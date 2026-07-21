@@ -9,9 +9,9 @@
 
 ## 1. Executive Summary
 
-Project Atlas is an enterprise-grade AI Infrastructure Operations Platform designed to understand, analyze, and assist in managing modern IT infrastructure.
+Project Atlas is an enterprise-grade AI Infrastructure Operations Platform designed to understand, analyze, and assist with modern IT infrastructure operations.
 
-Unlike traditional monitoring or infrastructure management solutions, Atlas is not intended to replace system administrators or infrastructure architects. Instead, it functions as an intelligent operational advisor capable of understanding infrastructure topology, analyzing incidents, correlating information from multiple systems, performing root cause analysis, assessing operational risk, and recommending safe remediation plans.
+Unlike traditional monitoring or infrastructure management solutions, Atlas is not intended to replace system administrators or infrastructure architects. Instead, it functions as an intelligent operational advisor that can understand infrastructure topology, analyze incidents, correlate information from multiple systems, perform root cause analysis, assess operational risk, and recommend safe remediation plans.
 
 Atlas combines large language models, retrieval-augmented generation, modular MCP integrations, infrastructure knowledge graphs, and enterprise governance principles to create a unified AI platform for infrastructure operations.
 
@@ -23,7 +23,7 @@ To become the AI-powered operating platform that understands enterprise infrastr
 
 ## 3. Mission
 
-Atlas aims to reduce operational complexity by providing a unified AI platform capable of:
+Atlas aims to reduce operational complexity by providing a unified AI platform that can:
 
 - Understanding heterogeneous enterprise infrastructure
 - Correlating data across multiple technology domains
@@ -36,13 +36,13 @@ Atlas aims to reduce operational complexity by providing a unified AI platform c
 
 ## 4. Core Philosophy
 
-Atlas is built upon five immutable principles.
+Atlas is built upon seven immutable principles.
 
 ### Principle 1 - AI Assists, Humans Decide
 
 Atlas never performs operational changes autonomously.
 
-The platform provides recommendations, risk assessments, implementation plans, rollback procedures, and impact analyses. Final execution always remains under human control unless an organization explicitly enables policy-based automation.
+The platform provides recommendations, risk assessments, implementation plans, rollback procedures, and impact analyses. Final execution always remains under human control and policy governance.
 
 ### Principle 2 - Explainability Before Intelligence
 
@@ -61,7 +61,7 @@ Atlas must always explain why it reached a conclusion.
 
 Every architectural decision prioritizes enterprise requirements over convenience.
 
-Examples include:
+Enterprise requirements include:
 
 - RBAC
 - LDAP and Active Directory
@@ -81,9 +81,9 @@ Atlas does not belong to a single vendor ecosystem.
 
 Every infrastructure component is integrated through modular MCP connectors. Supported vendors may include storage, virtualization, networking, operating systems, backup platforms, cloud providers, databases, and security solutions.
 
-### Principle 5 - Extensibility
+### Principle 5 - Modular by Design
 
-Everything inside Atlas must be modular.
+Everything inside Atlas must be modular and independently evolvable.
 
 Examples:
 
@@ -96,7 +96,19 @@ Examples:
 - Dashboards
 - Knowledge sources
 
-Nothing should require modification of the core platform.
+New capabilities should not require unnecessary modification of the core platform.
+
+### Principle 6 - Security by Default
+
+Security must be built into the platform from the beginning.
+
+This includes least privilege, secure secret handling, auditability, safe defaults, controlled execution paths, and explicit approval for risky operations.
+
+### Principle 7 - Reproducibility
+
+Atlas must be practical for enterprise environments with restricted internet access.
+
+Build, test, validation, bootstrap, and deployment processes should be documented and automated from the repository wherever possible.
 
 ## 5. Product Goals
 
@@ -147,7 +159,7 @@ Primary users include:
 
 ## 8. Long-Term Product Vision
 
-Atlas should evolve into an enterprise AI operating platform capable of understanding the complete lifecycle of infrastructure.
+Atlas should evolve into an enterprise AI operating platform that can understand the complete lifecycle of infrastructure.
 
 Future capabilities include:
 
@@ -172,8 +184,8 @@ Atlas will be considered successful when it can:
 - Recommend safe remediation plans
 - Estimate operational impact before changes occur
 - Preserve organizational operational knowledge
-- Reduce Mean Time to Detect
-- Reduce Mean Time to Resolve
+- Reduce Mean Time to Detect (MTTD)
+- Reduce Mean Time to Resolve (MTTR)
 - Increase operational confidence
 - Improve infrastructure reliability
 
