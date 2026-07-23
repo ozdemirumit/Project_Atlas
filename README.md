@@ -112,7 +112,9 @@ Design LDAP, Active Directory, SSO readiness, RBAC, audit logging, Syslog, SIEM,
 
 Current status: Product Definition.
 
-Implementation has not started. The repository currently contains foundational documents and structure only. Backend, frontend, MCP connector, AI agent, and deployment implementation should wait until the relevant documents are reviewed and accepted.
+Implementation has not started. The repository currently contains the foundational documentation set and repository structure only. Backend, frontend, MCP connector, AI agent, and deployment implementation should wait until the relevant documents are reviewed and accepted.
+
+The initial documentation set has been created as `0.1 Draft` material. These documents are intended to guide discussion, architecture review, and future AI-assisted implementation work.
 
 ## Repository Structure
 
@@ -149,6 +151,8 @@ Until then, contributors should read:
 - `docs/README.md`
 - `docs/001_Product_Vision.md`
 - `docs/002_Product_Requirements.md`
+- `docs/003_Project_Principles.md`
+- `docs/060_Master_Prompt.md`
 
 ## Contributing
 

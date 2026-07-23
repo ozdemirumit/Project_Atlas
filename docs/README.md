@@ -2,6 +2,8 @@
 
 This directory contains the architectural and product foundation for Project Atlas.
 
+All listed documents currently start as `0.1 Draft` material unless otherwise stated. Draft status means the document is suitable for alignment and review, but not yet a final implementation contract.
+
 ## Document Roadmap
 
 ### Phase 1 - Product Definition
@@ -42,6 +44,7 @@ This directory contains the architectural and product foundation for Project Atl
 - `035_SIEM.md`
 - `036_ITSM_Integration.md`
 - `037_Approval_Workflow.md`
+- `038_Deployment_and_Bootstrap.md`
 
 ### Phase 5 - AI
 
@@ -66,3 +69,7 @@ This directory contains the architectural and product foundation for Project Atl
 - `057_Deployment.md`
 - `058_CI_CD.md`
 - `059_Release_Process.md`
+
+### Phase 7 - AI Development Control
+
+- `060_Master_Prompt.md`

@@ -16,6 +16,7 @@ Before making changes, every agent must read:
 - `docs/README.md`
 - `docs/001_Product_Vision.md`
 - `docs/002_Product_Requirements.md`
+- `docs/003_Project_Principles.md`
 - `AGENTS.md`
 
 When working on a specialized area, the agent must also read the relevant document under `docs/` before editing files in that area.
@@ -106,4 +107,4 @@ Before committing, agents should check the working tree and verify that no unrel
 
 Current phase: Product Definition.
 
-Until the foundational documents are reviewed and accepted, agents should focus on documentation, architecture, repository structure, and development process only.
+The foundational documentation set exists as `0.1 Draft` material. Until these documents are reviewed and accepted, agents should focus on documentation, architecture, repository structure, and development process only.
