@@ -156,9 +156,7 @@ Until then, contributors should read:
 
 ## Contributing
 
-Contribution rules will be finalized in the development guide.
-
-Temporary rules:
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the documentation lifecycle, review and approval workflow, versioning policy, and pull request expectations.
 
 - Do not start implementation until foundational documents are accepted.
 - Do not commit secrets, credentials, IP addresses, customer names, or real infrastructure details.

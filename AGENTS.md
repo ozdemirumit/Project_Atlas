@@ -17,6 +17,7 @@ Before making changes, every agent must read:
 - `docs/001_Product_Vision.md`
 - `docs/002_Product_Requirements.md`
 - `docs/003_Project_Principles.md`
+- `docs/governance/DOCUMENT_GOVERNANCE.md`
 - `AGENTS.md`
 
 When working on a specialized area, the agent must also read the relevant document under `docs/` before editing files in that area.
@@ -54,6 +55,8 @@ Documentation must be clear enough for product owners, architects, engineers, se
 Documentation changes should:
 
 - Preserve the existing intent.
+- Follow the document lifecycle, metadata, versioning, approval, and traceability rules in `docs/governance/DOCUMENT_GOVERNANCE.md`.
+- Use `docs/templates/DOCUMENT_TEMPLATE.md` for new governed documents.
 - Use consistent terminology.
 - Prefer enterprise-grade wording.
 - Identify open questions explicitly.
