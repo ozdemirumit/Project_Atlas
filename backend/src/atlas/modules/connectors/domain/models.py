@@ -42,6 +42,7 @@ class IdempotencyClass(StrEnum):
 
 
 class PackageLifecycle(StrEnum):
+    QUARANTINED = "quarantined"
     REGISTERED = "registered"
     SUSPENDED = "suspended"
     RETIRED = "retired"

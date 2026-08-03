@@ -1,0 +1,34 @@
+{
+  "source_set_id": "source-set.hitachi.opscenter.configuration-manager.11-0-x",
+  "reviewed_at": "2026-08-03T00:00:00Z",
+  "publisher": "Hitachi Vantara",
+  "document": {
+    "title": "Ops Center API Configuration Manager REST API Reference Guide",
+    "version": "11.0.x",
+    "part_number": "MK-99CFM000-25",
+    "published": "2026-03-16",
+    "url": "https://docs.hitachivantara.com/r/en-us/mk-99cfm000/latest"
+  },
+  "capability_sources": [
+    {
+      "capability_id": "hitachi.opscenter.storage.inventory.read",
+      "method": "GET",
+      "path": "/v1/objects/storages",
+      "url": "https://docs.hitachivantara.com/r/en-us/mk-99cfm000/latest/common-operations-in-the-rest-api/getting-a-list-of-storage-systems"
+    },
+    {
+      "capability_id": "hitachi.opscenter.storage.health.read",
+      "method": "GET",
+      "path": "/v1/objects/storages/{storageDeviceId}/components/instance",
+      "vendor_permission": "Storage Administrator (View Only)",
+      "url": "https://docs.hitachivantara.com/r/en-us/mk-99cfm000/latest/monitoring-storage-systems/getting-information-about-the-hardware-installed-in-a-storage-system"
+    }
+  ],
+  "self_test_source": {
+    "method": "GET",
+    "path": "/configuration/version",
+    "url": "https://docs.hitachivantara.com/r/en-us/mk-99cfm000/latest/common-operations-in-the-rest-api/getting-the-version-information"
+  },
+  "data_policy": "synthetic-only",
+  "production_credentials_present": false
+}

@@ -15,3 +15,8 @@ The accepted foundation implementation currently lives in the backend modular-mo
 
 Vendor-specific connector packages will be added here only after passing the framework validation and
 quarantine requirements defined by ATLAS-020, ATLAS-021, ATLAS-022, and ATLAS-047.
+
+Current candidates:
+
+- [Hitachi Ops Center API Configuration Manager](connectors/hitachi_ops_center/README.md) -
+  quarantined C1 inventory and hardware-health candidate using synthetic data only.

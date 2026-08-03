@@ -167,21 +167,32 @@ class ConnectorRegistryService:
                     "The package version is already registered with a different digest.",
                 )
 
+            lifecycle = (
+                PackageLifecycle.QUARANTINED if manifest.generated else PackageLifecycle.REGISTERED
+            )
             package = RegisteredPackage(
                 manifest=manifest,
-                lifecycle=PackageLifecycle.REGISTERED,
+                lifecycle=lifecycle,
                 registered_at=self._clock(),
                 registered_by=context.subject_id,
                 validation_report=report,
             )
             await self._audit(
                 context=context,
-                event_type="atlas.connector.package.registered",
+                event_type=(
+                    "atlas.connector.package.quarantined"
+                    if lifecycle is PackageLifecycle.QUARANTINED
+                    else "atlas.connector.package.registered"
+                ),
                 permission_id=PACKAGE_REGISTER,
                 resource_type="resource.connector.package",
                 scope_reference=manifest.version_reference,
                 outcome="succeeded",
-                result_code="package_registered",
+                result_code=(
+                    "generated_package_quarantined"
+                    if lifecycle is PackageLifecycle.QUARANTINED
+                    else "package_registered"
+                ),
             )
             await self._repository.add_package(package)
             return package
@@ -219,6 +230,11 @@ class ConnectorRegistryService:
                     "instance_conflict", "The connector instance identifier already exists."
                 )
             package = await self._required_package(package_id, package_version)
+            if package.lifecycle is not PackageLifecycle.REGISTERED:
+                raise ConnectorRegistryError(
+                    "package_not_approved",
+                    "Connector instances can be created only from approved registered packages.",
+                )
             declared = {item.capability_id for item in package.manifest.capabilities}
             if not enabled_capability_ids or not enabled_capability_ids <= declared:
                 raise ConnectorRegistryError(
