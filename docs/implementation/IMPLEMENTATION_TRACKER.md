@@ -8,7 +8,7 @@
 | Title | Evidence-grounded investigation and reasoning vertical slice |
 | Status | Review |
 | Branch | `agent/investigation-reasoning` |
-| Pull Request | Pending |
+| Pull Request | [PR #21](https://github.com/ozdemirumit/Project_Atlas/pull/21) |
 | Governing Documents | ATLAS-002, ATLAS-014, ATLAS-015, ATLAS-026, ATLAS-027, ATLAS-031, ATLAS-032, ATLAS-041, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052 |
 | Last Updated | 2026-08-03 |
 | Next Action | Open the implementation pull request and verify GitHub quality gates |
