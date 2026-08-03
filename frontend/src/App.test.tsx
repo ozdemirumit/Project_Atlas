@@ -438,6 +438,103 @@ const investigationResponse = {
   },
 };
 
+const rcaResponse = {
+  data: {
+    case_id: "rca_test",
+    version: 1,
+    prior_version_id: null,
+    owner: "Storage Operations",
+    requested_by: "subject.development.operator",
+    state: "provisional",
+    severity: "warning",
+    created_at: "2026-08-04T10:00:00Z",
+    updated_at: "2026-08-04T10:00:00Z",
+    incident_references: [
+      { reference_type: "incident", reference_id: "INC-LOCAL-B28", authority: "user" },
+    ],
+    target_id: "asset.storage.lab.b28",
+    fault_families: ["storage_controller_or_path_degradation"],
+    symptoms: [
+      {
+        symptom_id: "symptom.storage.warning",
+        statement: "A current controller warning was observed.",
+        first_observed_at: "2026-08-04T09:30:00Z",
+        current_state: "observed warning; persistence and impact unknown",
+        evidence_references: ["evidence.health"],
+      },
+    ],
+    impact_scope: {
+      affected_entities: ["asset.storage.lab.b28", "CTL01"],
+      possibly_affected_services: ["Enterprise Resource Planning"],
+      explicitly_unaffected_entities: ["CTL02"],
+      current_impact: "A component warning is observed.",
+      business_criticality: "Unknown",
+      impact_confirmed: false,
+      limitations: ["Graph reachability does not establish current service impact."],
+    },
+    source_investigation_artifact_id: "investigation_test",
+    evidence: [],
+    timeline: [],
+    hypotheses: [
+      {
+        hypothesis_id: "rca-hypothesis.controller-path-degradation",
+        rank: 1,
+        fault_family: "storage_controller_or_path_degradation",
+        cause_type: "contributing_cause",
+        statement: "A controller or path condition may be contributing to the warning.",
+        mechanism: "A degraded component could reduce redundancy.",
+        expected_affected_entities: ["CTL01"],
+        expected_unaffected_entities: ["CTL02"],
+        expected_sequence: ["Condition begins", "Warning is observed"],
+        supporting_evidence: ["evidence.health"],
+        contradicting_evidence: ["evidence.peer"],
+        missing_expected_observations: ["Current path state"],
+        confounders: ["Transient warning"],
+        assumptions: ["Target mapping is current"],
+        confirmation_level: "supported",
+        confidence_rationale: "Direct warning exists, but independent evidence is missing.",
+        diagnostic_steps: [
+          {
+            step_id: "diagnostic.path-events",
+            question: "Is the warning reproduced by current path evidence?",
+            capability_id: "hitachi.opscenter.storage.path-events.read",
+            capability_class: "C1",
+            timeout_seconds: 30,
+            max_output_records: 20,
+          },
+        ],
+      },
+    ],
+    evidence_gaps: ["Current path and event-log evidence is missing."],
+    blocker: "Evidence cannot distinguish persistent degradation from a transient warning.",
+    safest_next_step: "Run the allowlisted C1 path and event read.",
+    provisional_statement: {
+      statement: "No root cause is confirmed. Path degradation is the leading candidate.",
+      confirmation_level: "supported",
+      supporting_evidence: ["evidence.health"],
+      contradicting_evidence: ["evidence.peer"],
+      residual_uncertainty: ["The warning has not been reproduced."],
+      alternatives_not_ruled_out: ["Transient warning"],
+      prevention_or_verification_implication: "Collect current path evidence before remediation.",
+    },
+    human_review: {
+      status: "pending",
+      reviewer_id: null,
+      reviewed_at: null,
+      decision_reason: null,
+      domain_confirmation_criterion: null,
+    },
+    data_profile: "synthetic_lab",
+    root_cause_confirmed: false,
+    safety_notice:
+      "Decision support only. This provisional RCA cannot authorize an infrastructure change.",
+  },
+  meta: {
+    correlation_id: "test-rca-correlation",
+    generated_at: "2026-08-04T10:00:00Z",
+  },
+};
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -454,8 +551,10 @@ describe("Atlas application shell", () => {
           ? storageResponse
           : url.includes("/health-checks/overview")
             ? healthCheckResponse
-            : url.includes("/investigations/storage")
-              ? investigationResponse
+            : url.includes("/rca/storage")
+              ? rcaResponse
+              : url.includes("/investigations/storage")
+                ? investigationResponse
           : url.includes("/graph/storage-impact")
             ? graphResponse
           : platformResponse;
@@ -504,5 +603,14 @@ describe("Atlas application shell", () => {
     expect(screen.getByText("Normalized UTC timeline")).toBeVisible();
     expect(screen.getByText("Do not declare root cause or outage.")).toBeVisible();
     expect(screen.getByText(/does not confirm root cause or outage/)).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Build RCA case" }));
+
+    expect(await screen.findByText("Ranked hypotheses")).toBeVisible();
+    expect(screen.getByText("Bounded diagnostics")).toBeVisible();
+    expect(screen.getByText("Provisional cause statement")).toBeVisible();
+    expect(screen.getByText("INC-LOCAL-B28")).toBeVisible();
+    expect(screen.getAllByText(/No root cause is confirmed/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/cannot authorize an infrastructure change/)).toBeVisible();
   });
 });

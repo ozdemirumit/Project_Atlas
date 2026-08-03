@@ -4,14 +4,58 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-009 |
-| Title | Evidence-grounded investigation and reasoning vertical slice |
+| Task ID | ATLAS-IMP-010 |
+| Title | Storage fault-family Root Cause Analysis vertical slice |
 | Status | Done |
-| Branch | `agent/investigation-reasoning` |
-| Pull Request | [PR #21](https://github.com/ozdemirumit/Project_Atlas/pull/21) |
-| Governing Documents | ATLAS-002, ATLAS-014, ATLAS-015, ATLAS-026, ATLAS-027, ATLAS-031, ATLAS-032, ATLAS-041, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052 |
-| Last Updated | 2026-08-03 |
+| Branch | `agent/storage-rca-case` |
+| Pull Request | [PR #22](https://github.com/ozdemirumit/Project_Atlas/pull/22) |
+| Governing Documents | ATLAS-002, ATLAS-023, ATLAS-026, ATLAS-027, ATLAS-031, ATLAS-032, ATLAS-041, ATLAS-042, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052 |
+| Last Updated | 2026-08-04 |
 | Next Action | Select the next approved vertical slice |
+
+### ATLAS-IMP-010 Acceptance Criteria
+
+- The first RCA domain is storage and the bounded fault families are controller or path
+  degradation and transient or observation-source failure.
+- Every case is immutable and versioned and retains owner, state, severity, incident references,
+  target scope, analysis window, source investigation artifact, component versions, and lineage.
+- Cases distinguish symptoms, possible triggers, contributing conditions, recovery factors,
+  observation failures, and coincidental events without converting correlation into causation.
+- Affected and explicitly unaffected components and services remain separate; graph reachability
+  never becomes confirmed service impact.
+- Ranked hypotheses retain mechanism, expected affected and unaffected entities, expected sequence,
+  supporting and contradicting evidence, missing observations, confounders, and assumptions.
+- Diagnostic plans are exact, bounded, allowlisted C0/C1 operations with declared duration, load,
+  output, timeout, stop behavior, role, policy, classification, retention, and result branches.
+- Confirmation levels are categorical and no case can become confirmed without domain criteria and
+  attributable eligible human review.
+- Missing, stale, conflicting, inaccessible, or insufficient evidence produces provisional or
+  inconclusive state, an explicit blocker, and the safest useful next check.
+- Authorization, scope, evidence, citation, capability, confirmation, and required audit failures
+  fail closed without exposing hidden targets or partial unauthorized case data.
+- The web workspace shows incident scope, symptoms, affected and unaffected context, ranked
+  hypotheses, evidence balance, diagnostics, gaps, provisional statement, and review status.
+- RCA remains decision support and cannot authorize or execute remediation.
+
+### ATLAS-IMP-010 Validation Evidence
+
+- Backend Ruff formatting and lint checks passed.
+- Backend strict mypy analysis passed for 141 source and test files.
+- Backend pytest suite passed: 114 tests, including eleven RCA tests for authentication, exact
+  assignment and scope, immutable incident-target version lineage, causal taxonomy, evidence
+  balance, affected and explicitly unaffected scope, timeline integrity, generic target errors,
+  evidence budgets, fail-closed audit, and allowlisted diagnostics.
+- Frontend ESLint, TypeScript, Vitest, and production bundle checks passed.
+- Live API validation returned a versioned provisional case with two ranked fault-family
+  hypotheses, pending attributable review, explicit evidence gaps, and false root-cause and impact
+  confirmation flags.
+- The live web flow completed investigation followed by RCA case creation and displayed incident
+  scope, symptoms, affected, possible, and explicitly unaffected context, ranked hypotheses,
+  evidence balance, bounded C1 diagnostics, blocker, safest next step, provisional cause statement,
+  and the decision-support safety boundary.
+- The 1280-pixel desktop view was visually inspected with no incoherent overlap or page-level
+  horizontal overflow in the RCA workspace.
+- GitHub backend and frontend CI jobs passed before merge.
 
 ### ATLAS-IMP-009 Acceptance Criteria
 
@@ -188,6 +232,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-007 | Infrastructure Graph and storage impact vertical slice | Completed through [PR #19](https://github.com/ozdemirumit/Project_Atlas/pull/19); 82 backend tests, live desktop/mobile UI validation, and all GitHub quality gates passed |
 | ATLAS-IMP-008 | Scheduled storage health checks vertical slice | Completed through [PR #20](https://github.com/ozdemirumit/Project_Atlas/pull/20); 93 backend tests, live desktop/mobile UI and manual-run validation, and all GitHub quality gates passed |
 | ATLAS-IMP-009 | Evidence-grounded investigation and reasoning vertical slice | Completed through [PR #21](https://github.com/ozdemirumit/Project_Atlas/pull/21); 103 backend tests, live desktop/mobile investigation validation, and all GitHub quality gates passed |
+| ATLAS-IMP-010 | Storage fault-family Root Cause Analysis vertical slice | Completed through [PR #22](https://github.com/ozdemirumit/Project_Atlas/pull/22); 114 backend tests, live API and desktop UI validation, and all GitHub quality gates passed |
 
 ## Status Rules
 
