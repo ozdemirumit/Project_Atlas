@@ -4,16 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
+from atlas.core.capabilities import CapabilityClass as CapabilityClass
 from atlas.modules.identity.domain.models import AuthenticatedSubject, validate_stable_identifier
-
-
-class CapabilityClass(StrEnum):
-    C0_INFORMATIONAL = "C0"
-    C1_READ_ONLY = "C1"
-    C2_DIAGNOSTIC = "C2"
-    C3_CONTROLLED_CHANGE = "C3"
-    C4_SERVICE_IMPACTING = "C4"
-    C5_DESTRUCTIVE = "C5"
 
 
 class DecisionOutcome(StrEnum):

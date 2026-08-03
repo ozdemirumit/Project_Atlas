@@ -4,44 +4,37 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-002 |
-| Title | Identity and authorization foundation |
-| Status | Review |
-| Branch | `agent/identity-authorization-foundation` |
-| Pull Request | [#13](https://github.com/ozdemirumit/Project_Atlas/pull/13) |
-| Governing Documents | ATLAS-003, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-051 |
+| Task ID | ATLAS-IMP-003 |
+| Title | Connector registry and simulator framework |
+| Status | In Progress |
+| Branch | `agent/connector-registry-simulator` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-020, ATLAS-021, ATLAS-025, ATLAS-032 |
 | Last Updated | 2026-08-03 |
-| Next Action | Review and merge the identity and authorization foundation pull request |
+| Next Action | Complete repository validation, open the pull request, and verify CI |
 
-### ATLAS-IMP-002 Acceptance Criteria
+### ATLAS-IMP-003 Acceptance Criteria
 
-- A stable normalized subject contract distinguishes authentication from authorization.
-- Development identity is deterministic, server-configured, disabled by default, and impossible to enable in production.
-- A versioned permission registry, role definition, exact resource scope, and time-bound assignment contract exists.
-- Protected API requests return safe `401` and `403` problem details without resource disclosure.
-- Authorization decisions are deterministic, correlated, and submitted to the audit boundary.
-- Client-supplied identity, role, or scope headers cannot elevate access.
-- Current-identity API and frontend identity display work in the supported development profile.
-- Backend and frontend quality gates and runtime smoke tests pass.
+- Connector package manifests and validation reports are immutable after registration.
+- Foundation registration accepts only C0 informational and C1 read-only capabilities.
+- Reusing a package version with a different digest is rejected.
+- Connector instances are organization, environment, site, target, and package scoped.
+- Instances remain disabled until a trusted connector self-test succeeds.
+- Simulator instances cannot receive network, secret, filesystem, or subprocess access.
+- Capability discovery returns only explicitly enabled capabilities from enabled instances.
+- Package validation, registration, instance lifecycle, and discovery produce audit events.
+- The simulator returns deterministic, bounded results for success and documented fault scenarios.
 
-### ATLAS-IMP-002 Validation Evidence
+### ATLAS-IMP-003 Validation Evidence
 
 - Backend Ruff formatting and lint checks passed.
-- Backend strict mypy analysis passed for 43 source files.
-- Backend pytest suite passed: 17 tests, including default deny, exact scope, expired
-  assignment, header spoofing, unverified bearer token, production configuration, and audit
-  failure behavior.
-- Frontend ESLint, TypeScript, Vitest, and production build checks passed.
-- Direct API and frontend-proxy smoke tests returned the same authorized current-identity
-  contract and preserved correlation IDs.
-- Unverified bearer input returned safe `401` problem details and did not enter audit records.
-- Desktop UI displayed the server-derived `Local Operator` identity with no console errors or
-  horizontal overflow.
-- Developer web and Compose host ports bind to loopback only, preserving the local development
-  identity boundary.
-- Production configuration rejects interactive API documentation; backend validation now passes
-  19 tests.
-- CI checkout uses the current Node 24-based action runtime.
+- Backend strict mypy analysis passed for 55 source and test files.
+- Backend pytest suite passed: 41 tests, including package immutability, C0/C1 boundaries,
+  permission and organization scope, audit fail-closed behavior, trusted self-test enablement,
+  exact target-filtered instance reads, stale self-test rejection, simulator secret isolation,
+  exact invocation binding, deadlines, size limits, and deterministic fault scenarios.
+- Frontend ESLint, TypeScript, Vitest, and production build checks passed without regressions.
+- CI validation remains pending before review.
 
 ### ATLAS-IMP-001 Validation Evidence
 
@@ -60,7 +53,6 @@
 
 | Task ID | Title | Status | Depends On | Governing Documents | Expected Outcome |
 | --- | --- | --- | --- | --- | --- |
-| ATLAS-IMP-003 | Connector registry and simulator framework | Planned | ATLAS-IMP-001, ATLAS-IMP-002 | ATLAS-020, ATLAS-021, ATLAS-025, ATLAS-032 | Registered packages, instances, C0/C1 capabilities, isolation, and simulator harness |
 | ATLAS-IMP-004 | Hitachi Ops Center read-only connector candidate | Planned | ATLAS-IMP-003 | ATLAS-020 through ATLAS-022, ATLAS-047 | Quarantined C1 inventory and health connector using synthetic and approved lab data |
 | ATLAS-IMP-005 | Storage inventory and health vertical slice | Planned | ATLAS-IMP-004 | ATLAS-026, ATLAS-042 through ATLAS-046, ATLAS-052 | Evidence-linked storage inventory, health findings, investigation, and report workflow |
 | ATLAS-IMP-006 | Local LLM and governed RAG foundation | Planned | ATLAS-IMP-002, ATLAS-IMP-005 | ATLAS-014, ATLAS-015, ATLAS-027, ATLAS-040, ATLAS-047, ATLAS-054 | Model gateway, retrieval, citations, ACL filtering, and evaluation harness |
@@ -76,6 +68,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | Task ID | Title | Completion Evidence |
 | --- | --- | --- |
 | ATLAS-IMP-001 | Runnable development foundation | Merged through [PR #12](https://github.com/ozdemirumit/Project_Atlas/pull/12); local and GitHub quality gates passed |
+| ATLAS-IMP-002 | Identity and authorization foundation | Merged through [PR #13](https://github.com/ozdemirumit/Project_Atlas/pull/13); local and GitHub quality gates passed |
 
 ## Status Rules
 
