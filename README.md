@@ -6,7 +6,7 @@ Its purpose is to help infrastructure teams understand complex environments, ana
 
 Atlas is not a traditional monitoring tool and it is not an autonomous operator. It is designed as an intelligent decision-support platform that can correlate infrastructure data, vendor knowledge, operational history, topology, health checks, and human-approved workflows.
 
-The project is currently in the product-definition phase. Implementation should not begin until the foundational product, architecture, security, AI, and development documents are reviewed and accepted.
+The project is currently in documentation foundation review. All 47 planned governed documents have been completed at version `0.2.0` with `Draft` status. Implementation should not begin until the relevant product, architecture, security, AI, and development documents are reviewed and approved.
 
 ## Executive Summary
 
@@ -84,42 +84,46 @@ Everything required to build, test, validate, and deploy Atlas should be documen
 
 ## Roadmap
 
-### Phase 0 - Product Definition
+### Phase 1 - Product Definition
 
-Define product vision, requirements, principles, glossary, architecture direction, development protocol, and enterprise governance expectations.
+Define product vision, requirements, principles, and shared terminology.
 
-### Phase 1 - Core Platform Foundation
+### Phase 2 - Architecture
 
-Design the backend, frontend, database model, connector registry, configuration model, audit foundation, and local development workflow.
+Define system, component, service, deployment, AI, RAG, and event architecture.
 
-### Phase 2 - Knowledge Platform
+### Phase 3 - Core Platform
 
-Design and validate RAG ingestion, vendor documentation handling, source metadata, vector database strategy, and enterprise knowledge sources.
+Define the MCP framework and SDK, MCP Builder, workflow, decision, policy, graph, and knowledge engines.
 
-### Phase 3 - MCP and Infrastructure Graph
+### Phase 4 - Enterprise
 
-Design the MCP framework, connector SDK, connector lifecycle, capability discovery, health checks, and infrastructure relationship graph.
+Define authentication, RBAC, audit, logging, Syslog, SIEM, ITSM, approval, deployment, and bootstrap controls.
 
-### Phase 4 - AI Agents and Decision Support
+### Phase 5 - AI
 
-Design AI agent orchestration, root cause analysis, recommendation format, change impact analysis, explainability, confidence handling, and guardrails.
+Define agents, reasoning, root cause analysis, recommendations, change impact, runbook intelligence, explainability, and guardrails.
 
-### Phase 5 - Enterprise Operations
+### Phase 6 - Development
 
-Design LDAP, Active Directory, SSO readiness, RBAC, audit logging, Syslog, SIEM, ITSM integration, approval workflows, deployment, and operational readiness.
+Define API, backend, frontend, databases, coding standards, testing, deployment, CI/CD, and release practices.
+
+### Phase 7 - AI Development Control
+
+Define the master operating prompt and control protocol for AI-assisted development.
 
 ## Development Status
 
-Current status: Product Definition.
+Current status: Documentation Foundation Review.
 
-Implementation has not started. The repository currently contains the foundational documentation set and repository structure only. Backend, frontend, MCP connector, AI agent, and deployment implementation should wait until the relevant documents are reviewed and accepted.
+Implementation has not started. The repository currently contains the complete planned documentation foundation and repository structure only. Backend, frontend, MCP connector, AI agent, and deployment implementation must wait until the relevant documents are reviewed and approved.
 
-The initial documentation set has been created as `0.1 Draft` material. These documents are intended to guide discussion, architecture review, and future AI-assisted implementation work.
+All 47 governed documents are at version `0.2.0` with `Draft` status. They are ready for structured human review but are not yet approved implementation contracts.
 
 ## Repository Structure
 
 ```text
-AGENTS.md          AI development rules for Codex, Work Mode, Claude Code, and similar agents
+AGENTS.md          AI development rules for Codex, Claude Code, and similar agents
 docs/              Product, architecture, platform, security, AI, and development documents
 backend/           Backend services and APIs
 frontend/          Web interface
