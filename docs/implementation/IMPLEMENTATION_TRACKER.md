@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-005 |
 | Title | Storage inventory and health vertical slice |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/storage-health-vertical-slice` |
-| Pull Request | Pending |
+| Pull Request | [#16](https://github.com/ozdemirumit/Project_Atlas/pull/16) |
 | Governing Documents | ATLAS-026, ATLAS-042 through ATLAS-046, ATLAS-050, ATLAS-052 |
 | Last Updated | 2026-08-03 |
-| Next Action | Complete visual validation, open the pull request, and verify CI |
+| Next Action | Verify pull request CI and resolve any review findings |
 
 ### ATLAS-IMP-005 Acceptance Criteria
 
