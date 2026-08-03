@@ -9,10 +9,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from atlas import __version__
 from atlas.api.errors import register_error_handlers
 from atlas.api.middleware import CorrelationIdMiddleware
-from atlas.api.routes import health, identity, platform, storage
+from atlas.api.routes import ai, health, identity, platform, storage
 from atlas.core.audit import AuditSink, LoggingAuditSink
+from atlas.core.classification import DataClassification
 from atlas.core.config import Settings, get_settings
 from atlas.core.persistence.database import DatabaseHealthProbe
+from atlas.modules.ai.adapters.openai_compatible import OpenAICompatibleTransport
+from atlas.modules.ai.adapters.synthetic import SyntheticOpenAICompatibleTransport
+from atlas.modules.ai.application.gateway import ModelGateway
+from atlas.modules.ai.application.ports import ModelTransport
+from atlas.modules.ai.application.service import GroundedAnswerService
+from atlas.modules.ai.domain.models import (
+    EndpointLifecycle,
+    EvaluationStatus,
+    ModelEndpointProfile,
+    TaskClass,
+)
 from atlas.modules.authorization.application.bootstrap import (
     build_development_authorization_service,
 )
@@ -20,6 +32,9 @@ from atlas.modules.authorization.application.service import AuthorizationService
 from atlas.modules.identity.adapters.development import DevelopmentIdentityProvider
 from atlas.modules.identity.application.ports import IdentityProvider
 from atlas.modules.identity.application.service import IdentityService
+from atlas.modules.knowledge.adapters.memory import InMemoryKnowledgeRetriever
+from atlas.modules.knowledge.adapters.synthetic import build_synthetic_knowledge_chunks
+from atlas.modules.knowledge.application.service import KnowledgeRetrievalService
 from atlas.modules.platform.application.service import PlatformStatusService
 from atlas.modules.storage.adapters.synthetic import build_synthetic_storage_overview
 from atlas.modules.storage.application.service import StorageOperationsService
@@ -32,6 +47,7 @@ def create_app(
     identity_provider: IdentityProvider | None = None,
     authorization_service: AuthorizationService | None = None,
     storage_operations_service: StorageOperationsService | None = None,
+    grounded_answer_service: GroundedAnswerService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     resolved_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -58,6 +74,60 @@ def create_app(
         ),
         audit_sink=resolved_audit_sink,
     )
+    synthetic_model_id = "atlas-local-synthetic"
+    model_transport: ModelTransport
+    if resolved_settings.local_model_enabled:
+        assert resolved_settings.local_model_base_url is not None
+        assert resolved_settings.local_model_id is not None
+        assert resolved_settings.local_model_reader_token is not None
+        model_id = resolved_settings.local_model_id
+        model_base_url = str(resolved_settings.local_model_base_url).rstrip("/")
+        model_secret_reference = resolved_settings.local_model_secret_reference_id
+        model_transport = OpenAICompatibleTransport(
+            bearer_token=resolved_settings.local_model_reader_token.get_secret_value()
+        )
+        model_data_profile = "configured_local_model"
+        model_endpoint_id = "endpoint.model.configured-local"
+    else:
+        model_id = synthetic_model_id
+        model_base_url = "http://127.0.0.1:11434/v1"
+        model_secret_reference = "secret.model.synthetic-reader"
+        model_transport = SyntheticOpenAICompatibleTransport()
+        model_data_profile = "synthetic_lab"
+        model_endpoint_id = "endpoint.model.synthetic-local"
+    resolved_grounded_answer_service = grounded_answer_service or GroundedAnswerService(
+        retrieval_service=KnowledgeRetrievalService(
+            retriever=InMemoryKnowledgeRetriever(
+                chunks=build_synthetic_knowledge_chunks(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment=resolved_settings.environment,
+                )
+            ),
+            audit_sink=resolved_audit_sink,
+        ),
+        model_gateway=ModelGateway(
+            endpoint=ModelEndpointProfile(
+                endpoint_id=model_endpoint_id,
+                owner="Project Atlas development",
+                provider_type="openai_compatible",
+                base_url=model_base_url,
+                secret_reference_id=model_secret_reference,
+                approved_model_ids=frozenset({model_id}),
+                approved_task_classes=frozenset({TaskClass.GROUNDED_ANSWER}),
+                classification_ceiling=DataClassification.INTERNAL,
+                network_boundary="development-loopback",
+                max_context_characters=32_000,
+                max_output_tokens=1024,
+                timeout_seconds=10.0,
+                lifecycle=EndpointLifecycle.ACTIVE,
+                evaluation_status=EvaluationStatus.APPROVED,
+            ),
+            transport=model_transport,
+        ),
+        audit_sink=resolved_audit_sink,
+        model_id=model_id,
+        data_profile=model_data_profile,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -67,6 +137,7 @@ def create_app(
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
+        app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
         await database_probe.close()
 
@@ -82,7 +153,7 @@ def create_app(
         CORSMiddleware,
         allow_origins=[str(origin) for origin in resolved_settings.cors_origins],
         allow_credentials=False,
-        allow_methods=["GET"],
+        allow_methods=["GET", "POST"],
         allow_headers=["Accept", "Authorization", "Content-Type", "X-Correlation-ID"],
         expose_headers=["X-Correlation-ID"],
     )
@@ -91,4 +162,5 @@ def create_app(
     app.include_router(identity.router, prefix="/api/v1")
     app.include_router(platform.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
+    app.include_router(ai.router, prefix="/api/v1")
     return app
