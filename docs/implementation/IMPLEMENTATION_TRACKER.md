@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-010 |
 | Title | Storage fault-family Root Cause Analysis vertical slice |
-| Status | Review |
+| Status | Done |
 | Branch | `agent/storage-rca-case` |
 | Pull Request | [PR #22](https://github.com/ozdemirumit/Project_Atlas/pull/22) |
 | Governing Documents | ATLAS-002, ATLAS-023, ATLAS-026, ATLAS-027, ATLAS-031, ATLAS-032, ATLAS-041, ATLAS-042, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052 |
 | Last Updated | 2026-08-04 |
-| Next Action | Open the pull request, validate GitHub CI, and merge after review |
+| Next Action | Select the next approved vertical slice |
 
 ### ATLAS-IMP-010 Acceptance Criteria
 
@@ -55,6 +55,7 @@
   and the decision-support safety boundary.
 - The 1280-pixel desktop view was visually inspected with no incoherent overlap or page-level
   horizontal overflow in the RCA workspace.
+- GitHub backend and frontend CI jobs passed before merge.
 
 ### ATLAS-IMP-009 Acceptance Criteria
 
@@ -231,6 +232,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-007 | Infrastructure Graph and storage impact vertical slice | Completed through [PR #19](https://github.com/ozdemirumit/Project_Atlas/pull/19); 82 backend tests, live desktop/mobile UI validation, and all GitHub quality gates passed |
 | ATLAS-IMP-008 | Scheduled storage health checks vertical slice | Completed through [PR #20](https://github.com/ozdemirumit/Project_Atlas/pull/20); 93 backend tests, live desktop/mobile UI and manual-run validation, and all GitHub quality gates passed |
 | ATLAS-IMP-009 | Evidence-grounded investigation and reasoning vertical slice | Completed through [PR #21](https://github.com/ozdemirumit/Project_Atlas/pull/21); 103 backend tests, live desktop/mobile investigation validation, and all GitHub quality gates passed |
+| ATLAS-IMP-010 | Storage fault-family Root Cause Analysis vertical slice | Completed through [PR #22](https://github.com/ozdemirumit/Project_Atlas/pull/22); 114 backend tests, live API and desktop UI validation, and all GitHub quality gates passed |
 
 ## Status Rules
 
