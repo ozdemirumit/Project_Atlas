@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-008 |
 | Title | Scheduled storage health checks vertical slice |
-| Status | Review |
+| Status | Done |
 | Branch | `agent/scheduled-health-checks` |
 | Pull Request | [PR #20](https://github.com/ozdemirumit/Project_Atlas/pull/20) |
 | Governing Documents | ATLAS-002, ATLAS-016, ATLAS-020, ATLAS-023, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-052 |
 | Last Updated | 2026-08-03 |
-| Next Action | Open the implementation pull request and verify GitHub quality gates |
+| Next Action | Select the next approved vertical slice |
 
 ### ATLAS-IMP-008 Acceptance Criteria
 
@@ -47,6 +47,7 @@
 - Desktop and 390-pixel mobile views were inspected with no incoherent overlap or page-level
   horizontal overflow; health-check tabs and tables remain bounded and internally scrollable.
 - Browser console validation reported no errors or warnings during overview and manual-run flows.
+- GitHub backend and frontend CI jobs passed before merge.
 
 ### ATLAS-IMP-007 Acceptance Criteria
 
@@ -144,6 +145,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-005 | Storage inventory and health vertical slice | Merged through [PR #16](https://github.com/ozdemirumit/Project_Atlas/pull/16); 60 backend tests, live UI validation, and all GitHub quality gates passed |
 | ATLAS-IMP-006 | Local LLM and governed RAG foundation | Merged through [PR #17](https://github.com/ozdemirumit/Project_Atlas/pull/17); 74 backend tests, retrieval evaluation, live API smoke tests, and all GitHub quality gates passed |
 | ATLAS-IMP-007 | Infrastructure Graph and storage impact vertical slice | Completed through [PR #19](https://github.com/ozdemirumit/Project_Atlas/pull/19); 82 backend tests, live desktop/mobile UI validation, and all GitHub quality gates passed |
+| ATLAS-IMP-008 | Scheduled storage health checks vertical slice | Completed through [PR #20](https://github.com/ozdemirumit/Project_Atlas/pull/20); 93 backend tests, live desktop/mobile UI and manual-run validation, and all GitHub quality gates passed |
 
 ## Status Rules
 
