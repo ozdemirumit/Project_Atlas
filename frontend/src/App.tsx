@@ -40,6 +40,7 @@ import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
 import { createStorageInvestigation } from "./api/investigations";
 import { getPlatformStatus } from "./api/platform";
+import { createStorageRca } from "./api/rca";
 import { getStorageOverview, type StorageAsset } from "./api/storage";
 
 const navigation = [
@@ -179,6 +180,11 @@ export function App() {
       createStorageInvestigation(targetId, question),
   });
   const reasoningArtifact = investigationMutation.data?.data;
+  const rcaMutation = useMutation({
+    mutationFn: ({ targetId, actualBehavior }: { targetId: string; actualBehavior: string }) =>
+      createStorageRca(targetId, actualBehavior),
+  });
+  const rcaCase = rcaMutation.data?.data;
   const longestImpactPath = impact
     ? [...impact.paths].sort((left, right) => right.entity_ids.length - left.entity_ids.length)[0]
     : undefined;
@@ -833,6 +839,201 @@ export function App() {
                     )}
                   </section>
 
+                  <section className="workspace-section rca-section" aria-live="polite">
+                    <div className="section-heading rca-heading">
+                      <div>
+                        <p className="eyebrow">ROOT CAUSE ANALYSIS</p>
+                        <h2>Governed RCA case</h2>
+                      </div>
+                      <button
+                        className="run-check-button"
+                        type="button"
+                        disabled={!reasoningArtifact || !selectedAsset || rcaMutation.isPending}
+                        onClick={() => {
+                          if (reasoningArtifact && selectedAsset) {
+                            rcaMutation.mutate({
+                              targetId: selectedAsset.asset_id,
+                              actualBehavior:
+                                reasoningArtifact.summary.known[0] ??
+                                `Storage health is ${selectedAsset.health}.`,
+                            });
+                          }
+                        }}
+                      >
+                        {rcaMutation.isPending ? (
+                          <RefreshCw className="spin" size={14} />
+                        ) : (
+                          <FileText size={14} />
+                        )}
+                        Build RCA case
+                      </button>
+                    </div>
+
+                    {!rcaCase && !rcaMutation.isPending && !rcaMutation.isError && (
+                      <div className="reasoning-empty">
+                        <FileText size={21} />
+                        <div>
+                          <strong>Investigation evidence required</strong>
+                          <p>
+                            Build a provisional case after the governed reasoning artifact is
+                            available. Root cause and service impact remain unconfirmed.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {rcaMutation.isPending && (
+                      <div className="reasoning-empty">
+                        <Clock3 size={20} />
+                        <div>
+                          <strong>Building immutable RCA case</strong>
+                          <p>Evidence balance, causal taxonomy, and diagnostics are being checked.</p>
+                        </div>
+                      </div>
+                    )}
+                    {rcaMutation.isError && (
+                      <div className="reasoning-empty reasoning-error">
+                        <AlertTriangle size={20} />
+                        <div>
+                          <strong>RCA case unavailable</strong>
+                          <p>No cause statement is shown when governance checks fail.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {rcaCase && (
+                      <>
+                        <div className="rca-summary-grid">
+                          <div>
+                            <span>Case version</span>
+                            <strong>Version {rcaCase.version}</strong>
+                            <small>{rcaCase.incident_references[0]?.reference_id}</small>
+                          </div>
+                          <div>
+                            <span>State</span>
+                            <strong className={`rca-state ${rcaCase.state}`}>
+                              {rcaCase.state}
+                            </strong>
+                            <small>{rcaCase.severity} severity</small>
+                          </div>
+                          <div>
+                            <span>Owner</span>
+                            <strong>{rcaCase.owner}</strong>
+                            <small>{rcaCase.target_id}</small>
+                          </div>
+                          <div>
+                            <span>Human review</span>
+                            <strong>{rcaCase.human_review.status}</strong>
+                            <small>Attributable review required</small>
+                          </div>
+                        </div>
+
+                        <div className="rca-impact-grid">
+                          <div>
+                            <h3>Observed symptom</h3>
+                            <strong>{rcaCase.symptoms[0]?.statement}</strong>
+                            <p>{rcaCase.symptoms[0]?.current_state}</p>
+                          </div>
+                          <div>
+                            <h3>Affected / possible</h3>
+                            <strong>{rcaCase.impact_scope.affected_entities.join(", ")}</strong>
+                            <p>
+                              Possible services: {rcaCase.impact_scope.possibly_affected_services.join(", ")}
+                            </p>
+                          </div>
+                          <div>
+                            <h3>Explicitly unaffected</h3>
+                            <strong>
+                              {rcaCase.impact_scope.explicitly_unaffected_entities.join(", ")}
+                            </strong>
+                            <p>{rcaCase.impact_scope.limitations[0]}</p>
+                          </div>
+                        </div>
+
+                        <div className="rca-body-grid">
+                          <div className="rca-hypotheses">
+                            <h3>Ranked hypotheses</h3>
+                            {rcaCase.hypotheses.map((hypothesis) => (
+                              <article key={hypothesis.hypothesis_id}>
+                                <div className="rca-hypothesis-title">
+                                  <span className="rca-rank">#{hypothesis.rank}</span>
+                                  <span className="epistemic-type">
+                                    {hypothesis.cause_type.replaceAll("_", " ")}
+                                  </span>
+                                  <span className={`confidence ${hypothesis.confirmation_level}`}>
+                                    {hypothesis.confirmation_level.replaceAll("_", " ")}
+                                  </span>
+                                </div>
+                                <strong>{hypothesis.statement}</strong>
+                                <p>{hypothesis.mechanism}</p>
+                                <small>
+                                  {hypothesis.supporting_evidence.length} supporting /{" "}
+                                  {hypothesis.contradicting_evidence.length} contradicting /{" "}
+                                  {hypothesis.missing_expected_observations.length} missing
+                                </small>
+                                <div className="rca-sequence">
+                                  {hypothesis.expected_sequence.map((step) => (
+                                    <span key={step}>{step}</span>
+                                  ))}
+                                </div>
+                              </article>
+                            ))}
+                          </div>
+
+                          <div className="rca-diagnostics">
+                            <h3>Bounded diagnostics</h3>
+                            {rcaCase.hypotheses.flatMap((hypothesis) =>
+                              hypothesis.diagnostic_steps.map((step) => (
+                                <article key={`${hypothesis.hypothesis_id}-${step.step_id}`}>
+                                  <div>
+                                    <ShieldCheck size={14} />
+                                    <span>{step.capability_class}</span>
+                                  </div>
+                                  <strong>{step.question}</strong>
+                                  <p>{step.capability_id}</p>
+                                  <small>
+                                    {step.timeout_seconds}s timeout · max {step.max_output_records}{" "}
+                                    records · no approval
+                                  </small>
+                                </article>
+                              )),
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="rca-gaps-grid">
+                          <div>
+                            <h3>Evidence gaps</h3>
+                            <ul>
+                              {rcaCase.evidence_gaps.map((gap) => (
+                                <li key={gap}>{gap}</li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div>
+                            <h3>Current blocker</h3>
+                            <p>{rcaCase.blocker}</p>
+                            <strong>{rcaCase.safest_next_step}</strong>
+                          </div>
+                        </div>
+
+                        <div className="rca-provisional">
+                          <CircleHelp size={17} />
+                          <div>
+                            <strong>Provisional cause statement</strong>
+                            <p>{rcaCase.provisional_statement.statement}</p>
+                            <span>
+                              {rcaCase.provisional_statement.prevention_or_verification_implication}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="safety-notice">
+                          <ShieldCheck size={16} />
+                          <span>{rcaCase.safety_notice}</span>
+                        </div>
+                      </>
+                    )}
+                  </section>
+
                   <section className="workspace-section impact-section">
                     <div className="section-heading">
                       <div>
@@ -985,6 +1186,7 @@ export function App() {
                   event.preventDefault();
                   const question = investigationQuestion.trim();
                   if (selectedAsset && question) {
+                    rcaMutation.reset();
                     investigationMutation.mutate({ targetId: selectedAsset.asset_id, question });
                   }
                 }}

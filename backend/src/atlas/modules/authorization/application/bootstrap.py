@@ -20,6 +20,7 @@ GRAPH_STORAGE_IMPACT_READ = "graph.storage-impact.read"
 HEALTH_CHECK_OVERVIEW_READ = "health-check.overview.read"
 HEALTH_CHECK_RUN_CREATE = "health-check.run.create"
 INVESTIGATION_CREATE = "investigation.create"
+RCA_CREATE = "rca.create"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 
 
@@ -89,6 +90,17 @@ def investigation_scope(organization_id: str, environment: str) -> ResourceScope
     )
 
 
+def rca_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.rca",
+        resource_id="resource.rca.storage.synthetic",
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
 def build_development_authorization_service(
     settings: Settings, audit_sink: AuditSink
 ) -> AuthorizationService:
@@ -121,6 +133,12 @@ def build_development_authorization_service(
             permission_id=INVESTIGATION_CREATE,
             description="Create an evidence-grounded investigation in the exact storage scope.",
         ),
+        PermissionDefinition(
+            permission_id=RCA_CREATE,
+            description=(
+                "Create a provisional evidence-grounded RCA case in the exact storage scope."
+            ),
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -134,6 +152,7 @@ def build_development_authorization_service(
                 HEALTH_CHECK_OVERVIEW_READ,
                 HEALTH_CHECK_RUN_CREATE,
                 INVESTIGATION_CREATE,
+                RCA_CREATE,
             }
         ),
     )
@@ -202,6 +221,14 @@ def build_development_authorization_service(
                 scope=investigation_scope(
                     settings.development_organization_id, settings.environment
                 ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.rca",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=rca_scope(settings.development_organization_id, settings.environment),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),
         )
