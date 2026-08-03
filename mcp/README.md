@@ -1,5 +1,17 @@
 # MCP
 
-This directory will contain the MCP framework, connector SDK, connector lifecycle design, vendor connector implementations, and connector validation assets.
+This directory contains connector-facing framework assets, SDK material, validation fixtures, and
+vendor connector packages as they are introduced.
 
-Current status: placeholder. Do not add implementation until the MCP framework documents are accepted.
+The accepted foundation implementation currently lives in the backend modular-monolith boundary at
+`backend/src/atlas/modules/connectors` and includes:
+
+- immutable package registration with retained validation reports;
+- C0 informational and C1 read-only capability enforcement;
+- organization, environment, site, target, and package-scoped connector instances;
+- disabled-by-default lifecycle with trusted self-test enablement;
+- audited capability discovery; and
+- a deterministic simulator with no network, secret, filesystem, or subprocess access.
+
+Vendor-specific connector packages will be added here only after passing the framework validation and
+quarantine requirements defined by ATLAS-020, ATLAS-021, ATLAS-022, and ATLAS-047.
