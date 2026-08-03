@@ -8,7 +8,7 @@
 | Title | Infrastructure Graph and storage impact vertical slice |
 | Status | Review |
 | Branch | `agent/infrastructure-graph-impact` |
-| Pull Request | Pending |
+| Pull Request | [PR #19](https://github.com/ozdemirumit/Project_Atlas/pull/19) |
 | Governing Documents | ATLAS-024, ATLAS-026, ATLAS-031, ATLAS-044, ATLAS-050, ATLAS-052 |
 | Last Updated | 2026-08-03 |
 | Next Action | Open the implementation pull request and verify GitHub quality gates |
