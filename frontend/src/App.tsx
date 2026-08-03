@@ -3,6 +3,7 @@ import {
   Activity,
   AlertTriangle,
   Bell,
+  BrainCircuit,
   Building2,
   Blocks,
   Box,
@@ -37,6 +38,7 @@ import { useState } from "react";
 import { getStorageImpact, type GraphEntity } from "./api/graph";
 import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
+import { createStorageInvestigation } from "./api/investigations";
 import { getPlatformStatus } from "./api/platform";
 import { getStorageOverview, type StorageAsset } from "./api/storage";
 
@@ -113,6 +115,9 @@ export function App() {
   const [inspectorOpen, setInspectorOpen] = useState(shouldOpenInspector);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [selectedHealthCheckId, setSelectedHealthCheckId] = useState<string | null>(null);
+  const [investigationQuestion, setInvestigationQuestion] = useState(
+    "What evidence explains the current storage warning?",
+  );
   const statusQuery = useQuery({
     queryKey: ["platform-status"],
     queryFn: getPlatformStatus,
@@ -169,6 +174,11 @@ export function App() {
       await queryClient.invalidateQueries({ queryKey: ["health-check-overview"] });
     },
   });
+  const investigationMutation = useMutation({
+    mutationFn: ({ targetId, question }: { targetId: string; question: string }) =>
+      createStorageInvestigation(targetId, question),
+  });
+  const reasoningArtifact = investigationMutation.data?.data;
   const longestImpactPath = impact
     ? [...impact.paths].sort((left, right) => right.entity_ids.length - left.entity_ids.length)[0]
     : undefined;
@@ -390,7 +400,10 @@ export function App() {
                                 <button
                                   className="asset-select"
                                   type="button"
-                                  onClick={() => setSelectedAssetId(asset.asset_id)}
+                                  onClick={() => {
+                                    setSelectedAssetId(asset.asset_id);
+                                    investigationMutation.reset();
+                                  }}
                                 >
                                   <Database size={17} />
                                   <span>
@@ -656,6 +669,170 @@ export function App() {
                     )}
                   </section>
 
+                  <section className="workspace-section reasoning-section" aria-live="polite">
+                    <div className="section-heading">
+                      <div>
+                        <p className="eyebrow">EVIDENCE-GROUNDED INVESTIGATION</p>
+                        <h2>Reasoning artifact</h2>
+                      </div>
+                      {reasoningArtifact && (
+                        <span className="reasoning-version">
+                          <BrainCircuit size={14} /> Version {reasoningArtifact.version}
+                        </span>
+                      )}
+                    </div>
+
+                    {!reasoningArtifact && !investigationMutation.isPending && (
+                      <div className="reasoning-empty">
+                        <BrainCircuit size={21} />
+                        <div>
+                          <strong>Start a bounded investigation</strong>
+                          <p>
+                            The selected target will be assessed from authorized evidence without
+                            claiming root cause or outage.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {investigationMutation.isPending && (
+                      <div className="reasoning-empty">
+                        <Clock3 size={20} />
+                        <div>
+                          <strong>Assembling governed evidence</strong>
+                          <p>Scope, citations, epistemic types, and safety checks are being validated.</p>
+                        </div>
+                      </div>
+                    )}
+                    {investigationMutation.isError && (
+                      <div className="reasoning-empty reasoning-error">
+                        <AlertTriangle size={20} />
+                        <div>
+                          <strong>Investigation unavailable</strong>
+                          <p>No conclusion is shown when the governed artifact cannot be validated.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {reasoningArtifact && (
+                      <>
+                        <div className="reasoning-summary-grid">
+                          <div>
+                            <span>Confidence</span>
+                            <strong className={`confidence ${reasoningArtifact.summary.confidence}`}>
+                              {reasoningArtifact.summary.confidence}
+                            </strong>
+                            <p>{reasoningArtifact.summary.confidence_rationale}</p>
+                          </div>
+                          <div>
+                            <span>Supported decision</span>
+                            <strong>{reasoningArtifact.summary.supported_decision}</strong>
+                          </div>
+                          <div>
+                            <span>Not supported</span>
+                            <strong>{reasoningArtifact.summary.unsupported_decision}</strong>
+                          </div>
+                        </div>
+
+                        <div className="reasoning-facts-grid">
+                          <div>
+                            <h3>Known</h3>
+                            <ul>
+                              {reasoningArtifact.summary.known.map((item) => (
+                                <li key={item}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div>
+                            <h3>Inferred</h3>
+                            <ul>
+                              {reasoningArtifact.summary.inferred.map((item) => (
+                                <li key={item}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div>
+                            <h3>Unknown</h3>
+                            <ul>
+                              {reasoningArtifact.summary.unknowns.map((item) => (
+                                <li key={item}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+
+                        <div className="reasoning-body-grid">
+                          <div className="claim-ledger">
+                            <h3>Typed claim ledger</h3>
+                            {reasoningArtifact.claims.map((claim) => (
+                              <article key={claim.claim_id}>
+                                <div>
+                                  <span className={`epistemic-type ${claim.epistemic_type}`}>
+                                    {claim.epistemic_type.replaceAll("_", " ")}
+                                  </span>
+                                  <span className={`confidence ${claim.confidence}`}>
+                                    {claim.confidence}
+                                  </span>
+                                </div>
+                                <strong>{claim.text}</strong>
+                                <small>
+                                  {claim.supporting_evidence.length} supporting /{" "}
+                                  {claim.contradicting_evidence.length} contradicting evidence
+                                </small>
+                              </article>
+                            ))}
+                          </div>
+
+                          <div className="hypothesis-ledger">
+                            <h3>Alternative hypotheses</h3>
+                            {reasoningArtifact.hypotheses.map((hypothesis) => (
+                              <article key={hypothesis.hypothesis_id}>
+                                <div>
+                                  <span className="state-badge">{hypothesis.state}</span>
+                                  <span className={`confidence ${hypothesis.confidence}`}>
+                                    {hypothesis.confidence}
+                                  </span>
+                                </div>
+                                <strong>{hypothesis.statement}</strong>
+                                <p>{hypothesis.confidence_rationale}</p>
+                                <div className="next-check">
+                                  <ShieldCheck size={14} />
+                                  <span>
+                                    {hypothesis.discriminating_checks[0]?.title} ·{" "}
+                                    {hypothesis.discriminating_checks[0]?.capability_class} read-only
+                                  </span>
+                                </div>
+                              </article>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="reasoning-timeline">
+                          <h3>Normalized UTC timeline</h3>
+                          {reasoningArtifact.timeline.map((event) => (
+                            <div key={event.event_id}>
+                              <span>{formatTimestamp(event.occurred_at)}</span>
+                              <strong>{event.summary}</strong>
+                              <small>{event.evidence_references.length} linked evidence</small>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="reasoning-stop">
+                          <CircleHelp size={16} />
+                          <div>
+                            <strong>Stop reason</strong>
+                            <p>{reasoningArtifact.stop_reason}</p>
+                            <span>{reasoningArtifact.summary.safest_next_check}</span>
+                          </div>
+                        </div>
+                        <div className="safety-notice">
+                          <ShieldCheck size={16} />
+                          <span>{reasoningArtifact.safety_notice}</span>
+                        </div>
+                      </>
+                    )}
+                  </section>
+
                   <section className="workspace-section impact-section">
                     <div className="section-heading">
                       <div>
@@ -802,20 +979,40 @@ export function App() {
             </div>
 
             <div className="composer-wrap">
-              <div className="composer">
+              <form
+                className="composer"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const question = investigationQuestion.trim();
+                  if (selectedAsset && question) {
+                    investigationMutation.mutate({ targetId: selectedAsset.asset_id, question });
+                  }
+                }}
+              >
                 <textarea
                   aria-label="Ask Atlas"
-                  placeholder="Ask Atlas about this storage assessment..."
+                  placeholder="Ask Atlas to investigate the selected storage system..."
                   rows={2}
-                  disabled
+                  value={investigationQuestion}
+                  onChange={(event) => setInvestigationQuestion(event.target.value)}
+                  disabled={!selectedAsset || investigationMutation.isPending}
                 />
                 <div className="composer-footer">
-                  <span>Conversational analysis is not enabled in this slice</span>
-                  <button className="send-button" type="button" aria-label="Send message" disabled>
+                  <span>Authorized evidence · 24-hour UTC window · decision support only</span>
+                  <button
+                    className="send-button"
+                    type="submit"
+                    aria-label="Start investigation"
+                    disabled={
+                      !selectedAsset ||
+                      !investigationQuestion.trim() ||
+                      investigationMutation.isPending
+                    }
+                  >
                     <Send size={17} />
                   </button>
                 </div>
-              </div>
+              </form>
             </div>
           </section>
 

@@ -19,6 +19,7 @@ AI_GROUNDED_QUERY_CREATE = "ai.grounded-query.create"
 GRAPH_STORAGE_IMPACT_READ = "graph.storage-impact.read"
 HEALTH_CHECK_OVERVIEW_READ = "health-check.overview.read"
 HEALTH_CHECK_RUN_CREATE = "health-check.run.create"
+INVESTIGATION_CREATE = "investigation.create"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 
 
@@ -77,6 +78,17 @@ def health_check_scope(organization_id: str, environment: str) -> ResourceScope:
     )
 
 
+def investigation_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.investigation",
+        resource_id="resource.investigation.storage.synthetic",
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
 def build_development_authorization_service(
     settings: Settings, audit_sink: AuditSink
 ) -> AuthorizationService:
@@ -105,6 +117,10 @@ def build_development_authorization_service(
             permission_id=HEALTH_CHECK_RUN_CREATE,
             description="Run an exact allowlisted C1 read-only health check.",
         ),
+        PermissionDefinition(
+            permission_id=INVESTIGATION_CREATE,
+            description="Create an evidence-grounded investigation in the exact storage scope.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -117,6 +133,7 @@ def build_development_authorization_service(
                 GRAPH_STORAGE_IMPACT_READ,
                 HEALTH_CHECK_OVERVIEW_READ,
                 HEALTH_CHECK_RUN_CREATE,
+                INVESTIGATION_CREATE,
             }
         ),
     )
@@ -173,6 +190,16 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=health_check_scope(
+                    settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.investigation",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=investigation_scope(
                     settings.development_organization_id, settings.environment
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
