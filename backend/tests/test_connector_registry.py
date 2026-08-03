@@ -27,6 +27,7 @@ from atlas.modules.connectors.domain.models import (
     ConnectorPackageManifest,
     IdempotencyClass,
     InstanceLifecycle,
+    PackageLifecycle,
     SideEffect,
 )
 
@@ -206,6 +207,34 @@ async def test_foundation_registry_rejects_capabilities_above_c1() -> None:
     assert error.value.validation_report.findings[0].code == "unsupported_capability_class"
     assert audit_sink.records[-1].event_type == "atlas.connector.package.validation_failed"
     assert await repository.list_packages() == ()
+
+
+@pytest.mark.asyncio
+async def test_generated_package_is_quarantined_and_cannot_create_instances() -> None:
+    repository = InMemoryConnectorRegistryRepository()
+    audit_sink = CollectingAuditSink()
+    service = registry(repository, audit_sink)
+    health = capability("storage.health.read", CapabilityClass.C1_READ_ONLY, SideEffect.READ)
+    generated = replace(manifest(health), generated=True)
+
+    package = await service.register_package(generated, access_context(PACKAGE_REGISTER))
+
+    assert package.lifecycle is PackageLifecycle.QUARANTINED
+    assert audit_sink.records[-1].event_type == "atlas.connector.package.quarantined"
+    with pytest.raises(ConnectorRegistryError) as error:
+        await service.create_instance(
+            instance_id="instance.storage.quarantined",
+            package_id=generated.package_id,
+            package_version=generated.package_version,
+            organization_id="organization.test",
+            environment_id="environment.test",
+            site_id="site.lab",
+            target_id="target.storage.lab",
+            enabled_capability_ids=frozenset({"storage.health.read"}),
+            secret_reference_ids=(),
+            context=access_context(INSTANCE_MANAGE),
+        )
+    assert error.value.code == "package_not_approved"
 
 
 @pytest.mark.asyncio

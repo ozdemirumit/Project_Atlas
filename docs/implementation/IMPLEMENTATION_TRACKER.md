@@ -4,37 +4,40 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-003 |
-| Title | Connector registry and simulator framework |
-| Status | Review |
-| Branch | `agent/connector-registry-simulator` |
-| Pull Request | [#14](https://github.com/ozdemirumit/Project_Atlas/pull/14) |
-| Governing Documents | ATLAS-020, ATLAS-021, ATLAS-025, ATLAS-032 |
+| Task ID | ATLAS-IMP-004 |
+| Title | Hitachi Ops Center read-only connector candidate |
+| Status | In Progress |
+| Branch | `agent/hitachi-ops-center-c1` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-047 |
 | Last Updated | 2026-08-03 |
-| Next Action | Verify pull request CI and resolve any review findings |
+| Next Action | Complete candidate validation, open the pull request, and verify CI |
 
-### ATLAS-IMP-003 Acceptance Criteria
+### ATLAS-IMP-004 Acceptance Criteria
 
-- Connector package manifests and validation reports are immutable after registration.
-- Foundation registration accepts only C0 informational and C1 read-only capabilities.
-- Reusing a package version with a different digest is rejected.
-- Connector instances are organization, environment, site, target, and package scoped.
-- Instances remain disabled until a trusted connector self-test succeeds.
-- Simulator instances cannot receive network, secret, filesystem, or subprocess access.
-- Capability discovery returns only explicitly enabled capabilities from enabled instances.
-- Package validation, registration, instance lifecycle, and discovery produce audit events.
-- The simulator returns deterministic, bounded results for success and documented fault scenarios.
+- The generated candidate package remains quarantined and cannot create connector instances.
+- Inventory and hardware health capabilities are C1 read-only and use only documented GET requests.
+- Connector code receives a pre-authenticated transport and never handles credential values.
+- Storage device identifiers are exact allowlist bindings and cannot be expanded by caller input.
+- Inventory normalization excludes management, SVP, and controller IP addresses.
+- Health normalization preserves warning, degraded, critical, empty, and unknown outcomes.
+- Input, collection count, nesting depth, response shape, and target identifiers are bounded.
+- Synthetic tests cover success, denial, timeout, throttling, unavailability, malformed, oversized,
+  empty, product mismatch, and unknown-status behavior.
+- Official source provenance and lab promotion requirements are documented.
 
-### ATLAS-IMP-003 Validation Evidence
+### ATLAS-IMP-004 Validation Evidence
 
+- Official Hitachi Vantara Configuration Manager 11.0.x version, storage inventory, and hardware
+  health request contracts were reviewed and recorded with source provenance.
 - Backend Ruff formatting and lint checks passed.
-- Backend strict mypy analysis passed for 55 source and test files.
-- Backend pytest suite passed: 41 tests, including package immutability, C0/C1 boundaries,
-  permission and organization scope, audit fail-closed behavior, trusted self-test enablement,
-  exact target-filtered instance reads, stale self-test rejection, simulator secret isolation,
-  exact invocation binding, deadlines, size limits, and deterministic fault scenarios.
+- Backend strict mypy analysis passed for 63 source and test files.
+- Backend pytest suite passed: 55 tests, including generated-package quarantine, C1-only
+  manifests, destination validation, exact storage allowlists, management-address exclusion,
+  bounded response handling, nested hardware status normalization, unknown and empty outcomes,
+  vendor fault mapping, self-test compatibility, and synthetic-only package assets.
 - Frontend ESLint, TypeScript, Vitest, and production build checks passed without regressions.
-- CI validation remains pending before review.
+- GitHub CI validation remains pending before review.
 
 ### ATLAS-IMP-001 Validation Evidence
 
@@ -53,7 +56,6 @@
 
 | Task ID | Title | Status | Depends On | Governing Documents | Expected Outcome |
 | --- | --- | --- | --- | --- | --- |
-| ATLAS-IMP-004 | Hitachi Ops Center read-only connector candidate | Planned | ATLAS-IMP-003 | ATLAS-020 through ATLAS-022, ATLAS-047 | Quarantined C1 inventory and health connector using synthetic and approved lab data |
 | ATLAS-IMP-005 | Storage inventory and health vertical slice | Planned | ATLAS-IMP-004 | ATLAS-026, ATLAS-042 through ATLAS-046, ATLAS-052 | Evidence-linked storage inventory, health findings, investigation, and report workflow |
 | ATLAS-IMP-006 | Local LLM and governed RAG foundation | Planned | ATLAS-IMP-002, ATLAS-IMP-005 | ATLAS-014, ATLAS-015, ATLAS-027, ATLAS-040, ATLAS-047, ATLAS-054 | Model gateway, retrieval, citations, ACL filtering, and evaluation harness |
 
@@ -69,6 +71,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | --- | --- | --- |
 | ATLAS-IMP-001 | Runnable development foundation | Merged through [PR #12](https://github.com/ozdemirumit/Project_Atlas/pull/12); local and GitHub quality gates passed |
 | ATLAS-IMP-002 | Identity and authorization foundation | Merged through [PR #13](https://github.com/ozdemirumit/Project_Atlas/pull/13); local and GitHub quality gates passed |
+| ATLAS-IMP-003 | Connector registry and simulator framework | Merged through [PR #14](https://github.com/ozdemirumit/Project_Atlas/pull/14); 41 backend tests and all GitHub quality gates passed |
 
 ## Status Rules
 
