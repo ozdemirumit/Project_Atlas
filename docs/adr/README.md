@@ -1,0 +1,19 @@
+# Project Atlas Architecture Decision Records
+
+Architecture Decision Records capture significant implementation choices made under the approved Project Atlas documentation baseline.
+
+## Lifecycle
+
+- `Proposed`: under evaluation and not implementation authority.
+- `Accepted`: approved for implementation.
+- `Superseded`: replaced by a later ADR that links back to the prior decision.
+- `Deprecated`: retained for history but no longer applicable.
+
+ADR numbers are permanent and never reused. Material changes require a new ADR rather than silent editing of an accepted decision.
+
+## Index
+
+| ADR | Title | Status |
+| --- | --- | --- |
+| [ADR-001](ADR-001_Initial_Application_Stack.md) | Initial application stack | Accepted |
+| [ADR-002](ADR-002_Development_and_Delivery_Toolchain.md) | Development and delivery toolchain | Accepted |

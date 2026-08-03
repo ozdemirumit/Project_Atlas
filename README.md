@@ -6,7 +6,7 @@ Its purpose is to help infrastructure teams understand complex environments, ana
 
 Atlas is not a traditional monitoring tool and it is not an autonomous operator. It is designed as an intelligent decision-support platform that can correlate infrastructure data, vendor knowledge, operational history, topology, health checks, and human-approved workflows.
 
-The project now has an approved documentation baseline. All 47 planned governed documents are at version `1.0.0` with `Approved` status. Implementation has not started and requires an explicit implementation task governed by these contracts.
+The project has an approved documentation baseline. All 47 planned governed documents are at version `1.0.0` with `Approved` status. Implementation is now underway through governed tasks recorded in the implementation tracker.
 
 ## Executive Summary
 
@@ -114,9 +114,9 @@ Define the master operating prompt and control protocol for AI-assisted developm
 
 ## Development Status
 
-Current status: Approved Documentation Baseline.
+Current status: Implementation Foundation.
 
-Implementation has not started. The repository currently contains the approved documentation foundation and repository structure only. Backend, frontend, MCP connector, AI agent, and deployment implementation may begin only through an explicit task that follows the approved contracts.
+ATLAS-IMP-001 introduces the runnable modular-monolith API, PostgreSQL migration baseline, enterprise web application shell, local development scripts, container assets, and continuous integration. Connector, identity, LLM, RAG, and infrastructure-changing capabilities remain outside this task.
 
 All 47 governed documents are at version `1.0.0` with `Approved` status and form the first binding implementation baseline.
 
@@ -140,16 +140,39 @@ Each top-level directory contains a short README that defines its ownership and 
 
 ## Getting Started
 
-Getting started instructions will be added after the architecture and development workflow documents are accepted.
+Prerequisites:
 
-Planned setup modes:
+- Python 3.12
+- uv 0.12.1
+- Node.js 24
+- pnpm 11.7.0
+- Docker with Compose for the full PostgreSQL profile
 
-- Online development setup
-- Restricted-network enterprise setup
-- Offline or mirrored dependency setup
-- Environment validation through project scripts
+For direct local development on Windows without changing PowerShell execution policy:
 
-Until then, contributors should read:
+```bat
+scripts\bootstrap.cmd
+scripts\dev.cmd
+```
+
+Open `http://localhost:5173`. The API is available at `http://localhost:8000`, with interactive development documentation at `http://localhost:8000/docs`.
+
+Run all repository quality checks with:
+
+```bat
+scripts\check.cmd
+```
+
+Equivalent PowerShell scripts remain available for environments where signed or local scripts
+are permitted. Do not disable antivirus or lower organizational security controls for Atlas.
+
+For the container profile, create a local `.env` from `.env.example`, replace the placeholder database password, and run:
+
+```powershell
+docker compose up --build
+```
+
+Contributors should read:
 
 - `AGENTS.md`
 - `docs/README.md`
@@ -157,12 +180,14 @@ Until then, contributors should read:
 - `docs/002_Product_Requirements.md`
 - `docs/003_Project_Principles.md`
 - `docs/060_Master_Prompt.md`
+- `docs/implementation/IMPLEMENTATION_TRACKER.md`
+- `docs/adr/README.md`
 
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the documentation lifecycle, review and approval workflow, versioning policy, and pull request expectations.
 
-- Do not start implementation until foundational documents are accepted.
+- Start implementation only through a scoped task governed by the accepted documents.
 - Do not commit secrets, credentials, IP addresses, customer names, or real infrastructure details.
 - Keep changes scoped to the assigned task.
 - Preserve the principle that AI assists and humans decide.

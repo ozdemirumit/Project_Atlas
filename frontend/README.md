@@ -1,5 +1,23 @@
-# Frontend
+# Atlas Web
 
-This directory will contain the web interface for chat-based operations, dashboards, reports, approval workflows, and administrative views.
+The Atlas web application is the operator-facing shell for infrastructure context,
+investigations, recommendations, and governed actions.
 
-Current status: placeholder. Do not add implementation until the UI and frontend architecture documents are accepted.
+## Development
+
+```powershell
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+The development server runs on `http://localhost:5173` and proxies `/api` requests to
+`http://localhost:8000` by default. Set `ATLAS_API_PROXY_TARGET` to use another API endpoint.
+
+## Quality checks
+
+```powershell
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```
