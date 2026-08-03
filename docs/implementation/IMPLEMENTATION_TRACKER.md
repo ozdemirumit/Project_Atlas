@@ -8,7 +8,7 @@
 | Title | Identity and authorization foundation |
 | Status | Review |
 | Branch | `agent/identity-authorization-foundation` |
-| Pull Request | Not opened |
+| Pull Request | [#13](https://github.com/ozdemirumit/Project_Atlas/pull/13) |
 | Governing Documents | ATLAS-003, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-051 |
 | Last Updated | 2026-08-03 |
 | Next Action | Review and merge the identity and authorization foundation pull request |
