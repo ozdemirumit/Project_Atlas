@@ -159,6 +159,97 @@ const storageResponse = {
   },
 };
 
+const graphResponse = {
+  data: {
+    snapshot_id: "snapshot.graph.lab.001",
+    snapshot_generated_at: "2026-08-03T10:00:00Z",
+    start_entity_id: "asset.storage.lab.b28",
+    max_depth: 5,
+    freshness: "fresh",
+    completeness: "partial",
+    entities: [
+      ["asset.storage.lab.b28", "storage_system", "VSP One B28"],
+      ["entity.volume.erp.prod", "volume", "ERP-PROD-VOL-01"],
+      ["entity.datastore.erp.prod", "datastore", "ERP-PROD-DS-01"],
+      ["entity.vm.erp.app.01", "virtual_machine", "erp-app-01"],
+      ["entity.service.erp.application", "technical_service", "ERP Application Service"],
+      ["entity.business-service.erp", "business_service", "Enterprise Resource Planning"],
+    ].map(([entity_id, entity_type, display_name], index) => ({
+      entity_id,
+      entity_type,
+      display_name,
+      domain_id: `domain.${entity_type}`,
+      observed_at: "2026-08-03T10:00:00Z",
+      freshness: "fresh",
+      confidence_basis: "Synthetic topology observation",
+      evidence_references: [`evidence.entity.${index}`],
+      classification: "internal",
+      vendor: index === 0 ? "Hitachi" : null,
+      product: null,
+      model: index === 0 ? "VSP One B28" : null,
+      lifecycle_state: "active",
+    })),
+    relationships: [
+      ["rel.1", "backed_by", "entity.volume.erp.prod", "asset.storage.lab.b28"],
+      ["rel.2", "backed_by", "entity.datastore.erp.prod", "entity.volume.erp.prod"],
+      ["rel.3", "uses", "entity.vm.erp.app.01", "entity.datastore.erp.prod"],
+      ["rel.4", "runs_on", "entity.service.erp.application", "entity.vm.erp.app.01"],
+      [
+        "rel.5",
+        "depends_on",
+        "entity.business-service.erp",
+        "entity.service.erp.application",
+      ],
+    ].map(([relationship_id, relationship_type, source_entity_id, target_entity_id], index) => ({
+      relationship_id,
+      relationship_type,
+      source_entity_id,
+      target_entity_id,
+      assertion_method: "observed",
+      observed_at: "2026-08-03T10:00:00Z",
+      freshness: "fresh",
+      confidence_basis: "Synthetic topology observation",
+      evidence_references: [`evidence.relationship.${index}`],
+      classification: "internal",
+    })),
+    paths: [
+      {
+        scope: "possible",
+        entity_ids: [
+          "asset.storage.lab.b28",
+          "entity.volume.erp.prod",
+          "entity.datastore.erp.prod",
+          "entity.vm.erp.app.01",
+          "entity.service.erp.application",
+          "entity.business-service.erp",
+        ],
+        relationship_ids: ["rel.1", "rel.2", "rel.3", "rel.4", "rel.5"],
+        evidence_references: ["evidence.relationship.0", "evidence.relationship.4"],
+      },
+    ],
+    evidence: [],
+    direct_entity_ids: ["entity.volume.erp.prod"],
+    possible_entity_ids: [
+      "entity.datastore.erp.prod",
+      "entity.vm.erp.app.01",
+      "entity.service.erp.application",
+      "entity.business-service.erp",
+    ],
+    technical_service_ids: ["entity.service.erp.application"],
+    business_service_ids: ["entity.business-service.erp"],
+    unknowns: ["Reachability does not establish service unavailability."],
+    known_gaps: ["Storage multipathing is not represented."],
+    outage_confirmed: false,
+    digital_twin_maturity: "D0-D1 dependency analysis",
+    data_profile: "synthetic_lab",
+    safety_notice: "Dependencies indicate possible impact, not an outage.",
+  },
+  meta: {
+    correlation_id: "test-graph-correlation",
+    generated_at: "2026-08-03T10:00:00Z",
+  },
+};
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -173,6 +264,8 @@ describe("Atlas application shell", () => {
         ? identityResponse
         : url.includes("/storage/overview")
           ? storageResponse
+          : url.includes("/graph/storage-impact")
+            ? graphResponse
           : platformResponse;
       return Promise.resolve(
         new Response(JSON.stringify(payload), {
@@ -199,5 +292,9 @@ describe("Atlas application shell", () => {
     expect(screen.getByText("provisional", { selector: ".state-badge" })).toBeVisible();
     expect(screen.getAllByText("Synthetic lab").length).toBeGreaterThan(0);
     expect(screen.getByText(/No infrastructure change is authorized/)).toBeVisible();
+    expect(await screen.findByText("Evidence-linked service path")).toBeVisible();
+    expect(await screen.findByText("Enterprise Resource Planning")).toBeVisible();
+    expect(screen.getByText("D0-D1 dependency analysis")).toBeVisible();
+    expect(screen.getByText(/Dependencies indicate possible impact/)).toBeVisible();
   });
 });

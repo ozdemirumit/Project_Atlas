@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from atlas import __version__
 from atlas.api.errors import register_error_handlers
 from atlas.api.middleware import CorrelationIdMiddleware
-from atlas.api.routes import ai, health, identity, platform, storage
+from atlas.api.routes import ai, graph, health, identity, platform, storage
 from atlas.core.audit import AuditSink, LoggingAuditSink
 from atlas.core.classification import DataClassification
 from atlas.core.config import Settings, get_settings
@@ -29,6 +29,9 @@ from atlas.modules.authorization.application.bootstrap import (
     build_development_authorization_service,
 )
 from atlas.modules.authorization.application.service import AuthorizationService
+from atlas.modules.graph.adapters.synthetic import build_synthetic_graph_snapshot
+from atlas.modules.graph.application.engine import InMemoryGraphImpactAnalyzer
+from atlas.modules.graph.application.service import GraphImpactService
 from atlas.modules.identity.adapters.development import DevelopmentIdentityProvider
 from atlas.modules.identity.application.ports import IdentityProvider
 from atlas.modules.identity.application.service import IdentityService
@@ -47,6 +50,7 @@ def create_app(
     identity_provider: IdentityProvider | None = None,
     authorization_service: AuthorizationService | None = None,
     storage_operations_service: StorageOperationsService | None = None,
+    graph_impact_service: GraphImpactService | None = None,
     grounded_answer_service: GroundedAnswerService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
@@ -71,6 +75,15 @@ def create_app(
         overview=build_synthetic_storage_overview(
             organization_id=resolved_settings.development_organization_id,
             environment=resolved_settings.environment,
+        ),
+        audit_sink=resolved_audit_sink,
+    )
+    resolved_graph_impact_service = graph_impact_service or GraphImpactService(
+        analyzer=InMemoryGraphImpactAnalyzer(
+            snapshot=build_synthetic_graph_snapshot(
+                organization_id=resolved_settings.development_organization_id,
+                environment=resolved_settings.environment,
+            )
         ),
         audit_sink=resolved_audit_sink,
     )
@@ -137,6 +150,7 @@ def create_app(
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
+        app.state.graph_impact_service = resolved_graph_impact_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
         await database_probe.close()
@@ -162,5 +176,6 @@ def create_app(
     app.include_router(identity.router, prefix="/api/v1")
     app.include_router(platform.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
+    app.include_router(graph.router, prefix="/api/v1")
     app.include_router(ai.router, prefix="/api/v1")
     return app

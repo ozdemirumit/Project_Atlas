@@ -751,6 +751,226 @@ tbody tr.selected {
   color: #678079;
 }
 
+.impact-maturity {
+  display: inline-flex;
+  min-height: 25px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 7px;
+  color: #3d6259;
+  background: #edf5f2;
+  border: 1px solid #cadfd8;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.impact-message {
+  display: flex;
+  min-height: 70px;
+  align-items: center;
+  gap: 9px;
+  padding: 16px;
+  color: #5e6b67;
+  font-size: 10px;
+}
+
+.impact-message svg {
+  flex: 0 0 auto;
+}
+
+.impact-error {
+  color: #864646;
+}
+
+.impact-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-bottom: 1px solid #e2e8e5;
+}
+
+.impact-summary > div {
+  min-height: 55px;
+  padding: 10px 13px;
+  border-right: 1px solid #e2e8e5;
+}
+
+.impact-summary > div:last-child {
+  border-right: 0;
+}
+
+.impact-summary span,
+.impact-summary strong {
+  display: block;
+}
+
+.impact-summary span {
+  color: #75807c;
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.impact-summary strong {
+  margin-top: 5px;
+  color: #2f3d39;
+  font-size: 15px;
+}
+
+.dependency-path {
+  display: flex;
+  min-height: 116px;
+  align-items: center;
+  overflow-x: auto;
+  padding: 17px 15px;
+  background: #f9fbfa;
+  border-bottom: 1px solid #e2e8e5;
+}
+
+.dependency-step {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.dependency-node {
+  display: flex;
+  width: 152px;
+  min-height: 66px;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  color: #3e5e56;
+  background: #ffffff;
+  border: 1px solid #cfdad6;
+  border-radius: 5px;
+}
+
+.dependency-node svg {
+  flex: 0 0 auto;
+}
+
+.dependency-node > span {
+  min-width: 0;
+}
+
+.dependency-node small,
+.dependency-node strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.dependency-node small {
+  color: #7d8884;
+  font-size: 7px;
+  text-transform: uppercase;
+}
+
+.dependency-node strong {
+  margin-top: 4px;
+  color: #34413d;
+  font-size: 9px;
+  line-height: 1.3;
+}
+
+.dependency-node.storage_system {
+  color: #2f7563;
+  border-color: #9fcbbf;
+}
+
+.dependency-node.technical_service,
+.dependency-node.business_service {
+  color: #4d6280;
+  border-color: #b9c8da;
+}
+
+.dependency-link {
+  position: relative;
+  width: 68px;
+  height: 42px;
+  flex: 0 0 68px;
+}
+
+.dependency-link::before {
+  position: absolute;
+  top: 21px;
+  right: 8px;
+  left: 8px;
+  height: 1px;
+  content: "";
+  background: #aebbb7;
+}
+
+.dependency-link::after {
+  position: absolute;
+  top: 17px;
+  right: 8px;
+  width: 7px;
+  height: 7px;
+  content: "";
+  border-top: 1px solid #83928d;
+  border-right: 1px solid #83928d;
+  transform: rotate(45deg);
+}
+
+.dependency-link span {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  left: 0;
+  color: #74817d;
+  font-size: 7px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.impact-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.impact-detail-grid > div {
+  min-width: 0;
+  padding: 13px 15px;
+  border-right: 1px solid #e2e8e5;
+}
+
+.impact-detail-grid > div:last-child {
+  border-right: 0;
+}
+
+.impact-detail-grid h3 {
+  margin: 0 0 8px;
+  color: #47534f;
+  font-size: 10px;
+}
+
+.impact-detail-grid ul {
+  margin: 0;
+  padding-left: 16px;
+  color: #616d69;
+  font-size: 9px;
+  line-height: 1.55;
+}
+
+.impact-detail-grid li + li {
+  margin-top: 5px;
+}
+
+.impact-safety {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 11px 15px;
+  color: #725d2e;
+  background: #faf6ec;
+  border-top: 1px solid #e7dcc3;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.impact-safety svg {
+  flex: 0 0 auto;
+}
+
 .safety-notice {
   display: flex;
   align-items: flex-start;
@@ -1086,6 +1306,31 @@ tbody tr.selected {
 
   .summary-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .impact-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .impact-summary > div:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .impact-summary > div:nth-child(-n + 2) {
+    border-bottom: 1px solid #e2e8e5;
+  }
+
+  .impact-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .impact-detail-grid > div {
+    border-right: 0;
+    border-bottom: 1px solid #e2e8e5;
+  }
+
+  .impact-detail-grid > div:last-child {
+    border-bottom: 0;
   }
 
   .summary-strip > div {
