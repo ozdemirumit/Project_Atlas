@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-059 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Release Management Owner |
 | Reviewers | Product Owner, Architecture Owner, Security Architecture, Quality Engineering, Platform Engineering, Site Reliability Engineering, AI Architecture, Infrastructure Domain Owners, Support Owner, Audit and Compliance |
 | Approver | Product Owner |

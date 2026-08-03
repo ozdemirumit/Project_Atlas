@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-032 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Audit and Compliance Owner |
 | Reviewers | Security Architecture, Architecture Owner, Identity and Access Management, Platform Engineering, Operations, Legal and Privacy |
 | Approver | Security Architecture Owner |

@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-060 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Engineering Enablement and AI Architecture Owner |
 | Reviewers | Product Owner, Architecture Owner, Security Architecture, Backend Engineering, Frontend Engineering, Platform Engineering, Quality Engineering, Documentation Owner, Audit and Compliance |
 | Approver | Architecture Owner |

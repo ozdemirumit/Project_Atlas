@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-053 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Data Architecture Owner |
 | Reviewers | Architecture Owner, Security Architecture, Backend Engineering, Database Engineering, Site Reliability Engineering, Privacy and Data Governance, Audit and Compliance, Quality Engineering |
 | Approver | Architecture Owner |

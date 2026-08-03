@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-020 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | MCP Platform Architecture |
 | Reviewers | Architecture Owner, Security Architecture, Infrastructure Operations, AI Architecture, Connector SDK Owner |
 | Approver | Architecture Owner |

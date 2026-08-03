@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-026 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Infrastructure Graph Architecture |
 | Reviewers | Architecture Owner, Infrastructure Domain Architects, Data Architecture, Security Architecture, AI Architecture |
 | Approver | Architecture Owner |

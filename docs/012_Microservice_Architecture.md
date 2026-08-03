@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-012 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Architecture Owner |
 | Reviewers | Backend Architecture, Platform Engineering, Security Architecture, Operations |
 | Approver | Architecture Owner |

@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-047 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | AI Security Owner |
 | Reviewers | Security Architecture, AI Architecture, Architecture Owner, Infrastructure Domain Architects, Platform Engineering, Operations, Privacy and Data Governance, Audit and Compliance |
 | Approver | Security Architecture Owner |

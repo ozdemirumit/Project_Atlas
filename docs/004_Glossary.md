@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-004 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Architecture Owner |
 | Reviewers | Product Owner, Security Architecture, Infrastructure Domain Architects |
 | Approver | Product Owner |

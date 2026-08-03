@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-046 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | AI Product and Experience Owner |
 | Reviewers | AI Architecture, Product Owner, Architecture Owner, Infrastructure Domain Architects, Security Architecture, Operations, IT Service Management Owner, Audit and Compliance, User Experience |
 | Approver | Product Owner |

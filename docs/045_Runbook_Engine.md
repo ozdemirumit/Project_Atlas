@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-045 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Knowledge and Operations Engineering Owner |
 | Reviewers | Architecture Owner, AI Architecture, Infrastructure Domain Architects, Operations, Security Architecture, IT Service Management Owner, Audit and Compliance |
 | Approver | Architecture Owner |

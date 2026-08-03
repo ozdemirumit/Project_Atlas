@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-042 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | AI and Infrastructure Analysis Owner |
 | Reviewers | AI Architecture, Architecture Owner, Infrastructure Domain Architects, Operations, IT Service Management Owner, Security Architecture, Data Science and Evaluation |
 | Approver | Architecture Owner |

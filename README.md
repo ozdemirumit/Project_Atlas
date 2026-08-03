@@ -6,7 +6,7 @@ Its purpose is to help infrastructure teams understand complex environments, ana
 
 Atlas is not a traditional monitoring tool and it is not an autonomous operator. It is designed as an intelligent decision-support platform that can correlate infrastructure data, vendor knowledge, operational history, topology, health checks, and human-approved workflows.
 
-The project is currently in documentation foundation review. All 47 planned governed documents have been completed at version `0.2.0` with `Draft` status. Implementation should not begin until the relevant product, architecture, security, AI, and development documents are reviewed and approved.
+The project is currently in structured documentation review. All 47 planned governed documents have been completed at version `0.2.0` with `Review` status. Implementation should not begin until the relevant product, architecture, security, AI, and development documents are approved.
 
 ## Executive Summary
 
@@ -114,11 +114,11 @@ Define the master operating prompt and control protocol for AI-assisted developm
 
 ## Development Status
 
-Current status: Documentation Foundation Review.
+Current status: Structured Documentation Review.
 
 Implementation has not started. The repository currently contains the complete planned documentation foundation and repository structure only. Backend, frontend, MCP connector, AI agent, and deployment implementation must wait until the relevant documents are reviewed and approved.
 
-All 47 governed documents are at version `0.2.0` with `Draft` status. They are ready for structured human review but are not yet approved implementation contracts.
+All 47 governed documents are at version `0.2.0` with `Review` status. Required stakeholder review and formal approval are in progress; the documents are not yet approved implementation contracts.
 
 ## Repository Structure
 

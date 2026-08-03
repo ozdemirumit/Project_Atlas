@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-025 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Security and Policy Architecture |
 | Reviewers | Architecture Owner, Security Architecture, Infrastructure Operations, Compliance, Identity and Access Owner |
 | Approver | Security Architecture Owner |

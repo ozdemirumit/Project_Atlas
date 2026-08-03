@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-055 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Engineering Enablement Owner |
 | Reviewers | Architecture Owner, Backend Engineering, Frontend Engineering, Security Architecture, Platform Engineering, Quality Engineering, AI Architecture, Documentation Owner |
 | Approver | Architecture Owner |

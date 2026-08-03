@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-031 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Security Architecture Owner |
 | Reviewers | Architecture Owner, Identity and Access Management, Platform Engineering, Infrastructure Operations, Audit and Compliance |
 | Approver | Security Architecture Owner |

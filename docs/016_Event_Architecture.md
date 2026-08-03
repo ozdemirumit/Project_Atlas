@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-016 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Architecture Owner |
 | Reviewers | Backend Architecture, Security Architecture, Platform Engineering, Data Governance, Operations |
 | Approver | Architecture Owner |

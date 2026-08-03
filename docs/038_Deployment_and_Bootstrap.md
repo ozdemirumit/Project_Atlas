@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-038 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Platform Engineering Owner |
 | Reviewers | Architecture Owner, Security Architecture, Site Reliability Engineering, Database Engineering, Network Engineering, Infrastructure Operations, Support Engineering |
 | Approver | Architecture Owner |
