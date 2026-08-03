@@ -9,11 +9,14 @@ from atlas.api.errors import AtlasError
 from atlas.modules.authorization.application.bootstrap import (
     AI_GROUNDED_QUERY_CREATE,
     GRAPH_STORAGE_IMPACT_READ,
+    HEALTH_CHECK_OVERVIEW_READ,
+    HEALTH_CHECK_RUN_CREATE,
     IDENTITY_SELF_READ,
     STORAGE_OVERVIEW_READ,
     ai_grounded_query_scope,
     current_identity_scope,
     graph_storage_impact_scope,
+    health_check_scope,
     storage_overview_scope,
 )
 from atlas.modules.authorization.application.service import AuthorizationService
@@ -159,3 +162,46 @@ async def authorize_graph_storage_impact_read(
         )
     request.state.authorization_decision = decision
     return decision
+
+
+async def _authorize_health_check(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.health-check",
+            scope=health_check_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_health_check_overview_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_health_check(request, subject, permission_id=HEALTH_CHECK_OVERVIEW_READ)
+
+
+async def authorize_health_check_run_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_health_check(request, subject, permission_id=HEALTH_CHECK_RUN_CREATE)

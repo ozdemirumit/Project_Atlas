@@ -17,6 +17,8 @@ IDENTITY_SELF_READ = "identity.self.read"
 STORAGE_OVERVIEW_READ = "storage.overview.read"
 AI_GROUNDED_QUERY_CREATE = "ai.grounded-query.create"
 GRAPH_STORAGE_IMPACT_READ = "graph.storage-impact.read"
+HEALTH_CHECK_OVERVIEW_READ = "health-check.overview.read"
+HEALTH_CHECK_RUN_CREATE = "health-check.run.create"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 
 
@@ -64,6 +66,17 @@ def graph_storage_impact_scope(organization_id: str, environment: str) -> Resour
     )
 
 
+def health_check_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.health-check",
+        resource_id="resource.health-check.storage.synthetic",
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
 def build_development_authorization_service(
     settings: Settings, audit_sink: AuditSink
 ) -> AuthorizationService:
@@ -84,6 +97,14 @@ def build_development_authorization_service(
             permission_id=GRAPH_STORAGE_IMPACT_READ,
             description="Read bounded storage dependency impact in the exact graph scope.",
         ),
+        PermissionDefinition(
+            permission_id=HEALTH_CHECK_OVERVIEW_READ,
+            description="Read governed health-check definitions, schedules, and recent runs.",
+        ),
+        PermissionDefinition(
+            permission_id=HEALTH_CHECK_RUN_CREATE,
+            description="Run an exact allowlisted C1 read-only health check.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -94,6 +115,8 @@ def build_development_authorization_service(
                 STORAGE_OVERVIEW_READ,
                 AI_GROUNDED_QUERY_CREATE,
                 GRAPH_STORAGE_IMPACT_READ,
+                HEALTH_CHECK_OVERVIEW_READ,
+                HEALTH_CHECK_RUN_CREATE,
             }
         ),
     )
@@ -140,6 +163,16 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=graph_storage_impact_scope(
+                    settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.health-check",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=health_check_scope(
                     settings.development_organization_id, settings.environment
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),

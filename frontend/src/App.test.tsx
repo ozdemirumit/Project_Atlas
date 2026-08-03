@@ -250,6 +250,112 @@ const graphResponse = {
   },
 };
 
+const healthCheckResponse = {
+  data: {
+    generated_at: "2026-08-03T10:00:00Z",
+    data_profile: "synthetic_lab",
+    definitions: [
+      {
+        definition_id: "health-check.storage.controller-status",
+        version: 1,
+        title: "Storage controller status",
+        owner: "Storage Operations",
+        enabled: true,
+        target_id: "target.hitachi.opscenter.lab",
+        connector_id: "connector.hitachi.opscenter.synthetic",
+        connector_version: "1.0.0",
+        capability_id: "hitachi.opscenter.storage.hardware.read",
+        capability_class: "C1",
+        schedule: { interval_minutes: 15, anchor_at: "2026-08-03T00:00:00Z" },
+        thresholds: [
+          {
+            metric: "controller.status",
+            warning_condition: "vendor status equals Warning",
+            critical_condition: "vendor status equals Critical or Failed",
+            unit: null,
+          },
+        ],
+        limits: {
+          timeout_seconds: 5,
+          max_steps: 3,
+          max_evidence_records: 8,
+          max_targets: 1,
+        },
+        evidence_requirements: ["Current hardware status"],
+      },
+    ],
+    schedules: [
+      {
+        definition_id: "health-check.storage.controller-status",
+        enabled: true,
+        interval_minutes: 15,
+        last_due_at: "2026-08-03T10:00:00Z",
+        next_due_at: "2026-08-03T10:15:00Z",
+      },
+    ],
+    latest_runs: [
+      {
+        run_id: "run.health.001",
+        definition_id: "health-check.storage.controller-status",
+        definition_version: 1,
+        connector_id: "connector.hitachi.opscenter.synthetic",
+        connector_version: "1.0.0",
+        capability_id: "hitachi.opscenter.storage.hardware.read",
+        target_id: "target.hitachi.opscenter.lab",
+        trigger: "scheduled",
+        requested_by: "service.health-check.scheduler",
+        started_at: "2026-08-03T10:00:00Z",
+        completed_at: "2026-08-03T10:00:00Z",
+        state: "partial",
+        step_count: 2,
+        observations: [
+          {
+            observation_id: "observation.health.b28.ctl01",
+            target_id: "asset.storage.lab.b28",
+            component: "CTL01",
+            metric: "controller.status",
+            value: "Warning",
+            unit: null,
+            state: "warning",
+            observed_at: "2026-08-03T10:00:00Z",
+            freshness: "current",
+            evidence_references: ["evidence.health.warning"],
+          },
+        ],
+        findings: [
+          {
+            finding_id: "finding.health.b28.ctl01-warning",
+            severity: "warning",
+            title: "Controller warning requires correlation",
+            summary: "CTL01 reports Warning while event-log evidence is unavailable.",
+            observation_ids: ["observation.health.b28.ctl01"],
+            evidence_references: ["evidence.health.warning"],
+          },
+        ],
+        evidence: [
+          {
+            reference: "evidence.health.warning",
+            source: "Hitachi Ops Center synthetic hardware fixture",
+            source_version: "11.0.x-contract.1",
+            observed_at: "2026-08-03T10:00:00Z",
+            freshness: "current",
+            trust_basis: "Documentation-derived allowlisted C1 response",
+          },
+        ],
+        partial_reasons: ["Authorized storage event-log evidence is not configured."],
+        unknowns: ["No root cause or service outage is established by this check."],
+        safety_notice: "Read-only decision support.",
+      },
+    ],
+    safety_notice:
+      "Read-only decision support. Health-check results do not authorize an infrastructure change.",
+  },
+  meta: {
+    correlation_id: "test-health-check-correlation",
+    generated_at: "2026-08-03T10:00:00Z",
+  },
+};
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -264,6 +370,8 @@ describe("Atlas application shell", () => {
         ? identityResponse
         : url.includes("/storage/overview")
           ? storageResponse
+          : url.includes("/health-checks/overview")
+            ? healthCheckResponse
           : url.includes("/graph/storage-impact")
             ? graphResponse
           : platformResponse;
@@ -288,7 +396,7 @@ describe("Atlas application shell", () => {
     expect(await screen.findByText("Local Operator")).toBeVisible();
     expect(await screen.findAllByText("VSP One B28")).not.toHaveLength(0);
     expect(screen.getByText("VSP G400")).toBeVisible();
-    expect(screen.getByText("CTL01")).toBeVisible();
+    expect(screen.getAllByText("CTL01").length).toBeGreaterThan(0);
     expect(screen.getByText("provisional", { selector: ".state-badge" })).toBeVisible();
     expect(screen.getAllByText("Synthetic lab").length).toBeGreaterThan(0);
     expect(screen.getByText(/No infrastructure change is authorized/)).toBeVisible();
@@ -296,5 +404,12 @@ describe("Atlas application shell", () => {
     expect(await screen.findByText("Enterprise Resource Planning")).toBeVisible();
     expect(screen.getByText("D0-D1 dependency analysis")).toBeVisible();
     expect(screen.getByText(/Dependencies indicate possible impact/)).toBeVisible();
+    expect(await screen.findByText("Governed read-only checks")).toBeVisible();
+    expect(screen.getAllByText("Storage controller status").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Run check" })).toBeEnabled();
+    expect(screen.getByText("Every 15 min")).toBeVisible();
+    expect(screen.getByText("Controller warning requires correlation")).toBeVisible();
+    expect(screen.getByText(/event-log evidence is not configured/)).toBeVisible();
+    expect(screen.getByText(/results do not authorize an infrastructure change/)).toBeVisible();
   });
 });
