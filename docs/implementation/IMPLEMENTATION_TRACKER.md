@@ -8,7 +8,7 @@
 | Title | Storage fault-family Root Cause Analysis vertical slice |
 | Status | Review |
 | Branch | `agent/storage-rca-case` |
-| Pull Request | Pending |
+| Pull Request | [PR #22](https://github.com/ozdemirumit/Project_Atlas/pull/22) |
 | Governing Documents | ATLAS-002, ATLAS-023, ATLAS-026, ATLAS-027, ATLAS-031, ATLAS-032, ATLAS-041, ATLAS-042, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052 |
 | Last Updated | 2026-08-04 |
 | Next Action | Open the pull request, validate GitHub CI, and merge after review |
