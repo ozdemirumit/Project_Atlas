@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-003 |
 | Title | Connector registry and simulator framework |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/connector-registry-simulator` |
-| Pull Request | Pending |
+| Pull Request | [#14](https://github.com/ozdemirumit/Project_Atlas/pull/14) |
 | Governing Documents | ATLAS-020, ATLAS-021, ATLAS-025, ATLAS-032 |
 | Last Updated | 2026-08-03 |
-| Next Action | Complete repository validation, open the pull request, and verify CI |
+| Next Action | Verify pull request CI and resolve any review findings |
 
 ### ATLAS-IMP-003 Acceptance Criteria
 
