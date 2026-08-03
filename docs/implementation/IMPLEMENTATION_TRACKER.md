@@ -8,7 +8,7 @@
 | Title | Scheduled storage health checks vertical slice |
 | Status | Review |
 | Branch | `agent/scheduled-health-checks` |
-| Pull Request | Pending |
+| Pull Request | [PR #20](https://github.com/ozdemirumit/Project_Atlas/pull/20) |
 | Governing Documents | ATLAS-002, ATLAS-016, ATLAS-020, ATLAS-023, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-052 |
 | Last Updated | 2026-08-03 |
 | Next Action | Open the implementation pull request and verify GitHub quality gates |
