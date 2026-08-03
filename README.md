@@ -157,6 +157,10 @@ scripts\dev.cmd
 
 Open `http://localhost:5173`. The API is available at `http://localhost:8000`, with interactive development documentation at `http://localhost:8000/docs`.
 
+The supported development launcher explicitly enables a local, server-configured identity named
+`Local Operator`. This identity is disabled by default, cannot run in production, and has only the
+C0 permission required to read its own identity context. It is not an administrator account.
+
 Run all repository quality checks with:
 
 ```bat

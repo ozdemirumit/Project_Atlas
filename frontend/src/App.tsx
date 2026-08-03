@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
+import { getCurrentIdentity } from "./api/identity";
 import { getPlatformStatus } from "./api/platform";
 
 const navigation = [
@@ -41,6 +42,15 @@ function shouldOpenInspector(): boolean {
   return typeof window.matchMedia === "function" && window.matchMedia("(min-width: 821px)").matches;
 }
 
+function initials(displayName: string | undefined): string {
+  if (!displayName) return "--";
+  return displayName
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+}
+
 export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(shouldOpenInspector);
@@ -50,7 +60,13 @@ export function App() {
     refetchInterval: 30_000,
     retry: 1,
   });
+  const identityQuery = useQuery({
+    queryKey: ["current-identity"],
+    queryFn: getCurrentIdentity,
+    retry: false,
+  });
   const platform = statusQuery.data?.data;
+  const identity = identityQuery.data?.data;
   const state = statusQuery.isError ? "unavailable" : platform?.status;
 
   return (
@@ -102,10 +118,14 @@ export function App() {
             </div>
           </div>
           <div className="user-row">
-            <div className="avatar">UO</div>
+            <div className="avatar">{initials(identity?.display_name)}</div>
             <div>
-              <strong>Umit Ozdemir</strong>
-              <span>Platform Owner</span>
+              <strong>{identity?.display_name ?? "Not authenticated"}</strong>
+              <span>
+                {identity
+                  ? `${identity.authentication.method} identity`
+                  : "Sign-in required"}
+              </span>
             </div>
           </div>
         </div>

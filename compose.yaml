@@ -24,6 +24,7 @@ services:
       ATLAS_ENVIRONMENT: development
       ATLAS_DATABASE_REQUIRED: "true"
       ATLAS_DATABASE_URL: postgresql+psycopg://atlas:${ATLAS_POSTGRES_PASSWORD}@database:5432/atlas
+      ATLAS_DEVELOPMENT_IDENTITY_ENABLED: "true"
     command:
       - sh
       - -c

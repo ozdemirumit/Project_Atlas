@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from atlas.modules.authorization.domain.models import AuthorizationDecision, ResourceScope
+from atlas.modules.identity.domain.models import AuthenticatedSubject
 from atlas.modules.platform.domain.status import ComponentHealth, PlatformHealth
 
 
@@ -67,4 +69,84 @@ class PlatformStatusResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: PlatformStatusData
+    meta: ResponseMeta
+
+
+class AuthenticationContextSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider_id: str
+    method: str
+    assurance_level: str
+    authenticated_at: datetime
+
+
+class IdentityScopeSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    organization_id: str
+    environment_id: str
+    site_id: str
+    domain_id: str
+    resource_id: str
+    capability_class: str
+
+    @classmethod
+    def from_domain(cls, scope: ResourceScope) -> IdentityScopeSchema:
+        return cls(
+            organization_id=scope.organization_id,
+            environment_id=scope.environment_id,
+            site_id=scope.site_id,
+            domain_id=scope.domain_id,
+            resource_id=scope.resource_id,
+            capability_class=scope.capability_class.value,
+        )
+
+
+class CurrentIdentityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    subject_id: str
+    display_name: str
+    subject_kind: str
+    organization_id: str
+    role_ids: list[str]
+    group_ids: list[str]
+    authentication: AuthenticationContextSchema
+    scope: IdentityScopeSchema
+    authorization_decision_id: str
+    effective_role_versions: list[str]
+    effective_assignment_versions: list[str]
+
+    @classmethod
+    def from_domain(
+        cls,
+        subject: AuthenticatedSubject,
+        scope: ResourceScope,
+        decision: AuthorizationDecision,
+    ) -> CurrentIdentityData:
+        return cls(
+            subject_id=subject.subject_id,
+            display_name=subject.display_name,
+            subject_kind=subject.kind.value,
+            organization_id=subject.organization_id,
+            role_ids=list(subject.role_ids),
+            group_ids=list(subject.group_ids),
+            authentication=AuthenticationContextSchema(
+                provider_id=subject.provider_id,
+                method=subject.authentication_method.value,
+                assurance_level=subject.assurance_level.value,
+                authenticated_at=subject.authenticated_at,
+            ),
+            scope=IdentityScopeSchema.from_domain(scope),
+            authorization_decision_id=decision.decision_id,
+            effective_role_versions=list(decision.role_references),
+            effective_assignment_versions=list(decision.assignment_references),
+        )
+
+
+class CurrentIdentityResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: CurrentIdentityData
     meta: ResponseMeta

@@ -1,6 +1,7 @@
 @echo off
 setlocal
 set "REPOSITORY_ROOT=%~dp0.."
+set "ATLAS_DEVELOPMENT_IDENTITY_ENABLED=true"
 
 where uv >nul 2>nul
 if errorlevel 1 (

@@ -11,7 +11,7 @@ pnpm dev
 ```
 
 The development server runs on `http://localhost:5173` and proxies `/api` requests to
-`http://localhost:8000` by default. Set `ATLAS_API_PROXY_TARGET` to use another API endpoint.
+`http://127.0.0.1:8000` by default. Set `ATLAS_API_PROXY_TARGET` to use another API endpoint.
 
 ## Quality checks
 
