@@ -8,7 +8,7 @@
 | Title | Runnable development foundation |
 | Status | Review |
 | Branch | `agent/implementation-foundation` |
-| Pull Request | Not opened |
+| Pull Request | [#12](https://github.com/ozdemirumit/Project_Atlas/pull/12) |
 | Governing Documents | ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ATLAS-058 |
 | Last Updated | 2026-08-03 |
 | Next Action | Review and merge the implementation foundation pull request |
