@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -356,6 +356,88 @@ const healthCheckResponse = {
   },
 };
 
+const investigationResponse = {
+  data: {
+    artifact_id: "investigation_test",
+    version: 1,
+    prior_version_id: null,
+    target_id: "asset.storage.lab.b28",
+    data_profile: "synthetic_lab",
+    summary: {
+      known: ["A current controller warning was observed."],
+      inferred: ["Reduced redundancy is plausible, but impact is not established."],
+      alternatives: ["Persistent path degradation", "Transient warning"],
+      unknowns: ["Current end-to-end path state is unknown."],
+      confidence: "low",
+      confidence_rationale: "Current direct evidence conflicts and path telemetry is missing.",
+      safest_next_check: "Run the bounded C1 path and event evidence read.",
+      supported_decision: "Collect more read-only evidence.",
+      unsupported_decision: "Do not declare root cause or outage.",
+    },
+    claims: [
+      {
+        claim_id: "claim.observation",
+        epistemic_type: "observation",
+        text: "A controller warning was observed.",
+        confidence: "high",
+        supporting_evidence: ["evidence.health"],
+        contradicting_evidence: [],
+      },
+      {
+        claim_id: "claim.unknown",
+        epistemic_type: "unknown",
+        text: "Current service impact is unknown.",
+        confidence: "insufficient",
+        supporting_evidence: [],
+        contradicting_evidence: [],
+      },
+    ],
+    hypotheses: [
+      {
+        hypothesis_id: "hypothesis.path",
+        statement: "A path condition may be contributing to degradation.",
+        state: "supported",
+        confidence: "low",
+        confidence_rationale: "A direct warning exists, but current path evidence is missing.",
+        discriminating_checks: [
+          {
+            title: "Read current path and event evidence",
+            capability_class: "C1",
+          },
+        ],
+      },
+      {
+        hypothesis_id: "hypothesis.transient",
+        statement: "The warning may be transient.",
+        state: "unresolved",
+        confidence: "low",
+        confidence_rationale: "The peer remains available.",
+        discriminating_checks: [
+          {
+            title: "Repeat the current state read",
+            capability_class: "C1",
+          },
+        ],
+      },
+    ],
+    timeline: [
+      {
+        event_id: "timeline.warning",
+        occurred_at: "2026-08-03T10:00:00Z",
+        summary: "A controller warning was observed.",
+        evidence_references: ["evidence.health"],
+      },
+    ],
+    stop_reason: "Evidence is insufficient to confirm root cause or current service impact.",
+    safety_notice:
+      "Decision support only. This artifact does not confirm root cause or outage and does not authorize an infrastructure change.",
+  },
+  meta: {
+    correlation_id: "test-investigation-correlation",
+    generated_at: "2026-08-03T10:00:00Z",
+  },
+};
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -372,6 +454,8 @@ describe("Atlas application shell", () => {
           ? storageResponse
           : url.includes("/health-checks/overview")
             ? healthCheckResponse
+            : url.includes("/investigations/storage")
+              ? investigationResponse
           : url.includes("/graph/storage-impact")
             ? graphResponse
           : platformResponse;
@@ -411,5 +495,14 @@ describe("Atlas application shell", () => {
     expect(screen.getByText("Controller warning requires correlation")).toBeVisible();
     expect(screen.getByText(/event-log evidence is not configured/)).toBeVisible();
     expect(screen.getByText(/results do not authorize an infrastructure change/)).toBeVisible();
+    expect(screen.getByText("Start a bounded investigation")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Start investigation" }));
+
+    expect(await screen.findByText("Typed claim ledger")).toBeVisible();
+    expect(screen.getByText("Alternative hypotheses")).toBeVisible();
+    expect(screen.getByText("Normalized UTC timeline")).toBeVisible();
+    expect(screen.getByText("Do not declare root cause or outage.")).toBeVisible();
+    expect(screen.getByText(/does not confirm root cause or outage/)).toBeVisible();
   });
 });

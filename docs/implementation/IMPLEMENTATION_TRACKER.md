@@ -4,14 +4,56 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-008 |
-| Title | Scheduled storage health checks vertical slice |
-| Status | Done |
-| Branch | `agent/scheduled-health-checks` |
-| Pull Request | [PR #20](https://github.com/ozdemirumit/Project_Atlas/pull/20) |
-| Governing Documents | ATLAS-002, ATLAS-016, ATLAS-020, ATLAS-023, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-052 |
+| Task ID | ATLAS-IMP-009 |
+| Title | Evidence-grounded investigation and reasoning vertical slice |
+| Status | Review |
+| Branch | `agent/investigation-reasoning` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-002, ATLAS-014, ATLAS-015, ATLAS-026, ATLAS-027, ATLAS-031, ATLAS-032, ATLAS-041, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052 |
 | Last Updated | 2026-08-03 |
-| Next Action | Select the next approved vertical slice |
+| Next Action | Open the implementation pull request and verify GitHub quality gates |
+
+### ATLAS-IMP-009 Acceptance Criteria
+
+- Investigation requests are limited to an exact authorized organization, environment, site,
+  resource, target, question, time window, and bounded evidence budget.
+- Artifacts are immutable and versioned and retain the prior version reference, requester,
+  intended decision, component versions, stop reason, and safety boundary.
+- Material statements remain typed as observations, retrieved facts, calculated findings,
+  correlations, inferences, hypotheses, assumptions, unknowns, or recommendations.
+- Material claims reference current authorized evidence or explicitly declare why evidence is
+  unavailable; unresolved, stale, and contradicting evidence remains visible.
+- Timeline entries preserve occurrence, observation, and ingestion time without claiming temporal
+  order proves causality.
+- Multiple hypotheses retain supporting and contradicting evidence, categorical confidence,
+  limiting factors, and safe discriminating checks.
+- Graph reachability, recent change, correlation, and historical similarity are never labeled root
+  cause or confirmed outage in this slice.
+- Schema, citation, scope, evidence-budget, capability, and audit failures fail closed without
+  exposing hidden targets or partial unauthorized artifacts.
+- The web workspace communicates what is known, inferred, assumed, conflicting, and unknown,
+  explains confidence, and shows the safest next evidence without private chain-of-thought.
+- Atlas remains decision support and does not authorize or execute infrastructure changes.
+
+### ATLAS-IMP-009 Validation Evidence
+
+- Backend Ruff formatting and lint checks passed.
+- Backend strict mypy analysis passed for 130 source and test files.
+- Backend pytest suite passed: 103 tests, including ten investigation tests for exact
+  authorization, immutable version links, typed claims, evidence references, normalized time,
+  hidden-target non-disclosure, evidence budgets, fail-closed audit, allowlisted checks, and exact
+  resource scope.
+- Frontend ESLint, TypeScript, Vitest, and production bundle checks passed.
+- Live API validation returned all eight implemented epistemic claim types, two alternative
+  hypotheses, explicit stopping behavior, and false root-cause and outage confirmation flags.
+- The live web flow created a versioned artifact from the selected storage target and displayed
+  known, inferred, and unknown statements, confidence rationale, typed claims, alternatives,
+  bounded C1 checks, normalized UTC timeline, stop reason, and safety boundary.
+- Desktop and 390-pixel mobile views were inspected with no incoherent overlap or page-level
+  horizontal overflow; inventory tables remain bounded and internally scrollable.
+- Browser console validation reported no errors or warnings during the investigation flow.
+
+### ATLAS-IMP-008 Acceptance Criteria
 
 ### ATLAS-IMP-008 Acceptance Criteria
 
