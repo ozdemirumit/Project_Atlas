@@ -33,6 +33,7 @@
 - Frontend Vitest suite passed and the production bundle built successfully.
 - API liveness, correlation ID, platform status, and frontend proxy smoke tests passed.
 - Desktop and 390-pixel mobile layouts were visually inspected with no horizontal overflow or console errors.
+- Windows Command Prompt bootstrap and quality-check entry points passed without PowerShell execution-policy changes.
 - Compose YAML parsed successfully with database, backend, and frontend services.
 - Docker runtime validation remains unavailable on this workstation and is delegated to CI or a Docker-capable reviewer.
 

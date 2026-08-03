@@ -148,20 +148,23 @@ Prerequisites:
 - pnpm 11.7.0
 - Docker with Compose for the full PostgreSQL profile
 
-For direct local development:
+For direct local development on Windows without changing PowerShell execution policy:
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/bootstrap.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/dev.ps1
+```bat
+scripts\bootstrap.cmd
+scripts\dev.cmd
 ```
 
 Open `http://localhost:5173`. The API is available at `http://localhost:8000`, with interactive development documentation at `http://localhost:8000/docs`.
 
 Run all repository quality checks with:
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1
+```bat
+scripts\check.cmd
 ```
+
+Equivalent PowerShell scripts remain available for environments where signed or local scripts
+are permitted. Do not disable antivirus or lower organizational security controls for Atlas.
 
 For the container profile, create a local `.env` from `.env.example`, replace the placeholder database password, and run:
 
