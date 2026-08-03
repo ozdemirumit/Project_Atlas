@@ -15,6 +15,7 @@ from atlas.modules.authorization.domain.models import (
 
 IDENTITY_SELF_READ = "identity.self.read"
 STORAGE_OVERVIEW_READ = "storage.overview.read"
+AI_GROUNDED_QUERY_CREATE = "ai.grounded-query.create"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 
 
@@ -40,6 +41,17 @@ def storage_overview_scope(organization_id: str, environment: str) -> ResourceSc
     )
 
 
+def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.ai",
+        resource_id="resource.ai.grounded-query.synthetic",
+        capability_class=CapabilityClass.C0_INFORMATIONAL,
+    )
+
+
 def build_development_authorization_service(
     settings: Settings, audit_sink: AuditSink
 ) -> AuthorizationService:
@@ -52,11 +64,17 @@ def build_development_authorization_service(
             permission_id=STORAGE_OVERVIEW_READ,
             description="Read the exact synthetic storage operations overview scope.",
         ),
+        PermissionDefinition(
+            permission_id=AI_GROUNDED_QUERY_CREATE,
+            description="Create an evidence-grounded answer in the exact authorized scope.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
         version=1,
-        permissions=frozenset({IDENTITY_SELF_READ, STORAGE_OVERVIEW_READ}),
+        permissions=frozenset(
+            {IDENTITY_SELF_READ, STORAGE_OVERVIEW_READ, AI_GROUNDED_QUERY_CREATE}
+        ),
     )
     assignments: tuple[RoleAssignment, ...] = ()
 
@@ -81,6 +99,16 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=storage_overview_scope(
+                    settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.ai-grounded-query",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=ai_grounded_query_scope(
                     settings.development_organization_id, settings.environment
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),

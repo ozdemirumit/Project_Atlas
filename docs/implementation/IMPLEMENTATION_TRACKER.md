@@ -4,38 +4,42 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-005 |
-| Title | Storage inventory and health vertical slice |
-| Status | Review |
-| Branch | `agent/storage-health-vertical-slice` |
-| Pull Request | [#16](https://github.com/ozdemirumit/Project_Atlas/pull/16) |
-| Governing Documents | ATLAS-026, ATLAS-042 through ATLAS-046, ATLAS-050, ATLAS-052 |
+| Task ID | ATLAS-IMP-006 |
+| Title | Local LLM and governed RAG foundation |
+| Status | In Progress |
+| Branch | `agent/governed-rag-foundation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-014, ATLAS-015, ATLAS-027, ATLAS-040, ATLAS-047, ATLAS-054 |
 | Last Updated | 2026-08-03 |
-| Next Action | Verify pull request CI and resolve any review findings |
+| Next Action | Open the implementation pull request and verify GitHub CI |
 
-### ATLAS-IMP-005 Acceptance Criteria
+### ATLAS-IMP-006 Acceptance Criteria
 
-- The storage overview is protected by authenticated identity and an exact C1 authorization scope.
-- Inventory, health findings, investigations, reports, and evidence use explicit domain models.
-- Every asset, finding, investigation, and report reference resolvable evidence.
-- Unknown conditions remain visible and are never converted into healthy outcomes.
-- Root-cause language remains provisional until confirmation criteria can be met.
-- Reports distinguish confirmed facts, provisional findings, and unknowns.
-- The web workspace displays inventory, findings, investigation, report, and evidence context.
-- Synthetic data is clearly labeled and cannot be mistaken for a production observation.
-- No autonomous or service-impacting operation is exposed by this vertical slice.
-- Authorized reads are audited fail-closed without leaking hidden resource details.
+- The Model Gateway is the only application path to a model transport.
+- Endpoint routing is deterministic by task class, classification, lifecycle, and evaluation state.
+- Model transports receive bounded provider-neutral invocations and no infrastructure credentials.
+- Knowledge chunks carry organization, environment, classification, ACL, lifecycle, version, and
+  exact citation metadata before becoming retrievable.
+- Unauthorized chunks are excluded before relevance scoring and revalidated after ranking.
+- Empty authorized retrieval is a valid result and is never presented as success or evidence.
+- Model output citations must resolve to the exact authorized retrieval package.
+- Grounded answers distinguish evidence-backed summary text and explicit unknowns.
+- Required retrieval and model audit failures block the protected response.
+- Evaluation covers citation recall, resolution, empty results, and zero ACL leakage.
 
-### ATLAS-IMP-005 Validation Evidence
+### ATLAS-IMP-006 Validation Evidence
 
 - Backend Ruff formatting and lint checks passed.
-- Backend strict mypy analysis passed for 73 source and test files.
-- Backend pytest suite passed: 60 tests, including authentication, exact-scope authorization,
-  evidence resolution, provisional RCA language, audit failure, and scope mismatch behavior.
-- Frontend ESLint, TypeScript, Vitest, and production bundle checks passed.
-- The live desktop workspace was visually inspected and storage selection updated its scoped
-  evidence context without overlap; responsive layout rules cover narrow navigation, tables,
-  analysis sections, reports, and the context panel.
+- Backend strict mypy analysis passed for 97 source and test files.
+- Backend pytest suite passed: 74 tests, including pre-score ACL filtering, classification denial,
+  exact citation validation, empty authorized retrieval, audit failure, bounded input, and safe API
+  denial behavior.
+- The retrieval evaluation harness passed fixed citation-recall and zero-leakage cases.
+- The OpenAI-compatible adapter passed Reader Token isolation, structured request, and malformed
+  provider-response tests.
+- Frontend ESLint, TypeScript, Vitest, and production bundle checks passed without regressions.
+- Live HTTP smoke tests returned one exact authorized citation for a grounded query and did not
+  invoke the model when no authorized relevant evidence was available.
 - GitHub CI validation remains pending before review.
 
 ### ATLAS-IMP-001 Validation Evidence
@@ -53,9 +57,8 @@
 
 ## Planned Tasks
 
-| Task ID | Title | Status | Depends On | Governing Documents | Expected Outcome |
-| --- | --- | --- | --- | --- | --- |
-| ATLAS-IMP-006 | Local LLM and governed RAG foundation | Planned | ATLAS-IMP-002, ATLAS-IMP-005 | ATLAS-014, ATLAS-015, ATLAS-027, ATLAS-040, ATLAS-047, ATLAS-054 | Model gateway, retrieval, citations, ACL filtering, and evaluation harness |
+No additional implementation task is scheduled until ATLAS-IMP-006 is complete and the next
+vertical slice is selected from the approved roadmap.
 
 ## Blocked Tasks
 
@@ -71,6 +74,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-002 | Identity and authorization foundation | Merged through [PR #13](https://github.com/ozdemirumit/Project_Atlas/pull/13); local and GitHub quality gates passed |
 | ATLAS-IMP-003 | Connector registry and simulator framework | Merged through [PR #14](https://github.com/ozdemirumit/Project_Atlas/pull/14); 41 backend tests and all GitHub quality gates passed |
 | ATLAS-IMP-004 | Hitachi Ops Center read-only connector candidate | Merged through [PR #15](https://github.com/ozdemirumit/Project_Atlas/pull/15); 55 backend tests and all GitHub quality gates passed |
+| ATLAS-IMP-005 | Storage inventory and health vertical slice | Merged through [PR #16](https://github.com/ozdemirumit/Project_Atlas/pull/16); 60 backend tests, live UI validation, and all GitHub quality gates passed |
 
 ## Status Rules
 

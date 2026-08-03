@@ -4,7 +4,7 @@ import logging
 from functools import lru_cache
 from typing import Literal, Self
 
-from pydantic import AnyHttpUrl, Field, model_validator
+from pydantic import AnyHttpUrl, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     development_display_name: str = "Local Operator"
     development_organization_id: str = "organization.development"
     development_role_ids: tuple[str, ...] = ("role.development.operator",)
+    local_model_enabled: bool = False
+    local_model_base_url: AnyHttpUrl | None = None
+    local_model_id: str | None = None
+    local_model_reader_token: SecretStr | None = None
+    local_model_secret_reference_id: str = "secret.model.local-reader"
 
     @model_validator(mode="after")
     def enforce_production_security_defaults(self) -> Self:
@@ -35,6 +40,10 @@ class Settings(BaseSettings):
             raise ValueError("development identity cannot be enabled in production")
         if self.environment == "production" and self.enable_api_docs:
             raise ValueError("interactive API documentation cannot be enabled in production")
+        if self.local_model_enabled and not all(
+            (self.local_model_base_url, self.local_model_id, self.local_model_reader_token)
+        ):
+            raise ValueError("enabled local model requires base URL, model ID, and reader token")
         return self
 
     @property

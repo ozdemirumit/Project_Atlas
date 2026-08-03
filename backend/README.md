@@ -30,6 +30,8 @@ uv run pytest
 - `GET /health/ready`
 - `GET /api/v1/platform/status`
 - `GET /api/v1/identity/me` (authenticated and authorized)
+- `GET /api/v1/storage/overview` (authenticated, exact-scope C1 read)
+- `POST /api/v1/ai/grounded-query` (authenticated, evidence-grounded C0 analysis)
 - `GET /docs` in development only
 
 All responses return a validated `X-Correlation-ID`. Development identity is disabled by
@@ -42,3 +44,22 @@ The connector application boundary provides immutable package registration, C0/C
 validation, disabled-by-default scoped instances, trusted self-test enablement, audited capability
 discovery, and a deterministic isolated simulator. Vendor network integrations and operational
 capabilities above C1 are intentionally outside the current foundation boundary.
+
+## Local OpenAI-Compatible Model
+
+The grounded-query API uses a clearly labeled synthetic model and synthetic knowledge profile by
+default. Enable a configured local OpenAI-compatible endpoint only when all required values are
+available:
+
+```bat
+set ATLAS_LOCAL_MODEL_ENABLED=true
+set ATLAS_LOCAL_MODEL_BASE_URL=http://127.0.0.1:11434/v1
+set ATLAS_LOCAL_MODEL_ID=approved-local-model-id
+set ATLAS_LOCAL_MODEL_READER_TOKEN=reader-token-value
+set ATLAS_LOCAL_MODEL_SECRET_REFERENCE_ID=secret.model.local-reader
+```
+
+The Reader Token is owned by the provider transport, is excluded from model prompts and audit
+records, and is never accepted from an API caller. Non-loopback endpoints must use HTTPS. Model
+responses are accepted only when their structured citations resolve to the authorized retrieval
+package.
