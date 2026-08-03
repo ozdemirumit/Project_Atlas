@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-006 |
 | Title | Local LLM and governed RAG foundation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/governed-rag-foundation` |
-| Pull Request | Pending |
+| Pull Request | [#17](https://github.com/ozdemirumit/Project_Atlas/pull/17) |
 | Governing Documents | ATLAS-014, ATLAS-015, ATLAS-027, ATLAS-040, ATLAS-047, ATLAS-054 |
 | Last Updated | 2026-08-03 |
-| Next Action | Open the implementation pull request and verify GitHub CI |
+| Next Action | Verify pull request CI and resolve any review findings |
 
 ### ATLAS-IMP-006 Acceptance Criteria
 
