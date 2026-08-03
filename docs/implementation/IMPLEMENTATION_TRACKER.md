@@ -2,18 +2,11 @@
 
 ## Current Focus
 
-| Field | Value |
-| --- | --- |
-| Task ID | ATLAS-IMP-006 |
-| Title | Local LLM and governed RAG foundation |
-| Status | Review |
-| Branch | `agent/governed-rag-foundation` |
-| Pull Request | [#17](https://github.com/ozdemirumit/Project_Atlas/pull/17) |
-| Governing Documents | ATLAS-014, ATLAS-015, ATLAS-027, ATLAS-040, ATLAS-047, ATLAS-054 |
-| Last Updated | 2026-08-03 |
-| Next Action | Verify pull request CI and resolve any review findings |
+No implementation task is currently active. ATLAS-IMP-006 was merged through
+[PR #17](https://github.com/ozdemirumit/Project_Atlas/pull/17) on 2026-08-03. The next action is to
+select and govern the next vertical slice from the approved roadmap.
 
-### ATLAS-IMP-006 Acceptance Criteria
+### ATLAS-IMP-006 Completion Criteria
 
 - The Model Gateway is the only application path to a model transport.
 - Endpoint routing is deterministic by task class, classification, lifecycle, and evaluation state.
@@ -40,7 +33,7 @@
 - Frontend ESLint, TypeScript, Vitest, and production bundle checks passed without regressions.
 - Live HTTP smoke tests returned one exact authorized citation for a grounded query and did not
   invoke the model when no authorized relevant evidence was available.
-- GitHub CI validation remains pending before review.
+- GitHub backend and frontend CI jobs passed before merge.
 
 ### ATLAS-IMP-001 Validation Evidence
 
@@ -57,8 +50,8 @@
 
 ## Planned Tasks
 
-No additional implementation task is scheduled until ATLAS-IMP-006 is complete and the next
-vertical slice is selected from the approved roadmap.
+The next implementation task will be added after its vertical slice is selected from the approved
+roadmap and its dependencies and acceptance criteria are recorded.
 
 ## Blocked Tasks
 
@@ -75,6 +68,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-003 | Connector registry and simulator framework | Merged through [PR #14](https://github.com/ozdemirumit/Project_Atlas/pull/14); 41 backend tests and all GitHub quality gates passed |
 | ATLAS-IMP-004 | Hitachi Ops Center read-only connector candidate | Merged through [PR #15](https://github.com/ozdemirumit/Project_Atlas/pull/15); 55 backend tests and all GitHub quality gates passed |
 | ATLAS-IMP-005 | Storage inventory and health vertical slice | Merged through [PR #16](https://github.com/ozdemirumit/Project_Atlas/pull/16); 60 backend tests, live UI validation, and all GitHub quality gates passed |
+| ATLAS-IMP-006 | Local LLM and governed RAG foundation | Merged through [PR #17](https://github.com/ozdemirumit/Project_Atlas/pull/17); 74 backend tests, retrieval evaluation, live API smoke tests, and all GitHub quality gates passed |
 
 ## Status Rules
 
