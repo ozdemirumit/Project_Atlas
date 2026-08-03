@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-043 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Decision Intelligence Owner |
 | Reviewers | AI Architecture, Architecture Owner, Infrastructure Domain Architects, Security Architecture, Operations, IT Service Management Owner, Audit and Compliance |
 | Approver | Architecture Owner |

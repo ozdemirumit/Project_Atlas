@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-021 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Connector SDK Owner |
 | Reviewers | MCP Platform Architecture, Security Architecture, Infrastructure Domain Architects, Developer Experience, Test Architecture |
 | Approver | Architecture Owner |

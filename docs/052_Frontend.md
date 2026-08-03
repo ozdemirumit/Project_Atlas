@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-052 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Frontend and User Experience Owner |
 | Reviewers | Product Owner, Architecture Owner, Security Architecture, Infrastructure Operations, Accessibility, API Architecture, Quality Engineering, Audit and Compliance |
 | Approver | Product Owner |

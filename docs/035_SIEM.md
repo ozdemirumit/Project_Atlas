@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-035 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Security Operations Integration Owner |
 | Reviewers | Security Architecture, Architecture Owner, Audit and Compliance, Platform Operations, Site Reliability Engineering, Privacy and Data Governance |
 | Approver | Security Architecture Owner |

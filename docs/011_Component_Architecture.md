@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-011 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Architecture Owner |
 | Reviewers | Backend Architecture, Frontend Architecture, Security Architecture, AI Architecture, Infrastructure Operations |
 | Approver | Architecture Owner |

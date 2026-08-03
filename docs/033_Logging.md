@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-033 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Platform Operations Owner |
 | Reviewers | Architecture Owner, Security Architecture, Platform Engineering, Site Reliability Engineering, Audit and Compliance, Support Engineering |
 | Approver | Architecture Owner |

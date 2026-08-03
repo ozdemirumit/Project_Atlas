@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-044 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Infrastructure Architecture Owner |
 | Reviewers | AI Architecture, Architecture Owner, Infrastructure Domain Architects, Service Owners, Operations, IT Service Management Owner, Security Architecture, Capacity Management |
 | Approver | Architecture Owner |

@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-058 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Platform Engineering and Release Automation Owner |
 | Reviewers | Architecture Owner, Security Architecture, Engineering Enablement, Quality Engineering, Site Reliability Engineering, AI Architecture, Documentation Owner, Audit and Compliance |
 | Approver | Architecture Owner |

@@ -2,14 +2,15 @@
 
 This directory contains the governed product, architecture, platform, enterprise, AI, development, and AI development control foundation for Project Atlas.
 
-All 47 planned governed documents are complete at version `0.2.0` with `Draft` status. They are ready for structured human review, but they are not approved implementation contracts.
+All 47 planned governed documents are complete at version `0.2.0` with `Review` status. Required stakeholder review and formal approval are in progress; the documents are not approved implementation contracts.
 
 ## Current Documentation Status
 
 - Planned governed documents: 47
 - Completed governed documents: 47
-- Current baseline: `0.2.0 Draft`
-- Next lifecycle step: accountable human review, issue resolution, and approval
+- Current baseline: `0.2.0 Review`
+- Review record: [`reviews/2026-08-03_Foundation_Review.md`](reviews/2026-08-03_Foundation_Review.md)
+- Next lifecycle step: review issue resolution and accountable human approval
 - Implementation status: not authorized by document completion alone
 
 ## Documentation Governance

@@ -109,6 +109,6 @@ Before committing, agents should check the working tree and verify that no unrel
 
 ## 9. Current Repository Phase
 
-Current phase: Documentation Foundation Review.
+Current phase: Structured Documentation Review.
 
-All 47 planned governed documents exist at version `0.2.0` with `Draft` status. Until the relevant documents are reviewed and approved, agents should focus on documentation, architecture, repository structure, and development process only. Implementation requires an explicit request and approved governing documents.
+All 47 planned governed documents exist at version `0.2.0` with `Review` status. Until the relevant documents are approved, agents should focus on resolving review findings, documentation, architecture, repository structure, and development process only. Implementation requires an explicit request and approved governing documents.

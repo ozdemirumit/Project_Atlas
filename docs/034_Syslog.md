@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-034 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Platform Operations Owner |
 | Reviewers | Security Architecture, Architecture Owner, Network Engineering, Site Reliability Engineering, Audit and Compliance, SIEM Operations |
 | Approver | Security Architecture Owner |

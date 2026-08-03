@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-022 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | MCP Builder Product and Architecture Owner |
 | Reviewers | MCP Platform Architecture, Connector SDK Owner, Security Architecture, AI Architecture, Infrastructure Domain Architects, Legal and Licensing |
 | Approver | Architecture Owner |

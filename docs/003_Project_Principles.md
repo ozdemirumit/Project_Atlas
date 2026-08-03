@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-003 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Product Owner and Architecture Owner |
 | Reviewers | Security Architecture, Infrastructure Operations |
 | Approver | Product Owner |

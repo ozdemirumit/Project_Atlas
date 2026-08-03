@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-054 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Knowledge Retrieval Engineering Owner |
 | Reviewers | AI Architecture, Data Architecture, Security Architecture, Knowledge Management Owner, Platform Engineering, Site Reliability Engineering, Privacy and Data Governance, Quality Engineering |
 | Approver | Architecture Owner |

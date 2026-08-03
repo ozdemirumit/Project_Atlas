@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-015 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Knowledge and AI Architecture |
 | Reviewers | Architecture Owner, Security Architecture, Data Governance, Infrastructure Domain Architects, AI Architecture |
 | Approver | Architecture Owner |

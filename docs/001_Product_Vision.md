@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-001 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Product Owner |
 | Reviewers | Architecture Owner, Security Architecture, Infrastructure Domain Architects, Operations, AI Architecture, IT Service Management Owner |
 | Approver | Product Owner |

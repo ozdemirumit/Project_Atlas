@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-051 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Backend Engineering Owner |
 | Reviewers | Architecture Owner, Security Architecture, API Architecture, Data Architecture, Platform Engineering, Site Reliability Engineering, Quality Engineering, AI Architecture |
 | Approver | Architecture Owner |

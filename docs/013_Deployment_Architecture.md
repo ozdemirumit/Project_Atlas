@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-013 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Platform Architecture |
 | Reviewers | Architecture Owner, Security Architecture, Platform Engineering, Infrastructure Operations, Database Administration |
 | Approver | Architecture Owner |

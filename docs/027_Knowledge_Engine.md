@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-027 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Knowledge Management Owner |
 | Reviewers | Architecture Owner, Data Governance, Security Architecture, AI Architecture, Infrastructure Domain Architects, Operations |
 | Approver | Architecture Owner |

@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-041 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | AI Architecture Owner |
 | Reviewers | Architecture Owner, Security Architecture, Infrastructure Domain Architects, Data Science and Evaluation, Operations, Audit and Compliance |
 | Approver | Architecture Owner |

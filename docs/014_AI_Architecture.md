@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-014 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | AI Architecture |
 | Reviewers | Architecture Owner, Security Architecture, Infrastructure Operations, Data Governance |
 | Approver | Architecture Owner |

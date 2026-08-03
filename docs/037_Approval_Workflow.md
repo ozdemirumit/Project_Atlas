@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-037 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Governance and Workflow Owner |
 | Reviewers | Product Owner, Security Architecture, Architecture Owner, Infrastructure Operations, IT Service Management Owner, Audit and Compliance |
 | Approver | Product Owner |

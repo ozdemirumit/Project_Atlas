@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-036 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Enterprise Integration Owner |
 | Reviewers | Architecture Owner, IT Service Management Owner, Security Architecture, Infrastructure Operations, Data Governance, Audit and Compliance |
 | Approver | Architecture Owner |

@@ -6,7 +6,7 @@
 | --- | --- |
 | Document ID | ATLAS-023 |
 | Version | 0.2.0 |
-| Status | Draft |
+| Status | Review |
 | Document Owner | Workflow Platform Owner |
 | Reviewers | Architecture Owner, Security Architecture, Infrastructure Operations, Backend Architecture, Audit Owner |
 | Approver | Architecture Owner |
