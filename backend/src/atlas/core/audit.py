@@ -1,18 +1,39 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import logging
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Protocol
 
 
 @dataclass(frozen=True, slots=True)
 class AuditRecord:
+    event_id: str
     event_type: str
+    schema_version: str
+    producer: str
+    producer_version: str
     occurred_at: datetime
     correlation_id: str
-    actor_reference: str
+    subject_id: str | None
+    actor_type: str | None
+    authentication_method: str | None
+    assurance_level: str | None
+    permission_id: str | None
+    resource_type: str | None
+    scope_reference: str | None
+    decision_id: str | None
     outcome: str
+    result_code: str
 
 
 class AuditSink(Protocol):
     async def record(self, event: AuditRecord) -> None: ...
+
+
+class LoggingAuditSink:
+    def __init__(self, logger: logging.Logger) -> None:
+        self._logger = logger
+
+    async def record(self, event: AuditRecord) -> None:
+        self._logger.info("atlas_audit_event", extra={"audit": asdict(event)})

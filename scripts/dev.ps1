@@ -5,6 +5,7 @@ $ErrorActionPreference = "Stop"
 $RepositoryRoot = Split-Path -Parent $PSScriptRoot
 $BackendRoot = Join-Path $RepositoryRoot "backend"
 $FrontendRoot = Join-Path $RepositoryRoot "frontend"
+$env:ATLAS_DEVELOPMENT_IDENTITY_ENABLED = "true"
 
 $backend = Start-Process -FilePath "uv" -ArgumentList @(
     "run", "uvicorn", "atlas.main:app", "--app-dir", "src", "--host", "127.0.0.1", "--port", "8000", "--reload"

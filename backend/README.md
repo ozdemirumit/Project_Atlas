@@ -4,14 +4,16 @@ The backend is a Python modular monolith with explicit domain, application, port
 
 ## Local Setup
 
-```powershell
+```bat
 cd backend
 uv sync --frozen
-uv run alembic upgrade head
+set ATLAS_DEVELOPMENT_IDENTITY_ENABLED=true
 uv run uvicorn atlas.main:app --app-dir src --reload
 ```
 
-For direct development without PostgreSQL, omit `ATLAS_DATABASE_URL` and keep `ATLAS_DATABASE_REQUIRED=false`. The readiness response will identify the database probe as disabled. PostgreSQL-backed development and all migration verification use the root Compose profile.
+For direct development without PostgreSQL, omit `ATLAS_DATABASE_URL` and keep
+`ATLAS_DATABASE_REQUIRED=false`. The readiness response will identify the database probe as
+disabled. PostgreSQL-backed development and all migration execution use the root Compose profile.
 
 ## Checks
 
@@ -27,6 +29,9 @@ uv run pytest
 - `GET /health/live`
 - `GET /health/ready`
 - `GET /api/v1/platform/status`
+- `GET /api/v1/identity/me` (authenticated and authorized)
 - `GET /docs` in development only
 
-All responses return a validated `X-Correlation-ID`. Protected product APIs will be added only with the deterministic identity and authorization foundation in ATLAS-IMP-002.
+All responses return a validated `X-Correlation-ID`. Development identity is disabled by
+default, cannot be enabled in production, and never accepts client-provided identity or role
+headers. It grants only the exact C0 scope required to read its own normalized identity.

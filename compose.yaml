@@ -24,12 +24,13 @@ services:
       ATLAS_ENVIRONMENT: development
       ATLAS_DATABASE_REQUIRED: "true"
       ATLAS_DATABASE_URL: postgresql+psycopg://atlas:${ATLAS_POSTGRES_PASSWORD}@database:5432/atlas
+      ATLAS_DEVELOPMENT_IDENTITY_ENABLED: "true"
     command:
       - sh
       - -c
       - uv run --no-dev alembic upgrade head && uv run --no-dev uvicorn atlas.main:app --app-dir src --host 0.0.0.0 --port 8000
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       database:
         condition: service_healthy
@@ -49,7 +50,7 @@ services:
     build:
       context: ./frontend
     ports:
-      - "5173:8080"
+      - "127.0.0.1:5173:8080"
     depends_on:
       backend:
         condition: service_healthy
