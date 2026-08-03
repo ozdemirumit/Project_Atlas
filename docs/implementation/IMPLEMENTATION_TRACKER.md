@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-004 |
 | Title | Hitachi Ops Center read-only connector candidate |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/hitachi-ops-center-c1` |
-| Pull Request | Pending |
+| Pull Request | [#15](https://github.com/ozdemirumit/Project_Atlas/pull/15) |
 | Governing Documents | ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-047 |
 | Last Updated | 2026-08-03 |
-| Next Action | Complete candidate validation, open the pull request, and verify CI |
+| Next Action | Verify pull request CI and resolve any review findings |
 
 ### ATLAS-IMP-004 Acceptance Criteria
 
