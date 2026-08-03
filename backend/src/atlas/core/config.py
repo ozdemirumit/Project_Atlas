@@ -30,9 +30,11 @@ class Settings(BaseSettings):
     development_role_ids: tuple[str, ...] = ("role.development.operator",)
 
     @model_validator(mode="after")
-    def reject_development_identity_in_production(self) -> Self:
+    def enforce_production_security_defaults(self) -> Self:
         if self.environment == "production" and self.development_identity_enabled:
             raise ValueError("development identity cannot be enabled in production")
+        if self.environment == "production" and self.enable_api_docs:
+            raise ValueError("interactive API documentation cannot be enabled in production")
         return self
 
     @property

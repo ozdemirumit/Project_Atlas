@@ -37,6 +37,11 @@
 - Unverified bearer input returned safe `401` problem details and did not enter audit records.
 - Desktop UI displayed the server-derived `Local Operator` identity with no console errors or
   horizontal overflow.
+- Developer web and Compose host ports bind to loopback only, preserving the local development
+  identity boundary.
+- Production configuration rejects interactive API documentation; backend validation now passes
+  19 tests.
+- CI checkout uses the current Node 24-based action runtime.
 
 ### ATLAS-IMP-001 Validation Evidence
 

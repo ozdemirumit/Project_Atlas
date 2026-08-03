@@ -117,3 +117,18 @@ def test_development_identity_cannot_be_enabled_in_production() -> None:
         assert "cannot be enabled in production" in str(error)
     else:
         raise AssertionError("production configuration unexpectedly accepted development identity")
+
+
+def test_interactive_api_documentation_cannot_be_enabled_in_production() -> None:
+    try:
+        Settings(environment="production", enable_api_docs=True)
+    except ValidationError as error:
+        assert "interactive API documentation cannot be enabled in production" in str(error)
+    else:
+        raise AssertionError("production configuration unexpectedly enabled interactive API docs")
+
+
+def test_production_configuration_accepts_disabled_interactive_api_documentation() -> None:
+    settings = Settings(environment="production", enable_api_docs=False)
+
+    assert settings.enable_api_docs is False
