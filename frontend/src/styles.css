@@ -1185,6 +1185,321 @@ tbody tr.selected {
   border: 1px solid #c7e0d8;
 }
 
+.health-check-tabs {
+  display: flex;
+  min-width: 0;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 11px 14px;
+  background: #f8faf9;
+  border-bottom: 1px solid #e2e8e5;
+}
+
+.health-check-tabs button {
+  display: inline-flex;
+  min-width: 210px;
+  min-height: 40px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  color: #52605c;
+  background: #ffffff;
+  border: 1px solid #d8e0dd;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.health-check-tabs button:hover {
+  border-color: #9abdb4;
+}
+
+.health-check-tabs button.active {
+  color: #1f6557;
+  background: #eef7f4;
+  border-color: #85b9ac;
+}
+
+.health-check-tabs button span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 680;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.health-check-tabs button small {
+  color: #7b8783;
+  font-size: 8px;
+}
+
+.health-check-toolbar {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #e2e8e5;
+}
+
+.health-check-toolbar > div {
+  min-width: 0;
+}
+
+.health-check-toolbar strong,
+.health-check-toolbar span {
+  display: block;
+}
+
+.health-check-toolbar strong {
+  color: #2a3633;
+  font-size: 12px;
+}
+
+.health-check-toolbar span {
+  margin-top: 4px;
+  overflow: hidden;
+  color: #75817d;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-check-button {
+  display: inline-flex;
+  min-width: 108px;
+  min-height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 11px;
+  color: #ffffff;
+  background: #216f60;
+  border: 1px solid #185d50;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.run-check-button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.spin {
+  animation: health-check-spin 900ms linear infinite;
+}
+
+@keyframes health-check-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.health-check-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-bottom: 1px solid #e2e8e5;
+}
+
+.health-check-summary > div {
+  min-width: 0;
+  min-height: 68px;
+  padding: 11px 13px;
+  border-right: 1px solid #e2e8e5;
+}
+
+.health-check-summary > div:last-child {
+  border-right: 0;
+}
+
+.health-check-summary span,
+.health-check-summary strong,
+.health-check-summary small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.health-check-summary span {
+  color: #7b8582;
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.health-check-summary strong {
+  margin-top: 5px;
+  color: #33403d;
+  font-size: 11px;
+  text-transform: capitalize;
+}
+
+.health-check-summary small {
+  margin-top: 4px;
+  color: #7a8581;
+  font-size: 8px;
+}
+
+.run-state.completed {
+  color: #247965;
+}
+
+.run-state.partial,
+.run-state.timed_out {
+  color: #986818;
+}
+
+.run-state.failed,
+.run-state.cancelled {
+  color: #a94444;
+}
+
+.health-check-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(250px, 0.85fr);
+}
+
+.health-check-detail-grid > div {
+  min-width: 0;
+  padding: 14px;
+  border-right: 1px solid #e2e8e5;
+}
+
+.health-check-detail-grid > div:last-child {
+  border-right: 0;
+}
+
+.health-check-detail-grid h3 {
+  margin: 0 0 10px;
+  color: #52605c;
+  font-size: 10px;
+}
+
+.health-observations .table-wrap {
+  border: 1px solid #e2e8e5;
+}
+
+.health-observations table {
+  min-width: 500px;
+}
+
+.health-observations th:first-child {
+  width: 18%;
+}
+
+.health-observations th:nth-child(2) {
+  width: 32%;
+}
+
+.health-observations th:nth-child(3) {
+  width: 15%;
+}
+
+.health-observations th:nth-child(4) {
+  width: 17%;
+}
+
+.health-observations th:nth-child(5) {
+  width: 18%;
+}
+
+.health-observations td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.health-observations td:nth-child(2) {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.observation-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  font-weight: 680;
+  text-transform: capitalize;
+}
+
+.observation-state.normal {
+  color: #247965;
+}
+
+.observation-state.warning {
+  color: #986818;
+}
+
+.observation-state.critical,
+.observation-state.unknown {
+  color: #a94444;
+}
+
+.health-check-findings article {
+  padding: 10px;
+  background: #fffaf0;
+  border: 1px solid #eadab8;
+  border-radius: 4px;
+}
+
+.health-check-findings article strong {
+  display: block;
+  margin-top: 7px;
+  color: #4a4437;
+  font-size: 10px;
+}
+
+.health-check-findings article p,
+.health-limit-note,
+.health-unknown {
+  margin: 6px 0 0;
+  color: #68736f;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.health-limit-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 9px 0;
+  color: #7c5e28;
+  border-bottom: 1px solid #e6ebe8;
+}
+
+.health-limit-note svg {
+  flex: 0 0 auto;
+}
+
+.health-unknown {
+  padding-left: 10px;
+  border-left: 2px solid #c9d2cf;
+}
+
+.health-check-safety {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  color: #3b655b;
+  background: #eef6f3;
+  border-top: 1px solid #d4e6e0;
+  font-size: 9px;
+}
+
+.health-check-safety svg {
+  flex: 0 0 auto;
+}
+
 .scrim {
   display: none;
 }
@@ -1324,6 +1639,31 @@ tbody tr.selected {
     grid-template-columns: 1fr;
   }
 
+  .health-check-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .health-check-summary > div:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .health-check-summary > div:nth-child(-n + 2) {
+    border-bottom: 1px solid #e2e8e5;
+  }
+
+  .health-check-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .health-check-detail-grid > div {
+    border-right: 0;
+    border-bottom: 1px solid #e2e8e5;
+  }
+
+  .health-check-detail-grid > div:last-child {
+    border-bottom: 0;
+  }
+
   .impact-detail-grid > div {
     border-right: 0;
     border-bottom: 1px solid #e2e8e5;
@@ -1390,5 +1730,13 @@ tbody tr.selected {
   .data-profile {
     max-width: 118px;
     white-space: normal;
+  }
+
+  .health-check-toolbar {
+    align-items: flex-start;
+  }
+
+  .run-check-button {
+    min-width: 98px;
   }
 }

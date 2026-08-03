@@ -4,14 +4,49 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-007 |
-| Title | Infrastructure Graph and storage impact vertical slice |
-| Status | Done |
-| Branch | `agent/infrastructure-graph-impact` |
-| Pull Request | [PR #19](https://github.com/ozdemirumit/Project_Atlas/pull/19) |
-| Governing Documents | ATLAS-024, ATLAS-026, ATLAS-031, ATLAS-044, ATLAS-050, ATLAS-052 |
+| Task ID | ATLAS-IMP-008 |
+| Title | Scheduled storage health checks vertical slice |
+| Status | Review |
+| Branch | `agent/scheduled-health-checks` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-002, ATLAS-016, ATLAS-020, ATLAS-023, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-052 |
 | Last Updated | 2026-08-03 |
-| Next Action | Select the next approved vertical slice |
+| Next Action | Open the implementation pull request and verify GitHub quality gates |
+
+### ATLAS-IMP-008 Acceptance Criteria
+
+- Health-check definitions are immutable and versioned, and retain owner, target scope, connector
+  capability, schedule, thresholds, timeout, step, and evidence limits.
+- Definitions can be enabled or disabled without changing historical runs.
+- Schedule evaluation is deterministic and reports the last and next due times without relying on
+  an LLM or an in-process timer as authoritative state.
+- On-demand execution is limited to an allowlisted C1 read-only connector capability and exact
+  authorized target scope.
+- Runs retain definition and connector versions, actor, trigger, timestamps, state, observations,
+  findings, evidence, freshness, partial-result reasons, and safety notice.
+- Completed, partial, timed-out, failed, and cancelled states are distinct; unknown outcomes are
+  never represented as healthy.
+- Step, evidence, duration, and target limits fail closed before connector dispatch or truncate to
+  an explicit partial result where the contract permits.
+- Required authorization and audit failures block protected health-check responses.
+- The web workspace shows enabled checks, schedule state, latest run, findings, freshness,
+  evidence, partial context, and an explicit read-only decision-support boundary.
+
+### ATLAS-IMP-008 Validation Evidence
+
+- Backend Ruff formatting and lint checks passed.
+- Backend strict mypy analysis passed for 119 source and test files.
+- Backend pytest suite passed: 93 tests, including eleven health-check tests for exact
+  authorization, deterministic schedules, versioned definitions, partial results, safe timeout,
+  disabled dispatch, generic target errors, result budgets, and fail-closed pre-dispatch audit.
+- Frontend ESLint, TypeScript, Vitest, and production bundle checks passed.
+- Live API validation returned two versioned C1 definitions with deterministic 15- and 60-minute
+  schedules and evidence-linked partial and completed latest runs.
+- A live manual controller check completed as `partial`, retained the authenticated requester,
+  and did not represent missing event-log evidence as healthy or as a confirmed outage.
+- Desktop and 390-pixel mobile views were inspected with no incoherent overlap or page-level
+  horizontal overflow; health-check tabs and tables remain bounded and internally scrollable.
+- Browser console validation reported no errors or warnings during overview and manual-run flows.
 
 ### ATLAS-IMP-007 Acceptance Criteria
 
