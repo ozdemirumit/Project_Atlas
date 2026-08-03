@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-010 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Architecture Owner |
 | Reviewers | Product Owner, Security Architecture, Infrastructure Operations, AI Architecture |
-| Approver | Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-001](001_Product_Vision.md), [ATLAS-002](002_Product_Requirements.md), [ATLAS-003](003_Project_Principles.md), [ATLAS-004](004_Glossary.md), [ATLAS-011](011_Component_Architecture.md), [ATLAS-013](013_Deployment_Architecture.md), [ATLAS-014](014_AI_Architecture.md), [ATLAS-020](020_MCP_Framework.md) |
 | Supersedes | ATLAS-010 version 0.1.0 |
@@ -782,3 +782,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial high-level architecture draft |
 | 0.2.0 | 2026-08-03 | Architecture Owner | Added governed metadata, planes, trust zones, component boundaries, core flows, data ownership, MVP runtime strategy, failure behavior, and ADR backlog |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

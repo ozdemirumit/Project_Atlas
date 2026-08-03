@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-030 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Security Architecture Owner |
 | Reviewers | Architecture Owner, Platform Engineering, Identity and Access Management, Operations, Audit and Compliance |
-| Approver | Security Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Security Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-013](013_Deployment_Architecture.md), [ATLAS-025](025_Policy_Engine.md), [ATLAS-031](031_RBAC.md), [ATLAS-032](032_Audit.md), [ATLAS-038](038_Deployment_and_Bootstrap.md) |
 | Supersedes | ATLAS-030 version 0.1.0 |
@@ -343,3 +343,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial authentication goals and candidate capabilities |
 | 0.2.0 | 2026-08-03 | Security Architecture Owner | Added identity classes, enterprise federation, session and workload identity, bootstrap, recovery, failure, audit, and testing contracts |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

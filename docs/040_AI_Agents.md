@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-040 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | AI Architecture Owner |
 | Reviewers | Architecture Owner, Security Architecture, Infrastructure Domain Architects, Platform Engineering, Operations, Audit and Compliance |
-| Approver | Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-014](014_AI_Architecture.md), [ATLAS-020](020_MCP_Framework.md), [ATLAS-023](023_Workflow_Engine.md), [ATLAS-024](024_Decision_Engine.md), [ATLAS-025](025_Policy_Engine.md), [ATLAS-031](031_RBAC.md), [ATLAS-032](032_Audit.md), [ATLAS-041](041_Reasoning.md), [ATLAS-047](047_Guardrails.md) |
 | Supersedes | ATLAS-040 version 0.1.0 |
@@ -441,3 +441,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial candidate agents, rules, and output requirements |
 | 0.2.0 | 2026-08-03 | AI Architecture Owner | Added logical role catalog, orchestration, task and handoff contracts, scoped tools, context, memory, validation, lifecycle, evaluation, and MVP composition |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-057 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Platform Engineering Owner |
 | Reviewers | Architecture Owner, Security Architecture, Site Reliability Engineering, Backend Engineering, Frontend Engineering, Database Engineering, Network Engineering, Infrastructure Operations, Quality Engineering |
-| Approver | Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-013](013_Deployment_Architecture.md), [ATLAS-016](016_Event_Architecture.md), [ATLAS-030](030_Authentication.md), [ATLAS-032](032_Audit.md), [ATLAS-033](033_Logging.md), [ATLAS-038](038_Deployment_and_Bootstrap.md), [ATLAS-051](051_Backend.md), [ATLAS-052](052_Frontend.md), [ATLAS-053](053_Database.md), [ATLAS-054](054_VectorDB.md), [ATLAS-056](056_Testing.md), [ATLAS-058](058_CI_CD.md), [ATLAS-059](059_Release_Process.md) |
 | Supersedes | ATLAS-057 version 0.1.0 |
@@ -509,3 +509,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial deployment goals, artifacts, environments, and questions |
 | 0.2.0 | 2026-08-03 | Platform Engineering Owner | Added profiles, units, immutable artifacts, configuration, secrets, network, resources, stateful services, model and connector deployment, scaling, rollout, migration, upgrade, rollback, recovery, offline operation, drift, and handoff |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

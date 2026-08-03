@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-038 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Platform Engineering Owner |
 | Reviewers | Architecture Owner, Security Architecture, Site Reliability Engineering, Database Engineering, Network Engineering, Infrastructure Operations, Support Engineering |
-| Approver | Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-010](010_System_Architecture.md), [ATLAS-013](013_Deployment_Architecture.md), [ATLAS-014](014_AI_Architecture.md), [ATLAS-015](015_RAG_Architecture.md), [ATLAS-030](030_Authentication.md), [ATLAS-032](032_Audit.md), [ATLAS-033](033_Logging.md), [ATLAS-057](057_Deployment.md), [ATLAS-058](058_CI_CD.md) |
 | Supersedes | ATLAS-038 version 0.1.0 |
@@ -551,3 +551,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial bootstrap goals, modes, assets, and questions |
 | 0.2.0 | 2026-08-03 | Platform Engineering Owner | Added deployment profiles, phased preflight and bootstrap, artifact trust, secrets, certificates, data migration, identity and model setup, verification, recovery, rollback, uninstall, offline operation, support, and testing contracts |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

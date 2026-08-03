@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-036 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Enterprise Integration Owner |
 | Reviewers | Architecture Owner, IT Service Management Owner, Security Architecture, Infrastructure Operations, Data Governance, Audit and Compliance |
-| Approver | Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-016](016_Event_Architecture.md), [ATLAS-024](024_Decision_Engine.md), [ATLAS-026](026_Graph_Engine.md), [ATLAS-027](027_Knowledge_Engine.md), [ATLAS-032](032_Audit.md), [ATLAS-035](035_SIEM.md), [ATLAS-037](037_Approval_Workflow.md) |
 | Supersedes | ATLAS-036 version 0.1.0 |
@@ -439,3 +439,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial ITSM goals, candidate capabilities, and safety requirements |
 | 0.2.0 | 2026-08-03 | Enterprise Integration Owner | Added source ownership, normalized records, incident and change workflows, approval synchronization, CMDB reconciliation, idempotency, conflict, privacy, failure, and testing contracts |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

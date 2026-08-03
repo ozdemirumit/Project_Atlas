@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-033 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Platform Operations Owner |
 | Reviewers | Architecture Owner, Security Architecture, Platform Engineering, Site Reliability Engineering, Audit and Compliance, Support Engineering |
-| Approver | Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-016](016_Event_Architecture.md), [ATLAS-032](032_Audit.md), [ATLAS-034](034_Syslog.md), [ATLAS-035](035_SIEM.md), [ATLAS-038](038_Deployment_and_Bootstrap.md) |
 | Supersedes | ATLAS-033 version 0.1.0 |
@@ -410,3 +410,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial log types and required fields |
 | 0.2.0 | 2026-08-03 | Platform Operations Owner | Added telemetry separation, structured schema, component contracts, AI and connector logging, redaction, routing, sampling, retention, support bundles, and testing |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

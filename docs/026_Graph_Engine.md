@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-026 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Infrastructure Graph Architecture |
 | Reviewers | Architecture Owner, Infrastructure Domain Architects, Data Architecture, Security Architecture, AI Architecture |
-| Approver | Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-010](010_System_Architecture.md), [ATLAS-015](015_RAG_Architecture.md), [ATLAS-024](024_Decision_Engine.md), [ATLAS-042](042_Root_Cause_Analysis.md), [ATLAS-044](044_Change_Impact.md) |
 | Supersedes | ATLAS-026 version 0.1.0 |
@@ -467,3 +467,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial graph goals, entities, and relationships |
 | 0.2.0 | 2026-08-03 | Infrastructure Graph Architecture | Added canonical graph records, identity, reconciliation, temporal validity, confidence, completeness, queries, access, digital-twin direction, and MVP path |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

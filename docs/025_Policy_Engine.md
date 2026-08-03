@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-025 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Security and Policy Architecture |
 | Reviewers | Architecture Owner, Security Architecture, Infrastructure Operations, Compliance, Identity and Access Owner |
-| Approver | Security Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Security Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-020](020_MCP_Framework.md), [ATLAS-023](023_Workflow_Engine.md), [ATLAS-024](024_Decision_Engine.md), [ATLAS-031](031_RBAC.md), [ATLAS-037](037_Approval_Workflow.md) |
 | Supersedes | ATLAS-025 version 0.1.0 |
@@ -442,3 +442,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial policy goals, risk classes, inputs, and outputs |
 | 0.2.0 | 2026-08-03 | Security and Policy Architecture | Added control separation, precedence, non-overridable minimum, policy lifecycle, simulation, testing, validity, failure, break-glass, and administration |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

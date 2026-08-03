@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-035 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Security Operations Integration Owner |
 | Reviewers | Security Architecture, Architecture Owner, Audit and Compliance, Platform Operations, Site Reliability Engineering, Privacy and Data Governance |
-| Approver | Security Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Security Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-016](016_Event_Architecture.md), [ATLAS-032](032_Audit.md), [ATLAS-033](033_Logging.md), [ATLAS-034](034_Syslog.md), [ATLAS-036](036_ITSM_Integration.md), [ATLAS-047](047_Guardrails.md) |
 | Supersedes | ATLAS-035 version 0.1.0 |
@@ -406,3 +406,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial SIEM goals, patterns, and event types |
 | 0.2.0 | 2026-08-03 | Security Operations Integration Owner | Added normalized event model, baseline detections, mapping lifecycle, enrichment, delivery health, investigation, ITSM handoff, offline operation, and testing |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

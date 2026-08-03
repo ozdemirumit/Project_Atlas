@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-024 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Decision Intelligence Owner |
 | Reviewers | Architecture Owner, AI Architecture, Security Architecture, Infrastructure Domain Architects, Operations |
-| Approver | Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-014](014_AI_Architecture.md), [ATLAS-023](023_Workflow_Engine.md), [ATLAS-025](025_Policy_Engine.md), [ATLAS-042](042_Root_Cause_Analysis.md), [ATLAS-043](043_Recommendation_Engine.md) |
 | Supersedes | ATLAS-024 version 0.1.0 |
@@ -453,3 +453,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial decision responsibilities, inputs, and outputs |
 | 0.2.0 | 2026-08-03 | Decision Intelligence Owner | Added evidence, finding, hypothesis, confidence, conflict, impact, recommendation, policy handoff, record, evaluation, and feedback architecture |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-014 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | AI Architecture |
 | Reviewers | Architecture Owner, Security Architecture, Infrastructure Operations, Data Governance |
-| Approver | Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-004](004_Glossary.md), [ATLAS-010](010_System_Architecture.md), [ATLAS-015](015_RAG_Architecture.md), [ATLAS-024](024_Decision_Engine.md), [ATLAS-040](040_AI_Agents.md), [ATLAS-047](047_Guardrails.md) |
 | Supersedes | ATLAS-014 version 0.1.0 |
@@ -616,3 +616,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial AI role, capabilities, model strategy, and guardrails |
 | 0.2.0 | 2026-08-03 | AI Architecture | Added AI trust model, Model Gateway, agent and tool mediation, context and prompt governance, evaluation, model lifecycle, memory, privacy, and degraded behavior |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

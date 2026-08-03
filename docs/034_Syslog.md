@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-034 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Platform Operations Owner |
 | Reviewers | Security Architecture, Architecture Owner, Network Engineering, Site Reliability Engineering, Audit and Compliance, SIEM Operations |
-| Approver | Security Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Security Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-016](016_Event_Architecture.md), [ATLAS-032](032_Audit.md), [ATLAS-033](033_Logging.md), [ATLAS-035](035_SIEM.md), [ATLAS-038](038_Deployment_and_Bootstrap.md) |
 | Supersedes | ATLAS-034 version 0.1.0 |
@@ -367,3 +367,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial Syslog goals and candidate capabilities |
 | 0.2.0 | 2026-08-03 | Platform Operations Owner | Added standards profile, secure transports, structured mapping, durable delivery, filtering, certificate lifecycle, failure, restricted-network operation, and testing |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

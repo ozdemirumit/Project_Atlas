@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-013 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Platform Architecture |
 | Reviewers | Architecture Owner, Security Architecture, Platform Engineering, Infrastructure Operations, Database Administration |
-| Approver | Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-010](010_System_Architecture.md), [ATLAS-011](011_Component_Architecture.md), [ATLAS-012](012_Microservice_Architecture.md), [ATLAS-038](038_Deployment_and_Bootstrap.md), [ATLAS-057](057_Deployment.md) |
 | Supersedes | ATLAS-013 version 0.1.0 |
@@ -589,3 +589,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial deployment goals and candidate profiles |
 | 0.2.0 | 2026-08-03 | Platform Architecture | Added deployment zones, runtime placement, network flows, restricted-network support, availability, recovery, upgrade, and operational readiness |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

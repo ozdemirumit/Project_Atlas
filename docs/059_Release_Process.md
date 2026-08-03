@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-059 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Release Management Owner |
 | Reviewers | Product Owner, Architecture Owner, Security Architecture, Quality Engineering, Platform Engineering, Site Reliability Engineering, AI Architecture, Infrastructure Domain Owners, Support Owner, Audit and Compliance |
-| Approver | Product Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (Product Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-032](032_Audit.md), [ATLAS-038](038_Deployment_and_Bootstrap.md), [ATLAS-047](047_Guardrails.md), [ATLAS-050](050_API.md), [ATLAS-053](053_Database.md), [ATLAS-055](055_Coding_Standards.md), [ATLAS-056](056_Testing.md), [ATLAS-057](057_Deployment.md), [ATLAS-058](058_CI_CD.md) |
 | Supersedes | ATLAS-059 version 0.1.0 |
@@ -619,3 +619,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial release goals, artifacts, requirements, and questions |
 | 0.2.0 | 2026-08-03 | Release Management Owner | Added semantic and independent versioning, compatibility, release types and lifecycle, readiness, evidence, approval, manifest, rollout, patch and security releases, connector and AI releases, offline distribution, support, LTS, deprecation, suspension, and recall |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

@@ -1,6 +1,6 @@
 # Contributing to Project Atlas
 
-Project Atlas is currently in Structured Documentation Review. All 47 planned governed documents are at version `0.2.0` with `Review` status. Contributions should focus on review findings, documentation, architecture, repository structure, and development process unless implementation is explicitly requested and the relevant governing documents are approved.
+Project Atlas has an Approved Documentation Baseline. All 47 planned governed documents are at version `1.0.0` with `Approved` status. Implementation contributions require an explicit task and must conform to the approved contracts; material contract changes require a new review and approval cycle.
 
 ## Before Contributing
 
