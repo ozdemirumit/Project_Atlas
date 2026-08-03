@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-022 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | MCP Builder Product and Architecture Owner |
 | Reviewers | MCP Platform Architecture, Connector SDK Owner, Security Architecture, AI Architecture, Infrastructure Domain Architects, Legal and Licensing |
-| Approver | Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-014](014_AI_Architecture.md), [ATLAS-015](015_RAG_Architecture.md), [ATLAS-020](020_MCP_Framework.md), [ATLAS-021](021_MCP_Plugin_SDK.md), [ATLAS-056](056_Testing.md) |
 | Supersedes | ATLAS-022 version 0.1.0 |
@@ -550,3 +550,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial Builder sources, workflow, and safety constraints |
 | 0.2.0 | 2026-08-03 | MCP Builder Product and Architecture Owner | Added project lifecycle, analysis and generation pipeline, human gates, testing, traceability, regeneration, evaluation, licensing, and candidate handoff |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

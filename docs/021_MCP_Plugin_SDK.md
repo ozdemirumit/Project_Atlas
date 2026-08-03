@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-021 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Connector SDK Owner |
 | Reviewers | MCP Platform Architecture, Security Architecture, Infrastructure Domain Architects, Developer Experience, Test Architecture |
-| Approver | Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-020](020_MCP_Framework.md), [ATLAS-022](022_MCP_Builder.md), [ATLAS-025](025_Policy_Engine.md), [ATLAS-055](055_Coding_Standards.md), [ATLAS-056](056_Testing.md) |
 | Supersedes | ATLAS-021 version 0.1.0 |
@@ -599,3 +599,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial SDK goals, features, and connector lifecycle |
 | 0.2.0 | 2026-08-03 | Connector SDK Owner | Added SDK modules, safe client APIs, handler contracts, test harness, validation, packaging, compatibility, and generated-connector support |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

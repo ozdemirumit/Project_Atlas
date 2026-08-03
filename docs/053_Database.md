@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-053 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Data Architecture Owner |
 | Reviewers | Architecture Owner, Security Architecture, Backend Engineering, Database Engineering, Site Reliability Engineering, Privacy and Data Governance, Audit and Compliance, Quality Engineering |
-| Approver | Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-011](011_Component_Architecture.md), [ATLAS-015](015_RAG_Architecture.md), [ATLAS-016](016_Event_Architecture.md), [ATLAS-026](026_Graph_Engine.md), [ATLAS-027](027_Knowledge_Engine.md), [ATLAS-032](032_Audit.md), [ATLAS-038](038_Deployment_and_Bootstrap.md), [ATLAS-051](051_Backend.md), [ATLAS-054](054_VectorDB.md), [ATLAS-056](056_Testing.md), [ATLAS-057](057_Deployment.md) |
 | Supersedes | ATLAS-053 version 0.1.0 |
@@ -458,3 +458,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial data domains, principles, candidate stores, and questions |
 | 0.2.0 | 2026-08-03 | Data Architecture Owner | Added persistence portfolio, domain ownership, schema and isolation, transactions, versions, retention, deletion, encryption, projection contracts, migrations, backup, restore, HA, operations, and testing |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

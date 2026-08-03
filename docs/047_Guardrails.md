@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-047 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | AI Security Owner |
 | Reviewers | Security Architecture, AI Architecture, Architecture Owner, Infrastructure Domain Architects, Platform Engineering, Operations, Privacy and Data Governance, Audit and Compliance |
-| Approver | Security Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Security Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-014](014_AI_Architecture.md), [ATLAS-015](015_RAG_Architecture.md), [ATLAS-020](020_MCP_Framework.md), [ATLAS-022](022_MCP_Builder.md), [ATLAS-023](023_Workflow_Engine.md), [ATLAS-025](025_Policy_Engine.md), [ATLAS-030](030_Authentication.md), [ATLAS-031](031_RBAC.md), [ATLAS-032](032_Audit.md), [ATLAS-037](037_Approval_Workflow.md), [ATLAS-040](040_AI_Agents.md), [ATLAS-041](041_Reasoning.md), [ATLAS-046](046_Explainability.md) |
 | Supersedes | ATLAS-047 version 0.1.0 |
@@ -587,3 +587,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial mandatory guardrails, risk handling, and failure behavior |
 | 0.2.0 | 2026-08-03 | AI Security Owner | Added threat model, layered controls, stable invariants, instruction hierarchy, prompt-injection, context, retrieval, tool, output, DLP, model, agent, generated-artifact, exception, incident, evaluation, and release-gate contracts |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

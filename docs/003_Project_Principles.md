@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-003 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Product Owner and Architecture Owner |
 | Reviewers | Security Architecture, Infrastructure Operations |
-| Approver | Product Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (Product Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-001](001_Product_Vision.md), [ATLAS-002](002_Product_Requirements.md), [ATLAS-004](004_Glossary.md), [ATLAS-025](025_Policy_Engine.md), [ATLAS-037](037_Approval_Workflow.md), [ATLAS-047](047_Guardrails.md) |
 | Supersedes | ATLAS-003 version 0.1.0 |
@@ -347,3 +347,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial draft |
 | 0.2.0 | 2026-08-03 | Architecture Owner | Added governed metadata, stable principle IDs, execution boundaries, capability classes, output contract, and review gates |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

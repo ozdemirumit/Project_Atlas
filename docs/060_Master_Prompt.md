@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-060 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Engineering Enablement and AI Architecture Owner |
 | Reviewers | Product Owner, Architecture Owner, Security Architecture, Backend Engineering, Frontend Engineering, Platform Engineering, Quality Engineering, Documentation Owner, Audit and Compliance |
-| Approver | Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-004](004_Glossary.md), [ATLAS-020](020_MCP_Framework.md), [ATLAS-032](032_Audit.md), [ATLAS-040](040_AI_Agents.md), [ATLAS-047](047_Guardrails.md), [ATLAS-050](050_API.md), [ATLAS-055](055_Coding_Standards.md), [ATLAS-056](056_Testing.md), [ATLAS-058](058_CI_CD.md), [Documentation Governance](governance/DOCUMENT_GOVERNANCE.md) |
 | Supersedes | ATLAS-060 version 0.1.0 |
@@ -567,3 +567,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial reusable master prompt and usage guidance |
 | 0.2.0 | 2026-08-03 | Engineering Enablement and AI Architecture Owner | Added task modes, canonical operating prompt, task and report templates, specialized addenda, multi-agent and dirty-worktree rules, prohibited behavior, prompt lifecycle, and evaluation |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

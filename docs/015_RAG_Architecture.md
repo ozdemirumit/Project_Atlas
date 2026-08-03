@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-015 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Knowledge and AI Architecture |
 | Reviewers | Architecture Owner, Security Architecture, Data Governance, Infrastructure Domain Architects, AI Architecture |
-| Approver | Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-004](004_Glossary.md), [ATLAS-010](010_System_Architecture.md), [ATLAS-014](014_AI_Architecture.md), [ATLAS-027](027_Knowledge_Engine.md), [ATLAS-054](054_VectorDB.md) |
 | Supersedes | ATLAS-015 version 0.1.0 |
@@ -672,3 +672,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial source, ingestion, and retrieval principles |
 | 0.2.0 | 2026-08-03 | Knowledge and AI Architecture | Added source lifecycle, ingestion pipeline, access controls, metadata, hybrid retrieval, citations, safety, evaluation, deletion, and recovery architecture |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

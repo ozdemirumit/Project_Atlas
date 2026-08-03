@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-045 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Knowledge and Operations Engineering Owner |
 | Reviewers | Architecture Owner, AI Architecture, Infrastructure Domain Architects, Operations, Security Architecture, IT Service Management Owner, Audit and Compliance |
-| Approver | Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-015](015_RAG_Architecture.md), [ATLAS-020](020_MCP_Framework.md), [ATLAS-023](023_Workflow_Engine.md), [ATLAS-025](025_Policy_Engine.md), [ATLAS-027](027_Knowledge_Engine.md), [ATLAS-032](032_Audit.md), [ATLAS-037](037_Approval_Workflow.md), [ATLAS-041](041_Reasoning.md), [ATLAS-043](043_Recommendation_Engine.md), [ATLAS-044](044_Change_Impact.md), [ATLAS-047](047_Guardrails.md) |
 | Supersedes | ATLAS-045 version 0.1.0 |
@@ -518,3 +518,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial runbook goals, metadata, AI use, and questions |
 | 0.2.0 | 2026-08-03 | Knowledge and Operations Engineering Owner | Added runbook and step contracts, authoring, AI-assisted structuring, validation, lifecycle, applicability, plans, dry-run, execution boundary, deviations, outcomes, and evaluation |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

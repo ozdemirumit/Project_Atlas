@@ -109,6 +109,6 @@ Before committing, agents should check the working tree and verify that no unrel
 
 ## 9. Current Repository Phase
 
-Current phase: Structured Documentation Review.
+Current phase: Approved Documentation Baseline.
 
-All 47 planned governed documents exist at version `0.2.0` with `Review` status. Until the relevant documents are approved, agents should focus on resolving review findings, documentation, architecture, repository structure, and development process only. Implementation requires an explicit request and approved governing documents.
+All 47 planned governed documents exist at version `1.0.0` with `Approved` status. Agents may begin implementation only when explicitly requested and must treat the approved documents as binding contracts. Material architectural changes require a new governed review cycle.

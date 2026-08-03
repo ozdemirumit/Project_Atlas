@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-032 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Audit and Compliance Owner |
 | Reviewers | Security Architecture, Architecture Owner, Identity and Access Management, Platform Engineering, Operations, Legal and Privacy |
-| Approver | Security Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Security Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-016](016_Event_Architecture.md), [ATLAS-020](020_MCP_Framework.md), [ATLAS-030](030_Authentication.md), [ATLAS-031](031_RBAC.md), [ATLAS-033](033_Logging.md), [ATLAS-035](035_SIEM.md), [ATLAS-037](037_Approval_Workflow.md) |
 | Supersedes | ATLAS-032 version 0.1.0 |
@@ -392,3 +392,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial audit goals, events, and fields |
 | 0.2.0 | 2026-08-03 | Audit and Compliance Owner | Added canonical event model, end-to-end lineage, AI and connector evidence, integrity, failure, redaction, retention, export, recovery, and testing contracts |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-041 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | AI Architecture Owner |
 | Reviewers | Architecture Owner, Security Architecture, Infrastructure Domain Architects, Data Science and Evaluation, Operations, Audit and Compliance |
-| Approver | Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-014](014_AI_Architecture.md), [ATLAS-015](015_RAG_Architecture.md), [ATLAS-024](024_Decision_Engine.md), [ATLAS-026](026_Graph_Engine.md), [ATLAS-027](027_Knowledge_Engine.md), [ATLAS-040](040_AI_Agents.md), [ATLAS-042](042_Root_Cause_Analysis.md), [ATLAS-046](046_Explainability.md), [ATLAS-047](047_Guardrails.md) |
 | Supersedes | ATLAS-041 version 0.1.0 |
@@ -476,3 +476,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial reasoning principles, inputs, outputs, and questions |
 | 0.2.0 | 2026-08-03 | AI Architecture Owner | Added epistemic and evidence contracts, temporal and graph reasoning, hypothesis ledger, discriminating checks, confidence model, deterministic boundaries, artifacts, stopping, evaluation, and reproducibility |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-027 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Knowledge Management Owner |
 | Reviewers | Architecture Owner, Data Governance, Security Architecture, AI Architecture, Infrastructure Domain Architects, Operations |
-| Approver | Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-014](014_AI_Architecture.md), [ATLAS-015](015_RAG_Architecture.md), [ATLAS-024](024_Decision_Engine.md), [ATLAS-045](045_Runbook_Engine.md), [ATLAS-054](054_VectorDB.md) |
 | Supersedes | ATLAS-027 version 0.1.0 |
@@ -443,3 +443,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial knowledge responsibilities, domains, and governance |
 | 0.2.0 | 2026-08-03 | Knowledge Management Owner | Added catalog, lifecycle, roles, quality, vendor packs, runbook and incident memory, learning, feedback, access, conflict, expiry, deletion, and recovery |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |

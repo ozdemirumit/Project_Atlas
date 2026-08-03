@@ -5,12 +5,12 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-058 |
-| Version | 0.2.0 |
-| Status | Review |
+| Version | 1.0.0 |
+| Status | Approved |
 | Document Owner | Platform Engineering and Release Automation Owner |
 | Reviewers | Architecture Owner, Security Architecture, Engineering Enablement, Quality Engineering, Site Reliability Engineering, AI Architecture, Documentation Owner, Audit and Compliance |
-| Approver | Architecture Owner |
-| Approval Date | Not approved |
+| Approver | Umit Ozdemir (acting Architecture Owner) |
+| Approval Date | 2026-08-03 |
 | Last Updated | 2026-08-03 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-032](032_Audit.md), [ATLAS-038](038_Deployment_and_Bootstrap.md), [ATLAS-047](047_Guardrails.md), [ATLAS-050](050_API.md), [ATLAS-055](055_Coding_Standards.md), [ATLAS-056](056_Testing.md), [ATLAS-057](057_Deployment.md), [ATLAS-059](059_Release_Process.md) |
 | Supersedes | ATLAS-058 version 0.1.0 |
@@ -520,3 +520,4 @@ This document is ready to enter Review when:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial CI/CD goals, checks, and questions |
 | 0.2.0 | 2026-08-03 | Platform Engineering and Release Automation Owner | Added pipeline tiers, runner trust, identities, secrets, pinned supply chain, build-once promotion, artifacts, SBOM, provenance, signing, AI and schema gates, environments, offline bundles, rollback, failure, and evidence |
+| 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |
