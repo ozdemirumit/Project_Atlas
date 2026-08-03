@@ -1,6 +1,6 @@
 # Project Atlas Agent Instructions
 
-This file defines how AI coding agents must work in this repository. It applies to Codex, Work Mode, Claude Code, and any similar AI-assisted development tool.
+This file defines how AI coding agents must work in this repository. It applies to Codex, Claude Code, and any similar AI-assisted development tool.
 
 ## 1. Product Identity
 
@@ -17,6 +17,7 @@ Before making changes, every agent must read:
 - `docs/001_Product_Vision.md`
 - `docs/002_Product_Requirements.md`
 - `docs/003_Project_Principles.md`
+- `docs/060_Master_Prompt.md`
 - `docs/governance/DOCUMENT_GOVERNANCE.md`
 - `AGENTS.md`
 
@@ -108,6 +109,6 @@ Before committing, agents should check the working tree and verify that no unrel
 
 ## 9. Current Repository Phase
 
-Current phase: Product Definition.
+Current phase: Documentation Foundation Review.
 
-The foundational documentation set exists as `0.1 Draft` material. Until these documents are reviewed and accepted, agents should focus on documentation, architecture, repository structure, and development process only.
+All 47 planned governed documents exist at version `0.2.0` with `Draft` status. Until the relevant documents are reviewed and approved, agents should focus on documentation, architecture, repository structure, and development process only. Implementation requires an explicit request and approved governing documents.

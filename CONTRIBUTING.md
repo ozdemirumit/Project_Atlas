@@ -1,6 +1,6 @@
 # Contributing to Project Atlas
 
-Project Atlas is currently in the Product Definition phase. Contributions should focus on documentation, architecture, repository structure, and development process unless implementation is explicitly authorized.
+Project Atlas is currently in Documentation Foundation Review. All 47 planned governed documents are at version `0.2.0` with `Draft` status. Contributions should focus on review findings, documentation, architecture, repository structure, and development process unless implementation is explicitly requested and the relevant governing documents are approved.
 
 ## Before Contributing
 
@@ -12,6 +12,7 @@ Read:
 - `docs/001_Product_Vision.md`
 - `docs/002_Product_Requirements.md`
 - `docs/003_Project_Principles.md`
+- `docs/060_Master_Prompt.md`
 - `docs/governance/DOCUMENT_GOVERNANCE.md`
 
 Do not commit secrets, credentials, customer names, IP addresses, or real infrastructure details.
