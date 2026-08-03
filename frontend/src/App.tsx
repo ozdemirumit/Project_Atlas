@@ -3,6 +3,7 @@ import {
   Activity,
   AlertTriangle,
   Bell,
+  Building2,
   Blocks,
   Box,
   CheckCircle2,
@@ -14,18 +15,24 @@ import {
   FileText,
   FlaskConical,
   GitBranch,
+  HardDrive,
+  Layers3,
   Menu,
   MessageSquareText,
+  Monitor,
+  Network,
   PanelRightClose,
   Search,
   Send,
   Server,
   Settings,
   ShieldCheck,
+  Workflow,
   X,
 } from "lucide-react";
 import { useState } from "react";
 
+import { getStorageImpact, type GraphEntity } from "./api/graph";
 import { getCurrentIdentity } from "./api/identity";
 import { getPlatformStatus } from "./api/platform";
 import { getStorageOverview, type StorageAsset } from "./api/storage";
@@ -72,6 +79,31 @@ function healthLabel(health: StorageAsset["health"]): string {
   return health.charAt(0).toUpperCase() + health.slice(1);
 }
 
+function entityTypeLabel(entityType: GraphEntity["entity_type"]): string {
+  return entityType.replaceAll("_", " ");
+}
+
+function relationshipLabel(relationshipType: string | undefined): string {
+  return (
+    {
+      backed_by: "backs",
+      uses: "supports",
+      runs_on: "hosts",
+      depends_on: "supports",
+    }[relationshipType ?? ""] ?? "relates to"
+  );
+}
+
+function graphEntityIcon(entityType: GraphEntity["entity_type"]) {
+  const props = { size: 18, strokeWidth: 1.8 };
+  if (entityType === "storage_system") return <HardDrive {...props} />;
+  if (entityType === "volume") return <Layers3 {...props} />;
+  if (entityType === "datastore") return <Database {...props} />;
+  if (entityType === "virtual_machine") return <Monitor {...props} />;
+  if (entityType === "technical_service") return <Workflow {...props} />;
+  return <Building2 {...props} />;
+}
+
 export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(shouldOpenInspector);
@@ -102,6 +134,17 @@ export function App() {
     overview?.assets.find((asset) => asset.asset_id === selectedAssetId) ??
     warningAsset ??
     overview?.assets[0];
+  const impactAssetId = selectedAsset?.asset_id;
+  const impactQuery = useQuery({
+    queryKey: ["storage-impact", impactAssetId],
+    queryFn: () => getStorageImpact(impactAssetId ?? ""),
+    enabled: Boolean(identity && impactAssetId),
+    retry: false,
+  });
+  const impact = impactQuery.data?.data;
+  const longestImpactPath = impact
+    ? [...impact.paths].sort((left, right) => right.entity_ids.length - left.entity_ids.length)[0]
+    : undefined;
   const selectedEvidence =
     overview?.evidence.filter((item) =>
       selectedAsset?.evidence_references.includes(item.reference),
@@ -413,6 +456,107 @@ export function App() {
                     </section>
                   </div>
 
+                  <section className="workspace-section impact-section">
+                    <div className="section-heading">
+                      <div>
+                        <p className="eyebrow">DEPENDENCY IMPACT</p>
+                        <h2>Evidence-linked service path</h2>
+                      </div>
+                      {impact && (
+                        <span className="impact-maturity">
+                          <Network size={14} /> {impact.digital_twin_maturity}
+                        </span>
+                      )}
+                    </div>
+
+                    {impactQuery.isLoading && (
+                      <div className="impact-message">
+                        <Clock3 size={18} /> Evaluating authorized dependency paths
+                      </div>
+                    )}
+                    {impactQuery.isError && (
+                      <div className="impact-message impact-error">
+                        <AlertTriangle size={18} /> Dependency impact is unavailable; no service
+                        impact is inferred.
+                      </div>
+                    )}
+                    {impact && longestImpactPath && (
+                      <>
+                        <div className="impact-summary" aria-label="Dependency impact summary">
+                          <div>
+                            <span>Direct dependencies</span>
+                            <strong>{impact.direct_entity_ids.length}</strong>
+                          </div>
+                          <div>
+                            <span>Possibly affected</span>
+                            <strong>{impact.possible_entity_ids.length}</strong>
+                          </div>
+                          <div>
+                            <span>Technical services</span>
+                            <strong>{impact.technical_service_ids.length}</strong>
+                          </div>
+                          <div>
+                            <span>Business services</span>
+                            <strong>{impact.business_service_ids.length}</strong>
+                          </div>
+                        </div>
+
+                        <div className="dependency-path" aria-label="Authorized dependency path">
+                          {longestImpactPath.entity_ids.map((entityId, index) => {
+                            const entity = impact.entities.find(
+                              (candidate) => candidate.entity_id === entityId,
+                            );
+                            const relationship = impact.relationships.find(
+                              (candidate) =>
+                                candidate.relationship_id ===
+                                longestImpactPath.relationship_ids[index],
+                            );
+                            if (!entity) return null;
+                            return (
+                              <div className="dependency-step" key={entity.entity_id}>
+                                <div className={`dependency-node ${entity.entity_type}`}>
+                                  {graphEntityIcon(entity.entity_type)}
+                                  <span>
+                                    <small>{entityTypeLabel(entity.entity_type)}</small>
+                                    <strong>{entity.display_name}</strong>
+                                  </span>
+                                </div>
+                                {relationship && (
+                                  <div className="dependency-link">
+                                    <span>{relationshipLabel(relationship.relationship_type)}</span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div className="impact-detail-grid">
+                          <div>
+                            <h3>Known gaps</h3>
+                            <ul>
+                              {impact.known_gaps.map((gap) => (
+                                <li key={gap}>{gap}</li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div>
+                            <h3>Impact boundary</h3>
+                            <ul>
+                              {impact.unknowns.map((unknown) => (
+                                <li key={unknown}>{unknown}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                        <div className="impact-safety">
+                          <ShieldCheck size={16} />
+                          <span>{impact.safety_notice}</span>
+                        </div>
+                      </>
+                    )}
+                  </section>
+
                   <section className="workspace-section report-section">
                     <div className="section-heading">
                       <div>
@@ -563,6 +707,32 @@ export function App() {
                   </dl>
                 ) : (
                   <p className="context-empty">No authorized storage context is loaded.</p>
+                )}
+              </section>
+
+              <section className="inspector-section">
+                <h3>Graph context</h3>
+                {impact ? (
+                  <dl className="status-list context-list">
+                    <div>
+                      <dt>Snapshot</dt>
+                      <dd>{impact.snapshot_id}</dd>
+                    </div>
+                    <div>
+                      <dt>Freshness</dt>
+                      <dd>{impact.freshness}</dd>
+                    </div>
+                    <div>
+                      <dt>Completeness</dt>
+                      <dd>{impact.completeness}</dd>
+                    </div>
+                    <div>
+                      <dt>Path evidence</dt>
+                      <dd>{longestImpactPath?.evidence_references.length ?? 0} linked</dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <p className="context-empty">No authorized graph context is loaded.</p>
                 )}
               </section>
 

@@ -16,6 +16,7 @@ from atlas.modules.authorization.domain.models import (
 IDENTITY_SELF_READ = "identity.self.read"
 STORAGE_OVERVIEW_READ = "storage.overview.read"
 AI_GROUNDED_QUERY_CREATE = "ai.grounded-query.create"
+GRAPH_STORAGE_IMPACT_READ = "graph.storage-impact.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 
 
@@ -52,6 +53,17 @@ def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceS
     )
 
 
+def graph_storage_impact_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.graph",
+        resource_id="resource.graph.storage-impact.synthetic",
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
 def build_development_authorization_service(
     settings: Settings, audit_sink: AuditSink
 ) -> AuthorizationService:
@@ -68,12 +80,21 @@ def build_development_authorization_service(
             permission_id=AI_GROUNDED_QUERY_CREATE,
             description="Create an evidence-grounded answer in the exact authorized scope.",
         ),
+        PermissionDefinition(
+            permission_id=GRAPH_STORAGE_IMPACT_READ,
+            description="Read bounded storage dependency impact in the exact graph scope.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
         version=1,
         permissions=frozenset(
-            {IDENTITY_SELF_READ, STORAGE_OVERVIEW_READ, AI_GROUNDED_QUERY_CREATE}
+            {
+                IDENTITY_SELF_READ,
+                STORAGE_OVERVIEW_READ,
+                AI_GROUNDED_QUERY_CREATE,
+                GRAPH_STORAGE_IMPACT_READ,
+            }
         ),
     )
     assignments: tuple[RoleAssignment, ...] = ()
@@ -109,6 +130,16 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=ai_grounded_query_scope(
+                    settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.graph-storage-impact",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=graph_storage_impact_scope(
                     settings.development_organization_id, settings.environment
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),

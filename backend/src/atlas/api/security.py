@@ -8,10 +8,12 @@ from fastapi import Depends, Request
 from atlas.api.errors import AtlasError
 from atlas.modules.authorization.application.bootstrap import (
     AI_GROUNDED_QUERY_CREATE,
+    GRAPH_STORAGE_IMPACT_READ,
     IDENTITY_SELF_READ,
     STORAGE_OVERVIEW_READ,
     ai_grounded_query_scope,
     current_identity_scope,
+    graph_storage_impact_scope,
     storage_overview_scope,
 )
 from atlas.modules.authorization.application.service import AuthorizationService
@@ -117,6 +119,33 @@ async def authorize_ai_grounded_query(
             permission_id=AI_GROUNDED_QUERY_CREATE,
             resource_type="resource.ai.grounded-query",
             scope=ai_grounded_query_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_graph_storage_impact_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=GRAPH_STORAGE_IMPACT_READ,
+            resource_type="resource.graph.storage-impact",
+            scope=graph_storage_impact_scope(subject.organization_id, settings.environment),
             correlation_id=str(request.state.correlation_id),
             requested_at=datetime.now(UTC),
         )
