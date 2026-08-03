@@ -8,7 +8,9 @@ from fastapi import Depends, Request
 from atlas.api.errors import AtlasError
 from atlas.modules.authorization.application.bootstrap import (
     IDENTITY_SELF_READ,
+    STORAGE_OVERVIEW_READ,
     current_identity_scope,
+    storage_overview_scope,
 )
 from atlas.modules.authorization.application.service import AuthorizationService
 from atlas.modules.authorization.domain.models import AuthorizationDecision, AuthorizationRequest
@@ -59,6 +61,33 @@ async def authorize_identity_self_read(
             permission_id=IDENTITY_SELF_READ,
             resource_type="resource.identity.context",
             scope=current_identity_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_storage_overview_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=STORAGE_OVERVIEW_READ,
+            resource_type="resource.storage.overview",
+            scope=storage_overview_scope(subject.organization_id, settings.environment),
             correlation_id=str(request.state.correlation_id),
             requested_at=datetime.now(UTC),
         )

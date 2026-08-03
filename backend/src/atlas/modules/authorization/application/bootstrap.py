@@ -14,6 +14,7 @@ from atlas.modules.authorization.domain.models import (
 )
 
 IDENTITY_SELF_READ = "identity.self.read"
+STORAGE_OVERVIEW_READ = "storage.overview.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 
 
@@ -28,6 +29,17 @@ def current_identity_scope(organization_id: str, environment: str) -> ResourceSc
     )
 
 
+def storage_overview_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.storage",
+        resource_id="resource.storage.lab-overview",
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
 def build_development_authorization_service(
     settings: Settings, audit_sink: AuditSink
 ) -> AuthorizationService:
@@ -36,11 +48,15 @@ def build_development_authorization_service(
             permission_id=IDENTITY_SELF_READ,
             description="Read the authenticated subject's own normalized identity context.",
         ),
+        PermissionDefinition(
+            permission_id=STORAGE_OVERVIEW_READ,
+            description="Read the exact synthetic storage operations overview scope.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
         version=1,
-        permissions=frozenset({IDENTITY_SELF_READ}),
+        permissions=frozenset({IDENTITY_SELF_READ, STORAGE_OVERVIEW_READ}),
     )
     assignments: tuple[RoleAssignment, ...] = ()
 
@@ -55,6 +71,16 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=current_identity_scope(
+                    settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.storage-overview",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=storage_overview_scope(
                     settings.development_organization_id, settings.environment
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),

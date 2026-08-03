@@ -1,0 +1,1 @@
+"""Storage operations domain contracts."""
