@@ -11,8 +11,10 @@ from uuid import uuid4
 
 from atlas import __version__
 from atlas.core.audit import AuditRecord, AuditSink
+from atlas.modules.identity.application.identity_status_ports import IdentityStatusRepository
 from atlas.modules.identity.application.service import IdentityService
 from atlas.modules.identity.application.session_ports import SessionRepository
+from atlas.modules.identity.domain.identity_status import IdentityLifecycleState
 from atlas.modules.identity.domain.models import AuthenticationInput
 from atlas.modules.identity.domain.sessions import (
     CredentialKind,
@@ -40,6 +42,7 @@ class SessionService:
         absolute_timeout: timedelta,
         idle_timeout: timedelta,
         max_sessions_per_subject: int,
+        status_repository: IdentityStatusRepository | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         if not timedelta(minutes=5) <= absolute_timeout <= timedelta(hours=24):
@@ -56,6 +59,7 @@ class SessionService:
         self._absolute_timeout = absolute_timeout
         self._idle_timeout = idle_timeout
         self._max_sessions = max_sessions_per_subject
+        self._status_repository = status_repository
         self._clock = clock or (lambda: datetime.now(UTC))
         self._creation_lock = asyncio.Lock()
 
@@ -110,6 +114,11 @@ class SessionService:
             if record is None or record.state is not SessionState.ACTIVE:
                 await self._audit_denial("unknown_session", correlation_id)
                 return None
+            if self._status_repository is not None:
+                status = await self._status_repository.get(record.subject.subject_id)
+                if status is None or status.state is IdentityLifecycleState.DISABLED:
+                    await self._audit_denial("identity_disabled", correlation_id, record)
+                    return None
             now = self._clock()
             if now >= record.absolute_expires_at or now >= record.idle_expires_at:
                 expired = replace(

@@ -14,6 +14,20 @@ export type GovernedSession = {
   idle_expires_at: string;
 };
 
+export type GovernedSubject = {
+  subject_id: string;
+  version: number;
+  display_name: string;
+  provider_id: string;
+  subject_kind: "human";
+  authentication_method: "ldap" | "oidc" | "saml";
+  state: "active" | "disabled";
+  observed_at: string;
+  disabled_at: string | null;
+  active_session_count: number;
+  active_api_credential_count: number;
+};
+
 export type GovernedApiCredential = {
   credential_id: string;
   version: number;
@@ -31,6 +45,7 @@ export type GovernedApiCredential = {
 
 export type IdentityGovernanceResponse = {
   data: {
+    subjects: GovernedSubject[];
     sessions: GovernedSession[];
     api_credentials: GovernedApiCredential[];
     truncated: boolean;
@@ -48,6 +63,32 @@ export async function getIdentityGovernance(
   if (response.status === 403) return null;
   if (!response.ok) throw new ApiRequestError("Identity governance inventory failed", response.status);
   return (await response.json()) as IdentityGovernanceResponse;
+}
+
+export async function disableGovernedIdentity(input: {
+  subjectId: string;
+  expectedVersion: number;
+  reason: string;
+  idempotencyKey: string;
+}): Promise<void> {
+  const response = await apiFetch(
+    `/api/v1/identity-governance/subjects/${encodeURIComponent(input.subjectId)}/disablements`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": input.idempotencyKey,
+      },
+      body: JSON.stringify({
+        expected_version: input.expectedVersion,
+        reason: input.reason,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new ApiRequestError("Identity disablement failed", response.status);
+  }
 }
 
 export async function revokeGovernedSession(input: {

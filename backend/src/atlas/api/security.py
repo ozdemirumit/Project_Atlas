@@ -21,6 +21,7 @@ from atlas.modules.authorization.application.bootstrap import (
     HEALTH_CHECK_RUN_CREATE,
     IDENTITY_GOVERNANCE_READ,
     IDENTITY_SELF_READ,
+    IDENTITY_SUBJECT_ADMIN_DISABLE,
     INVESTIGATION_CREATE,
     RCA_CREATE,
     RECOMMENDATION_CREATE,
@@ -415,6 +416,30 @@ async def authorize_api_credential_admin_revoke(
         request,
         subject,
         permission_id=API_CREDENTIAL_ADMIN_REVOKE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+        target_subject_id=target_subject_id,
+        reason=reason,
+        idempotency_key=idempotency_key,
+        target_metadata=target_metadata,
+    )
+
+
+async def authorize_identity_subject_admin_disable(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    subject_id: str,
+) -> AuthorizationDecision:
+    (
+        target_subject_id,
+        target_metadata,
+    ) = await request.app.state.identity_governance_service.target_audit_fields(
+        "identity_subject", subject_id
+    )
+    reason, idempotency_key = await _governance_mutation_audit_fields(request)
+    return await _authorize_identity_governance(
+        request,
+        subject,
+        permission_id=IDENTITY_SUBJECT_ADMIN_DISABLE,
         capability_class=CapabilityClass.C2_DIAGNOSTIC,
         target_subject_id=target_subject_id,
         reason=reason,

@@ -218,6 +218,20 @@ const issuedApiCredentialResponse = {
 
 const identityGovernanceResponse = {
   data: {
+    subjects: [
+      {
+        subject_id: "subject.enterprise.operator",
+        version: 1,
+        display_name: "Storage Operator",
+        provider_id: "provider.ldap.enterprise",
+        authentication_method: "ldap",
+        state: "active",
+        observed_at: "2026-08-04T09:00:00Z",
+        disabled_at: null,
+        active_session_count: 1,
+        active_api_credential_count: 1,
+      },
+    ],
     sessions: [
       {
         session_id: "session.governed.operator",
@@ -1522,20 +1536,34 @@ describe("Atlas application shell", () => {
     fireEvent.change(await screen.findByLabelText("Identity governance revocation reason"), {
       target: { value: "Operator access is no longer required." },
     });
+    fireEvent.click(screen.getByRole("button", { name: "Disable identity" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "revokes 1 browser session(s) and 1 personal token(s)",
+    );
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "Re-enable is not part of this slice",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Confirm disablement" }));
     fireEvent.click(screen.getByRole("button", { name: "Revoke session" }));
     fireEvent.click(screen.getByRole("button", { name: "Revoke token" }));
 
-    await waitFor(() => expect(governanceRequests).toHaveLength(2));
+    await waitFor(() => expect(governanceRequests).toHaveLength(3));
     for (const request of governanceRequests) {
       const headers = new Headers(request.init?.headers);
       expect(headers.get("X-CSRF-Token")).toBe("csrf_governance_test");
-      expect(headers.get("Idempotency-Key")).toMatch(/^governance-(session|token)-/);
+      expect(headers.get("Idempotency-Key")).toMatch(/^governance-(identity|session|token)-/);
       expect(request.init?.body).toContain(
         '"reason":"Operator access is no longer required."',
       );
     }
-    const [sessionRequest, tokenRequest] = governanceRequests;
-    if (!sessionRequest || !tokenRequest) throw new Error("governance requests were not captured");
+    const [disableRequest, sessionRequest, tokenRequest] = governanceRequests;
+    if (!disableRequest || !sessionRequest || !tokenRequest) {
+      throw new Error("governance requests were not captured");
+    }
+    expect(disableRequest.url).toContain(
+      "subjects/subject.enterprise.operator/disablements",
+    );
+    expect(disableRequest.init?.body).toContain('"expected_version":1');
     expect(sessionRequest.url).toContain("session.governed.operator/revocations");
     expect(sessionRequest.init?.body).toContain('"expected_version":3');
     expect(tokenRequest.url).toContain("credential.governed.operator/revocations");

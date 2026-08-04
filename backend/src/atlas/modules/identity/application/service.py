@@ -6,7 +6,9 @@ from uuid import uuid4
 
 from atlas import __version__
 from atlas.core.audit import AuditRecord, AuditSink
+from atlas.modules.identity.application.identity_status_ports import IdentityStatusRepository
 from atlas.modules.identity.application.ports import IdentityProvider
+from atlas.modules.identity.domain.identity_status import IdentityLifecycleState
 from atlas.modules.identity.domain.models import (
     AuthenticatedSubject,
     AuthenticationInput,
@@ -21,10 +23,12 @@ class IdentityService:
         *,
         provider: IdentityProvider,
         audit_sink: AuditSink,
+        status_repository: IdentityStatusRepository | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._provider = provider
         self._audit_sink = audit_sink
+        self._status_repository = status_repository
         self._clock = clock or (lambda: datetime.now(UTC))
 
     async def authenticate(
@@ -78,6 +82,32 @@ class IdentityService:
                 )
             )
             raise
+        if subject is not None and self._status_repository is not None:
+            status = await self._status_repository.observe(subject, observed_at=self._clock())
+            if status.state is IdentityLifecycleState.DISABLED:
+                await self._audit_sink.record(
+                    AuditRecord(
+                        event_id=f"evt_{uuid4().hex}",
+                        event_type="atlas.identity.authentication.denied",
+                        schema_version="1.0",
+                        producer="project-atlas-api",
+                        producer_version=__version__,
+                        occurred_at=self._clock(),
+                        correlation_id=authentication_input.correlation_id,
+                        subject_id=subject.subject_id,
+                        actor_type=subject.kind.value,
+                        authentication_method=subject.authentication_method.value,
+                        assurance_level=subject.assurance_level.value,
+                        permission_id=None,
+                        resource_type="resource.identity.subject",
+                        scope_reference=subject.subject_id,
+                        decision_id=None,
+                        outcome="denied",
+                        result_code="identity_disabled",
+                        target_subject_id=subject.subject_id,
+                    )
+                )
+                return None
         succeeded = subject is not None
         await self._audit_sink.record(
             AuditRecord(

@@ -40,6 +40,7 @@ import {
   Scale,
   Workflow,
   UserCheck,
+  UserX,
   X,
 } from "lucide-react";
 import { type FormEvent, useState } from "react";
@@ -58,6 +59,7 @@ import {
 import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
 import {
+  disableGovernedIdentity,
   getIdentityGovernance,
   revokeGovernedApiCredential,
   revokeGovernedSession,
@@ -137,7 +139,10 @@ function apiGrantLabel(permissionId: string): string {
   );
 }
 
-function governanceIdempotencyKey(resource: "session" | "token", version: number): string {
+function governanceIdempotencyKey(
+  resource: "identity" | "session" | "token",
+  version: number,
+): string {
   const nonce =
     typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
   return `governance-${resource}-${version}-${nonce}`;
@@ -192,6 +197,7 @@ export function App() {
   const [issuedApiToken, setIssuedApiToken] = useState<string | null>(null);
   const [governanceSearch, setGovernanceSearch] = useState("");
   const [governanceReason, setGovernanceReason] = useState("");
+  const [pendingDisableSubjectId, setPendingDisableSubjectId] = useState<string | null>(null);
   const [investigationQuestion, setInvestigationQuestion] = useState(
     "What evidence explains the current storage warning?",
   );
@@ -227,6 +233,8 @@ export function App() {
       setApprovalRequestId(null);
       setApprovalRationale("");
       setIssuedApiToken(null);
+      setPendingDisableSubjectId(null);
+      setGovernanceReason("");
       await queryClient.invalidateQueries({ queryKey: ["current-identity"] });
     },
   });
@@ -292,6 +300,14 @@ export function App() {
   const revokeGovernedSessionMutation = useMutation({
     mutationFn: revokeGovernedSession,
     onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["identity-governance"] });
+    },
+  });
+  const disableGovernedIdentityMutation = useMutation({
+    mutationFn: disableGovernedIdentity,
+    onSuccess: async () => {
+      setPendingDisableSubjectId(null);
+      setGovernanceReason("");
       await queryClient.invalidateQueries({ queryKey: ["identity-governance"] });
     },
   });
@@ -983,6 +999,7 @@ export function App() {
                           <h2>Administrative access review</h2>
                         </div>
                         <span className="session-count">
+                          {identityGovernance.subjects.length} identities {" · "}
                           {identityGovernance.sessions.length +
                             identityGovernance.api_credentials.length}
                           {identityGovernance.truncated ? "+" : ""} active
@@ -1004,24 +1021,145 @@ export function App() {
                           </div>
                         </label>
                         <label>
-                          <span>Revocation reason</span>
+                          <span>Governance reason</span>
                           <input
                             aria-label="Identity governance revocation reason"
                             value={governanceReason}
                             maxLength={240}
-                            placeholder="Required for an attributable revocation"
+                            placeholder="Required for revocation or identity disablement"
                             onChange={(event) => setGovernanceReason(event.target.value)}
                           />
                         </label>
                       </div>
 
-                      {(revokeGovernedSessionMutation.isError ||
+                      {(disableGovernedIdentityMutation.isError ||
+                        revokeGovernedSessionMutation.isError ||
                         revokeGovernedApiCredentialMutation.isError) && (
                         <div className="impact-message impact-error">
-                          <AlertTriangle size={18} /> The administrative revocation was not
-                          completed.
+                          <AlertTriangle size={18} /> The administrative identity change was not
+                          completed; prior access state remains authoritative.
                         </div>
                       )}
+
+                      <div className="governance-panel governance-subject-panel">
+                        <div className="governance-panel-heading">
+                          <div>
+                            <UserCheck size={17} />
+                            <h3>Enterprise identities</h3>
+                          </div>
+                          <span>{identityGovernance.subjects.length}</span>
+                        </div>
+                        {identityGovernance.subjects.length === 0 && (
+                          <div className="governance-empty">No matching enterprise identities.</div>
+                        )}
+                        <div className="governance-subject-records">
+                          {identityGovernance.subjects.map((governedSubject) => {
+                            const confirming =
+                              pendingDisableSubjectId === governedSubject.subject_id;
+                            return (
+                              <article
+                                className="governance-record governance-subject-record"
+                                key={governedSubject.subject_id}
+                              >
+                                <div className="governance-record-heading">
+                                  <div>
+                                    <strong>{governedSubject.display_name}</strong>
+                                    <span>{governedSubject.subject_id}</span>
+                                  </div>
+                                  <span className={`state-badge ${governedSubject.state}`}>
+                                    {governedSubject.state}
+                                  </span>
+                                </div>
+                                <dl>
+                                  <div>
+                                    <dt>Provider</dt>
+                                    <dd>{governedSubject.provider_id}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Browser sessions</dt>
+                                    <dd>{governedSubject.active_session_count} active</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Personal tokens</dt>
+                                    <dd>{governedSubject.active_api_credential_count} active</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Observed</dt>
+                                    <dd>{formatTimestamp(governedSubject.observed_at)}</dd>
+                                  </div>
+                                </dl>
+                                {governedSubject.disabled_at && (
+                                  <p>
+                                    Disabled {formatTimestamp(governedSubject.disabled_at)}. New
+                                    authentication and personal-token issuance remain blocked.
+                                  </p>
+                                )}
+                                {confirming && governedSubject.state === "active" && (
+                                  <div className="governance-disable-confirmation" role="dialog">
+                                    <div>
+                                      <strong>Confirm identity disablement</strong>
+                                      <p>
+                                        This disables {governedSubject.display_name} and atomically
+                                        revokes {governedSubject.active_session_count} browser
+                                        session(s) and {" "}
+                                        {governedSubject.active_api_credential_count} personal
+                                        token(s). Re-enable is not part of this slice.
+                                      </p>
+                                    </div>
+                                    <div className="governance-confirm-actions">
+                                      <button
+                                        type="button"
+                                        onClick={() => setPendingDisableSubjectId(null)}
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        className="governance-disable-confirm"
+                                        type="button"
+                                        disabled={
+                                          !governanceReason.trim() ||
+                                          disableGovernedIdentityMutation.isPending
+                                        }
+                                        onClick={() =>
+                                          disableGovernedIdentityMutation.mutate({
+                                            subjectId: governedSubject.subject_id,
+                                            expectedVersion: governedSubject.version,
+                                            reason: governanceReason.trim(),
+                                            idempotencyKey: governanceIdempotencyKey(
+                                              "identity",
+                                              governedSubject.version,
+                                            ),
+                                          })
+                                        }
+                                      >
+                                        <UserX size={14} /> Confirm disablement
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                                <div className="governance-record-footer">
+                                  <code>
+                                    {governedSubject.authentication_method} · v
+                                    {governedSubject.version}
+                                  </code>
+                                  {governedSubject.state === "active" && !confirming && (
+                                    <button
+                                      className="governance-revoke"
+                                      type="button"
+                                      disabled={disableGovernedIdentityMutation.isPending}
+                                      onClick={() =>
+                                        setPendingDisableSubjectId(governedSubject.subject_id)
+                                      }
+                                    >
+                                      <UserX size={14} /> Disable identity
+                                    </button>
+                                  )}
+                                </div>
+                              </article>
+                            );
+                          })}
+                        </div>
+                      </div>
 
                       <div className="governance-grid">
                         <div className="governance-panel">
