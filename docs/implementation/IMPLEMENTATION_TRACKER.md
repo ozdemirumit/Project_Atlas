@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-013 |
 | Title | Governed Syslog and SIEM security-event export vertical slice |
-| Status | Ready for Review |
+| Status | Done |
 | Branch | `agent/syslog-siem-export` |
-| Pull Request | Pending |
+| Pull Request | [#25](https://github.com/ozdemirumit/Project_Atlas/pull/25) |
 | Governing Documents | ATLAS-002, ATLAS-003, ATLAS-016, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-034, ATLAS-035, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
 | Last Updated | 2026-08-04 |
-| Next Action | Submit the validated slice for GitHub review and CI |
+| Next Action | Select ATLAS-IMP-014 from the documented implementation sequence |
 
 ### ATLAS-IMP-013 Acceptance Criteria
 
@@ -55,7 +55,8 @@
 - The live web workspace displayed destination and certificate health, queue and handoff counts,
   RFC 5424 mapping preview, safety limitations, and successful explicit test-event feedback without
   claiming SIEM ingestion or infrastructure authority.
-- GitHub review and CI are pending.
+- GitHub backend CI passed in 24 seconds and frontend CI passed in 30 seconds on PR #25 head
+  `1e96eac042297fbed383e0a269a8ea79eed2d59f` before the final documentation-only update.
 
 ### ATLAS-IMP-012 Acceptance Criteria
 
