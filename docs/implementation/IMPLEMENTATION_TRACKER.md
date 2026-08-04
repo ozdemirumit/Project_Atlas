@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-031 |
 | Title | Governed bootstrap configuration rendering and validation |
-| Status | Review |
+| Status | Done |
 | Branch | `agent/bootstrap-configuration-rendering` |
-| Pull Request | Pending |
+| Pull Request | [#43](https://github.com/ozdemirumit/Project_Atlas/pull/43) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Publish the reviewed implementation and complete GitHub CI and merge |
+| Next Action | Merge PR #43, synchronize `main`, and scope the next bootstrap phase |
 
 ### ATLAS-IMP-031 Scope Rationale
 
@@ -86,7 +86,8 @@
 - A page reload retained the completed artifact and configuration evidence without offering either
   action again. Live presentation passed at 1440x900 and 390x844 with no horizontal overflow, and the
   browser produced no warning or error logs.
-- GitHub CI evidence will be recorded after branch publication.
+- GitHub backend and frontend CI jobs passed for source commit `26c21eb` in
+  [run 30928899479](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30928899479).
 
 ### ATLAS-IMP-030 Scope Rationale
 
@@ -1483,6 +1484,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-028 | Bootstrap input drift and checkpoint invalidation preview | Completed through [PR #40](https://github.com/ozdemirumit/Project_Atlas/pull/40) from source commit `8419c94`; 287 backend tests, 20 frontend tests, live non-mutating desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-029 | Controlled bootstrap plan rebase and checkpoint invalidation | Completed through [PR #41](https://github.com/ozdemirumit/Project_Atlas/pull/41) from source commit `f2feecc`; 291 backend tests, 21 frontend tests, live enterprise-session rebase and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-030 | Governed bootstrap artifact acquisition and verification | Completed through [PR #42](https://github.com/ozdemirumit/Project_Atlas/pull/42) from source commit `270d625`; 301 backend tests, 23 frontend tests, live exact-lease artifact acquisition and desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-031 | Governed bootstrap configuration rendering and validation | Completed through [PR #43](https://github.com/ozdemirumit/Project_Atlas/pull/43) from source commit `26c21eb`; 309 backend tests, 24 frontend tests, live exact-lease artifact/configuration execution and desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
