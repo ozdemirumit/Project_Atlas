@@ -4,14 +4,47 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-027 |
-| Title | Persistent bootstrap checkpoint and lease foundation |
-| Status | Done |
-| Branch | `agent/bootstrap-checkpoint-lease` |
-| Pull Request | [#39](https://github.com/ozdemirumit/Project_Atlas/pull/39) |
-| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
+| Task ID | ATLAS-IMP-028 |
+| Title | Bootstrap input drift and checkpoint invalidation preview |
+| Status | In Progress |
+| Branch | `agent/bootstrap-invalidation-preview` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Merge PR #39 and select the next bounded MVP-005 implementation slice |
+| Next Action | Implement deterministic drift comparison, downstream invalidation preview, governed API, and read-only UI |
+
+### ATLAS-IMP-028 Scope Rationale
+
+- ATLAS-038 requires changed bootstrap inputs to invalidate every affected downstream phase before
+  resume. The state foundation now rejects plan substitution, but operators still need a safe,
+  deterministic explanation of what changed and which checkpoints can no longer be reused.
+- This slice compares one exact candidate release, profile, plan, configuration digest, and phase
+  order with the current authorized run. It produces a read-only invalidation preview and never
+  updates the run, releases or acquires its lease, or executes a phase.
+
+### ATLAS-IMP-028 Acceptance Criteria
+
+- A strict request binds organization, environment, site, candidate release/profile, plan digest,
+  resume key, configuration digest, and ordered phase IDs. Unknown fields, malformed identifiers,
+  foreign scope, duplicates, and unbounded phase sets fail closed.
+- Equivalent input is reported as unchanged with all completed checkpoints reusable. Release,
+  profile, or plan-identity change invalidates from acquisition; configuration change invalidates
+  from configuration; phase-order change invalidates from the earliest affected phase.
+- Every changed field has a stable non-secret reason code, safe old/new digest references, earliest
+  affected phase, invalidated completed checkpoints, downstream phase IDs, and bounded remediation.
+  No raw configuration, output, lease-holder, token, secret, or command is returned.
+- The preview is calculated from the current exact-scope repository state without mutation and
+  includes source run/version, freshness timestamp, correlation ID, and explicit false execution,
+  lease-mutation, checkpoint-mutation, and infrastructure-mutation authorization.
+- Exact-scope C0 authorization, required audit, `no-store` delivery, and indistinguishable empty or
+  foreign state apply. Required audit failure blocks disclosure.
+- The operations UI shows unchanged/drifted state, changed inputs, earliest invalidation boundary,
+  reusable and invalidated checkpoints, downstream phases, and the explicit read-only boundary.
+- Automated and live tests cover identical inputs, each drift class, combined drift precedence,
+  phase reordering, empty state, foreign scope, strict parsing, audit failure, malformed response,
+  non-mutation, owner redaction, and responsive desktop/mobile presentation.
+- This slice does not mutate bootstrap state, acquire or release leases, execute a phase, invalidate
+  data physically, run rollback, write files, invoke connectors, or authorize infrastructure change.
 
 ### ATLAS-IMP-027 Scope Rationale
 
