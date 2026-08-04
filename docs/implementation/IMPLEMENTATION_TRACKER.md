@@ -87,7 +87,9 @@
   width-stable with document, card, and list scroll widths equal to their client widths; browser
   warning/error logs were empty.
 - Source implementation is committed as `3389466` and is under review in
-  [PR #49](https://github.com/ozdemirumit/Project_Atlas/pull/49); GitHub CI evidence is pending.
+  [PR #49](https://github.com/ozdemirumit/Project_Atlas/pull/49). GitHub backend and frontend jobs
+  passed in
+  [run 30948571671](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30948571671).
 
 ### ATLAS-IMP-036 Scope Rationale
 
