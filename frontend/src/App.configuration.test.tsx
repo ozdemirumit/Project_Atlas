@@ -75,6 +75,47 @@ function configurationPreview(profile = "linux_lab") {
   };
 }
 
+const preflight = {
+  data: {
+    report_id: "preflight.ui.plan",
+    release_id: "release.atlas.lab-0.1.0",
+    release_version: "0.1.0",
+    build_id: "build.synthetic.main",
+    manifest_digest: "a".repeat(64),
+    mode: "offline",
+    profile: "linux_lab",
+    state: "passed",
+    checks: [],
+    generated_at: "2026-08-04T16:00:00Z",
+    correlation_id: "correlation.plan.preflight",
+    mutation_authorized: false,
+    execution_authorized: false,
+  },
+};
+
+const bootstrapPlan = {
+  data: {
+    plan_id: "bootstrap-plan.ui.001",
+    schema_version: "atlas.bootstrap-plan.v1",
+    release_id: "release.atlas.lab-0.1.0",
+    profile: "linux_lab",
+    organization_id: "organization.enterprise",
+    environment_id: "environment.test",
+    site_id: "site.local",
+    state: "ready",
+    plan_digest: "c".repeat(64),
+    resume_key: "resume.cccccccccccccccccccccccccccccccc",
+    phases: [
+      { phase_id: "phase.acquire", sequence: 1, title: "Acquire and verify artifacts", dependencies: [], state: "ready", resumable: true, input_references: ["manifest:aaa"], stop_guidance: "Stop without mutation." },
+      { phase_id: "phase.configure", sequence: 2, title: "Render validated configuration", dependencies: ["phase.acquire"], state: "ready", resumable: true, input_references: ["configuration:bbb"], stop_guidance: "Keep the prior valid plan." },
+    ],
+    generated_at: "2026-08-04T16:00:00Z",
+    correlation_id: "correlation.plan.ui",
+    mutation_authorized: false,
+    execution_authorized: false,
+  },
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -140,5 +181,23 @@ describe("deployment configuration preview", () => {
         screen.queryByRole("heading", { name: "Versioned deployment preview" }),
       ).not.toBeInTheDocument(),
     );
+  });
+
+  it("shows the exact-input non-executing bootstrap plan", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) return Promise.resolve(new Response(JSON.stringify(identity), { status: 200 }));
+      if (url.includes("/release-preflight")) return Promise.resolve(new Response(JSON.stringify(preflight), { status: 200 }));
+      if (url.includes("/deployment-configuration/preview")) return Promise.resolve(new Response(JSON.stringify(configurationPreview()), { status: 200 }));
+      if (url.includes("/bootstrap-plan")) return Promise.resolve(new Response(JSON.stringify(bootstrapPlan), { status: 200 }));
+      return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+
+    expect(await screen.findByText("Ordered deployment phases")).toBeVisible();
+    expect(screen.getByText("Acquire and verify artifacts")).toBeVisible();
+    expect(screen.getByText(/No phase, command, rollback/)).toBeVisible();
   });
 });
