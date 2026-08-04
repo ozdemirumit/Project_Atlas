@@ -53,6 +53,7 @@ import {
 } from "./api/apiCredentials";
 import { getAuditExportOverview, retryAuditExport } from "./api/auditExport";
 import { getBootstrapPlan } from "./api/bootstrapPlan";
+import { getBootstrapState } from "./api/bootstrapState";
 import { previewDeploymentConfiguration } from "./api/deploymentConfiguration";
 import { getStorageImpact, type GraphEntity } from "./api/graph";
 import {
@@ -433,6 +434,13 @@ export function App() {
     retry: false,
   });
   const bootstrapPlan = bootstrapPlanQuery.data?.data;
+  const bootstrapStateQuery = useQuery({
+    queryKey: ["bootstrap-state"],
+    queryFn: getBootstrapState,
+    enabled: Boolean(identity),
+    retry: false,
+  });
+  const bootstrapState = bootstrapStateQuery.data?.data;
   const retryAuditExportMutation = useMutation({
     mutationFn: retryAuditExport,
     onSuccess: async () => {
@@ -1169,6 +1177,104 @@ export function App() {
                   <div className="safety-notice">
                     <ShieldCheck size={16} />
                     <span>Planning evidence only. No phase, command, rollback, or infrastructure mutation is authorized.</span>
+                  </div>
+                </section>
+              )}
+
+              {bootstrapState && (
+                <section className="workspace-section bootstrap-state-section">
+                  <div className="section-heading bootstrap-state-heading">
+                    <div>
+                      <p className="eyebrow">BOOTSTRAP CHECKPOINTS</p>
+                      <h2>Resume and lease state</h2>
+                      <p>Coordination metadata only; loading this view never claims a lease.</p>
+                    </div>
+                    <span className={`state-badge ${bootstrapState.durable ? "ready" : "warning"}`}>
+                      <LockKeyhole size={14} />
+                      {bootstrapState.durable ? "durable" : "development memory"}
+                    </span>
+                  </div>
+                  {bootstrapState.run ? (
+                    <>
+                      <div className="bootstrap-state-summary">
+                        <div>
+                          <span>Run</span>
+                          <code>{bootstrapState.run.run_id}</code>
+                        </div>
+                        <div>
+                          <span>Revision</span>
+                          <strong>{bootstrapState.run.version}</strong>
+                        </div>
+                        <div>
+                          <span>Completed</span>
+                          <strong>
+                            {bootstrapState.run.completed_phase_ids.length}/
+                            {bootstrapState.run.phase_ids.length}
+                          </strong>
+                        </div>
+                        <div>
+                          <span>Lease</span>
+                          <strong>
+                            {bootstrapState.lease_available
+                              ? "Available"
+                              : bootstrapState.lease_held_by_current_actor
+                                ? "Held by this session"
+                                : "Held by another operator"}
+                          </strong>
+                        </div>
+                      </div>
+                      <div
+                        className="bootstrap-checkpoint-grid"
+                        aria-label="Bootstrap checkpoint progress"
+                      >
+                        {bootstrapState.run.phase_ids.map((phaseId, index) => {
+                          const checkpoint = bootstrapState.run?.checkpoints.find(
+                            (item) => item.phase_id === phaseId,
+                          );
+                          const phaseState =
+                            checkpoint?.state ??
+                            (bootstrapState.run?.current_phase_id === phaseId
+                              ? "current"
+                              : "pending");
+                          return (
+                            <div className={`bootstrap-checkpoint ${phaseState}`} key={phaseId}>
+                              <span>{index + 1}</span>
+                              <div>
+                                <code>{phaseId}</code>
+                                <strong>{phaseState}</strong>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="bootstrap-state-detail">
+                        <div>
+                          <span>Plan digest</span>
+                          <code>{bootstrapState.run.plan_digest.slice(0, 20)}...</code>
+                        </div>
+                        <div>
+                          <span>Lease expiry</span>
+                          <strong>
+                            {formatTimestamp(bootstrapState.run.lease_expires_at ?? undefined)}
+                          </strong>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="bootstrap-state-empty">
+                      <LockKeyhole size={18} />
+                      <div>
+                        <strong>No checkpoint state has been initialized.</strong>
+                        <p>The approved plan remains read-only and no lease is held.</p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="safety-notice">
+                    <ShieldCheck size={16} />
+                    <span>
+                      No phase, command, rollback, installer, or infrastructure mutation is
+                      authorized by checkpoint metadata.
+                    </span>
                   </div>
                 </section>
               )}

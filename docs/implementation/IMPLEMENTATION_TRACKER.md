@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-027 |
 | Title | Persistent bootstrap checkpoint and lease foundation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/bootstrap-checkpoint-lease` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Implement the atomic checkpoint repository, bounded lease service, governed API, and read-only state UI |
+| Next Action | Open the implementation pull request and complete GitHub CI review |
 
 ### ATLAS-IMP-027 Scope Rationale
 
@@ -30,7 +30,7 @@
   configuration digest, phase order, current revision, completed and failed phases, safe output
   references, lease state, and timestamps. Unknown fields, unsafe identifiers, secrets, and
   unbounded output fail closed.
-- Lease acquisition is atomic, bounded in duration, idempotent, and tied to the authenticated actor.
+- Lease acquisition is atomic, bounded in duration, idempotent, and tied to the authenticated browser session.
   A live foreign lease blocks a second claimant without disclosing its owner; an expired lease may
   be reclaimed with explicit audit evidence.
 - Checkpoint updates require the active lease, expected revision, exact plan identity, an
@@ -50,6 +50,21 @@
 - This slice does not execute bootstrap phases, invoke connectors or shell commands, provision
   resources, authorize infrastructure mutation, implement rollback, or claim production digital
   twin fidelity.
+
+### ATLAS-IMP-027 Validation Evidence
+
+- Backend tests pass for atomic create/resume, idempotent replay, same-identity simultaneous claims, expired-lease
+  reclaim, release, stale revision, dependency ordering, plan substitution, safe-reference
+  validation, exact scope, CSRF, audit failure, owner redaction, and PostgreSQL state mapping.
+- Full backend verification passes Ruff format/check, mypy across 244 source files, and 282 pytest
+  tests. Full frontend verification passes ESLint, TypeScript, 18 Vitest tests, and production build.
+- Live API validation returned revision 2 with one completed phase and retained revision 2 after all
+  UI reads, proving that page loading did not claim or mutate state. Lease-owner identity remained
+  absent from direct and proxied API responses.
+- Live UI validation passed at 1440x900 and 390x844. Checkpoint progress, current phase, lease state,
+  durability boundary, and non-execution notice remained visible with no page-level horizontal
+  overflow.
+- GitHub pull request and required CI evidence are pending.
 
 ### ATLAS-IMP-026 Scope Rationale
 

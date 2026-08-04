@@ -47,6 +47,8 @@ AUDIT_EXPORT = "audit.export"
 RELEASE_PREFLIGHT_READ = "platform.release-preflight.read"
 DEPLOYMENT_CONFIGURATION_PREVIEW = "platform.deployment-configuration.preview"
 BOOTSTRAP_PLAN_READ = "platform.bootstrap-plan.read"
+BOOTSTRAP_STATE_READ = "platform.bootstrap-state.read"
+BOOTSTRAP_STATE_MANAGE = "platform.bootstrap-state.manage"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -230,6 +232,19 @@ def bootstrap_plan_scope(organization_id: str, environment: str) -> ResourceScop
         domain_id="domain.platform",
         resource_id="resource.platform.bootstrap-plan",
         capability_class=CapabilityClass.C0_INFORMATIONAL,
+    )
+
+
+def bootstrap_state_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.platform",
+        resource_id="resource.platform.bootstrap-state",
+        capability_class=capability_class,
     )
 
 
@@ -498,6 +513,14 @@ def build_development_authorization_service(
             permission_id=BOOTSTRAP_PLAN_READ,
             description="Read one exact-input bootstrap plan without executing it.",
         ),
+        PermissionDefinition(
+            permission_id=BOOTSTRAP_STATE_READ,
+            description="Read exact-scope bootstrap checkpoint and lease metadata.",
+        ),
+        PermissionDefinition(
+            permission_id=BOOTSTRAP_STATE_MANAGE,
+            description="Coordinate bootstrap metadata without executing a phase.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -527,6 +550,8 @@ def build_development_authorization_service(
                 RELEASE_PREFLIGHT_READ,
                 DEPLOYMENT_CONFIGURATION_PREVIEW,
                 BOOTSTRAP_PLAN_READ,
+                BOOTSTRAP_STATE_READ,
+                BOOTSTRAP_STATE_MANAGE,
             }
         ),
     )
@@ -632,6 +657,30 @@ def build_development_authorization_service(
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=bootstrap_plan_scope(
                     settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.bootstrap-state-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=bootstrap_state_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C0_INFORMATIONAL,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.bootstrap-state-manage",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=bootstrap_state_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),

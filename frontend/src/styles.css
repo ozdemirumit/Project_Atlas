@@ -827,6 +827,26 @@ textarea:focus-visible {
 .bootstrap-phase-list p, .bootstrap-phase-list small { display: block; margin: 5px 0 0; color: #63716d; overflow-wrap: anywhere; }
 @media (max-width: 620px) { .bootstrap-plan-identity { grid-template-columns: minmax(0, 1fr); } }
 
+.bootstrap-state-section { display: grid; gap: 16px; border-top: 1px solid #dbe3e0; }
+.bootstrap-state-heading .state-badge { display: inline-flex; align-items: center; gap: 6px; }
+.bootstrap-state-heading > div > p:last-child { margin: 4px 0 0; color: #63716d; }
+.bootstrap-state-summary, .bootstrap-state-detail { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid #dbe3e0; border-radius: 6px; background: #dbe3e0; }
+.bootstrap-state-detail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.bootstrap-state-summary > div, .bootstrap-state-detail > div { min-width: 0; padding: 12px; background: #fbfcfc; }
+.bootstrap-state-summary span, .bootstrap-state-detail span { display: block; margin-bottom: 5px; color: #63716d; font-size: 0.72rem; text-transform: uppercase; }
+.bootstrap-state-summary code, .bootstrap-state-detail code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bootstrap-checkpoint-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.bootstrap-checkpoint { display: grid; grid-template-columns: 26px minmax(0, 1fr); align-items: center; gap: 8px; min-width: 0; padding: 10px; border: 1px solid #dbe3e0; border-radius: 6px; background: #fbfcfc; }
+.bootstrap-checkpoint > span { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 50%; background: #edf1ef; color: #63716d; font-size: 0.76rem; }
+.bootstrap-checkpoint code, .bootstrap-checkpoint strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bootstrap-checkpoint strong { margin-top: 3px; color: #63716d; font-size: 0.76rem; text-transform: capitalize; }
+.bootstrap-checkpoint.completed { border-color: #78ad98; }
+.bootstrap-checkpoint.failed { border-color: #cf8f8f; }
+.bootstrap-checkpoint.current { border-color: #5d91aa; }
+.bootstrap-state-empty { display: flex; align-items: center; gap: 12px; padding: 16px; border: 1px dashed #aebdb8; border-radius: 6px; }
+.bootstrap-state-empty p { margin: 4px 0 0; color: #63716d; }
+@media (max-width: 760px) { .bootstrap-state-summary, .bootstrap-state-detail, .bootstrap-checkpoint-grid { grid-template-columns: minmax(0, 1fr); } }
+
 .deployment-configuration-heading .state-badge {
   display: inline-flex;
   align-items: center;

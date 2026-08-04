@@ -116,6 +116,44 @@ const bootstrapPlan = {
   },
 };
 
+const bootstrapState = {
+  data: {
+    run: {
+      run_id: "bootstrap-run.ui-001",
+      version: 3,
+      state: "active",
+      release_id: "release.atlas.lab-0.1.0",
+      profile: "linux_lab",
+      organization_id: "organization.enterprise",
+      environment_id: "environment.test",
+      site_id: "site.local",
+      plan_digest: "c".repeat(64),
+      resume_key: "resume.cccccccccccccccccccccccccccccccc",
+      configuration_digest: "b".repeat(64),
+      phase_ids: ["phase.acquire", "phase.configure", "phase.trust"],
+      checkpoints: [
+        {
+          phase_id: "phase.acquire",
+          state: "completed",
+          safe_output_references: ["artifact.release-manifest-001"],
+          recorded_at: "2026-08-04T16:01:00Z",
+        },
+      ],
+      completed_phase_ids: ["phase.acquire"],
+      failed_phase_id: null,
+      current_phase_id: "phase.configure",
+      lease_expires_at: "2026-08-04T16:10:00Z",
+      created_at: "2026-08-04T16:00:00Z",
+      updated_at: "2026-08-04T16:01:00Z",
+    },
+    durable: true,
+    lease_available: false,
+    lease_held_by_current_actor: true,
+    execution_authorized: false,
+    infrastructure_mutation_authorized: false,
+  },
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -199,5 +237,48 @@ describe("deployment configuration preview", () => {
     expect(await screen.findByText("Ordered deployment phases")).toBeVisible();
     expect(screen.getByText("Acquire and verify artifacts")).toBeVisible();
     expect(screen.getByText(/No phase, command, rollback/)).toBeVisible();
+  });
+
+  it("shows durable checkpoint progress without exposing a lease owner or taking action", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) {
+        return Promise.resolve(new Response(JSON.stringify(identity), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-state/current")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapState), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+
+    expect(await screen.findByText("Resume and lease state")).toBeVisible();
+    expect(screen.getByText("Held by this session")).toBeVisible();
+    expect(screen.getByText("phase.configure")).toBeVisible();
+    expect(screen.getByText(/loading this view never claims a lease/)).toBeVisible();
+    expect(screen.queryByText(/subject\.lease-owner/)).not.toBeInTheDocument();
+  });
+
+  it("keeps malformed bootstrap state absent", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) {
+        return Promise.resolve(new Response(JSON.stringify(identity), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-state/current")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: { run: { version: "unsafe" } } }), { status: 200 }),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+
+    expect(await screen.findByText("Platform Operator")).toBeVisible();
+    await waitFor(() => expect(screen.queryByText("Resume and lease state")).not.toBeInTheDocument());
   });
 });
