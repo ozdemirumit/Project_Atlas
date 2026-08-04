@@ -224,8 +224,7 @@ def create_app(
     bootstrap_identity_plan_service: BootstrapIdentityPlanService | None = None,
     bootstrap_identity_handoff_service: BootstrapIdentityHandoffService | None = None,
     bootstrap_integration_plan_service: BootstrapIntegrationPlanService | None = None,
-    bootstrap_integration_validation_service: BootstrapIntegrationValidationService
-    | None = None,
+    bootstrap_integration_validation_service: BootstrapIntegrationValidationService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -627,9 +626,7 @@ def create_app(
         )
         app.state.bootstrap_identity_plan_service = resolved_bootstrap_identity_plan_service
         app.state.bootstrap_identity_handoff_service = resolved_bootstrap_identity_handoff_service
-        app.state.bootstrap_integration_plan_service = (
-            resolved_bootstrap_integration_plan_service
-        )
+        app.state.bootstrap_integration_plan_service = resolved_bootstrap_integration_plan_service
         app.state.bootstrap_integration_validation_service = (
             resolved_bootstrap_integration_validation_service
         )

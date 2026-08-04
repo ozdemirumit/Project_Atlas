@@ -301,8 +301,7 @@ class InMemoryBootstrapStateRepository:
                 if (
                     reclaimed
                     and current.integration_validation is not None
-                    and current.integration_validation.state
-                    is IntegrationValidationState.RUNNING
+                    and current.integration_validation.state is IntegrationValidationState.RUNNING
                 ):
                     interrupted_integrations = replace(
                         current.integration_validation,
@@ -1288,9 +1287,7 @@ class InMemoryBootstrapStateRepository:
                 version=current.version + 1,
                 state=BootstrapRunState.ACTIVE,
                 checkpoints=tuple(
-                    item
-                    for item in current.checkpoints
-                    if item.phase_id != "phase.integrations"
+                    item for item in current.checkpoints if item.phase_id != "phase.integrations"
                 ),
                 integration_validation=execution,
                 updated_at=now,
@@ -1457,9 +1454,7 @@ class InMemoryBootstrapStateRepository:
                     current.identity_handoff if "phase.identity" in reusable else None
                 ),
                 integration_validation=(
-                    current.integration_validation
-                    if "phase.integrations" in reusable
-                    else None
+                    current.integration_validation if "phase.integrations" in reusable else None
                 ),
                 updated_at=now,
             )

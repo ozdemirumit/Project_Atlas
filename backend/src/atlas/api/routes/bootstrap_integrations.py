@@ -62,9 +62,7 @@ async def preview_bootstrap_integration_plan(
         AuthorizationDecision, Depends(authorize_deployment_configuration_preview)
     ],
 ) -> BootstrapIntegrationPlanResponse:
-    service: BootstrapIntegrationPlanService = (
-        request.app.state.bootstrap_integration_plan_service
-    )
+    service: BootstrapIntegrationPlanService = request.app.state.bootstrap_integration_plan_service
     try:
         plan = await service.prepare(
             actor=subject,

@@ -194,8 +194,7 @@ class BootstrapRunRecord:
             if (
                 integration_execution.release_id != self.identity.release_id
                 or integration_execution.profile is not self.identity.profile
-                or integration_execution.configuration_digest
-                != self.identity.configuration_digest
+                or integration_execution.configuration_digest != self.identity.configuration_digest
                 or integration_execution.phase_id not in self.identity.phase_ids
             ):
                 raise ValueError("integration validation does not match the bootstrap run")

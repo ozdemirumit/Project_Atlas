@@ -608,9 +608,7 @@ class IntegrationValidationData(BaseModel):
     evidence: list[IntegrationStateEvidenceData]
 
     @classmethod
-    def from_domain(
-        cls, execution: IntegrationValidationExecution
-    ) -> IntegrationValidationData:
+    def from_domain(cls, execution: IntegrationValidationExecution) -> IntegrationValidationData:
         return cls(
             execution_id=execution.execution_id,
             phase_id=execution.phase_id,

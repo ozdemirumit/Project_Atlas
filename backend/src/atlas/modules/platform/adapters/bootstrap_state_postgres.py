@@ -348,8 +348,7 @@ class PostgreSQLBootstrapStateRepository:
                 if (
                     reclaimed
                     and current.integration_validation is not None
-                    and current.integration_validation.state
-                    is IntegrationValidationState.RUNNING
+                    and current.integration_validation.state is IntegrationValidationState.RUNNING
                 ):
                     interrupted_integrations = replace(
                         current.integration_validation,
@@ -1440,9 +1439,7 @@ class PostgreSQLBootstrapStateRepository:
                 version=current.version + 1,
                 state=BootstrapRunState.ACTIVE,
                 checkpoints=tuple(
-                    item
-                    for item in current.checkpoints
-                    if item.phase_id != "phase.integrations"
+                    item for item in current.checkpoints if item.phase_id != "phase.integrations"
                 ),
                 integration_validation=execution,
                 updated_at=now,
@@ -1623,9 +1620,7 @@ class PostgreSQLBootstrapStateRepository:
                     current.identity_handoff if "phase.identity" in reusable else None
                 ),
                 integration_validation=(
-                    current.integration_validation
-                    if "phase.integrations" in reusable
-                    else None
+                    current.integration_validation if "phase.integrations" in reusable else None
                 ),
                 updated_at=now,
             )
@@ -2437,9 +2432,7 @@ class PostgreSQLBootstrapStateRepository:
             "result_code": execution.result_code,
             "started_at": execution.started_at.isoformat(),
             "completed_at": (
-                execution.completed_at.isoformat()
-                if execution.completed_at is not None
-                else None
+                execution.completed_at.isoformat() if execution.completed_at is not None else None
             ),
             "model_check_count": execution.model_check_count,
             "integration_check_count": execution.integration_check_count,

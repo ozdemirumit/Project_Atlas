@@ -154,9 +154,7 @@ class BootstrapIntegrationPlanData(BaseModel):
                 rate_limit_per_minute=plan.model_endpoint.rate_limit_per_minute,
                 concurrency_limit=plan.model_endpoint.concurrency_limit,
                 telemetry_classification=plan.model_endpoint.telemetry_classification,
-                approved_task_class_ids=list(
-                    plan.model_endpoint.approved_task_class_ids
-                ),
+                approved_task_class_ids=list(plan.model_endpoint.approved_task_class_ids),
             ),
             integrations=[
                 CoreIntegrationRegistrationData(
@@ -258,8 +256,7 @@ class BootstrapIntegrationValidationResultData(BaseModel):
         if execution is None:
             raise ValueError("integration response requires execution evidence")
         mutated = execution.state is IntegrationValidationState.COMPLETED and any(
-            item.disposition is IntegrationStateDisposition.PUBLISHED
-            for item in execution.evidence
+            item.disposition is IntegrationStateDisposition.PUBLISHED for item in execution.evidence
         )
         return cls(
             run=BootstrapRunData.from_domain(result.record),
