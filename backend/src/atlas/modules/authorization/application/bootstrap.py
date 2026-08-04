@@ -44,6 +44,7 @@ SECURITY_EXPORT_OVERVIEW_READ = "security-export.overview.read"
 SECURITY_EXPORT_TEST_CREATE = "security-export.test.create"
 AUDIT_READ = "audit.read"
 AUDIT_EXPORT = "audit.export"
+RELEASE_PREFLIGHT_READ = "platform.release-preflight.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -194,6 +195,17 @@ def storage_overview_scope(organization_id: str, environment: str) -> ResourceSc
         domain_id="domain.storage",
         resource_id="resource.storage.lab-overview",
         capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+def release_preflight_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.platform",
+        resource_id="resource.platform.release-preflight",
+        capability_class=CapabilityClass.C0_INFORMATIONAL,
     )
 
 
@@ -450,6 +462,10 @@ def build_development_authorization_service(
             permission_id=SECURITY_EXPORT_TEST_CREATE,
             description="Dispatch an explicit synthetic security event over TLS.",
         ),
+        PermissionDefinition(
+            permission_id=RELEASE_PREFLIGHT_READ,
+            description="Read one bounded release and host preflight report without mutation.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -476,6 +492,7 @@ def build_development_authorization_service(
                 REPORT_CREATE,
                 SECURITY_EXPORT_OVERVIEW_READ,
                 SECURITY_EXPORT_TEST_CREATE,
+                RELEASE_PREFLIGHT_READ,
             }
         ),
     )
@@ -550,6 +567,16 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=storage_overview_scope(
+                    settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.release-preflight",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=release_preflight_scope(
                     settings.development_organization_id, settings.environment
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),

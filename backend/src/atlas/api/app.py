@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from hashlib import sha256
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,6 +25,7 @@ from atlas.api.routes import (
     platform,
     rca,
     recommendations,
+    release_preflight,
     reports,
     security_export,
     sessions,
@@ -79,6 +81,13 @@ from atlas.modules.investigations.application.service import InvestigationServic
 from atlas.modules.knowledge.adapters.memory import InMemoryKnowledgeRetriever
 from atlas.modules.knowledge.adapters.synthetic import build_synthetic_knowledge_chunks
 from atlas.modules.knowledge.application.service import KnowledgeRetrievalService
+from atlas.modules.platform.adapters.release_preflight import (
+    LabHmacReleaseSignatureVerifier,
+    SyntheticPreflightHostProbe,
+    SyntheticReleaseArtifactInventory,
+    build_synthetic_release_manifest,
+)
+from atlas.modules.platform.application.release_preflight import ReleasePreflightService
 from atlas.modules.platform.application.service import PlatformStatusService
 from atlas.modules.rca.adapters.synthetic import SyntheticStorageRcaAssembler
 from atlas.modules.rca.application.service import RcaService
@@ -118,6 +127,7 @@ def create_app(
     identity_governance_service: IdentityGovernanceService | None = None,
     identity_status_repository: IdentityStatusRepository | None = None,
     workload_identity_service: WorkloadIdentityService | None = None,
+    release_preflight_service: ReleasePreflightService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -169,6 +179,16 @@ def create_app(
     )
     resolved_workload_identity_service = workload_identity_service or WorkloadIdentityService(
         repository=InMemoryWorkloadIdentityRepository(),
+        audit_sink=resolved_audit_sink,
+        environment_id=f"environment.{resolved_settings.environment}",
+    )
+    release_key = sha256(b"atlas-synthetic-release-verifier").digest()
+    release_manifest = build_synthetic_release_manifest(release_key)
+    resolved_release_preflight_service = release_preflight_service or ReleasePreflightService(
+        manifest=release_manifest,
+        signature_verifier=LabHmacReleaseSignatureVerifier(release_key),
+        artifact_inventory=SyntheticReleaseArtifactInventory(release_manifest),
+        host_probe=SyntheticPreflightHostProbe(),
         audit_sink=resolved_audit_sink,
         environment_id=f"environment.{resolved_settings.environment}",
     )
@@ -297,6 +317,7 @@ def create_app(
         app.state.identity_governance_service = resolved_identity_governance_service
         app.state.identity_status_repository = resolved_identity_status_repository
         app.state.workload_identity_service = resolved_workload_identity_service
+        app.state.release_preflight_service = resolved_release_preflight_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -343,6 +364,7 @@ def create_app(
     app.include_router(identity_governance.router, prefix="/api/v1")
     app.include_router(workload_identities.router, prefix="/api/v1")
     app.include_router(platform.router, prefix="/api/v1")
+    app.include_router(release_preflight.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
     app.include_router(health_checks.router, prefix="/api/v1")
