@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-014 |
 | Title | Secure LDAP and Active Directory authentication-provider vertical slice |
-| Status | Ready for Review |
+| Status | Done |
 | Branch | `agent/ldap-directory-auth` |
-| Pull Request | Pending |
+| Pull Request | [#26](https://github.com/ozdemirumit/Project_Atlas/pull/26) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-056, ADR-003 |
 | Last Updated | 2026-08-04 |
-| Next Action | Submit the validated LDAP/AD provider slice for GitHub review and CI |
+| Next Action | Begin ATLAS-IMP-015 secure browser-session and API-token foundation |
 
 ### ATLAS-IMP-014 Acceptance Criteria
 
@@ -65,7 +65,8 @@
   identity, confirming adapter selection did not regress the local workflow.
 - A live enterprise LDAPS bind was not attempted because no customer directory endpoint, trust
   bundle, or test account is configured; network integration validation remains environment-bound.
-- GitHub review and CI are pending.
+- GitHub backend CI passed in 25 seconds and frontend CI passed in 35 seconds on PR #26 head
+  `b159f348f96da18c5151c05b1b02bc2de7b0de56` before the final documentation-only update.
 
 ### ATLAS-IMP-013 Acceptance Criteria
 
