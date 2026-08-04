@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-037 |
 | Title | Governed bootstrap end-to-end verification |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/bootstrap-end-to-end-verification` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-030, ATLAS-032, ATLAS-033, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Implement the bounded verification plan, report, checkpoint, API, and operator review flow |
+| Next Action | Open the implementation PR and complete GitHub CI review |
 
 ### ATLAS-IMP-037 Scope Rationale
 
@@ -59,6 +59,35 @@
 - This slice performs no network request, secret resolution, model inference, connector invocation,
   knowledge mutation, workflow execution, approval creation, backup or restore operation, external
   export, infrastructure mutation, deployment action, or AI recommendation.
+
+### ATLAS-IMP-037 Validation Evidence
+
+- Domain, filesystem, application, checkpoint, API, audit, migration, and PostgreSQL serialization
+  coverage verifies a deterministic 15-check suite, 12 mandatory passes, three explicit
+  not-applicable declarations, zero failed or skipped checks, empty/exact-reusable targets, unknown
+  state rejection, atomic publication, exact replay, strict redacted input, and phase advancement
+  only after complete evidence.
+- Full backend verification passes Ruff formatting and lint, strict mypy across 310 source and test
+  files, one Alembic head at `20260804_0010`, and 337 pytest tests with three existing Windows
+  symbolic-link skips. Full frontend verification passes ESLint, TypeScript, 30 Vitest tests, and
+  the production build.
+- Live browser validation established an enterprise-style LDAP session and completed acquire,
+  configure, trust, data, services, identity, integrations, and verification under one governed
+  lease. The run advanced from source revision 15 through the verification checkpoint to revision
+  17 and selected `phase.handoff` next.
+- Direct filesystem verification found exactly one `atlas-verification-report.json`. It contains
+  schema `atlas.synthetic-verification-report.v1`, suite
+  `atlas.bootstrap-verification-suite.v1`, 15 checks, 12 passes, zero failures, zero skips, three
+  not-applicable checks, 12 mandatory passes, and zero unresolved mandatory checks. All 12 external
+  operation or AI-advice flags are false.
+- The 4,783-byte live report has SHA-256
+  `8db59babdb99b95f8afe5dc35c7163e43684ad41d24763742855957154ef3a51` and no URL, Reader
+  Token, authorization header, bearer value, password, private key, prompt, or response text.
+- Live presentation passed at 1440x900 and 390x844. The verification confirmation and result were
+  width-stable with document, card, and list scroll widths equal to their client widths; browser
+  warning/error logs were empty.
+- Source implementation is committed as `3389466`; the pull request and GitHub CI evidence are
+  pending.
 
 ### ATLAS-IMP-036 Scope Rationale
 
