@@ -16,6 +16,7 @@ from atlas.api.routes import (
     api_credentials,
     approvals,
     audit_export,
+    deployment_configuration,
     graph,
     health,
     health_checks,
@@ -87,6 +88,9 @@ from atlas.modules.platform.adapters.release_preflight import (
     SyntheticReleaseArtifactInventory,
     build_synthetic_release_manifest,
 )
+from atlas.modules.platform.application.deployment_configuration import (
+    DeploymentConfigurationService,
+)
 from atlas.modules.platform.application.release_preflight import ReleasePreflightService
 from atlas.modules.platform.application.service import PlatformStatusService
 from atlas.modules.rca.adapters.synthetic import SyntheticStorageRcaAssembler
@@ -128,6 +132,7 @@ def create_app(
     identity_status_repository: IdentityStatusRepository | None = None,
     workload_identity_service: WorkloadIdentityService | None = None,
     release_preflight_service: ReleasePreflightService | None = None,
+    deployment_configuration_service: DeploymentConfigurationService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -191,6 +196,15 @@ def create_app(
         host_probe=SyntheticPreflightHostProbe(),
         audit_sink=resolved_audit_sink,
         environment_id=f"environment.{resolved_settings.environment}",
+    )
+    resolved_deployment_configuration_service = (
+        deployment_configuration_service
+        or DeploymentConfigurationService(
+            release_id=release_manifest.release_id,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
+            audit_sink=resolved_audit_sink,
+        )
     )
     resolved_authorization_service = (
         authorization_service
@@ -318,6 +332,7 @@ def create_app(
         app.state.identity_status_repository = resolved_identity_status_repository
         app.state.workload_identity_service = resolved_workload_identity_service
         app.state.release_preflight_service = resolved_release_preflight_service
+        app.state.deployment_configuration_service = resolved_deployment_configuration_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -365,6 +380,7 @@ def create_app(
     app.include_router(workload_identities.router, prefix="/api/v1")
     app.include_router(platform.router, prefix="/api/v1")
     app.include_router(release_preflight.router, prefix="/api/v1")
+    app.include_router(deployment_configuration.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
     app.include_router(health_checks.router, prefix="/api/v1")

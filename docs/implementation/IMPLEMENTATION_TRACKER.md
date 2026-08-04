@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-025 |
 | Title | Versioned deployment configuration preview foundation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/deployment-configuration-preview` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Implement the bounded read-only configuration validation and preview slice |
+| Next Action | Open the implementation pull request and complete GitHub CI review |
 
 ### ATLAS-IMP-025 Scope Rationale
 
@@ -53,7 +53,20 @@
 
 ### ATLAS-IMP-025 Validation Evidence
 
-- Pending implementation and validation.
+- Backend tests pass for deterministic canonicalization, overlay precedence, source provenance,
+  secret-safe digesting, unsafe bind and URL rejection, immutable component references, duplicate
+  resources, autonomous-execution denial, strict request parsing, exact-scope denial, redaction, and
+  required-audit failure.
+- Full backend verification passes: Ruff format/check, mypy across 231 source files, and 268 pytest
+  tests. The three warnings remain existing third-party Starlette and ldap3 deprecations.
+- Full frontend verification passes: ESLint, TypeScript, 15 Vitest tests, and the Vite production
+  build. Forbidden and malformed discovery responses do not render a configuration surface.
+- Live API validation passed for a safe Linux-lab plan and a failed unsafe overlay containing a
+  wildcard bind, credential-bearing URL, and plaintext secret; neither the response nor its digest
+  disclosed or varied with rejected secret material.
+- Live UI validation passed for Linux-lab and developer profiles at 1440x900 and 390x844, with
+  deterministic profile-specific values, no horizontal overflow, and no browser warning/error logs.
+- GitHub pull request and required CI evidence are pending.
 
 ### ATLAS-IMP-024 Scope Rationale
 

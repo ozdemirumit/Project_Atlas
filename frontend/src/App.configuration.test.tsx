@@ -1,0 +1,144 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { App } from "./App";
+
+const identity = {
+  data: {
+    subject_id: "subject.enterprise.platform-operator",
+    display_name: "Platform Operator",
+    subject_kind: "human",
+    organization_id: "organization.enterprise",
+    role_ids: ["role.platform-operator"],
+    group_ids: [],
+    authentication: {
+      provider_id: "provider.ldap.enterprise",
+      method: "ldap",
+      assurance_level: "multi_factor",
+      authenticated_at: "2026-08-04T16:00:00Z",
+    },
+    scope: {
+      organization_id: "organization.enterprise",
+      environment_id: "environment.test",
+      site_id: "site.local",
+      domain_id: "domain.identity",
+      resource_id: "resource.identity.self",
+      capability_class: "C0",
+    },
+    authorization_decision_id: "decision.configuration.ui",
+    effective_role_versions: ["role.platform-operator:v1"],
+    effective_assignment_versions: ["assignment.platform-configuration:1"],
+  },
+};
+
+function configurationPreview(profile = "linux_lab") {
+  return {
+    data: {
+      preview_id: "configuration-preview.ui.001",
+      schema_version: "atlas.deployment-configuration-preview.v1",
+      release_id: "release.atlas.lab-0.1.0",
+      profile,
+      organization_id: "organization.enterprise",
+      environment_id: "environment.test",
+      site_id: "site.local",
+      state: "passed",
+      configuration_digest: "b".repeat(64),
+      fields: [
+        {
+          path: "api.bind",
+          display_value: "127.0.0.1",
+          source: "release_default",
+          sensitive: false,
+        },
+        {
+          path: "secret_references",
+          display_value: "2 opaque references",
+          source: "release_default",
+          sensitive: true,
+        },
+      ],
+      validations: [
+        {
+          code: "configuration.secrets.references-only",
+          state: "passed",
+          summary: "Secrets use opaque references only.",
+          evidence: "validated",
+          remediation: null,
+        },
+      ],
+      generated_at: "2026-08-04T16:00:00Z",
+      correlation_id: "correlation.configuration.ui",
+      mutation_authorized: false,
+      execution_authorized: false,
+    },
+  };
+}
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+
+describe("deployment configuration preview", () => {
+  it("shows an authorized redacted preview and follows the selected profile", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    const requestBodies: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) {
+        return Promise.resolve(new Response(JSON.stringify(identity), { status: 200 }));
+      }
+      if (url.includes("/deployment-configuration/preview")) {
+        const body = typeof init?.body === "string" ? init.body : "";
+        requestBodies.push(body);
+        const profile = body.includes('"profile":"developer"') ? "developer" : "linux_lab";
+        return Promise.resolve(
+          new Response(JSON.stringify(configurationPreview(profile)), { status: 200 }),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Versioned deployment preview")).toBeVisible();
+    expect(screen.getByText("Secrets use opaque references only.")).toBeVisible();
+    expect(screen.getByText(/No file write, secret provisioning, port change/)).toBeVisible();
+    expect(screen.queryByText(/top-secret-value/)).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(requestBodies.some((body) => body.includes('"profile":"linux_lab"'))).toBe(true),
+    );
+  });
+
+  it("keeps forbidden or malformed discovery absent", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) {
+        return Promise.resolve(new Response(JSON.stringify(identity), { status: 200 }));
+      }
+      if (url.includes("/deployment-configuration/preview")) {
+        return Promise.resolve(new Response(JSON.stringify({ data: { state: "passed" } }), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Platform Operator")).toBeVisible();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("heading", { name: "Versioned deployment preview" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+});

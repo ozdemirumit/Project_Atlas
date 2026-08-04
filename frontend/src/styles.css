@@ -808,6 +808,146 @@ textarea:focus-visible {
   }
 }
 
+.deployment-configuration-section {
+  border-top: 1px solid #dbe3e0;
+}
+
+.deployment-configuration-heading .state-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.configuration-identity-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 18px 0 12px;
+  background: #dbe3e0;
+  border: 1px solid #dbe3e0;
+}
+
+.configuration-identity-strip > div {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  padding: 11px;
+  background: #fbfcfc;
+}
+
+.configuration-identity-strip span {
+  color: #63716d;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.configuration-identity-strip strong,
+.configuration-identity-strip code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.configuration-preview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.configuration-field-list,
+.configuration-validation-list {
+  min-width: 0;
+  border: 1px solid #dbe3e0;
+  border-radius: 6px;
+}
+
+.configuration-field-list h3,
+.configuration-validation-list h3 {
+  margin: 0;
+  padding: 11px 12px;
+  border-bottom: 1px solid #dbe3e0;
+  font-size: 0.82rem;
+}
+
+.configuration-field,
+.configuration-validation {
+  min-width: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e6ece9;
+}
+
+.configuration-field:last-child,
+.configuration-validation:last-child {
+  border-bottom: 0;
+}
+
+.configuration-field,
+.configuration-field > div,
+.configuration-validation {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.configuration-field > div,
+.configuration-validation > div {
+  min-width: 0;
+}
+
+.configuration-field > div {
+  display: grid;
+  justify-content: initial;
+  gap: 3px;
+}
+
+.configuration-field span {
+  color: #63716d;
+  font-size: 0.7rem;
+  text-transform: capitalize;
+}
+
+.configuration-field strong,
+.configuration-validation code,
+.configuration-validation strong,
+.configuration-validation small {
+  overflow-wrap: anywhere;
+}
+
+.configuration-validation {
+  justify-content: initial;
+}
+
+.configuration-validation > div {
+  display: grid;
+  gap: 4px;
+}
+
+.configuration-validation small {
+  color: #63716d;
+}
+
+@media (max-width: 980px) {
+  .configuration-identity-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .configuration-preview-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .configuration-identity-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .configuration-field {
+    display: grid;
+  }
+}
+
 .workload-create-form {
   margin: 14px 14px 0;
   overflow: hidden;
