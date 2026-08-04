@@ -4,14 +4,61 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-039 |
-| Title | Governed support bundle preview and local export foundation |
-| Status | Review |
-| Branch | `agent/support-bundle-foundation` |
-| Pull Request | [#51](https://github.com/ozdemirumit/Project_Atlas/pull/51) |
-| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-033, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056, ATLAS-057, ATLAS-059 |
+| Task ID | ATLAS-IMP-040 |
+| Title | Governed backup capture and isolated restore-validation foundation |
+| Status | In Progress |
+| Branch | `agent/backup-restore-foundation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Verify PR #51 CI, merge, and synchronize `main` |
+| Next Action | Implement the bounded logical backup and isolated restore-validation vertical slice |
+
+### ATLAS-IMP-040 Scope Rationale
+
+- ATLAS-038, ATLAS-056, ATLAS-057, and ATLAS-059 require backup integrity and successful restore
+  evidence before production readiness. The completed bootstrap, verification, handoff, and support
+  foundations now provide a coherent Atlas-owned state boundary that can support a first governed
+  backup lifecycle without touching customer infrastructure.
+- This workspace has no approved production database, object store, backup appliance, KMS key,
+  secret-manager recovery contract, retention authority, RPO/RTO, or disaster-recovery environment.
+  This slice therefore protects only a bounded logical projection of Atlas-owned synthetic bootstrap
+  evidence and validates it in an isolated ephemeral target. It does not claim production backup,
+  database point-in-time recovery, secret recovery, customer-data protection, HA, or DR readiness.
+
+### ATLAS-IMP-040 Acceptance Criteria
+
+- A versioned read-only preview binds the exact completed bootstrap run and revision, release and
+  profile identity, handoff and verification evidence, selected allowlisted logical components,
+  backup schema/catalog versions, classifications, deterministic entry digests, size budgets,
+  retention guidance, and exact intended local archive target.
+- The logical backup catalog contains only typed Atlas-owned release, configuration-schema,
+  bootstrap-checkpoint, verification, identity/integration handoff, and operational-handoff
+  projections. It rejects arbitrary paths, raw database pages, logs, audit payloads, credentials,
+  tokens, private keys, prompts, customer documents, unrestricted topology, command lines, and
+  unknown entry types before archive generation.
+- A strict C2 create request binds the exact preview identity and digest, completed run revision,
+  source-evidence digests, expected empty or byte-for-byte reusable local target, justification,
+  confirmation, and idempotency key. Changed replay, stale evidence, cross-scope access, unsafe
+  target, budget failure, or unavailable audit fails closed.
+- Execution atomically publishes one deterministic integrity-manifested local archive and returns
+  its digest, size, entry inventory, expiry guidance, and explicit zero-external-transfer evidence.
+  Exact replay reuses identical bytes and interruption never exposes a partial archive.
+- Restore validation reads only the governed archive, verifies archive and per-entry integrity,
+  parses strict versioned schemas, reconstructs the logical projection in an isolated ephemeral
+  store, checks required relationships and source consistency, and emits a deterministic validation
+  report. It never writes to active repositories, restores secrets, changes bootstrap state, or
+  claims an operational recovery.
+- The web flow requires preview review, justification, and explicit backup confirmation, followed
+  by a separate isolated restore-validation action. It shows scope, entries, exclusions, integrity,
+  local-only boundaries, restore verdict, limitations, and expiry without filesystem internals.
+- Default-deny RBAC, separate create and validation permissions, browser CSRF, audit, correlation,
+  no-store, safe errors, PostgreSQL metadata persistence, strict parsing, path safety, deterministic
+  serialization, automated tests, live enterprise-session execution, and desktop/mobile validation
+  apply.
+- This slice performs no network request, external backup upload, production database dump, active
+  restore, secret export, ticket or notification creation, model inference, connector invocation,
+  knowledge mutation, workflow execution, approval creation, deployment action, or infrastructure
+  mutation.
 
 ### ATLAS-IMP-039 Scope Rationale
 
@@ -80,6 +127,8 @@
 - Source implementation is committed at `3fb49cc` (`feat: add governed local support bundles`).
 - PR #51 CI run `30954806212` passed backend and frontend validation before the final evidence-only
   tracker update.
+- Final PR #51 CI run `30954940017` passed backend and frontend validation. PR #51 merged as
+  `e4756e9a4409871f4dd4e179cf7c37f0b869c47b`, and local `main` matched `origin/main` afterward.
 
 ### ATLAS-IMP-038 Scope Rationale
 
@@ -2142,6 +2191,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-036 | Governed bootstrap model and core-integration validation | Completed through [PR #48](https://github.com/ozdemirumit/Project_Atlas/pull/48) from source commit `7e1b894`; 333 backend tests, 29 frontend tests, live offline integration validation and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-037 | Governed bootstrap end-to-end verification | Completed through [PR #49](https://github.com/ozdemirumit/Project_Atlas/pull/49) from source commit `3389466`; 337 backend tests, 30 frontend tests, live 15-check verification and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-038 | Governed bootstrap operational handoff | Completed through [PR #50](https://github.com/ozdemirumit/Project_Atlas/pull/50) from source commit `8673edd`; 342 backend tests, 31 frontend tests, live nine-phase handoff and desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-039 | Governed support bundle preview and local export foundation | Completed through [PR #51](https://github.com/ozdemirumit/Project_Atlas/pull/51) from source commit `3fb49cc`; 348 backend tests, 32 frontend tests, live deterministic local ZIP export and desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
