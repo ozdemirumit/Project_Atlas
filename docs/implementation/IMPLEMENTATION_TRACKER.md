@@ -4,14 +4,72 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-035 |
-| Title | Governed bootstrap identity and enterprise authentication handoff |
-| Status | Review |
-| Branch | `agent/bootstrap-identity-handoff` |
-| Pull Request | [PR #47](https://github.com/ozdemirumit/Project_Atlas/pull/47) |
-| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-056, ATLAS-057, ATLAS-059 |
+| Task ID | ATLAS-IMP-036 |
+| Title | Governed bootstrap model gateway and core integration validation |
+| Status | In Progress |
+| Branch | `agent/bootstrap-integration-validation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-014, ATLAS-030, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Complete GitHub review and CI, merge PR #47, then scope `phase.integrations` |
+| Next Action | Implement bounded synthetic model and core-integration validation for `phase.integrations` |
+
+### ATLAS-IMP-036 Scope Rationale
+
+- ATLAS-038 places model-endpoint and core-integration validation after the identity handoff and
+  before end-to-end verification. IMP-014 through IMP-023 provide the existing identity, audit,
+  Syslog/SIEM, secret-reference, and workload-identity foundations; IMP-035 now provides exact
+  completed identity evidence. The bootstrap run still cannot bind those controls to an approved
+  model-gateway registration and a resumable integration-validation checkpoint.
+- No approved live model base URL, Reader Token value, customer directory, ITSM/CMDB/notification
+  endpoint, object/vector service, or production trust bundle is available in this workspace. This
+  first slice therefore validates only deterministic synthetic adapters and Atlas-owned state for
+  developer and Linux-lab profiles. It records opaque endpoint and credential references, capability
+  contracts, non-sensitive synthetic checks, mapping previews, permissions, data-flow boundaries,
+  unavailable/disabled behavior, and audit evidence without resolving a secret or making a network
+  request.
+
+### ATLAS-IMP-036 Acceptance Criteria
+
+- A read-only versioned integration-validation plan binds release/profile/scope, configuration,
+  trust, data, service, and identity-plan digests, completed service readiness, completed identity
+  handoff and recovery evidence, a bounded model-endpoint registration, and a bounded catalog of core
+  synthetic integrations.
+- Model registration exposes only stable endpoint/model IDs, owner, provider type, opaque local
+  service and Reader Token references, data-classification ceiling, residency boundary, context/output
+  limits, timeout/retry/rate/concurrency policy, telemetry classification, and approved task classes.
+  Base URLs, DNS results, routes, certificate content, Reader Token values, prompts, responses,
+  customer data, and arbitrary provider metadata are absent.
+- Model validation deterministically covers OpenAI-compatible request shape, exact model identity,
+  structured output, bounded tool-proposal format, streaming capability, timeout and limit policy,
+  telemetry/data-boundary policy, and one non-sensitive synthetic inference fixture. Text generation
+  alone never proves tool safety, operational correctness, or production readiness.
+- Core integration entries bind stable integration ID, type, owner, purpose, environment,
+  classification, endpoint/trust/credential references, scope and rate policy, mapping-preview ID,
+  non-changing validation operation, expected data flow, and activation state. Duplicate IDs,
+  unsupported types, write-capable checks, insecure transport, plaintext credentials, broad scope,
+  missing owner, unbounded rates, or activation requests fail before target mutation.
+- The initial catalog remains bounded to synthetic local model gateway, enterprise identity metadata,
+  TLS security-export metadata, and the existing read-only storage connector contract needed by the
+  selected profile. No LDAP bind, Syslog/SIEM delivery, ITSM/CMDB/notification request, model network
+  call, connector invocation, knowledge ingestion, or external state change occurs in this slice.
+- A strict C2 request binds the exact leased run/revision, all prior plan identities and evidence,
+  integration schema/digest, expected empty or byte-for-byte reusable target, `phase.integrations`,
+  justification, and idempotency key. Scope mismatch, stale or changed replay, foreign lease,
+  interruption, and out-of-order execution fail closed.
+- Execution requires all six prior checkpoints and exact identity recovery/mapping/enterprise-auth
+  evidence. It atomically publishes one bounded synthetic integration-validation state document,
+  records per-check pass/fail/not-applicable status and safe digest/disposition evidence, and advances
+  to `phase.verify`; mandatory failure keeps the phase failed and dependencies unavailable.
+- The UI requires review, explicit justification, and confirmation; it shows model capability,
+  integration classification, mapping, validation, disabled activation, and degraded-boundary evidence
+  without endpoint/token entry, secret display, live test buttons, provider activation, connector
+  execution, knowledge ingestion, workflow execution, infrastructure controls, or AI-generated advice.
+- Required RBAC, browser CSRF, audit, correlation, no-store, safe errors, PostgreSQL persistence, exact
+  replay, atomic publication, path safety, interrupted recovery, strict parsing, full automated tests,
+  live enterprise-session flow, and desktop/mobile presentation validation apply.
+- This slice does not resolve or create a secret, credential, token, certificate, endpoint, route,
+  model deployment, vector/object store, directory/ITSM/SIEM/Syslog/notification connection, connector
+  session, knowledge record, infrastructure resource, AI recommendation, or operational action.
 
 ### ATLAS-IMP-035 Scope Rationale
 
@@ -80,8 +138,9 @@
   were empty.
 - Source implementation is committed as `652218f` and is under review in
   [PR #47](https://github.com/ozdemirumit/Project_Atlas/pull/47).
-- GitHub backend and frontend CI jobs passed for review commit `541e4a1` in
-  [run 30942545234](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30942545234).
+- GitHub backend and frontend CI jobs passed for final review commit `b4b499a` in
+  [run 30942678540](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30942678540),
+  and the slice merged as `c578644`.
 
 ### ATLAS-IMP-034 Scope Rationale
 
@@ -1823,6 +1882,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-032 | Governed bootstrap trust bundle and workload identity provisioning | Completed through [PR #44](https://github.com/ozdemirumit/Project_Atlas/pull/44) from source commit `e9b8b7c`; 317 backend tests, 25 frontend tests, live exact-lease trust publication and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-033 | Governed bootstrap data-service initialization and migration | Completed through [PR #45](https://github.com/ozdemirumit/Project_Atlas/pull/45) from source commit `996a25c`; 321 backend tests, 26 frontend tests, live clean synthetic schema initialization and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-034 | Governed bootstrap service deployment and readiness | Completed through [PR #46](https://github.com/ozdemirumit/Project_Atlas/pull/46) from source commit `661395f`; 325 backend tests, 27 frontend tests, live two-service readiness and desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-035 | Governed bootstrap identity and enterprise authentication handoff | Completed through [PR #47](https://github.com/ozdemirumit/Project_Atlas/pull/47) from source commit `652218f`; 329 backend tests, 28 frontend tests, live secret-free identity handoff and desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
