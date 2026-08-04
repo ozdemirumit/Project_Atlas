@@ -4,14 +4,68 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-013 |
-| Title | Governed Syslog and SIEM security-event export vertical slice |
-| Status | Done |
-| Branch | `agent/syslog-siem-export` |
-| Pull Request | [#25](https://github.com/ozdemirumit/Project_Atlas/pull/25) |
-| Governing Documents | ATLAS-002, ATLAS-003, ATLAS-016, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-034, ATLAS-035, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
+| Task ID | ATLAS-IMP-014 |
+| Title | Secure LDAP and Active Directory authentication-provider vertical slice |
+| Status | Ready for Review |
+| Branch | `agent/ldap-directory-auth` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-056, ADR-003 |
 | Last Updated | 2026-08-04 |
-| Next Action | Select ATLAS-IMP-014 from the documented implementation sequence |
+| Next Action | Submit the validated LDAP/AD provider slice for GitHub review and CI |
+
+### ATLAS-IMP-014 Acceptance Criteria
+
+- The enterprise directory provider implements the existing identity-provider port and produces the
+  same normalized subject contract used by development identity; replacing the adapter does not
+  bypass authentication, RBAC, policy, approval, or audit boundaries.
+- Production-capable directory endpoints are versioned and `ldaps://` only, require CA-backed
+  certificate and hostname validation, use bounded connection and response timeouts, and never
+  downgrade to plain LDAP or disabled certificate verification.
+- Basic credentials are accepted only for the directory provider, decoded with strict bounds, used
+  only for the bind operation, excluded from representations and audit records, and never retained,
+  queued, reported, or sent to an LLM.
+- User principals and search filters are constructed from validated usernames and escaped values;
+  ambiguous, duplicate, missing, malformed, oversized, or control-character attributes fail closed.
+- Directory endpoints use deterministic bounded failover for provider unavailability; rejected
+  credentials do not fan out across endpoints and provider outages never become authenticated
+  identities.
+- Stable internal subject and group identifiers are derived deterministically without exposing raw
+  directory object identifiers or distinguished names in durable Atlas identifiers.
+- Directory groups grant no authority by themselves. Only explicit, versioned allowlist mappings can
+  add Atlas group and role identifiers, and existing exact-scope assignments remain mandatory.
+- Group retrieval is bounded by configured count and nesting depth; overflow, unsupported nesting,
+  unmapped groups, and stale or incomplete results cannot silently broaden access.
+- Authentication success, denial, and provider failure are audited with stable subject context when
+  known, method and assurance, generic result codes, and no password, token, raw claim, or directory
+  secret disclosure.
+- Configuration rejects simultaneous development and enterprise providers, incomplete directory
+  profiles, insecure endpoints, missing trust configuration, invalid mapping identifiers, and
+  synthetic directory mode in production.
+- Tests cover success, denial, malformed credentials, secret redaction, TLS configuration, exact
+  group mapping, group limits, deterministic failover, provider outage, and authentication-versus-
+  authorization separation.
+- This slice provides authentication decision support only; it does not add approval workflow,
+  directory account provisioning, autonomous role assignment, or infrastructure execution authority.
+
+### ATLAS-IMP-014 Validation Evidence
+
+- Backend Ruff check and format verification passed across 181 files.
+- Strict backend type checking passed across all 178 source and test files.
+- Full backend test suite passed: 163 tests, including thirteen directory-identity tests for
+  normalized identities, explicit group mapping, malformed credentials, deterministic failover,
+  rejection without failover, bounded group retrieval, provider outage audit, generic credential
+  denial, authentication-versus-authorization separation, TLS-only configuration, nested-group
+  rejection, and trust-file validation before network access.
+- Frontend TypeScript, ESLint, integrated user-flow test, and production build all passed without a
+  frontend contract change.
+- The production/stable `ldap3==2.9.1` release is pinned in `uv.lock`; TLS uses platform-required
+  certificate validation and the configured CA file, while insecure LDAP and trust downgrade are
+  rejected.
+- The live development API remained healthy and returned the existing server-configured development
+  identity, confirming adapter selection did not regress the local workflow.
+- A live enterprise LDAPS bind was not attempted because no customer directory endpoint, trust
+  bundle, or test account is configured; network integration validation remains environment-bound.
+- GitHub review and CI are pending.
 
 ### ATLAS-IMP-013 Acceptance Criteria
 

@@ -52,6 +52,7 @@ from atlas.modules.health_checks.adapters.synthetic import (
 )
 from atlas.modules.health_checks.application.service import HealthCheckService
 from atlas.modules.identity.adapters.development import DevelopmentIdentityProvider
+from atlas.modules.identity.adapters.directory import build_directory_identity_provider
 from atlas.modules.identity.application.ports import IdentityProvider
 from atlas.modules.identity.application.service import IdentityService
 from atlas.modules.investigations.adapters.synthetic import SyntheticInvestigationAssembler
@@ -103,7 +104,12 @@ def create_app(
         site_id="site.local",
     )
     resolved_audit_sink: AuditSink = resolved_security_export_service
-    resolved_identity_provider = identity_provider or DevelopmentIdentityProvider(resolved_settings)
+    if identity_provider is not None:
+        resolved_identity_provider = identity_provider
+    elif resolved_settings.directory_identity_enabled:
+        resolved_identity_provider = build_directory_identity_provider(resolved_settings)
+    else:
+        resolved_identity_provider = DevelopmentIdentityProvider(resolved_settings)
     identity_service = IdentityService(
         provider=resolved_identity_provider,
         audit_sink=resolved_audit_sink,
