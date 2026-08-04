@@ -6,9 +6,9 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-019 |
 | Title | Governed personal API credential lifecycle |
-| Status | Ready for Review |
+| Status | Review |
 | Branch | `agent/governed-api-credentials` |
-| Pull Request | Pending |
+| Pull Request | [PR #31](https://github.com/ozdemirumit/Project_Atlas/pull/31) |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
 | Last Updated | 2026-08-04 |
 | Next Action | Open the ATLAS-IMP-019 pull request, pass CI, merge, and synchronize `main` |
