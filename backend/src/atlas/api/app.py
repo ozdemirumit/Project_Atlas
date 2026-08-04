@@ -17,6 +17,7 @@ from atlas.api.routes import (
     approvals,
     audit_export,
     bootstrap_plan,
+    bootstrap_state,
     deployment_configuration,
     graph,
     health,
@@ -83,6 +84,12 @@ from atlas.modules.investigations.application.service import InvestigationServic
 from atlas.modules.knowledge.adapters.memory import InMemoryKnowledgeRetriever
 from atlas.modules.knowledge.adapters.synthetic import build_synthetic_knowledge_chunks
 from atlas.modules.knowledge.application.service import KnowledgeRetrievalService
+from atlas.modules.platform.adapters.bootstrap_state_memory import (
+    InMemoryBootstrapStateRepository,
+)
+from atlas.modules.platform.adapters.bootstrap_state_postgres import (
+    PostgreSQLBootstrapStateRepository,
+)
 from atlas.modules.platform.adapters.release_preflight import (
     LabHmacReleaseSignatureVerifier,
     SyntheticPreflightHostProbe,
@@ -90,6 +97,7 @@ from atlas.modules.platform.adapters.release_preflight import (
     build_synthetic_release_manifest,
 )
 from atlas.modules.platform.application.bootstrap_plan import BootstrapPlanService
+from atlas.modules.platform.application.bootstrap_state import BootstrapStateService
 from atlas.modules.platform.application.deployment_configuration import (
     DeploymentConfigurationService,
 )
@@ -136,6 +144,7 @@ def create_app(
     release_preflight_service: ReleasePreflightService | None = None,
     deployment_configuration_service: DeploymentConfigurationService | None = None,
     bootstrap_plan_service: BootstrapPlanService | None = None,
+    bootstrap_state_service: BootstrapStateService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -214,6 +223,20 @@ def create_app(
         site_id="site.local",
         audit_sink=resolved_audit_sink,
     )
+    if bootstrap_state_service is not None:
+        resolved_bootstrap_state_service = bootstrap_state_service
+    else:
+        bootstrap_state_repository = (
+            PostgreSQLBootstrapStateRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryBootstrapStateRepository()
+        )
+        resolved_bootstrap_state_service = BootstrapStateService(
+            repository=bootstrap_state_repository,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
+            audit_sink=resolved_audit_sink,
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -342,6 +365,7 @@ def create_app(
         app.state.release_preflight_service = resolved_release_preflight_service
         app.state.deployment_configuration_service = resolved_deployment_configuration_service
         app.state.bootstrap_plan_service = resolved_bootstrap_plan_service
+        app.state.bootstrap_state_service = resolved_bootstrap_state_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -354,6 +378,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_bootstrap_state_service.close()
         await database_probe.close()
 
     app = FastAPI(
@@ -391,6 +416,7 @@ def create_app(
     app.include_router(release_preflight.router, prefix="/api/v1")
     app.include_router(deployment_configuration.router, prefix="/api/v1")
     app.include_router(bootstrap_plan.router, prefix="/api/v1")
+    app.include_router(bootstrap_state.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
     app.include_router(health_checks.router, prefix="/api/v1")

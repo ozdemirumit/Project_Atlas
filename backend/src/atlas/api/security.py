@@ -22,6 +22,8 @@ from atlas.modules.authorization.application.bootstrap import (
     AUDIT_EXPORT,
     AUDIT_READ,
     BOOTSTRAP_PLAN_READ,
+    BOOTSTRAP_STATE_MANAGE,
+    BOOTSTRAP_STATE_READ,
     DEPLOYMENT_CONFIGURATION_PREVIEW,
     GRAPH_STORAGE_IMPACT_READ,
     HEALTH_CHECK_OVERVIEW_READ,
@@ -49,6 +51,7 @@ from atlas.modules.authorization.application.bootstrap import (
     approval_scope,
     audit_export_scope,
     bootstrap_plan_scope,
+    bootstrap_state_scope,
     current_identity_scope,
     deployment_configuration_scope,
     graph_storage_impact_scope,
@@ -703,6 +706,62 @@ async def authorize_bootstrap_plan_read(
         )
     request.state.authorization_decision = decision
     return decision
+
+
+async def _authorize_bootstrap_state(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.platform.bootstrap-state",
+            scope=bootstrap_state_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="Bootstrap coordination is not authorized.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_bootstrap_state_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_bootstrap_state(
+        request,
+        subject,
+        permission_id=BOOTSTRAP_STATE_READ,
+        capability_class=CapabilityClass.C0_INFORMATIONAL,
+    )
+
+
+async def authorize_bootstrap_state_manage(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_bootstrap_state(
+        request,
+        subject,
+        permission_id=BOOTSTRAP_STATE_MANAGE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
 
 
 async def authorize_ai_grounded_query(

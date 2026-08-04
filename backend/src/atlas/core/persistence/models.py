@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, Integer, String, func
+from sqlalchemy import CheckConstraint, DateTime, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -27,3 +27,40 @@ class RuntimeMetadata(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class BootstrapRunModel(Base):
+    __tablename__ = "platform_bootstrap_runs"
+    __table_args__ = (
+        CheckConstraint("version > 0", name="ck_platform_bootstrap_runs_version_positive"),
+        UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "site_id",
+            name="uq_platform_bootstrap_runs_deployment",
+        ),
+    )
+
+    run_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    release_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    profile: Mapped[str] = mapped_column(String(32), nullable=False)
+    plan_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    resume_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    configuration_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    phase_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    checkpoints: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    idempotency_records: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    lease_holder_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_acquired_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

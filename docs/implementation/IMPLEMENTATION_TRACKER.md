@@ -4,14 +4,68 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-026 |
-| Title | Deterministic bootstrap plan and resume-state foundation |
+| Task ID | ATLAS-IMP-027 |
+| Title | Persistent bootstrap checkpoint and lease foundation |
 | Status | Done |
-| Branch | `agent/bootstrap-plan-foundation` |
-| Pull Request | [#38](https://github.com/ozdemirumit/Project_Atlas/pull/38) |
-| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
+| Branch | `agent/bootstrap-checkpoint-lease` |
+| Pull Request | [#39](https://github.com/ozdemirumit/Project_Atlas/pull/39) |
+| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Merge PR #38 and select the next bounded MVP-005 implementation slice |
+| Next Action | Merge PR #39 and select the next bounded MVP-005 implementation slice |
+
+### ATLAS-IMP-027 Scope Rationale
+
+- ATLAS-038 requires bootstrap state to survive interruption, invalidate unsafe resumes, preserve
+  completed-step evidence, and prevent two bootstrap processes from modifying one deployment.
+- This slice adds the coordination and persistence boundary before any phase executor exists: a
+  versioned state record, atomic lease ownership, dependency-aware checkpoints, PostgreSQL schema
+  and adapter, an equivalent in-memory development adapter, and governed API/UI visibility.
+- Claiming a coordination lease or recording externally supplied phase evidence changes only Atlas
+  bootstrap metadata. It never runs a phase, command, rollback, migration, installer, or
+  infrastructure operation.
+
+### ATLAS-IMP-027 Acceptance Criteria
+
+- A bootstrap run binds organization, environment, site, release, profile, plan digest, resume key,
+  configuration digest, phase order, current revision, completed and failed phases, safe output
+  references, lease state, and timestamps. Unknown fields, unsafe identifiers, secrets, and
+  unbounded output fail closed.
+- Lease acquisition is atomic, bounded in duration, idempotent, and tied to the authenticated browser session.
+  A live foreign lease blocks a second claimant without disclosing its owner; an expired lease may
+  be reclaimed with explicit audit evidence.
+- Checkpoint updates require the active lease, expected revision, exact plan identity, an
+  idempotency key, and satisfied phase dependencies. Replays return the prior result; stale,
+  reordered, skipped, conflicting, or foreign updates fail closed.
+- PostgreSQL storage uses a migration, unique deployment identity, row-level serialization, revision
+  checks, and JSON-safe phase evidence. The in-memory development adapter follows the same atomic
+  contract and is explicitly reported as non-durable.
+- Exact-scope C0 read and C2 metadata-mutation permissions, browser CSRF, required audit, correlation
+  IDs, and `no-store` delivery apply. Required audit failure blocks or compensates every mutation.
+- The operations UI reports checkpoint revision, durability, completed/failed/current phases, lease
+  availability and expiry, and the non-execution boundary. It never acquires a lease or records a
+  checkpoint merely by loading the page.
+- Automated and live tests cover create/resume, replay, concurrency conflict, expiry reclaim, stale
+  revision, dependency order, plan mismatch, redaction, audit failure, persistence mapping, empty
+  state, malformed response, and responsive desktop/mobile presentation.
+- This slice does not execute bootstrap phases, invoke connectors or shell commands, provision
+  resources, authorize infrastructure mutation, implement rollback, or claim production digital
+  twin fidelity.
+
+### ATLAS-IMP-027 Validation Evidence
+
+- Backend tests pass for atomic create/resume, idempotent replay, same-identity simultaneous claims, expired-lease
+  reclaim, release, stale revision, dependency ordering, plan substitution, safe-reference
+  validation, exact scope, CSRF, audit failure, owner redaction, and PostgreSQL state mapping.
+- Full backend verification passes Ruff format/check, mypy across 244 source files, and 282 pytest
+  tests. Full frontend verification passes ESLint, TypeScript, 18 Vitest tests, and production build.
+- Live API validation returned revision 2 with one completed phase and retained revision 2 after all
+  UI reads, proving that page loading did not claim or mutate state. Lease-owner identity remained
+  absent from direct and proxied API responses.
+- Live UI validation passed at 1440x900 and 390x844. Checkpoint progress, current phase, lease state,
+  durability boundary, and non-execution notice remained visible with no page-level horizontal
+  overflow.
+- GitHub backend and frontend CI jobs passed for source commit `874fe0a` in
+  [run 30917032240](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30917032240).
 
 ### ATLAS-IMP-026 Scope Rationale
 
@@ -1179,6 +1233,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-024 | Release manifest and restricted-network preflight foundation | Completed through [PR #36](https://github.com/ozdemirumit/Project_Atlas/pull/36) from source commit `1f93456`; 261 backend tests, 13 frontend tests, live connected/mirrored/offline API/UI and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-025 | Versioned deployment configuration preview foundation | Completed through [PR #37](https://github.com/ozdemirumit/Project_Atlas/pull/37) from source commit `4917f22`; 268 backend tests, 15 frontend tests, live safe/unsafe configuration API and Linux-lab/developer desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-026 | Deterministic bootstrap plan and resume-state foundation | Completed through [PR #38](https://github.com/ozdemirumit/Project_Atlas/pull/38) from source commit `0a9c38b`; 272 backend tests, 16 frontend tests, live ready/blocked API and desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-027 | Persistent bootstrap checkpoint and lease foundation | Completed through [PR #39](https://github.com/ozdemirumit/Project_Atlas/pull/39) from source commit `874fe0a`; 282 backend tests, 18 frontend tests, live non-mutating checkpoint API and desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
