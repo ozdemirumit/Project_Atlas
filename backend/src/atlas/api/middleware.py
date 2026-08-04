@@ -40,3 +40,11 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         response.headers[CORRELATION_HEADER] = correlation_id
         return response
+
+
+class ApiCredentialNoStoreMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        response = await call_next(request)
+        if getattr(request.state, "authenticated_api_credential_id", None) is not None:
+            response.headers["Cache-Control"] = "no-store"
+        return response

@@ -4,14 +4,81 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-018 |
-| Title | Immutable approval packet and human review foundation |
+| Task ID | ATLAS-IMP-019 |
+| Title | Governed personal API credential lifecycle |
 | Status | Ready for Review |
-| Branch | `agent/immutable-approval-review` |
+| Branch | `agent/governed-api-credentials` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-043, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
 | Last Updated | 2026-08-04 |
-| Next Action | Open the ATLAS-IMP-018 pull request, pass CI, merge, and synchronize `main` |
+| Next Action | Open the ATLAS-IMP-019 pull request, pass CI, merge, and synchronize `main` |
+
+### ATLAS-IMP-019 Acceptance Criteria
+
+- Only an authenticated human using a CSRF-protected browser session and an exact C2 self-service
+  credential permission can create or revoke a personal API credential; bearer credentials cannot
+  create, rotate, broaden, or revoke credentials.
+- Creation requires a bounded display name, explicit purpose, five-to-sixty-minute lifetime, and one
+  or more server-catalogued read-only grants. Every requested permission and exact scope is authorized
+  against the human's current RBAC before issuance, so a credential cannot elevate its owner.
+- The raw prefixed token is generated with cryptographic randomness, returned exactly once over a
+  `Cache-Control: no-store` response, excluded from logs and representations, and never persisted;
+  only a SHA-256 digest is retained and constant-time comparison protects validation.
+- Bearer authentication accepts only the dedicated token format, rejects ambiguous cookie-plus-header
+  authentication, expiry, revocation, malformed input, and unsafe HTTP methods, and never falls back
+  to a weaker provider path for an invalid bearer token.
+- Every token-backed authorization is conjunctive: both the credential's exact permission and scope
+  grant and the subject's current role assignment must allow the request. Grant mismatch is audited
+  as a denied authorization without revealing hidden resources.
+- Self-service inventory is bounded and newest-first, exposes metadata, exact grants, last use, expiry,
+  lifecycle state, and a stable credential ID only, and never returns token material or its digest.
+- Revocation is subject-bound, idempotently fail-closed for missing, foreign, expired, or already
+  revoked records, uses optimistic version checks, and prevents subsequent authentication without
+  affecting browser sessions.
+- Issuance, successful authentication, rejected authentication, inventory, expiry, revocation, RBAC
+  denial, and credential-grant denial produce required secret-safe audit records; audit failure blocks
+  protected disclosure or a successful lifecycle mutation.
+- The web settings experience can create a bounded read-only token, shows its raw value once with a
+  clear dismissal boundary, lists lifecycle metadata and grants, and provides explicit revoke controls
+  without storing the raw token in browser storage.
+- Tests cover one-time disclosure, digest-only persistence, randomness, lifetime and active-count
+  bounds, exact grant/RBAC conjunction, bearer reads, unsafe-method denial, ambiguity, expiry,
+  revocation, optimistic concurrency, CSRF, audit failure, redaction, and responsive UI. Service
+  accounts, workload identities, refresh tokens, rotation, delegated tokens, administrator-wide
+  management, and infrastructure-changing permissions remain outside this slice.
+
+### ATLAS-IMP-019 Validation Evidence
+
+- A dedicated digest-only credential repository and service enforce cryptographic token generation,
+  five-to-sixty-minute lifetime, bounded active count, deterministic grants, subject isolation,
+  optimistic updates, expiry, and revocation. Raw token material is returned once and excluded from
+  persisted records, representations, audit events, and inventory responses.
+- Bearer authentication recognizes only the dedicated `atlas_pat_` format, never falls through to an
+  identity provider, denies unsafe methods, rejects cookie ambiguity, and attaches an exact grant
+  restriction to the authenticated subject. Every authorization still re-evaluates current RBAC and
+  denies either a missing token grant or inactive/missing role assignment.
+- Credential creation, inventory, and revocation require a CSRF-protected browser session plus exact
+  self-service C0/C2 permissions. Requested grants come from a server catalogue and are independently
+  authorized before issuance; management is unavailable to bearer credentials.
+- API credential lifecycle and bearer responses use `Cache-Control: no-store`. Required issuance,
+  authentication, inventory, expiry, revocation, denial, and authorization audit failures block the
+  protected response or successful mutation.
+- Backend Ruff and strict type checks passed across 201 source and test files. The complete backend
+  suite passed with 213 tests, including ten focused API credential scenarios for one-time disclosure,
+  digest-only storage, exact grant and RBAC conjunction, unsafe methods, ambiguity, expiry, revocation,
+  races, subject isolation, limits, CSRF, redaction, and audit failure.
+- Frontend ESLint and TypeScript checks passed, five Vitest scenarios passed across two files, and the
+  production Vite bundle built successfully. The integrated browser-session test verifies CSRF-backed
+  creation and revocation, grant selection, one-time display, and dismissal from UI state.
+- A fresh live enterprise-style browser session created a real token, used it without a cookie to read
+  the exact storage scope with HTTP 200, revoked it, and confirmed the same bearer then failed with
+  HTTP 401. The raw token disappeared after explicit dismissal.
+- Desktop 1440x900 and mobile 390x844 views were visually inspected. The API access form, grant
+  checkboxes, lifecycle row, and revoke state remained readable with no page-level horizontal overflow
+  or incoherent overlap.
+- Service accounts, workload identities, refresh tokens, rotation, delegated credentials,
+  administrator-wide management, and infrastructure-changing grants remain intentionally outside this
+  slice.
 
 ### ATLAS-IMP-018 Acceptance Criteria
 
@@ -636,6 +703,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-015 | Secure browser-session and bounded API-credential foundation | Completed through [PR #27](https://github.com/ozdemirumit/Project_Atlas/pull/27); 185 backend tests, frontend validation, live fail-closed API validation, and all GitHub quality gates passed |
 | ATLAS-IMP-016 | Enterprise browser login and CSRF-aware web session lifecycle | Completed through [PR #28](https://github.com/ozdemirumit/Project_Atlas/pull/28); 185 backend tests, four frontend scenarios, live desktop/390px mobile login validation, and all GitHub quality gates passed |
 | ATLAS-IMP-017 | Self-service session inventory and governed revocation | Completed through [PR #29](https://github.com/ozdemirumit/Project_Atlas/pull/29); 192 backend tests, four frontend scenarios, live API and desktop/390px mobile validation, and all GitHub quality gates passed |
+| ATLAS-IMP-018 | Immutable approval packet and human review foundation | Completed through [PR #30](https://github.com/ozdemirumit/Project_Atlas/pull/30); 203 backend tests, five frontend scenarios, live desktop/390px mobile validation, and all GitHub quality gates passed |
 
 ## Status Rules
 

@@ -14,6 +14,7 @@ from atlas.modules.authorization.domain.models import (
     RoleAssignment,
     RoleDefinition,
 )
+from atlas.modules.identity.domain.models import CredentialGrant
 
 
 class AuthorizationService:
@@ -58,6 +59,15 @@ class AuthorizationService:
             reason_code = "permission_not_registered"
         elif request.subject.organization_id != request.scope.organization_id:
             reason_code = "organization_scope_mismatch"
+        elif (
+            request.subject.credential_grants is not None
+            and CredentialGrant(
+                permission_id=request.permission_id,
+                scope_reference=request.scope.reference,
+            )
+            not in request.subject.credential_grants
+        ):
+            reason_code = "credential_scope_denied"
         else:
             scoped_assignments = [
                 assignment

@@ -169,6 +169,53 @@ const sessionInventoryResponse = {
   },
 };
 
+const apiCredentialInventoryResponse = {
+  data: {
+    credentials: [
+      {
+        credential_id: "credential.ui",
+        version: 1,
+        display_name: "Existing CLI",
+        purpose: "Read the bounded storage overview.",
+        state: "active",
+        grants: [
+          {
+            permission_id: "storage.overview.read",
+            scope_reference:
+              "organization.development/environment.test/site.local/domain.storage/resource.storage.lab-overview/C1",
+          },
+        ],
+        created_at: "2026-08-04T10:00:00Z",
+        expires_at: "2026-08-04T10:30:00Z",
+        last_used_at: null,
+      },
+    ],
+    available_grants: [
+      {
+        permission_id: "storage.overview.read",
+        scope_reference:
+          "organization.development/environment.test/site.local/domain.storage/resource.storage.lab-overview/C1",
+      },
+      {
+        permission_id: "graph.storage-impact.read",
+        scope_reference:
+          "organization.development/environment.test/site.local/domain.graph/resource.graph.storage-impact.synthetic/C1",
+      },
+    ],
+    truncated: false,
+  },
+};
+
+const issuedApiCredentialResponse = {
+  data: {
+    ...apiCredentialInventoryResponse.data.credentials[0],
+    credential_id: "credential.created",
+    display_name: "Operations CLI",
+    purpose: "Read current storage evidence.",
+    token: `atlas_pat_${"A".repeat(43)}`,
+  },
+};
+
 const storageResponse = {
   data: {
     snapshot_id: "snapshot.storage.lab.001",
@@ -1190,6 +1237,8 @@ describe("Atlas application shell", () => {
     let authenticated = false;
     let logoutRequest: RequestInit | undefined;
     let revokeRequest: RequestInit | undefined;
+    let createApiCredentialRequest: RequestInit | undefined;
+    let revokeApiCredentialRequest: RequestInit | undefined;
     const enterpriseIdentity = {
       ...identityResponse,
       data: {
@@ -1215,6 +1264,27 @@ describe("Atlas application shell", () => {
       if (url.endsWith("/authentication/sessions/session.other")) {
         revokeRequest = init;
         return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (url.endsWith("/authentication/api-credentials/credential.ui")) {
+        revokeApiCredentialRequest = init;
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (url.endsWith("/authentication/api-credentials") && init?.method === "POST") {
+        createApiCredentialRequest = init;
+        return Promise.resolve(
+          new Response(JSON.stringify(issuedApiCredentialResponse), {
+            status: 201,
+            headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+          }),
+        );
+      }
+      if (url.endsWith("/authentication/api-credentials")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(apiCredentialInventoryResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
       }
       if (url.endsWith("/authentication/sessions") && init?.method === "POST") {
         authenticated = true;
@@ -1274,6 +1344,28 @@ describe("Atlas application shell", () => {
     expect(screen.queryByDisplayValue("temporary-secret")).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Browser sessions" })).toBeVisible();
     expect(screen.getByText("Current session")).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Personal read-only tokens" })).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Operations CLI" },
+    });
+    fireEvent.change(screen.getByLabelText("Purpose"), {
+      target: { value: "Read current storage evidence." },
+    });
+    fireEvent.click(screen.getByLabelText("Storage overview"));
+    fireEvent.click(screen.getByRole("button", { name: "Create token" }));
+
+    const rawToken = issuedApiCredentialResponse.data.token;
+    expect(await screen.findByText(rawToken)).toBeVisible();
+    await waitFor(() => expect(createApiCredentialRequest?.method).toBe("POST"));
+    const createApiHeaders = new Headers(createApiCredentialRequest?.headers);
+    expect(createApiHeaders.get("X-CSRF-Token")).toBe("csrf_browser_test");
+    expect(createApiCredentialRequest?.body).toContain('"permission_ids":["storage.overview.read"]');
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss API token" }));
+    expect(screen.queryByText(rawToken)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Revoke Existing CLI" }));
+    await waitFor(() => expect(revokeApiCredentialRequest?.method).toBe("DELETE"));
+    const revokeApiHeaders = new Headers(revokeApiCredentialRequest?.headers);
+    expect(revokeApiHeaders.get("X-CSRF-Token")).toBe("csrf_browser_test");
     fireEvent.click(screen.getByRole("button", { name: "Revoke browser session" }));
 
     await waitFor(() => expect(revokeRequest?.method).toBe("DELETE"));
@@ -1320,6 +1412,8 @@ describe("Atlas application shell", () => {
       }
       const payload = url.includes("/identity/me")
         ? reviewerIdentity
+        : url.includes("/authentication/api-credentials")
+          ? apiCredentialInventoryResponse
         : url.includes("/approvals/approval_test")
           ? approvalResponse
           : url.includes("/security-export/overview")

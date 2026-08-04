@@ -11,6 +11,7 @@ import {
   ChevronDown,
   CircleHelp,
   Clock3,
+  Copy,
   Database,
   Download,
   FileChartColumn,
@@ -19,6 +20,7 @@ import {
   GitBranch,
   HardDrive,
   Layers3,
+  KeyRound,
   LogIn,
   LogOut,
   Menu,
@@ -42,6 +44,11 @@ import {
 } from "lucide-react";
 import { type FormEvent, useState } from "react";
 
+import {
+  createApiCredential,
+  getApiCredentials,
+  revokeApiCredential,
+} from "./api/apiCredentials";
 import { getStorageImpact, type GraphEntity } from "./api/graph";
 import {
   createApprovalRequest,
@@ -113,6 +120,18 @@ function entityTypeLabel(entityType: GraphEntity["entity_type"]): string {
   return entityType.replaceAll("_", " ");
 }
 
+function apiGrantLabel(permissionId: string): string {
+  return (
+    {
+      "identity.self.read": "Identity profile",
+      "storage.overview.read": "Storage overview",
+      "graph.storage-impact.read": "Dependency impact",
+      "health-check.overview.read": "Health check overview",
+      "approval.request.read": "Approval packet",
+    }[permissionId] ?? permissionId
+  );
+}
+
 function relationshipLabel(relationshipType: string | undefined): string {
   return (
     {
@@ -155,6 +174,11 @@ export function App() {
     new URLSearchParams(window.location.search).get("approval_request_id"),
   );
   const [approvalRationale, setApprovalRationale] = useState("");
+  const [apiCredentialName, setApiCredentialName] = useState("");
+  const [apiCredentialPurpose, setApiCredentialPurpose] = useState("");
+  const [apiCredentialLifetime, setApiCredentialLifetime] = useState(30);
+  const [selectedApiGrants, setSelectedApiGrants] = useState<string[]>([]);
+  const [issuedApiToken, setIssuedApiToken] = useState<string | null>(null);
   const [investigationQuestion, setInvestigationQuestion] = useState(
     "What evidence explains the current storage warning?",
   );
@@ -185,8 +209,10 @@ export function App() {
       queryClient.removeQueries({ queryKey: ["health-check-overview"] });
       queryClient.removeQueries({ queryKey: ["security-export-overview"] });
       queryClient.removeQueries({ queryKey: ["approval-request"] });
+      queryClient.removeQueries({ queryKey: ["api-credentials"] });
       setApprovalRequestId(null);
       setApprovalRationale("");
+      setIssuedApiToken(null);
       await queryClient.invalidateQueries({ queryKey: ["current-identity"] });
     },
   });
@@ -210,6 +236,36 @@ export function App() {
       } else {
         await queryClient.invalidateQueries({ queryKey: ["browser-sessions"] });
       }
+    },
+  });
+  const apiCredentialsQuery = useQuery({
+    queryKey: ["api-credentials"],
+    queryFn: getApiCredentials,
+    enabled: Boolean(identity && identity.authentication.method !== "development"),
+    retry: false,
+  });
+  const apiCredentialInventory = apiCredentialsQuery.data?.data;
+  const apiCredentials = apiCredentialInventory?.credentials;
+  const availableApiGrants = apiCredentialInventory?.available_grants ?? [];
+  const createApiCredentialMutation = useMutation({
+    mutationFn: () =>
+      createApiCredential({
+        displayName: apiCredentialName,
+        purpose: apiCredentialPurpose,
+        expiresInMinutes: apiCredentialLifetime,
+        permissionIds: selectedApiGrants,
+      }),
+    onSuccess: async (result) => {
+      setIssuedApiToken(result.data.token);
+      setApiCredentialName("");
+      setApiCredentialPurpose("");
+      await queryClient.invalidateQueries({ queryKey: ["api-credentials"] });
+    },
+  });
+  const revokeApiCredentialMutation = useMutation({
+    mutationFn: revokeApiCredential,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["api-credentials"] });
     },
   });
   const storageQuery = useQuery({
@@ -674,6 +730,207 @@ export function App() {
                                   title="Revoke session"
                                   disabled={revokeSessionMutation.isPending}
                                   onClick={() => revokeSessionMutation.mutate(session.session_id)}
+                                >
+                                  <Trash2 size={17} />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  )}
+
+                  {identity && identity.authentication.method !== "development" && (
+                    <section className="workspace-section api-credential-section">
+                      <div className="section-heading">
+                        <div>
+                          <p className="eyebrow">API ACCESS</p>
+                          <h2>Personal read-only tokens</h2>
+                        </div>
+                        <span className="session-count">
+                          {apiCredentials?.filter((item) => item.state === "active").length ?? 0}
+                          {apiCredentialInventory?.truncated ? "+" : ""} active
+                        </span>
+                      </div>
+
+                      {apiCredentialsQuery.isLoading && (
+                        <div className="impact-message">
+                          <Clock3 size={18} /> Reading authorized API access
+                        </div>
+                      )}
+                      {apiCredentialsQuery.isError && (
+                        <div className="impact-message impact-error">
+                          <AlertTriangle size={18} /> API access is unavailable.
+                        </div>
+                      )}
+
+                      {issuedApiToken && (
+                        <div className="issued-token" role="status">
+                          <div className="issued-token-heading">
+                            <div>
+                              <span>NEW TOKEN</span>
+                              <strong>Available once</strong>
+                            </div>
+                            <button
+                              className="icon-button"
+                              type="button"
+                              aria-label="Dismiss API token"
+                              title="Dismiss token"
+                              onClick={() => setIssuedApiToken(null)}
+                            >
+                              <X size={17} />
+                            </button>
+                          </div>
+                          <div className="issued-token-value">
+                            <code>{issuedApiToken}</code>
+                            <button
+                              className="icon-button"
+                              type="button"
+                              aria-label="Copy API token"
+                              title="Copy token"
+                              onClick={() => void navigator.clipboard.writeText(issuedApiToken)}
+                            >
+                              <Copy size={17} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {apiCredentialInventory && (
+                        <form
+                          className="api-credential-form"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            if (
+                              apiCredentialName.trim() &&
+                              apiCredentialPurpose.trim() &&
+                              selectedApiGrants.length > 0 &&
+                              !createApiCredentialMutation.isPending
+                            ) {
+                              createApiCredentialMutation.mutate();
+                            }
+                          }}
+                        >
+                          <div className="api-credential-fields">
+                            <label>
+                              <span>Name</span>
+                              <input
+                                value={apiCredentialName}
+                                onChange={(event) => setApiCredentialName(event.target.value)}
+                                maxLength={80}
+                                required
+                              />
+                            </label>
+                            <label>
+                              <span>Purpose</span>
+                              <input
+                                value={apiCredentialPurpose}
+                                onChange={(event) => setApiCredentialPurpose(event.target.value)}
+                                maxLength={240}
+                                required
+                              />
+                            </label>
+                            <label>
+                              <span>Lifetime</span>
+                              <select
+                                value={apiCredentialLifetime}
+                                onChange={(event) =>
+                                  setApiCredentialLifetime(Number(event.target.value))
+                                }
+                              >
+                                <option value={5}>5 minutes</option>
+                                <option value={15}>15 minutes</option>
+                                <option value={30}>30 minutes</option>
+                                <option value={60}>60 minutes</option>
+                              </select>
+                            </label>
+                          </div>
+                          <fieldset className="api-grant-options">
+                            <legend>Read access</legend>
+                            {availableApiGrants.map((grant) => (
+                              <label key={grant.permission_id}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedApiGrants.includes(grant.permission_id)}
+                                  onChange={(event) =>
+                                    setSelectedApiGrants((current) =>
+                                      event.target.checked
+                                        ? [...current, grant.permission_id]
+                                        : current.filter((item) => item !== grant.permission_id),
+                                    )
+                                  }
+                                />
+                                <span>{apiGrantLabel(grant.permission_id)}</span>
+                              </label>
+                            ))}
+                          </fieldset>
+                          <div className="api-credential-submit">
+                            <span>Read-only · expires automatically</span>
+                            <button
+                              className="run-check-button"
+                              type="submit"
+                              disabled={
+                                createApiCredentialMutation.isPending ||
+                                !apiCredentialName.trim() ||
+                                !apiCredentialPurpose.trim() ||
+                                selectedApiGrants.length === 0
+                              }
+                            >
+                              {createApiCredentialMutation.isPending ? (
+                                <RefreshCw className="spin" size={16} />
+                              ) : (
+                                <KeyRound size={16} />
+                              )}
+                              Create token
+                            </button>
+                          </div>
+                        </form>
+                      )}
+
+                      {(createApiCredentialMutation.isError ||
+                        revokeApiCredentialMutation.isError) && (
+                        <div className="impact-message impact-error">
+                          <AlertTriangle size={18} /> API access change was not completed.
+                        </div>
+                      )}
+
+                      {apiCredentials?.length === 0 && (
+                        <div className="impact-message">No personal API tokens are visible.</div>
+                      )}
+                      {apiCredentials && apiCredentials.length > 0 && (
+                        <div className="api-credential-list">
+                          {apiCredentials.map((credential) => (
+                            <div className="api-credential-row" key={credential.credential_id}>
+                              <div className="session-icon"><KeyRound size={17} /></div>
+                              <div className="api-credential-detail">
+                                <strong>{credential.display_name}</strong>
+                                <span>{credential.purpose}</span>
+                                <small>
+                                  {credential.grants.map((grant) =>
+                                    apiGrantLabel(grant.permission_id),
+                                  ).join(" · ")}
+                                </small>
+                              </div>
+                              <div className="session-expiry">
+                                <span>Expires</span>
+                                <strong>{formatTimestamp(credential.expires_at)}</strong>
+                              </div>
+                              <span className={`state-badge ${credential.state}`}>
+                                {credential.state}
+                              </span>
+                              {credential.state === "active" && (
+                                <button
+                                  className="icon-button session-revoke"
+                                  type="button"
+                                  aria-label={`Revoke ${credential.display_name}`}
+                                  title="Revoke token"
+                                  disabled={revokeApiCredentialMutation.isPending}
+                                  onClick={() =>
+                                    revokeApiCredentialMutation.mutate(
+                                      credential.credential_id,
+                                    )
+                                  }
                                 >
                                   <Trash2 size={17} />
                                 </button>

@@ -9,6 +9,9 @@ from atlas.api.errors import AtlasError
 from atlas.core.capabilities import CapabilityClass
 from atlas.modules.authorization.application.bootstrap import (
     AI_GROUNDED_QUERY_CREATE,
+    API_CREDENTIAL_SELF_CREATE,
+    API_CREDENTIAL_SELF_READ,
+    API_CREDENTIAL_SELF_REVOKE,
     APPROVAL_REQUEST_CREATE,
     APPROVAL_REQUEST_DECIDE,
     APPROVAL_REQUEST_READ,
@@ -26,6 +29,7 @@ from atlas.modules.authorization.application.bootstrap import (
     SESSION_SELF_REVOKE,
     STORAGE_OVERVIEW_READ,
     ai_grounded_query_scope,
+    api_credential_self_scope,
     approval_scope,
     current_identity_scope,
     graph_storage_impact_scope,
@@ -40,9 +44,14 @@ from atlas.modules.authorization.application.bootstrap import (
 )
 from atlas.modules.authorization.application.service import AuthorizationService
 from atlas.modules.authorization.domain.models import AuthorizationDecision, AuthorizationRequest
+from atlas.modules.identity.application.api_credentials import (
+    ApiCredentialOperationsError,
+    ApiCredentialService,
+)
 from atlas.modules.identity.application.service import IdentityService
 from atlas.modules.identity.application.sessions import SessionOperationsError, SessionService
 from atlas.modules.identity.domain.models import AuthenticatedSubject, AuthenticationInput
+from atlas.modules.identity.domain.sessions import CredentialKind
 
 
 def _presented_authorization(request: Request) -> tuple[str | None, str | None]:
@@ -91,7 +100,34 @@ async def authenticated_subject(request: Request) -> AuthenticatedSubject:
             )
         request.state.authenticated_subject = context.subject
         request.state.authenticated_session_id = context.session_id
+        request.state.authenticated_credential_kind = CredentialKind.BROWSER_SESSION
         return context.subject
+    if scheme == "bearer" and credential is not None:
+        api_credential_service: ApiCredentialService = request.app.state.api_credential_service
+        try:
+            api_context = await api_credential_service.authenticate(
+                credential,
+                unsafe_request=request.method not in {"GET", "HEAD", "OPTIONS"},
+                correlation_id=str(request.state.correlation_id),
+            )
+        except ApiCredentialOperationsError as exc:
+            raise AtlasError(
+                status=403,
+                code=exc.code,
+                title="API credential denied",
+                detail="The API credential cannot authorize this request.",
+            ) from exc
+        if api_context is None:
+            raise AtlasError(
+                status=401,
+                code="authentication_required",
+                title="Authentication required",
+                detail="A valid authenticated identity is required for this operation.",
+            )
+        request.state.authenticated_subject = api_context.subject
+        request.state.authenticated_api_credential_id = api_context.credential_id
+        request.state.authenticated_credential_kind = CredentialKind.API_TOKEN
+        return api_context.subject
     service: IdentityService = request.app.state.identity_service
     subject = await service.authenticate(
         AuthenticationInput(
@@ -108,6 +144,23 @@ async def authenticated_subject(request: Request) -> AuthenticatedSubject:
             detail="A valid authenticated identity is required for this operation.",
         )
     request.state.authenticated_subject = subject
+    return subject
+
+
+async def browser_session_subject(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthenticatedSubject:
+    if (
+        getattr(request.state, "authenticated_credential_kind", None)
+        is not CredentialKind.BROWSER_SESSION
+    ):
+        raise AtlasError(
+            status=403,
+            code="browser_session_required",
+            title="Browser session required",
+            detail="Use a CSRF-protected browser session for credential management.",
+        )
     return subject
 
 
@@ -190,6 +243,76 @@ async def authorize_session_self_revoke(
         request,
         subject,
         permission_id=SESSION_SELF_REVOKE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def _authorize_api_credential_self(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.identity.api-credential",
+            scope=api_credential_self_scope(
+                subject.organization_id,
+                settings.environment,
+                capability_class,
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="API credential management is not authorized.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_api_credential_self_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_api_credential_self(
+        request,
+        subject,
+        permission_id=API_CREDENTIAL_SELF_CREATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_api_credential_self_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_api_credential_self(
+        request,
+        subject,
+        permission_id=API_CREDENTIAL_SELF_READ,
+        capability_class=CapabilityClass.C0_INFORMATIONAL,
+    )
+
+
+async def authorize_api_credential_self_revoke(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_api_credential_self(
+        request,
+        subject,
+        permission_id=API_CREDENTIAL_SELF_REVOKE,
         capability_class=CapabilityClass.C2_DIAGNOSTIC,
     )
 
