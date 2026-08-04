@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-024 |
 | Title | Release manifest and restricted-network preflight foundation |
-| Status | Review |
+| Status | Done |
 | Branch | `agent/release-manifest-preflight` |
-| Pull Request | Pending |
+| Pull Request | [#36](https://github.com/ozdemirumit/Project_Atlas/pull/36) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-016, ATLAS-030, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-058, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Open the implementation pull request and complete GitHub CI review |
+| Next Action | Merge PR #36 and select the next bounded MVP-005 implementation slice |
 
 ### ATLAS-IMP-024 Scope Rationale
 
@@ -80,7 +80,9 @@
   false mutation/execution authorization.
 - Browser validation passed at 1440x900 and 390x844 with no horizontal overflow, incoherent overlap,
   or warning/error console entries. The mobile view starts with navigation and context panels closed.
-- GitHub pull request and required CI evidence are pending.
+- GitHub Continuous Integration run
+  [30911152355](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30911152355) passed
+  both backend and frontend jobs for source commit `1f93456`.
 
 ### ATLAS-IMP-023 Scope Rationale
 
@@ -1076,6 +1078,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-021 | Identity disablement and credential revocation fan-out foundation | Completed through [PR #33](https://github.com/ozdemirumit/Project_Atlas/pull/33) from source commit `423f958`; 234 backend tests, seven frontend tests, live enterprise admin/operator disablement, old/new authentication, session/token fan-out API/UI validation, desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-022 | Enterprise audit export and Syslog delivery foundation | Completed through [PR #34](https://github.com/ozdemirumit/Project_Atlas/pull/34) from source commit `7682d0d`; 244 backend tests, nine frontend tests, live Security Auditor/ordinary-operator API/UI validation, fake TLS Syslog retry and secret-free RFC 5424 delivery, desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-023 | Platform workload identity and secret-reference foundation | Completed through [PR #35](https://github.com/ozdemirumit/Project_Atlas/pull/35) from source commit `1c0fac3`; 253 backend tests, 11 frontend tests, live enterprise workload create/rotate/revoke desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-024 | Release manifest and restricted-network preflight foundation | Completed through [PR #36](https://github.com/ozdemirumit/Project_Atlas/pull/36) from source commit `1f93456`; 261 backend tests, 13 frontend tests, live connected/mirrored/offline API/UI and desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
