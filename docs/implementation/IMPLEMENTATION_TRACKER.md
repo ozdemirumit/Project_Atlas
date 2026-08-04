@@ -4,14 +4,50 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-028 |
-| Title | Bootstrap input drift and checkpoint invalidation preview |
-| Status | Done |
-| Branch | `agent/bootstrap-invalidation-preview` |
-| Pull Request | [PR #40](https://github.com/ozdemirumit/Project_Atlas/pull/40) |
+| Task ID | ATLAS-IMP-029 |
+| Title | Controlled bootstrap plan rebase and checkpoint invalidation |
+| Status | In Progress |
+| Branch | `agent/bootstrap-plan-rebase` |
+| Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Merge PR #40 and synchronize `main` |
+| Next Action | Implement atomic plan rebase, checkpoint invalidation, governed API, and explicit UI confirmation |
+
+### ATLAS-IMP-029 Scope Rationale
+
+- ATLAS-038 requires changed bootstrap inputs to invalidate affected downstream phases before a run
+  resumes. IMP-028 explains the boundary, but the current state repository rejects every plan change
+  and cannot safely persist a reviewed candidate plan.
+- This slice atomically rebases the current run onto an exact candidate identity, preserves only the
+  checkpoints proven reusable by the same deterministic comparison, and invalidates the remainder.
+  It changes Atlas coordination metadata only and never executes a bootstrap phase or infrastructure
+  operation.
+
+### ATLAS-IMP-029 Acceptance Criteria
+
+- A strict C2 request binds the exact run, expected revision, candidate release/profile, plan digest,
+  resume key, configuration digest, ordered phase IDs, preview source revision, and bounded human
+  justification. Unknown fields and malformed or foreign identifiers fail closed.
+- Rebase requires the active lease held by the authenticated browser session, exact scope, current
+  expected revision, a drifted candidate, and deterministic recomputation of the invalidation
+  boundary inside the atomic repository operation. Stale, unchanged, completed, foreign, expired,
+  or differently held runs are rejected without disclosure or mutation.
+- The mutation preserves only completed checkpoints before the earliest affected phase, removes all
+  other completed or failed checkpoints, installs the exact candidate identity, returns the stable
+  invalidation reason codes and affected phase IDs, increments the revision once, and remains
+  idempotent for an exact replay.
+- PostgreSQL and in-memory adapters provide equivalent concurrency, replay, and failure semantics.
+  The durable path uses row locking and the existing transaction-scoped coordination boundary.
+- Authorization, CSRF, required audit, `no-store`, safe error mapping, and session-bound lease identity
+  apply. Responses and audit records contain no lease holder, secrets, commands, or raw configuration.
+- The operations UI requires an explicit confirmation before applying a drifted preview, displays the
+  retained and invalidated checkpoints and new revision, and offers no phase or infrastructure
+  execution control.
+- Automated and live tests cover success, exact replay, stale revision, changed replay, missing or
+  foreign lease, unchanged input, completed run, audit failure, strict parsing, owner redaction,
+  PostgreSQL mapping, responsive desktop/mobile presentation, and non-execution boundaries.
+- This slice does not acquire or release the lease, execute a phase, run rollback, write deployment
+  files, invoke connectors, install artifacts, provision secrets, or authorize infrastructure change.
 
 ### ATLAS-IMP-028 Scope Rationale
 
