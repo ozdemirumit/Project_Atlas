@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-015 |
 | Title | Secure browser-session and bounded API-credential foundation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/secure-browser-session` |
-| Pull Request | Pending |
+| Pull Request | [PR #27](https://github.com/ozdemirumit/Project_Atlas/pull/27) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
 | Last Updated | 2026-08-04 |
-| Next Action | Open the implementation pull request and run GitHub quality gates |
+| Next Action | Wait for GitHub quality gates and merge after review |
 
 ### ATLAS-IMP-015 Acceptance Criteria
 
