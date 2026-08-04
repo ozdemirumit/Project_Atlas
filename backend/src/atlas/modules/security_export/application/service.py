@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
+import hmac
 import re
+import secrets
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -12,6 +16,10 @@ from atlas.core.audit import AuditRecord, AuditSink
 from atlas.core.classification import DataClassification
 from atlas.modules.security_export.application.ports import SyslogTransport
 from atlas.modules.security_export.domain.models import (
+    AuditEventPage,
+    AuditEventProjection,
+    AuditExportOverview,
+    AuditRetryResult,
     DeliveryRecord,
     DeliveryState,
     DestinationHealth,
@@ -30,7 +38,11 @@ SAFETY_NOTICE = (
     "Transport delivery confirms only Syslog handoff. SIEM ingestion, parsing, correlation, "
     "alerting, ticket creation, and infrastructure action remain unconfirmed and unauthorized."
 )
-SECRET_PATTERN = re.compile(r"(?i)(password|passwd|secret|token|credential|api[-_]?key)")
+SECRET_VALUE_PATTERN = re.compile(
+    r"(?i)(?:password|passwd|secret|token|credential|api[-_]?key)\s*[:=]\s*\S+|bearer\s+\S+"
+)
+MAX_AUDIT_PAGE_SIZE = 50
+MAX_AUDIT_QUERY_LENGTH = 80
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +88,9 @@ class SecurityExportService(AuditSink):
         self._deliveries: dict[str, DeliveryRecord] = {}
         self._events: dict[str, NormalizedSecurityEvent] = {}
         self._messages: dict[str, SyslogMessage] = {}
+        self._audit_events: list[AuditEventProjection] = []
+        self._audit_records: dict[str, AuditRecord] = {}
+        self._cursor_key = secrets.token_bytes(32)
         self._delivered_counts: dict[str, int] = {item.destination_id: 0 for item in destinations}
         self._last_handoff: dict[str, datetime | None] = {
             item.destination_id: None for item in destinations
@@ -83,16 +98,30 @@ class SecurityExportService(AuditSink):
         self._lock = asyncio.Lock()
 
     async def record(self, event: AuditRecord) -> None:
-        await self._delegate.record(event)
-        normalized = self._normalize(event)
         async with self._lock:
+            existing = self._audit_records.get(event.event_id)
+            if existing is not None:
+                if existing != event:
+                    raise RuntimeError("audit_event_identity_conflict")
+                return
+            await self._delegate.record(event)
+            projection = self._project_audit_event(event, sequence=len(self._audit_events) + 1)
+            self._audit_records[event.event_id] = event
+            self._audit_events.append(projection)
+            try:
+                normalized = self._normalize(event)
+            except RuntimeError:
+                return
             for destination in self._destinations.values():
                 if (
                     destination.state is DestinationState.ACTIVE
                     and normalized.category in destination.selected_categories
                     and destination.classification_ceiling.permits(normalized.classification)
                 ):
-                    await self._enqueue_and_deliver(destination, normalized)
+                    try:
+                        await self._enqueue_and_deliver(destination, normalized)
+                    except RuntimeError:
+                        continue
 
     async def get_overview(
         self,
@@ -119,6 +148,76 @@ class SecurityExportService(AuditSink):
             preview_event=preview_event,
             preview_message=preview_message,
             safety_notice=SAFETY_NOTICE,
+        )
+
+    async def get_audit_overview(
+        self,
+        *,
+        context: SecurityExportAccessContext,
+        limit: int,
+        cursor: str | None,
+        query: str | None,
+        outcome: str | None,
+    ) -> AuditExportOverview:
+        self._validate_audit_scope(context)
+        self._validate_audit_query(limit=limit, query=query, outcome=outcome)
+        await self._record_operation_audit(
+            context,
+            event_type="atlas.audit.inventory.read",
+            result_code="bounded_audit_inventory_returned",
+            permission_id="audit.read",
+            resource_type="resource.audit.events",
+        )
+        async with self._lock:
+            return AuditExportOverview(
+                generated_at=context.requested_at,
+                page=self._audit_page(
+                    context=context,
+                    limit=limit,
+                    cursor=cursor,
+                    query=query,
+                    outcome=outcome,
+                ),
+                health=self._health(context.requested_at),
+                recent_deliveries=tuple(list(self._deliveries.values())[-20:][::-1]),
+                safety_notice=SAFETY_NOTICE,
+            )
+
+    async def retry_audit_deliveries(
+        self,
+        *,
+        context: SecurityExportAccessContext,
+    ) -> AuditRetryResult:
+        self._validate_audit_scope(context)
+        await self._record_operation_audit(
+            context,
+            event_type="atlas.audit.export.retry",
+            result_code="bounded_delivery_retry_requested",
+            permission_id="audit.export",
+            resource_type="resource.audit.export",
+        )
+        attempted = 0
+        delivered = 0
+        retrying = 0
+        dead_letter = 0
+        async with self._lock:
+            for destination_id, queue in self._queues.items():
+                destination = self._destinations[destination_id]
+                for delivery_id in tuple(queue):
+                    attempted += 1
+                    await self._deliver(destination, delivery_id, at=context.requested_at)
+                    state = self._deliveries[delivery_id].state
+                    delivered += state is DeliveryState.TRANSPORT_DELIVERED
+                    retrying += state is DeliveryState.RETRYING
+                    dead_letter += state is DeliveryState.DEAD_LETTER
+                    if state is DeliveryState.RETRYING:
+                        break
+        return AuditRetryResult(
+            attempted=attempted,
+            delivered=delivered,
+            retrying=retrying,
+            dead_letter=dead_letter,
+            generated_at=context.requested_at,
         )
 
     async def emit_test_event(
@@ -179,6 +278,111 @@ class SecurityExportService(AuditSink):
                     delivery = self._deliveries[delivery_id]
                     if delivery.next_attempt_at is None or delivery.next_attempt_at <= at:
                         await self._deliver(destination, delivery_id, at=at)
+                        if self._deliveries[delivery_id].state is DeliveryState.RETRYING:
+                            break
+                    else:
+                        break
+
+    def _audit_page(
+        self,
+        *,
+        context: SecurityExportAccessContext,
+        limit: int,
+        cursor: str | None,
+        query: str | None,
+        outcome: str | None,
+    ) -> AuditEventPage:
+        before_sequence = self._decode_cursor(cursor) if cursor is not None else None
+        scope_prefix = (
+            "/".join((context.organization_id, context.environment_id, context.site_id)) + "/"
+        )
+        normalized_query = query.strip().lower() if query else None
+        normalized_outcome = outcome.strip().lower() if outcome else None
+        matching = []
+        for event in reversed(self._audit_events):
+            if before_sequence is not None and event.sequence >= before_sequence:
+                continue
+            if not event.scope_reference.startswith(scope_prefix):
+                continue
+            if normalized_outcome is not None and event.outcome.lower() != normalized_outcome:
+                continue
+            if normalized_query is not None and normalized_query not in " ".join(
+                value.lower()
+                for value in (
+                    event.event_id,
+                    event.event_type,
+                    event.result_code,
+                    event.correlation_id,
+                    event.subject_id or "",
+                    event.target_subject_id or "",
+                )
+            ):
+                continue
+            matching.append(event)
+            if len(matching) > limit:
+                break
+        has_more = len(matching) > limit
+        events = tuple(matching[:limit])
+        next_cursor = self._encode_cursor(events[-1].sequence) if has_more and events else None
+        return AuditEventPage(
+            events=events,
+            limit=limit,
+            next_cursor=next_cursor,
+            has_more=has_more,
+        )
+
+    def _project_audit_event(
+        self,
+        event: AuditRecord,
+        *,
+        sequence: int,
+    ) -> AuditEventProjection:
+        return AuditEventProjection(
+            sequence=sequence,
+            event_id=self._sanitize(event.event_id, limit=120),
+            event_type=self._sanitize(event.event_type, limit=120),
+            schema_version=self._sanitize(event.schema_version, limit=20),
+            occurred_at=event.occurred_at.astimezone(UTC),
+            accepted_at=datetime.now(UTC),
+            correlation_id=self._sanitize(event.correlation_id, limit=120),
+            subject_id=self._optional(event.subject_id, 120),
+            actor_type=self._optional(event.actor_type, 32),
+            authentication_method=self._optional(event.authentication_method, 32),
+            assurance_level=self._optional(event.assurance_level, 32),
+            permission_id=self._optional(event.permission_id, 120),
+            resource_type=self._optional(event.resource_type, 120),
+            scope_reference=self._optional(event.scope_reference, 512) or "scope.unspecified",
+            decision_id=self._optional(event.decision_id, 120),
+            outcome=self._sanitize(event.outcome, limit=32),
+            result_code=self._sanitize(event.result_code, limit=120),
+            target_subject_id=self._optional(event.target_subject_id, 120),
+        )
+
+    def _encode_cursor(self, sequence: int) -> str:
+        value = f"v1:{sequence}".encode()
+        signature = hmac.digest(self._cursor_key, value, "sha256")
+        encoded_value = base64.urlsafe_b64encode(value).decode().rstrip("=")
+        encoded_signature = base64.urlsafe_b64encode(signature).decode().rstrip("=")
+        return f"{encoded_value}.{encoded_signature}"
+
+    def _decode_cursor(self, cursor: str) -> int:
+        try:
+            encoded_value, encoded_signature = cursor.split(".", maxsplit=1)
+            value = base64.urlsafe_b64decode(encoded_value + "=" * (-len(encoded_value) % 4))
+            signature = base64.urlsafe_b64decode(
+                encoded_signature + "=" * (-len(encoded_signature) % 4)
+            )
+            if not hmac.compare_digest(signature, hmac.digest(self._cursor_key, value, "sha256")):
+                raise ValueError
+            version, sequence = value.decode().split(":", maxsplit=1)
+            if version != "v1" or int(sequence) < 1:
+                raise ValueError
+            return int(sequence)
+        except (binascii.Error, ValueError, UnicodeDecodeError) as exc:
+            raise SecurityExportOperationsError(
+                "audit_export_request_invalid",
+                "The bounded audit request could not be processed.",
+            ) from exc
 
     async def _enqueue_and_deliver(
         self,
@@ -206,7 +410,8 @@ class SecurityExportService(AuditSink):
         self._events[delivery_id] = event
         self._messages[delivery_id] = message
         queue.append(delivery_id)
-        await self._deliver(destination, delivery_id, at=event.occurred_at)
+        if queue[0] == delivery_id:
+            await self._deliver(destination, delivery_id, at=event.occurred_at)
 
     async def _deliver(
         self,
@@ -402,7 +607,7 @@ class SecurityExportService(AuditSink):
     def _sanitize(value: str, *, limit: int) -> str:
         cleaned = "".join(character if 32 <= ord(character) < 127 else " " for character in value)
         cleaned = " ".join(cleaned.split())
-        if SECRET_PATTERN.search(cleaned):
+        if SECRET_VALUE_PATTERN.search(cleaned):
             return "redacted"
         return cleaned[:limit] or "unknown"
 
@@ -417,12 +622,45 @@ class SecurityExportService(AuditSink):
                 "The security-export destination is outside the authorized scope.",
             )
 
+    @staticmethod
+    def _validate_audit_scope(context: SecurityExportAccessContext) -> None:
+        if context.resource_id != "resource.audit.enterprise-events":
+            raise SecurityExportOperationsError(
+                "audit_export_scope_mismatch",
+                "The audit inventory is outside the authorized scope.",
+            )
+
+    @staticmethod
+    def _validate_audit_query(
+        *,
+        limit: int,
+        query: str | None,
+        outcome: str | None,
+    ) -> None:
+        if not 1 <= limit <= MAX_AUDIT_PAGE_SIZE:
+            raise SecurityExportOperationsError(
+                "audit_export_request_invalid",
+                "The bounded audit request could not be processed.",
+            )
+        for value in (query, outcome):
+            if value is not None and (
+                not value.strip()
+                or len(value) > MAX_AUDIT_QUERY_LENGTH
+                or any(ord(character) < 32 for character in value)
+            ):
+                raise SecurityExportOperationsError(
+                    "audit_export_request_invalid",
+                    "The bounded audit request could not be processed.",
+                )
+
     async def _record_operation_audit(
         self,
         context: SecurityExportAccessContext,
         *,
         event_type: str,
         result_code: str,
+        permission_id: str = "security-export.overview.read",
+        resource_type: str = "resource.security-export",
     ) -> None:
         await self.record(
             AuditRecord(
@@ -437,9 +675,16 @@ class SecurityExportService(AuditSink):
                 actor_type=context.actor_type,
                 authentication_method=context.authentication_method,
                 assurance_level=context.assurance_level,
-                permission_id="security-export.overview.read",
-                resource_type="resource.security-export",
-                scope_reference=context.resource_id,
+                permission_id=permission_id,
+                resource_type=resource_type,
+                scope_reference="/".join(
+                    (
+                        context.organization_id,
+                        context.environment_id,
+                        context.site_id,
+                        context.resource_id,
+                    )
+                ),
                 decision_id=context.decision_id,
                 outcome="succeeded",
                 result_code=result_code,

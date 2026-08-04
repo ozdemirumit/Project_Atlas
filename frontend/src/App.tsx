@@ -50,6 +50,7 @@ import {
   getApiCredentials,
   revokeApiCredential,
 } from "./api/apiCredentials";
+import { getAuditExportOverview, retryAuditExport } from "./api/auditExport";
 import { getStorageImpact, type GraphEntity } from "./api/graph";
 import {
   createApprovalRequest,
@@ -197,6 +198,8 @@ export function App() {
   const [issuedApiToken, setIssuedApiToken] = useState<string | null>(null);
   const [governanceSearch, setGovernanceSearch] = useState("");
   const [governanceReason, setGovernanceReason] = useState("");
+  const [auditSearch, setAuditSearch] = useState("");
+  const [auditOutcome, setAuditOutcome] = useState("");
   const [pendingDisableSubjectId, setPendingDisableSubjectId] = useState<string | null>(null);
   const [investigationQuestion, setInvestigationQuestion] = useState(
     "What evidence explains the current storage warning?",
@@ -230,6 +233,7 @@ export function App() {
       queryClient.removeQueries({ queryKey: ["approval-request"] });
       queryClient.removeQueries({ queryKey: ["api-credentials"] });
       queryClient.removeQueries({ queryKey: ["identity-governance"] });
+      queryClient.removeQueries({ queryKey: ["audit-export-overview"] });
       setApprovalRequestId(null);
       setApprovalRationale("");
       setIssuedApiToken(null);
@@ -315,6 +319,20 @@ export function App() {
     mutationFn: revokeGovernedApiCredential,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["identity-governance"] });
+    },
+  });
+  const auditExportQuery = useQuery({
+    queryKey: ["audit-export-overview", auditSearch, auditOutcome],
+    queryFn: () => getAuditExportOverview(auditSearch, auditOutcome),
+    enabled: Boolean(identity && identity.authentication.method !== "development"),
+    retry: false,
+  });
+  const auditExport = auditExportQuery.data?.data;
+  const auditHealth = auditExport?.health?.[0];
+  const retryAuditExportMutation = useMutation({
+    mutationFn: retryAuditExport,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["audit-export-overview"] });
     },
   });
   const storageQuery = useQuery({
@@ -699,6 +717,173 @@ export function App() {
                     <p>No infrastructure state is inferred when authorized evidence cannot be read.</p>
                   </div>
                 </div>
+              )}
+
+              {auditExport && auditHealth && (
+                <section className="workspace-section audit-export-section">
+                  <div className="section-heading audit-export-heading">
+                    <div>
+                      <p className="eyebrow">AUDIT GOVERNANCE</p>
+                      <h2>Enterprise audit delivery</h2>
+                      <p>Bounded, secret-free evidence from the authoritative Atlas audit stream.</p>
+                    </div>
+                    <span className={`security-export-state ${auditHealth.state}`}>
+                      <ShieldCheck size={14} /> {auditHealth.state}
+                    </span>
+                  </div>
+
+                  <div className="audit-export-toolbar">
+                    <label>
+                      <span>Search bounded events</span>
+                      <div className="audit-search-input">
+                        <Search size={15} />
+                        <input
+                          aria-label="Search audit events"
+                          value={auditSearch}
+                          maxLength={80}
+                          placeholder="Event, result, subject, correlation"
+                          onChange={(event) => setAuditSearch(event.target.value)}
+                        />
+                      </div>
+                    </label>
+                    <label>
+                      <span>Outcome</span>
+                      <select
+                        aria-label="Filter audit outcome"
+                        value={auditOutcome}
+                        onChange={(event) => setAuditOutcome(event.target.value)}
+                      >
+                        <option value="">All outcomes</option>
+                        <option value="allowed">Allowed</option>
+                        <option value="denied">Denied</option>
+                        <option value="succeeded">Succeeded</option>
+                        <option value="failed">Failed</option>
+                      </select>
+                    </label>
+                    <button
+                      className="run-check-button audit-retry-button"
+                      type="button"
+                      disabled={
+                        retryAuditExportMutation.isPending || auditHealth.queue_depth === 0
+                      }
+                      onClick={() => retryAuditExportMutation.mutate()}
+                    >
+                      <RefreshCw
+                        className={retryAuditExportMutation.isPending ? "spin" : undefined}
+                        size={16}
+                      />
+                      Retry queued delivery
+                    </button>
+                  </div>
+
+                  <div className="audit-health-grid" aria-label="Audit delivery health">
+                    <div>
+                      <span>Bounded page</span>
+                      <strong>{auditExport.page.events.length}</strong>
+                      <small>Maximum {auditExport.page.limit} events</small>
+                    </div>
+                    <div>
+                      <span>Queued</span>
+                      <strong>{auditHealth.queue_depth}</strong>
+                      <small>{auditHealth.retrying_count} retrying</small>
+                    </div>
+                    <div>
+                      <span>Transport handoffs</span>
+                      <strong>{auditHealth.delivered_count}</strong>
+                      <small>SIEM receipt not inferred</small>
+                    </div>
+                    <div>
+                      <span>Dead-letter</span>
+                      <strong>{auditHealth.dead_letter_count}</strong>
+                      <small>Visible for governed follow-up</small>
+                    </div>
+                  </div>
+
+                  <div className="audit-export-grid">
+                    <div className="audit-events-panel">
+                      <div className="audit-panel-heading">
+                        <h3>Authorized events</h3>
+                        <span>{auditExport.page.has_more ? "More available" : "Bounded result"}</span>
+                      </div>
+                      {auditExport.page.events.length === 0 ? (
+                        <p className="audit-empty">No matching audit events in this exact scope.</p>
+                      ) : (
+                        <div className="audit-event-list">
+                          {auditExport.page.events.map((event) => (
+                            <article className="audit-event" key={`${event.sequence}-${event.event_id}`}>
+                              <div className="audit-event-title">
+                                <strong>{event.event_type}</strong>
+                                <span className={`audit-outcome ${event.outcome}`}>
+                                  {event.outcome}
+                                </span>
+                              </div>
+                              <p>{event.result_code}</p>
+                              <dl>
+                                <div>
+                                  <dt>Actor</dt>
+                                  <dd>{event.subject_id ?? "Unknown subject"}</dd>
+                                </div>
+                                <div>
+                                  <dt>Occurred</dt>
+                                  <dd>{formatTimestamp(event.occurred_at)}</dd>
+                                </div>
+                                <div>
+                                  <dt>Correlation</dt>
+                                  <dd>{event.correlation_id}</dd>
+                                </div>
+                                <div>
+                                  <dt>Permission</dt>
+                                  <dd>{event.permission_id ?? "Not applicable"}</dd>
+                                </div>
+                              </dl>
+                              <code>{event.event_id}</code>
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="audit-delivery-panel">
+                      <div className="audit-panel-heading">
+                        <h3>Recent delivery state</h3>
+                        <span>At least once</span>
+                      </div>
+                      {auditExport.recent_deliveries.length === 0 ? (
+                        <p className="audit-empty">No delivery attempts are visible yet.</p>
+                      ) : (
+                        <div className="audit-delivery-list">
+                          {auditExport.recent_deliveries.slice(0, 8).map((delivery) => (
+                            <article className="audit-delivery" key={delivery.delivery_id}>
+                              <div>
+                                <strong>{delivery.state.replaceAll("_", " ")}</strong>
+                                <span>{delivery.attempts} attempt(s)</span>
+                              </div>
+                              <code>{delivery.event_id}</code>
+                              <small>{formatTimestamp(delivery.updated_at)}</small>
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {retryAuditExportMutation.data && (
+                    <div className="security-export-result" role="status">
+                      <CheckCircle2 size={16} />
+                      Retry completed: {retryAuditExportMutation.data.data.delivered} transport
+                      handoff(s), {retryAuditExportMutation.data.data.retrying} still retrying.
+                    </div>
+                  )}
+                  {retryAuditExportMutation.isError && (
+                    <div className="security-export-result error-state" role="alert">
+                      <AlertTriangle size={16} /> Delivery remains queued or unavailable.
+                    </div>
+                  )}
+                  <div className="safety-notice">
+                    <ShieldCheck size={16} />
+                    <span>{auditExport.safety_notice}</span>
+                  </div>
+                </section>
               )}
 
               {overview && (

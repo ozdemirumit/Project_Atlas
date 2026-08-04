@@ -23,6 +23,8 @@ class SecurityExportDestinationData(BaseModel):
     port: int
     tls_server_authentication: bool
     tls_hostname_validation: bool
+    trust_reference_id: str
+    client_identity_secret_reference_id: str | None
     certificate_not_after: datetime
     facility: int
     selected_categories: list[str]

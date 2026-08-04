@@ -4,14 +4,78 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-021 |
-| Title | Identity disablement and credential revocation fan-out foundation |
-| Status | Done |
-| Branch | `agent/identity-disablement-fanout` |
-| Pull Request | [PR #33](https://github.com/ozdemirumit/Project_Atlas/pull/33) |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
+| Task ID | ATLAS-IMP-022 |
+| Title | Enterprise audit export and Syslog delivery foundation |
+| Status | Review |
+| Branch | `agent/enterprise-audit-export` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-034, ATLAS-035 |
 | Last Updated | 2026-08-04 |
-| Next Action | Select the next approved vertical slice and record its dependencies and acceptance criteria |
+| Next Action | Open the ready pull request and validate backend and frontend GitHub Actions on the review head |
+
+### ATLAS-IMP-022 Scope Rationale
+
+- ATLAS-032 makes the immutable Atlas audit ledger authoritative, requires separately authorized and
+  audited read/export access, and requires downstream outages to queue without weakening protected
+  state-changing audit. ATLAS-033 and ATLAS-034 require normalized, injection-safe RFC 5424 export,
+  stable event identity, bounded retry, observable backlog, and no insecure transport downgrade.
+- ATLAS-IMP-013 already established the synthetic TLS destination, normalized security-event
+  contract, RFC 5424 serializer, and delivery-health model. The next smallest locally verifiable
+  vertical slice is therefore to project real Atlas audit events into a bounded auditor inventory
+  and the existing at-least-once delivery path, rather than duplicate transport setup or require a
+  customer SIEM, certificate authority, LDAP, OIDC, SAML, or ITSM endpoint.
+- The slice remains decision support and security evidence delivery only. It cannot authorize,
+  dispatch, or imply infrastructure execution.
+
+### ATLAS-IMP-022 Acceptance Criteria
+
+- A dedicated Security Auditor role receives separate `audit.read` and `audit.export` permissions
+  only at one exact organization, environment, site, audit domain, resource, and capability scope.
+  Security Administrator and the development operator receive no implicit audit access.
+- Existing required, secret-free audit records are projected immutably with stable event identity
+  and sequence, then queried through a bounded cursor with bounded filters. Invalid cursors, hidden
+  scopes, and unauthorized requests fail closed without disclosing counts or target existence.
+- Audit read and export access is itself audited before records are disclosed. Required audit failure
+  blocks disclosure, while downstream Syslog transport failure never changes or deletes the
+  authoritative source record and never runs infrastructure actions.
+- Export uses the existing RFC 5424 TLS-only destination and serializer with allowlisted fields,
+  control/newline normalization, stable event IDs, bounded UTF-8 size, classification checks, and
+  secret-reference-only destination metadata. Raw credentials, tokens, digests, private keys,
+  prompts, documents, and command output are never exposed.
+- The at-least-once outbox exposes queued, retrying, transport-delivered, and dead-letter state,
+  bounded exponential retry, stable identity across duplicate attempts, per-destination ordering,
+  and explicit transport-only acknowledgement semantics.
+- Browser access requires a human enterprise session and current exact-scope RBAC. Unsafe personal
+  bearer requests are rejected; the browser retry action also requires CSRF and `audit.export`.
+- The auditor-only web view provides bounded searchable events, delivery health, retry and
+  dead-letter visibility, and a clear no-execution/no-SIEM-confirmation boundary. An ordinary
+  operator's 403 silently hides the view.
+- Tests cover scope and role separation, bounded cursor/filter behavior, audit-of-audit access,
+  fail-closed source-audit behavior, delivery retry/dead-letter/duplicate semantics, injection and
+  secret redaction, CSRF/bearer denial, no-store responses, and responsive desktop/mobile UI.
+- A live test-only enterprise Security Auditor and fake TLS Syslog receiver prove event delivery,
+  retry, stable identity, no-secret output, and desktop/mobile layout without granting development
+  identity enterprise privilege.
+- Real SIEM integration, certificate enrollment, multi-destination routing, WORM or log signing,
+  long-term archive, vendor detection deployment, external acknowledgement, and infrastructure
+  execution remain outside this slice.
+
+### ATLAS-IMP-022 Validation Evidence
+
+- Backend quality gates pass: Ruff format/check, strict mypy across 212 source files, and all 244
+  backend tests. The signed cursor regression also passed 20 consecutive focused repetitions.
+- Frontend quality gates pass: ESLint, TypeScript typecheck, all 9 Vitest tests, and production Vite
+  build.
+- Live test-only enterprise authorization proved that a dedicated Security Auditor can discover and
+  search the bounded secret-free inventory while a normal enterprise operator receives a silent 403
+  and sees neither the governance surface nor an intrusive error. The development identity received
+  no enterprise audit assignment.
+- A fake TLS Syslog receiver failed the first handoff, exposed the ordered retrying backlog, and then
+  accepted 19 messages after the CSRF-protected retry. The queue returned to zero, state became
+  active, and every received message was RFC 5424 shaped, single-line, and free of the seeded secret.
+- Live browser validation at 1440 x 900 and 390 x 844 found no horizontal overflow. The responsive
+  audit view remained usable without overlap after dismissing the intentionally modal context drawer.
+- GitHub Actions evidence will be recorded after the review head completes backend and frontend CI.
 
 ### ATLAS-IMP-021 Acceptance Criteria
 

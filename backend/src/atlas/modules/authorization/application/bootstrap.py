@@ -38,8 +38,11 @@ APPROVAL_REQUEST_DECIDE = "approval.request.decide"
 REPORT_CREATE = "report.create"
 SECURITY_EXPORT_OVERVIEW_READ = "security-export.overview.read"
 SECURITY_EXPORT_TEST_CREATE = "security-export.test.create"
+AUDIT_READ = "audit.read"
+AUDIT_EXPORT = "audit.export"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
+SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
 
 
 def current_identity_scope(organization_id: str, environment: str) -> ResourceScope:
@@ -240,6 +243,42 @@ def security_export_scope(organization_id: str, environment: str) -> ResourceSco
     )
 
 
+def audit_export_scope(
+    organization_id: str,
+    environment: str,
+    capability_class: CapabilityClass,
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.audit",
+        resource_id="resource.audit.enterprise-events",
+        capability_class=capability_class,
+    )
+
+
+def audit_permission_definitions() -> tuple[PermissionDefinition, ...]:
+    return (
+        PermissionDefinition(
+            permission_id=AUDIT_READ,
+            description="Read a bounded secret-free audit inventory in one exact scope.",
+        ),
+        PermissionDefinition(
+            permission_id=AUDIT_EXPORT,
+            description="Retry bounded delivery of exact-scope audit events to an approved export.",
+        ),
+    )
+
+
+def security_auditor_role_definition() -> RoleDefinition:
+    return RoleDefinition(
+        role_id=SECURITY_AUDITOR_ROLE_ID,
+        version=1,
+        permissions=frozenset({AUDIT_READ, AUDIT_EXPORT}),
+    )
+
+
 def personal_api_grant_scopes(organization_id: str, environment: str) -> dict[str, ResourceScope]:
     return {
         IDENTITY_SELF_READ: current_identity_scope(organization_id, environment),
@@ -272,6 +311,7 @@ def build_development_authorization_service(
 ) -> AuthorizationService:
     permissions = (
         *identity_governance_permission_definitions(),
+        *audit_permission_definitions(),
         PermissionDefinition(
             permission_id=IDENTITY_SELF_READ,
             description="Read the authenticated subject's own normalized identity context.",
@@ -562,7 +602,11 @@ def build_development_authorization_service(
 
     return AuthorizationService(
         permissions=permissions,
-        roles=(role, security_administrator_role_definition()),
+        roles=(
+            role,
+            security_administrator_role_definition(),
+            security_auditor_role_definition(),
+        ),
         assignments=assignments,
         audit_sink=audit_sink,
     )
