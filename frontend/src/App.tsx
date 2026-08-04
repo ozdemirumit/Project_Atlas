@@ -56,6 +56,10 @@ import {
   acquireBootstrapArtifacts,
   type BootstrapArtifactAcquisitionResult,
 } from "./api/bootstrapArtifactAcquisition";
+import {
+  renderBootstrapConfiguration,
+  type BootstrapConfigurationRenderingResult,
+} from "./api/bootstrapConfigurationRendering";
 import { claimBootstrapLease, type BootstrapClaimResult } from "./api/bootstrapClaim";
 import { getBootstrapPlan } from "./api/bootstrapPlan";
 import { previewBootstrapInvalidation } from "./api/bootstrapInvalidation";
@@ -262,6 +266,11 @@ export function App() {
   const [artifactWarningAccepted, setArtifactWarningAccepted] = useState(false);
   const [artifactAcquisitionResult, setArtifactAcquisitionResult] =
     useState<BootstrapArtifactAcquisitionResult | null>(null);
+  const [configurationRenderingJustification, setConfigurationRenderingJustification] =
+    useState("");
+  const [configurationRenderingPending, setConfigurationRenderingPending] = useState(false);
+  const [configurationRenderingResult, setConfigurationRenderingResult] =
+    useState<BootstrapConfigurationRenderingResult | null>(null);
   const [bootstrapClaimJustification, setBootstrapClaimJustification] = useState("");
   const [bootstrapClaimPending, setBootstrapClaimPending] = useState(false);
   const [bootstrapClaimResult, setBootstrapClaimResult] =
@@ -316,6 +325,9 @@ export function App() {
       setArtifactAcquisitionPending(false);
       setArtifactWarningAccepted(false);
       setArtifactAcquisitionResult(null);
+      setConfigurationRenderingJustification("");
+      setConfigurationRenderingPending(false);
+      setConfigurationRenderingResult(null);
       setBootstrapClaimJustification("");
       setBootstrapClaimPending(false);
       setBootstrapClaimResult(null);
@@ -523,6 +535,24 @@ export function App() {
       ]);
     },
   });
+  const configurationRenderingMutation = useMutation({
+    mutationFn: () =>
+      renderBootstrapConfiguration({
+        state: bootstrapState!,
+        configuration: deploymentConfiguration!,
+        scope: identity!.scope,
+        justification: configurationRenderingJustification.trim(),
+      }),
+    onSuccess: async (response) => {
+      setConfigurationRenderingResult(response.data);
+      setConfigurationRenderingPending(false);
+      setConfigurationRenderingJustification("");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-state"] }),
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-invalidation"] }),
+      ]);
+    },
+  });
   const bootstrapClaimMutation = useMutation({
     mutationFn: () =>
       claimBootstrapLease({
@@ -544,6 +574,8 @@ export function App() {
   });
   const artifactExecution =
     artifactAcquisitionResult?.execution ?? bootstrapState?.run?.artifact_acquisition;
+  const configurationExecution =
+    configurationRenderingResult?.execution ?? bootstrapState?.run?.configuration_rendering;
   const artifactPhaseAvailable = Boolean(
     bootstrapState?.run &&
       bootstrapState.lease_held_by_current_actor &&
@@ -562,6 +594,19 @@ export function App() {
       bootstrapPlan?.state === "ready" &&
       deploymentConfiguration?.state === "passed" &&
       bootstrapState?.run?.state !== "completed",
+  );
+  const configurationPhaseAvailable = Boolean(
+    bootstrapState?.run &&
+      bootstrapState.lease_held_by_current_actor &&
+      bootstrapState.run.current_phase_id === "phase.configure" &&
+      bootstrapState.run.configuration_rendering?.state !== "running" &&
+      bootstrapState.run.completed_phase_ids.includes("phase.acquire") &&
+      bootstrapState.run.artifact_acquisition?.state === "completed" &&
+      deploymentConfiguration?.state === "passed" &&
+      deploymentConfiguration.release_id === bootstrapState.run.release_id &&
+      deploymentConfiguration.profile === bootstrapState.run.profile &&
+      deploymentConfiguration.configuration_digest ===
+        bootstrapState.run.configuration_digest,
   );
   const retryAuditExportMutation = useMutation({
     mutationFn: retryAuditExport,
@@ -1524,6 +1569,137 @@ export function App() {
                             <p className="artifact-recovery-note">
                               Verified prior content was preserved. Correct the bounded failure and
                               retry this phase under the active lease.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      {configurationPhaseAvailable && !configurationRenderingPending && (
+                        <div className="configuration-rendering-action">
+                          <div>
+                            <strong>Render and validate effective configuration</strong>
+                            <p>
+                              Writes only canonical non-secret configuration to the governed Atlas
+                              configuration store. Trust, secrets, data, services, and infrastructure
+                              remain unchanged.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setConfigurationRenderingResult(null);
+                              setConfigurationRenderingPending(true);
+                            }}
+                          >
+                            <FileText size={14} /> Review configuration
+                          </button>
+                        </div>
+                      )}
+                      {configurationRenderingPending &&
+                        configurationPhaseAvailable &&
+                        deploymentConfiguration && (
+                          <div className="configuration-rendering-confirmation" role="dialog">
+                            <div>
+                              <strong>Confirm effective configuration change</strong>
+                              <p>
+                                Configuration {deploymentConfiguration.configuration_digest.slice(0, 12)}
+                                ... will be recomputed, schema-validated, and atomically published.
+                                Existing exact output is reused and conflicting content is preserved.
+                              </p>
+                            </div>
+                            <label>
+                              Change justification
+                              <input
+                                value={configurationRenderingJustification}
+                                maxLength={500}
+                                onChange={(event) =>
+                                  setConfigurationRenderingJustification(event.target.value)
+                                }
+                                placeholder="Record the approved reason for rendering this configuration"
+                              />
+                            </label>
+                            {configurationRenderingMutation.isError && (
+                              <div className="impact-message impact-error" role="alert">
+                                <AlertTriangle size={16} /> Configuration was not published. Refresh
+                                the governed state and preview before retrying.
+                              </div>
+                            )}
+                            <div className="configuration-rendering-confirm-actions">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setConfigurationRenderingPending(false);
+                                  setConfigurationRenderingJustification("");
+                                }}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                className="configuration-rendering-confirm"
+                                type="button"
+                                disabled={
+                                  configurationRenderingJustification.trim().length < 12 ||
+                                  configurationRenderingMutation.isPending
+                                }
+                                onClick={() => configurationRenderingMutation.mutate()}
+                              >
+                                <FileText size={14} /> Confirm configuration
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      {configurationExecution && (
+                        <div className={`configuration-rendering-result ${configurationExecution.state}`}>
+                          <div className="configuration-rendering-result-heading">
+                            {configurationExecution.state === "completed" ? (
+                              <CheckCircle2 size={18} />
+                            ) : (
+                              <AlertTriangle size={18} />
+                            )}
+                            <div>
+                              <strong>Configuration rendering {configurationExecution.state}</strong>
+                              <code>{configurationExecution.result_code}</code>
+                            </div>
+                            <span className={`state-badge ${configurationExecution.state}`}>
+                              {configurationExecution.state}
+                            </span>
+                          </div>
+                          <div className="configuration-rendering-summary">
+                            <div>
+                              <span>Schema</span>
+                              <strong>v1</strong>
+                            </div>
+                            <div>
+                              <span>Files</span>
+                              <strong>{configurationExecution.file_count}</strong>
+                            </div>
+                            <div>
+                              <span>Verified bytes</span>
+                              <strong>{configurationExecution.total_bytes.toLocaleString()}</strong>
+                            </div>
+                            <div>
+                              <span>Completed</span>
+                              <strong>
+                                {formatTimestamp(configurationExecution.completed_at ?? undefined)}
+                              </strong>
+                            </div>
+                          </div>
+                          {configurationExecution.evidence.length > 0 && (
+                            <div className="configuration-evidence-list">
+                              {configurationExecution.evidence.map((item) => (
+                                <div key={item.file_id}>
+                                  <div>
+                                    <code>{item.file_id}</code>
+                                    <span>{item.disposition}</span>
+                                  </div>
+                                  <code>{item.sha256.slice(0, 20)}...</code>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {configurationExecution.state === "failed" && (
+                            <p className="configuration-recovery-note">
+                              Prior verified configuration was preserved. Correct the bounded failure
+                              and retry under the active lease.
                             </p>
                           )}
                         </div>

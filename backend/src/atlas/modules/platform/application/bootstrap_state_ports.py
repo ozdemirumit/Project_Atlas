@@ -6,6 +6,9 @@ from typing import Protocol
 from atlas.modules.platform.domain.bootstrap_artifact_acquisition import (
     ArtifactAcquisitionExecution,
 )
+from atlas.modules.platform.domain.bootstrap_configuration_rendering import (
+    ConfigurationRenderingExecution,
+)
 from atlas.modules.platform.domain.bootstrap_state import (
     BootstrapCheckpointState,
     BootstrapMutationResult,
@@ -70,6 +73,32 @@ class BootstrapStateRepository(Protocol):
         *,
         run_id: str,
         execution: ArtifactAcquisitionExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult: ...
+
+    async def begin_configuration_rendering(
+        self,
+        *,
+        run_id: str,
+        plan_digest: str,
+        resume_key: str,
+        execution: ConfigurationRenderingExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult: ...
+
+    async def finish_configuration_rendering(
+        self,
+        *,
+        run_id: str,
+        execution: ConfigurationRenderingExecution,
         lease_holder_id: str,
         expected_version: int,
         idempotency_key: str,

@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-031 |
 | Title | Governed bootstrap configuration rendering and validation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/bootstrap-configuration-rendering` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Implement the governed `phase.configure` execution path and validation suite |
+| Next Action | Publish the reviewed implementation and complete GitHub CI and merge |
 
 ### ATLAS-IMP-031 Scope Rationale
 
@@ -49,8 +49,9 @@
   replay returns prior evidence without rewriting files; changed replay, stale revision, foreign lease,
   expired/interrupted execution, and concurrent execution fail deterministically.
 - Required RBAC, browser CSRF, pre-mutation and pre-finish audit, correlation ID, `no-store`, safe error
-  mapping, and non-disclosing scope behavior apply. Required audit failure prevents file or state
-  mutation.
+  mapping, and non-disclosing scope behavior apply. A required pre-mutation audit failure prevents
+  execution begin, file publication, and checkpoint mutation; the result audit must succeed before
+  checkpoint completion.
 - The operations UI offers the action only for a current leased `phase.configure` with matching passed
   preview, requires explicit confirmation and justification, communicates configuration-only impact,
   and displays bounded evidence or recovery guidance without trust, secret, data, service, rollback,
@@ -62,6 +63,30 @@
 - This slice does not provision trust, certificates, secret values or identities; initialize or migrate
   data; deploy or restart services; configure enterprise identity, model, or integrations; execute
   rollback; invoke infrastructure connectors; or authorize AI-driven operation.
+
+### ATLAS-IMP-031 Validation Evidence
+
+- Filesystem, application, state, API, and persistence tests cover deterministic canonical output,
+  immutable publication and exact reuse, digest and validation drift, changed replay, stale or foreign
+  ownership, interrupted execution, required audit failure, path and symbolic-link safety, existing
+  conflicts, bounded cleanup, strict request parsing, safe response evidence, PostgreSQL serialization,
+  and persisted reload state. The two symbolic-link cases are skipped only on this Windows host and
+  remain enabled in Linux CI.
+- Full backend verification passes Ruff format/check across 269 files, mypy across 263 source files,
+  and 309 pytest tests with two host-specific symbolic-link skips. Full frontend verification passes
+  ESLint, TypeScript, 24 Vitest tests, and the production build.
+- Live browser validation established the exact coordination lease with explicit justification,
+  acquired and verified three immutable offline artifacts, rendered the approved non-secret effective
+  configuration, published one 1,324-byte file, advanced the run through revisions 1 to 5, completed
+  `phase.acquire` and `phase.configure`, and selected `phase.trust` next without exposing a trust action.
+- Direct filesystem verification found one canonical JSON document beneath the exact release and
+  configuration identities. It contains only effective non-secret values, source precedence, and two
+  opaque secret references; no raw credentials, temporary files, or attempt-owned staging content
+  remained after publication.
+- A page reload retained the completed artifact and configuration evidence without offering either
+  action again. Live presentation passed at 1440x900 and 390x844 with no horizontal overflow, and the
+  browser produced no warning or error logs.
+- GitHub CI evidence will be recorded after branch publication.
 
 ### ATLAS-IMP-030 Scope Rationale
 

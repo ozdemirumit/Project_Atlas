@@ -8,6 +8,9 @@ from atlas.modules.identity.domain.models import validate_stable_identifier
 from atlas.modules.platform.domain.bootstrap_artifact_acquisition import (
     ArtifactAcquisitionExecution,
 )
+from atlas.modules.platform.domain.bootstrap_configuration_rendering import (
+    ConfigurationRenderingExecution,
+)
 from atlas.modules.platform.domain.bootstrap_plan import DIGEST_PATTERN
 from atlas.modules.platform.domain.release_preflight import DeploymentProfile
 
@@ -92,6 +95,7 @@ class BootstrapRunRecord:
     created_at: datetime
     updated_at: datetime
     artifact_acquisition: ArtifactAcquisitionExecution | None = None
+    configuration_rendering: ConfigurationRenderingExecution | None = None
 
     def __post_init__(self) -> None:
         validate_stable_identifier(self.run_id, "run_id")
@@ -121,12 +125,22 @@ class BootstrapRunRecord:
         ):
             raise ValueError("bootstrap checkpoints do not match the plan")
         if self.artifact_acquisition is not None:
-            execution = self.artifact_acquisition
+            artifact_execution = self.artifact_acquisition
             if (
-                execution.release_id != self.identity.release_id
-                or execution.phase_id not in self.identity.phase_ids
+                artifact_execution.release_id != self.identity.release_id
+                or artifact_execution.phase_id not in self.identity.phase_ids
             ):
                 raise ValueError("artifact acquisition does not match the bootstrap run")
+        if self.configuration_rendering is not None:
+            configuration_execution = self.configuration_rendering
+            if (
+                configuration_execution.release_id != self.identity.release_id
+                or configuration_execution.profile is not self.identity.profile
+                or configuration_execution.configuration_digest
+                != self.identity.configuration_digest
+                or configuration_execution.phase_id not in self.identity.phase_ids
+            ):
+                raise ValueError("configuration rendering does not match the bootstrap run")
 
     def lease_is_active(self, at: datetime) -> bool:
         return self.lease_expires_at is not None and at < self.lease_expires_at
@@ -176,3 +190,4 @@ class BootstrapMutationResult:
     invalidation_reason_codes: tuple[str, ...] = ()
     earliest_affected_phase_id: str | None = None
     artifact_acquisition: ArtifactAcquisitionExecution | None = None
+    configuration_rendering: ConfigurationRenderingExecution | None = None

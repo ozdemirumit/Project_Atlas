@@ -10,6 +10,9 @@ from atlas.api.schemas import ResponseMeta
 from atlas.modules.platform.domain.bootstrap_artifact_acquisition import (
     ArtifactAcquisitionExecution,
 )
+from atlas.modules.platform.domain.bootstrap_configuration_rendering import (
+    ConfigurationRenderingExecution,
+)
 from atlas.modules.platform.domain.bootstrap_state import (
     BootstrapMutationResult,
     BootstrapRunIdentity,
@@ -210,6 +213,59 @@ class ArtifactAcquisitionData(BaseModel):
         )
 
 
+class RenderedConfigurationFileData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    file_id: str
+    sha256: str
+    size_bytes: int
+    disposition: str
+
+
+class ConfigurationRenderingData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    execution_id: str
+    phase_id: str
+    release_id: str
+    profile: str
+    configuration_schema_version: str
+    configuration_digest: str
+    state: str
+    result_code: str
+    started_at: datetime
+    completed_at: datetime | None
+    evidence: list[RenderedConfigurationFileData]
+    file_count: int
+    total_bytes: int
+
+    @classmethod
+    def from_domain(cls, execution: ConfigurationRenderingExecution) -> ConfigurationRenderingData:
+        return cls(
+            execution_id=execution.execution_id,
+            phase_id=execution.phase_id,
+            release_id=execution.release_id,
+            profile=execution.profile.value,
+            configuration_schema_version=execution.configuration_schema_version,
+            configuration_digest=execution.configuration_digest,
+            state=execution.state.value,
+            result_code=execution.result_code,
+            started_at=execution.started_at,
+            completed_at=execution.completed_at,
+            evidence=[
+                RenderedConfigurationFileData(
+                    file_id=item.file_id,
+                    sha256=item.sha256,
+                    size_bytes=item.size_bytes,
+                    disposition=item.disposition.value,
+                )
+                for item in execution.evidence
+            ],
+            file_count=len(execution.evidence),
+            total_bytes=execution.total_bytes,
+        )
+
+
 class BootstrapRunData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -233,6 +289,7 @@ class BootstrapRunData(BaseModel):
     created_at: datetime
     updated_at: datetime
     artifact_acquisition: ArtifactAcquisitionData | None
+    configuration_rendering: ConfigurationRenderingData | None
 
     @classmethod
     def from_domain(cls, record: BootstrapRunRecord) -> BootstrapRunData:
@@ -267,6 +324,11 @@ class BootstrapRunData(BaseModel):
             artifact_acquisition=(
                 ArtifactAcquisitionData.from_domain(record.artifact_acquisition)
                 if record.artifact_acquisition is not None
+                else None
+            ),
+            configuration_rendering=(
+                ConfigurationRenderingData.from_domain(record.configuration_rendering)
+                if record.configuration_rendering is not None
                 else None
             ),
         )

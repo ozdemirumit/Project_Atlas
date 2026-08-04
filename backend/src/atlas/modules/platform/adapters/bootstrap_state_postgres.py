@@ -16,6 +16,12 @@ from atlas.modules.platform.domain.bootstrap_artifact_acquisition import (
     ArtifactDisposition,
     VerifiedArtifactEvidence,
 )
+from atlas.modules.platform.domain.bootstrap_configuration_rendering import (
+    ConfigurationFileDisposition,
+    ConfigurationRenderingExecution,
+    ConfigurationRenderingState,
+    RenderedConfigurationEvidence,
+)
 from atlas.modules.platform.domain.bootstrap_invalidation import compare_bootstrap_run
 from atlas.modules.platform.domain.bootstrap_state import (
     BootstrapCheckpointState,
@@ -143,6 +149,38 @@ class PostgreSQLBootstrapStateRepository:
                         ),
                         artifact_acquisition=interrupted,
                     )
+                if (
+                    reclaimed
+                    and current.configuration_rendering is not None
+                    and current.configuration_rendering.state is ConfigurationRenderingState.RUNNING
+                ):
+                    interrupted_configuration = replace(
+                        current.configuration_rendering,
+                        state=ConfigurationRenderingState.FAILED,
+                        result_code="bootstrap.configuration.interrupted",
+                        completed_at=now,
+                    )
+                    failed_configuration_checkpoint = BootstrapPhaseCheckpoint(
+                        phase_id="phase.configure",
+                        state=BootstrapCheckpointState.FAILED,
+                        safe_output_references=(
+                            "result.configuration-rendering."
+                            f"{sha256(interrupted_configuration.execution_id.encode()).hexdigest()[:24]}",
+                        ),
+                        recorded_at=now,
+                    )
+                    current = replace(
+                        current,
+                        checkpoints=(
+                            *(
+                                item
+                                for item in current.checkpoints
+                                if item.phase_id != "phase.configure"
+                            ),
+                            failed_configuration_checkpoint,
+                        ),
+                        configuration_rendering=interrupted_configuration,
+                    )
                 record = replace(
                     current,
                     version=current.version + 1,
@@ -190,7 +228,7 @@ class PostgreSQLBootstrapStateRepository:
             if replay is not None:
                 return replay
             current = self._to_domain(row)
-            self._require_no_running_acquisition(current)
+            self._require_no_running_phase(current)
             if (
                 current.identity.plan_digest != plan_digest
                 or current.identity.resume_key != resume_key
@@ -267,7 +305,7 @@ class PostgreSQLBootstrapStateRepository:
             if replay is not None:
                 return replay
             current = self._to_domain(row)
-            self._require_no_running_acquisition(current)
+            self._require_no_running_phase(current)
             if (
                 current.identity.plan_digest != plan_digest
                 or current.identity.resume_key != resume_key
@@ -295,6 +333,154 @@ class PostgreSQLBootstrapStateRepository:
                 record=record,
                 replayed=False,
                 artifact_acquisition=execution,
+            )
+            self._remember(row, lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
+    async def begin_configuration_rendering(
+        self,
+        *,
+        run_id: str,
+        plan_digest: str,
+        resume_key: str,
+        execution: ConfigurationRenderingExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._sessions.begin() as session:
+            row = await session.scalar(
+                select(BootstrapRunModel)
+                .where(BootstrapRunModel.run_id == run_id)
+                .with_for_update()
+            )
+            if row is None:
+                raise BootstrapRepositoryError("bootstrap_run_unavailable")
+            replay = self._replay(row, lease_holder_id, idempotency_key, request_fingerprint)
+            if replay is not None:
+                return replay
+            current = self._to_domain(row)
+            self._require_no_running_phase(current)
+            if (
+                current.identity.plan_digest != plan_digest
+                or current.identity.resume_key != resume_key
+            ):
+                raise BootstrapRepositoryError("bootstrap_plan_mismatch")
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            if current.state is BootstrapRunState.COMPLETED:
+                raise BootstrapRepositoryError("bootstrap_run_completed")
+            if (
+                current.current_phase_id != "phase.configure"
+                or execution.phase_id != "phase.configure"
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_out_of_order")
+            record = replace(
+                current,
+                version=current.version + 1,
+                state=BootstrapRunState.ACTIVE,
+                checkpoints=tuple(
+                    item for item in current.checkpoints if item.phase_id != "phase.configure"
+                ),
+                configuration_rendering=execution,
+                updated_at=now,
+            )
+            self._apply(row, record)
+            result = BootstrapMutationResult(
+                record=record,
+                replayed=False,
+                configuration_rendering=execution,
+            )
+            self._remember(row, lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
+    async def finish_configuration_rendering(
+        self,
+        *,
+        run_id: str,
+        execution: ConfigurationRenderingExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._sessions.begin() as session:
+            row = await session.scalar(
+                select(BootstrapRunModel)
+                .where(BootstrapRunModel.run_id == run_id)
+                .with_for_update()
+            )
+            if row is None:
+                raise BootstrapRepositoryError("bootstrap_run_unavailable")
+            replay = self._replay(row, lease_holder_id, idempotency_key, request_fingerprint)
+            if (
+                replay is not None
+                and replay.configuration_rendering is not None
+                and replay.configuration_rendering.state is not ConfigurationRenderingState.RUNNING
+            ):
+                return replay
+            current = self._to_domain(row)
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            active = current.configuration_rendering
+            if (
+                active is None
+                or active.state is not ConfigurationRenderingState.RUNNING
+                or active.execution_id != execution.execution_id
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_execution_unavailable")
+            if (
+                execution.state is ConfigurationRenderingState.RUNNING
+                or execution.release_id != active.release_id
+                or execution.profile is not active.profile
+                or execution.configuration_schema_version != active.configuration_schema_version
+                or execution.configuration_digest != active.configuration_digest
+                or execution.started_at != active.started_at
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_execution_conflict")
+            if execution.state is ConfigurationRenderingState.COMPLETED:
+                reference = f"result.configuration.{execution.configuration_digest[:32]}"
+                checkpoint_state = BootstrapCheckpointState.COMPLETED
+                completed_after = len(current.completed_phase_ids) + 1
+                run_state = (
+                    BootstrapRunState.COMPLETED
+                    if completed_after == len(current.identity.phase_ids)
+                    else BootstrapRunState.ACTIVE
+                )
+            else:
+                reference = (
+                    "result.configuration-rendering."
+                    f"{sha256(execution.result_code.encode()).hexdigest()[:24]}"
+                )
+                checkpoint_state = BootstrapCheckpointState.FAILED
+                run_state = BootstrapRunState.FAILED
+            checkpoint = BootstrapPhaseCheckpoint(
+                phase_id="phase.configure",
+                state=checkpoint_state,
+                safe_output_references=(reference,),
+                recorded_at=now,
+            )
+            record = replace(
+                current,
+                version=current.version + 1,
+                state=run_state,
+                checkpoints=(
+                    *(item for item in current.checkpoints if item.phase_id != "phase.configure"),
+                    checkpoint,
+                ),
+                configuration_rendering=execution,
+                updated_at=now,
+            )
+            self._apply(row, record)
+            result = BootstrapMutationResult(
+                record=record,
+                replayed=False,
+                configuration_rendering=execution,
             )
             self._remember(row, lease_holder_id, idempotency_key, request_fingerprint, result)
             return result
@@ -408,7 +594,7 @@ class PostgreSQLBootstrapStateRepository:
             if replay is not None:
                 return replay
             current = self._to_domain(row)
-            self._require_no_running_acquisition(current)
+            self._require_no_running_phase(current)
             self._require_lease(current, lease_holder_id, now)
             if current.version != expected_version:
                 raise BootstrapRepositoryError("bootstrap_stale_revision")
@@ -449,7 +635,7 @@ class PostgreSQLBootstrapStateRepository:
             if replay is not None:
                 return replay
             current = self._to_domain(row)
-            self._require_no_running_acquisition(current)
+            self._require_no_running_phase(current)
             if (
                 candidate.organization_id != current.identity.organization_id
                 or candidate.environment_id != current.identity.environment_id
@@ -479,6 +665,9 @@ class PostgreSQLBootstrapStateRepository:
                 artifact_acquisition=(
                     current.artifact_acquisition if "phase.acquire" in reusable else None
                 ),
+                configuration_rendering=(
+                    current.configuration_rendering if "phase.configure" in reusable else None
+                ),
                 updated_at=now,
             )
             self._apply(row, record)
@@ -503,10 +692,13 @@ class PostgreSQLBootstrapStateRepository:
             raise BootstrapRepositoryError("bootstrap_lease_unavailable")
 
     @staticmethod
-    def _require_no_running_acquisition(record: BootstrapRunRecord) -> None:
+    def _require_no_running_phase(record: BootstrapRunRecord) -> None:
         if (
             record.artifact_acquisition is not None
             and record.artifact_acquisition.state is ArtifactAcquisitionState.RUNNING
+        ) or (
+            record.configuration_rendering is not None
+            and record.configuration_rendering.state is ConfigurationRenderingState.RUNNING
         ):
             raise BootstrapRepositoryError("bootstrap_phase_in_progress")
 
@@ -541,6 +733,9 @@ class PostgreSQLBootstrapStateRepository:
             for item in record.checkpoints
         ]
         model.artifact_acquisition = cls._execution_to_json(record.artifact_acquisition)
+        model.configuration_rendering = cls._configuration_execution_to_json(
+            record.configuration_rendering
+        )
         model.lease_holder_id = record.lease_holder_id
         model.lease_acquired_at = record.lease_acquired_at
         model.lease_expires_at = record.lease_expires_at
@@ -579,6 +774,9 @@ class PostgreSQLBootstrapStateRepository:
             created_at=model.created_at,
             updated_at=model.updated_at,
             artifact_acquisition=cls._execution_from_json(model.artifact_acquisition),
+            configuration_rendering=cls._configuration_execution_from_json(
+                model.configuration_rendering
+            ),
         )
 
     @classmethod
@@ -608,6 +806,9 @@ class PostgreSQLBootstrapStateRepository:
             invalidation_reason_codes=tuple(prior.get("invalidation_reason_codes", ())),
             earliest_affected_phase_id=prior.get("earliest_affected_phase_id"),
             artifact_acquisition=cls._execution_from_json(prior.get("artifact_acquisition")),
+            configuration_rendering=cls._configuration_execution_from_json(
+                prior.get("configuration_rendering")
+            ),
         )
 
     @classmethod
@@ -629,6 +830,9 @@ class PostgreSQLBootstrapStateRepository:
             "invalidation_reason_codes": list(result.invalidation_reason_codes),
             "earliest_affected_phase_id": result.earliest_affected_phase_id,
             "artifact_acquisition": cls._execution_to_json(result.artifact_acquisition),
+            "configuration_rendering": cls._configuration_execution_to_json(
+                result.configuration_rendering
+            ),
         }
         while len(records) > 100:
             del records[next(iter(records))]
@@ -674,6 +878,9 @@ class PostgreSQLBootstrapStateRepository:
             "created_at": record.created_at.isoformat(),
             "updated_at": record.updated_at.isoformat(),
             "artifact_acquisition": cls._execution_to_json(record.artifact_acquisition),
+            "configuration_rendering": cls._configuration_execution_to_json(
+                record.configuration_rendering
+            ),
         }
 
     @classmethod
@@ -716,6 +923,9 @@ class PostgreSQLBootstrapStateRepository:
             created_at=datetime.fromisoformat(data["created_at"]),
             updated_at=datetime.fromisoformat(data["updated_at"]),
             artifact_acquisition=cls._execution_from_json(data.get("artifact_acquisition")),
+            configuration_rendering=cls._configuration_execution_from_json(
+                data.get("configuration_rendering")
+            ),
         )
 
     @staticmethod
@@ -774,6 +984,70 @@ class PostgreSQLBootstrapStateRepository:
                     sha256=item["sha256"],
                     size_bytes=item["size_bytes"],
                     disposition=ArtifactDisposition(item["disposition"]),
+                )
+                for item in data["evidence"]
+            ),
+            total_bytes=data["total_bytes"],
+        )
+
+    @staticmethod
+    def _configuration_execution_to_json(
+        execution: ConfigurationRenderingExecution | None,
+    ) -> dict[str, Any] | None:
+        if execution is None:
+            return None
+        return {
+            "execution_id": execution.execution_id,
+            "phase_id": execution.phase_id,
+            "release_id": execution.release_id,
+            "profile": execution.profile.value,
+            "configuration_schema_version": execution.configuration_schema_version,
+            "configuration_digest": execution.configuration_digest,
+            "state": execution.state.value,
+            "result_code": execution.result_code,
+            "started_at": execution.started_at.isoformat(),
+            "completed_at": (
+                execution.completed_at.isoformat() if execution.completed_at is not None else None
+            ),
+            "evidence": [
+                {
+                    "file_id": item.file_id,
+                    "sha256": item.sha256,
+                    "size_bytes": item.size_bytes,
+                    "disposition": item.disposition.value,
+                }
+                for item in execution.evidence
+            ],
+            "total_bytes": execution.total_bytes,
+        }
+
+    @staticmethod
+    def _configuration_execution_from_json(
+        data: dict[str, Any] | None,
+    ) -> ConfigurationRenderingExecution | None:
+        if data is None:
+            return None
+        return ConfigurationRenderingExecution(
+            execution_id=data["execution_id"],
+            phase_id=data["phase_id"],
+            release_id=data["release_id"],
+            profile=DeploymentProfile(data["profile"]),
+            configuration_schema_version=data["configuration_schema_version"],
+            configuration_digest=data["configuration_digest"],
+            state=ConfigurationRenderingState(data["state"]),
+            result_code=data["result_code"],
+            started_at=datetime.fromisoformat(data["started_at"]),
+            completed_at=(
+                datetime.fromisoformat(data["completed_at"])
+                if data["completed_at"] is not None
+                else None
+            ),
+            evidence=tuple(
+                RenderedConfigurationEvidence(
+                    file_id=item["file_id"],
+                    sha256=item["sha256"],
+                    size_bytes=item["size_bytes"],
+                    disposition=ConfigurationFileDisposition(item["disposition"]),
                 )
                 for item in data["evidence"]
             ),

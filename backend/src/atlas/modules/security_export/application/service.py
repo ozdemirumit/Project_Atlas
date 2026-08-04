@@ -372,6 +372,11 @@ class SecurityExportService(AuditSink):
             signature = base64.urlsafe_b64decode(
                 encoded_signature + "=" * (-len(encoded_signature) % 4)
             )
+            if (
+                base64.urlsafe_b64encode(value).decode().rstrip("=") != encoded_value
+                or base64.urlsafe_b64encode(signature).decode().rstrip("=") != encoded_signature
+            ):
+                raise ValueError
             if not hmac.compare_digest(signature, hmac.digest(self._cursor_key, value, "sha256")):
                 raise ValueError
             version, sequence = value.decode().split(":", maxsplit=1)

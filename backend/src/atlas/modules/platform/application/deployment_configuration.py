@@ -45,6 +45,15 @@ class _EffectiveConfiguration:
     secret_references: tuple[NamedStringValue, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class PreparedDeploymentConfiguration:
+    state: ConfigurationState
+    configuration_digest: str
+    rendered_content: bytes
+    fields: tuple[EffectiveConfigurationField, ...]
+    validations: tuple[ConfigurationValidation, ...]
+
+
 class DeploymentConfigurationService:
     def __init__(
         self,
@@ -76,15 +85,7 @@ class DeploymentConfigurationService:
             await self._audit_denial(actor, request, correlation_id)
             raise DeploymentConfigurationScopeError("configuration scope does not match actor")
 
-        defaults = self._defaults(request.profile)
-        effective, sources = self._render(defaults, request.overlay)
-        validations = self._validate(request, effective)
-        state = (
-            ConfigurationState.FAILED
-            if any(item.state is ConfigurationState.FAILED for item in validations)
-            else ConfigurationState.PASSED
-        )
-        digest = sha256(self._canonical_payload(request, effective)).hexdigest()
+        prepared = self.prepare(request)
         preview = DeploymentConfigurationPreview(
             preview_id=f"configuration-preview.{uuid4().hex}",
             schema_version="atlas.deployment-configuration-preview.v1",
@@ -93,15 +94,42 @@ class DeploymentConfigurationService:
             organization_id=request.organization_id,
             environment_id=request.environment_id,
             site_id=request.site_id,
-            state=state,
-            configuration_digest=digest,
-            fields=self._safe_fields(effective, sources),
-            validations=validations,
+            state=prepared.state,
+            configuration_digest=prepared.configuration_digest,
+            fields=prepared.fields,
+            validations=prepared.validations,
             generated_at=self._clock(),
             correlation_id=correlation_id,
         )
         await self._audit_success(actor, preview)
         return preview
+
+    def prepare(self, request: DeploymentConfigurationRequest) -> PreparedDeploymentConfiguration:
+        defaults = self._defaults(request.profile)
+        effective, sources = self._render(defaults, request.overlay)
+        validations = self._validate(request, effective)
+        state = (
+            ConfigurationState.FAILED
+            if any(item.state is ConfigurationState.FAILED for item in validations)
+            else ConfigurationState.PASSED
+        )
+        canonical_content = self._canonical_payload(request, effective)
+        digest = sha256(canonical_content).hexdigest()
+        rendered_document = {
+            "configuration": json.loads(canonical_content),
+            "configuration_digest": digest,
+            "source_precedence": {key: sources[key].value for key in sorted(sources)},
+        }
+        return PreparedDeploymentConfiguration(
+            state=state,
+            configuration_digest=digest,
+            rendered_content=(
+                json.dumps(rendered_document, sort_keys=True, separators=(",", ":")).encode()
+                + b"\n"
+            ),
+            fields=self._safe_fields(effective, sources),
+            validations=validations,
+        )
 
     def _defaults(self, profile: DeploymentProfile) -> _EffectiveConfiguration:
         developer = profile is DeploymentProfile.DEVELOPER
