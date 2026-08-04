@@ -19,6 +19,7 @@ from atlas.api.routes import (
     bootstrap_artifacts,
     bootstrap_configuration,
     bootstrap_data,
+    bootstrap_handoff,
     bootstrap_identity,
     bootstrap_integrations,
     bootstrap_invalidation,
@@ -102,6 +103,9 @@ from atlas.modules.platform.adapters.bootstrap_configuration_filesystem import (
 )
 from atlas.modules.platform.adapters.bootstrap_data_filesystem import FilesystemBootstrapDataTarget
 from atlas.modules.platform.adapters.bootstrap_data_synthetic import SyntheticBootstrapDataCatalog
+from atlas.modules.platform.adapters.bootstrap_handoff_filesystem import (
+    FilesystemBootstrapHandoffTarget,
+)
 from atlas.modules.platform.adapters.bootstrap_identity_filesystem import (
     FilesystemBootstrapIdentityTarget,
 )
@@ -163,6 +167,10 @@ from atlas.modules.platform.application.bootstrap_integration_validation import 
     BootstrapIntegrationValidationService,
 )
 from atlas.modules.platform.application.bootstrap_invalidation import BootstrapInvalidationService
+from atlas.modules.platform.application.bootstrap_operational_handoff import (
+    BootstrapHandoffPlanService,
+    BootstrapOperationalHandoffService,
+)
 from atlas.modules.platform.application.bootstrap_plan import BootstrapPlanService
 from atlas.modules.platform.application.bootstrap_service_deployment import (
     BootstrapServiceDeploymentService,
@@ -235,6 +243,8 @@ def create_app(
     bootstrap_integration_validation_service: BootstrapIntegrationValidationService | None = None,
     bootstrap_verification_plan_service: BootstrapVerificationPlanService | None = None,
     bootstrap_end_to_end_verification_service: BootstrapEndToEndVerificationService | None = None,
+    bootstrap_handoff_plan_service: BootstrapHandoffPlanService | None = None,
+    bootstrap_operational_handoff_service: BootstrapOperationalHandoffService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -510,6 +520,30 @@ def create_app(
             site_id="site.local",
         )
     )
+    resolved_bootstrap_handoff_target = FilesystemBootstrapHandoffTarget(
+        root=resolved_settings.bootstrap_handoff_root,
+        max_report_bytes=resolved_settings.bootstrap_handoff_max_report_bytes,
+    )
+    resolved_bootstrap_handoff_plan_service = (
+        bootstrap_handoff_plan_service
+        or BootstrapHandoffPlanService(
+            repository=resolved_bootstrap_state_service.repository,
+            target=resolved_bootstrap_handoff_target,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
+        )
+    )
+    resolved_bootstrap_operational_handoff_service = (
+        bootstrap_operational_handoff_service
+        or BootstrapOperationalHandoffService(
+            repository=resolved_bootstrap_state_service.repository,
+            plan_service=resolved_bootstrap_handoff_plan_service,
+            target=resolved_bootstrap_handoff_target,
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
+        )
+    )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -668,6 +702,10 @@ def create_app(
         app.state.bootstrap_end_to_end_verification_service = (
             resolved_bootstrap_end_to_end_verification_service
         )
+        app.state.bootstrap_handoff_plan_service = resolved_bootstrap_handoff_plan_service
+        app.state.bootstrap_operational_handoff_service = (
+            resolved_bootstrap_operational_handoff_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -728,6 +766,7 @@ def create_app(
     app.include_router(bootstrap_identity.router, prefix="/api/v1")
     app.include_router(bootstrap_integrations.router, prefix="/api/v1")
     app.include_router(bootstrap_verification.router, prefix="/api/v1")
+    app.include_router(bootstrap_handoff.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
     app.include_router(health_checks.router, prefix="/api/v1")

@@ -457,6 +457,66 @@ const bootstrapVerificationPlan = {
   },
 };
 
+const bootstrapHandoffPlan = {
+  data: {
+    schema_version: "atlas.bootstrap-handoff-plan.v1",
+    suite_version: "atlas.bootstrap-handoff-suite.v1",
+    release_id: "release.atlas.lab-0.1.0",
+    profile: "linux_lab",
+    organization_id: "organization.enterprise",
+    environment_id: "environment.test",
+    site_id: "site.local",
+    source_run_id: "bootstrap-run.ui-001",
+    source_run_version: 17,
+    configuration_digest: "b".repeat(64),
+    trust_plan_digest: "f".repeat(64),
+    data_plan_digest: "5".repeat(64),
+    service_plan_digest: "d".repeat(64),
+    identity_plan_digest: "9".repeat(64),
+    integration_plan_digest: "7".repeat(64),
+    verification_plan_digest: "4".repeat(64),
+    verification_report_digest: "3".repeat(64),
+    source_evidence_digest: "8".repeat(64),
+    handoff_plan_digest: "2".repeat(64),
+    ingress_contract_id: "ingress.local-api-ui",
+    target_id: "target.bootstrap-handoff-report",
+    target_kind: "target-kind.local-handoff-report",
+    target_state: "empty",
+    readiness_class: "developer_linux_lab_bootstrap_complete",
+    readiness_claims: {
+      production_ready: false,
+      customer_integrations_validated: false,
+      support_accepted: false,
+      ha_certified: false,
+      dr_certified: false,
+      backup_restore_validated: false,
+      release_approved: false,
+    },
+    known_limitation_ids: Array.from(
+      { length: 7 },
+      (_, index) => `limitation.ui-${index + 1}`,
+    ),
+    pending_action_ids: Array.from({ length: 7 }, (_, index) => `action.ui-${index + 1}`),
+    owner_role_ids: Array.from({ length: 5 }, (_, index) => `owner-role.ui-${index + 1}`),
+    missing_production_evidence_ids: Array.from(
+      { length: 7 },
+      (_, index) => `evidence.production-ui-${index + 1}`,
+    ),
+    checks: Array.from({ length: 15 }, (_, index) => ({
+      check_id: `handoff.ui-${index + 1}`,
+      category_id: `category.${index < 12 ? "mandatory" : "production"}`,
+      subject_id: `subject.handoff-${index + 1}`,
+      state: index < 12 ? "passed" : "not_applicable",
+      result_code: `handoff.ui-${index + 1}.${index < 12 ? "passed" : "not-available"}`,
+      mandatory: index < 12,
+    })),
+    state: "passed",
+    result_code: "bootstrap.handoff-plan.passed",
+    generated_at: "2026-08-04T16:09:00Z",
+    external_operations_authorized: false,
+  },
+};
+
 const bootstrapState = {
   data: {
     run: {
@@ -2392,6 +2452,267 @@ describe("deployment configuration preview", () => {
     expect(
       screen.queryByRole("button", {
         name: /run backup|call model|activate connector|execute workflow/i,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("completes a bounded lab handoff without asserting production readiness", async () => {
+    vi.stubGlobal("crypto", { randomUUID: () => "handoff-request-001" });
+    const verificationExecution = {
+      execution_id: "phase-execution.ui-verification-complete",
+      phase_id: "phase.verify",
+      release_id: "release.atlas.lab-0.1.0",
+      profile: "linux_lab",
+      configuration_digest: "b".repeat(64),
+      trust_plan_digest: "f".repeat(64),
+      data_plan_digest: "5".repeat(64),
+      service_plan_digest: "d".repeat(64),
+      identity_plan_digest: "9".repeat(64),
+      integration_plan_digest: "7".repeat(64),
+      verification_schema_version: "atlas.bootstrap-verification-plan.v1",
+      suite_version: "atlas.bootstrap-verification-suite.v1",
+      verification_plan_digest: "4".repeat(64),
+      target_id: "target.bootstrap-verification-report",
+      state: "completed",
+      result_code: "bootstrap.verification.completed",
+      started_at: "2026-08-04T16:08:00Z",
+      completed_at: "2026-08-04T16:08:01Z",
+      passed_count: 12,
+      failed_count: 0,
+      skipped_count: 0,
+      not_applicable_count: 3,
+      mandatory_pass_count: 12,
+      unresolved_mandatory_count: 0,
+      external_operation_count: 0,
+      checks: bootstrapVerificationPlan.data.checks,
+      evidence: [
+        {
+          evidence_id: "verification.end-to-end-report",
+          sha256: "3".repeat(64),
+          size_bytes: 3200,
+          disposition: "published",
+        },
+      ],
+    };
+    const handoffState = {
+      data: {
+        ...bootstrapState.data,
+        run: {
+          ...bootstrapState.data.run,
+          version: 17,
+          phase_ids: [
+            "phase.acquire",
+            "phase.configure",
+            "phase.trust",
+            "phase.data",
+            "phase.services",
+            "phase.identity",
+            "phase.integrations",
+            "phase.verify",
+            "phase.handoff",
+          ],
+          checkpoints: [
+            ...[
+              "phase.acquire",
+              "phase.configure",
+              "phase.trust",
+              "phase.data",
+              "phase.services",
+              "phase.identity",
+              "phase.integrations",
+              "phase.verify",
+            ].map((phaseId) => ({
+              phase_id: phaseId,
+              state: "completed",
+              safe_output_references: [`result.${phaseId.slice(6)}.verified`],
+              recorded_at: "2026-08-04T16:08:01Z",
+            })),
+          ],
+          completed_phase_ids: [
+            "phase.acquire",
+            "phase.configure",
+            "phase.trust",
+            "phase.data",
+            "phase.services",
+            "phase.identity",
+            "phase.integrations",
+            "phase.verify",
+          ],
+          current_phase_id: "phase.handoff",
+          end_to_end_verification: verificationExecution,
+          operational_handoff: null,
+          updated_at: "2026-08-04T16:08:01Z",
+        },
+      },
+    };
+    const requests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) {
+        return Promise.resolve(new Response(JSON.stringify(identity), { status: 200 }));
+      }
+      if (url.includes("/release-preflight")) {
+        return Promise.resolve(new Response(JSON.stringify(preflight), { status: 200 }));
+      }
+      if (url.includes("/deployment-configuration/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(configurationPreview()), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-trust-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapTrustPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-data-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapDataPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-service-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapServicePlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-identity-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapIdentityPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-integration-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapIntegrationPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-handoff-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapHandoffPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-plan")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-state/current")) {
+        return Promise.resolve(new Response(JSON.stringify(handoffState), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-invalidation/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapInvalidation), { status: 200 }));
+      }
+      if (url.includes("/phases/handoff")) {
+        const headers = new Headers(init?.headers);
+        requests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        const execution = {
+          execution_id: "phase-execution.ui-handoff-001",
+          phase_id: "phase.handoff",
+          release_id: "release.atlas.lab-0.1.0",
+          profile: "linux_lab",
+          configuration_digest: "b".repeat(64),
+          trust_plan_digest: "f".repeat(64),
+          data_plan_digest: "5".repeat(64),
+          service_plan_digest: "d".repeat(64),
+          identity_plan_digest: "9".repeat(64),
+          integration_plan_digest: "7".repeat(64),
+          verification_plan_digest: "4".repeat(64),
+          verification_report_digest: "3".repeat(64),
+          source_evidence_digest: "8".repeat(64),
+          handoff_schema_version: "atlas.bootstrap-handoff-plan.v1",
+          suite_version: "atlas.bootstrap-handoff-suite.v1",
+          handoff_plan_digest: "2".repeat(64),
+          target_id: "target.bootstrap-handoff-report",
+          readiness_class: "developer_linux_lab_bootstrap_complete",
+          readiness_claims: bootstrapHandoffPlan.data.readiness_claims,
+          state: "completed",
+          result_code: "bootstrap.handoff.completed",
+          started_at: "2026-08-04T16:09:00Z",
+          completed_at: "2026-08-04T16:09:01Z",
+          passed_count: 12,
+          not_applicable_count: 3,
+          mandatory_pass_count: 12,
+          known_limitation_count: 7,
+          pending_action_count: 7,
+          owner_role_count: 5,
+          missing_production_evidence_count: 7,
+          external_operation_count: 0,
+          checks: bootstrapHandoffPlan.data.checks,
+          evidence: [
+            {
+              evidence_id: "handoff.operational-report",
+              sha256: "1".repeat(64),
+              size_bytes: 4100,
+              disposition: "published",
+            },
+          ],
+        };
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                run: {
+                  ...handoffState.data.run,
+                  version: 19,
+                  state: "completed",
+                  checkpoints: [
+                    ...handoffState.data.run.checkpoints,
+                    {
+                      phase_id: "phase.handoff",
+                      state: "completed",
+                      safe_output_references: [`result.handoff.${"2".repeat(32)}`],
+                      recorded_at: "2026-08-04T16:09:01Z",
+                    },
+                  ],
+                  completed_phase_ids: [
+                    ...handoffState.data.run.completed_phase_ids,
+                    "phase.handoff",
+                  ],
+                  current_phase_id: null,
+                  operational_handoff: execution,
+                  updated_at: "2026-08-04T16:09:01Z",
+                },
+                execution,
+                replayed: false,
+                synthetic_report_mutation_performed: true,
+                model_request_performed: false,
+                network_request_performed: false,
+                secret_resolution_performed: false,
+                connector_invocation_performed: false,
+                knowledge_mutation_performed: false,
+                workflow_execution_performed: false,
+                approval_creation_performed: false,
+                backup_restore_operation_performed: false,
+                external_export_performed: false,
+                support_bundle_export_performed: false,
+                ticket_creation_performed: false,
+                notification_performed: false,
+                infrastructure_mutation_performed: false,
+                deployment_action_performed: false,
+                ai_advice_generated: false,
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Review handoff" }));
+    expect(screen.getByText("Confirm operational handoff")).toBeVisible();
+    expect(screen.getByText("All seven claims remain false")).toBeVisible();
+    expect(screen.getAllByText("Bounded handoff limitation")).toHaveLength(7);
+    const confirm = screen.getByRole("button", { name: "Confirm handoff" });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Handoff justification"), {
+      target: { value: "Publish the reviewed developer and lab operational handoff evidence." },
+    });
+    fireEvent.click(confirm);
+
+    expect(await screen.findByText("Operational handoff completed")).toBeVisible();
+    expect(screen.getByText("handoff.operational-report")).toBeVisible();
+    expect(screen.getByText(/Production readiness remains false/)).toBeVisible();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.body).toContain('"phase_id":"phase.handoff"');
+    expect(requests[0]?.body).toContain('"verification_report_digest":"' + "3".repeat(64));
+    expect(requests[0]?.body).toContain('"handoff_plan_digest":"' + "2".repeat(64));
+    expect(requests[0]?.idempotencyKey).toBe("bootstrap-handoff.17.handoff-request-001");
+    expect(
+      screen.queryByRole("button", {
+        name: /export support|create ticket|notify owner|approve production/i,
       }),
     ).not.toBeInTheDocument();
   });
