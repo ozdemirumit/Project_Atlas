@@ -8,7 +8,7 @@
 | Title | Governed bootstrap model gateway and core integration validation |
 | Status | Review |
 | Branch | `agent/bootstrap-integration-validation` |
-| Pull Request | Pending |
+| Pull Request | [#48](https://github.com/ozdemirumit/Project_Atlas/pull/48) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-014, ATLAS-030, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
 | Next Action | Open the implementation PR and complete GitHub CI review |
@@ -93,8 +93,9 @@
 - Live presentation passed at 1440x900 and 390x844 with no horizontal overflow in the integration
   result card or its descendants. The result displayed eight model checks, four integration checks,
   12 mandatory passes, and zero external operations; browser warning/error logs were empty.
-- Source implementation is committed as `7e1b894`; pull-request and final GitHub CI evidence will be
-  attached during review.
+- Source implementation is committed as `7e1b894` and is under review in
+  [PR #48](https://github.com/ozdemirumit/Project_Atlas/pull/48); final GitHub CI evidence will be
+  attached before merge.
 
 ### ATLAS-IMP-035 Scope Rationale
 
