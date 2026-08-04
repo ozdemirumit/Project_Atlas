@@ -4,14 +4,92 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-036 |
-| Title | Governed bootstrap model gateway and core integration validation |
+| Task ID | ATLAS-IMP-037 |
+| Title | Governed bootstrap end-to-end verification |
 | Status | Review |
-| Branch | `agent/bootstrap-integration-validation` |
-| Pull Request | [#48](https://github.com/ozdemirumit/Project_Atlas/pull/48) |
-| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-014, ATLAS-030, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-056, ATLAS-057, ATLAS-059 |
+| Branch | `agent/bootstrap-end-to-end-verification` |
+| Pull Request | [#49](https://github.com/ozdemirumit/Project_Atlas/pull/49) |
+| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-030, ATLAS-032, ATLAS-033, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
 | Next Action | Open the implementation PR and complete GitHub CI review |
+
+### ATLAS-IMP-037 Scope Rationale
+
+- ATLAS-038 places a versioned end-to-end verification suite after model and core-integration
+  validation and before operational handoff. IMP-029 through IMP-036 now provide one governed run
+  with exact acquire, configure, trust, data, services, identity, and integrations checkpoints, but
+  Atlas cannot yet reconcile those artifacts into a single installation verdict or prevent a
+  mandatory omission from being reported as success.
+- No approved production ingress, customer directory, model endpoint, object/vector/graph/cache
+  service, backup destination, Syslog/SIEM/ITSM receiver, or lab connector target is available in
+  this workspace. This first slice therefore verifies only deterministic Atlas-owned evidence for
+  developer and Linux-lab profiles. Unsupported optional dependencies are explicitly
+  `not_applicable`; every applicable mandatory check must pass, and no skipped mandatory check is
+  permitted.
+
+### ATLAS-IMP-037 Acceptance Criteria
+
+- A read-only versioned verification plan binds release/profile/scope, configuration and all prior
+  phase-plan digests, seven completed checkpoint executions, their bounded evidence, the intended
+  local API/UI ingress contract, and a deterministic verification-suite version and digest.
+- The suite reports passed, failed, skipped, and not-applicable checks with stable IDs, subjects,
+  mandatory flags, and non-sensitive reasons. Mandatory failed or skipped checks prevent a
+  successful plan or execution; optional unavailable production integrations remain explicit rather
+  than being silently omitted.
+- The bounded developer/Linux-lab catalog covers local UI/API readiness evidence; enterprise
+  authentication, session, default-deny RBAC, and group mapping; audit integrity and protected
+  access; structured logging, correlation, and redaction; the selected PostgreSQL data contract;
+  offline model and integration contracts; synthetic knowledge, workflow/policy/approval,
+  read-only connector, backup/restore, and external-export applicability declarations.
+- A strict C2 request binds the exact leased run/revision, bootstrap identity, all prior digests,
+  verification schema/suite/digest, expected empty or byte-for-byte reusable target,
+  `phase.verify`, justification, and idempotency key. Scope mismatch, stale or changed replay,
+  foreign lease, interruption, and out-of-order execution fail closed.
+- Execution requires all seven prior checkpoints and exact completed integration evidence. It
+  atomically publishes one sanitized verification report, records counts and report digest, advances
+  to `phase.handoff` only when every mandatory applicable check passes, and otherwise remains failed
+  with explicit unresolved checks.
+- The UI requires review, justification, and confirmation; it displays suite identity, verdict,
+  check categories, pass/fail/skip/not-applicable counts, unresolved mandatory checks, and zero
+  external-operation evidence without exposing endpoints, credentials, prompts, customer data,
+  arbitrary logs, infrastructure controls, or AI-generated advice.
+- Required RBAC, browser CSRF, audit, correlation, no-store, safe errors, PostgreSQL persistence,
+  exact replay, atomic publication, path safety, interrupted recovery, strict parsing, automated
+  tests, live enterprise-session flow, and desktop/mobile presentation validation apply.
+- This slice performs no network request, secret resolution, model inference, connector invocation,
+  knowledge mutation, workflow execution, approval creation, backup or restore operation, external
+  export, infrastructure mutation, deployment action, or AI recommendation.
+
+### ATLAS-IMP-037 Validation Evidence
+
+- Domain, filesystem, application, checkpoint, API, audit, migration, and PostgreSQL serialization
+  coverage verifies a deterministic 15-check suite, 12 mandatory passes, three explicit
+  not-applicable declarations, zero failed or skipped checks, empty/exact-reusable targets, unknown
+  state rejection, atomic publication, exact replay, strict redacted input, and phase advancement
+  only after complete evidence.
+- Full backend verification passes Ruff formatting and lint, strict mypy across 310 source and test
+  files, one Alembic head at `20260804_0010`, and 337 pytest tests with three existing Windows
+  symbolic-link skips. Full frontend verification passes ESLint, TypeScript, 30 Vitest tests, and
+  the production build.
+- Live browser validation established an enterprise-style LDAP session and completed acquire,
+  configure, trust, data, services, identity, integrations, and verification under one governed
+  lease. The run advanced from source revision 15 through the verification checkpoint to revision
+  17 and selected `phase.handoff` next.
+- Direct filesystem verification found exactly one `atlas-verification-report.json`. It contains
+  schema `atlas.synthetic-verification-report.v1`, suite
+  `atlas.bootstrap-verification-suite.v1`, 15 checks, 12 passes, zero failures, zero skips, three
+  not-applicable checks, 12 mandatory passes, and zero unresolved mandatory checks. All 12 external
+  operation or AI-advice flags are false.
+- The 4,783-byte live report has SHA-256
+  `8db59babdb99b95f8afe5dc35c7163e43684ad41d24763742855957154ef3a51` and no URL, Reader
+  Token, authorization header, bearer value, password, private key, prompt, or response text.
+- Live presentation passed at 1440x900 and 390x844. The verification confirmation and result were
+  width-stable with document, card, and list scroll widths equal to their client widths; browser
+  warning/error logs were empty.
+- Source implementation is committed as `3389466` and is under review in
+  [PR #49](https://github.com/ozdemirumit/Project_Atlas/pull/49). GitHub backend and frontend jobs
+  passed in
+  [run 30948571671](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30948571671).
 
 ### ATLAS-IMP-036 Scope Rationale
 
@@ -97,6 +175,9 @@
   [PR #48](https://github.com/ozdemirumit/Project_Atlas/pull/48). GitHub backend and frontend jobs
   passed for formatting commit `5e2d7c8` in
   [run 30945473102](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30945473102).
+- Final backend and frontend CI passed in
+  [run 30945610047](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30945610047), and
+  [PR #48](https://github.com/ozdemirumit/Project_Atlas/pull/48) merged to `main` as `b770afb`.
 
 ### ATLAS-IMP-035 Scope Rationale
 

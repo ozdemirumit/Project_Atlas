@@ -77,6 +77,11 @@ import {
   type BootstrapIntegrationValidationResult,
 } from "./api/bootstrapIntegrations";
 import {
+  previewBootstrapVerificationPlan,
+  verifyBootstrapEndToEnd,
+  type BootstrapVerificationResult,
+} from "./api/bootstrapVerification";
+import {
   renderBootstrapConfiguration,
   type BootstrapConfigurationRenderingResult,
 } from "./api/bootstrapConfigurationRendering";
@@ -317,6 +322,10 @@ export function App() {
   const [integrationValidationPending, setIntegrationValidationPending] = useState(false);
   const [integrationValidationResult, setIntegrationValidationResult] =
     useState<BootstrapIntegrationValidationResult | null>(null);
+  const [verificationJustification, setVerificationJustification] = useState("");
+  const [verificationPending, setVerificationPending] = useState(false);
+  const [verificationResult, setVerificationResult] =
+    useState<BootstrapVerificationResult | null>(null);
   const [bootstrapClaimJustification, setBootstrapClaimJustification] = useState("");
   const [bootstrapClaimPending, setBootstrapClaimPending] = useState(false);
   const [bootstrapClaimResult, setBootstrapClaimResult] =
@@ -650,6 +659,37 @@ export function App() {
     retry: false,
   });
   const bootstrapState = bootstrapStateQuery.data?.data;
+  const bootstrapVerificationPlanQuery = useQuery({
+    queryKey: [
+      "bootstrap-verification-plan",
+      bootstrapState?.run?.run_id,
+      bootstrapState?.run?.version,
+      bootstrapIntegrationPlan?.integration_plan_digest,
+    ],
+    queryFn: () =>
+      previewBootstrapVerificationPlan({
+        state: bootstrapState!,
+        configuration: deploymentConfiguration!,
+        trustPlan: bootstrapTrustPlan!,
+        dataPlan: bootstrapDataPlan!,
+        servicePlan: bootstrapServicePlan!,
+        identityPlan: bootstrapIdentityPlan!,
+        integrationPlan: bootstrapIntegrationPlan!,
+        scope: identity!.scope,
+      }),
+    enabled: Boolean(
+      identity &&
+        bootstrapState?.run?.current_phase_id === "phase.verify" &&
+        deploymentConfiguration &&
+        bootstrapTrustPlan &&
+        bootstrapDataPlan &&
+        bootstrapServicePlan &&
+        bootstrapIdentityPlan &&
+        bootstrapIntegrationPlan,
+    ),
+    retry: false,
+  });
+  const bootstrapVerificationPlan = bootstrapVerificationPlanQuery.data?.data;
   const bootstrapInvalidationQuery = useQuery({
     queryKey: [
       "bootstrap-invalidation",
@@ -829,6 +869,25 @@ export function App() {
       ]);
     },
   });
+  const verificationMutation = useMutation({
+    mutationFn: () =>
+      verifyBootstrapEndToEnd({
+        state: bootstrapState!,
+        plan: bootstrapVerificationPlan!,
+        scope: identity!.scope,
+        justification: verificationJustification.trim(),
+      }),
+    onSuccess: async (response) => {
+      setVerificationResult(response.data);
+      setVerificationPending(false);
+      setVerificationJustification("");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-state"] }),
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-invalidation"] }),
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-verification-plan"] }),
+      ]);
+    },
+  });
   const bootstrapClaimMutation = useMutation({
     mutationFn: () =>
       claimBootstrapLease({
@@ -862,6 +921,8 @@ export function App() {
     identityHandoffResult?.execution ?? bootstrapState?.run?.identity_handoff;
   const integrationExecution =
     integrationValidationResult?.execution ?? bootstrapState?.run?.integration_validation;
+  const verificationExecution =
+    verificationResult?.execution ?? bootstrapState?.run?.end_to_end_verification;
   const artifactPhaseAvailable = Boolean(
     bootstrapState?.run &&
       bootstrapState.lease_held_by_current_actor &&
@@ -1008,6 +1069,24 @@ export function App() {
         bootstrapState.run.configuration_digest &&
       bootstrapIntegrationPlan.identity_plan_digest ===
         bootstrapIdentityPlan.identity_plan_digest,
+  );
+  const verificationPhaseAvailable = Boolean(
+    bootstrapState?.run &&
+      bootstrapState.lease_held_by_current_actor &&
+      bootstrapState.run.current_phase_id === "phase.verify" &&
+      bootstrapState.run.end_to_end_verification?.state !== "running" &&
+      bootstrapState.run.completed_phase_ids.includes("phase.integrations") &&
+      bootstrapState.run.integration_validation?.state === "completed" &&
+      bootstrapState.run.integration_validation.mandatory_pass_count === 12 &&
+      bootstrapState.run.integration_validation.activation_count === 0 &&
+      bootstrapState.run.integration_validation.network_request_count === 0 &&
+      bootstrapState.run.integration_validation.secret_resolution_count === 0 &&
+      bootstrapIntegrationPlan?.state === "passed" &&
+      bootstrapState.run.integration_validation.integration_plan_digest ===
+        bootstrapIntegrationPlan.integration_plan_digest &&
+      bootstrapVerificationPlan?.state === "passed" &&
+      bootstrapVerificationPlan.source_run_id === bootstrapState.run.run_id &&
+      bootstrapVerificationPlan.source_run_version === bootstrapState.run.version,
   );
   const retryAuditExportMutation = useMutation({
     mutationFn: retryAuditExport,
@@ -2880,6 +2959,174 @@ export function App() {
                             <p className="data-recovery-note">
                               No partial integration state was published. Correct the bounded failure
                               and retry under the active lease.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      {verificationPhaseAvailable &&
+                        bootstrapVerificationPlan &&
+                        !verificationPending && (
+                          <div className="data-initialization-action verification-action">
+                            <div>
+                              <strong>Verify the complete bootstrap evidence</strong>
+                              <p>
+                                Reconciles {bootstrapVerificationPlan.checks.length} versioned
+                                checks across ingress, identity, audit, data, model, knowledge,
+                                workflow, connector, recovery, and security boundaries.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setVerificationResult(null);
+                                setVerificationPending(true);
+                              }}
+                            >
+                              <ShieldCheck size={14} /> Review verification
+                            </button>
+                          </div>
+                        )}
+                      {verificationPending &&
+                        verificationPhaseAvailable &&
+                        bootstrapVerificationPlan && (
+                          <div className="data-initialization-confirmation verification-confirmation" role="dialog">
+                            <div>
+                              <strong>Confirm end-to-end verification</strong>
+                              <p>
+                                Target {bootstrapVerificationPlan.target_id} is {" "}
+                                {bootstrapVerificationPlan.target_state}. This publishes one
+                                sanitized Atlas report and performs no external operation.
+                              </p>
+                            </div>
+                            <div className="identity-plan-summary verification-plan-summary">
+                              <div>
+                                <span>Suite</span>
+                                <code>{bootstrapVerificationPlan.suite_version}</code>
+                                <small>Source revision {bootstrapVerificationPlan.source_run_version}</small>
+                              </div>
+                              <div>
+                                <span>Mandatory passes</span>
+                                <strong>
+                                  {bootstrapVerificationPlan.checks.filter((item) => item.mandatory).length}
+                                </strong>
+                                <small>No skipped mandatory check</small>
+                              </div>
+                              <div>
+                                <span>Not applicable</span>
+                                <strong>
+                                  {bootstrapVerificationPlan.checks.filter(
+                                    (item) => item.state === "not_applicable",
+                                  ).length}
+                                </strong>
+                                <small>Unselected external services</small>
+                              </div>
+                              <div>
+                                <span>External operations</span>
+                                <strong>0</strong>
+                                <small>Evidence reconciliation only</small>
+                              </div>
+                            </div>
+                            <div className="identity-mapping-list verification-check-list">
+                              {bootstrapVerificationPlan.checks.map((check) => (
+                                <div key={check.check_id}>
+                                  <div>
+                                    <code>{check.check_id}</code>
+                                    <small>{check.category_id}</small>
+                                  </div>
+                                  <strong>{check.state.replaceAll("_", " ")}</strong>
+                                </div>
+                              ))}
+                            </div>
+                            <label>
+                              Verification justification
+                              <input
+                                value={verificationJustification}
+                                maxLength={500}
+                                onChange={(event) => setVerificationJustification(event.target.value)}
+                                placeholder="Record the reviewed reason for verification"
+                              />
+                            </label>
+                            {verificationMutation.isError && (
+                              <div className="impact-message impact-error" role="alert">
+                                <AlertTriangle size={16} /> Verification was not completed. Refresh
+                                the exact governed state before retrying.
+                              </div>
+                            )}
+                            <div className="data-initialization-confirm-actions">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setVerificationPending(false);
+                                  setVerificationJustification("");
+                                }}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                className="data-initialization-confirm"
+                                type="button"
+                                disabled={
+                                  verificationJustification.trim().length < 12 ||
+                                  verificationMutation.isPending
+                                }
+                                onClick={() => verificationMutation.mutate()}
+                              >
+                                <ShieldCheck size={14} /> Confirm verification
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      {verificationExecution && (
+                        <div
+                          className={`data-initialization-result verification-result ${verificationExecution.state}`}
+                        >
+                          <div className="data-initialization-result-heading">
+                            {verificationExecution.state === "completed" ? (
+                              <CheckCircle2 size={18} />
+                            ) : (
+                              <AlertTriangle size={18} />
+                            )}
+                            <div>
+                              <strong>End-to-end verification {verificationExecution.state}</strong>
+                              <code>{verificationExecution.result_code}</code>
+                            </div>
+                            <span className={`state-badge ${verificationExecution.state}`}>
+                              {verificationExecution.state}
+                            </span>
+                          </div>
+                          <div className="data-initialization-summary">
+                            <div>
+                              <span>Passed</span>
+                              <strong>{verificationExecution.passed_count}</strong>
+                            </div>
+                            <div>
+                              <span>Failed / skipped</span>
+                              <strong>
+                                {verificationExecution.failed_count + verificationExecution.skipped_count}
+                              </strong>
+                            </div>
+                            <div>
+                              <span>Not applicable</span>
+                              <strong>{verificationExecution.not_applicable_count}</strong>
+                            </div>
+                            <div>
+                              <span>External operations</span>
+                              <strong>{verificationExecution.external_operation_count}</strong>
+                            </div>
+                          </div>
+                          {verificationExecution.evidence.map((item) => (
+                            <div className="service-state-evidence" key={item.evidence_id}>
+                              <div>
+                                <code>{item.evidence_id}</code>
+                                <span>{item.disposition}</span>
+                              </div>
+                              <code>{item.sha256.slice(0, 20)}...</code>
+                            </div>
+                          ))}
+                          {verificationExecution.state === "failed" && (
+                            <p className="data-recovery-note">
+                              No successful verification checkpoint was recorded. Resolve every
+                              mandatory finding before operational handoff.
                             </p>
                           )}
                         </div>
