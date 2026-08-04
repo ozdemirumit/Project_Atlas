@@ -41,6 +41,18 @@ class InMemoryRecoveryRepository:
     ) -> RestoreValidation | None:
         return self._validations.get((actor_id, idempotency_key))
 
+    async def get_validation_by_id(
+        self, *, actor_id: str, validation_id: str
+    ) -> RestoreValidation | None:
+        return next(
+            (
+                item
+                for (owner, _), item in self._validations.items()
+                if owner == actor_id and item.validation_id == validation_id
+            ),
+            None,
+        )
+
     async def add_validation(self, record: RestoreValidation) -> bool:
         async with self._lock:
             key = (record.actor_id, record.idempotency_key)

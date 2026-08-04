@@ -87,6 +87,18 @@ class PostgreSQLRecoveryRepository:
             )
             return self._validation_to_domain(row) if row is not None else None
 
+    async def get_validation_by_id(
+        self, *, actor_id: str, validation_id: str
+    ) -> RestoreValidation | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(RestoreValidationModel).where(
+                    RestoreValidationModel.actor_id == actor_id,
+                    RestoreValidationModel.validation_id == validation_id,
+                )
+            )
+            return self._validation_to_domain(row) if row is not None else None
+
     async def add_validation(self, record: RestoreValidation) -> bool:
         try:
             async with self._sessions.begin() as session:

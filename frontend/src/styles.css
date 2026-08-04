@@ -1482,6 +1482,107 @@ textarea:focus-visible {
   color: #53625e;
 }
 
+.upgrade-readiness-panel,
+.upgrade-simulation-result {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #b9d5cd;
+  background: #f7fbfa;
+}
+
+.upgrade-readiness-panel code,
+.upgrade-simulation-result code,
+.upgrade-confirmation code {
+  overflow-wrap: anywhere;
+}
+
+.upgrade-review-action {
+  margin-top: 0;
+}
+
+.upgrade-plan-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.upgrade-migration-list {
+  max-height: none;
+}
+
+.upgrade-policy-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.upgrade-policy-columns > div {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  padding: 11px;
+  border-left: 3px solid #d0ad64;
+  background: #fffdf7;
+}
+
+.upgrade-policy-columns strong {
+  margin-bottom: 2px;
+  color: #4b4130;
+  font-size: 0.78rem;
+}
+
+.upgrade-policy-columns code {
+  color: #665b45;
+  font-size: 0.7rem;
+}
+
+.upgrade-timeline {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid #d7e1de;
+  background: #d7e1de;
+}
+
+.upgrade-timeline > div {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 10px;
+  background: #fff;
+}
+
+.upgrade-timeline > div > span {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  color: #2f6254;
+  background: #e5f2ee;
+  border-radius: 50%;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.upgrade-timeline > div > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.upgrade-timeline small {
+  color: #63716d;
+  overflow-wrap: anywhere;
+}
+
+.upgrade-timeline strong {
+  color: #3f4f4a;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
 .service-plan-list > div {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) auto;
@@ -1798,6 +1899,16 @@ textarea:focus-visible {
   .support-bundle-controls,
   .support-bundle-controls fieldset {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .upgrade-plan-summary,
+  .upgrade-policy-columns,
+  .upgrade-timeline > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .upgrade-timeline > div > span {
+    display: none;
   }
 }
 

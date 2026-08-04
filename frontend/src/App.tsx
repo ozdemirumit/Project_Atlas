@@ -157,6 +157,11 @@ import {
   revokeWorkloadCredential,
   rotateWorkloadCredential,
 } from "./api/workloadIdentities";
+import {
+  previewUpgradeReadiness,
+  simulateUpgradeRollback,
+  type UpgradeSimulation,
+} from "./api/upgrades";
 
 const navigation = [
   { label: "Workspace", icon: MessageSquareText },
@@ -363,6 +368,9 @@ export function App() {
   const [backupPending, setBackupPending] = useState(false);
   const [backupResult, setBackupResult] = useState<LogicalBackup | null>(null);
   const [restoreValidation, setRestoreValidation] = useState<RestoreValidation | null>(null);
+  const [upgradeJustification, setUpgradeJustification] = useState("");
+  const [upgradePending, setUpgradePending] = useState(false);
+  const [upgradeSimulation, setUpgradeSimulation] = useState<UpgradeSimulation | null>(null);
   const [bootstrapClaimJustification, setBootstrapClaimJustification] = useState("");
   const [bootstrapClaimPending, setBootstrapClaimPending] = useState(false);
   const [bootstrapClaimResult, setBootstrapClaimResult] =
@@ -446,6 +454,14 @@ export function App() {
       setSupportJustification("");
       setSupportPending(false);
       setSupportResult(null);
+      setBackupComponentIds([...LOGICAL_BACKUP_COMPONENTS]);
+      setBackupJustification("");
+      setBackupPending(false);
+      setBackupResult(null);
+      setRestoreValidation(null);
+      setUpgradeJustification("");
+      setUpgradePending(false);
+      setUpgradeSimulation(null);
       setBootstrapClaimJustification("");
       setBootstrapClaimPending(false);
       setBootstrapClaimResult(null);
@@ -818,6 +834,29 @@ export function App() {
     retry: false,
   });
   const backupPreview = backupPreviewQuery.data?.data;
+  const upgradeReadinessQuery = useQuery({
+    queryKey: [
+      "upgrade-readiness",
+      bootstrapState?.run?.run_id,
+      bootstrapState?.run?.version,
+      backupResult?.backup_id,
+      restoreValidation?.validation_id,
+    ],
+    queryFn: () =>
+      previewUpgradeReadiness({
+        sourceRunId: bootstrapState!.run!.run_id,
+        backupId: backupResult!.backup_id,
+        restoreValidationId: restoreValidation!.validation_id,
+      }),
+    enabled: Boolean(
+      identity &&
+        bootstrapState?.run?.state === "completed" &&
+        backupResult &&
+        restoreValidation,
+    ),
+    retry: false,
+  });
+  const upgradeReadiness = upgradeReadinessQuery.data?.data;
   const bootstrapInvalidationQuery = useQuery({
     queryKey: [
       "bootstrap-invalidation",
@@ -1054,11 +1093,28 @@ export function App() {
       setBackupPending(false);
       setBackupJustification("");
       setRestoreValidation(null);
+      setUpgradePending(false);
+      setUpgradeJustification("");
+      setUpgradeSimulation(null);
     },
   });
   const restoreValidationMutation = useMutation({
     mutationFn: () => validateLogicalRestore(backupResult!),
-    onSuccess: (response) => setRestoreValidation(response.data),
+    onSuccess: (response) => {
+      setRestoreValidation(response.data);
+      setUpgradePending(false);
+      setUpgradeJustification("");
+      setUpgradeSimulation(null);
+    },
+  });
+  const upgradeSimulationMutation = useMutation({
+    mutationFn: () =>
+      simulateUpgradeRollback(upgradeReadiness!, upgradeJustification.trim()),
+    onSuccess: (response) => {
+      setUpgradeSimulation(response.data);
+      setUpgradePending(false);
+      setUpgradeJustification("");
+    },
   });
   const bootstrapClaimMutation = useMutation({
     mutationFn: () =>
@@ -3723,6 +3779,9 @@ export function App() {
                                           setBackupResult(null);
                                           setRestoreValidation(null);
                                           setBackupPending(false);
+                                          setUpgradePending(false);
+                                          setUpgradeJustification("");
+                                          setUpgradeSimulation(null);
                                           setBackupComponentIds((current) =>
                                             event.target.checked
                                               ? [...current, componentId]
@@ -3854,6 +3913,161 @@ export function App() {
                                   Retain only through {formatTimestamp(backupResult.expires_at)}.
                                   Production RPO, RTO, secret recovery, HA, and DR remain unvalidated.
                                 </p>
+                              </div>
+                            )}
+                            {restoreValidation && upgradeReadinessQuery.isLoading && (
+                              <div className="inline-state">
+                                <RefreshCw className="spin" size={16} /> Evaluating upgrade readiness
+                              </div>
+                            )}
+                            {restoreValidation && upgradeReadinessQuery.isError && (
+                              <div className="inline-error">
+                                <AlertTriangle size={16} /> Upgrade readiness failed closed for this
+                                evidence set.
+                              </div>
+                            )}
+                            {upgradeReadiness && !upgradePending && !upgradeSimulation && (
+                              <div className="upgrade-readiness-panel">
+                                <div className="data-initialization-result-heading">
+                                  <GitBranch size={18} />
+                                  <div>
+                                    <strong>Upgrade readiness passed</strong>
+                                    <code>{upgradeReadiness.plan_id}</code>
+                                  </div>
+                                  <span className="state-badge completed">C1 preview</span>
+                                </div>
+                                <div className="data-initialization-summary">
+                                  <div>
+                                    <span>Readiness gates</span>
+                                    <strong>
+                                      {upgradeReadiness.readiness_checks.filter((item) => item.passed).length}/
+                                      {upgradeReadiness.readiness_checks.length}
+                                    </strong>
+                                  </div>
+                                  <div>
+                                    <span>Release path</span>
+                                    <strong>
+                                      {upgradeReadiness.source_release_version} to {upgradeReadiness.target_release_version}
+                                    </strong>
+                                  </div>
+                                  <div>
+                                    <span>Downtime range</span>
+                                    <strong>
+                                      {upgradeReadiness.estimated_downtime_min_minutes}-
+                                      {upgradeReadiness.estimated_downtime_max_minutes} min
+                                    </strong>
+                                  </div>
+                                  <div>
+                                    <span>Rollback window</span>
+                                    <strong>{upgradeReadiness.rollback_window_minutes} min</strong>
+                                  </div>
+                                </div>
+                                <div className="data-initialization-action upgrade-review-action">
+                                  <div>
+                                    <strong>Isolated abort and rollback model</strong>
+                                    <p>
+                                      {upgradeReadiness.migration_steps.length} reversible migrations;
+                                      production authorization remains disabled.
+                                    </p>
+                                  </div>
+                                  <button type="button" onClick={() => setUpgradePending(true)}>
+                                    <FlaskConical size={14} /> Review simulation
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                            {upgradePending && upgradeReadiness && (
+                              <div className="data-initialization-confirmation upgrade-confirmation"
+                                role="dialog">
+                                <div>
+                                  <strong>Confirm isolated upgrade rollback simulation</strong>
+                                  <p>
+                                    This models the reviewed release path, injects an abort, and
+                                    evaluates rollback without acquiring artifacts or changing services.
+                                  </p>
+                                </div>
+                                <div className="identity-plan-summary upgrade-plan-summary">
+                                  <div><span>Source</span><strong>{upgradeReadiness.source_release_version}</strong>
+                                    <small>{upgradeReadiness.source_schema_version}</small></div>
+                                  <div><span>Target</span><strong>{upgradeReadiness.target_release_version}</strong>
+                                    <small>{upgradeReadiness.target_schema_version}</small></div>
+                                  <div><span>Services</span><strong>{upgradeReadiness.service_dependency_ids.length}</strong>
+                                    <small>No restart authorized</small></div>
+                                  <div><span>Execution</span><strong>Isolated only</strong>
+                                    <small>Active state false</small></div>
+                                </div>
+                                <div className="identity-mapping-list upgrade-migration-list">
+                                  {upgradeReadiness.migration_steps.map((step) => (
+                                    <div key={step.step_id}>
+                                      <div><code>{step.step_id}</code>
+                                        <small>{step.migration_kind.replaceAll("_", " ")} · {step.estimated_minutes} min</small></div>
+                                      <strong>{step.reversible ? "reversible" : "forward only"}</strong>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="upgrade-policy-columns">
+                                  <div><strong>Abort criteria</strong>
+                                    {upgradeReadiness.abort_criterion_ids.map((item) => <code key={item}>{item}</code>)}</div>
+                                  <div><strong>Rollback sequence</strong>
+                                    {upgradeReadiness.rollback_step_ids.map((item) => <code key={item}>{item}</code>)}</div>
+                                </div>
+                                <label>
+                                  Upgrade simulation justification
+                                  <input value={upgradeJustification} maxLength={500}
+                                    onChange={(event) => setUpgradeJustification(event.target.value)}
+                                    placeholder="Record why this isolated rollback path is being reviewed" />
+                                </label>
+                                {upgradeSimulationMutation.isError && (
+                                  <div className="inline-error">
+                                    <AlertTriangle size={16} /> Upgrade simulation failed closed.
+                                  </div>
+                                )}
+                                <div className="data-initialization-confirm-actions">
+                                  <button type="button" onClick={() => {
+                                    setUpgradePending(false); setUpgradeJustification("");
+                                  }}>Cancel</button>
+                                  <button className="data-initialization-confirm" type="button"
+                                    disabled={upgradeJustification.trim().length < 12 ||
+                                      upgradeSimulationMutation.isPending}
+                                    onClick={() => upgradeSimulationMutation.mutate()}>
+                                    <FlaskConical size={14} /> Confirm isolated simulation
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                            {upgradeSimulation && (
+                              <div className="upgrade-simulation-result">
+                                <div className="data-initialization-result-heading">
+                                  <CheckCircle2 size={18} />
+                                  <div><strong>Upgrade rollback simulation passed</strong>
+                                    <code>{upgradeSimulation.simulation_id}</code></div>
+                                  <span className="state-badge completed">isolated</span>
+                                </div>
+                                <div className="data-initialization-summary">
+                                  <div><span>Timeline</span><strong>{upgradeSimulation.steps.length} steps</strong></div>
+                                  <div><span>Modeled downtime</span><strong>{upgradeSimulation.estimated_downtime_minutes} min</strong></div>
+                                  <div><span>Production authorization</span><strong>No</strong></div>
+                                  <div><span>Active execution</span><strong>No</strong></div>
+                                </div>
+                                <div className="upgrade-timeline">
+                                  {upgradeSimulation.steps.map((step) => (
+                                    <div key={step.step_id}>
+                                      <span>{step.sequence}</span>
+                                      <div><code>{step.step_id}</code><small>{step.result_code}</small></div>
+                                      <strong>{step.simulated_minutes} min</strong>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="recovery-validation-result">
+                                  <ShieldCheck size={18} />
+                                  <div><strong>Abort injected; rollback applicable</strong>
+                                    <p>
+                                      {upgradeSimulation.post_verification_check_ids.length} source-release
+                                      checks modeled with no network request or infrastructure mutation.
+                                    </p>
+                                    <code>{upgradeSimulation.simulation_digest.slice(0, 20)}...</code>
+                                  </div>
+                                </div>
                               </div>
                             )}
                           </section>

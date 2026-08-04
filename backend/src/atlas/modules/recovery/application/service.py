@@ -86,6 +86,10 @@ class RecoveryService:
         self._max_archive_bytes = max_archive_bytes
         self._clock = clock or (lambda: datetime.now(UTC))
 
+    @property
+    def repository(self) -> RecoveryRepository:
+        return self._repository
+
     async def close(self) -> None:
         await self._repository.close()
 

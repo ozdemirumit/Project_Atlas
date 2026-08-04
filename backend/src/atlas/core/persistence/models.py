@@ -165,3 +165,43 @@ class RestoreValidationModel(Base):
     check_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     entry_count: Mapped[int] = mapped_column(Integer, nullable=False)
     validated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class UpgradeSimulationModel(Base):
+    __tablename__ = "platform_upgrade_simulations"
+    __table_args__ = (
+        CheckConstraint("source_run_version > 0", name="ck_platform_upgrade_simulations_source"),
+        CheckConstraint(
+            "estimated_downtime_minutes > 0",
+            name="ck_platform_upgrade_simulations_downtime",
+        ),
+        UniqueConstraint(
+            "actor_id",
+            "idempotency_key",
+            name="uq_platform_upgrade_simulations_actor_idempotency",
+        ),
+    )
+
+    simulation_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_run_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_run_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    plan_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    plan_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    backup_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    restore_validation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    steps: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    impacted_service_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    post_verification_check_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    abort_injected_at_step_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    rollback_decision: Mapped[str] = mapped_column(String(128), nullable=False)
+    estimated_downtime_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    simulation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

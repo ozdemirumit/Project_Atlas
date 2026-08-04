@@ -55,6 +55,8 @@ SUPPORT_BUNDLE_EXPORT = "support.bundle.export"
 BACKUP_LOGICAL_PREVIEW = "backup.logical.preview"
 BACKUP_LOGICAL_CREATE = "backup.logical.create"
 BACKUP_LOGICAL_RESTORE_VALIDATE = "backup.logical.restore-validate"
+UPGRADE_READINESS_PREVIEW = "platform.upgrade.readiness-preview"
+UPGRADE_ROLLBACK_SIMULATE = "platform.upgrade.simulate"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -287,6 +289,19 @@ def logical_backup_scope(
         site_id="site.local",
         domain_id="domain.recovery",
         resource_id="resource.backup.logical",
+        capability_class=capability_class,
+    )
+
+
+def upgrade_simulation_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.platform",
+        resource_id="resource.platform.upgrade-simulation",
         capability_class=capability_class,
     )
 
@@ -588,6 +603,14 @@ def build_development_authorization_service(
             permission_id=BACKUP_LOGICAL_RESTORE_VALIDATE,
             description="Validate one logical backup in an isolated ephemeral target.",
         ),
+        PermissionDefinition(
+            permission_id=UPGRADE_READINESS_PREVIEW,
+            description="Preview exact upgrade readiness without changing active state.",
+        ),
+        PermissionDefinition(
+            permission_id=UPGRADE_ROLLBACK_SIMULATE,
+            description="Run one confirmed isolated upgrade and rollback simulation.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -625,6 +648,8 @@ def build_development_authorization_service(
                 BACKUP_LOGICAL_PREVIEW,
                 BACKUP_LOGICAL_CREATE,
                 BACKUP_LOGICAL_RESTORE_VALIDATE,
+                UPGRADE_READINESS_PREVIEW,
+                UPGRADE_ROLLBACK_SIMULATE,
             }
         ),
     )
@@ -824,6 +849,30 @@ def build_development_authorization_service(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.upgrade-readiness",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=upgrade_simulation_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.upgrade-simulation",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=upgrade_simulation_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),
