@@ -8,7 +8,7 @@
 | Title | Governed bootstrap operational handoff |
 | Status | Review |
 | Branch | `agent/bootstrap-operational-handoff` |
-| Pull Request | Pending |
+| Pull Request | [#50](https://github.com/ozdemirumit/Project_Atlas/pull/50) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-032, ATLAS-033, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
 | Next Action | Open the implementation pull request and complete CI review |
