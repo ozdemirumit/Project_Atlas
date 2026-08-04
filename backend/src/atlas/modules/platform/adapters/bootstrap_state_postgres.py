@@ -35,6 +35,14 @@ from atlas.modules.platform.domain.bootstrap_identity_handoff import (
     IdentityStateDisposition,
     IdentityStateEvidence,
 )
+from atlas.modules.platform.domain.bootstrap_integration_validation import (
+    IntegrationCheckState,
+    IntegrationStateDisposition,
+    IntegrationStateEvidence,
+    IntegrationValidationCheck,
+    IntegrationValidationExecution,
+    IntegrationValidationState,
+)
 from atlas.modules.platform.domain.bootstrap_invalidation import compare_bootstrap_run
 from atlas.modules.platform.domain.bootstrap_service_deployment import (
     ServiceDeploymentExecution,
@@ -336,6 +344,39 @@ class PostgreSQLBootstrapStateRepository:
                             failed_identity_checkpoint,
                         ),
                         identity_handoff=interrupted_identity,
+                    )
+                if (
+                    reclaimed
+                    and current.integration_validation is not None
+                    and current.integration_validation.state
+                    is IntegrationValidationState.RUNNING
+                ):
+                    interrupted_integrations = replace(
+                        current.integration_validation,
+                        state=IntegrationValidationState.FAILED,
+                        result_code="bootstrap.integrations.interrupted",
+                        completed_at=now,
+                    )
+                    failed_integration_checkpoint = BootstrapPhaseCheckpoint(
+                        phase_id="phase.integrations",
+                        state=BootstrapCheckpointState.FAILED,
+                        safe_output_references=(
+                            "result.integration-validation."
+                            f"{sha256(interrupted_integrations.execution_id.encode()).hexdigest()[:24]}",
+                        ),
+                        recorded_at=now,
+                    )
+                    current = replace(
+                        current,
+                        checkpoints=(
+                            *(
+                                item
+                                for item in current.checkpoints
+                                if item.phase_id != "phase.integrations"
+                            ),
+                            failed_integration_checkpoint,
+                        ),
+                        integration_validation=interrupted_integrations,
                     )
                 record = replace(
                     current,
@@ -1353,6 +1394,165 @@ class PostgreSQLBootstrapStateRepository:
             self._remember(row, lease_holder_id, idempotency_key, request_fingerprint, result)
             return result
 
+    async def begin_integration_validation(
+        self,
+        *,
+        run_id: str,
+        plan_digest: str,
+        resume_key: str,
+        execution: IntegrationValidationExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._sessions.begin() as session:
+            row = await session.scalar(
+                select(BootstrapRunModel)
+                .where(BootstrapRunModel.run_id == run_id)
+                .with_for_update()
+            )
+            if row is None:
+                raise BootstrapRepositoryError("bootstrap_run_unavailable")
+            replay = self._replay(row, lease_holder_id, idempotency_key, request_fingerprint)
+            if replay is not None:
+                return replay
+            current = self._to_domain(row)
+            self._require_no_running_phase(current)
+            if (
+                current.identity.plan_digest != plan_digest
+                or current.identity.resume_key != resume_key
+            ):
+                raise BootstrapRepositoryError("bootstrap_plan_mismatch")
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            if current.state is BootstrapRunState.COMPLETED:
+                raise BootstrapRepositoryError("bootstrap_run_completed")
+            if (
+                current.current_phase_id != "phase.integrations"
+                or execution.phase_id != "phase.integrations"
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_out_of_order")
+            record = replace(
+                current,
+                version=current.version + 1,
+                state=BootstrapRunState.ACTIVE,
+                checkpoints=tuple(
+                    item
+                    for item in current.checkpoints
+                    if item.phase_id != "phase.integrations"
+                ),
+                integration_validation=execution,
+                updated_at=now,
+            )
+            self._apply(row, record)
+            result = BootstrapMutationResult(
+                record=record,
+                replayed=False,
+                integration_validation=execution,
+            )
+            self._remember(row, lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
+    async def finish_integration_validation(
+        self,
+        *,
+        run_id: str,
+        execution: IntegrationValidationExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._sessions.begin() as session:
+            row = await session.scalar(
+                select(BootstrapRunModel)
+                .where(BootstrapRunModel.run_id == run_id)
+                .with_for_update()
+            )
+            if row is None:
+                raise BootstrapRepositoryError("bootstrap_run_unavailable")
+            replay = self._replay(row, lease_holder_id, idempotency_key, request_fingerprint)
+            if (
+                replay is not None
+                and replay.integration_validation is not None
+                and replay.integration_validation.state is not IntegrationValidationState.RUNNING
+            ):
+                return replay
+            current = self._to_domain(row)
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            active = current.integration_validation
+            if (
+                active is None
+                or active.state is not IntegrationValidationState.RUNNING
+                or active.execution_id != execution.execution_id
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_execution_unavailable")
+            if (
+                execution.state is IntegrationValidationState.RUNNING
+                or execution.release_id != active.release_id
+                or execution.profile is not active.profile
+                or execution.configuration_digest != active.configuration_digest
+                or execution.trust_plan_digest != active.trust_plan_digest
+                or execution.data_plan_digest != active.data_plan_digest
+                or execution.service_plan_digest != active.service_plan_digest
+                or execution.identity_plan_digest != active.identity_plan_digest
+                or execution.integration_schema_version != active.integration_schema_version
+                or execution.integration_plan_digest != active.integration_plan_digest
+                or execution.target_id != active.target_id
+                or execution.started_at != active.started_at
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_execution_conflict")
+            if execution.state is IntegrationValidationState.COMPLETED:
+                reference = f"result.integrations.{execution.integration_plan_digest[:32]}"
+                checkpoint_state = BootstrapCheckpointState.COMPLETED
+                run_state = (
+                    BootstrapRunState.COMPLETED
+                    if len(current.completed_phase_ids) + 1 == len(current.identity.phase_ids)
+                    else BootstrapRunState.ACTIVE
+                )
+            else:
+                reference = (
+                    "result.integration-validation."
+                    f"{sha256(execution.result_code.encode()).hexdigest()[:24]}"
+                )
+                checkpoint_state = BootstrapCheckpointState.FAILED
+                run_state = BootstrapRunState.FAILED
+            checkpoint = BootstrapPhaseCheckpoint(
+                phase_id="phase.integrations",
+                state=checkpoint_state,
+                safe_output_references=(reference,),
+                recorded_at=now,
+            )
+            record = replace(
+                current,
+                version=current.version + 1,
+                state=run_state,
+                checkpoints=(
+                    *(
+                        item
+                        for item in current.checkpoints
+                        if item.phase_id != "phase.integrations"
+                    ),
+                    checkpoint,
+                ),
+                integration_validation=execution,
+                updated_at=now,
+            )
+            self._apply(row, record)
+            result = BootstrapMutationResult(
+                record=record,
+                replayed=False,
+                integration_validation=execution,
+            )
+            self._remember(row, lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
     async def rebase(
         self,
         *,
@@ -1422,6 +1622,11 @@ class PostgreSQLBootstrapStateRepository:
                 identity_handoff=(
                     current.identity_handoff if "phase.identity" in reusable else None
                 ),
+                integration_validation=(
+                    current.integration_validation
+                    if "phase.integrations" in reusable
+                    else None
+                ),
                 updated_at=now,
             )
             self._apply(row, record)
@@ -1472,6 +1677,10 @@ class PostgreSQLBootstrapStateRepository:
                 record.identity_handoff is not None
                 and record.identity_handoff.state is IdentityHandoffState.RUNNING
             )
+            or (
+                record.integration_validation is not None
+                and record.integration_validation.state is IntegrationValidationState.RUNNING
+            )
         ):
             raise BootstrapRepositoryError("bootstrap_phase_in_progress")
 
@@ -1513,6 +1722,9 @@ class PostgreSQLBootstrapStateRepository:
         model.data_initialization = cls._data_execution_to_json(record.data_initialization)
         model.service_deployment = cls._service_execution_to_json(record.service_deployment)
         model.identity_handoff = cls._identity_execution_to_json(record.identity_handoff)
+        model.integration_validation = cls._integration_execution_to_json(
+            record.integration_validation
+        )
         model.lease_holder_id = record.lease_holder_id
         model.lease_acquired_at = record.lease_acquired_at
         model.lease_expires_at = record.lease_expires_at
@@ -1558,6 +1770,9 @@ class PostgreSQLBootstrapStateRepository:
             data_initialization=cls._data_execution_from_json(model.data_initialization),
             service_deployment=cls._service_execution_from_json(model.service_deployment),
             identity_handoff=cls._identity_execution_from_json(model.identity_handoff),
+            integration_validation=cls._integration_execution_from_json(
+                model.integration_validation
+            ),
         )
 
     @classmethod
@@ -1594,6 +1809,9 @@ class PostgreSQLBootstrapStateRepository:
             data_initialization=cls._data_execution_from_json(prior.get("data_initialization")),
             service_deployment=cls._service_execution_from_json(prior.get("service_deployment")),
             identity_handoff=cls._identity_execution_from_json(prior.get("identity_handoff")),
+            integration_validation=cls._integration_execution_from_json(
+                prior.get("integration_validation")
+            ),
         )
 
     @classmethod
@@ -1622,6 +1840,9 @@ class PostgreSQLBootstrapStateRepository:
             "data_initialization": cls._data_execution_to_json(result.data_initialization),
             "service_deployment": cls._service_execution_to_json(result.service_deployment),
             "identity_handoff": cls._identity_execution_to_json(result.identity_handoff),
+            "integration_validation": cls._integration_execution_to_json(
+                result.integration_validation
+            ),
         }
         while len(records) > 100:
             del records[next(iter(records))]
@@ -1674,6 +1895,9 @@ class PostgreSQLBootstrapStateRepository:
             "data_initialization": cls._data_execution_to_json(record.data_initialization),
             "service_deployment": cls._service_execution_to_json(record.service_deployment),
             "identity_handoff": cls._identity_execution_to_json(record.identity_handoff),
+            "integration_validation": cls._integration_execution_to_json(
+                record.integration_validation
+            ),
         }
 
     @classmethod
@@ -1723,6 +1947,9 @@ class PostgreSQLBootstrapStateRepository:
             data_initialization=cls._data_execution_from_json(data.get("data_initialization")),
             service_deployment=cls._service_execution_from_json(data.get("service_deployment")),
             identity_handoff=cls._identity_execution_from_json(data.get("identity_handoff")),
+            integration_validation=cls._integration_execution_from_json(
+                data.get("integration_validation")
+            ),
         )
 
     @staticmethod
@@ -2182,6 +2409,114 @@ class PostgreSQLBootstrapStateRepository:
                     sha256=item["sha256"],
                     size_bytes=item["size_bytes"],
                     disposition=IdentityStateDisposition(item["disposition"]),
+                )
+                for item in data["evidence"]
+            ),
+        )
+
+    @staticmethod
+    def _integration_execution_to_json(
+        execution: IntegrationValidationExecution | None,
+    ) -> dict[str, Any] | None:
+        if execution is None:
+            return None
+        return {
+            "execution_id": execution.execution_id,
+            "phase_id": execution.phase_id,
+            "release_id": execution.release_id,
+            "profile": execution.profile.value,
+            "configuration_digest": execution.configuration_digest,
+            "trust_plan_digest": execution.trust_plan_digest,
+            "data_plan_digest": execution.data_plan_digest,
+            "service_plan_digest": execution.service_plan_digest,
+            "identity_plan_digest": execution.identity_plan_digest,
+            "integration_schema_version": execution.integration_schema_version,
+            "integration_plan_digest": execution.integration_plan_digest,
+            "target_id": execution.target_id,
+            "state": execution.state.value,
+            "result_code": execution.result_code,
+            "started_at": execution.started_at.isoformat(),
+            "completed_at": (
+                execution.completed_at.isoformat()
+                if execution.completed_at is not None
+                else None
+            ),
+            "model_check_count": execution.model_check_count,
+            "integration_check_count": execution.integration_check_count,
+            "mandatory_pass_count": execution.mandatory_pass_count,
+            "activation_count": execution.activation_count,
+            "network_request_count": execution.network_request_count,
+            "secret_resolution_count": execution.secret_resolution_count,
+            "checks": [
+                {
+                    "check_id": item.check_id,
+                    "subject_id": item.subject_id,
+                    "state": item.state.value,
+                    "result_code": item.result_code,
+                    "mandatory": item.mandatory,
+                }
+                for item in execution.checks
+            ],
+            "evidence": [
+                {
+                    "evidence_id": item.evidence_id,
+                    "sha256": item.sha256,
+                    "size_bytes": item.size_bytes,
+                    "disposition": item.disposition.value,
+                }
+                for item in execution.evidence
+            ],
+        }
+
+    @staticmethod
+    def _integration_execution_from_json(
+        data: dict[str, Any] | None,
+    ) -> IntegrationValidationExecution | None:
+        if data is None:
+            return None
+        return IntegrationValidationExecution(
+            execution_id=data["execution_id"],
+            phase_id=data["phase_id"],
+            release_id=data["release_id"],
+            profile=DeploymentProfile(data["profile"]),
+            configuration_digest=data["configuration_digest"],
+            trust_plan_digest=data["trust_plan_digest"],
+            data_plan_digest=data["data_plan_digest"],
+            service_plan_digest=data["service_plan_digest"],
+            identity_plan_digest=data["identity_plan_digest"],
+            integration_schema_version=data["integration_schema_version"],
+            integration_plan_digest=data["integration_plan_digest"],
+            target_id=data["target_id"],
+            state=IntegrationValidationState(data["state"]),
+            result_code=data["result_code"],
+            started_at=datetime.fromisoformat(data["started_at"]),
+            completed_at=(
+                datetime.fromisoformat(data["completed_at"])
+                if data["completed_at"] is not None
+                else None
+            ),
+            model_check_count=data["model_check_count"],
+            integration_check_count=data["integration_check_count"],
+            mandatory_pass_count=data["mandatory_pass_count"],
+            activation_count=data["activation_count"],
+            network_request_count=data["network_request_count"],
+            secret_resolution_count=data["secret_resolution_count"],
+            checks=tuple(
+                IntegrationValidationCheck(
+                    check_id=item["check_id"],
+                    subject_id=item["subject_id"],
+                    state=IntegrationCheckState(item["state"]),
+                    result_code=item["result_code"],
+                    mandatory=item["mandatory"],
+                )
+                for item in data["checks"]
+            ),
+            evidence=tuple(
+                IntegrationStateEvidence(
+                    evidence_id=item["evidence_id"],
+                    sha256=item["sha256"],
+                    size_bytes=item["size_bytes"],
+                    disposition=IntegrationStateDisposition(item["disposition"]),
                 )
                 for item in data["evidence"]
             ),

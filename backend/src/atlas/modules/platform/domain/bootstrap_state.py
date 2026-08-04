@@ -13,6 +13,9 @@ from atlas.modules.platform.domain.bootstrap_configuration_rendering import (
 )
 from atlas.modules.platform.domain.bootstrap_data_initialization import DataInitializationExecution
 from atlas.modules.platform.domain.bootstrap_identity_handoff import IdentityHandoffExecution
+from atlas.modules.platform.domain.bootstrap_integration_validation import (
+    IntegrationValidationExecution,
+)
 from atlas.modules.platform.domain.bootstrap_plan import DIGEST_PATTERN
 from atlas.modules.platform.domain.bootstrap_service_deployment import ServiceDeploymentExecution
 from atlas.modules.platform.domain.bootstrap_trust_provisioning import TrustProvisioningExecution
@@ -104,6 +107,7 @@ class BootstrapRunRecord:
     data_initialization: DataInitializationExecution | None = None
     service_deployment: ServiceDeploymentExecution | None = None
     identity_handoff: IdentityHandoffExecution | None = None
+    integration_validation: IntegrationValidationExecution | None = None
 
     def __post_init__(self) -> None:
         validate_stable_identifier(self.run_id, "run_id")
@@ -185,6 +189,16 @@ class BootstrapRunRecord:
                 or identity_execution.phase_id not in self.identity.phase_ids
             ):
                 raise ValueError("identity handoff does not match the bootstrap run")
+        if self.integration_validation is not None:
+            integration_execution = self.integration_validation
+            if (
+                integration_execution.release_id != self.identity.release_id
+                or integration_execution.profile is not self.identity.profile
+                or integration_execution.configuration_digest
+                != self.identity.configuration_digest
+                or integration_execution.phase_id not in self.identity.phase_ids
+            ):
+                raise ValueError("integration validation does not match the bootstrap run")
 
     def lease_is_active(self, at: datetime) -> bool:
         return self.lease_expires_at is not None and at < self.lease_expires_at
@@ -239,3 +253,4 @@ class BootstrapMutationResult:
     data_initialization: DataInitializationExecution | None = None
     service_deployment: ServiceDeploymentExecution | None = None
     identity_handoff: IdentityHandoffExecution | None = None
+    integration_validation: IntegrationValidationExecution | None = None

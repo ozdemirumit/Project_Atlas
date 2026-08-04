@@ -15,6 +15,9 @@ from atlas.modules.platform.domain.bootstrap_configuration_rendering import (
 )
 from atlas.modules.platform.domain.bootstrap_data_initialization import DataInitializationExecution
 from atlas.modules.platform.domain.bootstrap_identity_handoff import IdentityHandoffExecution
+from atlas.modules.platform.domain.bootstrap_integration_validation import (
+    IntegrationValidationExecution,
+)
 from atlas.modules.platform.domain.bootstrap_service_deployment import ServiceDeploymentExecution
 from atlas.modules.platform.domain.bootstrap_state import (
     BootstrapMutationResult,
@@ -557,6 +560,102 @@ class IdentityHandoffData(BaseModel):
         )
 
 
+class IntegrationValidationCheckData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    check_id: str
+    subject_id: str
+    state: str
+    result_code: str
+    mandatory: bool
+
+
+class IntegrationStateEvidenceData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_id: str
+    sha256: str
+    size_bytes: int
+    disposition: str
+
+
+class IntegrationValidationData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    execution_id: str
+    phase_id: str
+    release_id: str
+    profile: str
+    configuration_digest: str
+    trust_plan_digest: str
+    data_plan_digest: str
+    service_plan_digest: str
+    identity_plan_digest: str
+    integration_schema_version: str
+    integration_plan_digest: str
+    target_id: str
+    state: str
+    result_code: str
+    started_at: datetime
+    completed_at: datetime | None
+    model_check_count: int
+    integration_check_count: int
+    mandatory_pass_count: int
+    activation_count: int
+    network_request_count: int
+    secret_resolution_count: int
+    checks: list[IntegrationValidationCheckData]
+    evidence: list[IntegrationStateEvidenceData]
+
+    @classmethod
+    def from_domain(
+        cls, execution: IntegrationValidationExecution
+    ) -> IntegrationValidationData:
+        return cls(
+            execution_id=execution.execution_id,
+            phase_id=execution.phase_id,
+            release_id=execution.release_id,
+            profile=execution.profile.value,
+            configuration_digest=execution.configuration_digest,
+            trust_plan_digest=execution.trust_plan_digest,
+            data_plan_digest=execution.data_plan_digest,
+            service_plan_digest=execution.service_plan_digest,
+            identity_plan_digest=execution.identity_plan_digest,
+            integration_schema_version=execution.integration_schema_version,
+            integration_plan_digest=execution.integration_plan_digest,
+            target_id=execution.target_id,
+            state=execution.state.value,
+            result_code=execution.result_code,
+            started_at=execution.started_at,
+            completed_at=execution.completed_at,
+            model_check_count=execution.model_check_count,
+            integration_check_count=execution.integration_check_count,
+            mandatory_pass_count=execution.mandatory_pass_count,
+            activation_count=execution.activation_count,
+            network_request_count=execution.network_request_count,
+            secret_resolution_count=execution.secret_resolution_count,
+            checks=[
+                IntegrationValidationCheckData(
+                    check_id=item.check_id,
+                    subject_id=item.subject_id,
+                    state=item.state.value,
+                    result_code=item.result_code,
+                    mandatory=item.mandatory,
+                )
+                for item in execution.checks
+            ],
+            evidence=[
+                IntegrationStateEvidenceData(
+                    evidence_id=item.evidence_id,
+                    sha256=item.sha256,
+                    size_bytes=item.size_bytes,
+                    disposition=item.disposition.value,
+                )
+                for item in execution.evidence
+            ],
+        )
+
+
 class BootstrapRunData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -585,6 +684,7 @@ class BootstrapRunData(BaseModel):
     data_initialization: DataInitializationData | None
     service_deployment: ServiceDeploymentData | None
     identity_handoff: IdentityHandoffData | None
+    integration_validation: IntegrationValidationData | None
 
     @classmethod
     def from_domain(cls, record: BootstrapRunRecord) -> BootstrapRunData:
@@ -644,6 +744,11 @@ class BootstrapRunData(BaseModel):
             identity_handoff=(
                 IdentityHandoffData.from_domain(record.identity_handoff)
                 if record.identity_handoff is not None
+                else None
+            ),
+            integration_validation=(
+                IntegrationValidationData.from_domain(record.integration_validation)
+                if record.integration_validation is not None
                 else None
             ),
         )

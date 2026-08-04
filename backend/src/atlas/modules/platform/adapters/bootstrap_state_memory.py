@@ -22,6 +22,10 @@ from atlas.modules.platform.domain.bootstrap_identity_handoff import (
     IdentityHandoffExecution,
     IdentityHandoffState,
 )
+from atlas.modules.platform.domain.bootstrap_integration_validation import (
+    IntegrationValidationExecution,
+    IntegrationValidationState,
+)
 from atlas.modules.platform.domain.bootstrap_invalidation import compare_bootstrap_run
 from atlas.modules.platform.domain.bootstrap_service_deployment import (
     ServiceDeploymentExecution,
@@ -293,6 +297,39 @@ class InMemoryBootstrapStateRepository:
                             failed_identity_checkpoint,
                         ),
                         identity_handoff=interrupted_identity,
+                    )
+                if (
+                    reclaimed
+                    and current.integration_validation is not None
+                    and current.integration_validation.state
+                    is IntegrationValidationState.RUNNING
+                ):
+                    interrupted_integrations = replace(
+                        current.integration_validation,
+                        state=IntegrationValidationState.FAILED,
+                        result_code="bootstrap.integrations.interrupted",
+                        completed_at=now,
+                    )
+                    failed_integration_checkpoint = BootstrapPhaseCheckpoint(
+                        phase_id="phase.integrations",
+                        state=BootstrapCheckpointState.FAILED,
+                        safe_output_references=(
+                            "result.integration-validation."
+                            f"{sha256(interrupted_integrations.execution_id.encode()).hexdigest()[:24]}",
+                        ),
+                        recorded_at=now,
+                    )
+                    current = replace(
+                        current,
+                        checkpoints=(
+                            *(
+                                item
+                                for item in current.checkpoints
+                                if item.phase_id != "phase.integrations"
+                            ),
+                            failed_integration_checkpoint,
+                        ),
+                        integration_validation=interrupted_integrations,
                     )
                 updated = replace(
                     current,
@@ -1212,6 +1249,151 @@ class InMemoryBootstrapStateRepository:
             self._remember(lease_holder_id, idempotency_key, request_fingerprint, result)
             return result
 
+    async def begin_integration_validation(
+        self,
+        *,
+        run_id: str,
+        plan_digest: str,
+        resume_key: str,
+        execution: IntegrationValidationExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._lock:
+            replay = self._replay(lease_holder_id, idempotency_key, request_fingerprint)
+            if replay is not None:
+                return replay
+            key, current = self._find(run_id)
+            self._require_no_running_phase(current)
+            if (
+                current.identity.plan_digest != plan_digest
+                or current.identity.resume_key != resume_key
+            ):
+                raise BootstrapRepositoryError("bootstrap_plan_mismatch")
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            if current.state is BootstrapRunState.COMPLETED:
+                raise BootstrapRepositoryError("bootstrap_run_completed")
+            if (
+                current.current_phase_id != "phase.integrations"
+                or execution.phase_id != "phase.integrations"
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_out_of_order")
+            updated = replace(
+                current,
+                version=current.version + 1,
+                state=BootstrapRunState.ACTIVE,
+                checkpoints=tuple(
+                    item
+                    for item in current.checkpoints
+                    if item.phase_id != "phase.integrations"
+                ),
+                integration_validation=execution,
+                updated_at=now,
+            )
+            result = BootstrapMutationResult(
+                record=updated,
+                replayed=False,
+                integration_validation=execution,
+            )
+            self._records[key] = updated
+            self._remember(lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
+    async def finish_integration_validation(
+        self,
+        *,
+        run_id: str,
+        execution: IntegrationValidationExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._lock:
+            replay = self._replay(lease_holder_id, idempotency_key, request_fingerprint)
+            if (
+                replay is not None
+                and replay.integration_validation is not None
+                and replay.integration_validation.state is not IntegrationValidationState.RUNNING
+            ):
+                return replay
+            key, current = self._find(run_id)
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            active = current.integration_validation
+            if (
+                active is None
+                or active.state is not IntegrationValidationState.RUNNING
+                or active.execution_id != execution.execution_id
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_execution_unavailable")
+            if (
+                execution.state is IntegrationValidationState.RUNNING
+                or execution.release_id != active.release_id
+                or execution.profile is not active.profile
+                or execution.configuration_digest != active.configuration_digest
+                or execution.trust_plan_digest != active.trust_plan_digest
+                or execution.data_plan_digest != active.data_plan_digest
+                or execution.service_plan_digest != active.service_plan_digest
+                or execution.identity_plan_digest != active.identity_plan_digest
+                or execution.integration_schema_version != active.integration_schema_version
+                or execution.integration_plan_digest != active.integration_plan_digest
+                or execution.target_id != active.target_id
+                or execution.started_at != active.started_at
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_execution_conflict")
+            if execution.state is IntegrationValidationState.COMPLETED:
+                reference = f"result.integrations.{execution.integration_plan_digest[:32]}"
+                checkpoint_state = BootstrapCheckpointState.COMPLETED
+                run_state = (
+                    BootstrapRunState.COMPLETED
+                    if len(current.completed_phase_ids) + 1 == len(current.identity.phase_ids)
+                    else BootstrapRunState.ACTIVE
+                )
+            else:
+                reference = (
+                    "result.integration-validation."
+                    f"{sha256(execution.result_code.encode()).hexdigest()[:24]}"
+                )
+                checkpoint_state = BootstrapCheckpointState.FAILED
+                run_state = BootstrapRunState.FAILED
+            checkpoint = BootstrapPhaseCheckpoint(
+                phase_id="phase.integrations",
+                state=checkpoint_state,
+                safe_output_references=(reference,),
+                recorded_at=now,
+            )
+            updated = replace(
+                current,
+                version=current.version + 1,
+                state=run_state,
+                checkpoints=(
+                    *(
+                        item
+                        for item in current.checkpoints
+                        if item.phase_id != "phase.integrations"
+                    ),
+                    checkpoint,
+                ),
+                integration_validation=execution,
+                updated_at=now,
+            )
+            result = BootstrapMutationResult(
+                record=updated,
+                replayed=False,
+                integration_validation=execution,
+            )
+            self._records[key] = updated
+            self._remember(lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
     async def rebase(
         self,
         *,
@@ -1274,6 +1456,11 @@ class InMemoryBootstrapStateRepository:
                 identity_handoff=(
                     current.identity_handoff if "phase.identity" in reusable else None
                 ),
+                integration_validation=(
+                    current.integration_validation
+                    if "phase.integrations" in reusable
+                    else None
+                ),
                 updated_at=now,
             )
             result = BootstrapMutationResult(
@@ -1328,6 +1515,10 @@ class InMemoryBootstrapStateRepository:
             or (
                 record.identity_handoff is not None
                 and record.identity_handoff.state is IdentityHandoffState.RUNNING
+            )
+            or (
+                record.integration_validation is not None
+                and record.integration_validation.state is IntegrationValidationState.RUNNING
             )
         ):
             raise BootstrapRepositoryError("bootstrap_phase_in_progress")
