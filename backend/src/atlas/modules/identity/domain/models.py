@@ -34,6 +34,38 @@ class AssuranceLevel(StrEnum):
     HARDWARE_BACKED = "hardware_backed"
 
 
+class IdentityProviderFailure(RuntimeError):
+    def __init__(
+        self,
+        *,
+        provider_id: str,
+        authentication_method: AuthenticationMethod,
+        result_code: str,
+    ) -> None:
+        super().__init__(result_code)
+        validate_stable_identifier(provider_id, "provider_id")
+        validate_stable_identifier(result_code, "result_code")
+        self.provider_id = provider_id
+        self.authentication_method = authentication_method
+        self.result_code = result_code
+
+
+class IdentityProviderDenied(RuntimeError):
+    def __init__(
+        self,
+        *,
+        provider_id: str,
+        authentication_method: AuthenticationMethod,
+        result_code: str = "credentials_rejected",
+    ) -> None:
+        super().__init__(result_code)
+        validate_stable_identifier(provider_id, "provider_id")
+        validate_stable_identifier(result_code, "result_code")
+        self.provider_id = provider_id
+        self.authentication_method = authentication_method
+        self.result_code = result_code
+
+
 @dataclass(frozen=True, slots=True)
 class AuthenticationInput:
     correlation_id: str
