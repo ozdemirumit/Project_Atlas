@@ -4,14 +4,50 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-010 |
-| Title | Storage fault-family Root Cause Analysis vertical slice |
+| Task ID | ATLAS-IMP-011 |
+| Title | Storage Recommendation Engine vertical slice |
 | Status | Done |
-| Branch | `agent/storage-rca-case` |
-| Pull Request | [PR #22](https://github.com/ozdemirumit/Project_Atlas/pull/22) |
-| Governing Documents | ATLAS-002, ATLAS-023, ATLAS-026, ATLAS-027, ATLAS-031, ATLAS-032, ATLAS-041, ATLAS-042, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052 |
+| Branch | `agent/storage-recommendations` |
+| Pull Request | [PR #23](https://github.com/ozdemirumit/Project_Atlas/pull/23) |
+| Governing Documents | ATLAS-002, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-032, ATLAS-037, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-045, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052 |
 | Last Updated | 2026-08-04 |
-| Next Action | Select the next approved vertical slice |
+| Next Action | Select the next Approved implementation slice |
+
+### ATLAS-IMP-011 Acceptance Criteria
+
+- Recommendation requests are bound to one authorized storage target and one exact source RCA case
+  version, accountable audience, decision horizon, constraints, and maximum capability class.
+- Artifacts and options are immutable and versioned with owner, state, expiry, source lineage,
+  component versions, policy outcomes, and review status.
+- The first slice represents investigate, escalate, defer or no-action, restoration-planning, and
+  remediation-planning options without executing, approving, or silently generating commands.
+- Every option retains applicability, intended outcome, conceptual steps, capability class,
+  evidence balance, assumptions, unknowns, risk dimensions, impact, interruption, duration,
+  preconditions, success criteria, stop conditions, recovery, governance, and residual risk.
+- Deterministic validation excludes prohibited options and blocks consequential options that lack
+  current impact, rollback, applicability, readiness, or authoritative procedure evidence.
+- Comparison keeps evidence strength, effectiveness, impact, reversibility, duration, complexity,
+  policy, and residual risk visible rather than reducing them to one opaque score.
+- The preferred option is lower-risk, reversible, evidence-supported, and read-only when it can
+  answer the immediate decision; ties or insufficient evidence produce no preferred option.
+- Escalation and no-action remain explicit alternatives with trigger, expiry, and residual risk.
+- Hidden targets, unauthorized evidence, non-allowlisted capabilities, stale citations, unsupported
+  preference, and required audit failures fail closed without partial artifact disclosure.
+- The web workspace compares options, explains preference and exclusions, and shows impact,
+  interruption, readiness, recovery, policy, expiry, human review, and decision-support boundaries.
+- Recommendation review or approval never authorizes infrastructure execution.
+
+### ATLAS-IMP-011 Validation Evidence
+
+- Backend Ruff check and format verification passed across 155 files.
+- Strict backend type checking passed across 152 source and test files.
+- Full backend test suite passed: 126 tests; one dependency deprecation warning remains outside
+  this task's scope.
+- Frontend TypeScript, ESLint, user-flow test, and production build all passed.
+- The integrated UI test covers health check, bounded investigation, provisional RCA, and governed
+  recommendation comparison through the no-execution decision boundary.
+- Live API and recommendation UI validation passed with `execution_authorized=false`.
+- GitHub backend and frontend CI jobs passed before merge.
 
 ### ATLAS-IMP-010 Acceptance Criteria
 
@@ -233,6 +269,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-008 | Scheduled storage health checks vertical slice | Completed through [PR #20](https://github.com/ozdemirumit/Project_Atlas/pull/20); 93 backend tests, live desktop/mobile UI and manual-run validation, and all GitHub quality gates passed |
 | ATLAS-IMP-009 | Evidence-grounded investigation and reasoning vertical slice | Completed through [PR #21](https://github.com/ozdemirumit/Project_Atlas/pull/21); 103 backend tests, live desktop/mobile investigation validation, and all GitHub quality gates passed |
 | ATLAS-IMP-010 | Storage fault-family Root Cause Analysis vertical slice | Completed through [PR #22](https://github.com/ozdemirumit/Project_Atlas/pull/22); 114 backend tests, live API and desktop UI validation, and all GitHub quality gates passed |
+| ATLAS-IMP-011 | Storage Recommendation Engine vertical slice | Completed through [PR #23](https://github.com/ozdemirumit/Project_Atlas/pull/23); 126 backend tests, live recommendation API/UI validation, and all GitHub quality gates passed |
 
 ## Status Rules
 

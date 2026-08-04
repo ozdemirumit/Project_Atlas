@@ -30,6 +30,7 @@ import {
   Server,
   Settings,
   ShieldCheck,
+  Scale,
   Workflow,
   X,
 } from "lucide-react";
@@ -41,6 +42,7 @@ import { getCurrentIdentity } from "./api/identity";
 import { createStorageInvestigation } from "./api/investigations";
 import { getPlatformStatus } from "./api/platform";
 import { createStorageRca } from "./api/rca";
+import { createStorageRecommendation } from "./api/recommendations";
 import { getStorageOverview, type StorageAsset } from "./api/storage";
 
 const navigation = [
@@ -185,6 +187,11 @@ export function App() {
       createStorageRca(targetId, actualBehavior),
   });
   const rcaCase = rcaMutation.data?.data;
+  const recommendationMutation = useMutation({
+    mutationFn: ({ targetId, caseId, version }: { targetId: string; caseId: string; version: number }) =>
+      createStorageRecommendation(targetId, caseId, version),
+  });
+  const recommendation = recommendationMutation.data?.data;
   const longestImpactPath = impact
     ? [...impact.paths].sort((left, right) => right.entity_ids.length - left.entity_ids.length)[0]
     : undefined;
@@ -851,6 +858,7 @@ export function App() {
                         disabled={!reasoningArtifact || !selectedAsset || rcaMutation.isPending}
                         onClick={() => {
                           if (reasoningArtifact && selectedAsset) {
+                            recommendationMutation.reset();
                             rcaMutation.mutate({
                               targetId: selectedAsset.asset_id,
                               actualBehavior:
@@ -1034,6 +1042,232 @@ export function App() {
                     )}
                   </section>
 
+                  <section className="workspace-section recommendation-section" aria-live="polite">
+                    <div className="section-heading recommendation-heading">
+                      <div>
+                        <p className="eyebrow">RECOMMENDATION ENGINE</p>
+                        <h2>Operational choices</h2>
+                      </div>
+                      <button
+                        className="run-check-button recommendation-button"
+                        type="button"
+                        disabled={!rcaCase || recommendationMutation.isPending}
+                        onClick={() => {
+                          if (rcaCase) {
+                            recommendationMutation.mutate({
+                              targetId: rcaCase.target_id,
+                              caseId: rcaCase.case_id,
+                              version: rcaCase.version,
+                            });
+                          }
+                        }}
+                      >
+                        {recommendationMutation.isPending ? (
+                          <RefreshCw className="spin" size={14} />
+                        ) : (
+                          <Scale size={14} />
+                        )}
+                        Compare options
+                      </button>
+                    </div>
+
+                    {!recommendation &&
+                      !recommendationMutation.isPending &&
+                      !recommendationMutation.isError && (
+                        <div className="reasoning-empty">
+                          <Scale size={21} />
+                          <div>
+                            <strong>Governed RCA case required</strong>
+                            <p>
+                              Compare diagnostic, escalation, deferral, and blocked change-planning
+                              choices after the provisional RCA case is available.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    {recommendationMutation.isPending && (
+                      <div className="reasoning-empty">
+                        <Clock3 size={20} />
+                        <div>
+                          <strong>Comparing operational choices</strong>
+                          <p>Evidence, risk, reversibility, interruption, and policy are being validated.</p>
+                        </div>
+                      </div>
+                    )}
+                    {recommendationMutation.isError && (
+                      <div className="reasoning-empty reasoning-error">
+                        <AlertTriangle size={20} />
+                        <div>
+                          <strong>Recommendation unavailable</strong>
+                          <p>No preferred option is shown when source or governance checks fail.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {recommendation && (
+                      <>
+                        <div className="recommendation-summary-grid">
+                          <div>
+                            <span>Artifact</span>
+                            <strong>Version {recommendation.version}</strong>
+                            <small>{recommendation.state.replaceAll("_", " ")}</small>
+                          </div>
+                          <div>
+                            <span>Source RCA</span>
+                            <strong>Version {recommendation.source_case_version}</strong>
+                            <small>{recommendation.source_case_state}</small>
+                          </div>
+                          <div>
+                            <span>Human review</span>
+                            <strong>{recommendation.human_review.status}</strong>
+                            <small>{recommendation.accountable_audience}</small>
+                          </div>
+                          <div>
+                            <span>Expires</span>
+                            <strong>{formatTimestamp(recommendation.expires_at)}</strong>
+                            <small>{recommendation.horizon.replaceAll("_", " ")}</small>
+                          </div>
+                        </div>
+
+                        <div className="preferred-option-banner">
+                          <CheckCircle2 size={18} />
+                          <div>
+                            <span>Preferred for the current decision</span>
+                            <strong>
+                              {recommendation.options.find(
+                                (option) => option.option_id === recommendation.preferred_option_id,
+                              )?.title ?? "No option preferred"}
+                            </strong>
+                            <p>{recommendation.preference_rationale}</p>
+                          </div>
+                        </div>
+
+                        <div className="recommendation-options">
+                          <h3>Compared options</h3>
+                          <div>
+                            {recommendation.options.map((option) => (
+                              <article
+                                className={`${option.state} ${option.preference}`}
+                                key={option.option_id}
+                              >
+                                <div className="recommendation-option-head">
+                                  <span className="recommendation-category">
+                                    {option.category.replaceAll("_", " ")}
+                                  </span>
+                                  <span className={`recommendation-state ${option.state}`}>
+                                    {option.state}
+                                  </span>
+                                  <span className={`risk-level ${option.overall_risk}`}>
+                                    {option.overall_risk} risk
+                                  </span>
+                                </div>
+                                <strong>{option.title}</strong>
+                                <p>{option.intended_outcome}</p>
+                                <div className="recommendation-option-metrics">
+                                  <span>
+                                    Evidence <strong>{option.confidence}</strong>
+                                  </span>
+                                  <span>
+                                    Duration{" "}
+                                    <strong>
+                                      {option.duration.minimum_minutes}-
+                                      {option.duration.maximum_minutes} min
+                                    </strong>
+                                  </span>
+                                  <span>
+                                    Interruption <strong>{option.interruption.expected_mode}</strong>
+                                  </span>
+                                </div>
+                                <div className="recommendation-plan">
+                                  {option.plan_steps.map((step) => (
+                                    <div key={step.step_id}>
+                                      <span>{step.order}</span>
+                                      <p>{step.conceptual_action}</p>
+                                      <small>
+                                        {step.capability_class} · {step.capability_id ?? "human procedure"}
+                                      </small>
+                                    </div>
+                                  ))}
+                                </div>
+                                {option.state === "blocked" ? (
+                                  <div className="recommendation-exclusions">
+                                    <strong>Blocked by policy and readiness</strong>
+                                    <ul>
+                                      {option.exclusion_reasons.map((reason) => (
+                                        <li key={reason}>{reason}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                ) : (
+                                  <div className="recommendation-readiness">
+                                    <span>
+                                      Rollback {option.recovery.rollback_feasible ? "credible" : "not established"}
+                                    </span>
+                                    <span>{option.policy_outcome.replaceAll("_", " ")}</span>
+                                  </div>
+                                )}
+                              </article>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="recommendation-comparison">
+                          <h3>Visible comparison dimensions</h3>
+                          <div className="table-wrap">
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>Dimension</th>
+                                  {recommendation.options.map((option) => (
+                                    <th key={option.option_id}>{option.category.replaceAll("_", " ")}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {recommendation.comparisons.map((comparison) => (
+                                  <tr key={comparison.dimension}>
+                                    <td>{comparison.dimension.replaceAll("_", " ")}</td>
+                                    {recommendation.options.map((option) => (
+                                      <td key={option.option_id}>
+                                        {comparison.option_values.find(
+                                          ([optionId]) => optionId === option.option_id,
+                                        )?.[1] ?? "Unknown"}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        <div className="recommendation-policy-grid">
+                          <div>
+                            <h3>Policy constraints</h3>
+                            <ul>
+                              {recommendation.policy_constraints.map((constraint) => (
+                                <li key={constraint}>{constraint}</li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div>
+                            <h3>Decision boundary</h3>
+                            <p>
+                              {recommendation.execution_authorized
+                                ? "Execution authority present"
+                                : "No execution authority"}
+                            </p>
+                            <strong>Review does not grant RBAC, approval, or runtime authority.</strong>
+                          </div>
+                        </div>
+                        <div className="safety-notice">
+                          <ShieldCheck size={16} />
+                          <span>{recommendation.safety_notice}</span>
+                        </div>
+                      </>
+                    )}
+                  </section>
+
                   <section className="workspace-section impact-section">
                     <div className="section-heading">
                       <div>
@@ -1187,6 +1421,7 @@ export function App() {
                   const question = investigationQuestion.trim();
                   if (selectedAsset && question) {
                     rcaMutation.reset();
+                    recommendationMutation.reset();
                     investigationMutation.mutate({ targetId: selectedAsset.asset_id, question });
                   }
                 }}

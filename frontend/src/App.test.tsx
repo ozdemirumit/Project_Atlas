@@ -535,6 +535,212 @@ const rcaResponse = {
   },
 };
 
+const recommendationResponse = {
+  data: {
+    recommendation_id: "rec_test",
+    version: 1,
+    prior_version_id: null,
+    owner: "Storage Operations",
+    state: "ready_for_review",
+    created_at: "2026-08-04T10:05:00Z",
+    expires_at: "2026-08-04T14:05:00Z",
+    target_id: "asset.storage.lab.b28",
+    decision_question: "What is the safest next operational choice?",
+    accountable_audience: "Storage Operations",
+    horizon: "immediate_response",
+    constraints: ["No infrastructure change", "C1 read-only maximum"],
+    source_case_id: "rca_test",
+    source_case_version: 1,
+    source_case_state: "provisional",
+    options: [
+      {
+        option_id: "recommendation.option.investigate",
+        version: 1,
+        category: "investigate",
+        state: "viable",
+        preference: "preferred",
+        title: "Collect current path, event, and service evidence",
+        intended_outcome: "Distinguish persistent degradation from a transient observation.",
+        confidence: "supported",
+        overall_risk: "low",
+        duration: { minimum_minutes: 2, maximum_minutes: 5 },
+        interruption: { expected_mode: "none expected from read-only evidence collection" },
+        plan_steps: [
+          {
+            step_id: "step.investigate.path-events",
+            order: 1,
+            conceptual_action: "Collect one bounded current path and event snapshot.",
+            capability_class: "C1",
+            capability_id: "hitachi.opscenter.storage.path-events.read",
+          },
+        ],
+        recovery: { rollback_feasible: true },
+        policy_outcome: "permitted_for_human_initiation",
+        exclusion_reasons: [],
+      },
+      {
+        option_id: "recommendation.option.escalate",
+        version: 1,
+        category: "escalate",
+        state: "viable",
+        preference: "alternative",
+        title: "Prepare an attributable vendor escalation package",
+        intended_outcome: "Enable specialist review without exposing secrets or hidden targets.",
+        confidence: "supported",
+        overall_risk: "low",
+        duration: { minimum_minutes: 10, maximum_minutes: 30 },
+        interruption: { expected_mode: "none expected" },
+        plan_steps: [
+          {
+            step_id: "step.escalate.package",
+            order: 1,
+            conceptual_action: "Prepare a redacted evidence and version summary.",
+            capability_class: "C0",
+            capability_id: "atlas.vendor.support.package.prepare",
+          },
+        ],
+        recovery: { rollback_feasible: true },
+        policy_outcome: "permitted_for_human_handoff",
+        exclusion_reasons: [],
+      },
+      {
+        option_id: "recommendation.option.defer",
+        version: 1,
+        category: "defer_no_action",
+        state: "viable",
+        preference: "alternative",
+        title: "Defer change and monitor explicit triggers",
+        intended_outcome: "Avoid premature change while keeping a bounded review trigger.",
+        confidence: "suspected",
+        overall_risk: "moderate",
+        duration: { minimum_minutes: 0, maximum_minutes: 240 },
+        interruption: { expected_mode: "none expected" },
+        plan_steps: [
+          {
+            step_id: "step.defer.monitor",
+            order: 1,
+            conceptual_action: "Continue the approved bounded health observation until expiry.",
+            capability_class: "C1",
+            capability_id: "hitachi.opscenter.storage.hardware.read",
+          },
+        ],
+        recovery: { rollback_feasible: true },
+        policy_outcome: "permitted_with_expiry_and_trigger",
+        exclusion_reasons: [],
+      },
+      {
+        option_id: "recommendation.option.restoration-planning",
+        version: 1,
+        category: "restoration_planning",
+        state: "blocked",
+        preference: "ineligible",
+        title: "Prepare controller failover restoration planning",
+        intended_outcome: "Plan a human-governed restoration path if impact becomes active.",
+        confidence: "insufficient",
+        overall_risk: "critical",
+        duration: { minimum_minutes: 0, maximum_minutes: 0 },
+        interruption: { expected_mode: "not estimated because the option is blocked" },
+        plan_steps: [
+          {
+            step_id: "step.restore.failover-plan",
+            order: 1,
+            conceptual_action: "Select an approved vendor failover procedure for planning.",
+            capability_class: "C3",
+            capability_id: "hitachi.opscenter.storage.controller-failover.plan",
+          },
+        ],
+        recovery: { rollback_feasible: false },
+        policy_outcome: "blocked_pending_readiness",
+        exclusion_reasons: [
+          "No current service impact is confirmed.",
+          "Rollback and recovery are not established.",
+        ],
+      },
+      {
+        option_id: "recommendation.option.remediation-planning",
+        version: 1,
+        category: "remediation_planning",
+        state: "blocked",
+        preference: "ineligible",
+        title: "Prepare permanent controller or path remediation planning",
+        intended_outcome: "Plan correction only after the causal mechanism is supported.",
+        confidence: "insufficient",
+        overall_risk: "high",
+        duration: { minimum_minutes: 0, maximum_minutes: 0 },
+        interruption: { expected_mode: "not estimated because the option is blocked" },
+        plan_steps: [
+          {
+            step_id: "step.remediate.plan",
+            order: 1,
+            conceptual_action: "Select an approved remediation procedure.",
+            capability_class: "C3",
+            capability_id: "hitachi.opscenter.storage.path-remediation.plan",
+          },
+        ],
+        recovery: { rollback_feasible: false },
+        policy_outcome: "blocked_pending_causal_and_change_readiness",
+        exclusion_reasons: [
+          "Root cause is not confirmed.",
+          "Change impact and rollback are incomplete.",
+        ],
+      },
+    ],
+    comparisons: [
+      {
+        dimension: "evidence_strength",
+        precedence: 1,
+        option_values: [
+          ["recommendation.option.investigate", "supported; 2 supporting"],
+          ["recommendation.option.escalate", "supported; 2 supporting"],
+          ["recommendation.option.defer", "suspected; 1 supporting"],
+          ["recommendation.option.restoration-planning", "insufficient; 3 supporting"],
+          ["recommendation.option.remediation-planning", "insufficient; 2 supporting"],
+        ],
+        rationale: "Applicability and evidence must be sufficient before preference.",
+      },
+      {
+        dimension: "policy_and_readiness",
+        precedence: 5,
+        option_values: [
+          ["recommendation.option.investigate", "permitted_for_human_initiation"],
+          ["recommendation.option.escalate", "permitted_for_human_handoff"],
+          ["recommendation.option.defer", "permitted_with_expiry_and_trigger"],
+          ["recommendation.option.restoration-planning", "blocked_pending_readiness"],
+          [
+            "recommendation.option.remediation-planning",
+            "blocked_pending_causal_and_change_readiness",
+          ],
+        ],
+        rationale: "Policy exclusions override generated preference.",
+      },
+    ],
+    preferred_option_id: "recommendation.option.investigate",
+    preference_rationale:
+      "The preferred option is bounded, read-only, reversible, and reduces the evidence gap.",
+    policy_constraints: [
+      "No Atlas execution authority is available.",
+      "C3 planning remains blocked until readiness is current.",
+    ],
+    excluded_option_ids: [
+      "recommendation.option.restoration-planning",
+      "recommendation.option.remediation-planning",
+    ],
+    human_review: {
+      status: "pending",
+      reviewer_id: null,
+      reviewed_at: null,
+      rationale: null,
+    },
+    execution_authorized: false,
+    safety_notice:
+      "Decision support only. Recommendation review or approval does not authorize Atlas to execute an infrastructure change.",
+  },
+  meta: {
+    correlation_id: "test-recommendation-correlation",
+    generated_at: "2026-08-04T10:05:00Z",
+  },
+};
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -551,10 +757,12 @@ describe("Atlas application shell", () => {
           ? storageResponse
           : url.includes("/health-checks/overview")
             ? healthCheckResponse
-            : url.includes("/rca/storage")
-              ? rcaResponse
-              : url.includes("/investigations/storage")
-                ? investigationResponse
+            : url.includes("/recommendations/storage")
+              ? recommendationResponse
+              : url.includes("/rca/storage")
+                ? rcaResponse
+                : url.includes("/investigations/storage")
+                  ? investigationResponse
           : url.includes("/graph/storage-impact")
             ? graphResponse
           : platformResponse;
@@ -612,5 +820,16 @@ describe("Atlas application shell", () => {
     expect(screen.getByText("INC-LOCAL-B28")).toBeVisible();
     expect(screen.getAllByText(/No root cause is confirmed/).length).toBeGreaterThan(0);
     expect(screen.getByText(/cannot authorize an infrastructure change/)).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Compare options" }));
+
+    expect(await screen.findByText("Compared options")).toBeVisible();
+    expect(screen.getByText("Visible comparison dimensions")).toBeVisible();
+    expect(
+      screen.getAllByText("Collect current path, event, and service evidence").length,
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByText("Blocked by policy and readiness")).toHaveLength(2);
+    expect(screen.getByText("No execution authority")).toBeVisible();
+    expect(screen.getByText(/does not authorize Atlas to execute/)).toBeVisible();
   });
 });

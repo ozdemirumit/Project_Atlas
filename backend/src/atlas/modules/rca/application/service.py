@@ -49,6 +49,7 @@ class RcaService:
         self._assembler = assembler
         self._audit_sink = audit_sink
         self._latest: dict[tuple[str, str], RcaCase] = {}
+        self._cases: dict[str, RcaCase] = {}
         self._lock = asyncio.Lock()
 
     async def create(self, request: RcaCreateRequest, *, context: RcaAccessContext) -> RcaCase:
@@ -92,6 +93,14 @@ class RcaService:
                 result_code="rca_case_returned",
             )
             self._latest[key] = case
+            self._cases[case.case_id] = case
+            return case
+
+    async def get_case(self, case_id: str, version: int, target_id: str) -> RcaCase:
+        async with self._lock:
+            case = self._cases.get(case_id)
+            if case is None or case.version != version or case.target_id != target_id:
+                raise KeyError(case_id)
             return case
 
     @staticmethod
