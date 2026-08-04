@@ -37,6 +37,10 @@ from atlas.modules.authorization.application.bootstrap import (
     SESSION_SELF_READ,
     SESSION_SELF_REVOKE,
     STORAGE_OVERVIEW_READ,
+    WORKLOAD_IDENTITY_ADMIN_CREATE,
+    WORKLOAD_IDENTITY_ADMIN_REVOKE,
+    WORKLOAD_IDENTITY_ADMIN_ROTATE,
+    WORKLOAD_IDENTITY_GOVERNANCE_READ,
     ai_grounded_query_scope,
     api_credential_self_scope,
     approval_scope,
@@ -52,6 +56,7 @@ from atlas.modules.authorization.application.bootstrap import (
     security_export_scope,
     session_self_scope,
     storage_overview_scope,
+    workload_identity_governance_scope,
 )
 from atlas.modules.authorization.application.service import AuthorizationService
 from atlas.modules.authorization.domain.models import AuthorizationDecision, AuthorizationRequest
@@ -477,6 +482,113 @@ async def _governance_mutation_audit_fields(request: Request) -> tuple[str | Non
         else None
     )
     return reason, idempotency_key
+
+
+async def _authorize_workload_identity(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+    target_subject_id: str | None = None,
+    target_metadata: tuple[tuple[str, str], ...] = (),
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    reason, idempotency_key = await _governance_mutation_audit_fields(request)
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.identity.workload",
+            scope=workload_identity_governance_scope(
+                subject.organization_id,
+                settings.environment,
+                capability_class,
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+            target_subject_id=target_subject_id,
+            reason=reason,
+            idempotency_key=idempotency_key,
+            target_metadata=target_metadata,
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="Workload identity governance is not authorized.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_workload_identity_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_workload_identity(
+        request,
+        subject,
+        permission_id=WORKLOAD_IDENTITY_GOVERNANCE_READ,
+        capability_class=CapabilityClass.C0_INFORMATIONAL,
+    )
+
+
+async def authorize_workload_identity_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_workload_identity(
+        request,
+        subject,
+        permission_id=WORKLOAD_IDENTITY_ADMIN_CREATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_workload_identity_rotate(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    identity_id: str,
+) -> AuthorizationDecision:
+    (
+        target_subject_id,
+        target_metadata,
+    ) = await request.app.state.workload_identity_service.target_audit_fields(
+        "workload_identity", identity_id
+    )
+    return await _authorize_workload_identity(
+        request,
+        subject,
+        permission_id=WORKLOAD_IDENTITY_ADMIN_ROTATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+        target_subject_id=target_subject_id,
+        target_metadata=target_metadata,
+    )
+
+
+async def authorize_workload_identity_revoke(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    credential_id: str,
+) -> AuthorizationDecision:
+    (
+        target_subject_id,
+        target_metadata,
+    ) = await request.app.state.workload_identity_service.target_audit_fields(
+        "workload_credential", credential_id
+    )
+    return await _authorize_workload_identity(
+        request,
+        subject,
+        permission_id=WORKLOAD_IDENTITY_ADMIN_REVOKE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+        target_subject_id=target_subject_id,
+        target_metadata=target_metadata,
+    )
 
 
 async def authorize_storage_overview_read(

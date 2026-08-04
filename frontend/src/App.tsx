@@ -81,6 +81,12 @@ import {
   sendSecurityExportTestEvent,
 } from "./api/securityExport";
 import { getStorageOverview, type StorageAsset } from "./api/storage";
+import {
+  createWorkloadIdentity,
+  getWorkloadIdentities,
+  revokeWorkloadCredential,
+  rotateWorkloadCredential,
+} from "./api/workloadIdentities";
 
 const navigation = [
   { label: "Workspace", icon: MessageSquareText },
@@ -141,13 +147,18 @@ function apiGrantLabel(permissionId: string): string {
 }
 
 function governanceIdempotencyKey(
-  resource: "identity" | "session" | "token",
+  resource: "identity" | "session" | "token" | "workload-create" | "workload-rotate" | "workload-revoke",
   version: number,
 ): string {
   const nonce =
     typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
   return `governance-${resource}-${version}-${nonce}`;
 }
+
+type PendingWorkloadAction =
+  | { kind: "create" }
+  | { kind: "rotate"; identityId: string; version: number }
+  | { kind: "revoke"; credentialId: string; version: number };
 
 function relationshipLabel(relationshipType: string | undefined): string {
   return (
@@ -198,6 +209,29 @@ export function App() {
   const [issuedApiToken, setIssuedApiToken] = useState<string | null>(null);
   const [governanceSearch, setGovernanceSearch] = useState("");
   const [governanceReason, setGovernanceReason] = useState("");
+  const [workloadSearch, setWorkloadSearch] = useState("");
+  const [workloadReason, setWorkloadReason] = useState("");
+  const [workloadIdentityId, setWorkloadIdentityId] = useState(
+    "workload.atlas.health.scheduler",
+  );
+  const [workloadDisplayName, setWorkloadDisplayName] = useState("Health scheduler");
+  const [workloadServiceId, setWorkloadServiceId] = useState("service.health-scheduler");
+  const [workloadInstanceId, setWorkloadInstanceId] = useState(
+    "instance.health-scheduler.local-01",
+  );
+  const [workloadOwnerId, setWorkloadOwnerId] = useState(
+    "subject.enterprise.platform-owner",
+  );
+  const [workloadPurpose, setWorkloadPurpose] = useState(
+    "Run bounded Atlas health-check coordination.",
+  );
+  const [workloadAudience, setWorkloadAudience] = useState("service.health-check");
+  const [workloadSecretReference, setWorkloadSecretReference] = useState(
+    "secret.connector.health-readonly",
+  );
+  const [issuedWorkloadToken, setIssuedWorkloadToken] = useState<string | null>(null);
+  const [pendingWorkloadAction, setPendingWorkloadAction] =
+    useState<PendingWorkloadAction | null>(null);
   const [auditSearch, setAuditSearch] = useState("");
   const [auditOutcome, setAuditOutcome] = useState("");
   const [pendingDisableSubjectId, setPendingDisableSubjectId] = useState<string | null>(null);
@@ -233,12 +267,16 @@ export function App() {
       queryClient.removeQueries({ queryKey: ["approval-request"] });
       queryClient.removeQueries({ queryKey: ["api-credentials"] });
       queryClient.removeQueries({ queryKey: ["identity-governance"] });
+      queryClient.removeQueries({ queryKey: ["workload-identities"] });
       queryClient.removeQueries({ queryKey: ["audit-export-overview"] });
       setApprovalRequestId(null);
       setApprovalRationale("");
       setIssuedApiToken(null);
       setPendingDisableSubjectId(null);
       setGovernanceReason("");
+      setWorkloadReason("");
+      setIssuedWorkloadToken(null);
+      setPendingWorkloadAction(null);
       await queryClient.invalidateQueries({ queryKey: ["current-identity"] });
     },
   });
@@ -319,6 +357,36 @@ export function App() {
     mutationFn: revokeGovernedApiCredential,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["identity-governance"] });
+    },
+  });
+  const workloadIdentityQuery = useQuery({
+    queryKey: ["workload-identities", workloadSearch],
+    queryFn: () => getWorkloadIdentities(workloadSearch),
+    enabled: Boolean(identity && identity.authentication.method !== "development"),
+    retry: false,
+  });
+  const workloadInventory = workloadIdentityQuery.data?.data;
+  const createWorkloadIdentityMutation = useMutation({
+    mutationFn: createWorkloadIdentity,
+    onSuccess: async (result) => {
+      setIssuedWorkloadToken(result.data.token);
+      setPendingWorkloadAction(null);
+      await queryClient.invalidateQueries({ queryKey: ["workload-identities"] });
+    },
+  });
+  const rotateWorkloadCredentialMutation = useMutation({
+    mutationFn: rotateWorkloadCredential,
+    onSuccess: async (result) => {
+      setIssuedWorkloadToken(result.data.token);
+      setPendingWorkloadAction(null);
+      await queryClient.invalidateQueries({ queryKey: ["workload-identities"] });
+    },
+  });
+  const revokeWorkloadCredentialMutation = useMutation({
+    mutationFn: revokeWorkloadCredential,
+    onSuccess: async () => {
+      setPendingWorkloadAction(null);
+      await queryClient.invalidateQueries({ queryKey: ["workload-identities"] });
     },
   });
   const auditExportQuery = useQuery({
@@ -1480,6 +1548,423 @@ export function App() {
                                   >
                                     <Trash2 size={14} /> Revoke token
                                   </button>
+                                </div>
+                              </article>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+                  )}
+
+                  {workloadInventory && (
+                    <section className="workspace-section workload-identity-section">
+                      <div className="section-heading governance-heading">
+                        <div>
+                          <p className="eyebrow">WORKLOAD TRUST</p>
+                          <h2>Platform workload identities</h2>
+                          <p>
+                            Short-lived service credentials with exact audience and environment
+                            boundaries.
+                          </p>
+                        </div>
+                        <span className="session-count">
+                          {workloadInventory.identities.length} identities {" · "}
+                          {workloadInventory.credentials.length}
+                          {workloadInventory.truncated ? "+" : ""} credentials
+                        </span>
+                      </div>
+
+                      <div className="governance-toolbar workload-toolbar">
+                        <label>
+                          <span>Search workload identities</span>
+                          <div className="governance-input">
+                            <Search size={15} />
+                            <input
+                              aria-label="Search workload identities"
+                              value={workloadSearch}
+                              maxLength={128}
+                              placeholder="Service, instance, owner, or audience"
+                              onChange={(event) => setWorkloadSearch(event.target.value)}
+                            />
+                          </div>
+                        </label>
+                        <label>
+                          <span>Governance reason</span>
+                          <input
+                            aria-label="Workload identity governance reason"
+                            value={workloadReason}
+                            maxLength={240}
+                            placeholder="Required for create, rotate, or revoke"
+                            onChange={(event) => setWorkloadReason(event.target.value)}
+                          />
+                        </label>
+                      </div>
+
+                      {(createWorkloadIdentityMutation.isError ||
+                        rotateWorkloadCredentialMutation.isError ||
+                        revokeWorkloadCredentialMutation.isError) && (
+                        <div className="impact-message impact-error">
+                          <AlertTriangle size={18} /> The workload identity change was not
+                          completed; prior trust state remains authoritative.
+                        </div>
+                      )}
+
+                      {issuedWorkloadToken && (
+                        <div className="workload-token-once" role="status">
+                          <div>
+                            <KeyRound size={18} />
+                            <div>
+                              <strong>Credential shown once</strong>
+                              <p>Store it in the approved secret manager before dismissing.</p>
+                            </div>
+                          </div>
+                          <code>{issuedWorkloadToken}</code>
+                          <div className="workload-token-actions">
+                            <button
+                              type="button"
+                              title="Copy credential"
+                              aria-label="Copy workload credential"
+                              onClick={() => void navigator.clipboard?.writeText(issuedWorkloadToken)}
+                            >
+                              <Copy size={15} />
+                            </button>
+                            <button type="button" onClick={() => setIssuedWorkloadToken(null)}>
+                              Dismiss
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      <form
+                        className="workload-create-form"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          setPendingWorkloadAction({ kind: "create" });
+                        }}
+                      >
+                        <div className="governance-panel-heading">
+                          <div>
+                            <Server size={17} />
+                            <h3>Register workload identity</h3>
+                          </div>
+                          <span>C2 governed</span>
+                        </div>
+                        <div className="workload-form-grid">
+                          <label>
+                            <span>Identity ID</span>
+                            <input
+                              aria-label="Workload identity ID"
+                              value={workloadIdentityId}
+                              onChange={(event) => setWorkloadIdentityId(event.target.value)}
+                            />
+                          </label>
+                          <label>
+                            <span>Display name</span>
+                            <input
+                              aria-label="Workload display name"
+                              value={workloadDisplayName}
+                              onChange={(event) => setWorkloadDisplayName(event.target.value)}
+                            />
+                          </label>
+                          <label>
+                            <span>Service</span>
+                            <input
+                              aria-label="Workload service ID"
+                              value={workloadServiceId}
+                              onChange={(event) => setWorkloadServiceId(event.target.value)}
+                            />
+                          </label>
+                          <label>
+                            <span>Instance</span>
+                            <input
+                              aria-label="Workload instance ID"
+                              value={workloadInstanceId}
+                              onChange={(event) => setWorkloadInstanceId(event.target.value)}
+                            />
+                          </label>
+                          <label>
+                            <span>Owner</span>
+                            <input
+                              aria-label="Workload owner subject ID"
+                              value={workloadOwnerId}
+                              onChange={(event) => setWorkloadOwnerId(event.target.value)}
+                            />
+                          </label>
+                          <label>
+                            <span>Audience</span>
+                            <input
+                              aria-label="Workload audience"
+                              value={workloadAudience}
+                              onChange={(event) => setWorkloadAudience(event.target.value)}
+                            />
+                          </label>
+                          <label className="workload-form-wide">
+                            <span>Secret reference</span>
+                            <input
+                              aria-label="Workload secret reference"
+                              value={workloadSecretReference}
+                              onChange={(event) => setWorkloadSecretReference(event.target.value)}
+                            />
+                          </label>
+                          <label className="workload-form-wide">
+                            <span>Purpose</span>
+                            <input
+                              aria-label="Workload purpose"
+                              value={workloadPurpose}
+                              onChange={(event) => setWorkloadPurpose(event.target.value)}
+                            />
+                          </label>
+                        </div>
+                        <button
+                          className="governance-revoke workload-create-button"
+                          type="submit"
+                          disabled={
+                            !workloadReason.trim() ||
+                            !workloadIdentityId.trim() ||
+                            createWorkloadIdentityMutation.isPending
+                          }
+                        >
+                          <KeyRound size={14} /> Review creation
+                        </button>
+                      </form>
+
+                      {pendingWorkloadAction?.kind === "create" && (
+                        <div className="governance-disable-confirmation" role="dialog">
+                          <div>
+                            <strong>Confirm workload identity creation</strong>
+                            <p>
+                              Creates {workloadIdentityId} with one 10-minute credential for {" "}
+                              {workloadAudience}. It receives no human role and no execution
+                              authority.
+                            </p>
+                          </div>
+                          <div className="governance-confirm-actions">
+                            <button type="button" onClick={() => setPendingWorkloadAction(null)}>
+                              Cancel
+                            </button>
+                            <button
+                              className="governance-disable-confirm"
+                              type="button"
+                              onClick={() =>
+                                createWorkloadIdentityMutation.mutate({
+                                  identityId: workloadIdentityId.trim(),
+                                  displayName: workloadDisplayName.trim(),
+                                  serviceId: workloadServiceId.trim(),
+                                  instanceId: workloadInstanceId.trim(),
+                                  ownerSubjectId: workloadOwnerId.trim(),
+                                  purpose: workloadPurpose.trim(),
+                                  audience: workloadAudience.trim(),
+                                  secretReferenceId: workloadSecretReference.trim(),
+                                  lifetimeMinutes: 10,
+                                  reason: workloadReason.trim(),
+                                  idempotencyKey: governanceIdempotencyKey(
+                                    "workload-create",
+                                    1,
+                                  ),
+                                })
+                              }
+                            >
+                              <ShieldCheck size={14} /> Confirm creation
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="governance-grid workload-grid">
+                        <div className="governance-panel">
+                          <div className="governance-panel-heading">
+                            <div>
+                              <Server size={17} />
+                              <h3>Service identities</h3>
+                            </div>
+                            <span>{workloadInventory.identities.length}</span>
+                          </div>
+                          {workloadInventory.identities.length === 0 && (
+                            <div className="governance-empty">No matching workload identities.</div>
+                          )}
+                          <div className="governance-records">
+                            {workloadInventory.identities.map((workload) => (
+                              <article className="governance-record" key={workload.identity_id}>
+                                <div className="governance-record-heading">
+                                  <div>
+                                    <strong>{workload.display_name}</strong>
+                                    <span>{workload.identity_id}</span>
+                                  </div>
+                                  <span className={`state-badge ${workload.state}`}>
+                                    {workload.state}
+                                  </span>
+                                </div>
+                                <p>{workload.purpose}</p>
+                                <dl>
+                                  <div>
+                                    <dt>Service / instance</dt>
+                                    <dd>{workload.service_id} / {workload.instance_id}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Owner</dt>
+                                    <dd>{workload.owner_subject_id}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Audience</dt>
+                                    <dd>{workload.audiences.join(" · ")}</dd>
+                                  </div>
+                                </dl>
+                                {pendingWorkloadAction?.kind === "rotate" &&
+                                  pendingWorkloadAction.identityId === workload.identity_id && (
+                                    <div className="governance-disable-confirmation" role="dialog">
+                                      <div>
+                                        <strong>Confirm credential rotation</strong>
+                                        <p>
+                                          Issues a new 10-minute credential. Existing active
+                                          credentials retire after a two-minute overlap.
+                                        </p>
+                                      </div>
+                                      <div className="governance-confirm-actions">
+                                        <button
+                                          type="button"
+                                          onClick={() => setPendingWorkloadAction(null)}
+                                        >
+                                          Cancel
+                                        </button>
+                                        <button
+                                          className="governance-disable-confirm"
+                                          type="button"
+                                          onClick={() =>
+                                            rotateWorkloadCredentialMutation.mutate({
+                                              identityId: workload.identity_id,
+                                              expectedVersion: workload.version,
+                                              lifetimeMinutes: 10,
+                                              overlapMinutes: 2,
+                                              reason: workloadReason.trim(),
+                                              idempotencyKey: governanceIdempotencyKey(
+                                                "workload-rotate",
+                                                workload.version,
+                                              ),
+                                            })
+                                          }
+                                        >
+                                          <RefreshCw size={14} /> Confirm rotation
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                <div className="governance-record-footer">
+                                  <code>v{workload.version} · {workload.environment_id}</code>
+                                  <button
+                                    className="governance-revoke"
+                                    type="button"
+                                    disabled={!workloadReason.trim()}
+                                    onClick={() =>
+                                      setPendingWorkloadAction({
+                                        kind: "rotate",
+                                        identityId: workload.identity_id,
+                                        version: workload.version,
+                                      })
+                                    }
+                                  >
+                                    <RefreshCw size={14} /> Rotate credential
+                                  </button>
+                                </div>
+                              </article>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="governance-panel">
+                          <div className="governance-panel-heading">
+                            <div>
+                              <KeyRound size={17} />
+                              <h3>Credential health</h3>
+                            </div>
+                            <span>{workloadInventory.credentials.length}</span>
+                          </div>
+                          {workloadInventory.credentials.length === 0 && (
+                            <div className="governance-empty">No workload credentials issued.</div>
+                          )}
+                          <div className="governance-records">
+                            {workloadInventory.credentials.map((credential) => (
+                              <article className="governance-record" key={credential.credential_id}>
+                                <div className="governance-record-heading">
+                                  <div>
+                                    <strong>{credential.identity_id}</strong>
+                                    <span>{credential.credential_id}</span>
+                                  </div>
+                                  <span className={`state-badge ${credential.state}`}>
+                                    {credential.state}
+                                  </span>
+                                </div>
+                                <dl>
+                                  <div>
+                                    <dt>Audience</dt>
+                                    <dd>{credential.audiences.join(" · ")}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Expires</dt>
+                                    <dd>{formatTimestamp(credential.expires_at)}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Signing key</dt>
+                                    <dd>version {credential.key_version}</dd>
+                                  </div>
+                                </dl>
+                                {pendingWorkloadAction?.kind === "revoke" &&
+                                  pendingWorkloadAction.credentialId ===
+                                    credential.credential_id && (
+                                    <div className="governance-disable-confirmation" role="dialog">
+                                      <div>
+                                        <strong>Confirm immediate revocation</strong>
+                                        <p>
+                                          This credential stops authenticating immediately. The
+                                          workload must already have replacement trust.
+                                        </p>
+                                      </div>
+                                      <div className="governance-confirm-actions">
+                                        <button
+                                          type="button"
+                                          onClick={() => setPendingWorkloadAction(null)}
+                                        >
+                                          Cancel
+                                        </button>
+                                        <button
+                                          className="governance-disable-confirm"
+                                          type="button"
+                                          onClick={() =>
+                                            revokeWorkloadCredentialMutation.mutate({
+                                              credentialId: credential.credential_id,
+                                              expectedVersion: credential.version,
+                                              reason: workloadReason.trim(),
+                                              idempotencyKey: governanceIdempotencyKey(
+                                                "workload-revoke",
+                                                credential.version,
+                                              ),
+                                            })
+                                          }
+                                        >
+                                          <Trash2 size={14} /> Confirm revocation
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                <div className="governance-record-footer">
+                                  <code>v{credential.version}</code>
+                                  {(credential.state === "active" ||
+                                    credential.state === "retiring") && (
+                                    <button
+                                      className="governance-revoke"
+                                      type="button"
+                                      disabled={!workloadReason.trim()}
+                                      onClick={() =>
+                                        setPendingWorkloadAction({
+                                          kind: "revoke",
+                                          credentialId: credential.credential_id,
+                                          version: credential.version,
+                                        })
+                                      }
+                                    >
+                                      <Trash2 size={14} /> Revoke credential
+                                    </button>
+                                  )}
                                 </div>
                               </article>
                             ))}

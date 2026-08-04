@@ -4,14 +4,98 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-022 |
-| Title | Enterprise audit export and Syslog delivery foundation |
+| Task ID | ATLAS-IMP-023 |
+| Title | Platform workload identity and secret-reference foundation |
 | Status | Done |
-| Branch | `agent/enterprise-audit-export` |
-| Pull Request | [PR #34](https://github.com/ozdemirumit/Project_Atlas/pull/34) |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-034, ATLAS-035 |
+| Branch | `agent/workload-identity-foundation` |
+| Pull Request | [#35](https://github.com/ozdemirumit/Project_Atlas/pull/35) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-016, ATLAS-023, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047 |
 | Last Updated | 2026-08-04 |
-| Next Action | Resume the next approved slice from the designated main Codex Project Atlas workspace when requested |
+| Next Action | Merge the validated pull request and select the next implementation slice |
+
+### ATLAS-IMP-023 Scope Rationale
+
+- ATLAS-030 requires a distinct identity for every platform service, short-lived audience-bound
+  credentials, independently rotatable trust, and opaque references for connector and integration
+  secrets. ATLAS-031 requires purpose-specific service roles and scopes while prohibiting service
+  identities from approving human requests or inheriting human authority.
+- Existing human sessions and personal API credentials must not be reused as workload trust. The
+  smallest locally verifiable slice is therefore a dedicated workload identity inventory and
+  credential lifecycle with an in-memory adapter behind durable ports, exact administration scope,
+  bounded lifetime, rotation overlap, revocation, secret-reference metadata, and fail-closed audit.
+- This slice authenticates Atlas platform workloads only. It does not retrieve connector secrets,
+  impersonate humans, approve requests, invoke connectors, dispatch workflows, or authorize any
+  infrastructure change.
+
+### ATLAS-IMP-023 Acceptance Criteria
+
+- A dedicated Security Administrator permission manages platform workload identities only within
+  one exact organization, environment, site, workload domain, resource, and C2 capability scope.
+  Human, connector, recovery, shared, and development identities remain outside the surface.
+- Each workload identity has a stable service and instance identity, named owner, bounded purpose,
+  explicit environment, intended audiences, secret references, lifecycle state, and monotonic
+  version. Responses never disclose secret values, private keys, token digests, or unrestricted
+  permission snapshots.
+- Issuance produces a one-time short-lived signed credential whose minimum claims bind credential,
+  service, instance, organization, environment, audience, issue time, expiry, and key version.
+  Shared static API keys and human impersonation are rejected.
+- Validation requires exact audience and environment, verifies signature and lifetime with bounded
+  clock skew, consults authoritative identity and credential state, and returns a service subject
+  with no implicit role or human delegation. Expired, revoked, disabled, malformed, substituted,
+  foreign, and replayed retired credentials fail closed.
+- Rotation supports bounded overlap without platform-wide outage, retires the prior credential at
+  overlap expiry, and preserves independent credential IDs and signing-key metadata. Explicit
+  revocation takes effect immediately and cannot be undone by a stale token.
+- Administrative mutations require an enterprise-human browser session, CSRF, current exact-scope
+  RBAC, bounded reason, correlation ID, idempotency key, and expected version. Personal bearer and
+  workload credentials cannot administer the lifecycle.
+- Required create, issue, rotate, revoke, validation-denial, replay, and compensation audit evidence
+  fails closed and contains stable references only. Repository or audit failure leaves no visible
+  partial state and never records raw credentials or secret material.
+- A bounded governance web view shows secret-free workload identity, credential age, audience,
+  expiry, rotation and revocation health with explicit create, rotate, and revoke confirmations.
+  Unauthorized operators see no workload administration surface.
+- Tests cover identity-class and exact-scope separation, claim/audience/environment isolation,
+  expiry and clock skew, rotation overlap, immediate revocation, idempotency, concurrency, CSRF,
+  bearer denial, audit failure, secret redaction, and responsive desktop/mobile UI.
+- External PKI or secrets-manager integration, mutual TLS enrollment, service-to-human delegation,
+  scheduled-workflow ownership, connector credential retrieval, break-glass, notifications,
+  infrastructure execution, and durable production persistence remain outside this slice.
+
+### ATLAS-IMP-023 Validation Evidence
+
+- Backend implementation adds a dedicated workload identity domain, repository port and in-memory
+  adapter, short-lived HMAC-signed credential issuance, exact audience and environment validation,
+  bounded rotation overlap, immediate revocation, idempotency, optimistic concurrency, rollback,
+  secret-reference-only metadata, and fail-closed audit evidence. Workload authentication returns
+  a service subject with no human roles or execution authority.
+- API and authorization wiring add exact C0/C2 workload-governance permissions to the Security
+  Administrator surface. Administrative operations require an enterprise browser session, CSRF,
+  reason, idempotency key, expected version, correlation ID, and exact scope. Invalid workload,
+  personal bearer, foreign audience/environment, expired, future, tampered, retired, and revoked
+  credentials fail closed without exposing secret material.
+- The web workspace discovers authorization without leaking denied inventory, shows secret-free
+  workload and credential health, requires explicit create/rotate/revoke confirmations, and displays
+  newly issued credentials once with an explicit dismissal control. Automated UI coverage confirms
+  dismissal and that forbidden discovery leaves the administration surface absent.
+- Backend validation on 2026-08-04: Ruff format/check clean, strict mypy clean across 219 source
+  and test files, 253 tests passed including 9 workload identity lifecycle and security tests. The suite
+  covers clock skew, audience/environment separation, concurrency, overlap, revocation, CSRF,
+  role separation, input rejection, idempotency, compensation, audit redaction, and secret-free
+  responses.
+- Frontend validation on 2026-08-04: ESLint clean, TypeScript check clean, production Vite build
+  completed, and 11 Vitest tests passed across 3 files. The workload UI test covers create, rotate,
+  revoke, one-time credential dismissal, CSRF, idempotency headers, confirmation text, and hidden
+  unauthorized discovery.
+- Live local validation used an enterprise LDAP-style Security Administrator session against the
+  real API. Create, two-minute overlap rotation, and immediate revocation completed successfully.
+  Desktop 1440x900 and mobile 390x844 checks found no document-level horizontal overflow or
+  off-screen workload controls, no console warnings/errors, and no raw secret, private-key, or token
+  digest disclosure. The live fixture remained synthetic, in-memory, and non-executing.
+- GitHub Actions run
+  [30908835090](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30908835090) passed
+  both backend and frontend jobs for implementation commit `e0d02b1` after the full CI-equivalent
+  local verification. PR #35 is ready to merge after the final tracker-only CI pass.
 
 ### ATLAS-IMP-022 Scope Rationale
 

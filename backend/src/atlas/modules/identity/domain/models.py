@@ -26,6 +26,7 @@ class AuthenticationMethod(StrEnum):
     SAML = "saml"
     MUTUAL_TLS = "mutual_tls"
     API_TOKEN = "api_token"
+    WORKLOAD_TOKEN = "workload_token"
 
 
 class AssuranceLevel(StrEnum):
