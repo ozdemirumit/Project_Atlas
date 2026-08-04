@@ -48,6 +48,19 @@ class BootstrapStateRepository(Protocol):
         now: datetime,
     ) -> BootstrapMutationResult: ...
 
+    async def rebase(
+        self,
+        *,
+        run_id: str,
+        candidate: BootstrapRunIdentity,
+        lease_holder_id: str,
+        expected_version: int,
+        preview_source_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult: ...
+
     async def release(
         self,
         *,

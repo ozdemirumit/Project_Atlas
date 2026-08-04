@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -328,8 +328,72 @@ describe("deployment configuration preview", () => {
 
     expect(await screen.findByText("Checkpoint invalidation preview")).toBeVisible();
     expect(screen.getByText("bootstrap.configuration.changed")).toBeVisible();
-    expect(screen.getByText(/No checkpoint, lease, file, phase/)).toBeVisible();
+    expect(screen.getByText(/confirmed plan update changes checkpoint metadata only/)).toBeVisible();
     expect(screen.queryByRole("button", { name: /invalidate/i })).not.toBeInTheDocument();
+  });
+
+  it("requires explicit confirmation and shows the applied checkpoint metadata boundary", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    const rebaseRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) return Promise.resolve(new Response(JSON.stringify(identity), { status: 200 }));
+      if (url.includes("/release-preflight")) return Promise.resolve(new Response(JSON.stringify(preflight), { status: 200 }));
+      if (url.includes("/deployment-configuration/preview")) return Promise.resolve(new Response(JSON.stringify(configurationPreview()), { status: 200 }));
+      if (url.includes("/bootstrap-plan")) return Promise.resolve(new Response(JSON.stringify(bootstrapPlan), { status: 200 }));
+      if (url.includes("/bootstrap-invalidation-preview")) return Promise.resolve(new Response(JSON.stringify(bootstrapInvalidation), { status: 200 }));
+      if (url.includes("/bootstrap-state/current")) return Promise.resolve(new Response(JSON.stringify(bootstrapState), { status: 200 }));
+      if (url.includes("/bootstrap-state/bootstrap-run.ui-001/rebase")) {
+        const headers = new Headers(init?.headers);
+        rebaseRequests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                run: {
+                  run_id: "bootstrap-run.ui-001",
+                  version: 4,
+                  state: "active",
+                  completed_phase_ids: ["phase.acquire"],
+                  current_phase_id: "phase.configure",
+                },
+                replayed: false,
+                preserved_checkpoint_phase_ids: ["phase.acquire"],
+                invalidated_checkpoint_phase_ids: ["phase.configure"],
+                invalidation_reason_codes: ["bootstrap.configuration.changed"],
+                earliest_affected_phase_id: "phase.configure",
+                execution_authorized: false,
+                lease_mutation_authorized: false,
+                infrastructure_mutation_authorized: false,
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Review plan update" }));
+    expect(screen.getByRole("dialog")).toBeVisible();
+    const confirm = screen.getByRole("button", { name: "Confirm checkpoint update" });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Review justification"), {
+      target: { value: "Reviewed configuration correction for the lab deployment." },
+    });
+    fireEvent.click(confirm);
+
+    expect(await screen.findByText("Plan metadata updated to revision 4")).toBeVisible();
+    expect(screen.getByText(/Preserved: phase.acquire. Invalidated: phase.configure/)).toBeVisible();
+    expect(rebaseRequests).toHaveLength(1);
+    expect(rebaseRequests[0].body).toContain("Reviewed configuration correction");
+    expect(rebaseRequests[0].idempotencyKey).toMatch(/^bootstrap-rebase\.3\.3\./);
+    expect(screen.queryByRole("button", { name: /run phase|execute|rollback/i })).not.toBeInTheDocument();
   });
 
   it("keeps malformed invalidation evidence absent", async () => {

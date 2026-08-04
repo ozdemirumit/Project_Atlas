@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Implement atomic plan rebase, checkpoint invalidation, governed API, and explicit UI confirmation |
+| Next Action | Open the implementation pull request and complete GitHub quality gates |
 
 ### ATLAS-IMP-029 Scope Rationale
 
@@ -48,6 +48,23 @@
   PostgreSQL mapping, responsive desktop/mobile presentation, and non-execution boundaries.
 - This slice does not acquire or release the lease, execute a phase, run rollback, write deployment
   files, invoke connectors, install artifacts, provision secrets, or authorize infrastructure change.
+
+### ATLAS-IMP-029 Validation Evidence
+
+- In-memory tests pass for deterministic partial preservation, exact replay, changed replay conflict,
+  stale revision, foreign lease, unchanged input, completed run, required-audit failure, and
+  non-mutation on every rejected request. PostgreSQL result serialization preserves the same rebase
+  and replay evidence.
+- Full backend verification passes Ruff format/check, mypy across 249 source files, and 291 pytest
+  tests. Full frontend verification passes ESLint, TypeScript, 21 Vitest tests, and production build.
+- Live browser validation used an enterprise browser session holding the exact bootstrap lease. A
+  reviewed drift update advanced revision 2 to 3, invalidated `phase.acquire`, retained the lease,
+  removed the action after recomputation, and returned an unchanged preview for the rebased plan.
+- Reloading the page retained revision 3 and zero completed checkpoints. Lease-holder identity and
+  phase, rollback, or infrastructure execution controls remained absent from the API-driven UI.
+- Live presentation validation passed at 1440x900 and 390x844 with no page-level horizontal overflow.
+  The confirmation, explicit metadata-only boundary, result, and post-reload state remained legible.
+- GitHub pull request and CI evidence are pending.
 
 ### ATLAS-IMP-028 Scope Rationale
 
