@@ -21,6 +21,9 @@ from atlas.modules.authorization.application.bootstrap import (
     APPROVAL_REQUEST_READ,
     AUDIT_EXPORT,
     AUDIT_READ,
+    BACKUP_LOGICAL_CREATE,
+    BACKUP_LOGICAL_PREVIEW,
+    BACKUP_LOGICAL_RESTORE_VALIDATE,
     BOOTSTRAP_INVALIDATION_PREVIEW,
     BOOTSTRAP_PLAN_READ,
     BOOTSTRAP_STATE_MANAGE,
@@ -62,6 +65,7 @@ from atlas.modules.authorization.application.bootstrap import (
     health_check_scope,
     identity_governance_scope,
     investigation_scope,
+    logical_backup_scope,
     rca_scope,
     recommendation_scope,
     release_preflight_scope,
@@ -791,6 +795,74 @@ async def _authorize_support_bundle(
             code="authorization_denied",
             title="Request denied",
             detail="Support bundle access is not authorized.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_backup_preview(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_logical_backup(
+        request,
+        subject,
+        permission_id=BACKUP_LOGICAL_PREVIEW,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def authorize_backup_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_logical_backup(
+        request,
+        subject,
+        permission_id=BACKUP_LOGICAL_CREATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_restore_validation(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_logical_backup(
+        request,
+        subject,
+        permission_id=BACKUP_LOGICAL_RESTORE_VALIDATE,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def _authorize_logical_backup(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.backup.logical",
+            scope=logical_backup_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="Logical backup or restore validation is not authorized.",
         )
     request.state.authorization_decision = decision
     return decision

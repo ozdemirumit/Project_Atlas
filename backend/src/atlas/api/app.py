@@ -38,6 +38,7 @@ from atlas.api.routes import (
     platform,
     rca,
     recommendations,
+    recovery,
     release_preflight,
     reports,
     security_export,
@@ -193,6 +194,10 @@ from atlas.modules.recommendations.adapters.synthetic import (
     SyntheticStorageRecommendationAssembler,
 )
 from atlas.modules.recommendations.application.service import RecommendationService
+from atlas.modules.recovery.adapters.filesystem import FilesystemBackupArchiveStore
+from atlas.modules.recovery.adapters.memory import InMemoryRecoveryRepository
+from atlas.modules.recovery.adapters.postgres import PostgreSQLRecoveryRepository
+from atlas.modules.recovery.application.service import RecoveryService
 from atlas.modules.reports.adapters.synthetic import SyntheticTechnicalReportAssembler
 from atlas.modules.reports.application.service import ReportService
 from atlas.modules.security_export.adapters.synthetic import (
@@ -251,6 +256,7 @@ def create_app(
     bootstrap_handoff_plan_service: BootstrapHandoffPlanService | None = None,
     bootstrap_operational_handoff_service: BootstrapOperationalHandoffService | None = None,
     support_bundle_service: SupportBundleService | None = None,
+    recovery_service: RecoveryService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -570,6 +576,27 @@ def create_app(
             site_id="site.local",
             max_content_bytes=resolved_settings.support_bundle_max_content_bytes,
         )
+    if recovery_service is not None:
+        resolved_recovery_service = recovery_service
+    else:
+        recovery_repository = (
+            PostgreSQLRecoveryRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryRecoveryRepository()
+        )
+        resolved_recovery_service = RecoveryService(
+            bootstrap_repository=resolved_bootstrap_state_service.repository,
+            repository=recovery_repository,
+            archive_store=FilesystemBackupArchiveStore(
+                root=resolved_settings.logical_backup_root,
+                max_archive_bytes=resolved_settings.logical_backup_max_archive_bytes,
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
+            max_content_bytes=resolved_settings.logical_backup_max_content_bytes,
+            max_archive_bytes=resolved_settings.logical_backup_max_archive_bytes,
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -733,6 +760,7 @@ def create_app(
             resolved_bootstrap_operational_handoff_service
         )
         app.state.support_bundle_service = resolved_support_bundle_service
+        app.state.recovery_service = resolved_recovery_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -745,6 +773,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_recovery_service.close()
         await resolved_support_bundle_service.close()
         await resolved_bootstrap_state_service.close()
         await database_probe.close()
@@ -796,6 +825,7 @@ def create_app(
     app.include_router(bootstrap_verification.router, prefix="/api/v1")
     app.include_router(bootstrap_handoff.router, prefix="/api/v1")
     app.include_router(support_bundles.router, prefix="/api/v1")
+    app.include_router(recovery.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
     app.include_router(health_checks.router, prefix="/api/v1")

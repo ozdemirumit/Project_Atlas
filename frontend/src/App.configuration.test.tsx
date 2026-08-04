@@ -2863,7 +2863,52 @@ describe("deployment configuration preview", () => {
         infrastructure_mutation_performed: false,
       },
     };
+    const backupEntries = [
+      ["backup.release-state", "10-release-state.json", true],
+      ["backup.configuration-state", "20-configuration-state.json", true],
+      ["backup.checkpoint-state", "30-checkpoint-state.json", true],
+      ["backup.verification-state", "40-verification-state.json", true],
+      ["backup.identity-handoff", "50-identity-handoff.json", false],
+      ["backup.integration-validation", "60-integration-validation.json", false],
+      ["backup.operational-handoff", "70-operational-handoff.json", true],
+    ];
+    const backupPreview = {
+      data: {
+        preview_id: "backup-preview.ui-001",
+        schema_version: "atlas.logical-backup-preview.v1",
+        catalog_version: "atlas.synthetic-logical-backup-catalog.v1",
+        source_run_id: completedState.data.run.run_id,
+        source_run_version: 19,
+        release_id: completedState.data.run.release_id,
+        source_evidence_digest: "d".repeat(64),
+        component_ids: backupEntries.map((item) => item[0]),
+        entries: backupEntries.map(([entryId, fileName, mandatory], index) => ({
+          entry_id: entryId,
+          file_name: fileName,
+          classification: "internal",
+          mandatory,
+          size_bytes: 300 + index,
+          sha256: `${index + 1}`.repeat(64),
+        })),
+        content_bytes: 2121,
+        max_content_bytes: 524288,
+        preview_digest: "e".repeat(64),
+        target_id: "target.logical-backup.ui-001",
+        target_state: "empty",
+        archive_sha256: "f".repeat(64),
+        archive_size_bytes: 4200,
+        generated_at: "2026-08-04T16:11:00Z",
+        expires_at: "2026-08-05T16:11:00Z",
+        creatable: true,
+        external_transfer_performed: false,
+        active_restore_performed: false,
+        secret_export_performed: false,
+        network_request_performed: false,
+        infrastructure_mutation_performed: false,
+      },
+    };
     const requests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    const recoveryRequests: Array<{ path: string; body: string }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -2887,6 +2932,9 @@ describe("deployment configuration preview", () => {
       }
       if (url.endsWith("/platform/support-bundles/preview")) {
         return Promise.resolve(new Response(JSON.stringify(supportPreview), { status: 200 }));
+      }
+      if (url.endsWith("/platform/backups/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(backupPreview), { status: 200 }));
       }
       if (url.includes("/platform/support-bundles/") && url.endsWith("/exports")) {
         const headers = new Headers(init?.headers);
@@ -2918,6 +2966,30 @@ describe("deployment configuration preview", () => {
           ),
         );
       }
+      if (url.endsWith(`/platform/backups/${completedState.data.run.run_id}`)) {
+        recoveryRequests.push({ path: url, body: typeof init?.body === "string" ? init.body : "" });
+        return Promise.resolve(new Response(JSON.stringify({ data: {
+          backup_id: "logical-backup.ui-001", state: "completed",
+          source_run_id: completedState.data.run.run_id, source_run_version: 19,
+          preview_digest: "e".repeat(64), target_id: "target.logical-backup.ui-001",
+          archive_sha256: "f".repeat(64), archive_size_bytes: 4200,
+          archive_name: "target.logical-backup.ui-001.zip", entry_count: 7,
+          created_at: "2026-08-04T16:11:01Z", expires_at: "2026-08-11T16:11:01Z",
+          reused: false, external_transfer_performed: false, active_restore_performed: false,
+        } }), { status: 200 }));
+      }
+      if (url.endsWith("/platform/backups/logical-backup.ui-001/restore-validations")) {
+        recoveryRequests.push({ path: url, body: typeof init?.body === "string" ? init.body : "" });
+        return Promise.resolve(new Response(JSON.stringify({ data: {
+          validation_id: "restore-validation.ui-001", state: "passed",
+          backup_id: "logical-backup.ui-001", archive_sha256: "f".repeat(64),
+          validation_digest: "9".repeat(64),
+          check_ids: ["archive", "manifest", "entries", "schemas", "relationships", "isolation"],
+          entry_count: 7, validated_at: "2026-08-04T16:11:02Z", isolated_target: true,
+          active_repository_write_performed: false, operational_recovery_performed: false,
+          secret_restore_performed: false, network_request_performed: false, reused: false,
+        } }), { status: 200 }));
+      }
       return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
     });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -2946,5 +3018,24 @@ describe("deployment configuration preview", () => {
     expect(requests[0]?.body).toContain('"confirmed":true');
     expect(requests[0]?.body).not.toContain('"external_transfer_performed"');
     expect(requests[0]?.idempotencyKey).toBe("support-bundle.19.support-request-001");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Review backup" }));
+    expect(screen.getByText("Confirm local logical backup")).toBeVisible();
+    expect(screen.getByText(/not a production database backup/i)).toBeVisible();
+    const backupConfirm = screen.getByRole("button", { name: "Confirm local backup" });
+    expect(backupConfirm).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Backup justification"), {
+      target: { value: "Create the reviewed local logical recovery evidence." },
+    });
+    fireEvent.click(backupConfirm);
+
+    expect(await screen.findByText("Logical backup completed")).toBeVisible();
+    expect(screen.getByText("target.logical-backup.ui-001.zip")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Validate restore" }));
+    expect(await screen.findByText("Isolated restore validation passed")).toBeVisible();
+    expect(screen.getByText(/no active repository write or operational recovery/i)).toBeVisible();
+    expect(recoveryRequests).toHaveLength(2);
+    expect(recoveryRequests[0]?.body).toContain('"confirmed":true');
+    expect(recoveryRequests[1]?.body).toContain('"confirmed_isolated":true');
   });
 });

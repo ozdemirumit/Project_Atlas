@@ -52,6 +52,9 @@ BOOTSTRAP_STATE_MANAGE = "platform.bootstrap-state.manage"
 BOOTSTRAP_INVALIDATION_PREVIEW = "platform.bootstrap-invalidation.preview"
 SUPPORT_BUNDLE_PREVIEW = "support.bundle.preview"
 SUPPORT_BUNDLE_EXPORT = "support.bundle.export"
+BACKUP_LOGICAL_PREVIEW = "backup.logical.preview"
+BACKUP_LOGICAL_CREATE = "backup.logical.create"
+BACKUP_LOGICAL_RESTORE_VALIDATE = "backup.logical.restore-validate"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -271,6 +274,19 @@ def support_bundle_scope(
         site_id="site.local",
         domain_id="domain.support",
         resource_id="resource.support.bundle",
+        capability_class=capability_class,
+    )
+
+
+def logical_backup_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.recovery",
+        resource_id="resource.backup.logical",
         capability_class=capability_class,
     )
 
@@ -560,6 +576,18 @@ def build_development_authorization_service(
             permission_id=SUPPORT_BUNDLE_EXPORT,
             description="Create one confirmed local support bundle from an exact safe preview.",
         ),
+        PermissionDefinition(
+            permission_id=BACKUP_LOGICAL_PREVIEW,
+            description="Preview one bounded Atlas-owned logical backup.",
+        ),
+        PermissionDefinition(
+            permission_id=BACKUP_LOGICAL_CREATE,
+            description="Create one confirmed local logical backup from an exact preview.",
+        ),
+        PermissionDefinition(
+            permission_id=BACKUP_LOGICAL_RESTORE_VALIDATE,
+            description="Validate one logical backup in an isolated ephemeral target.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -594,6 +622,9 @@ def build_development_authorization_service(
                 BOOTSTRAP_INVALIDATION_PREVIEW,
                 SUPPORT_BUNDLE_PREVIEW,
                 SUPPORT_BUNDLE_EXPORT,
+                BACKUP_LOGICAL_PREVIEW,
+                BACKUP_LOGICAL_CREATE,
+                BACKUP_LOGICAL_RESTORE_VALIDATE,
             }
         ),
     )
@@ -757,6 +788,42 @@ def build_development_authorization_service(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.logical-backup-preview",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=logical_backup_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.logical-backup-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=logical_backup_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.restore-validation",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=logical_backup_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),

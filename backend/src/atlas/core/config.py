@@ -88,6 +88,13 @@ class Settings(BaseSettings):
     support_bundle_max_archive_bytes: int = Field(
         default=4 * 1024 * 1024, ge=2048, le=64 * 1024 * 1024
     )
+    logical_backup_root: Path = Path(".atlas/logical-backups")
+    logical_backup_max_content_bytes: int = Field(
+        default=4 * 1024 * 1024, ge=1024, le=32 * 1024 * 1024
+    )
+    logical_backup_max_archive_bytes: int = Field(
+        default=8 * 1024 * 1024, ge=2048, le=64 * 1024 * 1024
+    )
     cors_origins: tuple[AnyHttpUrl, ...] = (AnyHttpUrl("http://localhost:5173"),)
     development_identity_enabled: bool = False
     development_subject_id: str = "subject.development.operator"
