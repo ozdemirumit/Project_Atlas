@@ -14,6 +14,9 @@ from atlas.modules.platform.domain.bootstrap_configuration_rendering import (
     ConfigurationRenderingExecution,
 )
 from atlas.modules.platform.domain.bootstrap_data_initialization import DataInitializationExecution
+from atlas.modules.platform.domain.bootstrap_end_to_end_verification import (
+    EndToEndVerificationExecution,
+)
 from atlas.modules.platform.domain.bootstrap_identity_handoff import IdentityHandoffExecution
 from atlas.modules.platform.domain.bootstrap_integration_validation import (
     IntegrationValidationExecution,
@@ -654,6 +657,108 @@ class IntegrationValidationData(BaseModel):
         )
 
 
+class VerificationCheckData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    check_id: str
+    category_id: str
+    subject_id: str
+    state: str
+    result_code: str
+    mandatory: bool
+
+
+class VerificationReportEvidenceData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_id: str
+    sha256: str
+    size_bytes: int
+    disposition: str
+
+
+class EndToEndVerificationData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    execution_id: str
+    phase_id: str
+    release_id: str
+    profile: str
+    configuration_digest: str
+    trust_plan_digest: str
+    data_plan_digest: str
+    service_plan_digest: str
+    identity_plan_digest: str
+    integration_plan_digest: str
+    verification_schema_version: str
+    suite_version: str
+    verification_plan_digest: str
+    target_id: str
+    state: str
+    result_code: str
+    started_at: datetime
+    completed_at: datetime | None
+    passed_count: int
+    failed_count: int
+    skipped_count: int
+    not_applicable_count: int
+    mandatory_pass_count: int
+    unresolved_mandatory_count: int
+    external_operation_count: int
+    checks: list[VerificationCheckData]
+    evidence: list[VerificationReportEvidenceData]
+
+    @classmethod
+    def from_domain(cls, execution: EndToEndVerificationExecution) -> EndToEndVerificationData:
+        return cls(
+            execution_id=execution.execution_id,
+            phase_id=execution.phase_id,
+            release_id=execution.release_id,
+            profile=execution.profile.value,
+            configuration_digest=execution.configuration_digest,
+            trust_plan_digest=execution.trust_plan_digest,
+            data_plan_digest=execution.data_plan_digest,
+            service_plan_digest=execution.service_plan_digest,
+            identity_plan_digest=execution.identity_plan_digest,
+            integration_plan_digest=execution.integration_plan_digest,
+            verification_schema_version=execution.verification_schema_version,
+            suite_version=execution.suite_version,
+            verification_plan_digest=execution.verification_plan_digest,
+            target_id=execution.target_id,
+            state=execution.state.value,
+            result_code=execution.result_code,
+            started_at=execution.started_at,
+            completed_at=execution.completed_at,
+            passed_count=execution.passed_count,
+            failed_count=execution.failed_count,
+            skipped_count=execution.skipped_count,
+            not_applicable_count=execution.not_applicable_count,
+            mandatory_pass_count=execution.mandatory_pass_count,
+            unresolved_mandatory_count=execution.unresolved_mandatory_count,
+            external_operation_count=execution.external_operation_count,
+            checks=[
+                VerificationCheckData(
+                    check_id=item.check_id,
+                    category_id=item.category_id,
+                    subject_id=item.subject_id,
+                    state=item.state.value,
+                    result_code=item.result_code,
+                    mandatory=item.mandatory,
+                )
+                for item in execution.checks
+            ],
+            evidence=[
+                VerificationReportEvidenceData(
+                    evidence_id=item.evidence_id,
+                    sha256=item.sha256,
+                    size_bytes=item.size_bytes,
+                    disposition=item.disposition.value,
+                )
+                for item in execution.evidence
+            ],
+        )
+
+
 class BootstrapRunData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -683,6 +788,7 @@ class BootstrapRunData(BaseModel):
     service_deployment: ServiceDeploymentData | None
     identity_handoff: IdentityHandoffData | None
     integration_validation: IntegrationValidationData | None
+    end_to_end_verification: EndToEndVerificationData | None
 
     @classmethod
     def from_domain(cls, record: BootstrapRunRecord) -> BootstrapRunData:
@@ -747,6 +853,11 @@ class BootstrapRunData(BaseModel):
             integration_validation=(
                 IntegrationValidationData.from_domain(record.integration_validation)
                 if record.integration_validation is not None
+                else None
+            ),
+            end_to_end_verification=(
+                EndToEndVerificationData.from_domain(record.end_to_end_verification)
+                if record.end_to_end_verification is not None
                 else None
             ),
         )

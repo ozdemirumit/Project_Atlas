@@ -10,6 +10,9 @@ from atlas.modules.platform.domain.bootstrap_configuration_rendering import (
     ConfigurationRenderingExecution,
 )
 from atlas.modules.platform.domain.bootstrap_data_initialization import DataInitializationExecution
+from atlas.modules.platform.domain.bootstrap_end_to_end_verification import (
+    EndToEndVerificationExecution,
+)
 from atlas.modules.platform.domain.bootstrap_identity_handoff import IdentityHandoffExecution
 from atlas.modules.platform.domain.bootstrap_integration_validation import (
     IntegrationValidationExecution,
@@ -236,6 +239,32 @@ class BootstrapStateRepository(Protocol):
         *,
         run_id: str,
         execution: IntegrationValidationExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult: ...
+
+    async def begin_end_to_end_verification(
+        self,
+        *,
+        run_id: str,
+        plan_digest: str,
+        resume_key: str,
+        execution: EndToEndVerificationExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult: ...
+
+    async def finish_end_to_end_verification(
+        self,
+        *,
+        run_id: str,
+        execution: EndToEndVerificationExecution,
         lease_holder_id: str,
         expected_version: int,
         idempotency_key: str,

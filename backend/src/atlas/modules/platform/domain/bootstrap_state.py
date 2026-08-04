@@ -12,6 +12,9 @@ from atlas.modules.platform.domain.bootstrap_configuration_rendering import (
     ConfigurationRenderingExecution,
 )
 from atlas.modules.platform.domain.bootstrap_data_initialization import DataInitializationExecution
+from atlas.modules.platform.domain.bootstrap_end_to_end_verification import (
+    EndToEndVerificationExecution,
+)
 from atlas.modules.platform.domain.bootstrap_identity_handoff import IdentityHandoffExecution
 from atlas.modules.platform.domain.bootstrap_integration_validation import (
     IntegrationValidationExecution,
@@ -108,6 +111,7 @@ class BootstrapRunRecord:
     service_deployment: ServiceDeploymentExecution | None = None
     identity_handoff: IdentityHandoffExecution | None = None
     integration_validation: IntegrationValidationExecution | None = None
+    end_to_end_verification: EndToEndVerificationExecution | None = None
 
     def __post_init__(self) -> None:
         validate_stable_identifier(self.run_id, "run_id")
@@ -198,6 +202,15 @@ class BootstrapRunRecord:
                 or integration_execution.phase_id not in self.identity.phase_ids
             ):
                 raise ValueError("integration validation does not match the bootstrap run")
+        if self.end_to_end_verification is not None:
+            verification_execution = self.end_to_end_verification
+            if (
+                verification_execution.release_id != self.identity.release_id
+                or verification_execution.profile is not self.identity.profile
+                or verification_execution.configuration_digest != self.identity.configuration_digest
+                or verification_execution.phase_id not in self.identity.phase_ids
+            ):
+                raise ValueError("end-to-end verification does not match the bootstrap run")
 
     def lease_is_active(self, at: datetime) -> bool:
         return self.lease_expires_at is not None and at < self.lease_expires_at
@@ -253,3 +266,4 @@ class BootstrapMutationResult:
     service_deployment: ServiceDeploymentExecution | None = None
     identity_handoff: IdentityHandoffExecution | None = None
     integration_validation: IntegrationValidationExecution | None = None
+    end_to_end_verification: EndToEndVerificationExecution | None = None

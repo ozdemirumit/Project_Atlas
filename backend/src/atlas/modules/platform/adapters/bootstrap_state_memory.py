@@ -18,6 +18,10 @@ from atlas.modules.platform.domain.bootstrap_data_initialization import (
     DataInitializationExecution,
     DataInitializationState,
 )
+from atlas.modules.platform.domain.bootstrap_end_to_end_verification import (
+    EndToEndVerificationExecution,
+    VerificationExecutionState,
+)
 from atlas.modules.platform.domain.bootstrap_identity_handoff import (
     IdentityHandoffExecution,
     IdentityHandoffState,
@@ -329,6 +333,38 @@ class InMemoryBootstrapStateRepository:
                             failed_integration_checkpoint,
                         ),
                         integration_validation=interrupted_integrations,
+                    )
+                if (
+                    reclaimed
+                    and current.end_to_end_verification is not None
+                    and current.end_to_end_verification.state is VerificationExecutionState.RUNNING
+                ):
+                    interrupted_verification = replace(
+                        current.end_to_end_verification,
+                        state=VerificationExecutionState.FAILED,
+                        result_code="bootstrap.verification.interrupted",
+                        completed_at=now,
+                    )
+                    failed_verification_checkpoint = BootstrapPhaseCheckpoint(
+                        phase_id="phase.verify",
+                        state=BootstrapCheckpointState.FAILED,
+                        safe_output_references=(
+                            "result.end-to-end-verification."
+                            f"{sha256(interrupted_verification.execution_id.encode()).hexdigest()[:24]}",
+                        ),
+                        recorded_at=now,
+                    )
+                    current = replace(
+                        current,
+                        checkpoints=(
+                            *(
+                                item
+                                for item in current.checkpoints
+                                if item.phase_id != "phase.verify"
+                            ),
+                            failed_verification_checkpoint,
+                        ),
+                        end_to_end_verification=interrupted_verification,
                     )
                 updated = replace(
                     current,
@@ -1391,6 +1427,140 @@ class InMemoryBootstrapStateRepository:
             self._remember(lease_holder_id, idempotency_key, request_fingerprint, result)
             return result
 
+    async def begin_end_to_end_verification(
+        self,
+        *,
+        run_id: str,
+        plan_digest: str,
+        resume_key: str,
+        execution: EndToEndVerificationExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._lock:
+            replay = self._replay(lease_holder_id, idempotency_key, request_fingerprint)
+            if replay is not None:
+                return replay
+            key, current = self._find(run_id)
+            self._require_no_running_phase(current)
+            if (
+                current.identity.plan_digest != plan_digest
+                or current.identity.resume_key != resume_key
+            ):
+                raise BootstrapRepositoryError("bootstrap_plan_mismatch")
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            if current.state is BootstrapRunState.COMPLETED:
+                raise BootstrapRepositoryError("bootstrap_run_completed")
+            if current.current_phase_id != "phase.verify" or execution.phase_id != "phase.verify":
+                raise BootstrapRepositoryError("bootstrap_phase_out_of_order")
+            updated = replace(
+                current,
+                version=current.version + 1,
+                state=BootstrapRunState.ACTIVE,
+                checkpoints=tuple(
+                    item for item in current.checkpoints if item.phase_id != "phase.verify"
+                ),
+                end_to_end_verification=execution,
+                updated_at=now,
+            )
+            result = BootstrapMutationResult(
+                record=updated, replayed=False, end_to_end_verification=execution
+            )
+            self._records[key] = updated
+            self._remember(lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
+    async def finish_end_to_end_verification(
+        self,
+        *,
+        run_id: str,
+        execution: EndToEndVerificationExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._lock:
+            replay = self._replay(lease_holder_id, idempotency_key, request_fingerprint)
+            if (
+                replay is not None
+                and replay.end_to_end_verification is not None
+                and replay.end_to_end_verification.state is not VerificationExecutionState.RUNNING
+            ):
+                return replay
+            key, current = self._find(run_id)
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            active = current.end_to_end_verification
+            if (
+                active is None
+                or active.state is not VerificationExecutionState.RUNNING
+                or active.execution_id != execution.execution_id
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_execution_unavailable")
+            if (
+                execution.state is VerificationExecutionState.RUNNING
+                or execution.release_id != active.release_id
+                or execution.profile is not active.profile
+                or execution.configuration_digest != active.configuration_digest
+                or execution.trust_plan_digest != active.trust_plan_digest
+                or execution.data_plan_digest != active.data_plan_digest
+                or execution.service_plan_digest != active.service_plan_digest
+                or execution.identity_plan_digest != active.identity_plan_digest
+                or execution.integration_plan_digest != active.integration_plan_digest
+                or execution.verification_schema_version != active.verification_schema_version
+                or execution.suite_version != active.suite_version
+                or execution.verification_plan_digest != active.verification_plan_digest
+                or execution.target_id != active.target_id
+                or execution.started_at != active.started_at
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_execution_conflict")
+            if execution.state is VerificationExecutionState.COMPLETED:
+                reference = f"result.verification.{execution.verification_plan_digest[:32]}"
+                checkpoint_state = BootstrapCheckpointState.COMPLETED
+                run_state = (
+                    BootstrapRunState.COMPLETED
+                    if len(current.completed_phase_ids) + 1 == len(current.identity.phase_ids)
+                    else BootstrapRunState.ACTIVE
+                )
+            else:
+                reference = (
+                    "result.end-to-end-verification."
+                    f"{sha256(execution.result_code.encode()).hexdigest()[:24]}"
+                )
+                checkpoint_state = BootstrapCheckpointState.FAILED
+                run_state = BootstrapRunState.FAILED
+            checkpoint = BootstrapPhaseCheckpoint(
+                phase_id="phase.verify",
+                state=checkpoint_state,
+                safe_output_references=(reference,),
+                recorded_at=now,
+            )
+            updated = replace(
+                current,
+                version=current.version + 1,
+                state=run_state,
+                checkpoints=(
+                    *(item for item in current.checkpoints if item.phase_id != "phase.verify"),
+                    checkpoint,
+                ),
+                end_to_end_verification=execution,
+                updated_at=now,
+            )
+            result = BootstrapMutationResult(
+                record=updated, replayed=False, end_to_end_verification=execution
+            )
+            self._records[key] = updated
+            self._remember(lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
     async def rebase(
         self,
         *,
@@ -1456,6 +1626,9 @@ class InMemoryBootstrapStateRepository:
                 integration_validation=(
                     current.integration_validation if "phase.integrations" in reusable else None
                 ),
+                end_to_end_verification=(
+                    current.end_to_end_verification if "phase.verify" in reusable else None
+                ),
                 updated_at=now,
             )
             result = BootstrapMutationResult(
@@ -1514,6 +1687,10 @@ class InMemoryBootstrapStateRepository:
             or (
                 record.integration_validation is not None
                 and record.integration_validation.state is IntegrationValidationState.RUNNING
+            )
+            or (
+                record.end_to_end_verification is not None
+                and record.end_to_end_verification.state is VerificationExecutionState.RUNNING
             )
         ):
             raise BootstrapRepositoryError("bootstrap_phase_in_progress")

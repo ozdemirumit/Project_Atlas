@@ -29,6 +29,14 @@ from atlas.modules.platform.domain.bootstrap_data_initialization import (
     DataStateDisposition,
     DataStateEvidence,
 )
+from atlas.modules.platform.domain.bootstrap_end_to_end_verification import (
+    EndToEndVerificationCheck,
+    EndToEndVerificationExecution,
+    VerificationCheckState,
+    VerificationExecutionState,
+    VerificationReportDisposition,
+    VerificationReportEvidence,
+)
 from atlas.modules.platform.domain.bootstrap_identity_handoff import (
     IdentityHandoffExecution,
     IdentityHandoffState,
@@ -376,6 +384,38 @@ class PostgreSQLBootstrapStateRepository:
                             failed_integration_checkpoint,
                         ),
                         integration_validation=interrupted_integrations,
+                    )
+                if (
+                    reclaimed
+                    and current.end_to_end_verification is not None
+                    and current.end_to_end_verification.state is VerificationExecutionState.RUNNING
+                ):
+                    interrupted_verification = replace(
+                        current.end_to_end_verification,
+                        state=VerificationExecutionState.FAILED,
+                        result_code="bootstrap.verification.interrupted",
+                        completed_at=now,
+                    )
+                    failed_verification_checkpoint = BootstrapPhaseCheckpoint(
+                        phase_id="phase.verify",
+                        state=BootstrapCheckpointState.FAILED,
+                        safe_output_references=(
+                            "result.end-to-end-verification."
+                            f"{sha256(interrupted_verification.execution_id.encode()).hexdigest()[:24]}",
+                        ),
+                        recorded_at=now,
+                    )
+                    current = replace(
+                        current,
+                        checkpoints=(
+                            *(
+                                item
+                                for item in current.checkpoints
+                                if item.phase_id != "phase.verify"
+                            ),
+                            failed_verification_checkpoint,
+                        ),
+                        end_to_end_verification=interrupted_verification,
                     )
                 record = replace(
                     current,
@@ -1550,6 +1590,154 @@ class PostgreSQLBootstrapStateRepository:
             self._remember(row, lease_holder_id, idempotency_key, request_fingerprint, result)
             return result
 
+    async def begin_end_to_end_verification(
+        self,
+        *,
+        run_id: str,
+        plan_digest: str,
+        resume_key: str,
+        execution: EndToEndVerificationExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._sessions.begin() as session:
+            row = await session.scalar(
+                select(BootstrapRunModel)
+                .where(BootstrapRunModel.run_id == run_id)
+                .with_for_update()
+            )
+            if row is None:
+                raise BootstrapRepositoryError("bootstrap_run_unavailable")
+            replay = self._replay(row, lease_holder_id, idempotency_key, request_fingerprint)
+            if replay is not None:
+                return replay
+            current = self._to_domain(row)
+            self._require_no_running_phase(current)
+            if (
+                current.identity.plan_digest != plan_digest
+                or current.identity.resume_key != resume_key
+            ):
+                raise BootstrapRepositoryError("bootstrap_plan_mismatch")
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            if current.state is BootstrapRunState.COMPLETED:
+                raise BootstrapRepositoryError("bootstrap_run_completed")
+            if current.current_phase_id != "phase.verify" or execution.phase_id != "phase.verify":
+                raise BootstrapRepositoryError("bootstrap_phase_out_of_order")
+            record = replace(
+                current,
+                version=current.version + 1,
+                state=BootstrapRunState.ACTIVE,
+                checkpoints=tuple(
+                    item for item in current.checkpoints if item.phase_id != "phase.verify"
+                ),
+                end_to_end_verification=execution,
+                updated_at=now,
+            )
+            self._apply(row, record)
+            result = BootstrapMutationResult(
+                record=record, replayed=False, end_to_end_verification=execution
+            )
+            self._remember(row, lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
+    async def finish_end_to_end_verification(
+        self,
+        *,
+        run_id: str,
+        execution: EndToEndVerificationExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._sessions.begin() as session:
+            row = await session.scalar(
+                select(BootstrapRunModel)
+                .where(BootstrapRunModel.run_id == run_id)
+                .with_for_update()
+            )
+            if row is None:
+                raise BootstrapRepositoryError("bootstrap_run_unavailable")
+            replay = self._replay(row, lease_holder_id, idempotency_key, request_fingerprint)
+            if (
+                replay is not None
+                and replay.end_to_end_verification is not None
+                and replay.end_to_end_verification.state is not VerificationExecutionState.RUNNING
+            ):
+                return replay
+            current = self._to_domain(row)
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            active = current.end_to_end_verification
+            if (
+                active is None
+                or active.state is not VerificationExecutionState.RUNNING
+                or active.execution_id != execution.execution_id
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_execution_unavailable")
+            if (
+                execution.state is VerificationExecutionState.RUNNING
+                or execution.release_id != active.release_id
+                or execution.profile is not active.profile
+                or execution.configuration_digest != active.configuration_digest
+                or execution.trust_plan_digest != active.trust_plan_digest
+                or execution.data_plan_digest != active.data_plan_digest
+                or execution.service_plan_digest != active.service_plan_digest
+                or execution.identity_plan_digest != active.identity_plan_digest
+                or execution.integration_plan_digest != active.integration_plan_digest
+                or execution.verification_schema_version != active.verification_schema_version
+                or execution.suite_version != active.suite_version
+                or execution.verification_plan_digest != active.verification_plan_digest
+                or execution.target_id != active.target_id
+                or execution.started_at != active.started_at
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_execution_conflict")
+            if execution.state is VerificationExecutionState.COMPLETED:
+                reference = f"result.verification.{execution.verification_plan_digest[:32]}"
+                checkpoint_state = BootstrapCheckpointState.COMPLETED
+                run_state = (
+                    BootstrapRunState.COMPLETED
+                    if len(current.completed_phase_ids) + 1 == len(current.identity.phase_ids)
+                    else BootstrapRunState.ACTIVE
+                )
+            else:
+                reference = (
+                    "result.end-to-end-verification."
+                    f"{sha256(execution.result_code.encode()).hexdigest()[:24]}"
+                )
+                checkpoint_state = BootstrapCheckpointState.FAILED
+                run_state = BootstrapRunState.FAILED
+            checkpoint = BootstrapPhaseCheckpoint(
+                phase_id="phase.verify",
+                state=checkpoint_state,
+                safe_output_references=(reference,),
+                recorded_at=now,
+            )
+            record = replace(
+                current,
+                version=current.version + 1,
+                state=run_state,
+                checkpoints=(
+                    *(item for item in current.checkpoints if item.phase_id != "phase.verify"),
+                    checkpoint,
+                ),
+                end_to_end_verification=execution,
+                updated_at=now,
+            )
+            self._apply(row, record)
+            result = BootstrapMutationResult(
+                record=record, replayed=False, end_to_end_verification=execution
+            )
+            self._remember(row, lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
     async def rebase(
         self,
         *,
@@ -1622,6 +1810,9 @@ class PostgreSQLBootstrapStateRepository:
                 integration_validation=(
                     current.integration_validation if "phase.integrations" in reusable else None
                 ),
+                end_to_end_verification=(
+                    current.end_to_end_verification if "phase.verify" in reusable else None
+                ),
                 updated_at=now,
             )
             self._apply(row, record)
@@ -1676,6 +1867,10 @@ class PostgreSQLBootstrapStateRepository:
                 record.integration_validation is not None
                 and record.integration_validation.state is IntegrationValidationState.RUNNING
             )
+            or (
+                record.end_to_end_verification is not None
+                and record.end_to_end_verification.state is VerificationExecutionState.RUNNING
+            )
         ):
             raise BootstrapRepositoryError("bootstrap_phase_in_progress")
 
@@ -1719,6 +1914,9 @@ class PostgreSQLBootstrapStateRepository:
         model.identity_handoff = cls._identity_execution_to_json(record.identity_handoff)
         model.integration_validation = cls._integration_execution_to_json(
             record.integration_validation
+        )
+        model.end_to_end_verification = cls._verification_execution_to_json(
+            record.end_to_end_verification
         )
         model.lease_holder_id = record.lease_holder_id
         model.lease_acquired_at = record.lease_acquired_at
@@ -1768,6 +1966,9 @@ class PostgreSQLBootstrapStateRepository:
             integration_validation=cls._integration_execution_from_json(
                 model.integration_validation
             ),
+            end_to_end_verification=cls._verification_execution_from_json(
+                model.end_to_end_verification
+            ),
         )
 
     @classmethod
@@ -1807,6 +2008,9 @@ class PostgreSQLBootstrapStateRepository:
             integration_validation=cls._integration_execution_from_json(
                 prior.get("integration_validation")
             ),
+            end_to_end_verification=cls._verification_execution_from_json(
+                prior.get("end_to_end_verification")
+            ),
         )
 
     @classmethod
@@ -1837,6 +2041,9 @@ class PostgreSQLBootstrapStateRepository:
             "identity_handoff": cls._identity_execution_to_json(result.identity_handoff),
             "integration_validation": cls._integration_execution_to_json(
                 result.integration_validation
+            ),
+            "end_to_end_verification": cls._verification_execution_to_json(
+                result.end_to_end_verification
             ),
         }
         while len(records) > 100:
@@ -1893,6 +2100,9 @@ class PostgreSQLBootstrapStateRepository:
             "integration_validation": cls._integration_execution_to_json(
                 record.integration_validation
             ),
+            "end_to_end_verification": cls._verification_execution_to_json(
+                record.end_to_end_verification
+            ),
         }
 
     @classmethod
@@ -1944,6 +2154,9 @@ class PostgreSQLBootstrapStateRepository:
             identity_handoff=cls._identity_execution_from_json(data.get("identity_handoff")),
             integration_validation=cls._integration_execution_from_json(
                 data.get("integration_validation")
+            ),
+            end_to_end_verification=cls._verification_execution_from_json(
+                data.get("end_to_end_verification")
             ),
         )
 
@@ -2510,6 +2723,120 @@ class PostgreSQLBootstrapStateRepository:
                     sha256=item["sha256"],
                     size_bytes=item["size_bytes"],
                     disposition=IntegrationStateDisposition(item["disposition"]),
+                )
+                for item in data["evidence"]
+            ),
+        )
+
+    @staticmethod
+    def _verification_execution_to_json(
+        execution: EndToEndVerificationExecution | None,
+    ) -> dict[str, Any] | None:
+        if execution is None:
+            return None
+        return {
+            "execution_id": execution.execution_id,
+            "phase_id": execution.phase_id,
+            "release_id": execution.release_id,
+            "profile": execution.profile.value,
+            "configuration_digest": execution.configuration_digest,
+            "trust_plan_digest": execution.trust_plan_digest,
+            "data_plan_digest": execution.data_plan_digest,
+            "service_plan_digest": execution.service_plan_digest,
+            "identity_plan_digest": execution.identity_plan_digest,
+            "integration_plan_digest": execution.integration_plan_digest,
+            "verification_schema_version": execution.verification_schema_version,
+            "suite_version": execution.suite_version,
+            "verification_plan_digest": execution.verification_plan_digest,
+            "target_id": execution.target_id,
+            "state": execution.state.value,
+            "result_code": execution.result_code,
+            "started_at": execution.started_at.isoformat(),
+            "completed_at": (
+                execution.completed_at.isoformat() if execution.completed_at is not None else None
+            ),
+            "passed_count": execution.passed_count,
+            "failed_count": execution.failed_count,
+            "skipped_count": execution.skipped_count,
+            "not_applicable_count": execution.not_applicable_count,
+            "mandatory_pass_count": execution.mandatory_pass_count,
+            "unresolved_mandatory_count": execution.unresolved_mandatory_count,
+            "external_operation_count": execution.external_operation_count,
+            "checks": [
+                {
+                    "check_id": item.check_id,
+                    "category_id": item.category_id,
+                    "subject_id": item.subject_id,
+                    "state": item.state.value,
+                    "result_code": item.result_code,
+                    "mandatory": item.mandatory,
+                }
+                for item in execution.checks
+            ],
+            "evidence": [
+                {
+                    "evidence_id": item.evidence_id,
+                    "sha256": item.sha256,
+                    "size_bytes": item.size_bytes,
+                    "disposition": item.disposition.value,
+                }
+                for item in execution.evidence
+            ],
+        }
+
+    @staticmethod
+    def _verification_execution_from_json(
+        data: dict[str, Any] | None,
+    ) -> EndToEndVerificationExecution | None:
+        if data is None:
+            return None
+        return EndToEndVerificationExecution(
+            execution_id=data["execution_id"],
+            phase_id=data["phase_id"],
+            release_id=data["release_id"],
+            profile=DeploymentProfile(data["profile"]),
+            configuration_digest=data["configuration_digest"],
+            trust_plan_digest=data["trust_plan_digest"],
+            data_plan_digest=data["data_plan_digest"],
+            service_plan_digest=data["service_plan_digest"],
+            identity_plan_digest=data["identity_plan_digest"],
+            integration_plan_digest=data["integration_plan_digest"],
+            verification_schema_version=data["verification_schema_version"],
+            suite_version=data["suite_version"],
+            verification_plan_digest=data["verification_plan_digest"],
+            target_id=data["target_id"],
+            state=VerificationExecutionState(data["state"]),
+            result_code=data["result_code"],
+            started_at=datetime.fromisoformat(data["started_at"]),
+            completed_at=(
+                datetime.fromisoformat(data["completed_at"])
+                if data["completed_at"] is not None
+                else None
+            ),
+            passed_count=data["passed_count"],
+            failed_count=data["failed_count"],
+            skipped_count=data["skipped_count"],
+            not_applicable_count=data["not_applicable_count"],
+            mandatory_pass_count=data["mandatory_pass_count"],
+            unresolved_mandatory_count=data["unresolved_mandatory_count"],
+            external_operation_count=data["external_operation_count"],
+            checks=tuple(
+                EndToEndVerificationCheck(
+                    check_id=item["check_id"],
+                    category_id=item["category_id"],
+                    subject_id=item["subject_id"],
+                    state=VerificationCheckState(item["state"]),
+                    result_code=item["result_code"],
+                    mandatory=item["mandatory"],
+                )
+                for item in data["checks"]
+            ),
+            evidence=tuple(
+                VerificationReportEvidence(
+                    evidence_id=item["evidence_id"],
+                    sha256=item["sha256"],
+                    size_bytes=item["size_bytes"],
+                    disposition=VerificationReportDisposition(item["disposition"]),
                 )
                 for item in data["evidence"]
             ),

@@ -420,6 +420,43 @@ const bootstrapIntegrationPlan = {
   },
 };
 
+const bootstrapVerificationPlan = {
+  data: {
+    schema_version: "atlas.bootstrap-verification-plan.v1",
+    suite_version: "atlas.bootstrap-verification-suite.v1",
+    release_id: "release.atlas.lab-0.1.0",
+    profile: "linux_lab",
+    organization_id: "organization.enterprise",
+    environment_id: "environment.test",
+    site_id: "site.local",
+    source_run_id: "bootstrap-run.ui-001",
+    source_run_version: 15,
+    configuration_digest: "b".repeat(64),
+    trust_plan_digest: "f".repeat(64),
+    data_plan_digest: "5".repeat(64),
+    service_plan_digest: "d".repeat(64),
+    identity_plan_digest: "9".repeat(64),
+    integration_plan_digest: "7".repeat(64),
+    verification_plan_digest: "4".repeat(64),
+    ingress_contract_id: "ingress.local-api-ui",
+    target_id: "target.bootstrap-verification-report",
+    target_kind: "target-kind.local-verification-report",
+    target_state: "empty",
+    checks: Array.from({ length: 15 }, (_, index) => ({
+      check_id: `verify.ui-${index + 1}`,
+      category_id: `category.${index < 12 ? "mandatory" : "optional"}`,
+      subject_id: `subject.verification-${index + 1}`,
+      state: index < 12 ? "passed" : "not_applicable",
+      result_code: `verification.ui-${index + 1}.${index < 12 ? "passed" : "not-selected"}`,
+      mandatory: index < 12,
+    })),
+    state: "passed",
+    result_code: "bootstrap.verification-plan.passed",
+    generated_at: "2026-08-04T16:08:00Z",
+    external_operations_authorized: false,
+  },
+};
+
 const bootstrapState = {
   data: {
     run: {
@@ -2108,6 +2145,253 @@ describe("deployment configuration preview", () => {
     expect(
       screen.queryByRole("button", {
         name: /activate integration|resolve secret|send model request/i,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reconciles end-to-end evidence without external operations", async () => {
+    vi.stubGlobal("crypto", { randomUUID: () => "verification-request-001" });
+    const integrationExecution = {
+      execution_id: "phase-execution.ui-integrations-complete",
+      phase_id: "phase.integrations",
+      release_id: "release.atlas.lab-0.1.0",
+      profile: "linux_lab",
+      configuration_digest: "b".repeat(64),
+      trust_plan_digest: "f".repeat(64),
+      data_plan_digest: "5".repeat(64),
+      service_plan_digest: "d".repeat(64),
+      identity_plan_digest: "9".repeat(64),
+      integration_schema_version: "atlas.bootstrap-integration-plan.v1",
+      integration_plan_digest: "7".repeat(64),
+      target_id: "target.atlas-synthetic-integrations.primary",
+      state: "completed",
+      result_code: "bootstrap.integrations.completed",
+      started_at: "2026-08-04T16:07:00Z",
+      completed_at: "2026-08-04T16:07:01Z",
+      model_check_count: 8,
+      integration_check_count: 4,
+      mandatory_pass_count: 12,
+      activation_count: 0,
+      network_request_count: 0,
+      secret_resolution_count: 0,
+      checks: bootstrapIntegrationPlan.data.checks,
+      evidence: [
+        {
+          evidence_id: "integrations.validation-state",
+          sha256: "6".repeat(64),
+          size_bytes: 2400,
+          disposition: "published",
+        },
+      ],
+    };
+    const verificationState = {
+      data: {
+        ...bootstrapState.data,
+        run: {
+          ...bootstrapState.data.run,
+          version: 15,
+          phase_ids: [
+            "phase.acquire",
+            "phase.configure",
+            "phase.trust",
+            "phase.data",
+            "phase.services",
+            "phase.identity",
+            "phase.integrations",
+            "phase.verify",
+            "phase.handoff",
+          ],
+          checkpoints: [
+            ...[
+              "phase.acquire",
+              "phase.configure",
+              "phase.trust",
+              "phase.data",
+              "phase.services",
+              "phase.identity",
+              "phase.integrations",
+            ].map((phaseId) => ({
+              phase_id: phaseId,
+              state: "completed",
+              safe_output_references: [`result.${phaseId.slice(6)}.verified`],
+              recorded_at: "2026-08-04T16:07:01Z",
+            })),
+          ],
+          completed_phase_ids: [
+            "phase.acquire",
+            "phase.configure",
+            "phase.trust",
+            "phase.data",
+            "phase.services",
+            "phase.identity",
+            "phase.integrations",
+          ],
+          current_phase_id: "phase.verify",
+          integration_validation: integrationExecution,
+          end_to_end_verification: null,
+          updated_at: "2026-08-04T16:07:01Z",
+        },
+      },
+    };
+    const requests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) {
+        return Promise.resolve(new Response(JSON.stringify(identity), { status: 200 }));
+      }
+      if (url.includes("/release-preflight")) {
+        return Promise.resolve(new Response(JSON.stringify(preflight), { status: 200 }));
+      }
+      if (url.includes("/deployment-configuration/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(configurationPreview()), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-trust-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapTrustPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-data-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapDataPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-service-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapServicePlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-identity-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapIdentityPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-integration-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapIntegrationPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-verification-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapVerificationPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-plan")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-state/current")) {
+        return Promise.resolve(new Response(JSON.stringify(verificationState), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-invalidation/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapInvalidation), { status: 200 }));
+      }
+      if (url.includes("/phases/verify")) {
+        const headers = new Headers(init?.headers);
+        requests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        const execution = {
+          execution_id: "phase-execution.ui-verification-001",
+          phase_id: "phase.verify",
+          release_id: "release.atlas.lab-0.1.0",
+          profile: "linux_lab",
+          configuration_digest: "b".repeat(64),
+          trust_plan_digest: "f".repeat(64),
+          data_plan_digest: "5".repeat(64),
+          service_plan_digest: "d".repeat(64),
+          identity_plan_digest: "9".repeat(64),
+          integration_plan_digest: "7".repeat(64),
+          verification_schema_version: "atlas.bootstrap-verification-plan.v1",
+          suite_version: "atlas.bootstrap-verification-suite.v1",
+          verification_plan_digest: "4".repeat(64),
+          target_id: "target.bootstrap-verification-report",
+          state: "completed",
+          result_code: "bootstrap.verification.completed",
+          started_at: "2026-08-04T16:08:00Z",
+          completed_at: "2026-08-04T16:08:01Z",
+          passed_count: 12,
+          failed_count: 0,
+          skipped_count: 0,
+          not_applicable_count: 3,
+          mandatory_pass_count: 12,
+          unresolved_mandatory_count: 0,
+          external_operation_count: 0,
+          checks: bootstrapVerificationPlan.data.checks,
+          evidence: [
+            {
+              evidence_id: "verification.end-to-end-report",
+              sha256: "3".repeat(64),
+              size_bytes: 3200,
+              disposition: "published",
+            },
+          ],
+        };
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                run: {
+                  ...verificationState.data.run,
+                  version: 17,
+                  checkpoints: [
+                    ...verificationState.data.run.checkpoints,
+                    {
+                      phase_id: "phase.verify",
+                      state: "completed",
+                      safe_output_references: [`result.verification.${"4".repeat(32)}`],
+                      recorded_at: "2026-08-04T16:08:01Z",
+                    },
+                  ],
+                  completed_phase_ids: [
+                    ...verificationState.data.run.completed_phase_ids,
+                    "phase.verify",
+                  ],
+                  current_phase_id: "phase.handoff",
+                  end_to_end_verification: execution,
+                  updated_at: "2026-08-04T16:08:01Z",
+                },
+                execution,
+                replayed: false,
+                synthetic_report_mutation_performed: true,
+                model_request_performed: false,
+                network_request_performed: false,
+                secret_resolution_performed: false,
+                connector_invocation_performed: false,
+                knowledge_mutation_performed: false,
+                workflow_execution_performed: false,
+                approval_creation_performed: false,
+                backup_restore_operation_performed: false,
+                external_export_performed: false,
+                infrastructure_mutation_performed: false,
+                deployment_action_performed: false,
+                ai_advice_generated: false,
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Review verification" }));
+    expect(screen.getByText("Confirm end-to-end verification")).toBeVisible();
+    expect(screen.getByText("No skipped mandatory check")).toBeVisible();
+    expect(screen.getByText("Evidence reconciliation only")).toBeVisible();
+    const confirm = screen.getByRole("button", { name: "Confirm verification" });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Verification justification"), {
+      target: { value: "Reconcile the reviewed bootstrap evidence for operational handoff." },
+    });
+    fireEvent.click(confirm);
+
+    expect(await screen.findByText("End-to-end verification completed")).toBeVisible();
+    expect(screen.getByText("verification.end-to-end-report")).toBeVisible();
+    expect(screen.getByText("Failed / skipped")).toBeVisible();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.body).toContain('"verification_plan_digest":"' + "4".repeat(64));
+    expect(requests[0]?.body).toContain('"expected_target_state":"empty"');
+    expect(requests[0]?.idempotencyKey).toBe(
+      "bootstrap-verification.15.verification-request-001",
+    );
+    expect(
+      screen.queryByRole("button", {
+        name: /run backup|call model|activate connector|execute workflow/i,
       }),
     ).not.toBeInTheDocument();
   });

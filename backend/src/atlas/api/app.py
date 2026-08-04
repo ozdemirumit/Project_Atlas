@@ -26,6 +26,7 @@ from atlas.api.routes import (
     bootstrap_services,
     bootstrap_state,
     bootstrap_trust,
+    bootstrap_verification,
     deployment_configuration,
     graph,
     health,
@@ -129,6 +130,9 @@ from atlas.modules.platform.adapters.bootstrap_trust_filesystem import (
     FilesystemBootstrapTrustPublisher,
 )
 from atlas.modules.platform.adapters.bootstrap_trust_synthetic import SyntheticBootstrapTrustSource
+from atlas.modules.platform.adapters.bootstrap_verification_filesystem import (
+    FilesystemBootstrapVerificationTarget,
+)
 from atlas.modules.platform.adapters.release_preflight import (
     SYNTHETIC_ARTIFACT_CONTENT,
     LabHmacReleaseSignatureVerifier,
@@ -145,6 +149,10 @@ from atlas.modules.platform.application.bootstrap_configuration_rendering import
 from atlas.modules.platform.application.bootstrap_data_initialization import (
     BootstrapDataInitializationService,
     BootstrapDataPlanService,
+)
+from atlas.modules.platform.application.bootstrap_end_to_end_verification import (
+    BootstrapEndToEndVerificationService,
+    BootstrapVerificationPlanService,
 )
 from atlas.modules.platform.application.bootstrap_identity_handoff import (
     BootstrapIdentityHandoffService,
@@ -225,6 +233,8 @@ def create_app(
     bootstrap_identity_handoff_service: BootstrapIdentityHandoffService | None = None,
     bootstrap_integration_plan_service: BootstrapIntegrationPlanService | None = None,
     bootstrap_integration_validation_service: BootstrapIntegrationValidationService | None = None,
+    bootstrap_verification_plan_service: BootstrapVerificationPlanService | None = None,
+    bootstrap_end_to_end_verification_service: BootstrapEndToEndVerificationService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -476,6 +486,30 @@ def create_app(
             site_id="site.local",
         )
     )
+    resolved_bootstrap_verification_target = FilesystemBootstrapVerificationTarget(
+        root=resolved_settings.bootstrap_verification_root,
+        max_report_bytes=resolved_settings.bootstrap_verification_max_report_bytes,
+    )
+    resolved_bootstrap_verification_plan_service = (
+        bootstrap_verification_plan_service
+        or BootstrapVerificationPlanService(
+            repository=resolved_bootstrap_state_service.repository,
+            target=resolved_bootstrap_verification_target,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
+        )
+    )
+    resolved_bootstrap_end_to_end_verification_service = (
+        bootstrap_end_to_end_verification_service
+        or BootstrapEndToEndVerificationService(
+            repository=resolved_bootstrap_state_service.repository,
+            plan_service=resolved_bootstrap_verification_plan_service,
+            target=resolved_bootstrap_verification_target,
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
+        )
+    )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -630,6 +664,10 @@ def create_app(
         app.state.bootstrap_integration_validation_service = (
             resolved_bootstrap_integration_validation_service
         )
+        app.state.bootstrap_verification_plan_service = resolved_bootstrap_verification_plan_service
+        app.state.bootstrap_end_to_end_verification_service = (
+            resolved_bootstrap_end_to_end_verification_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -689,6 +727,7 @@ def create_app(
     app.include_router(bootstrap_services.router, prefix="/api/v1")
     app.include_router(bootstrap_identity.router, prefix="/api/v1")
     app.include_router(bootstrap_integrations.router, prefix="/api/v1")
+    app.include_router(bootstrap_verification.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
     app.include_router(health_checks.router, prefix="/api/v1")

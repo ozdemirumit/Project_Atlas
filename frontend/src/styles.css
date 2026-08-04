@@ -1337,6 +1337,11 @@ textarea:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.verification-check-list {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
 .identity-mapping-list small {
   margin-top: 4px;
   color: #63716d;
