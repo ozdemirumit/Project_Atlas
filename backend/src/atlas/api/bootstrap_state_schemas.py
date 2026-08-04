@@ -14,6 +14,7 @@ from atlas.modules.platform.domain.bootstrap_configuration_rendering import (
     ConfigurationRenderingExecution,
 )
 from atlas.modules.platform.domain.bootstrap_data_initialization import DataInitializationExecution
+from atlas.modules.platform.domain.bootstrap_identity_handoff import IdentityHandoffExecution
 from atlas.modules.platform.domain.bootstrap_service_deployment import ServiceDeploymentExecution
 from atlas.modules.platform.domain.bootstrap_state import (
     BootstrapMutationResult,
@@ -483,6 +484,79 @@ class ServiceDeploymentData(BaseModel):
         )
 
 
+class IdentityStateEvidenceData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_id: str
+    sha256: str
+    size_bytes: int
+    disposition: str
+
+
+class IdentityHandoffData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    execution_id: str
+    phase_id: str
+    release_id: str
+    profile: str
+    configuration_digest: str
+    trust_plan_digest: str
+    data_plan_digest: str
+    service_plan_digest: str
+    identity_schema_version: str
+    identity_plan_digest: str
+    target_id: str
+    state: str
+    result_code: str
+    started_at: datetime
+    completed_at: datetime | None
+    group_mapping_count: int
+    validation_count: int
+    credential_replacement_required: bool
+    recovery_identity_verified: bool
+    bootstrap_material_sealed: bool
+    pilot_identity_verified: bool
+    enterprise_authentication_validated: bool
+    evidence: list[IdentityStateEvidenceData]
+
+    @classmethod
+    def from_domain(cls, execution: IdentityHandoffExecution) -> IdentityHandoffData:
+        return cls(
+            execution_id=execution.execution_id,
+            phase_id=execution.phase_id,
+            release_id=execution.release_id,
+            profile=execution.profile.value,
+            configuration_digest=execution.configuration_digest,
+            trust_plan_digest=execution.trust_plan_digest,
+            data_plan_digest=execution.data_plan_digest,
+            service_plan_digest=execution.service_plan_digest,
+            identity_schema_version=execution.identity_schema_version,
+            identity_plan_digest=execution.identity_plan_digest,
+            target_id=execution.target_id,
+            state=execution.state.value,
+            result_code=execution.result_code,
+            started_at=execution.started_at,
+            completed_at=execution.completed_at,
+            group_mapping_count=execution.group_mapping_count,
+            validation_count=execution.validation_count,
+            credential_replacement_required=execution.credential_replacement_required,
+            recovery_identity_verified=execution.recovery_identity_verified,
+            bootstrap_material_sealed=execution.bootstrap_material_sealed,
+            pilot_identity_verified=execution.pilot_identity_verified,
+            enterprise_authentication_validated=execution.enterprise_authentication_validated,
+            evidence=[
+                IdentityStateEvidenceData(
+                    evidence_id=item.evidence_id,
+                    sha256=item.sha256,
+                    size_bytes=item.size_bytes,
+                    disposition=item.disposition.value,
+                )
+                for item in execution.evidence
+            ],
+        )
+
+
 class BootstrapRunData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -510,6 +584,7 @@ class BootstrapRunData(BaseModel):
     trust_provisioning: TrustProvisioningData | None
     data_initialization: DataInitializationData | None
     service_deployment: ServiceDeploymentData | None
+    identity_handoff: IdentityHandoffData | None
 
     @classmethod
     def from_domain(cls, record: BootstrapRunRecord) -> BootstrapRunData:
@@ -564,6 +639,11 @@ class BootstrapRunData(BaseModel):
             service_deployment=(
                 ServiceDeploymentData.from_domain(record.service_deployment)
                 if record.service_deployment is not None
+                else None
+            ),
+            identity_handoff=(
+                IdentityHandoffData.from_domain(record.identity_handoff)
+                if record.identity_handoff is not None
                 else None
             ),
         )

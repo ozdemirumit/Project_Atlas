@@ -296,6 +296,55 @@ const bootstrapServicePlan = {
   },
 };
 
+const bootstrapIdentityPlan = {
+  data: {
+    schema_version: "atlas.bootstrap-identity-plan.v1",
+    release_id: "release.atlas.lab-0.1.0",
+    profile: "linux_lab",
+    organization_id: "organization.enterprise",
+    environment_id: "environment.test",
+    site_id: "site.local",
+    configuration_digest: "b".repeat(64),
+    trust_plan_digest: "f".repeat(64),
+    data_plan_digest: "5".repeat(64),
+    service_plan_digest: "d".repeat(64),
+    identity_plan_digest: "9".repeat(64),
+    target_id: "target.atlas-synthetic-identity.primary",
+    target_kind: "target-kind.synthetic-file-identity",
+    target_state: "empty",
+    bootstrap_administrator_subject_id: "subject.bootstrap-administrator.primary",
+    credential_verifier_reference_id: "secret-reference.bootstrap-administrator.verifier",
+    credential_replacement_required: true,
+    recovery_identity_id: "identity.recovery-administrator.primary",
+    recovery_seal_required: true,
+    provider_id: "provider.ldap.enterprise",
+    provider_protocol: "ldaps",
+    pilot_subject_id: "subject.pilot.platform-administrator",
+    group_mappings: [
+      {
+        mapping_id: "mapping.platform-administrators",
+        directory_group_reference: "directory-group.platform-administrators",
+        role_ids: ["role.platform-administrator"],
+      },
+      {
+        mapping_id: "mapping.security-administrators",
+        directory_group_reference: "directory-group.security-administrators",
+        role_ids: ["role.security-administrator"],
+      },
+    ],
+    state: "passed",
+    result_code: "bootstrap.identity-plan.passed",
+    generated_at: "2026-08-04T16:06:00Z",
+    credential_material_present: false,
+    directory_mutation_authorized: false,
+    provider_activation_authorized: false,
+    account_mutation_authorized: false,
+    session_or_token_mutation_authorized: false,
+    infrastructure_mutation_authorized: false,
+    ai_operation_authorized: false,
+  },
+};
+
 const bootstrapState = {
   data: {
     run: {
@@ -330,6 +379,7 @@ const bootstrapState = {
       trust_provisioning: null,
       data_initialization: null,
       service_deployment: null,
+      identity_handoff: null,
     },
     durable: true,
     lease_available: false,
@@ -965,6 +1015,7 @@ describe("deployment configuration preview", () => {
           trust_provisioning: null,
           data_initialization: null,
           service_deployment: null,
+          identity_handoff: null,
           updated_at: "2026-08-04T16:02:01Z",
         },
       },
@@ -1172,6 +1223,7 @@ describe("deployment configuration preview", () => {
           trust_provisioning: trustExecution,
           data_initialization: null,
           service_deployment: null,
+          identity_handoff: null,
           updated_at: "2026-08-04T16:03:01Z",
         },
       },
@@ -1260,6 +1312,7 @@ describe("deployment configuration preview", () => {
                   current_phase_id: "phase.services",
                   data_initialization: execution,
                   service_deployment: null,
+                  identity_handoff: null,
                   updated_at: "2026-08-04T16:04:01Z",
                 },
                 execution,
@@ -1366,6 +1419,7 @@ describe("deployment configuration preview", () => {
           trust_provisioning: null,
           data_initialization: dataExecution,
           service_deployment: null,
+          identity_handoff: null,
           updated_at: "2026-08-04T16:04:01Z",
         },
       },
@@ -1467,6 +1521,7 @@ describe("deployment configuration preview", () => {
                   ],
                   current_phase_id: "phase.identity",
                   service_deployment: execution,
+                  identity_handoff: null,
                   updated_at: "2026-08-04T16:05:01Z",
                 },
                 execution,
@@ -1515,6 +1570,226 @@ describe("deployment configuration preview", () => {
     expect(requests[0]?.idempotencyKey).toBe("bootstrap-services.9.services-request-001");
     expect(
       screen.queryByRole("button", { name: /start process|run container|open port|restart service/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reviews synthetic identity handoff without credential or directory controls", async () => {
+    vi.stubGlobal("crypto", { randomUUID: () => "identity-request-001" });
+    const serviceExecution = {
+      execution_id: "phase-execution.ui-services-complete",
+      phase_id: "phase.services",
+      release_id: "release.atlas.lab-0.1.0",
+      profile: "linux_lab",
+      configuration_digest: "b".repeat(64),
+      trust_plan_digest: "f".repeat(64),
+      data_plan_digest: "5".repeat(64),
+      migration_artifact_digest: "4".repeat(64),
+      service_schema_version: "atlas.bootstrap-service-plan.v1",
+      service_plan_digest: "d".repeat(64),
+      target_id: "target.atlas-synthetic-runtime.primary",
+      state: "completed",
+      result_code: "bootstrap.services.completed",
+      started_at: "2026-08-04T16:05:00Z",
+      completed_at: "2026-08-04T16:05:01Z",
+      deployed_service_count: 2,
+      ready_service_count: 2,
+      passed_probe_count: 6,
+      service_statuses: ["service.atlas-api", "service.atlas-web"].map((serviceId) => ({
+        service_id: serviceId,
+        state: "ready",
+        startup_passed: true,
+        readiness_passed: true,
+        liveness_passed: true,
+      })),
+      evidence: [
+        {
+          evidence_id: "services.runtime-state",
+          sha256: "e".repeat(64),
+          size_bytes: 1800,
+          disposition: "published",
+        },
+      ],
+    };
+    const identityState = {
+      data: {
+        ...bootstrapState.data,
+        run: {
+          ...bootstrapState.data.run,
+          version: 11,
+          phase_ids: [
+            "phase.acquire",
+            "phase.configure",
+            "phase.trust",
+            "phase.data",
+            "phase.services",
+            "phase.identity",
+            "phase.integrations",
+          ],
+          checkpoints: [
+            ...["phase.acquire", "phase.configure", "phase.trust", "phase.data", "phase.services"].map(
+              (phaseId) => ({
+                phase_id: phaseId,
+                state: "completed",
+                safe_output_references: [`result.${phaseId.slice(6)}.verified`],
+                recorded_at: "2026-08-04T16:05:01Z",
+              }),
+            ),
+          ],
+          completed_phase_ids: [
+            "phase.acquire",
+            "phase.configure",
+            "phase.trust",
+            "phase.data",
+            "phase.services",
+          ],
+          current_phase_id: "phase.identity",
+          service_deployment: serviceExecution,
+          identity_handoff: null,
+          updated_at: "2026-08-04T16:05:01Z",
+        },
+      },
+    };
+    const requests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) {
+        return Promise.resolve(new Response(JSON.stringify(identity), { status: 200 }));
+      }
+      if (url.includes("/release-preflight")) {
+        return Promise.resolve(new Response(JSON.stringify(preflight), { status: 200 }));
+      }
+      if (url.includes("/deployment-configuration/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(configurationPreview()), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-trust-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapTrustPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-data-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapDataPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-service-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapServicePlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-identity-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapIdentityPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-plan")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-state/current")) {
+        return Promise.resolve(new Response(JSON.stringify(identityState), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-invalidation/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapInvalidation), { status: 200 }));
+      }
+      if (url.includes("/phases/identity")) {
+        const headers = new Headers(init?.headers);
+        requests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        const execution = {
+          execution_id: "phase-execution.ui-identity-001",
+          phase_id: "phase.identity",
+          release_id: "release.atlas.lab-0.1.0",
+          profile: "linux_lab",
+          configuration_digest: "b".repeat(64),
+          trust_plan_digest: "f".repeat(64),
+          data_plan_digest: "5".repeat(64),
+          service_plan_digest: "d".repeat(64),
+          identity_schema_version: "atlas.bootstrap-identity-plan.v1",
+          identity_plan_digest: "9".repeat(64),
+          target_id: "target.atlas-synthetic-identity.primary",
+          state: "completed",
+          result_code: "bootstrap.identity.completed",
+          started_at: "2026-08-04T16:06:00Z",
+          completed_at: "2026-08-04T16:06:01Z",
+          group_mapping_count: 2,
+          validation_count: 5,
+          credential_replacement_required: true,
+          recovery_identity_verified: true,
+          bootstrap_material_sealed: true,
+          pilot_identity_verified: true,
+          enterprise_authentication_validated: true,
+          evidence: [
+            {
+              evidence_id: "identity.handoff-state",
+              sha256: "8".repeat(64),
+              size_bytes: 1700,
+              disposition: "published",
+            },
+          ],
+        };
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                run: {
+                  ...identityState.data.run,
+                  version: 13,
+                  checkpoints: [
+                    ...identityState.data.run.checkpoints,
+                    {
+                      phase_id: "phase.identity",
+                      state: "completed",
+                      safe_output_references: [`result.identity.${"9".repeat(32)}`],
+                      recorded_at: "2026-08-04T16:06:01Z",
+                    },
+                  ],
+                  completed_phase_ids: [
+                    ...identityState.data.run.completed_phase_ids,
+                    "phase.identity",
+                  ],
+                  current_phase_id: "phase.integrations",
+                  identity_handoff: execution,
+                  updated_at: "2026-08-04T16:06:01Z",
+                },
+                execution,
+                replayed: false,
+                synthetic_state_mutation_performed: true,
+                credential_material_mutation_performed: false,
+                directory_mutation_performed: false,
+                provider_activation_performed: false,
+                account_mutation_performed: false,
+                session_or_token_mutation_performed: false,
+                infrastructure_mutation_performed: false,
+                ai_operation_performed: false,
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Review identity handoff" }));
+    expect(screen.getByText("Confirm synthetic identity handoff")).toBeVisible();
+    expect(screen.getByText("LDAPS metadata only")).toBeVisible();
+    expect(screen.getByText("directory-group.platform-administrators")).toBeVisible();
+    const confirm = screen.getByRole("button", { name: "Confirm identity" });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Identity-handoff justification"), {
+      target: { value: "Publish the reviewed secret-free identity handoff for the lab run." },
+    });
+    fireEvent.click(confirm);
+
+    expect(await screen.findByText("Identity handoff completed")).toBeVisible();
+    expect(screen.getByText("identity.handoff-state")).toBeVisible();
+    expect(screen.getByText("Real identity systems")).toBeVisible();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.body).toContain('"identity_plan_digest":"' + "9".repeat(64));
+    expect(requests[0]?.body).toContain('"expected_target_state":"empty"');
+    expect(requests[0]?.idempotencyKey).toBe("bootstrap-identity.11.identity-request-001");
+    expect(
+      screen.queryByRole("button", { name: /set password|create account|activate provider|issue token/i }),
     ).not.toBeInTheDocument();
   });
 });

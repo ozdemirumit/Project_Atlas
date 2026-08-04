@@ -18,6 +18,10 @@ from atlas.modules.platform.domain.bootstrap_data_initialization import (
     DataInitializationExecution,
     DataInitializationState,
 )
+from atlas.modules.platform.domain.bootstrap_identity_handoff import (
+    IdentityHandoffExecution,
+    IdentityHandoffState,
+)
 from atlas.modules.platform.domain.bootstrap_invalidation import compare_bootstrap_run
 from atlas.modules.platform.domain.bootstrap_service_deployment import (
     ServiceDeploymentExecution,
@@ -257,6 +261,38 @@ class InMemoryBootstrapStateRepository:
                             failed_service_checkpoint,
                         ),
                         service_deployment=interrupted_services,
+                    )
+                if (
+                    reclaimed
+                    and current.identity_handoff is not None
+                    and current.identity_handoff.state is IdentityHandoffState.RUNNING
+                ):
+                    interrupted_identity = replace(
+                        current.identity_handoff,
+                        state=IdentityHandoffState.FAILED,
+                        result_code="bootstrap.identity.interrupted",
+                        completed_at=now,
+                    )
+                    failed_identity_checkpoint = BootstrapPhaseCheckpoint(
+                        phase_id="phase.identity",
+                        state=BootstrapCheckpointState.FAILED,
+                        safe_output_references=(
+                            "result.identity-handoff."
+                            f"{sha256(interrupted_identity.execution_id.encode()).hexdigest()[:24]}",
+                        ),
+                        recorded_at=now,
+                    )
+                    current = replace(
+                        current,
+                        checkpoints=(
+                            *(
+                                item
+                                for item in current.checkpoints
+                                if item.phase_id != "phase.identity"
+                            ),
+                            failed_identity_checkpoint,
+                        ),
+                        identity_handoff=interrupted_identity,
                     )
                 updated = replace(
                     current,
@@ -1042,6 +1078,140 @@ class InMemoryBootstrapStateRepository:
             self._remember(lease_holder_id, idempotency_key, request_fingerprint, result)
             return result
 
+    async def begin_identity_handoff(
+        self,
+        *,
+        run_id: str,
+        plan_digest: str,
+        resume_key: str,
+        execution: IdentityHandoffExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._lock:
+            replay = self._replay(lease_holder_id, idempotency_key, request_fingerprint)
+            if replay is not None:
+                return replay
+            key, current = self._find(run_id)
+            self._require_no_running_phase(current)
+            if (
+                current.identity.plan_digest != plan_digest
+                or current.identity.resume_key != resume_key
+            ):
+                raise BootstrapRepositoryError("bootstrap_plan_mismatch")
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            if current.state is BootstrapRunState.COMPLETED:
+                raise BootstrapRepositoryError("bootstrap_run_completed")
+            if (
+                current.current_phase_id != "phase.identity"
+                or execution.phase_id != "phase.identity"
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_out_of_order")
+            updated = replace(
+                current,
+                version=current.version + 1,
+                state=BootstrapRunState.ACTIVE,
+                checkpoints=tuple(
+                    item for item in current.checkpoints if item.phase_id != "phase.identity"
+                ),
+                identity_handoff=execution,
+                updated_at=now,
+            )
+            result = BootstrapMutationResult(
+                record=updated, replayed=False, identity_handoff=execution
+            )
+            self._records[key] = updated
+            self._remember(lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
+    async def finish_identity_handoff(
+        self,
+        *,
+        run_id: str,
+        execution: IdentityHandoffExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._lock:
+            replay = self._replay(lease_holder_id, idempotency_key, request_fingerprint)
+            if (
+                replay is not None
+                and replay.identity_handoff is not None
+                and replay.identity_handoff.state is not IdentityHandoffState.RUNNING
+            ):
+                return replay
+            key, current = self._find(run_id)
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            active = current.identity_handoff
+            if (
+                active is None
+                or active.state is not IdentityHandoffState.RUNNING
+                or active.execution_id != execution.execution_id
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_execution_unavailable")
+            if (
+                execution.state is IdentityHandoffState.RUNNING
+                or execution.release_id != active.release_id
+                or execution.profile is not active.profile
+                or execution.configuration_digest != active.configuration_digest
+                or execution.trust_plan_digest != active.trust_plan_digest
+                or execution.data_plan_digest != active.data_plan_digest
+                or execution.service_plan_digest != active.service_plan_digest
+                or execution.identity_schema_version != active.identity_schema_version
+                or execution.identity_plan_digest != active.identity_plan_digest
+                or execution.target_id != active.target_id
+                or execution.started_at != active.started_at
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_execution_conflict")
+            if execution.state is IdentityHandoffState.COMPLETED:
+                reference = f"result.identity.{execution.identity_plan_digest[:32]}"
+                checkpoint_state = BootstrapCheckpointState.COMPLETED
+                run_state = (
+                    BootstrapRunState.COMPLETED
+                    if len(current.completed_phase_ids) + 1 == len(current.identity.phase_ids)
+                    else BootstrapRunState.ACTIVE
+                )
+            else:
+                reference = (
+                    "result.identity-handoff."
+                    f"{sha256(execution.result_code.encode()).hexdigest()[:24]}"
+                )
+                checkpoint_state = BootstrapCheckpointState.FAILED
+                run_state = BootstrapRunState.FAILED
+            checkpoint = BootstrapPhaseCheckpoint(
+                phase_id="phase.identity",
+                state=checkpoint_state,
+                safe_output_references=(reference,),
+                recorded_at=now,
+            )
+            updated = replace(
+                current,
+                version=current.version + 1,
+                state=run_state,
+                checkpoints=(
+                    *(item for item in current.checkpoints if item.phase_id != "phase.identity"),
+                    checkpoint,
+                ),
+                identity_handoff=execution,
+                updated_at=now,
+            )
+            result = BootstrapMutationResult(
+                record=updated, replayed=False, identity_handoff=execution
+            )
+            self._records[key] = updated
+            self._remember(lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
     async def rebase(
         self,
         *,
@@ -1101,6 +1271,9 @@ class InMemoryBootstrapStateRepository:
                 service_deployment=(
                     current.service_deployment if "phase.services" in reusable else None
                 ),
+                identity_handoff=(
+                    current.identity_handoff if "phase.identity" in reusable else None
+                ),
                 updated_at=now,
             )
             result = BootstrapMutationResult(
@@ -1151,6 +1324,10 @@ class InMemoryBootstrapStateRepository:
             or (
                 record.service_deployment is not None
                 and record.service_deployment.state is ServiceDeploymentState.RUNNING
+            )
+            or (
+                record.identity_handoff is not None
+                and record.identity_handoff.state is IdentityHandoffState.RUNNING
             )
         ):
             raise BootstrapRepositoryError("bootstrap_phase_in_progress")
