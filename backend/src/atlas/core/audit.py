@@ -25,6 +25,10 @@ class AuditRecord:
     decision_id: str | None
     outcome: str
     result_code: str
+    target_subject_id: str | None = None
+    reason: str | None = None
+    idempotency_key: str | None = None
+    target_metadata: tuple[tuple[str, str], ...] = ()
 
 
 class AuditSink(Protocol):

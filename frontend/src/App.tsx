@@ -57,6 +57,11 @@ import {
 } from "./api/approvals";
 import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
+import {
+  getIdentityGovernance,
+  revokeGovernedApiCredential,
+  revokeGovernedSession,
+} from "./api/identityGovernance";
 import { createStorageInvestigation } from "./api/investigations";
 import { getPlatformStatus } from "./api/platform";
 import { createStorageRca } from "./api/rca";
@@ -132,6 +137,12 @@ function apiGrantLabel(permissionId: string): string {
   );
 }
 
+function governanceIdempotencyKey(resource: "session" | "token", version: number): string {
+  const nonce =
+    typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
+  return `governance-${resource}-${version}-${nonce}`;
+}
+
 function relationshipLabel(relationshipType: string | undefined): string {
   return (
     {
@@ -179,6 +190,8 @@ export function App() {
   const [apiCredentialLifetime, setApiCredentialLifetime] = useState(30);
   const [selectedApiGrants, setSelectedApiGrants] = useState<string[]>([]);
   const [issuedApiToken, setIssuedApiToken] = useState<string | null>(null);
+  const [governanceSearch, setGovernanceSearch] = useState("");
+  const [governanceReason, setGovernanceReason] = useState("");
   const [investigationQuestion, setInvestigationQuestion] = useState(
     "What evidence explains the current storage warning?",
   );
@@ -210,6 +223,7 @@ export function App() {
       queryClient.removeQueries({ queryKey: ["security-export-overview"] });
       queryClient.removeQueries({ queryKey: ["approval-request"] });
       queryClient.removeQueries({ queryKey: ["api-credentials"] });
+      queryClient.removeQueries({ queryKey: ["identity-governance"] });
       setApprovalRequestId(null);
       setApprovalRationale("");
       setIssuedApiToken(null);
@@ -266,6 +280,25 @@ export function App() {
     mutationFn: revokeApiCredential,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["api-credentials"] });
+    },
+  });
+  const identityGovernanceQuery = useQuery({
+    queryKey: ["identity-governance", governanceSearch],
+    queryFn: () => getIdentityGovernance(governanceSearch),
+    enabled: Boolean(identity && identity.authentication.method !== "development"),
+    retry: false,
+  });
+  const identityGovernance = identityGovernanceQuery.data?.data;
+  const revokeGovernedSessionMutation = useMutation({
+    mutationFn: revokeGovernedSession,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["identity-governance"] });
+    },
+  });
+  const revokeGovernedApiCredentialMutation = useMutation({
+    mutationFn: revokeGovernedApiCredential,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["identity-governance"] });
     },
   });
   const storageQuery = useQuery({
@@ -939,6 +972,197 @@ export function App() {
                           ))}
                         </div>
                       )}
+                    </section>
+                  )}
+
+                  {identityGovernance && (
+                    <section className="workspace-section identity-governance-section">
+                      <div className="section-heading governance-heading">
+                        <div>
+                          <p className="eyebrow">IDENTITY GOVERNANCE</p>
+                          <h2>Administrative access review</h2>
+                        </div>
+                        <span className="session-count">
+                          {identityGovernance.sessions.length +
+                            identityGovernance.api_credentials.length}
+                          {identityGovernance.truncated ? "+" : ""} active
+                        </span>
+                      </div>
+
+                      <div className="governance-toolbar">
+                        <label>
+                          <span>Search identities and credentials</span>
+                          <div className="governance-input">
+                            <Search size={15} />
+                            <input
+                              aria-label="Search identity governance"
+                              value={governanceSearch}
+                              maxLength={128}
+                              placeholder="Subject, provider, session, or token name"
+                              onChange={(event) => setGovernanceSearch(event.target.value)}
+                            />
+                          </div>
+                        </label>
+                        <label>
+                          <span>Revocation reason</span>
+                          <input
+                            aria-label="Identity governance revocation reason"
+                            value={governanceReason}
+                            maxLength={240}
+                            placeholder="Required for an attributable revocation"
+                            onChange={(event) => setGovernanceReason(event.target.value)}
+                          />
+                        </label>
+                      </div>
+
+                      {(revokeGovernedSessionMutation.isError ||
+                        revokeGovernedApiCredentialMutation.isError) && (
+                        <div className="impact-message impact-error">
+                          <AlertTriangle size={18} /> The administrative revocation was not
+                          completed.
+                        </div>
+                      )}
+
+                      <div className="governance-grid">
+                        <div className="governance-panel">
+                          <div className="governance-panel-heading">
+                            <div>
+                              <Monitor size={17} />
+                              <h3>Browser sessions</h3>
+                            </div>
+                            <span>{identityGovernance.sessions.length}</span>
+                          </div>
+                          {identityGovernance.sessions.length === 0 && (
+                            <div className="governance-empty">No matching sessions.</div>
+                          )}
+                          <div className="governance-records">
+                            {identityGovernance.sessions.map((session) => (
+                              <article className="governance-record" key={session.session_id}>
+                                <div className="governance-record-heading">
+                                  <div>
+                                    <strong>{session.subject_display_name}</strong>
+                                    <span>{session.subject_id}</span>
+                                  </div>
+                                  <span className="state-badge active">active</span>
+                                </div>
+                                <dl>
+                                  <div>
+                                    <dt>Provider</dt>
+                                    <dd>{session.provider_id}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Last active</dt>
+                                    <dd>{formatTimestamp(session.last_seen_at)}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Idle expiry</dt>
+                                    <dd>{formatTimestamp(session.idle_expires_at)}</dd>
+                                  </div>
+                                </dl>
+                                <div className="governance-record-footer">
+                                  <code>{session.session_id}</code>
+                                  <button
+                                    className="governance-revoke"
+                                    type="button"
+                                    disabled={
+                                      !governanceReason.trim() ||
+                                      revokeGovernedSessionMutation.isPending
+                                    }
+                                    onClick={() =>
+                                      revokeGovernedSessionMutation.mutate({
+                                        sessionId: session.session_id,
+                                        expectedVersion: session.version,
+                                        reason: governanceReason.trim(),
+                                        idempotencyKey: governanceIdempotencyKey(
+                                          "session",
+                                          session.version,
+                                        ),
+                                      })
+                                    }
+                                  >
+                                    <Trash2 size={14} /> Revoke session
+                                  </button>
+                                </div>
+                              </article>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="governance-panel">
+                          <div className="governance-panel-heading">
+                            <div>
+                              <KeyRound size={17} />
+                              <h3>Personal API tokens</h3>
+                            </div>
+                            <span>{identityGovernance.api_credentials.length}</span>
+                          </div>
+                          {identityGovernance.api_credentials.length === 0 && (
+                            <div className="governance-empty">No matching personal tokens.</div>
+                          )}
+                          <div className="governance-records">
+                            {identityGovernance.api_credentials.map((credential) => (
+                              <article
+                                className="governance-record"
+                                key={credential.credential_id}
+                              >
+                                <div className="governance-record-heading">
+                                  <div>
+                                    <strong>{credential.display_name}</strong>
+                                    <span>
+                                      {credential.subject_display_name} {" · "}
+                                      {credential.subject_id}
+                                    </span>
+                                  </div>
+                                  <span className="state-badge active">active</span>
+                                </div>
+                                <p>{credential.purpose}</p>
+                                <dl>
+                                  <div>
+                                    <dt>Provider</dt>
+                                    <dd>{credential.provider_id}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Grant</dt>
+                                    <dd>
+                                      {credential.grants
+                                        .map((grant) => apiGrantLabel(grant.permission_id))
+                                        .join(" · ")}
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt>Expires</dt>
+                                    <dd>{formatTimestamp(credential.expires_at)}</dd>
+                                  </div>
+                                </dl>
+                                <div className="governance-record-footer">
+                                  <code>{credential.credential_id}</code>
+                                  <button
+                                    className="governance-revoke"
+                                    type="button"
+                                    disabled={
+                                      !governanceReason.trim() ||
+                                      revokeGovernedApiCredentialMutation.isPending
+                                    }
+                                    onClick={() =>
+                                      revokeGovernedApiCredentialMutation.mutate({
+                                        credentialId: credential.credential_id,
+                                        expectedVersion: credential.version,
+                                        reason: governanceReason.trim(),
+                                        idempotencyKey: governanceIdempotencyKey(
+                                          "token",
+                                          credential.version,
+                                        ),
+                                      })
+                                    }
+                                  >
+                                    <Trash2 size={14} /> Revoke token
+                                  </button>
+                                </div>
+                              </article>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
                     </section>
                   )}
 

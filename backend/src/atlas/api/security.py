@@ -9,6 +9,7 @@ from atlas.api.errors import AtlasError
 from atlas.core.capabilities import CapabilityClass
 from atlas.modules.authorization.application.bootstrap import (
     AI_GROUNDED_QUERY_CREATE,
+    API_CREDENTIAL_ADMIN_REVOKE,
     API_CREDENTIAL_SELF_CREATE,
     API_CREDENTIAL_SELF_READ,
     API_CREDENTIAL_SELF_REVOKE,
@@ -18,6 +19,7 @@ from atlas.modules.authorization.application.bootstrap import (
     GRAPH_STORAGE_IMPACT_READ,
     HEALTH_CHECK_OVERVIEW_READ,
     HEALTH_CHECK_RUN_CREATE,
+    IDENTITY_GOVERNANCE_READ,
     IDENTITY_SELF_READ,
     INVESTIGATION_CREATE,
     RCA_CREATE,
@@ -25,6 +27,7 @@ from atlas.modules.authorization.application.bootstrap import (
     REPORT_CREATE,
     SECURITY_EXPORT_OVERVIEW_READ,
     SECURITY_EXPORT_TEST_CREATE,
+    SESSION_ADMIN_REVOKE,
     SESSION_SELF_READ,
     SESSION_SELF_REVOKE,
     STORAGE_OVERVIEW_READ,
@@ -34,6 +37,7 @@ from atlas.modules.authorization.application.bootstrap import (
     current_identity_scope,
     graph_storage_impact_scope,
     health_check_scope,
+    identity_governance_scope,
     investigation_scope,
     rca_scope,
     recommendation_scope,
@@ -315,6 +319,128 @@ async def authorize_api_credential_self_revoke(
         permission_id=API_CREDENTIAL_SELF_REVOKE,
         capability_class=CapabilityClass.C2_DIAGNOSTIC,
     )
+
+
+async def _authorize_identity_governance(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+    target_subject_id: str | None = None,
+    reason: str | None = None,
+    idempotency_key: str | None = None,
+    target_metadata: tuple[tuple[str, str], ...] = (),
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.identity.governance",
+            scope=identity_governance_scope(
+                subject.organization_id,
+                settings.environment,
+                capability_class,
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+            target_subject_id=target_subject_id,
+            reason=reason,
+            idempotency_key=idempotency_key,
+            target_metadata=target_metadata,
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="Identity governance is not authorized.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_identity_governance_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_identity_governance(
+        request,
+        subject,
+        permission_id=IDENTITY_GOVERNANCE_READ,
+        capability_class=CapabilityClass.C0_INFORMATIONAL,
+    )
+
+
+async def authorize_session_admin_revoke(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    session_id: str,
+) -> AuthorizationDecision:
+    (
+        target_subject_id,
+        target_metadata,
+    ) = await request.app.state.identity_governance_service.target_audit_fields(
+        "browser_session", session_id
+    )
+    reason, idempotency_key = await _governance_mutation_audit_fields(request)
+    return await _authorize_identity_governance(
+        request,
+        subject,
+        permission_id=SESSION_ADMIN_REVOKE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+        target_subject_id=target_subject_id,
+        reason=reason,
+        idempotency_key=idempotency_key,
+        target_metadata=target_metadata,
+    )
+
+
+async def authorize_api_credential_admin_revoke(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    credential_id: str,
+) -> AuthorizationDecision:
+    (
+        target_subject_id,
+        target_metadata,
+    ) = await request.app.state.identity_governance_service.target_audit_fields(
+        "personal_api_credential", credential_id
+    )
+    reason, idempotency_key = await _governance_mutation_audit_fields(request)
+    return await _authorize_identity_governance(
+        request,
+        subject,
+        permission_id=API_CREDENTIAL_ADMIN_REVOKE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+        target_subject_id=target_subject_id,
+        reason=reason,
+        idempotency_key=idempotency_key,
+        target_metadata=target_metadata,
+    )
+
+
+async def _governance_mutation_audit_fields(request: Request) -> tuple[str | None, str | None]:
+    try:
+        body = await request.json()
+    except ValueError:
+        body = None
+    raw_reason = body.get("reason") if isinstance(body, dict) else None
+    reason = raw_reason.strip() if isinstance(raw_reason, str) else None
+    if reason is not None and (
+        not reason or len(reason) > 240 or any(ord(character) < 32 for character in reason)
+    ):
+        reason = None
+    raw_idempotency_key = request.headers.get("Idempotency-Key")
+    idempotency_key = (
+        raw_idempotency_key
+        if raw_idempotency_key is not None and len(raw_idempotency_key) <= 128
+        else None
+    )
+    return reason, idempotency_key
 
 
 async def authorize_storage_overview_read(

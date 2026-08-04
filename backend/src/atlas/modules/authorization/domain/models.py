@@ -112,6 +112,10 @@ class AuthorizationRequest:
     scope: ResourceScope
     correlation_id: str
     requested_at: datetime
+    target_subject_id: str | None = None
+    reason: str | None = None
+    idempotency_key: str | None = None
+    target_metadata: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         validate_stable_identifier(self.permission_id, "permission_id")

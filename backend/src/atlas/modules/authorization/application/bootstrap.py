@@ -20,6 +20,9 @@ SESSION_SELF_REVOKE = "identity.session.self.revoke"
 API_CREDENTIAL_SELF_CREATE = "identity.api-credential.self.create"
 API_CREDENTIAL_SELF_READ = "identity.api-credential.self.read"
 API_CREDENTIAL_SELF_REVOKE = "identity.api-credential.self.revoke"
+IDENTITY_GOVERNANCE_READ = "identity.governance.read"
+SESSION_ADMIN_REVOKE = "identity.session.admin.revoke"
+API_CREDENTIAL_ADMIN_REVOKE = "identity.api-credential.admin.revoke"
 STORAGE_OVERVIEW_READ = "storage.overview.read"
 AI_GROUNDED_QUERY_CREATE = "ai.grounded-query.create"
 GRAPH_STORAGE_IMPACT_READ = "graph.storage-impact.read"
@@ -35,6 +38,7 @@ REPORT_CREATE = "report.create"
 SECURITY_EXPORT_OVERVIEW_READ = "security-export.overview.read"
 SECURITY_EXPORT_TEST_CREATE = "security-export.test.create"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
+SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 
 
 def current_identity_scope(organization_id: str, environment: str) -> ResourceScope:
@@ -71,6 +75,50 @@ def api_credential_self_scope(
         domain_id="domain.identity",
         resource_id="resource.identity.api-credentials.self",
         capability_class=capability_class,
+    )
+
+
+def identity_governance_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.identity",
+        resource_id="resource.identity.governance",
+        capability_class=capability_class,
+    )
+
+
+def identity_governance_permission_definitions() -> tuple[PermissionDefinition, ...]:
+    return (
+        PermissionDefinition(
+            permission_id=IDENTITY_GOVERNANCE_READ,
+            description="Read bounded secret-free identity lifecycle metadata in exact scope.",
+        ),
+        PermissionDefinition(
+            permission_id=SESSION_ADMIN_REVOKE,
+            description="Administratively revoke one exact foreign browser session.",
+        ),
+        PermissionDefinition(
+            permission_id=API_CREDENTIAL_ADMIN_REVOKE,
+            description="Administratively revoke one exact foreign personal API credential.",
+        ),
+    )
+
+
+def security_administrator_role_definition() -> RoleDefinition:
+    return RoleDefinition(
+        role_id=SECURITY_ADMINISTRATOR_ROLE_ID,
+        version=1,
+        permissions=frozenset(
+            {
+                IDENTITY_GOVERNANCE_READ,
+                SESSION_ADMIN_REVOKE,
+                API_CREDENTIAL_ADMIN_REVOKE,
+            }
+        ),
     )
 
 
@@ -217,6 +265,7 @@ def build_development_authorization_service(
     settings: Settings, audit_sink: AuditSink
 ) -> AuthorizationService:
     permissions = (
+        *identity_governance_permission_definitions(),
         PermissionDefinition(
             permission_id=IDENTITY_SELF_READ,
             description="Read the authenticated subject's own normalized identity context.",
@@ -507,7 +556,7 @@ def build_development_authorization_service(
 
     return AuthorizationService(
         permissions=permissions,
-        roles=(role,),
+        roles=(role, security_administrator_role_definition()),
         assignments=assignments,
         audit_sink=audit_sink,
     )

@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
 | Last Updated | 2026-08-04 |
-| Next Action | Implement exact-scope administrative identity inventory and revocation, complete local and live validation, and open the pull request |
+| Next Action | Commit the validated implementation, open the pull request, and verify GitHub Actions on the review head |
 
 ### ATLAS-IMP-020 Acceptance Criteria
 
@@ -40,7 +40,39 @@
 
 ### ATLAS-IMP-020 Validation Evidence
 
-- Pending implementation and validation.
+- Dedicated `identity.governance.read`, `identity.session.admin.revoke`, and
+  `identity.api-credential.admin.revoke` permissions are bound to a versioned Security Administrator
+  role at exact organization, environment, site, identity domain, resource, and capability scope.
+  The development operator has no assignment, and enterprise-human enforcement independently rejects
+  development, service, workload, and other non-human identities.
+- The bounded governance service filters deterministic active session and personal-token inventory for
+  other subjects in the administrator's organization. Responses and audit metadata exclude cookie,
+  CSRF, raw-token, and token-digest material.
+- Administrative revocation is browser-session and CSRF only, requires a bounded reason,
+  idempotency key, and expected version, protects the current administrator session, and collapses
+  missing, foreign, hidden, inactive, stale, and concurrently changed targets into one external
+  result. Repository versioning prevents revoked sessions or credentials from being resurrected.
+- RBAC allow and deny decisions and governance inventory, replay, denial, and revoke events fail
+  closed. Mutation audit evidence includes actor, target subject, secrets-free lifecycle metadata,
+  reason, correlation, and idempotency context.
+- Backend Ruff formatting and lint and strict mypy checks passed across 206 source files. The complete
+  backend suite passed with 223 tests, including ten focused governance scenarios covering exact
+  scope, identity class, redaction, filtering and bounds, CSRF, bearer denial, current-session
+  protection, indistinguishable hidden targets, idempotency, concurrency, propagation, and audit
+  failure.
+- Frontend ESLint and TypeScript checks passed, seven Vitest scenarios passed across two files, and
+  the production Vite bundle built successfully. The web view is discovered only after a successful
+  administrative inventory response; an ordinary enterprise operator's 403 is treated as an absent
+  capability without a disruptive error.
+- A live injected enterprise authorization/provider configuration showed another subject's active
+  browser session and personal API credential without secrets, revoked both, confirmed the old
+  session and bearer token returned HTTP 401, and confirmed the administrator's current session
+  stayed active. A normal enterprise operator received HTTP 403 and did not see the governance view.
+- Desktop 1440x900 and mobile 390x844 views were visually inspected in a real Chromium session.
+  Document width matched each viewport, with no page-level horizontal overflow or incoherent overlap.
+- Identity-disablement fan-out, OIDC/SAML setup, service and workload credentials, break-glass,
+  token secret recovery or rotation, and infrastructure-changing grants remain intentionally outside
+  this slice.
 
 ### ATLAS-IMP-019 Acceptance Criteria
 

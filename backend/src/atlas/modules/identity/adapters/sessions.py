@@ -47,3 +47,7 @@ class InMemorySessionRepository:
             return tuple(
                 item for item in self._records.values() if item.subject.subject_id == subject_id
             )
+
+    async def all_records(self) -> tuple[SessionRecord, ...]:
+        async with self._lock:
+            return tuple(self._records.values())
