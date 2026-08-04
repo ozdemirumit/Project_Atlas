@@ -22,6 +22,7 @@ HEALTH_CHECK_RUN_CREATE = "health-check.run.create"
 INVESTIGATION_CREATE = "investigation.create"
 RCA_CREATE = "rca.create"
 RECOMMENDATION_CREATE = "recommendation.create"
+REPORT_CREATE = "report.create"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 
 
@@ -113,6 +114,17 @@ def recommendation_scope(organization_id: str, environment: str) -> ResourceScop
     )
 
 
+def report_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.report",
+        resource_id="resource.report.storage.synthetic",
+        capability_class=CapabilityClass.C0_INFORMATIONAL,
+    )
+
+
 def build_development_authorization_service(
     settings: Settings, audit_sink: AuditSink
 ) -> AuthorizationService:
@@ -155,6 +167,10 @@ def build_development_authorization_service(
             permission_id=RECOMMENDATION_CREATE,
             description="Create a governed recommendation from an exact authorized RCA case.",
         ),
+        PermissionDefinition(
+            permission_id=REPORT_CREATE,
+            description="Create a governed report and non-dispatching ITSM handoff draft.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -170,6 +186,7 @@ def build_development_authorization_service(
                 INVESTIGATION_CREATE,
                 RCA_CREATE,
                 RECOMMENDATION_CREATE,
+                REPORT_CREATE,
             }
         ),
     )
@@ -256,6 +273,14 @@ def build_development_authorization_service(
                 scope=recommendation_scope(
                     settings.development_organization_id, settings.environment
                 ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.report",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=report_scope(settings.development_organization_id, settings.environment),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),
         )

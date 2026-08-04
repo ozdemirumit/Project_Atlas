@@ -19,6 +19,7 @@ from atlas.api.routes import (
     platform,
     rca,
     recommendations,
+    reports,
     storage,
 )
 from atlas.core.audit import AuditSink, LoggingAuditSink
@@ -64,6 +65,8 @@ from atlas.modules.recommendations.adapters.synthetic import (
     SyntheticStorageRecommendationAssembler,
 )
 from atlas.modules.recommendations.application.service import RecommendationService
+from atlas.modules.reports.adapters.synthetic import SyntheticTechnicalReportAssembler
+from atlas.modules.reports.application.service import ReportService
 from atlas.modules.storage.adapters.synthetic import build_synthetic_storage_overview
 from atlas.modules.storage.application.service import StorageOperationsService
 
@@ -80,6 +83,7 @@ def create_app(
     investigation_service: InvestigationService | None = None,
     rca_service: RcaService | None = None,
     recommendation_service: RecommendationService | None = None,
+    report_service: ReportService | None = None,
     grounded_answer_service: GroundedAnswerService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
@@ -137,6 +141,11 @@ def create_app(
     resolved_recommendation_service = recommendation_service or RecommendationService(
         source_provider=resolved_rca_service,
         assembler=SyntheticStorageRecommendationAssembler(),
+        audit_sink=resolved_audit_sink,
+    )
+    resolved_report_service = report_service or ReportService(
+        source_provider=resolved_recommendation_service,
+        assembler=SyntheticTechnicalReportAssembler(),
         audit_sink=resolved_audit_sink,
     )
     synthetic_model_id = "atlas-local-synthetic"
@@ -207,6 +216,7 @@ def create_app(
         app.state.investigation_service = resolved_investigation_service
         app.state.rca_service = resolved_rca_service
         app.state.recommendation_service = resolved_recommendation_service
+        app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
         await database_probe.close()
@@ -237,5 +247,6 @@ def create_app(
     app.include_router(investigations.router, prefix="/api/v1")
     app.include_router(rca.router, prefix="/api/v1")
     app.include_router(recommendations.router, prefix="/api/v1")
+    app.include_router(reports.router, prefix="/api/v1")
     app.include_router(ai.router, prefix="/api/v1")
     return app
