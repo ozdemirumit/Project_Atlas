@@ -4,14 +4,52 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-020 |
-| Title | Administrative identity access governance |
-| Status | Done |
-| Branch | `agent/administrative-identity-access-governance` |
-| Pull Request | [PR #32](https://github.com/ozdemirumit/Project_Atlas/pull/32) |
+| Task ID | ATLAS-IMP-021 |
+| Title | Identity disablement and credential revocation fan-out foundation |
+| Status | In Progress |
+| Branch | `agent/identity-disablement-fanout` |
+| Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
 | Last Updated | 2026-08-04 |
-| Next Action | Select the next approved vertical slice and record its dependencies and acceptance criteria |
+| Next Action | Implement durable enterprise-human identity disablement with atomic session and personal-token revocation fan-out, then complete local and live validation |
+
+### ATLAS-IMP-021 Acceptance Criteria
+
+- A dedicated Security Administrator permission disables one exact human enterprise identity only
+  within the administrator's organization, environment, site, identity domain, resource, and C2
+  capability scope. Development, service, workload, recovery, and break-glass identities remain
+  outside this surface.
+- Subject lifecycle state is versioned behind repository and service ports suitable for a future
+  durable adapter. Disabled state remains authoritative across service reconstruction and cannot be
+  silently replaced by an upstream successful password verification.
+- Disablement atomically revokes every active browser session and personal API credential for the
+  exact target subject. Any repository failure compensates all staged in-memory changes so no visible
+  partial disablement or partial credential revocation survives.
+- A disabled subject's existing sessions and bearer tokens fail authentication with HTTP 401, and
+  correct upstream credentials cannot create a new browser session or personal API credential.
+  The administrator's current session remains active and self-disablement is denied.
+- Mutation requires an enterprise-human browser session, CSRF, current exact-scope RBAC, a bounded
+  reason, correlation ID, idempotency key, and expected subject version. Personal bearer credentials
+  cannot invoke the unsafe endpoint.
+- Idempotent replay returns the original result; conflicting reuse, stale concurrency, missing,
+  foreign, hidden, already-disabled, and unsupported targets fail closed without resource
+  enumeration or state resurrection.
+- Required authorization, denial, disablement, fan-out, replay, and compensation audit evidence
+  fails closed and records actor, target, reason, correlation, idempotency, result, and revoked session
+  and credential counts without cookies, CSRF values, raw tokens, or digests.
+- The searchable governance view shows secrets-free subject status derived from active inventory and
+  provides a confirmation plus impact summary before disablement. A normal operator's 403 continues
+  to hide the entire governance surface without a disruptive error.
+- Tests cover identity-class and exact-scope boundaries, authentication rejection, API issuance
+  rejection, self-protection, hidden targets, optimistic concurrency, idempotency, audit failure,
+  atomic compensation, no resurrection, and responsive desktop/mobile UI.
+- OIDC/SAML provisioning or deprovisioning hooks, LDAP polling or synchronization, re-enable,
+  service/workload credentials, break-glass, last-administrator global quorum, external ITSM,
+  notifications, token rotation, and infrastructure execution remain outside this slice.
+
+### ATLAS-IMP-021 Validation Evidence
+
+- Pending implementation and validation.
 
 ### ATLAS-IMP-020 Acceptance Criteria
 
