@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-028 |
 | Title | Bootstrap input drift and checkpoint invalidation preview |
-| Status | Review |
+| Status | Done |
 | Branch | `agent/bootstrap-invalidation-preview` |
 | Pull Request | [PR #40](https://github.com/ozdemirumit/Project_Atlas/pull/40) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Complete GitHub quality gates and merge PR #40 |
+| Next Action | Merge PR #40 and synchronize `main` |
 
 ### ATLAS-IMP-028 Scope Rationale
 
@@ -57,8 +57,8 @@
   earliest invalidation boundary as `phase.acquire`, and exposed no lease-owner identity.
 - Live presentation validation passed at 1440x900 and 390x844. The invalidation preview, drift state,
   boundary, and read-only notice remained visible with no page-level horizontal overflow.
-- Source commit `8419c94` is under review in
-  [PR #40](https://github.com/ozdemirumit/Project_Atlas/pull/40); GitHub CI evidence is pending.
+- GitHub backend and frontend CI jobs passed for review commit `8352ab3` in
+  [run 30918524000](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30918524000).
 
 ### ATLAS-IMP-027 Scope Rationale
 
@@ -1281,6 +1281,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-025 | Versioned deployment configuration preview foundation | Completed through [PR #37](https://github.com/ozdemirumit/Project_Atlas/pull/37) from source commit `4917f22`; 268 backend tests, 15 frontend tests, live safe/unsafe configuration API and Linux-lab/developer desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-026 | Deterministic bootstrap plan and resume-state foundation | Completed through [PR #38](https://github.com/ozdemirumit/Project_Atlas/pull/38) from source commit `0a9c38b`; 272 backend tests, 16 frontend tests, live ready/blocked API and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-027 | Persistent bootstrap checkpoint and lease foundation | Completed through [PR #39](https://github.com/ozdemirumit/Project_Atlas/pull/39) from source commit `874fe0a`; 282 backend tests, 18 frontend tests, live non-mutating checkpoint API and desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-028 | Bootstrap input drift and checkpoint invalidation preview | Completed through [PR #40](https://github.com/ozdemirumit/Project_Atlas/pull/40) from source commit `8419c94`; 287 backend tests, 20 frontend tests, live non-mutating desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
