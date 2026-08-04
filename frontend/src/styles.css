@@ -1455,6 +1455,33 @@ textarea:focus-visible {
   margin-top: 2px;
 }
 
+.recovery-section {
+  border-top: 1px solid #d9e2df;
+}
+
+.recovery-controls {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.recovery-validation-action {
+  margin-top: 12px;
+}
+
+.recovery-validation-result {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #add2c8;
+  background: #f1f8f6;
+}
+
+.recovery-validation-result p {
+  margin: 3px 0 6px;
+  color: #53625e;
+}
+
 .service-plan-list > div {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) auto;

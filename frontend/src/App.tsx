@@ -121,6 +121,14 @@ import { getPlatformStatus } from "./api/platform";
 import { createStorageRca } from "./api/rca";
 import { createStorageRecommendation } from "./api/recommendations";
 import {
+  createLogicalBackup,
+  LOGICAL_BACKUP_COMPONENTS,
+  previewLogicalBackup,
+  validateLogicalRestore,
+  type LogicalBackup,
+  type RestoreValidation,
+} from "./api/recovery";
+import {
   getReleasePreflight,
   type ReleasePreflightMode,
   type ReleasePreflightProfile,
@@ -348,6 +356,13 @@ export function App() {
   const [supportJustification, setSupportJustification] = useState("");
   const [supportPending, setSupportPending] = useState(false);
   const [supportResult, setSupportResult] = useState<SupportBundleExport | null>(null);
+  const [backupComponentIds, setBackupComponentIds] = useState<string[]>([
+    ...LOGICAL_BACKUP_COMPONENTS,
+  ]);
+  const [backupJustification, setBackupJustification] = useState("");
+  const [backupPending, setBackupPending] = useState(false);
+  const [backupResult, setBackupResult] = useState<LogicalBackup | null>(null);
+  const [restoreValidation, setRestoreValidation] = useState<RestoreValidation | null>(null);
   const [bootstrapClaimJustification, setBootstrapClaimJustification] = useState("");
   const [bootstrapClaimPending, setBootstrapClaimPending] = useState(false);
   const [bootstrapClaimResult, setBootstrapClaimResult] =
@@ -779,6 +794,30 @@ export function App() {
     retry: false,
   });
   const supportBundlePreview = supportBundlePreviewQuery.data?.data;
+  const backupPreviewQuery = useQuery({
+    queryKey: [
+      "logical-backup-preview",
+      bootstrapState?.run?.run_id,
+      bootstrapState?.run?.version,
+      backupComponentIds,
+    ],
+    queryFn: () =>
+      previewLogicalBackup(bootstrapState!.run!.run_id, backupComponentIds),
+    enabled: Boolean(
+      identity &&
+        bootstrapState?.run?.state === "completed" &&
+        bootstrapState.run.operational_handoff?.state === "completed" &&
+        [
+          "backup.release-state",
+          "backup.configuration-state",
+          "backup.checkpoint-state",
+          "backup.verification-state",
+          "backup.operational-handoff",
+        ].every((item) => backupComponentIds.includes(item)),
+    ),
+    retry: false,
+  });
+  const backupPreview = backupPreviewQuery.data?.data;
   const bootstrapInvalidationQuery = useQuery({
     queryKey: [
       "bootstrap-invalidation",
@@ -1007,6 +1046,19 @@ export function App() {
       setSupportPending(false);
       setSupportJustification("");
     },
+  });
+  const backupMutation = useMutation({
+    mutationFn: () => createLogicalBackup(backupPreview!, backupJustification.trim()),
+    onSuccess: (response) => {
+      setBackupResult(response.data);
+      setBackupPending(false);
+      setBackupJustification("");
+      setRestoreValidation(null);
+    },
+  });
+  const restoreValidationMutation = useMutation({
+    mutationFn: () => validateLogicalRestore(backupResult!),
+    onSuccess: (response) => setRestoreValidation(response.data),
   });
   const bootstrapClaimMutation = useMutation({
     mutationFn: () =>
@@ -3640,6 +3692,167 @@ export function App() {
                                 <p className="data-recovery-note">
                                   Retain only through {formatTimestamp(supportResult.expires_at)}.
                                   Support-system upload remains outside this operation.
+                                </p>
+                              </div>
+                            )}
+                          </section>
+                        )}
+                      {bootstrapState.run.state === "completed" &&
+                        bootstrapState.run.operational_handoff?.state === "completed" && (
+                          <section className="support-bundle-section recovery-section">
+                            <div className="support-bundle-heading">
+                              <div>
+                                <span className="eyebrow">Recovery evidence</span>
+                                <h3>Logical backup and restore validation</h3>
+                              </div>
+                              <span className="state-badge completed">C2 local backup</span>
+                            </div>
+                            <div className="support-bundle-controls recovery-controls">
+                              <fieldset>
+                                <legend>Logical components</legend>
+                                {LOGICAL_BACKUP_COMPONENTS.map((componentId) => {
+                                  const optional = componentId === "backup.identity-handoff" ||
+                                    componentId === "backup.integration-validation";
+                                  return (
+                                    <label key={componentId}>
+                                      <input
+                                        type="checkbox"
+                                        checked={backupComponentIds.includes(componentId)}
+                                        disabled={!optional}
+                                        onChange={(event) => {
+                                          setBackupResult(null);
+                                          setRestoreValidation(null);
+                                          setBackupPending(false);
+                                          setBackupComponentIds((current) =>
+                                            event.target.checked
+                                              ? [...current, componentId]
+                                              : current.filter((item) => item !== componentId),
+                                          );
+                                        }}
+                                      />
+                                      <span>{componentId.replace("backup.", "").replaceAll("-", " ")}</span>
+                                      {!optional && <small>Required</small>}
+                                    </label>
+                                  );
+                                })}
+                              </fieldset>
+                            </div>
+                            {backupPreviewQuery.isLoading && (
+                              <div className="inline-state">
+                                <RefreshCw className="spin" size={16} /> Building logical backup preview
+                              </div>
+                            )}
+                            {backupPreviewQuery.isError && (
+                              <div className="inline-error">
+                                <AlertTriangle size={16} /> Backup preview is unavailable for this source.
+                              </div>
+                            )}
+                            {backupPreview && !backupPending && !backupResult && (
+                              <div className="data-initialization-action support-bundle-action">
+                                <div>
+                                  <strong>Backup preview passed</strong>
+                                  <p>
+                                    {backupPreview.entries.length} typed entries, {backupPreview.content_bytes}
+                                    {" "}bytes; no secret or external transfer is authorized.
+                                  </p>
+                                </div>
+                                <button type="button" onClick={() => setBackupPending(true)}>
+                                  <Database size={14} /> Review backup
+                                </button>
+                              </div>
+                            )}
+                            {backupPending && backupPreview && (
+                              <div className="data-initialization-confirmation support-bundle-confirmation"
+                                role="dialog">
+                                <div>
+                                  <strong>Confirm local logical backup</strong>
+                                  <p>
+                                    Archive {backupPreview.target_state}; this stores only the reviewed
+                                    Atlas-owned logical projection. It is not a production database backup.
+                                  </p>
+                                </div>
+                                <div className="identity-plan-summary support-bundle-summary">
+                                  <div><span>Entries</span><strong>{backupPreview.entries.length}</strong>
+                                    <small>Strict versioned JSON</small></div>
+                                  <div><span>Archive</span><strong>{backupPreview.archive_size_bytes} bytes</strong>
+                                    <small>{backupPreview.archive_sha256.slice(0, 20)}...</small></div>
+                                  <div><span>Classification</span><strong>Internal</strong>
+                                    <small>No secret values</small></div>
+                                  <div><span>Transfer</span><strong>Local only</strong>
+                                    <small>External operation false</small></div>
+                                </div>
+                                <div className="identity-mapping-list support-entry-list">
+                                  {backupPreview.entries.map((entry) => (
+                                    <div key={entry.entry_id}>
+                                      <div><code>{entry.entry_id}</code><small>{entry.file_name}</small></div>
+                                      <strong>{entry.mandatory ? "required" : "selected"}</strong>
+                                    </div>
+                                  ))}
+                                </div>
+                                <label>
+                                  Backup justification
+                                  <input value={backupJustification} maxLength={500}
+                                    onChange={(event) => setBackupJustification(event.target.value)}
+                                    placeholder="Record the reviewed recovery evidence purpose" />
+                                </label>
+                                {backupMutation.isError && (
+                                  <div className="inline-error"><AlertTriangle size={16} /> Backup was not created.</div>
+                                )}
+                                <div className="data-initialization-confirm-actions">
+                                  <button type="button" onClick={() => {
+                                    setBackupPending(false); setBackupJustification("");
+                                  }}>Cancel</button>
+                                  <button className="data-initialization-confirm" type="button"
+                                    disabled={backupJustification.trim().length < 12 || backupMutation.isPending}
+                                    onClick={() => backupMutation.mutate()}>
+                                    <Database size={14} /> Confirm local backup
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                            {backupResult && (
+                              <div className="data-initialization-result completed support-bundle-result">
+                                <div className="data-initialization-result-heading">
+                                  <CheckCircle2 size={18} />
+                                  <div><strong>Logical backup completed</strong><code>{backupResult.backup_id}</code></div>
+                                  <span className="state-badge completed">local only</span>
+                                </div>
+                                <div className="data-initialization-summary">
+                                  <div><span>Entries</span><strong>{backupResult.entry_count}</strong></div>
+                                  <div><span>Archive bytes</span><strong>{backupResult.archive_size_bytes}</strong></div>
+                                  <div><span>Reuse</span><strong>{backupResult.reused ? "Exact bytes" : "Published"}</strong></div>
+                                  <div><span>Active restore</span><strong>No</strong></div>
+                                </div>
+                                <div className="service-state-evidence">
+                                  <div><code>{backupResult.archive_name}</code><span>Integrity verified</span></div>
+                                  <code>{backupResult.archive_sha256.slice(0, 20)}...</code>
+                                </div>
+                                {!restoreValidation && (
+                                  <div className="data-initialization-action recovery-validation-action">
+                                    <div><strong>Validate isolated restore</strong>
+                                      <p>Reconstruct the projection in ephemeral memory without writing active state.</p>
+                                    </div>
+                                    <button type="button" disabled={restoreValidationMutation.isPending}
+                                      onClick={() => restoreValidationMutation.mutate()}>
+                                      <FlaskConical size={14} /> Validate restore
+                                    </button>
+                                  </div>
+                                )}
+                                {restoreValidationMutation.isError && (
+                                  <div className="inline-error"><AlertTriangle size={16} /> Restore validation failed closed.</div>
+                                )}
+                                {restoreValidation && (
+                                  <div className="recovery-validation-result">
+                                    <CheckCircle2 size={18} />
+                                    <div><strong>Isolated restore validation passed</strong>
+                                      <p>{restoreValidation.check_ids.length} checks; no active repository write or operational recovery.</p>
+                                      <code>{restoreValidation.validation_digest.slice(0, 20)}...</code>
+                                    </div>
+                                  </div>
+                                )}
+                                <p className="data-recovery-note">
+                                  Retain only through {formatTimestamp(backupResult.expires_at)}.
+                                  Production RPO, RTO, secret recovery, HA, and DR remain unvalidated.
                                 </p>
                               </div>
                             )}
