@@ -72,6 +72,11 @@ import {
   type BootstrapIdentityHandoffResult,
 } from "./api/bootstrapIdentity";
 import {
+  previewBootstrapIntegrationPlan,
+  validateBootstrapIntegrations,
+  type BootstrapIntegrationValidationResult,
+} from "./api/bootstrapIntegrations";
+import {
   renderBootstrapConfiguration,
   type BootstrapConfigurationRenderingResult,
 } from "./api/bootstrapConfigurationRendering";
@@ -307,6 +312,11 @@ export function App() {
   const [identityHandoffPending, setIdentityHandoffPending] = useState(false);
   const [identityHandoffResult, setIdentityHandoffResult] =
     useState<BootstrapIdentityHandoffResult | null>(null);
+  const [integrationValidationJustification, setIntegrationValidationJustification] =
+    useState("");
+  const [integrationValidationPending, setIntegrationValidationPending] = useState(false);
+  const [integrationValidationResult, setIntegrationValidationResult] =
+    useState<BootstrapIntegrationValidationResult | null>(null);
   const [bootstrapClaimJustification, setBootstrapClaimJustification] = useState("");
   const [bootstrapClaimPending, setBootstrapClaimPending] = useState(false);
   const [bootstrapClaimResult, setBootstrapClaimResult] =
@@ -376,6 +386,9 @@ export function App() {
       setIdentityHandoffJustification("");
       setIdentityHandoffPending(false);
       setIdentityHandoffResult(null);
+      setIntegrationValidationJustification("");
+      setIntegrationValidationPending(false);
+      setIntegrationValidationResult(null);
       setBootstrapClaimJustification("");
       setBootstrapClaimPending(false);
       setBootstrapClaimResult(null);
@@ -589,6 +602,36 @@ export function App() {
     retry: false,
   });
   const bootstrapIdentityPlan = bootstrapIdentityPlanQuery.data?.data;
+  const bootstrapIntegrationPlanQuery = useQuery({
+    queryKey: [
+      "bootstrap-integration-plan",
+      deploymentConfiguration?.configuration_digest,
+      bootstrapTrustPlan?.trust_plan_digest,
+      bootstrapDataPlan?.data_plan_digest,
+      bootstrapServicePlan?.service_plan_digest,
+      bootstrapIdentityPlan?.identity_plan_digest,
+      identity?.scope,
+    ],
+    queryFn: () =>
+      previewBootstrapIntegrationPlan(
+        deploymentConfiguration!,
+        bootstrapTrustPlan!,
+        bootstrapDataPlan!,
+        bootstrapServicePlan!,
+        bootstrapIdentityPlan!,
+        identity!.scope,
+      ),
+    enabled: Boolean(
+      identity &&
+        deploymentConfiguration &&
+        bootstrapTrustPlan &&
+        bootstrapDataPlan &&
+        bootstrapServicePlan &&
+        bootstrapIdentityPlan,
+    ),
+    retry: false,
+  });
+  const bootstrapIntegrationPlan = bootstrapIntegrationPlanQuery.data?.data;
   const bootstrapPlanQuery = useQuery({
     queryKey: [
       "bootstrap-plan",
@@ -762,6 +805,30 @@ export function App() {
       ]);
     },
   });
+  const integrationValidationMutation = useMutation({
+    mutationFn: () =>
+      validateBootstrapIntegrations({
+        state: bootstrapState!,
+        configuration: deploymentConfiguration!,
+        trustPlan: bootstrapTrustPlan!,
+        dataPlan: bootstrapDataPlan!,
+        servicePlan: bootstrapServicePlan!,
+        identityPlan: bootstrapIdentityPlan!,
+        integrationPlan: bootstrapIntegrationPlan!,
+        scope: identity!.scope,
+        justification: integrationValidationJustification.trim(),
+      }),
+    onSuccess: async (response) => {
+      setIntegrationValidationResult(response.data);
+      setIntegrationValidationPending(false);
+      setIntegrationValidationJustification("");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-state"] }),
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-invalidation"] }),
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-integration-plan"] }),
+      ]);
+    },
+  });
   const bootstrapClaimMutation = useMutation({
     mutationFn: () =>
       claimBootstrapLease({
@@ -793,6 +860,8 @@ export function App() {
     serviceDeploymentResult?.execution ?? bootstrapState?.run?.service_deployment;
   const identityExecution =
     identityHandoffResult?.execution ?? bootstrapState?.run?.identity_handoff;
+  const integrationExecution =
+    integrationValidationResult?.execution ?? bootstrapState?.run?.integration_validation;
   const artifactPhaseAvailable = Boolean(
     bootstrapState?.run &&
       bootstrapState.lease_held_by_current_actor &&
@@ -916,6 +985,29 @@ export function App() {
       bootstrapIdentityPlan.trust_plan_digest === bootstrapTrustPlan.trust_plan_digest &&
       bootstrapIdentityPlan.data_plan_digest === bootstrapDataPlan.data_plan_digest &&
       bootstrapIdentityPlan.service_plan_digest === bootstrapServicePlan.service_plan_digest,
+  );
+  const integrationPhaseAvailable = Boolean(
+    bootstrapState?.run &&
+      bootstrapState.lease_held_by_current_actor &&
+      bootstrapState.run.current_phase_id === "phase.integrations" &&
+      bootstrapState.run.integration_validation?.state !== "running" &&
+      bootstrapState.run.completed_phase_ids.includes("phase.identity") &&
+      bootstrapState.run.identity_handoff?.state === "completed" &&
+      bootstrapState.run.identity_handoff.validation_count === 5 &&
+      bootstrapState.run.identity_handoff.enterprise_authentication_validated &&
+      deploymentConfiguration?.state === "passed" &&
+      deploymentConfiguration.configuration_digest === bootstrapState.run.configuration_digest &&
+      bootstrapTrustPlan?.state === "passed" &&
+      bootstrapDataPlan?.state === "passed" &&
+      bootstrapServicePlan?.state === "passed" &&
+      bootstrapIdentityPlan?.state === "passed" &&
+      bootstrapState.run.identity_handoff.identity_plan_digest ===
+        bootstrapIdentityPlan.identity_plan_digest &&
+      bootstrapIntegrationPlan?.state === "passed" &&
+      bootstrapIntegrationPlan.configuration_digest ===
+        bootstrapState.run.configuration_digest &&
+      bootstrapIntegrationPlan.identity_plan_digest ===
+        bootstrapIdentityPlan.identity_plan_digest,
   );
   const retryAuditExportMutation = useMutation({
     mutationFn: retryAuditExport,
@@ -2612,6 +2704,182 @@ export function App() {
                             <p className="data-recovery-note">
                               No partial identity state was published. Correct the bounded failure and
                               retry under the active lease.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      {integrationPhaseAvailable &&
+                        bootstrapIntegrationPlan &&
+                        !integrationValidationPending && (
+                          <div className="data-initialization-action integration-validation-action">
+                            <div>
+                              <strong>Validate model gateway and core integrations</strong>
+                              <p>
+                                Reviews one local OpenAI-compatible model contract and {" "}
+                                {bootstrapIntegrationPlan.integrations.length} inactive integration
+                                registrations through {bootstrapIntegrationPlan.checks.length} {" "}
+                                synthetic checks. No endpoint is called or activated.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIntegrationValidationResult(null);
+                                setIntegrationValidationPending(true);
+                              }}
+                            >
+                              <Network size={14} /> Review integrations
+                            </button>
+                          </div>
+                        )}
+                      {integrationValidationPending &&
+                        integrationPhaseAvailable &&
+                        bootstrapIntegrationPlan && (
+                          <div
+                            className="data-initialization-confirmation integration-validation-confirmation"
+                            role="dialog"
+                          >
+                            <div>
+                              <strong>Confirm synthetic integration validation</strong>
+                              <p>
+                                Target {bootstrapIntegrationPlan.target_id} is {" "}
+                                {bootstrapIntegrationPlan.target_state}. This publishes one
+                                Atlas-owned validation document without resolving credentials or
+                                contacting any integration.
+                              </p>
+                            </div>
+                            <div className="identity-plan-summary integration-plan-summary">
+                              <div>
+                                <span>Model contract</span>
+                                <code>{bootstrapIntegrationPlan.model_endpoint.model_id}</code>
+                                <small>
+                                  {bootstrapIntegrationPlan.model_endpoint.context_limit.toLocaleString()}
+                                  -token context
+                                </small>
+                              </div>
+                              <div>
+                                <span>Core integrations</span>
+                                <strong>{bootstrapIntegrationPlan.integrations.length}</strong>
+                                <small>All inactive</small>
+                              </div>
+                              <div>
+                                <span>Mandatory checks</span>
+                                <strong>{bootstrapIntegrationPlan.checks.length}</strong>
+                                <small>All synthetic passes</small>
+                              </div>
+                              <div>
+                                <span>External operations</span>
+                                <strong>0</strong>
+                                <small>No network or secret access</small>
+                              </div>
+                            </div>
+                            <div className="identity-mapping-list integration-registration-list">
+                              {bootstrapIntegrationPlan.integrations.map((integration) => (
+                                <div key={integration.integration_id}>
+                                  <div>
+                                    <code>{integration.integration_id}</code>
+                                    <small>{integration.integration_type}</small>
+                                  </div>
+                                  <strong>{integration.activation_state}</strong>
+                                </div>
+                              ))}
+                            </div>
+                            <label>
+                              Integration-validation justification
+                              <input
+                                value={integrationValidationJustification}
+                                maxLength={500}
+                                onChange={(event) =>
+                                  setIntegrationValidationJustification(event.target.value)
+                                }
+                                placeholder="Record the reviewed reason for synthetic validation"
+                              />
+                            </label>
+                            {integrationValidationMutation.isError && (
+                              <div className="impact-message impact-error" role="alert">
+                                <AlertTriangle size={16} /> Integration state was not validated.
+                                Refresh the governed state and exact plan before retrying.
+                              </div>
+                            )}
+                            <div className="data-initialization-confirm-actions">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIntegrationValidationPending(false);
+                                  setIntegrationValidationJustification("");
+                                }}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                className="data-initialization-confirm"
+                                type="button"
+                                disabled={
+                                  integrationValidationJustification.trim().length < 12 ||
+                                  integrationValidationMutation.isPending
+                                }
+                                onClick={() => integrationValidationMutation.mutate()}
+                              >
+                                <Network size={14} /> Confirm integrations
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      {integrationExecution && (
+                        <div
+                          className={`data-initialization-result integration-validation-result ${integrationExecution.state}`}
+                        >
+                          <div className="data-initialization-result-heading">
+                            {integrationExecution.state === "completed" ? (
+                              <CheckCircle2 size={18} />
+                            ) : (
+                              <AlertTriangle size={18} />
+                            )}
+                            <div>
+                              <strong>
+                                Integration validation {integrationExecution.state}
+                              </strong>
+                              <code>{integrationExecution.result_code}</code>
+                            </div>
+                            <span className={`state-badge ${integrationExecution.state}`}>
+                              {integrationExecution.state}
+                            </span>
+                          </div>
+                          <div className="data-initialization-summary">
+                            <div>
+                              <span>Model checks</span>
+                              <strong>{integrationExecution.model_check_count}</strong>
+                            </div>
+                            <div>
+                              <span>Integration checks</span>
+                              <strong>{integrationExecution.integration_check_count}</strong>
+                            </div>
+                            <div>
+                              <span>Mandatory passes</span>
+                              <strong>{integrationExecution.mandatory_pass_count}</strong>
+                            </div>
+                            <div>
+                              <span>External operations</span>
+                              <strong>
+                                {integrationExecution.activation_count +
+                                  integrationExecution.network_request_count +
+                                  integrationExecution.secret_resolution_count}
+                              </strong>
+                            </div>
+                          </div>
+                          {integrationExecution.evidence.map((item) => (
+                            <div className="service-state-evidence" key={item.evidence_id}>
+                              <div>
+                                <code>{item.evidence_id}</code>
+                                <span>{item.disposition}</span>
+                              </div>
+                              <code>{item.sha256.slice(0, 20)}...</code>
+                            </div>
+                          ))}
+                          {integrationExecution.state === "failed" && (
+                            <p className="data-recovery-note">
+                              No partial integration state was published. Correct the bounded failure
+                              and retry under the active lease.
                             </p>
                           )}
                         </div>

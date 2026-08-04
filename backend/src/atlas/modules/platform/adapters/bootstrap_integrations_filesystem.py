@@ -1,0 +1,163 @@
+from __future__ import annotations
+
+import os
+import shutil
+from hashlib import sha256
+from pathlib import Path
+
+from atlas.modules.platform.application.bootstrap_integration_ports import (
+    BootstrapIntegrationError,
+)
+from atlas.modules.platform.domain.bootstrap_integration_validation import (
+    BootstrapIntegrationPlan,
+    IntegrationStateDisposition,
+    IntegrationStateEvidence,
+    IntegrationTargetState,
+    IntegrationValidationReceipt,
+)
+
+INTEGRATION_STATE_FILE_NAME = "atlas-integration-state.json"
+INTEGRATION_STATE_EVIDENCE_ID = "integrations.validation-state"
+
+
+class FilesystemBootstrapIntegrationTarget:
+    def __init__(self, *, root: Path, max_state_bytes: int) -> None:
+        self._root = root.resolve()
+        self._max_state_bytes = max_state_bytes
+
+    async def inspect(self, *, plan: BootstrapIntegrationPlan) -> IntegrationTargetState:
+        destination = self._target_root(plan)
+        if not destination.exists() and not destination.is_symlink():
+            return IntegrationTargetState.EMPTY
+        if destination.is_symlink() or not destination.is_dir():
+            raise BootstrapIntegrationError("bootstrap_integration_unknown_target")
+        entries = tuple(destination.rglob("*"))
+        if any(item.is_symlink() for item in entries):
+            raise BootstrapIntegrationError("bootstrap_integration_path_unsafe")
+        files = tuple(item for item in entries if item.is_file())
+        if len(files) != 1 or files[0].name != INTEGRATION_STATE_FILE_NAME:
+            raise BootstrapIntegrationError("bootstrap_integration_unknown_target")
+        if files[0].read_bytes() != self._state_document(plan):
+            raise BootstrapIntegrationError("bootstrap_integration_existing_conflict")
+        return IntegrationTargetState.REUSABLE
+
+    async def publish(
+        self, *, execution_id: str, plan: BootstrapIntegrationPlan, state_document: bytes
+    ) -> IntegrationValidationReceipt:
+        expected = self._state_document(plan)
+        if (
+            not state_document
+            or state_document != expected
+            or len(expected) > self._max_state_bytes
+        ):
+            raise BootstrapIntegrationError("bootstrap_integration_state_invalid")
+        attempt = self._root / ".staging" / execution_id
+        destination = self._target_root(plan)
+        self._prepare_attempt(attempt)
+        try:
+            output = attempt / INTEGRATION_STATE_FILE_NAME
+            with output.open("xb") as target:
+                target.write(expected)
+                target.flush()
+                os.fsync(target.fileno())
+            output.chmod(0o640)
+            disposition = (
+                IntegrationStateDisposition.PUBLISHED
+                if self._publish_attempt(attempt, destination, expected)
+                else IntegrationStateDisposition.REUSED
+            )
+            return IntegrationValidationReceipt(
+                checks=plan.checks,
+                evidence=(
+                    IntegrationStateEvidence(
+                        evidence_id=INTEGRATION_STATE_EVIDENCE_ID,
+                        sha256=sha256(expected).hexdigest(),
+                        size_bytes=len(expected),
+                        disposition=disposition,
+                    ),
+                ),
+            )
+        except BootstrapIntegrationError:
+            self._cleanup(attempt)
+            raise
+        except (OSError, ValueError) as error:
+            self._cleanup(attempt)
+            raise BootstrapIntegrationError("bootstrap_integration_validation_failed") from error
+
+    async def cleanup_attempt(self, execution_id: str) -> None:
+        self._cleanup(self._root / ".staging" / execution_id)
+
+    def _prepare_attempt(self, attempt: Path) -> None:
+        self._mkdir(self._root)
+        self._mkdir(self._root / ".staging")
+        if attempt.exists() or attempt.is_symlink():
+            raise BootstrapIntegrationError("bootstrap_integration_attempt_conflict")
+        attempt.mkdir()
+
+    def _publish_attempt(self, attempt: Path, destination: Path, expected: bytes) -> bool:
+        self._mkdir(destination.parent)
+        if destination.exists() or destination.is_symlink():
+            if self._verify(destination, expected):
+                self._cleanup(attempt)
+                return False
+            raise BootstrapIntegrationError("bootstrap_integration_existing_conflict")
+        try:
+            attempt.rename(destination)
+            return True
+        except FileExistsError:
+            if self._verify(destination, expected):
+                self._cleanup(attempt)
+                return False
+            raise BootstrapIntegrationError("bootstrap_integration_existing_conflict") from None
+
+    @staticmethod
+    def _verify(destination: Path, expected: bytes) -> bool:
+        if destination.is_symlink() or not destination.is_dir():
+            raise BootstrapIntegrationError("bootstrap_integration_existing_conflict")
+        entries = tuple(destination.rglob("*"))
+        if any(item.is_symlink() for item in entries):
+            raise BootstrapIntegrationError("bootstrap_integration_path_unsafe")
+        files = tuple(item for item in entries if item.is_file())
+        if len(files) != 1 or files[0].name != INTEGRATION_STATE_FILE_NAME:
+            raise BootstrapIntegrationError("bootstrap_integration_existing_conflict")
+        return files[0].read_bytes() == expected
+
+    def _cleanup(self, attempt: Path) -> None:
+        try:
+            attempt.relative_to(self._root / ".staging")
+        except ValueError as error:
+            raise BootstrapIntegrationError("bootstrap_integration_path_unsafe") from error
+        if attempt.is_symlink():
+            raise BootstrapIntegrationError("bootstrap_integration_path_unsafe")
+        if attempt.exists():
+            shutil.rmtree(attempt)
+
+    @staticmethod
+    def _mkdir(path: Path) -> None:
+        for candidate in (path, *path.parents):
+            if candidate.is_symlink():
+                raise BootstrapIntegrationError("bootstrap_integration_path_unsafe")
+        path.mkdir(parents=True, exist_ok=True)
+        if path.is_symlink() or not path.is_dir():
+            raise BootstrapIntegrationError("bootstrap_integration_path_unsafe")
+
+    def _target_root(self, plan: BootstrapIntegrationPlan) -> Path:
+        return (
+            self._root
+            / "deployments"
+            / plan.organization_id
+            / plan.environment_id
+            / plan.site_id
+            / plan.release_id
+            / "integration-plans"
+            / plan.integration_plan_digest
+            / plan.target_id
+        )
+
+    @staticmethod
+    def _state_document(plan: BootstrapIntegrationPlan) -> bytes:
+        from atlas.modules.platform.application.bootstrap_integration_validation import (
+            BootstrapIntegrationPlanService,
+        )
+
+        return BootstrapIntegrationPlanService.render(plan)

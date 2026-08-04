@@ -32,6 +32,7 @@ export type BootstrapState = {
     data_initialization: BootstrapDataExecution | null;
     service_deployment: BootstrapServiceExecution | null;
     identity_handoff: BootstrapIdentityExecution | null;
+    integration_validation: BootstrapIntegrationExecution | null;
   };
   durable: boolean;
   lease_available: boolean;
@@ -192,6 +193,44 @@ export type BootstrapIdentityExecution = {
   bootstrap_material_sealed: boolean;
   pilot_identity_verified: boolean;
   enterprise_authentication_validated: boolean;
+  evidence: Array<{
+    evidence_id: string;
+    sha256: string;
+    size_bytes: number;
+    disposition: "published" | "reused";
+  }>;
+};
+
+export type BootstrapIntegrationExecution = {
+  execution_id: string;
+  phase_id: "phase.integrations";
+  release_id: string;
+  profile: string;
+  configuration_digest: string;
+  trust_plan_digest: string;
+  data_plan_digest: string;
+  service_plan_digest: string;
+  identity_plan_digest: string;
+  integration_schema_version: "atlas.bootstrap-integration-plan.v1";
+  integration_plan_digest: string;
+  target_id: string;
+  state: "running" | "completed" | "failed";
+  result_code: string;
+  started_at: string;
+  completed_at: string | null;
+  model_check_count: number;
+  integration_check_count: number;
+  mandatory_pass_count: number;
+  activation_count: number;
+  network_request_count: number;
+  secret_resolution_count: number;
+  checks: Array<{
+    check_id: string;
+    subject_id: string;
+    state: "passed" | "not_applicable";
+    result_code: string;
+    mandatory: boolean;
+  }>;
   evidence: Array<{
     evidence_id: string;
     sha256: string;
@@ -448,6 +487,60 @@ export function isIdentityExecution(value: unknown): value is BootstrapIdentityE
   );
 }
 
+export function isIntegrationExecution(value: unknown): value is BootstrapIntegrationExecution {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.execution_id === "string" &&
+    candidate.phase_id === "phase.integrations" &&
+    typeof candidate.release_id === "string" &&
+    typeof candidate.profile === "string" &&
+    typeof candidate.configuration_digest === "string" &&
+    typeof candidate.trust_plan_digest === "string" &&
+    typeof candidate.data_plan_digest === "string" &&
+    typeof candidate.service_plan_digest === "string" &&
+    typeof candidate.identity_plan_digest === "string" &&
+    candidate.integration_schema_version === "atlas.bootstrap-integration-plan.v1" &&
+    typeof candidate.integration_plan_digest === "string" &&
+    typeof candidate.target_id === "string" &&
+    (candidate.state === "running" ||
+      candidate.state === "completed" ||
+      candidate.state === "failed") &&
+    typeof candidate.result_code === "string" &&
+    typeof candidate.started_at === "string" &&
+    (candidate.completed_at === null || typeof candidate.completed_at === "string") &&
+    typeof candidate.model_check_count === "number" &&
+    typeof candidate.integration_check_count === "number" &&
+    typeof candidate.mandatory_pass_count === "number" &&
+    candidate.activation_count === 0 &&
+    candidate.network_request_count === 0 &&
+    candidate.secret_resolution_count === 0 &&
+    Array.isArray(candidate.checks) &&
+    candidate.checks.every((item) => {
+      if (typeof item !== "object" || item === null) return false;
+      const check = item as Record<string, unknown>;
+      return (
+        typeof check.check_id === "string" &&
+        typeof check.subject_id === "string" &&
+        (check.state === "passed" || check.state === "not_applicable") &&
+        typeof check.result_code === "string" &&
+        typeof check.mandatory === "boolean"
+      );
+    }) &&
+    Array.isArray(candidate.evidence) &&
+    candidate.evidence.every((item) => {
+      if (typeof item !== "object" || item === null) return false;
+      const evidence = item as Record<string, unknown>;
+      return (
+        typeof evidence.evidence_id === "string" &&
+        typeof evidence.sha256 === "string" &&
+        typeof evidence.size_bytes === "number" &&
+        (evidence.disposition === "published" || evidence.disposition === "reused")
+      );
+    })
+  );
+}
+
 export function isBootstrapRun(value: unknown): value is NonNullable<BootstrapState["run"]> {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
@@ -485,7 +578,9 @@ export function isBootstrapRun(value: unknown): value is NonNullable<BootstrapSt
     (candidate.service_deployment === null ||
       isServiceExecution(candidate.service_deployment)) &&
     (candidate.identity_handoff === null ||
-      isIdentityExecution(candidate.identity_handoff))
+      isIdentityExecution(candidate.identity_handoff)) &&
+    (candidate.integration_validation === null ||
+      isIntegrationExecution(candidate.integration_validation))
   );
 }
 

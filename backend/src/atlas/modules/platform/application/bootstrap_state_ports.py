@@ -11,6 +11,9 @@ from atlas.modules.platform.domain.bootstrap_configuration_rendering import (
 )
 from atlas.modules.platform.domain.bootstrap_data_initialization import DataInitializationExecution
 from atlas.modules.platform.domain.bootstrap_identity_handoff import IdentityHandoffExecution
+from atlas.modules.platform.domain.bootstrap_integration_validation import (
+    IntegrationValidationExecution,
+)
 from atlas.modules.platform.domain.bootstrap_service_deployment import ServiceDeploymentExecution
 from atlas.modules.platform.domain.bootstrap_state import (
     BootstrapCheckpointState,
@@ -207,6 +210,32 @@ class BootstrapStateRepository(Protocol):
         *,
         run_id: str,
         execution: IdentityHandoffExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult: ...
+
+    async def begin_integration_validation(
+        self,
+        *,
+        run_id: str,
+        plan_digest: str,
+        resume_key: str,
+        execution: IntegrationValidationExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult: ...
+
+    async def finish_integration_validation(
+        self,
+        *,
+        run_id: str,
+        execution: IntegrationValidationExecution,
         lease_holder_id: str,
         expected_version: int,
         idempotency_key: str,

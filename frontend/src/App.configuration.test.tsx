@@ -345,6 +345,81 @@ const bootstrapIdentityPlan = {
   },
 };
 
+const bootstrapIntegrationPlan = {
+  data: {
+    schema_version: "atlas.bootstrap-integration-plan.v1",
+    release_id: "release.atlas.lab-0.1.0",
+    profile: "linux_lab",
+    organization_id: "organization.enterprise",
+    environment_id: "environment.test",
+    site_id: "site.local",
+    configuration_digest: "b".repeat(64),
+    trust_plan_digest: "f".repeat(64),
+    data_plan_digest: "5".repeat(64),
+    service_plan_digest: "d".repeat(64),
+    identity_plan_digest: "9".repeat(64),
+    integration_plan_digest: "7".repeat(64),
+    target_id: "target.atlas-synthetic-integrations.primary",
+    target_kind: "target-kind.synthetic-file-integrations",
+    target_state: "empty",
+    model_endpoint: {
+      endpoint_id: "endpoint.model-gateway.local",
+      owner_id: "owner.project-atlas",
+      provider_type: "provider-type.openai-compatible",
+      service_reference_id: "service-reference.model-gateway.local",
+      credential_reference_id: "secret.model.local-reader",
+      model_id: "model.atlas-local.synthetic",
+      context_limit: 32768,
+      output_limit: 4096,
+      data_classification_ceiling: "classification.internal",
+      residency_boundary_id: "residency.local",
+      timeout_seconds: 30,
+      max_retries: 1,
+      rate_limit_per_minute: 60,
+      concurrency_limit: 4,
+      telemetry_classification: "classification.internal",
+      approved_task_class_ids: ["task-class.infrastructure-analysis"],
+    },
+    integrations: [
+      ["integration.model-gateway.local", "integration-type.model-gateway"],
+      ["integration.enterprise-identity.metadata", "integration-type.enterprise-identity"],
+      ["integration.security-export.metadata", "integration-type.security-export"],
+      ["integration.storage-connector.readonly", "integration-type.storage-connector"],
+    ].map(([integrationId, integrationType]) => ({
+      integration_id: integrationId,
+      integration_type: integrationType,
+      owner_id: "owner.project-atlas",
+      purpose_id: "purpose.bootstrap-validation",
+      classification: "classification.internal",
+      endpoint_reference_id: `endpoint-reference.${integrationId}`,
+      trust_reference_id: "trust-reference.atlas-ca",
+      credential_reference_id: null,
+      scope_id: "scope.readonly",
+      rate_limit_per_minute: 60,
+      validation_operation_id: `operation.${integrationId}.read`,
+      mapping_preview_id: `mapping-preview.${integrationId}`,
+      data_flow_id: `data-flow.${integrationId}`,
+      activation_state: "inactive",
+    })),
+    checks: Array.from({ length: 12 }, (_, index) => ({
+      check_id: `check.integration.${index + 1}`,
+      subject_id: index < 8 ? "endpoint.model-gateway.local" : `integration.subject.${index}`,
+      state: "passed",
+      result_code: `bootstrap.integration-check.${index + 1}.passed`,
+      mandatory: true,
+    })),
+    state: "passed",
+    result_code: "bootstrap.integration-plan.passed",
+    generated_at: "2026-08-04T16:07:00Z",
+    actual_model_request_authorized: false,
+    network_request_authorized: false,
+    secret_resolution_authorized: false,
+    integration_activation_authorized: false,
+    connector_invocation_authorized: false,
+    infrastructure_mutation_authorized: false,
+  },
+};
+
 const bootstrapState = {
   data: {
     run: {
@@ -380,6 +455,7 @@ const bootstrapState = {
       data_initialization: null,
       service_deployment: null,
       identity_handoff: null,
+      integration_validation: null,
     },
     durable: true,
     lease_available: false,
@@ -1016,6 +1092,7 @@ describe("deployment configuration preview", () => {
           data_initialization: null,
           service_deployment: null,
           identity_handoff: null,
+          integration_validation: null,
           updated_at: "2026-08-04T16:02:01Z",
         },
       },
@@ -1224,6 +1301,7 @@ describe("deployment configuration preview", () => {
           data_initialization: null,
           service_deployment: null,
           identity_handoff: null,
+          integration_validation: null,
           updated_at: "2026-08-04T16:03:01Z",
         },
       },
@@ -1313,6 +1391,7 @@ describe("deployment configuration preview", () => {
                   data_initialization: execution,
                   service_deployment: null,
                   identity_handoff: null,
+                  integration_validation: null,
                   updated_at: "2026-08-04T16:04:01Z",
                 },
                 execution,
@@ -1420,6 +1499,7 @@ describe("deployment configuration preview", () => {
           data_initialization: dataExecution,
           service_deployment: null,
           identity_handoff: null,
+          integration_validation: null,
           updated_at: "2026-08-04T16:04:01Z",
         },
       },
@@ -1522,6 +1602,7 @@ describe("deployment configuration preview", () => {
                   current_phase_id: "phase.identity",
                   service_deployment: execution,
                   identity_handoff: null,
+                  integration_validation: null,
                   updated_at: "2026-08-04T16:05:01Z",
                 },
                 execution,
@@ -1645,6 +1726,7 @@ describe("deployment configuration preview", () => {
           current_phase_id: "phase.identity",
           service_deployment: serviceExecution,
           identity_handoff: null,
+          integration_validation: null,
           updated_at: "2026-08-04T16:05:01Z",
         },
       },
@@ -1743,6 +1825,7 @@ describe("deployment configuration preview", () => {
                   ],
                   current_phase_id: "phase.integrations",
                   identity_handoff: execution,
+                  integration_validation: null,
                   updated_at: "2026-08-04T16:06:01Z",
                 },
                 execution,
@@ -1790,6 +1873,242 @@ describe("deployment configuration preview", () => {
     expect(requests[0]?.idempotencyKey).toBe("bootstrap-identity.11.identity-request-001");
     expect(
       screen.queryByRole("button", { name: /set password|create account|activate provider|issue token/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("validates synthetic integrations without network, secret, or activation controls", async () => {
+    vi.stubGlobal("crypto", { randomUUID: () => "integration-request-001" });
+    const identityExecution = {
+      execution_id: "phase-execution.ui-identity-complete",
+      phase_id: "phase.identity",
+      release_id: "release.atlas.lab-0.1.0",
+      profile: "linux_lab",
+      configuration_digest: "b".repeat(64),
+      trust_plan_digest: "f".repeat(64),
+      data_plan_digest: "5".repeat(64),
+      service_plan_digest: "d".repeat(64),
+      identity_schema_version: "atlas.bootstrap-identity-plan.v1",
+      identity_plan_digest: "9".repeat(64),
+      target_id: "target.atlas-synthetic-identity.primary",
+      state: "completed",
+      result_code: "bootstrap.identity.completed",
+      started_at: "2026-08-04T16:06:00Z",
+      completed_at: "2026-08-04T16:06:01Z",
+      group_mapping_count: 2,
+      validation_count: 5,
+      credential_replacement_required: true,
+      recovery_identity_verified: true,
+      bootstrap_material_sealed: true,
+      pilot_identity_verified: true,
+      enterprise_authentication_validated: true,
+      evidence: [
+        {
+          evidence_id: "identity.handoff-state",
+          sha256: "8".repeat(64),
+          size_bytes: 1700,
+          disposition: "published",
+        },
+      ],
+    };
+    const integrationState = {
+      data: {
+        ...bootstrapState.data,
+        run: {
+          ...bootstrapState.data.run,
+          version: 13,
+          phase_ids: [
+            "phase.acquire",
+            "phase.configure",
+            "phase.trust",
+            "phase.data",
+            "phase.services",
+            "phase.identity",
+            "phase.integrations",
+            "phase.verify",
+            "phase.handoff",
+          ],
+          checkpoints: [
+            ...[
+              "phase.acquire",
+              "phase.configure",
+              "phase.trust",
+              "phase.data",
+              "phase.services",
+              "phase.identity",
+            ].map((phaseId) => ({
+              phase_id: phaseId,
+              state: "completed",
+              safe_output_references: [`result.${phaseId.slice(6)}.verified`],
+              recorded_at: "2026-08-04T16:06:01Z",
+            })),
+          ],
+          completed_phase_ids: [
+            "phase.acquire",
+            "phase.configure",
+            "phase.trust",
+            "phase.data",
+            "phase.services",
+            "phase.identity",
+          ],
+          current_phase_id: "phase.integrations",
+          identity_handoff: identityExecution,
+          integration_validation: null,
+          updated_at: "2026-08-04T16:06:01Z",
+        },
+      },
+    };
+    const requests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) {
+        return Promise.resolve(new Response(JSON.stringify(identity), { status: 200 }));
+      }
+      if (url.includes("/release-preflight")) {
+        return Promise.resolve(new Response(JSON.stringify(preflight), { status: 200 }));
+      }
+      if (url.includes("/deployment-configuration/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(configurationPreview()), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-trust-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapTrustPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-data-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapDataPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-service-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapServicePlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-identity-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapIdentityPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-integration-plan/preview")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(bootstrapIntegrationPlan), { status: 200 }),
+        );
+      }
+      if (url.includes("/bootstrap-plan")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-state/current")) {
+        return Promise.resolve(new Response(JSON.stringify(integrationState), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-invalidation/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapInvalidation), { status: 200 }));
+      }
+      if (url.includes("/phases/integrations")) {
+        const headers = new Headers(init?.headers);
+        requests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        const execution = {
+          execution_id: "phase-execution.ui-integrations-001",
+          phase_id: "phase.integrations",
+          release_id: "release.atlas.lab-0.1.0",
+          profile: "linux_lab",
+          configuration_digest: "b".repeat(64),
+          trust_plan_digest: "f".repeat(64),
+          data_plan_digest: "5".repeat(64),
+          service_plan_digest: "d".repeat(64),
+          identity_plan_digest: "9".repeat(64),
+          integration_schema_version: "atlas.bootstrap-integration-plan.v1",
+          integration_plan_digest: "7".repeat(64),
+          target_id: "target.atlas-synthetic-integrations.primary",
+          state: "completed",
+          result_code: "bootstrap.integrations.completed",
+          started_at: "2026-08-04T16:07:00Z",
+          completed_at: "2026-08-04T16:07:01Z",
+          model_check_count: 8,
+          integration_check_count: 4,
+          mandatory_pass_count: 12,
+          activation_count: 0,
+          network_request_count: 0,
+          secret_resolution_count: 0,
+          checks: bootstrapIntegrationPlan.data.checks,
+          evidence: [
+            {
+              evidence_id: "integrations.validation-state",
+              sha256: "6".repeat(64),
+              size_bytes: 2400,
+              disposition: "published",
+            },
+          ],
+        };
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                run: {
+                  ...integrationState.data.run,
+                  version: 15,
+                  checkpoints: [
+                    ...integrationState.data.run.checkpoints,
+                    {
+                      phase_id: "phase.integrations",
+                      state: "completed",
+                      safe_output_references: [`result.integrations.${"7".repeat(32)}`],
+                      recorded_at: "2026-08-04T16:07:01Z",
+                    },
+                  ],
+                  completed_phase_ids: [
+                    ...integrationState.data.run.completed_phase_ids,
+                    "phase.integrations",
+                  ],
+                  current_phase_id: "phase.verify",
+                  integration_validation: execution,
+                  updated_at: "2026-08-04T16:07:01Z",
+                },
+                execution,
+                replayed: false,
+                synthetic_state_mutation_performed: true,
+                actual_model_request_performed: false,
+                network_request_performed: false,
+                secret_resolution_performed: false,
+                integration_activation_performed: false,
+                connector_invocation_performed: false,
+                knowledge_ingestion_performed: false,
+                infrastructure_mutation_performed: false,
+                ai_advice_generated: false,
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Review integrations" }));
+    expect(screen.getByText("Confirm synthetic integration validation")).toBeVisible();
+    expect(screen.getAllByText("inactive")).toHaveLength(4);
+    expect(screen.getByText("No network or secret access")).toBeVisible();
+    const confirm = screen.getByRole("button", { name: "Confirm integrations" });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Integration-validation justification"), {
+      target: { value: "Validate the reviewed offline integration contracts for this lab run." },
+    });
+    fireEvent.click(confirm);
+
+    expect(await screen.findByText("Integration validation completed")).toBeVisible();
+    expect(screen.getByText("integrations.validation-state")).toBeVisible();
+    expect(screen.getByText("Mandatory passes")).toBeVisible();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.body).toContain('"integration_plan_digest":"' + "7".repeat(64));
+    expect(requests[0]?.body).toContain('"expected_target_state":"empty"');
+    expect(requests[0]?.idempotencyKey).toBe(
+      "bootstrap-integrations.13.integration-request-001",
+    );
+    expect(
+      screen.queryByRole("button", {
+        name: /activate integration|resolve secret|send model request/i,
+      }),
     ).not.toBeInTheDocument();
   });
 });

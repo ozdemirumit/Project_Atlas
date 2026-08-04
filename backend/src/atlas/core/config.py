@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     bootstrap_identity_max_state_bytes: int = Field(
         default=4 * 1024 * 1024, ge=1024, le=64 * 1024 * 1024
     )
+    bootstrap_integration_root: Path = Path(".atlas/bootstrap-integrations")
+    bootstrap_integration_max_state_bytes: int = Field(
+        default=4 * 1024 * 1024, ge=1024, le=64 * 1024 * 1024
+    )
     cors_origins: tuple[AnyHttpUrl, ...] = (AnyHttpUrl("http://localhost:5173"),)
     development_identity_enabled: bool = False
     development_subject_id: str = "subject.development.operator"
