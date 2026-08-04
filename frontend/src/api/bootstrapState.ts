@@ -31,6 +31,7 @@ export type BootstrapState = {
     trust_provisioning: BootstrapTrustExecution | null;
     data_initialization: BootstrapDataExecution | null;
     service_deployment: BootstrapServiceExecution | null;
+    identity_handoff: BootstrapIdentityExecution | null;
   };
   durable: boolean;
   lease_available: boolean;
@@ -160,6 +161,37 @@ export type BootstrapServiceExecution = {
     readiness_passed: boolean;
     liveness_passed: boolean;
   }>;
+  evidence: Array<{
+    evidence_id: string;
+    sha256: string;
+    size_bytes: number;
+    disposition: "published" | "reused";
+  }>;
+};
+
+export type BootstrapIdentityExecution = {
+  execution_id: string;
+  phase_id: "phase.identity";
+  release_id: string;
+  profile: string;
+  configuration_digest: string;
+  trust_plan_digest: string;
+  data_plan_digest: string;
+  service_plan_digest: string;
+  identity_schema_version: "atlas.bootstrap-identity-plan.v1";
+  identity_plan_digest: string;
+  target_id: string;
+  state: "running" | "completed" | "failed";
+  result_code: string;
+  started_at: string;
+  completed_at: string | null;
+  group_mapping_count: number;
+  validation_count: number;
+  credential_replacement_required: boolean;
+  recovery_identity_verified: boolean;
+  bootstrap_material_sealed: boolean;
+  pilot_identity_verified: boolean;
+  enterprise_authentication_validated: boolean;
   evidence: Array<{
     evidence_id: string;
     sha256: string;
@@ -374,6 +406,48 @@ export function isServiceExecution(value: unknown): value is BootstrapServiceExe
   );
 }
 
+export function isIdentityExecution(value: unknown): value is BootstrapIdentityExecution {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.execution_id === "string" &&
+    candidate.phase_id === "phase.identity" &&
+    typeof candidate.release_id === "string" &&
+    typeof candidate.profile === "string" &&
+    typeof candidate.configuration_digest === "string" &&
+    typeof candidate.trust_plan_digest === "string" &&
+    typeof candidate.data_plan_digest === "string" &&
+    typeof candidate.service_plan_digest === "string" &&
+    candidate.identity_schema_version === "atlas.bootstrap-identity-plan.v1" &&
+    typeof candidate.identity_plan_digest === "string" &&
+    typeof candidate.target_id === "string" &&
+    (candidate.state === "running" ||
+      candidate.state === "completed" ||
+      candidate.state === "failed") &&
+    typeof candidate.result_code === "string" &&
+    typeof candidate.started_at === "string" &&
+    (candidate.completed_at === null || typeof candidate.completed_at === "string") &&
+    typeof candidate.group_mapping_count === "number" &&
+    typeof candidate.validation_count === "number" &&
+    typeof candidate.credential_replacement_required === "boolean" &&
+    typeof candidate.recovery_identity_verified === "boolean" &&
+    typeof candidate.bootstrap_material_sealed === "boolean" &&
+    typeof candidate.pilot_identity_verified === "boolean" &&
+    typeof candidate.enterprise_authentication_validated === "boolean" &&
+    Array.isArray(candidate.evidence) &&
+    candidate.evidence.every((item) => {
+      if (typeof item !== "object" || item === null) return false;
+      const evidence = item as Record<string, unknown>;
+      return (
+        typeof evidence.evidence_id === "string" &&
+        typeof evidence.sha256 === "string" &&
+        typeof evidence.size_bytes === "number" &&
+        (evidence.disposition === "published" || evidence.disposition === "reused")
+      );
+    })
+  );
+}
+
 export function isBootstrapRun(value: unknown): value is NonNullable<BootstrapState["run"]> {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
@@ -409,7 +483,9 @@ export function isBootstrapRun(value: unknown): value is NonNullable<BootstrapSt
     (candidate.data_initialization === null ||
       isDataExecution(candidate.data_initialization)) &&
     (candidate.service_deployment === null ||
-      isServiceExecution(candidate.service_deployment))
+      isServiceExecution(candidate.service_deployment)) &&
+    (candidate.identity_handoff === null ||
+      isIdentityExecution(candidate.identity_handoff))
   );
 }
 

@@ -12,6 +12,7 @@ from atlas.modules.platform.domain.bootstrap_configuration_rendering import (
     ConfigurationRenderingExecution,
 )
 from atlas.modules.platform.domain.bootstrap_data_initialization import DataInitializationExecution
+from atlas.modules.platform.domain.bootstrap_identity_handoff import IdentityHandoffExecution
 from atlas.modules.platform.domain.bootstrap_plan import DIGEST_PATTERN
 from atlas.modules.platform.domain.bootstrap_service_deployment import ServiceDeploymentExecution
 from atlas.modules.platform.domain.bootstrap_trust_provisioning import TrustProvisioningExecution
@@ -102,6 +103,7 @@ class BootstrapRunRecord:
     trust_provisioning: TrustProvisioningExecution | None = None
     data_initialization: DataInitializationExecution | None = None
     service_deployment: ServiceDeploymentExecution | None = None
+    identity_handoff: IdentityHandoffExecution | None = None
 
     def __post_init__(self) -> None:
         validate_stable_identifier(self.run_id, "run_id")
@@ -174,6 +176,15 @@ class BootstrapRunRecord:
                 or service_execution.phase_id not in self.identity.phase_ids
             ):
                 raise ValueError("service deployment does not match the bootstrap run")
+        if self.identity_handoff is not None:
+            identity_execution = self.identity_handoff
+            if (
+                identity_execution.release_id != self.identity.release_id
+                or identity_execution.profile is not self.identity.profile
+                or identity_execution.configuration_digest != self.identity.configuration_digest
+                or identity_execution.phase_id not in self.identity.phase_ids
+            ):
+                raise ValueError("identity handoff does not match the bootstrap run")
 
     def lease_is_active(self, at: datetime) -> bool:
         return self.lease_expires_at is not None and at < self.lease_expires_at
@@ -227,3 +238,4 @@ class BootstrapMutationResult:
     trust_provisioning: TrustProvisioningExecution | None = None
     data_initialization: DataInitializationExecution | None = None
     service_deployment: ServiceDeploymentExecution | None = None
+    identity_handoff: IdentityHandoffExecution | None = None

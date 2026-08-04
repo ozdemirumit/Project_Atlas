@@ -19,6 +19,7 @@ from atlas.api.routes import (
     bootstrap_artifacts,
     bootstrap_configuration,
     bootstrap_data,
+    bootstrap_identity,
     bootstrap_invalidation,
     bootstrap_plan,
     bootstrap_services,
@@ -99,6 +100,12 @@ from atlas.modules.platform.adapters.bootstrap_configuration_filesystem import (
 )
 from atlas.modules.platform.adapters.bootstrap_data_filesystem import FilesystemBootstrapDataTarget
 from atlas.modules.platform.adapters.bootstrap_data_synthetic import SyntheticBootstrapDataCatalog
+from atlas.modules.platform.adapters.bootstrap_identity_filesystem import (
+    FilesystemBootstrapIdentityTarget,
+)
+from atlas.modules.platform.adapters.bootstrap_identity_synthetic import (
+    SyntheticBootstrapIdentityCatalog,
+)
 from atlas.modules.platform.adapters.bootstrap_services_filesystem import (
     FilesystemBootstrapServiceTarget,
 )
@@ -131,6 +138,10 @@ from atlas.modules.platform.application.bootstrap_configuration_rendering import
 from atlas.modules.platform.application.bootstrap_data_initialization import (
     BootstrapDataInitializationService,
     BootstrapDataPlanService,
+)
+from atlas.modules.platform.application.bootstrap_identity_handoff import (
+    BootstrapIdentityHandoffService,
+    BootstrapIdentityPlanService,
 )
 from atlas.modules.platform.application.bootstrap_invalidation import BootstrapInvalidationService
 from atlas.modules.platform.application.bootstrap_plan import BootstrapPlanService
@@ -199,6 +210,8 @@ def create_app(
     bootstrap_data_initialization_service: BootstrapDataInitializationService | None = None,
     bootstrap_service_plan_service: BootstrapServicePlanService | None = None,
     bootstrap_service_deployment_service: BootstrapServiceDeploymentService | None = None,
+    bootstrap_identity_plan_service: BootstrapIdentityPlanService | None = None,
+    bootstrap_identity_handoff_service: BootstrapIdentityHandoffService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -400,6 +413,31 @@ def create_app(
             site_id="site.local",
         )
     )
+    resolved_bootstrap_identity_target = FilesystemBootstrapIdentityTarget(
+        root=resolved_settings.bootstrap_identity_root,
+        max_state_bytes=resolved_settings.bootstrap_identity_max_state_bytes,
+    )
+    resolved_bootstrap_identity_plan_service = (
+        bootstrap_identity_plan_service
+        or BootstrapIdentityPlanService(
+            catalog=SyntheticBootstrapIdentityCatalog(),
+            target=resolved_bootstrap_identity_target,
+            service_plan_service=resolved_bootstrap_service_plan_service,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
+        )
+    )
+    resolved_bootstrap_identity_handoff_service = (
+        bootstrap_identity_handoff_service
+        or BootstrapIdentityHandoffService(
+            repository=resolved_bootstrap_state_service.repository,
+            plan_service=resolved_bootstrap_identity_plan_service,
+            target=resolved_bootstrap_identity_target,
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
+        )
+    )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -548,6 +586,8 @@ def create_app(
         app.state.bootstrap_service_deployment_service = (
             resolved_bootstrap_service_deployment_service
         )
+        app.state.bootstrap_identity_plan_service = resolved_bootstrap_identity_plan_service
+        app.state.bootstrap_identity_handoff_service = resolved_bootstrap_identity_handoff_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -605,6 +645,7 @@ def create_app(
     app.include_router(bootstrap_trust.router, prefix="/api/v1")
     app.include_router(bootstrap_data.router, prefix="/api/v1")
     app.include_router(bootstrap_services.router, prefix="/api/v1")
+    app.include_router(bootstrap_identity.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
     app.include_router(health_checks.router, prefix="/api/v1")

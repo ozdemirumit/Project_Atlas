@@ -67,6 +67,11 @@ import {
   type BootstrapServiceDeploymentResult,
 } from "./api/bootstrapServices";
 import {
+  handoffBootstrapIdentity,
+  previewBootstrapIdentityPlan,
+  type BootstrapIdentityHandoffResult,
+} from "./api/bootstrapIdentity";
+import {
   renderBootstrapConfiguration,
   type BootstrapConfigurationRenderingResult,
 } from "./api/bootstrapConfigurationRendering";
@@ -298,6 +303,10 @@ export function App() {
   const [serviceDeploymentPending, setServiceDeploymentPending] = useState(false);
   const [serviceDeploymentResult, setServiceDeploymentResult] =
     useState<BootstrapServiceDeploymentResult | null>(null);
+  const [identityHandoffJustification, setIdentityHandoffJustification] = useState("");
+  const [identityHandoffPending, setIdentityHandoffPending] = useState(false);
+  const [identityHandoffResult, setIdentityHandoffResult] =
+    useState<BootstrapIdentityHandoffResult | null>(null);
   const [bootstrapClaimJustification, setBootstrapClaimJustification] = useState("");
   const [bootstrapClaimPending, setBootstrapClaimPending] = useState(false);
   const [bootstrapClaimResult, setBootstrapClaimResult] =
@@ -364,6 +373,9 @@ export function App() {
       setServiceDeploymentJustification("");
       setServiceDeploymentPending(false);
       setServiceDeploymentResult(null);
+      setIdentityHandoffJustification("");
+      setIdentityHandoffPending(false);
+      setIdentityHandoffResult(null);
       setBootstrapClaimJustification("");
       setBootstrapClaimPending(false);
       setBootstrapClaimResult(null);
@@ -550,6 +562,33 @@ export function App() {
     retry: false,
   });
   const bootstrapServicePlan = bootstrapServicePlanQuery.data?.data;
+  const bootstrapIdentityPlanQuery = useQuery({
+    queryKey: [
+      "bootstrap-identity-plan",
+      deploymentConfiguration?.configuration_digest,
+      bootstrapTrustPlan?.trust_plan_digest,
+      bootstrapDataPlan?.data_plan_digest,
+      bootstrapServicePlan?.service_plan_digest,
+      identity?.scope,
+    ],
+    queryFn: () =>
+      previewBootstrapIdentityPlan(
+        deploymentConfiguration!,
+        bootstrapTrustPlan!,
+        bootstrapDataPlan!,
+        bootstrapServicePlan!,
+        identity!.scope,
+      ),
+    enabled: Boolean(
+      identity &&
+        deploymentConfiguration &&
+        bootstrapTrustPlan &&
+        bootstrapDataPlan &&
+        bootstrapServicePlan,
+    ),
+    retry: false,
+  });
+  const bootstrapIdentityPlan = bootstrapIdentityPlanQuery.data?.data;
   const bootstrapPlanQuery = useQuery({
     queryKey: [
       "bootstrap-plan",
@@ -700,6 +739,29 @@ export function App() {
       ]);
     },
   });
+  const identityHandoffMutation = useMutation({
+    mutationFn: () =>
+      handoffBootstrapIdentity({
+        state: bootstrapState!,
+        configuration: deploymentConfiguration!,
+        trustPlan: bootstrapTrustPlan!,
+        dataPlan: bootstrapDataPlan!,
+        servicePlan: bootstrapServicePlan!,
+        identityPlan: bootstrapIdentityPlan!,
+        scope: identity!.scope,
+        justification: identityHandoffJustification.trim(),
+      }),
+    onSuccess: async (response) => {
+      setIdentityHandoffResult(response.data);
+      setIdentityHandoffPending(false);
+      setIdentityHandoffJustification("");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-state"] }),
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-invalidation"] }),
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-identity-plan"] }),
+      ]);
+    },
+  });
   const bootstrapClaimMutation = useMutation({
     mutationFn: () =>
       claimBootstrapLease({
@@ -729,6 +791,8 @@ export function App() {
     dataInitializationResult?.execution ?? bootstrapState?.run?.data_initialization;
   const serviceExecution =
     serviceDeploymentResult?.execution ?? bootstrapState?.run?.service_deployment;
+  const identityExecution =
+    identityHandoffResult?.execution ?? bootstrapState?.run?.identity_handoff;
   const artifactPhaseAvailable = Boolean(
     bootstrapState?.run &&
       bootstrapState.lease_held_by_current_actor &&
@@ -825,6 +889,33 @@ export function App() {
       bootstrapServicePlan.configuration_digest === bootstrapState.run.configuration_digest &&
       bootstrapServicePlan.trust_plan_digest === bootstrapTrustPlan.trust_plan_digest &&
       bootstrapServicePlan.data_plan_digest === bootstrapDataPlan.data_plan_digest,
+  );
+  const identityPhaseAvailable = Boolean(
+    bootstrapState?.run &&
+      bootstrapState.lease_held_by_current_actor &&
+      bootstrapState.run.current_phase_id === "phase.identity" &&
+      bootstrapState.run.identity_handoff?.state !== "running" &&
+      bootstrapState.run.completed_phase_ids.includes("phase.services") &&
+      bootstrapState.run.service_deployment?.state === "completed" &&
+      bootstrapState.run.service_deployment.ready_service_count ===
+        bootstrapState.run.service_deployment.deployed_service_count &&
+      bootstrapState.run.service_deployment.passed_probe_count ===
+        bootstrapState.run.service_deployment.ready_service_count * 3 &&
+      deploymentConfiguration?.state === "passed" &&
+      deploymentConfiguration.configuration_digest === bootstrapState.run.configuration_digest &&
+      bootstrapTrustPlan?.state === "passed" &&
+      bootstrapDataPlan?.state === "passed" &&
+      bootstrapServicePlan?.state === "passed" &&
+      bootstrapState.run.service_deployment.service_plan_digest ===
+        bootstrapServicePlan.service_plan_digest &&
+      bootstrapIdentityPlan?.state === "passed" &&
+      bootstrapIdentityPlan.release_id === bootstrapState.run.release_id &&
+      bootstrapIdentityPlan.profile === bootstrapState.run.profile &&
+      bootstrapIdentityPlan.configuration_digest ===
+        bootstrapState.run.configuration_digest &&
+      bootstrapIdentityPlan.trust_plan_digest === bootstrapTrustPlan.trust_plan_digest &&
+      bootstrapIdentityPlan.data_plan_digest === bootstrapDataPlan.data_plan_digest &&
+      bootstrapIdentityPlan.service_plan_digest === bootstrapServicePlan.service_plan_digest,
   );
   const retryAuditExportMutation = useMutation({
     mutationFn: retryAuditExport,
@@ -2352,6 +2443,174 @@ export function App() {
                           {serviceExecution.state === "failed" && (
                             <p className="data-recovery-note">
                               No partial service state was published. Correct the bounded failure and
+                              retry under the active lease.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      {identityPhaseAvailable &&
+                        bootstrapIdentityPlan &&
+                        !identityHandoffPending && (
+                          <div className="data-initialization-action identity-handoff-action">
+                            <div>
+                              <strong>Publish governed identity handoff</strong>
+                              <p>
+                                Reviews the restricted administrator, recovery seal, LDAPS provider,
+                                pilot identity, and {bootstrapIdentityPlan.group_mappings.length} group
+                                mappings. No credential, account, directory, provider, session, or token
+                                is changed.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIdentityHandoffResult(null);
+                                setIdentityHandoffPending(true);
+                              }}
+                            >
+                              <UserCheck size={14} /> Review identity handoff
+                            </button>
+                          </div>
+                        )}
+                      {identityHandoffPending &&
+                        identityPhaseAvailable &&
+                        bootstrapIdentityPlan && (
+                          <div
+                            className="data-initialization-confirmation identity-handoff-confirmation"
+                            role="dialog"
+                          >
+                            <div>
+                              <strong>Confirm synthetic identity handoff</strong>
+                              <p>
+                                Target {bootstrapIdentityPlan.target_id} is {" "}
+                                {bootstrapIdentityPlan.target_state}. Only one Atlas-owned, secret-free
+                                identity state document will be atomically published.
+                              </p>
+                            </div>
+                            <div className="identity-plan-summary">
+                              <div>
+                                <span>Administrator</span>
+                                <code>{bootstrapIdentityPlan.bootstrap_administrator_subject_id}</code>
+                                <small>Credential replacement required</small>
+                              </div>
+                              <div>
+                                <span>Recovery identity</span>
+                                <code>{bootstrapIdentityPlan.recovery_identity_id}</code>
+                                <small>Recovery seal required</small>
+                              </div>
+                              <div>
+                                <span>Enterprise provider</span>
+                                <code>{bootstrapIdentityPlan.provider_id}</code>
+                                <small>LDAPS metadata only</small>
+                              </div>
+                              <div>
+                                <span>Pilot identity</span>
+                                <code>{bootstrapIdentityPlan.pilot_subject_id}</code>
+                                <small>Validation reference only</small>
+                              </div>
+                            </div>
+                            <div className="identity-mapping-list">
+                              {bootstrapIdentityPlan.group_mappings.map((mapping) => (
+                                <div key={mapping.mapping_id}>
+                                  <div>
+                                    <code>{mapping.directory_group_reference}</code>
+                                    <small>{mapping.mapping_id}</small>
+                                  </div>
+                                  <strong>{mapping.role_ids.join(", ")}</strong>
+                                </div>
+                              ))}
+                            </div>
+                            <label>
+                              Identity-handoff justification
+                              <input
+                                value={identityHandoffJustification}
+                                maxLength={500}
+                                onChange={(event) =>
+                                  setIdentityHandoffJustification(event.target.value)
+                                }
+                                placeholder="Record the reviewed reason for publishing identity state"
+                              />
+                            </label>
+                            {identityHandoffMutation.isError && (
+                              <div className="impact-message impact-error" role="alert">
+                                <AlertTriangle size={16} /> Identity state was not published. Refresh
+                                the governed state and exact identity plan before retrying.
+                              </div>
+                            )}
+                            <div className="data-initialization-confirm-actions">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIdentityHandoffPending(false);
+                                  setIdentityHandoffJustification("");
+                                }}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                className="data-initialization-confirm"
+                                type="button"
+                                disabled={
+                                  identityHandoffJustification.trim().length < 12 ||
+                                  identityHandoffMutation.isPending
+                                }
+                                onClick={() => identityHandoffMutation.mutate()}
+                              >
+                                <UserCheck size={14} /> Confirm identity
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      {identityExecution && (
+                        <div
+                          className={`data-initialization-result identity-handoff-result ${identityExecution.state}`}
+                        >
+                          <div className="data-initialization-result-heading">
+                            {identityExecution.state === "completed" ? (
+                              <CheckCircle2 size={18} />
+                            ) : (
+                              <AlertTriangle size={18} />
+                            )}
+                            <div>
+                              <strong>Identity handoff {identityExecution.state}</strong>
+                              <code>{identityExecution.result_code}</code>
+                            </div>
+                            <span className={`state-badge ${identityExecution.state}`}>
+                              {identityExecution.state}
+                            </span>
+                          </div>
+                          <div className="data-initialization-summary">
+                            <div>
+                              <span>Group mappings</span>
+                              <strong>{identityExecution.group_mapping_count}</strong>
+                            </div>
+                            <div>
+                              <span>Validations</span>
+                              <strong>{identityExecution.validation_count}</strong>
+                            </div>
+                            <div>
+                              <span>Recovery seal</span>
+                              <strong>
+                                {identityExecution.bootstrap_material_sealed ? "Verified" : "Pending"}
+                              </strong>
+                            </div>
+                            <div>
+                              <span>Real identity systems</span>
+                              <strong>Unchanged</strong>
+                            </div>
+                          </div>
+                          {identityExecution.evidence.map((item) => (
+                            <div className="service-state-evidence" key={item.evidence_id}>
+                              <div>
+                                <code>{item.evidence_id}</code>
+                                <span>{item.disposition}</span>
+                              </div>
+                              <code>{item.sha256.slice(0, 20)}...</code>
+                            </div>
+                          ))}
+                          {identityExecution.state === "failed" && (
+                            <p className="data-recovery-note">
+                              No partial identity state was published. Correct the bounded failure and
                               retry under the active lease.
                             </p>
                           )}

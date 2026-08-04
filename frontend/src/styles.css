@@ -1280,9 +1280,71 @@ textarea:focus-visible {
 }
 
 .service-plan-list,
-.service-status-list {
+.service-status-list,
+.identity-mapping-list {
   display: grid;
   gap: 7px;
+}
+
+.identity-plan-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.identity-plan-summary > div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #d8c79e;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.identity-plan-summary span,
+.identity-plan-summary code,
+.identity-plan-summary small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.identity-plan-summary span {
+  margin-bottom: 5px;
+  color: #63716d;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.identity-plan-summary small {
+  margin-top: 5px;
+  color: #665b45;
+}
+
+.identity-mapping-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 10px;
+  border-left: 3px solid #78ad98;
+  background: #f7f9f8;
+}
+
+.identity-mapping-list code,
+.identity-mapping-list small,
+.identity-mapping-list strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.identity-mapping-list small {
+  margin-top: 4px;
+  color: #63716d;
+}
+
+.identity-mapping-list strong {
+  color: #386b5a;
+  font-size: 0.76rem;
 }
 
 .service-plan-list > div {
@@ -1587,7 +1649,9 @@ textarea:focus-visible {
   .trust-evidence-list > div,
   .data-initialization-summary,
   .data-evidence-list > div,
-  .data-migration-list > div {
+  .data-migration-list > div,
+  .identity-plan-summary,
+  .identity-mapping-list > div {
     grid-template-columns: minmax(0, 1fr);
   }
 }
