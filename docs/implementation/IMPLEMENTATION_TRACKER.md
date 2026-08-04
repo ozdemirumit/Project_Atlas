@@ -8,7 +8,7 @@
 | Title | Storage Recommendation Engine vertical slice |
 | Status | Review |
 | Branch | `agent/storage-recommendations` |
-| Pull Request | Pending |
+| Pull Request | [PR #23](https://github.com/ozdemirumit/Project_Atlas/pull/23) |
 | Governing Documents | ATLAS-002, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-032, ATLAS-037, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-045, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052 |
 | Last Updated | 2026-08-04 |
 | Next Action | Open the pull request, validate CI, and merge after independent review |
