@@ -43,6 +43,7 @@ from atlas.api.routes import (
     security_export,
     sessions,
     storage,
+    support_bundles,
     workload_identities,
 )
 from atlas.core.audit import AuditSink, LoggingAuditSink
@@ -201,6 +202,10 @@ from atlas.modules.security_export.adapters.synthetic import (
 from atlas.modules.security_export.application.service import SecurityExportService
 from atlas.modules.storage.adapters.synthetic import build_synthetic_storage_overview
 from atlas.modules.storage.application.service import StorageOperationsService
+from atlas.modules.support.adapters.filesystem import FilesystemSupportBundlePublisher
+from atlas.modules.support.adapters.memory import InMemorySupportBundleExportRepository
+from atlas.modules.support.adapters.postgres import PostgreSQLSupportBundleExportRepository
+from atlas.modules.support.application.service import SupportBundleService
 
 
 def create_app(
@@ -245,6 +250,7 @@ def create_app(
     bootstrap_end_to_end_verification_service: BootstrapEndToEndVerificationService | None = None,
     bootstrap_handoff_plan_service: BootstrapHandoffPlanService | None = None,
     bootstrap_operational_handoff_service: BootstrapOperationalHandoffService | None = None,
+    support_bundle_service: SupportBundleService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -544,6 +550,26 @@ def create_app(
             site_id="site.local",
         )
     )
+    if support_bundle_service is not None:
+        resolved_support_bundle_service = support_bundle_service
+    else:
+        support_repository = (
+            PostgreSQLSupportBundleExportRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemorySupportBundleExportRepository()
+        )
+        resolved_support_bundle_service = SupportBundleService(
+            bootstrap_repository=resolved_bootstrap_state_service.repository,
+            export_repository=support_repository,
+            publisher=FilesystemSupportBundlePublisher(
+                root=resolved_settings.support_bundle_root,
+                max_archive_bytes=resolved_settings.support_bundle_max_archive_bytes,
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
+            max_content_bytes=resolved_settings.support_bundle_max_content_bytes,
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -706,6 +732,7 @@ def create_app(
         app.state.bootstrap_operational_handoff_service = (
             resolved_bootstrap_operational_handoff_service
         )
+        app.state.support_bundle_service = resolved_support_bundle_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -718,6 +745,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_support_bundle_service.close()
         await resolved_bootstrap_state_service.close()
         await database_probe.close()
 
@@ -767,6 +795,7 @@ def create_app(
     app.include_router(bootstrap_integrations.router, prefix="/api/v1")
     app.include_router(bootstrap_verification.router, prefix="/api/v1")
     app.include_router(bootstrap_handoff.router, prefix="/api/v1")
+    app.include_router(support_bundles.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
     app.include_router(health_checks.router, prefix="/api/v1")

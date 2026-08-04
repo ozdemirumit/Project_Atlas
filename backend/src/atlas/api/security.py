@@ -43,6 +43,8 @@ from atlas.modules.authorization.application.bootstrap import (
     SESSION_SELF_READ,
     SESSION_SELF_REVOKE,
     STORAGE_OVERVIEW_READ,
+    SUPPORT_BUNDLE_EXPORT,
+    SUPPORT_BUNDLE_PREVIEW,
     WORKLOAD_IDENTITY_ADMIN_CREATE,
     WORKLOAD_IDENTITY_ADMIN_REVOKE,
     WORKLOAD_IDENTITY_ADMIN_ROTATE,
@@ -67,6 +69,7 @@ from atlas.modules.authorization.application.bootstrap import (
     security_export_scope,
     session_self_scope,
     storage_overview_scope,
+    support_bundle_scope,
     workload_identity_governance_scope,
 )
 from atlas.modules.authorization.application.service import AuthorizationService
@@ -732,6 +735,62 @@ async def authorize_bootstrap_invalidation_preview(
             code="authorization_denied",
             title="Request denied",
             detail="Bootstrap invalidation preview is not authorized.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_support_bundle_preview(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_support_bundle(
+        request,
+        subject,
+        permission_id=SUPPORT_BUNDLE_PREVIEW,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def authorize_support_bundle_export(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_support_bundle(
+        request,
+        subject,
+        permission_id=SUPPORT_BUNDLE_EXPORT,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def _authorize_support_bundle(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.support.bundle",
+            scope=support_bundle_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="Support bundle access is not authorized.",
         )
     request.state.authorization_decision = decision
     return decision

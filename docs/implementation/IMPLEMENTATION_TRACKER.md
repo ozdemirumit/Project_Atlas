@@ -4,14 +4,82 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-038 |
-| Title | Governed bootstrap operational handoff |
+| Task ID | ATLAS-IMP-039 |
+| Title | Governed support bundle preview and local export foundation |
 | Status | Review |
-| Branch | `agent/bootstrap-operational-handoff` |
-| Pull Request | [#50](https://github.com/ozdemirumit/Project_Atlas/pull/50) |
-| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-032, ATLAS-033, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-056, ATLAS-057, ATLAS-059 |
+| Branch | `agent/support-bundle-foundation` |
+| Pull Request | [#51](https://github.com/ozdemirumit/Project_Atlas/pull/51) |
+| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-033, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Confirm final CI on the evidence commit and merge pull request #50 |
+| Next Action | Verify PR #51 CI, merge, and synchronize `main` |
+
+### ATLAS-IMP-039 Scope Rationale
+
+- ATLAS-038 requires authorized, audited support bundles with selected time and component scope,
+  preview, redaction verification, integrity evidence, and safe offline transfer. The completed
+  bootstrap lifecycle now supplies a deterministic deployment and handoff record, while existing
+  audit, logging, identity, and browser-session foundations can govern a first useful export.
+- This workspace has no approved support destination, customer log source, production endpoint,
+  encryption key, incident ticket, or production deployment. This slice therefore exports only a
+  bounded local bundle assembled from Atlas-owned synthetic support evidence. It does not collect
+  arbitrary host files, transmit data, claim production diagnostics, or create a support case.
+
+### ATLAS-IMP-039 Acceptance Criteria
+
+- A versioned read-only preview binds the exact completed bootstrap run and handoff evidence,
+  requester scope, selected Atlas-owned components, bounded UTC time window, support schema and
+  catalog versions, deterministic entry digests, exclusions, redaction findings, size budgets, and
+  the exact intended local archive target.
+- The allowlisted catalog contains only bounded manifest, version, bootstrap summary, health,
+  configuration-schema, and sanitized diagnostic entries produced by typed Atlas providers. It
+  rejects arbitrary paths, raw logs, secret values, private keys, credentials, tokens, prompts,
+  customer documents, unrestricted topology, private endpoints, command lines, and unknown entry
+  types before archive generation.
+- Preview reports included and excluded entries, classifications, source freshness, byte totals,
+  truncation or omission reasons, redaction checks, and an exportability verdict. Any mandatory
+  entry failure, unsafe content marker, changed source evidence, unsupported classification, stale
+  request, or exceeded hard budget fails closed.
+- A strict C2 request binds the exact preview identity and digest, completed run revision, handoff
+  report digest, expected empty or byte-for-byte reusable archive target, justification,
+  confirmation, and idempotency key. Changed replay, cross-scope access, unsafe target, or audit
+  failure cannot create or disclose an archive.
+- Execution atomically publishes one deterministic integrity-manifested local archive and returns
+  its digest, size, bounded entry summary, expiry guidance, and zero-external-transfer evidence.
+  Exact replay reuses the same bytes; interruption never exposes a partial archive.
+- The web flow requires scope selection, preview review, justification, and explicit confirmation;
+  it shows inclusions, exclusions, classifications, redaction and budget results, digest identity,
+  expiry guidance, and the local-only safety boundary without exposing filesystem internals.
+- Required default-deny RBAC, browser CSRF, audit, correlation, no-store, safe errors, PostgreSQL
+  persistence, strict parsing, path safety, deterministic serialization, automated tests, live
+  enterprise-session execution, and desktop/mobile presentation validation apply.
+- This slice performs no network request, support-system upload, ticket creation, notification,
+  model inference, connector invocation, knowledge mutation, workflow execution, approval creation,
+  backup or restore, infrastructure mutation, deployment action, or AI recommendation.
+
+### ATLAS-IMP-039 Validation Evidence
+
+- Domain, filesystem, application, API, authorization, audit, migration, memory, and PostgreSQL
+  coverage verifies deterministic preview/archive generation, exact replay, changed-replay and
+  stale-source rejection, target conflict handling, redaction, fail-closed audit behavior, browser
+  CSRF, strict parsing, and local-only safety boundaries.
+- Full backend verification passes Ruff formatting and lint, strict mypy across 330 source and test
+  files, one Alembic head at `20260804_0012`, and 348 pytest tests with three existing Windows
+  symbolic-link skips. Full frontend verification passes ESLint, TypeScript, 32 Vitest tests, and
+  the production build.
+- Live enterprise-style LDAP browser validation reused completed run
+  `bootstrap-run.56b078c71ba36043ace3805a` at revision 19. The governed preview included five
+  allowlisted entries, excluded none, completed 54 redaction checks, and authorized no external
+  transfer.
+- The confirmed local export `support-export.927b3683d8ade6e99e422378` published six deterministic
+  ZIP members in 4,700 bytes at `target.support-bundle.0f76646c6cae1d49bb95bec6.zip`. Its SHA-256
+  is `c1ea039554367efd54e73b5bb90ccc10e835dce043597e2485800bf37948f115`; an independent archive
+  scan found zero prohibited content markers and confirmed all five manifest entry digests.
+- Desktop validation at 1440x900 and mobile validation at 390x844 showed no support-section
+  overflow or incoherent overlap. The browser emitted no warning or error logs; both live service
+  listeners were stopped after validation.
+- Source implementation is committed at `3fb49cc` (`feat: add governed local support bundles`).
+- PR #51 CI run `30954806212` passed backend and frontend validation before the final evidence-only
+  tracker update.
 
 ### ATLAS-IMP-038 Scope Rationale
 
@@ -89,6 +157,10 @@
 - GitHub Actions run
   [`30952234776`](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30952234776) passed the
   backend and frontend jobs on the implementation and initial evidence commits.
+- Final GitHub Actions run
+  [`30952341254`](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30952341254) passed both
+  jobs on the exact review head. [PR #50](https://github.com/ozdemirumit/Project_Atlas/pull/50)
+  merged to `main` as `d8d7729`.
 
 ### ATLAS-IMP-037 Scope Rationale
 
@@ -2067,6 +2139,9 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-033 | Governed bootstrap data-service initialization and migration | Completed through [PR #45](https://github.com/ozdemirumit/Project_Atlas/pull/45) from source commit `996a25c`; 321 backend tests, 26 frontend tests, live clean synthetic schema initialization and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-034 | Governed bootstrap service deployment and readiness | Completed through [PR #46](https://github.com/ozdemirumit/Project_Atlas/pull/46) from source commit `661395f`; 325 backend tests, 27 frontend tests, live two-service readiness and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-035 | Governed bootstrap identity and enterprise authentication handoff | Completed through [PR #47](https://github.com/ozdemirumit/Project_Atlas/pull/47) from source commit `652218f`; 329 backend tests, 28 frontend tests, live secret-free identity handoff and desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-036 | Governed bootstrap model and core-integration validation | Completed through [PR #48](https://github.com/ozdemirumit/Project_Atlas/pull/48) from source commit `7e1b894`; 333 backend tests, 29 frontend tests, live offline integration validation and desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-037 | Governed bootstrap end-to-end verification | Completed through [PR #49](https://github.com/ozdemirumit/Project_Atlas/pull/49) from source commit `3389466`; 337 backend tests, 30 frontend tests, live 15-check verification and desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-038 | Governed bootstrap operational handoff | Completed through [PR #50](https://github.com/ozdemirumit/Project_Atlas/pull/50) from source commit `8673edd`; 342 backend tests, 31 frontend tests, live nine-phase handoff and desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
