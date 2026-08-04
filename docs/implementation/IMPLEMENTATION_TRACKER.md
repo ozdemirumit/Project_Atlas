@@ -4,14 +4,56 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-024 |
-| Title | Release manifest and restricted-network preflight foundation |
-| Status | Done |
-| Branch | `agent/release-manifest-preflight` |
-| Pull Request | [#36](https://github.com/ozdemirumit/Project_Atlas/pull/36) |
-| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-016, ATLAS-030, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-058, ATLAS-059 |
+| Task ID | ATLAS-IMP-025 |
+| Title | Versioned deployment configuration preview foundation |
+| Status | In Progress |
+| Branch | `agent/deployment-configuration-preview` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Merge PR #36 and select the next bounded MVP-005 implementation slice |
+| Next Action | Implement the bounded read-only configuration validation and preview slice |
+
+### ATLAS-IMP-025 Scope Rationale
+
+- ATLAS-038 places versioned configuration rendering and validation immediately after read-only
+  preflight and artifact verification. Installation cannot safely begin until defaults, overlays,
+  secret references, network exposure, component references, and configuration provenance are
+  resolved into one deterministic plan.
+- The smallest locally verifiable slice is a strict deployment-configuration contract, bounded
+  default-plus-overlay renderer, canonical digest, redacted effective preview, validation findings,
+  and exact-scope audited API/UI surface. It remains read-only and does not write environment files,
+  provision secrets or trust, initialize data, open ports, or deploy services.
+- Developer and Linux-lab profiles share one schema while preserving explicit profile differences.
+  Unknown keys, duplicate resources, unsupported combinations, wildcard binds, plaintext secrets,
+  mutable component references, and cross-environment references fail closed.
+
+### ATLAS-IMP-025 Acceptance Criteria
+
+- A versioned strict input contract identifies release, profile, organization, environment, site,
+  API bind, public URL, CORS origins, component references, feature flags, integration endpoints,
+  resource names, and opaque secret references. Unknown fields and malformed identifiers fail closed.
+- Rendering has deterministic precedence from immutable release defaults to one explicit overlay,
+  records the source of every effective field, and produces a canonical SHA-256 configuration digest.
+  Reordered equivalent input produces the same digest.
+- Secret-bearing settings accept only stable opaque `secret.*` references. Plaintext credentials,
+  URL userinfo, query/fragment credentials, control characters, unsafe wildcard binds, insecure
+  schemes, mutable image tags, duplicate origins/resources, and foreign environment references fail.
+- The preview exposes only redacted/reference-safe values, source provenance, stable validation codes,
+  bounded remediation, overall passed/failed state, release/profile identity, correlation ID, and
+  explicit false mutation/execution authorization.
+- API access requires authenticated exact-scope C0 platform-operations permission and required audit.
+  Unauthorized, malformed, foreign-scope, and audit-failed requests disclose no effective config.
+- The operations UI shows the governed configuration preview only when discovery succeeds, including
+  digest, profile/environment, effective sources, validation results, and the read-only boundary.
+- Tests cover strict parsing, deterministic rendering, precedence, redaction, secret rejection,
+  unsafe network exposure, duplicate and mutable references, exact scope, audit failure, malformed
+  legacy response handling, and responsive desktop/mobile presentation.
+- This slice does not write files, mutate host configuration, provision secrets/certificates, contact
+  integrations, initialize/migrate databases, deploy services, or authorize installation.
+
+### ATLAS-IMP-025 Validation Evidence
+
+- Pending implementation and validation.
 
 ### ATLAS-IMP-024 Scope Rationale
 
