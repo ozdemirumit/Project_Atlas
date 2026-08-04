@@ -93,13 +93,19 @@ def service(
     *,
     delegate: CollectingAuditSink | None = None,
     transport: SyntheticTlsSyslogTransport | None = None,
-    destination_overrides: dict[str, object] | None = None,
+    certificate_not_after: datetime | None = None,
+    max_queue_records: int | None = None,
+    max_attempts: int | None = None,
 ) -> tuple[SecurityExportService, CollectingAuditSink, SyntheticTlsSyslogTransport]:
     sink = delegate or CollectingAuditSink()
     resolved_transport = transport or SyntheticTlsSyslogTransport()
     destination = build_synthetic_syslog_destinations()[0]
-    if destination_overrides:
-        destination = replace(destination, **destination_overrides)
+    destination = replace(
+        destination,
+        certificate_not_after=certificate_not_after or destination.certificate_not_after,
+        max_queue_records=max_queue_records or destination.max_queue_records,
+        max_attempts=max_attempts or destination.max_attempts,
+    )
     return (
         SecurityExportService(
             delegate=sink,
@@ -215,7 +221,7 @@ async def test_transient_failure_retries_with_stable_event_identity() -> None:
 async def test_delivery_moves_to_dead_letter_after_bounded_attempts() -> None:
     export_service, _, _ = service(
         transport=SyntheticTlsSyslogTransport(fail_attempts=2),
-        destination_overrides={"max_attempts": 2},
+        max_attempts=2,
     )
     await export_service.record(audit_record())
     await export_service.retry_all(at=NOW + timedelta(seconds=1))
@@ -233,10 +239,8 @@ async def test_delivery_moves_to_dead_letter_after_bounded_attempts() -> None:
 @pytest.mark.asyncio
 async def test_expired_certificate_fails_closed_without_transport_downgrade() -> None:
     export_service, _, transport = service(
-        destination_overrides={
-            "certificate_not_after": datetime(2020, 1, 1, tzinfo=UTC),
-            "max_attempts": 1,
-        }
+        certificate_not_after=datetime(2020, 1, 1, tzinfo=UTC),
+        max_attempts=1,
     )
     await export_service.record(audit_record())
 
@@ -254,7 +258,7 @@ async def test_expired_certificate_fails_closed_without_transport_downgrade() ->
 async def test_bounded_queue_rejects_new_events_when_transport_is_unavailable() -> None:
     export_service, sink, _ = service(
         transport=SyntheticTlsSyslogTransport(fail_attempts=5),
-        destination_overrides={"max_queue_records": 1},
+        max_queue_records=1,
     )
     await export_service.record(audit_record())
 

@@ -44,7 +44,7 @@
 ### ATLAS-IMP-013 Validation Evidence
 
 - Backend Ruff check and format verification passed across 177 files.
-- Strict backend type checking passed across 157 source files.
+- Strict backend type checking passed across all 174 source and test files.
 - Full backend test suite passed: 150 tests, including eleven security-export tests for
   authentication, exact assignment and scope, TLS-only destination health, RFC 5424 preview,
   explicit test delivery, redaction and framing, stable retry identity, bounded dead-letter,
