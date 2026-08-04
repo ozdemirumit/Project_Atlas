@@ -14,6 +14,8 @@ from atlas.modules.authorization.domain.models import (
 )
 
 IDENTITY_SELF_READ = "identity.self.read"
+SESSION_SELF_READ = "identity.session.self.read"
+SESSION_SELF_REVOKE = "identity.session.self.revoke"
 STORAGE_OVERVIEW_READ = "storage.overview.read"
 AI_GROUNDED_QUERY_CREATE = "ai.grounded-query.create"
 GRAPH_STORAGE_IMPACT_READ = "graph.storage-impact.read"
@@ -36,6 +38,19 @@ def current_identity_scope(organization_id: str, environment: str) -> ResourceSc
         domain_id="domain.identity",
         resource_id="resource.identity.self",
         capability_class=CapabilityClass.C0_INFORMATIONAL,
+    )
+
+
+def session_self_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.identity",
+        resource_id="resource.identity.sessions.self",
+        capability_class=capability_class,
     )
 
 
@@ -147,6 +162,14 @@ def build_development_authorization_service(
             description="Read the authenticated subject's own normalized identity context.",
         ),
         PermissionDefinition(
+            permission_id=SESSION_SELF_READ,
+            description="Read the authenticated subject's bounded session inventory.",
+        ),
+        PermissionDefinition(
+            permission_id=SESSION_SELF_REVOKE,
+            description="Revoke one exact session owned by the authenticated subject.",
+        ),
+        PermissionDefinition(
             permission_id=STORAGE_OVERVIEW_READ,
             description="Read the exact synthetic storage operations overview scope.",
         ),
@@ -199,6 +222,8 @@ def build_development_authorization_service(
         permissions=frozenset(
             {
                 IDENTITY_SELF_READ,
+                SESSION_SELF_READ,
+                SESSION_SELF_REVOKE,
                 STORAGE_OVERVIEW_READ,
                 AI_GROUNDED_QUERY_CREATE,
                 GRAPH_STORAGE_IMPACT_READ,
@@ -227,6 +252,30 @@ def build_development_authorization_service(
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=current_identity_scope(
                     settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.session-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=session_self_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C0_INFORMATIONAL,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.session-revoke",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=session_self_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),

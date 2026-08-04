@@ -4,14 +4,63 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-016 |
-| Title | Enterprise browser login and CSRF-aware web session lifecycle |
-| Status | Done |
-| Branch | `agent/browser-login-session-lifecycle` |
-| Pull Request | [PR #28](https://github.com/ozdemirumit/Project_Atlas/pull/28) |
+| Task ID | ATLAS-IMP-017 |
+| Title | Self-service session inventory and governed revocation |
+| Status | Ready for Review |
+| Branch | `agent/session-inventory-revocation` |
+| Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
 | Last Updated | 2026-08-04 |
-| Next Action | Define session inventory and governed revocation |
+| Next Action | Publish the review branch, pass GitHub quality gates, and merge the slice |
+
+### ATLAS-IMP-017 Acceptance Criteria
+
+- A dedicated session-inventory permission and exact identity-session scope are evaluated by the
+  existing authorization service before any inventory metadata is returned.
+- Authenticated users can list only sessions whose normalized subject ID exactly matches their own;
+  query input cannot select another subject and counts do not reveal hidden sessions.
+- Inventory records expose stable session ID, lifecycle state, credential kind, creation, activity,
+  expiry, and current-session marker only; token and CSRF values or digests never leave the service.
+- Results are bounded, deterministically newest-first, and explicitly report truncation; inactive
+  records remain distinguishable without extending or reactivating their lifetime.
+- A separate self-revocation permission is required to revoke a selected own session. Unknown,
+  foreign, already terminated, stale, and concurrently changed targets fail closed without
+  disclosing another subject or resurrecting state.
+- Cookie-authenticated revocation requires CSRF through the shared request boundary. Revoking the
+  current session clears both browser cookies and removes protected client state; revoking another
+  own session leaves the current session active.
+- Inventory reads and successful or denied revocations are audited with stable IDs and no credential
+  material; required authorization or audit failure blocks disclosure or successful response.
+- The web workspace provides a compact session-management view with current-session status, expiry,
+  last activity, and an explicit revoke control for eligible sessions, including empty, loading,
+  error, and success states.
+- Tests cover exact RBAC and subject isolation, bounded ordering, secret redaction, current versus
+  other-session revocation, CSRF, cookie clearing, concurrency, audit failure, and responsive UI.
+- Administrator-wide inventory/revocation, identity disablement fan-out, API-token issuance,
+  approval, and infrastructure execution remain outside this slice.
+
+### ATLAS-IMP-017 Validation Evidence
+
+- Dedicated exact-scope `session.self.read` and `session.self.revoke` authorization precedes every
+  inventory or selected-session operation; subject selection is not accepted from request input.
+- The bounded newest-first inventory exposes only lifecycle metadata and an explicit current marker,
+  reports truncation, normalizes expired records without reactivation, emits a required audit event,
+  and returns `Cache-Control: no-store`.
+- Selected self-revocation uses optimistic version checks, hides foreign, missing, and inactive
+  targets behind the same response, requires the shared cookie CSRF boundary, and clears both cookies
+  only when the selected session is current.
+- Backend Ruff and strict type checks passed; the full backend suite passed with 192 tests, including
+  29 browser-session scenarios covering exact RBAC, subject isolation, ordering, redaction, CSRF,
+  current and other-session revocation, expiry, races, and required audit failure.
+- Frontend ESLint and TypeScript checks passed, four Vitest scenarios passed across two files, and the
+  production Vite bundle built successfully.
+- The web workspace displays current, active, and revoked sessions with bounded metadata and explicit
+  revoke controls. Integrated UI tests verify inventory loading and CSRF-backed other-session revoke
+  while preserving the established login and logout lifecycle.
+- A fresh live API returned the bounded inventory contract. Desktop and 390-pixel mobile views were
+  visually inspected with no horizontal overflow, child overlap, or browser console warnings/errors.
+- Administrator-wide revocation, real directory-session validation, API-token issuance, approval,
+  and infrastructure execution remain intentionally outside this slice.
 
 ### ATLAS-IMP-016 Acceptance Criteria
 

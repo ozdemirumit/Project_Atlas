@@ -34,6 +34,7 @@ import {
   Settings,
   ShieldCheck,
   LockKeyhole,
+  Trash2,
   Scale,
   Workflow,
   X,
@@ -48,7 +49,12 @@ import { getPlatformStatus } from "./api/platform";
 import { createStorageRca } from "./api/rca";
 import { createStorageRecommendation } from "./api/recommendations";
 import { createStorageTechnicalReport } from "./api/reports";
-import { createBrowserSession, logoutBrowserSession } from "./api/sessions";
+import {
+  createBrowserSession,
+  getBrowserSessions,
+  logoutBrowserSession,
+  revokeBrowserSession,
+} from "./api/sessions";
 import {
   getSecurityExportOverview,
   sendSecurityExportTestEvent,
@@ -169,6 +175,28 @@ export function App() {
       queryClient.removeQueries({ queryKey: ["health-check-overview"] });
       queryClient.removeQueries({ queryKey: ["security-export-overview"] });
       await queryClient.invalidateQueries({ queryKey: ["current-identity"] });
+    },
+  });
+  const sessionsQuery = useQuery({
+    queryKey: ["browser-sessions"],
+    queryFn: getBrowserSessions,
+    enabled: Boolean(identity && identity.authentication.method !== "development"),
+    retry: false,
+  });
+  const sessionInventory = sessionsQuery.data?.data;
+  const sessions = sessionInventory?.sessions;
+  const revokeSessionMutation = useMutation({
+    mutationFn: revokeBrowserSession,
+    onSuccess: async (_, sessionId) => {
+      const revokedCurrent = sessions?.some(
+        (session) => session.session_id === sessionId && session.current,
+      );
+      if (revokedCurrent) {
+        queryClient.removeQueries({ queryKey: ["browser-sessions"] });
+        await queryClient.invalidateQueries({ queryKey: ["current-identity"] });
+      } else {
+        await queryClient.invalidateQueries({ queryKey: ["browser-sessions"] });
+      }
     },
   });
   const storageQuery = useQuery({
@@ -525,6 +553,70 @@ export function App() {
                       <strong>{overview.evidence.length}</strong>
                     </div>
                   </section>
+
+                  {identity && identity.authentication.method !== "development" && (
+                    <section className="workspace-section session-section">
+                      <div className="section-heading">
+                        <div>
+                          <p className="eyebrow">SESSION SECURITY</p>
+                          <h2>Browser sessions</h2>
+                        </div>
+                        <span className="session-count">
+                          {sessions?.length ?? 0}{sessionInventory?.truncated ? "+" : ""} visible
+                        </span>
+                      </div>
+                      {sessionsQuery.isLoading && (
+                        <div className="impact-message">
+                          <Clock3 size={18} /> Reading authorized session inventory
+                        </div>
+                      )}
+                      {sessionsQuery.isError && (
+                        <div className="impact-message impact-error">
+                          <AlertTriangle size={18} /> Session inventory is unavailable.
+                        </div>
+                      )}
+                      {revokeSessionMutation.isError && (
+                        <div className="impact-message impact-error">
+                          <AlertTriangle size={18} /> Session revocation was not completed.
+                        </div>
+                      )}
+                      {sessions?.length === 0 && (
+                        <div className="impact-message">No browser sessions are visible.</div>
+                      )}
+                      {sessions && sessions.length > 0 && (
+                        <div className="session-list">
+                          {sessions.map((session) => (
+                            <div className="session-row" key={session.session_id}>
+                              <div className="session-icon"><Monitor size={17} /></div>
+                              <div className="session-detail">
+                                <strong>{session.current ? "Current session" : "Browser session"}</strong>
+                                <span>Last active {formatTimestamp(session.last_seen_at)}</span>
+                              </div>
+                              <div className="session-expiry">
+                                <span>Expires</span>
+                                <strong>{formatTimestamp(session.idle_expires_at)}</strong>
+                              </div>
+                              <span className={`state-badge ${session.state}`}>{session.state}</span>
+                              {session.state === "active" && (
+                                <button
+                                  className="icon-button session-revoke"
+                                  type="button"
+                                  aria-label={
+                                    session.current ? "Revoke current session" : "Revoke browser session"
+                                  }
+                                  title="Revoke session"
+                                  disabled={revokeSessionMutation.isPending}
+                                  onClick={() => revokeSessionMutation.mutate(session.session_id)}
+                                >
+                                  <Trash2 size={17} />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  )}
 
                   <section className="workspace-section security-export-section">
                     <div className="section-heading">

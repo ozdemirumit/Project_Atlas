@@ -160,6 +160,69 @@ textarea:focus-visible {
   font-size: 12px;
 }
 
+.session-count {
+  color: #60716d;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.session-list {
+  border: 1px solid #dbe3e0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.session-row {
+  display: grid;
+  grid-template-columns: 34px minmax(180px, 1fr) minmax(150px, auto) auto 36px;
+  min-height: 62px;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid #e4e9e7;
+}
+
+.session-row:last-child {
+  border-bottom: 0;
+}
+
+.session-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  color: #315b54;
+  background: #e6f1ee;
+  border-radius: 5px;
+}
+
+.session-detail strong,
+.session-detail span,
+.session-expiry strong,
+.session-expiry span {
+  display: block;
+}
+
+.session-detail strong,
+.session-expiry strong {
+  font-size: 12px;
+}
+
+.session-detail span,
+.session-expiry span {
+  margin-top: 3px;
+  color: #71807c;
+  font-size: 10px;
+}
+
+.session-expiry {
+  text-align: right;
+}
+
+.session-revoke {
+  color: #a43e3e;
+}
+
 .app-frame {
   display: grid;
   grid-template-columns: 244px minmax(0, 1fr);
@@ -3529,6 +3592,22 @@ tbody tr.selected {
 }
 
 @media (max-width: 520px) {
+  .session-row {
+    grid-template-columns: 34px minmax(0, 1fr) 36px;
+  }
+
+  .session-expiry,
+  .session-row .state-badge {
+    grid-column: 2;
+    justify-self: start;
+    text-align: left;
+  }
+
+  .session-revoke {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
   .topbar-actions .icon-button:first-of-type,
   .search-button {
     display: none;

@@ -76,3 +76,9 @@ class SessionContext:
     credential_kind: CredentialKind
     absolute_expires_at: datetime
     idle_expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class SessionInventory:
+    records: tuple[SessionRecord, ...]
+    truncated: bool
