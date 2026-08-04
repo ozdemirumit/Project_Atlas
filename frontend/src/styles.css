@@ -457,6 +457,166 @@ textarea:focus-visible {
   border: 1px solid #dce3e0;
 }
 
+.security-export-state {
+  display: inline-flex;
+  min-height: 27px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  color: #216f60;
+  background: #eaf5f1;
+  border: 1px solid #bfded4;
+  font-size: 9px;
+  font-weight: 720;
+  text-transform: capitalize;
+}
+
+.security-export-state.degraded {
+  color: #8a5b12;
+  background: #fff7e6;
+  border-color: #ead19e;
+}
+
+.security-export-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.6fr) repeat(4, minmax(100px, 1fr));
+  border-bottom: 1px solid #e2e8e5;
+}
+
+.security-export-grid > div {
+  min-width: 0;
+  min-height: 72px;
+  padding: 12px 13px;
+  border-right: 1px solid #e2e8e5;
+}
+
+.security-export-grid > div:last-child {
+  border-right: 0;
+}
+
+.security-export-grid span,
+.security-export-grid strong,
+.security-export-grid small {
+  display: block;
+}
+
+.security-export-grid span {
+  margin-bottom: 5px;
+  color: #78837f;
+  font-size: 8px;
+  font-weight: 720;
+  text-transform: uppercase;
+}
+
+.security-export-grid strong {
+  overflow: hidden;
+  color: #2a3633;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.security-export-grid small {
+  margin-top: 4px;
+  overflow: hidden;
+  color: #7b8783;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.security-export-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(230px, 1fr);
+  border-bottom: 1px solid #e2e8e5;
+}
+
+.security-export-detail > div {
+  min-width: 0;
+  padding: 13px 14px;
+}
+
+.security-export-detail > div:first-child {
+  border-right: 1px solid #e2e8e5;
+}
+
+.security-export-detail h3 {
+  margin: 0 0 8px;
+  color: #45514d;
+  font-size: 10px;
+}
+
+.security-payload {
+  max-height: 74px;
+  margin: 0 0 7px;
+  overflow: auto;
+  padding: 9px;
+  color: #37433f;
+  background: #f6f8f7;
+  border: 1px solid #e0e6e3;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 8px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.security-export-detail small {
+  color: #7a8581;
+  font-size: 8px;
+}
+
+.security-export-action {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.security-export-action dl {
+  margin: 0;
+}
+
+.security-export-action dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid #edf0ef;
+  font-size: 9px;
+}
+
+.security-export-action dt {
+  color: #7a8581;
+}
+
+.security-export-action dd {
+  margin: 0;
+  color: #394641;
+  font-weight: 650;
+  text-align: right;
+}
+
+.security-export-action .run-check-button {
+  align-self: flex-start;
+}
+
+.security-export-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  color: #216f60;
+  background: #eef7f4;
+  border-bottom: 1px solid #d5e7e1;
+  font-size: 9px;
+}
+
+.security-export-result.error-state {
+  color: #98423d;
+  background: #fff1ef;
+  border-color: #eccdca;
+}
+
 .section-heading {
   display: flex;
   min-height: 58px;
@@ -2867,6 +3027,18 @@ tbody tr.selected {
 }
 
 @media (max-width: 1180px) {
+  .security-export-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .security-export-grid > div:nth-child(3) {
+    border-right: 0;
+  }
+
+  .security-export-grid > div:nth-child(n + 4) {
+    border-top: 1px solid #e2e8e5;
+  }
+
   .app-frame {
     grid-template-columns: 210px minmax(0, 1fr);
   }
@@ -3008,6 +3180,26 @@ tbody tr.selected {
 }
 
 @media (max-width: 680px) {
+  .security-export-grid,
+  .security-export-detail {
+    grid-template-columns: 1fr;
+  }
+
+  .security-export-grid > div,
+  .security-export-grid > div:nth-child(3) {
+    border-right: 0;
+    border-bottom: 1px solid #e2e8e5;
+  }
+
+  .security-export-grid > div:last-child {
+    border-bottom: 0;
+  }
+
+  .security-export-detail > div:first-child {
+    border-right: 0;
+    border-bottom: 1px solid #e2e8e5;
+  }
+
   .conversation-heading {
     display: block;
     padding: 18px;

@@ -45,6 +45,10 @@ import { getPlatformStatus } from "./api/platform";
 import { createStorageRca } from "./api/rca";
 import { createStorageRecommendation } from "./api/recommendations";
 import { createStorageTechnicalReport } from "./api/reports";
+import {
+  getSecurityExportOverview,
+  sendSecurityExportTestEvent,
+} from "./api/securityExport";
 import { getStorageOverview, type StorageAsset } from "./api/storage";
 
 const navigation = [
@@ -173,6 +177,21 @@ export function App() {
     retry: false,
   });
   const healthChecks = healthChecksQuery.data?.data;
+  const securityExportQuery = useQuery({
+    queryKey: ["security-export-overview"],
+    queryFn: getSecurityExportOverview,
+    enabled: Boolean(identity),
+    retry: false,
+  });
+  const securityExport = securityExportQuery.data?.data;
+  const securityDestination = securityExport?.destinations?.[0];
+  const securityHealth = securityExport?.health?.[0];
+  const securityExportTestMutation = useMutation({
+    mutationFn: sendSecurityExportTestEvent,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["security-export-overview"] });
+    },
+  });
   const selectedHealthCheck =
     healthChecks?.definitions.find((item) => item.definition_id === selectedHealthCheckId) ??
     healthChecks?.definitions[0];
@@ -414,6 +433,120 @@ export function App() {
                       <span>Evidence</span>
                       <strong>{overview.evidence.length}</strong>
                     </div>
+                  </section>
+
+                  <section className="workspace-section security-export-section">
+                    <div className="section-heading">
+                      <div>
+                        <p className="eyebrow">SECURITY EXPORT</p>
+                        <h2>Syslog and SIEM delivery</h2>
+                      </div>
+                      {securityDestination && (
+                        <span className={`security-export-state ${securityHealth?.state ?? "active"}`}>
+                          <ShieldCheck size={14} /> {securityHealth?.state ?? "active"}
+                        </span>
+                      )}
+                    </div>
+
+                    {securityExportQuery.isLoading && (
+                      <div className="impact-message">
+                        <Clock3 size={18} /> Reading authorized export health
+                      </div>
+                    )}
+                    {securityExportQuery.isError && (
+                      <div className="impact-message impact-error">
+                        <AlertTriangle size={18} /> Export health is unavailable; no delivery is
+                        inferred.
+                      </div>
+                    )}
+                    {securityExport && securityDestination && securityHealth && (
+                      <>
+                        <div className="security-export-grid">
+                          <div className="security-destination">
+                            <span>Destination</span>
+                            <strong>{securityDestination.name}</strong>
+                            <small>
+                              {securityDestination.host}:{securityDestination.port}
+                            </small>
+                          </div>
+                          <div>
+                            <span>Transport</span>
+                            <strong>TLS</strong>
+                            <small>Server and hostname verified</small>
+                          </div>
+                          <div>
+                            <span>Certificate</span>
+                            <strong>{securityHealth.certificate_days_remaining} days</strong>
+                            <small>Until expiry</small>
+                          </div>
+                          <div>
+                            <span>Queue</span>
+                            <strong>{securityHealth.queue_depth}</strong>
+                            <small>{securityHealth.retrying_count} retrying</small>
+                          </div>
+                          <div>
+                            <span>Transport handoffs</span>
+                            <strong>{securityHealth.delivered_count}</strong>
+                            <small>{securityHealth.dead_letter_count} dead-letter</small>
+                          </div>
+                        </div>
+
+                        <div className="security-export-detail">
+                          <div>
+                            <h3>RFC 5424 preview</h3>
+                            <p className="security-payload">{securityExport.preview_message.payload}</p>
+                            <small>
+                              {securityExport.mapping_version} · {securityExport.preview_message.payload_bytes} bytes · digest {securityExport.preview_message.content_digest.slice(0, 16)}…
+                            </small>
+                          </div>
+                          <div className="security-export-action">
+                            <dl>
+                              <div>
+                                <dt>Collector handoff</dt>
+                                <dd>
+                                  {securityHealth.last_transport_handoff_at
+                                    ? formatTimestamp(securityHealth.last_transport_handoff_at)
+                                    : "No handoff yet"}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt>SIEM ingestion</dt>
+                                <dd>Not confirmed</dd>
+                              </div>
+                            </dl>
+                            <button
+                              className="run-check-button"
+                              type="button"
+                              disabled={securityExportTestMutation.isPending}
+                              onClick={() => securityExportTestMutation.mutate()}
+                            >
+                              {securityExportTestMutation.isPending ? (
+                                <RefreshCw className="spin" size={16} />
+                              ) : (
+                                <Play size={16} />
+                              )}
+                              Send test event
+                            </button>
+                          </div>
+                        </div>
+
+                        {securityExportTestMutation.data && (
+                          <div className="security-export-result" role="status">
+                            <CheckCircle2 size={16} />
+                            Transport handoff recorded. SIEM ingestion remains unconfirmed.
+                          </div>
+                        )}
+                        {securityExportTestMutation.isError && (
+                          <div className="security-export-result error-state" role="alert">
+                            <AlertTriangle size={16} /> Test event was not delivered.
+                          </div>
+                        )}
+                        <div className="safety-notice">
+                          <ShieldCheck size={16} />
+                          <span>{securityExport.safety_notice}</span>
+                        </div>
+                      </>
+                    )}
                   </section>
 
                   <section className="workspace-section inventory-section">
