@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-028 |
 | Title | Bootstrap input drift and checkpoint invalidation preview |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/bootstrap-invalidation-preview` |
-| Pull Request | Pending |
+| Pull Request | [PR #40](https://github.com/ozdemirumit/Project_Atlas/pull/40) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Open the implementation pull request and complete GitHub quality gates |
+| Next Action | Complete GitHub quality gates and merge PR #40 |
 
 ### ATLAS-IMP-028 Scope Rationale
 
@@ -57,7 +57,8 @@
   earliest invalidation boundary as `phase.acquire`, and exposed no lease-owner identity.
 - Live presentation validation passed at 1440x900 and 390x844. The invalidation preview, drift state,
   boundary, and read-only notice remained visible with no page-level horizontal overflow.
-- GitHub pull request and CI evidence are pending.
+- Source commit `8419c94` is under review in
+  [PR #40](https://github.com/ozdemirumit/Project_Atlas/pull/40); GitHub CI evidence is pending.
 
 ### ATLAS-IMP-027 Scope Rationale
 
