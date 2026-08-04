@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-015 |
 | Title | Secure browser-session and bounded API-credential foundation |
-| Status | Review |
+| Status | Done |
 | Branch | `agent/secure-browser-session` |
 | Pull Request | [PR #27](https://github.com/ozdemirumit/Project_Atlas/pull/27) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
 | Last Updated | 2026-08-04 |
-| Next Action | Wait for GitHub quality gates and merge after review |
+| Next Action | Define and implement the next approved security or operations slice |
 
 ### ATLAS-IMP-015 Acceptance Criteria
 
@@ -62,6 +62,8 @@
   bundle, or test account is configured; that environment-bound validation remains outstanding.
 - External API-token issuance remains disabled; only its distinct credential-kind domain boundary
   exists until exact token permission and scope enforcement is implemented.
+- GitHub quality gates passed on the review-linked tracker commit: backend in 27 seconds and
+  frontend in 38 seconds.
 
 ### ATLAS-IMP-014 Acceptance Criteria
 
@@ -471,6 +473,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-012 | Technical Decision Report and controlled ITSM handoff vertical slice | Completed through [PR #24](https://github.com/ozdemirumit/Project_Atlas/pull/24); 139 backend tests, live report and ITSM draft API/UI validation, and all GitHub quality gates passed |
 | ATLAS-IMP-013 | TLS Syslog security export vertical slice | Completed through [PR #25](https://github.com/ozdemirumit/Project_Atlas/pull/25); 150 backend tests, live API/UI validation, and all GitHub quality gates passed |
 | ATLAS-IMP-014 | Enterprise LDAP/AD identity provider | Completed through [PR #26](https://github.com/ozdemirumit/Project_Atlas/pull/26); 163 backend tests, live development-adapter validation, and all GitHub quality gates passed |
+| ATLAS-IMP-015 | Secure browser-session and bounded API-credential foundation | Completed through [PR #27](https://github.com/ozdemirumit/Project_Atlas/pull/27); 185 backend tests, frontend validation, live fail-closed API validation, and all GitHub quality gates passed |
 
 ## Status Rules
 
