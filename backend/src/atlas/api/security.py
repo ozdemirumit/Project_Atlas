@@ -33,6 +33,7 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.authorization.application.service import AuthorizationService
 from atlas.modules.authorization.domain.models import AuthorizationDecision, AuthorizationRequest
 from atlas.modules.identity.application.service import IdentityService
+from atlas.modules.identity.application.sessions import SessionOperationsError, SessionService
 from atlas.modules.identity.domain.models import AuthenticatedSubject, AuthenticationInput
 
 
@@ -48,6 +49,41 @@ def _presented_authorization(request: Request) -> tuple[str | None, str | None]:
 
 async def authenticated_subject(request: Request) -> AuthenticatedSubject:
     scheme, credential = _presented_authorization(request)
+    settings = request.app.state.settings
+    session_token = request.cookies.get(settings.session_cookie_name)
+    if session_token is not None and scheme is not None:
+        raise AtlasError(
+            status=400,
+            code="ambiguous_authentication",
+            title="Ambiguous authentication",
+            detail="Use exactly one supported authentication mechanism.",
+        )
+    if session_token is not None:
+        session_service: SessionService = request.app.state.session_service
+        try:
+            context = await session_service.authenticate(
+                session_token,
+                csrf_token=request.headers.get(settings.csrf_header_name),
+                unsafe_request=request.method not in {"GET", "HEAD", "OPTIONS"},
+                correlation_id=str(request.state.correlation_id),
+            )
+        except SessionOperationsError as exc:
+            raise AtlasError(
+                status=403,
+                code=exc.code,
+                title="Session validation failed",
+                detail="The browser session could not authorize this request.",
+            ) from exc
+        if context is None:
+            raise AtlasError(
+                status=401,
+                code="authentication_required",
+                title="Authentication required",
+                detail="A valid authenticated identity is required for this operation.",
+            )
+        request.state.authenticated_subject = context.subject
+        request.state.authenticated_session_id = context.session_id
+        return context.subject
     service: IdentityService = request.app.state.identity_service
     subject = await service.authenticate(
         AuthenticationInput(

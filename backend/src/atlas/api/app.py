@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import timedelta
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +22,7 @@ from atlas.api.routes import (
     recommendations,
     reports,
     security_export,
+    sessions,
     storage,
 )
 from atlas.core.audit import AuditSink, LoggingAuditSink
@@ -53,8 +55,10 @@ from atlas.modules.health_checks.adapters.synthetic import (
 from atlas.modules.health_checks.application.service import HealthCheckService
 from atlas.modules.identity.adapters.development import DevelopmentIdentityProvider
 from atlas.modules.identity.adapters.directory import build_directory_identity_provider
+from atlas.modules.identity.adapters.sessions import InMemorySessionRepository
 from atlas.modules.identity.application.ports import IdentityProvider
 from atlas.modules.identity.application.service import IdentityService
+from atlas.modules.identity.application.sessions import SessionService
 from atlas.modules.investigations.adapters.synthetic import SyntheticInvestigationAssembler
 from atlas.modules.investigations.application.service import InvestigationService
 from atlas.modules.knowledge.adapters.memory import InMemoryKnowledgeRetriever
@@ -93,6 +97,7 @@ def create_app(
     report_service: ReportService | None = None,
     grounded_answer_service: GroundedAnswerService | None = None,
     security_export_service: SecurityExportService | None = None,
+    session_service: SessionService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -113,6 +118,14 @@ def create_app(
     identity_service = IdentityService(
         provider=resolved_identity_provider,
         audit_sink=resolved_audit_sink,
+    )
+    resolved_session_service = session_service or SessionService(
+        identity_service=identity_service,
+        repository=InMemorySessionRepository(),
+        audit_sink=resolved_audit_sink,
+        absolute_timeout=timedelta(minutes=resolved_settings.session_absolute_timeout_minutes),
+        idle_timeout=timedelta(minutes=resolved_settings.session_idle_timeout_minutes),
+        max_sessions_per_subject=resolved_settings.session_max_per_subject,
     )
     resolved_authorization_service = (
         authorization_service
@@ -230,6 +243,7 @@ def create_app(
         app.state.audit_sink = resolved_audit_sink
         app.state.security_export_service = resolved_security_export_service
         app.state.identity_service = identity_service
+        app.state.session_service = resolved_session_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -254,13 +268,20 @@ def create_app(
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[str(origin) for origin in resolved_settings.cors_origins],
-        allow_credentials=False,
-        allow_methods=["GET", "POST"],
-        allow_headers=["Accept", "Authorization", "Content-Type", "X-Correlation-ID"],
-        expose_headers=["X-Correlation-ID"],
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "DELETE"],
+        allow_headers=[
+            "Accept",
+            "Authorization",
+            "Content-Type",
+            "X-Correlation-ID",
+            resolved_settings.csrf_header_name,
+        ],
+        expose_headers=["X-Correlation-ID", resolved_settings.csrf_header_name],
     )
     register_error_handlers(app)
     app.include_router(health.router)
+    app.include_router(sessions.router, prefix="/api/v1")
     app.include_router(identity.router, prefix="/api/v1")
     app.include_router(platform.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
