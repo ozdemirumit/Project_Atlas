@@ -8,7 +8,7 @@
 | Title | Governed bootstrap end-to-end verification |
 | Status | Review |
 | Branch | `agent/bootstrap-end-to-end-verification` |
-| Pull Request | Pending |
+| Pull Request | [#49](https://github.com/ozdemirumit/Project_Atlas/pull/49) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-030, ATLAS-032, ATLAS-033, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
 | Next Action | Open the implementation PR and complete GitHub CI review |
@@ -86,8 +86,8 @@
 - Live presentation passed at 1440x900 and 390x844. The verification confirmation and result were
   width-stable with document, card, and list scroll widths equal to their client widths; browser
   warning/error logs were empty.
-- Source implementation is committed as `3389466`; the pull request and GitHub CI evidence are
-  pending.
+- Source implementation is committed as `3389466` and is under review in
+  [PR #49](https://github.com/ozdemirumit/Project_Atlas/pull/49); GitHub CI evidence is pending.
 
 ### ATLAS-IMP-036 Scope Rationale
 
