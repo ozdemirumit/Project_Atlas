@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-029 |
 | Title | Controlled bootstrap plan rebase and checkpoint invalidation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/bootstrap-plan-rebase` |
-| Pull Request | Pending |
+| Pull Request | [PR #41](https://github.com/ozdemirumit/Project_Atlas/pull/41) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Open the implementation pull request and complete GitHub quality gates |
+| Next Action | Complete GitHub quality gates and merge PR #41 |
 
 ### ATLAS-IMP-029 Scope Rationale
 
@@ -64,7 +64,8 @@
   phase, rollback, or infrastructure execution controls remained absent from the API-driven UI.
 - Live presentation validation passed at 1440x900 and 390x844 with no page-level horizontal overflow.
   The confirmation, explicit metadata-only boundary, result, and post-reload state remained legible.
-- GitHub pull request and CI evidence are pending.
+- Source commit `f2feecc` is under review in
+  [PR #41](https://github.com/ozdemirumit/Project_Atlas/pull/41); GitHub CI evidence is pending.
 
 ### ATLAS-IMP-028 Scope Rationale
 
