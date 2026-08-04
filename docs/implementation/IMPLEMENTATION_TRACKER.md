@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-016 |
 | Title | Enterprise browser login and CSRF-aware web session lifecycle |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/browser-login-session-lifecycle` |
-| Pull Request | Pending |
+| Pull Request | [PR #28](https://github.com/ozdemirumit/Project_Atlas/pull/28) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
 | Last Updated | 2026-08-04 |
-| Next Action | Open the implementation pull request and run GitHub quality gates |
+| Next Action | Wait for GitHub quality gates and merge after review |
 
 ### ATLAS-IMP-016 Acceptance Criteria
 
