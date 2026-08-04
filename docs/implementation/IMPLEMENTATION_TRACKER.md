@@ -4,14 +4,80 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-040 |
-| Title | Governed backup capture and isolated restore-validation foundation |
-| Status | Review |
-| Branch | `agent/backup-restore-foundation` |
-| Pull Request | [#52](https://github.com/ozdemirumit/Project_Atlas/pull/52) |
-| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
-| Last Updated | 2026-08-04 |
-| Next Action | Verify PR #52 CI, merge, and synchronize `main` |
+| Task ID | ATLAS-IMP-041 |
+| Title | Governed upgrade readiness and rollback simulation foundation |
+| Status | CI Passed - Merge Pending |
+| Branch | `agent/upgrade-rollback-foundation` |
+| Pull Request | [#53](https://github.com/ozdemirumit/Project_Atlas/pull/53) |
+| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
+| Last Updated | 2026-08-05 |
+| Next Action | Record final CI evidence, merge PR #53, and synchronize local `main` |
+
+### ATLAS-IMP-041 Scope Rationale
+
+- ATLAS-038, ATLAS-057, and ATLAS-059 require explicit source/target compatibility, migration,
+  backup, abort, rollback, and post-change verification evidence before an upgrade can be trusted.
+  IMP-040 now supplies integrity-checked logical backup and isolated restore evidence that can gate a
+  first non-executing upgrade and rollback planning lifecycle.
+- No approved prior production installation, target release candidate, production database,
+  maintenance window, CAB decision, customer service dependency, or deployment runtime is available.
+  This slice will therefore use versioned synthetic release and migration fixtures to preview
+  readiness and simulate state transitions in an isolated model. It will not install, migrate,
+  restart, route traffic, roll back active data, or claim production upgrade readiness.
+
+### ATLAS-IMP-041 Acceptance Criteria
+
+- A read-only readiness plan binds exact source and target releases, deployment/profile scope,
+  configuration and schema versions, compatibility matrix, migration steps, completed backup and
+  isolated restore evidence, service dependencies, maintenance assumptions, abort criteria,
+  rollback window, post-upgrade verification suite, and deterministic plan digest.
+- Unknown versions, unsigned target evidence, incompatible schemas, stale backup/restore evidence,
+  irreversible migration without forward-recovery policy, missing rollback artifacts, configuration
+  drift, active bootstrap lease, or absent mandatory checks fail closed before simulation.
+- A separate confirmed simulation request binds the exact plan, source evidence, idempotency key,
+  justification, and an isolated target. It deterministically models ordered upgrade, abort, and
+  rollback states and emits impact, downtime estimate, rollback applicability, and verification
+  evidence without changing active platform state.
+- The simulation never emits executable commands or resolves secrets. It performs no artifact
+  acquisition, database migration, service restart, traffic switch, active restore, connector call,
+  external request, model inference, approval, ticket, notification, or infrastructure mutation.
+- The web flow presents source/target versions, gate verdicts, backup/restore age, reversible and
+  forward-only boundaries, expected service impact, rollback decision points, and simulation result;
+  it requires explicit review and confirmation without implying CAB or production authorization.
+- Default-deny RBAC, browser CSRF, audit, correlation, no-store, safe errors, PostgreSQL metadata,
+  strict schemas, exact replay, automated tests, live enterprise-session execution, and desktop/mobile
+  validation apply.
+
+### ATLAS-IMP-041 Validation Evidence
+
+- Domain, application, API, authorization, audit, memory, PostgreSQL, and migration coverage verifies
+  deterministic 12-gate readiness, exact backup and isolated-restore binding, three reversible
+  migrations, stale or unsupported evidence rejection, idempotent replay, fail-closed required audit,
+  and an eight-step isolated upgrade-abort-rollback timeline with every forbidden operation false.
+- Full backend verification passes Ruff formatting and lint, strict mypy across 314 source modules,
+  one Alembic head at `20260805_0014`, and 357 pytest tests with three existing Windows symbolic-link
+  skips. Full frontend verification passes ESLint, TypeScript, 32 Vitest tests, and the production
+  build.
+- Live enterprise-style LDAP browser validation completed all nine bootstrap phases for
+  `bootstrap-run.56b078c71ba36043ace3805a` at revision 19, created
+  `logical-backup.71697a19927f4079a7b0cae0`, and passed isolated restore validation before upgrade
+  planning was enabled.
+- Live readiness plan `upgrade-plan.900122c17ae44d8203b66338` passed all 12 mandatory checks for the
+  synthetic `0.1.0` to `0.2.0` path, bound the exact backup and restore evidence, declared three
+  reversible migrations, a 6-12 minute downtime range, a 60-minute rollback window, and no
+  production or execution authorization.
+- Confirmed isolated simulation `upgrade-simulation.613249fd793d9770d1702f51` modeled eight ordered
+  steps and 10 minutes of downtime, injected an abort at target deployment, returned rollback as
+  applicable, and performed no artifact acquisition, database migration, service restart, traffic
+  switch, active restore, secret resolution, network request, model inference, or infrastructure
+  mutation.
+- Desktop validation at 1440x900 and mobile validation at 390x844 showed no horizontal overflow or
+  incoherent overlap. The mobile simulation panel fit within a 349-pixel content width, and browser
+  warning and error logs were empty. The live application remains available locally at
+  `http://127.0.0.1:5198/` for user review.
+- Source implementation is committed at `a93ef6b` (`feat: add governed upgrade rollback simulation`).
+- PR #53 CI run `30958879463` passed backend and frontend validation before the final
+  evidence-only tracker update.
 
 ### ATLAS-IMP-040 Scope Rationale
 
@@ -84,6 +150,8 @@
 - Source implementation is committed at `1d7d6aa` (`feat: add governed logical backup recovery`).
 - PR #52 CI run `30956757277` passed backend and frontend validation before the final evidence-only
   tracker update.
+- Final PR #52 CI run `30956864461` passed backend and frontend validation. PR #52 merged as
+  `097b4ad3281d0f62c041c4861cbb43dfa5fa0df4`, and local `main` matched `origin/main` afterward.
 
 ### ATLAS-IMP-039 Scope Rationale
 
@@ -2217,6 +2285,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-037 | Governed bootstrap end-to-end verification | Completed through [PR #49](https://github.com/ozdemirumit/Project_Atlas/pull/49) from source commit `3389466`; 337 backend tests, 30 frontend tests, live 15-check verification and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-038 | Governed bootstrap operational handoff | Completed through [PR #50](https://github.com/ozdemirumit/Project_Atlas/pull/50) from source commit `8673edd`; 342 backend tests, 31 frontend tests, live nine-phase handoff and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-039 | Governed support bundle preview and local export foundation | Completed through [PR #51](https://github.com/ozdemirumit/Project_Atlas/pull/51) from source commit `3fb49cc`; 348 backend tests, 32 frontend tests, live deterministic local ZIP export and desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-040 | Governed backup capture and isolated restore-validation foundation | Completed through [PR #52](https://github.com/ozdemirumit/Project_Atlas/pull/52) from source commit `1d7d6aa`; 352 backend tests, 32 frontend tests, live deterministic logical backup and isolated restore validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 

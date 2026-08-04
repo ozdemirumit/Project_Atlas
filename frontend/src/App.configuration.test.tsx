@@ -2907,8 +2907,132 @@ describe("deployment configuration preview", () => {
         infrastructure_mutation_performed: false,
       },
     };
+    const upgradeReadiness = {
+      data: {
+        plan_id: "upgrade-plan.ui-001",
+        schema_version: "atlas.upgrade-readiness-plan.v1",
+        catalog_version: "atlas.synthetic-upgrade-catalog.v1",
+        source_run_id: completedState.data.run.run_id,
+        source_run_version: 19,
+        source_release_id: "release.atlas.lab-0.1.0",
+        source_release_version: "0.1.0",
+        target_release_id: "release.atlas.lab-0.2.0",
+        target_release_version: "0.2.0",
+        profile: "linux_lab",
+        source_configuration_digest: "b".repeat(64),
+        source_schema_version: "schema.platform.v1",
+        target_schema_version: "schema.platform.v2",
+        target_manifest_digest: "8".repeat(64),
+        backup_id: "logical-backup.ui-001",
+        backup_archive_sha256: "f".repeat(64),
+        restore_validation_id: "restore-validation.ui-001",
+        restore_validation_digest: "9".repeat(64),
+        source_evidence_digest: "7".repeat(64),
+        migration_steps: [
+          ["migration.application.compatibility", "application", false, 2],
+          ["migration.schema.expand-v2", "schema_expand", true, 4],
+          ["migration.projection.rebuild-v2", "projection_rebuild", false, 3],
+        ].map(([stepId, kind, quiescence, minutes], index) => ({
+          step_id: stepId,
+          sequence: index + 1,
+          migration_kind: kind,
+          reversible: true,
+          requires_quiescence: quiescence,
+          estimated_minutes: minutes,
+        })),
+        service_dependency_ids: ["service.atlas-api", "service.atlas-web"],
+        abort_criterion_ids: [
+          "abort.readiness-check-failed",
+          "abort.schema-expand-failed",
+          "abort.target-readiness-failed",
+          "abort.verification-regressed",
+        ],
+        rollback_step_ids: [
+          "rollback.stop-target-routing",
+          "rollback.restore-source-application",
+          "rollback.reconcile-expand-schema",
+          "rollback.verify-source-release",
+        ],
+        post_verification_check_ids: Array.from(
+          { length: 6 },
+          (_, index) => `verify.ui-${index + 1}`,
+        ),
+        readiness_checks: Array.from({ length: 12 }, (_, index) => ({
+          check_id: `upgrade.check.ui-${index + 1}`,
+          category_id: "category.ui",
+          result_code: `upgrade.ui-${index + 1}.passed`,
+          mandatory: true,
+          passed: true,
+        })),
+        estimated_downtime_min_minutes: 6,
+        estimated_downtime_max_minutes: 12,
+        rollback_window_minutes: 60,
+        rollback_supported: true,
+        forward_recovery_required_after_step_id: null,
+        state: "ready",
+        plan_digest: "6".repeat(64),
+        generated_at: "2026-08-04T16:12:00Z",
+        expires_at: "2026-08-04T17:12:00Z",
+        production_authorized: false,
+        execution_authorized: false,
+        active_state_mutation_performed: false,
+      },
+    };
+    const upgradeSimulation = {
+      data: {
+        simulation_id: "upgrade-simulation.ui-001",
+        schema_version: "atlas.upgrade-rollback-simulation.v1",
+        state: "passed",
+        source_run_id: completedState.data.run.run_id,
+        source_run_version: 19,
+        plan_id: "upgrade-plan.ui-001",
+        plan_digest: "6".repeat(64),
+        backup_id: "logical-backup.ui-001",
+        restore_validation_id: "restore-validation.ui-001",
+        steps: [
+          "preflight",
+          "quiesce-services",
+          "schema-expand",
+          "deploy-target",
+          "stop-target-routing",
+          "restore-source-application",
+          "reconcile-schema",
+          "verify-source",
+        ].map((step, index) => ({
+          step_id: `simulation.${step}`,
+          sequence: index + 1,
+          state: "simulated",
+          result_code: index === 3 ? "simulation.abort.injected" : `simulation.ui-${index + 1}.passed`,
+          rollback_applicable: index < 7,
+          simulated_minutes: [0, 2, 4, 1, 0, 2, 1, 1][index],
+        })),
+        impacted_service_ids: ["service.atlas-api", "service.atlas-web"],
+        post_verification_check_ids: Array.from(
+          { length: 6 },
+          (_, index) => `verify.ui-${index + 1}`,
+        ),
+        abort_injected_at_step_id: "simulation.deploy-target",
+        rollback_decision: "rollback.decision.applicable",
+        estimated_downtime_minutes: 10,
+        simulation_digest: "5".repeat(64),
+        created_at: "2026-08-04T16:12:01Z",
+        isolated_target: true,
+        reused: false,
+        production_authorized: false,
+        artifact_acquisition_performed: false,
+        database_migration_performed: false,
+        service_restart_performed: false,
+        traffic_switch_performed: false,
+        active_restore_performed: false,
+        secret_resolution_performed: false,
+        network_request_performed: false,
+        model_inference_performed: false,
+        infrastructure_mutation_performed: false,
+      },
+    };
     const requests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const recoveryRequests: Array<{ path: string; body: string }> = [];
+    const upgradeRequests: Array<{ path: string; body: string; idempotencyKey: string | null }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -2990,6 +3114,26 @@ describe("deployment configuration preview", () => {
           secret_restore_performed: false, network_request_performed: false, reused: false,
         } }), { status: 200 }));
       }
+      if (url.endsWith("/platform/upgrades/readiness-preview")) {
+        upgradeRequests.push({
+          path: url,
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: new Headers(init?.headers).get("Idempotency-Key"),
+        });
+        return Promise.resolve(
+          new Response(JSON.stringify(upgradeReadiness), { status: 200 }),
+        );
+      }
+      if (url.endsWith(`/platform/upgrades/${completedState.data.run.run_id}/simulations`)) {
+        upgradeRequests.push({
+          path: url,
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: new Headers(init?.headers).get("Idempotency-Key"),
+        });
+        return Promise.resolve(
+          new Response(JSON.stringify(upgradeSimulation), { status: 200 }),
+        );
+      }
       return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
     });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -3037,5 +3181,30 @@ describe("deployment configuration preview", () => {
     expect(recoveryRequests).toHaveLength(2);
     expect(recoveryRequests[0]?.body).toContain('"confirmed":true');
     expect(recoveryRequests[1]?.body).toContain('"confirmed_isolated":true');
+
+    expect(await screen.findByText("Upgrade readiness passed")).toBeVisible();
+    expect(screen.getByText("12/12")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Review simulation" }));
+    expect(screen.getByText("Confirm isolated upgrade rollback simulation")).toBeVisible();
+    expect(screen.getAllByText("reversible")).toHaveLength(3);
+    const simulationConfirm = screen.getByRole("button", {
+      name: "Confirm isolated simulation",
+    });
+    expect(simulationConfirm).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Upgrade simulation justification"), {
+      target: { value: "Review the isolated abort and rollback path before any change." },
+    });
+    fireEvent.click(simulationConfirm);
+
+    expect(await screen.findByText("Upgrade rollback simulation passed")).toBeVisible();
+    expect(screen.getByText("Abort injected; rollback applicable")).toBeVisible();
+    expect(screen.getByText("8 steps")).toBeVisible();
+    expect(upgradeRequests).toHaveLength(2);
+    expect(upgradeRequests[0]?.body).toContain('"target_release_id":"release.atlas.lab-0.2.0"');
+    expect(upgradeRequests[1]?.body).toContain('"confirmed_isolated":true');
+    expect(upgradeRequests[1]?.body).not.toContain("production_authorized");
+    expect(upgradeRequests[1]?.idempotencyKey).toBe(
+      "upgrade-simulation.19.support-request-001",
+    );
   });
 });

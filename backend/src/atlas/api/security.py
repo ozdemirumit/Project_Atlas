@@ -48,6 +48,8 @@ from atlas.modules.authorization.application.bootstrap import (
     STORAGE_OVERVIEW_READ,
     SUPPORT_BUNDLE_EXPORT,
     SUPPORT_BUNDLE_PREVIEW,
+    UPGRADE_READINESS_PREVIEW,
+    UPGRADE_ROLLBACK_SIMULATE,
     WORKLOAD_IDENTITY_ADMIN_CREATE,
     WORKLOAD_IDENTITY_ADMIN_REVOKE,
     WORKLOAD_IDENTITY_ADMIN_ROTATE,
@@ -74,6 +76,7 @@ from atlas.modules.authorization.application.bootstrap import (
     session_self_scope,
     storage_overview_scope,
     support_bundle_scope,
+    upgrade_simulation_scope,
     workload_identity_governance_scope,
 )
 from atlas.modules.authorization.application.service import AuthorizationService
@@ -863,6 +866,62 @@ async def _authorize_logical_backup(
             code="authorization_denied",
             title="Request denied",
             detail="Logical backup or restore validation is not authorized.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_upgrade_readiness(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_upgrade_simulation(
+        request,
+        subject,
+        permission_id=UPGRADE_READINESS_PREVIEW,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def authorize_upgrade_simulation(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_upgrade_simulation(
+        request,
+        subject,
+        permission_id=UPGRADE_ROLLBACK_SIMULATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def _authorize_upgrade_simulation(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.platform.upgrade-simulation",
+            scope=upgrade_simulation_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="Upgrade readiness or isolated rollback simulation is not authorized.",
         )
     request.state.authorization_decision = decision
     return decision
