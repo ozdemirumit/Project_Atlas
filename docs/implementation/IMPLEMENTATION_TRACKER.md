@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-041 |
 | Title | Governed upgrade readiness and rollback simulation foundation |
-| Status | In Progress |
+| Status | Validation Complete - PR Pending |
 | Branch | `agent/upgrade-rollback-foundation` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
-| Last Updated | 2026-08-04 |
-| Next Action | Implement the bounded upgrade readiness and isolated rollback simulation slice |
+| Last Updated | 2026-08-05 |
+| Next Action | Push the validated source and evidence commits, then open the governed PR |
 
 ### ATLAS-IMP-041 Scope Rationale
 
@@ -47,6 +47,35 @@
 - Default-deny RBAC, browser CSRF, audit, correlation, no-store, safe errors, PostgreSQL metadata,
   strict schemas, exact replay, automated tests, live enterprise-session execution, and desktop/mobile
   validation apply.
+
+### ATLAS-IMP-041 Validation Evidence
+
+- Domain, application, API, authorization, audit, memory, PostgreSQL, and migration coverage verifies
+  deterministic 12-gate readiness, exact backup and isolated-restore binding, three reversible
+  migrations, stale or unsupported evidence rejection, idempotent replay, fail-closed required audit,
+  and an eight-step isolated upgrade-abort-rollback timeline with every forbidden operation false.
+- Full backend verification passes Ruff formatting and lint, strict mypy across 314 source modules,
+  one Alembic head at `20260805_0014`, and 357 pytest tests with three existing Windows symbolic-link
+  skips. Full frontend verification passes ESLint, TypeScript, 32 Vitest tests, and the production
+  build.
+- Live enterprise-style LDAP browser validation completed all nine bootstrap phases for
+  `bootstrap-run.56b078c71ba36043ace3805a` at revision 19, created
+  `logical-backup.71697a19927f4079a7b0cae0`, and passed isolated restore validation before upgrade
+  planning was enabled.
+- Live readiness plan `upgrade-plan.900122c17ae44d8203b66338` passed all 12 mandatory checks for the
+  synthetic `0.1.0` to `0.2.0` path, bound the exact backup and restore evidence, declared three
+  reversible migrations, a 6-12 minute downtime range, a 60-minute rollback window, and no
+  production or execution authorization.
+- Confirmed isolated simulation `upgrade-simulation.613249fd793d9770d1702f51` modeled eight ordered
+  steps and 10 minutes of downtime, injected an abort at target deployment, returned rollback as
+  applicable, and performed no artifact acquisition, database migration, service restart, traffic
+  switch, active restore, secret resolution, network request, model inference, or infrastructure
+  mutation.
+- Desktop validation at 1440x900 and mobile validation at 390x844 showed no horizontal overflow or
+  incoherent overlap. The mobile simulation panel fit within a 349-pixel content width, and browser
+  warning and error logs were empty. The live application remains available locally at
+  `http://127.0.0.1:5198/` for user review.
+- Source implementation is committed at `a93ef6b` (`feat: add governed upgrade rollback simulation`).
 
 ### ATLAS-IMP-040 Scope Rationale
 
