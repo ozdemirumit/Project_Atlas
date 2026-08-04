@@ -9,9 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from atlas import __version__
 from atlas.api.errors import register_error_handlers
-from atlas.api.middleware import CorrelationIdMiddleware
+from atlas.api.middleware import ApiCredentialNoStoreMiddleware, CorrelationIdMiddleware
 from atlas.api.routes import (
     ai,
+    api_credentials,
     approvals,
     graph,
     health,
@@ -55,9 +56,11 @@ from atlas.modules.health_checks.adapters.synthetic import (
     build_synthetic_latest_runs,
 )
 from atlas.modules.health_checks.application.service import HealthCheckService
+from atlas.modules.identity.adapters.api_credentials import InMemoryApiCredentialRepository
 from atlas.modules.identity.adapters.development import DevelopmentIdentityProvider
 from atlas.modules.identity.adapters.directory import build_directory_identity_provider
 from atlas.modules.identity.adapters.sessions import InMemorySessionRepository
+from atlas.modules.identity.application.api_credentials import ApiCredentialService
 from atlas.modules.identity.application.ports import IdentityProvider
 from atlas.modules.identity.application.service import IdentityService
 from atlas.modules.identity.application.sessions import SessionService
@@ -101,6 +104,7 @@ def create_app(
     grounded_answer_service: GroundedAnswerService | None = None,
     security_export_service: SecurityExportService | None = None,
     session_service: SessionService | None = None,
+    api_credential_service: ApiCredentialService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -129,6 +133,12 @@ def create_app(
         absolute_timeout=timedelta(minutes=resolved_settings.session_absolute_timeout_minutes),
         idle_timeout=timedelta(minutes=resolved_settings.session_idle_timeout_minutes),
         max_sessions_per_subject=resolved_settings.session_max_per_subject,
+    )
+    resolved_api_credential_service = api_credential_service or ApiCredentialService(
+        repository=InMemoryApiCredentialRepository(),
+        audit_sink=resolved_audit_sink,
+        max_lifetime=timedelta(minutes=resolved_settings.api_credential_max_lifetime_minutes),
+        max_active_per_subject=resolved_settings.api_credential_max_active_per_subject,
     )
     resolved_authorization_service = (
         authorization_service
@@ -251,6 +261,7 @@ def create_app(
         app.state.security_export_service = resolved_security_export_service
         app.state.identity_service = identity_service
         app.state.session_service = resolved_session_service
+        app.state.api_credential_service = resolved_api_credential_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -273,6 +284,7 @@ def create_app(
         lifespan=lifespan,
     )
     app.add_middleware(CorrelationIdMiddleware)
+    app.add_middleware(ApiCredentialNoStoreMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[str(origin) for origin in resolved_settings.cors_origins],
@@ -291,6 +303,7 @@ def create_app(
     register_error_handlers(app)
     app.include_router(health.router)
     app.include_router(sessions.router, prefix="/api/v1")
+    app.include_router(api_credentials.router, prefix="/api/v1")
     app.include_router(identity.router, prefix="/api/v1")
     app.include_router(platform.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")

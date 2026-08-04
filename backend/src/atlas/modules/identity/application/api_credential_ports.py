@@ -1,0 +1,19 @@
+from __future__ import annotations
+
+from typing import Protocol
+
+from atlas.modules.identity.domain.api_credentials import ApiCredentialRecord
+
+
+class ApiCredentialRepository(Protocol):
+    async def get_by_digest(self, token_digest: str) -> ApiCredentialRecord | None: ...
+
+    async def get_by_id(self, credential_id: str) -> ApiCredentialRecord | None: ...
+
+    async def add(self, record: ApiCredentialRecord) -> None: ...
+
+    async def update(self, record: ApiCredentialRecord, *, expected_version: int) -> bool: ...
+
+    async def for_subject(self, subject_id: str) -> tuple[ApiCredentialRecord, ...]: ...
+
+    async def active_for_subject(self, subject_id: str) -> tuple[ApiCredentialRecord, ...]: ...

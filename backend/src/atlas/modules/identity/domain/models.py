@@ -25,6 +25,7 @@ class AuthenticationMethod(StrEnum):
     OIDC = "oidc"
     SAML = "saml"
     MUTUAL_TLS = "mutual_tls"
+    API_TOKEN = "api_token"
 
 
 class AssuranceLevel(StrEnum):
@@ -74,6 +75,19 @@ class AuthenticationInput:
 
 
 @dataclass(frozen=True, slots=True)
+class CredentialGrant:
+    permission_id: str
+    scope_reference: str
+
+    def __post_init__(self) -> None:
+        validate_stable_identifier(self.permission_id, "permission_id")
+        if not 1 <= len(self.scope_reference) <= 1024:
+            raise ValueError("scope_reference is outside platform bounds")
+        if any(ord(character) < 32 for character in self.scope_reference):
+            raise ValueError("scope_reference contains control characters")
+
+
+@dataclass(frozen=True, slots=True)
 class AuthenticatedSubject:
     subject_id: str
     display_name: str
@@ -85,6 +99,10 @@ class AuthenticatedSubject:
     organization_id: str
     role_ids: tuple[str, ...]
     group_ids: tuple[str, ...] = ()
+    credential_grants: frozenset[CredentialGrant] | None = field(
+        default=None,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         validate_stable_identifier(self.subject_id, "subject_id")

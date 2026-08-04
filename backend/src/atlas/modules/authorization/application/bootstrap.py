@@ -12,10 +12,14 @@ from atlas.modules.authorization.domain.models import (
     RoleAssignment,
     RoleDefinition,
 )
+from atlas.modules.identity.domain.models import CredentialGrant
 
 IDENTITY_SELF_READ = "identity.self.read"
 SESSION_SELF_READ = "identity.session.self.read"
 SESSION_SELF_REVOKE = "identity.session.self.revoke"
+API_CREDENTIAL_SELF_CREATE = "identity.api-credential.self.create"
+API_CREDENTIAL_SELF_READ = "identity.api-credential.self.read"
+API_CREDENTIAL_SELF_REVOKE = "identity.api-credential.self.revoke"
 STORAGE_OVERVIEW_READ = "storage.overview.read"
 AI_GROUNDED_QUERY_CREATE = "ai.grounded-query.create"
 GRAPH_STORAGE_IMPACT_READ = "graph.storage-impact.read"
@@ -53,6 +57,19 @@ def session_self_scope(
         site_id="site.local",
         domain_id="domain.identity",
         resource_id="resource.identity.sessions.self",
+        capability_class=capability_class,
+    )
+
+
+def api_credential_self_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.identity",
+        resource_id="resource.identity.api-credentials.self",
         capability_class=capability_class,
     )
 
@@ -169,6 +186,33 @@ def security_export_scope(organization_id: str, environment: str) -> ResourceSco
     )
 
 
+def personal_api_grant_scopes(organization_id: str, environment: str) -> dict[str, ResourceScope]:
+    return {
+        IDENTITY_SELF_READ: current_identity_scope(organization_id, environment),
+        STORAGE_OVERVIEW_READ: storage_overview_scope(organization_id, environment),
+        GRAPH_STORAGE_IMPACT_READ: graph_storage_impact_scope(organization_id, environment),
+        HEALTH_CHECK_OVERVIEW_READ: health_check_scope(organization_id, environment),
+        APPROVAL_REQUEST_READ: approval_scope(
+            organization_id,
+            environment,
+            CapabilityClass.C0_INFORMATIONAL,
+        ),
+    }
+
+
+def personal_api_grant_catalog(
+    organization_id: str, environment: str
+) -> dict[str, CredentialGrant]:
+    scopes = personal_api_grant_scopes(organization_id, environment)
+    return {
+        permission_id: CredentialGrant(
+            permission_id=permission_id,
+            scope_reference=scope.reference,
+        )
+        for permission_id, scope in scopes.items()
+    }
+
+
 def build_development_authorization_service(
     settings: Settings, audit_sink: AuditSink
 ) -> AuthorizationService:
@@ -184,6 +228,18 @@ def build_development_authorization_service(
         PermissionDefinition(
             permission_id=SESSION_SELF_REVOKE,
             description="Revoke one exact session owned by the authenticated subject.",
+        ),
+        PermissionDefinition(
+            permission_id=API_CREDENTIAL_SELF_CREATE,
+            description="Issue one bounded personal read-only API credential.",
+        ),
+        PermissionDefinition(
+            permission_id=API_CREDENTIAL_SELF_READ,
+            description="Read the authenticated subject's API credential inventory.",
+        ),
+        PermissionDefinition(
+            permission_id=API_CREDENTIAL_SELF_REVOKE,
+            description="Revoke one exact API credential owned by the authenticated subject.",
         ),
         PermissionDefinition(
             permission_id=STORAGE_OVERVIEW_READ,
@@ -252,6 +308,9 @@ def build_development_authorization_service(
                 IDENTITY_SELF_READ,
                 SESSION_SELF_READ,
                 SESSION_SELF_REVOKE,
+                API_CREDENTIAL_SELF_CREATE,
+                API_CREDENTIAL_SELF_READ,
+                API_CREDENTIAL_SELF_REVOKE,
                 STORAGE_OVERVIEW_READ,
                 AI_GROUNDED_QUERY_CREATE,
                 GRAPH_STORAGE_IMPACT_READ,
@@ -304,6 +363,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=session_self_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.api-credential-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=api_credential_self_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C0_INFORMATIONAL,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.api-credential-governance",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=api_credential_self_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C2_DIAGNOSTIC,
