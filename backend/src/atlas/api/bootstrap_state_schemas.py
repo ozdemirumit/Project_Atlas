@@ -19,6 +19,7 @@ from atlas.modules.platform.domain.bootstrap_state import (
     BootstrapRunRecord,
     BootstrapStateView,
 )
+from atlas.modules.platform.domain.bootstrap_trust_provisioning import TrustProvisioningExecution
 from atlas.modules.platform.domain.release_preflight import DeploymentProfile
 
 STABLE_ID_PATTERN = r"^[a-z][a-z0-9_.:-]{2,127}$"
@@ -266,6 +267,65 @@ class ConfigurationRenderingData(BaseModel):
         )
 
 
+class TrustFileData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    file_id: str
+    sha256: str
+    size_bytes: int
+    disposition: str
+
+
+class TrustProvisioningData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    execution_id: str
+    phase_id: str
+    release_id: str
+    profile: str
+    configuration_digest: str
+    trust_schema_version: str
+    trust_plan_digest: str
+    state: str
+    result_code: str
+    started_at: datetime
+    completed_at: datetime | None
+    anchor_count: int
+    workload_identity_count: int
+    evidence: list[TrustFileData]
+    file_count: int
+    total_bytes: int
+
+    @classmethod
+    def from_domain(cls, execution: TrustProvisioningExecution) -> TrustProvisioningData:
+        return cls(
+            execution_id=execution.execution_id,
+            phase_id=execution.phase_id,
+            release_id=execution.release_id,
+            profile=execution.profile.value,
+            configuration_digest=execution.configuration_digest,
+            trust_schema_version=execution.trust_schema_version,
+            trust_plan_digest=execution.trust_plan_digest,
+            state=execution.state.value,
+            result_code=execution.result_code,
+            started_at=execution.started_at,
+            completed_at=execution.completed_at,
+            anchor_count=execution.anchor_count,
+            workload_identity_count=execution.workload_identity_count,
+            evidence=[
+                TrustFileData(
+                    file_id=item.file_id,
+                    sha256=item.sha256,
+                    size_bytes=item.size_bytes,
+                    disposition=item.disposition.value,
+                )
+                for item in execution.evidence
+            ],
+            file_count=len(execution.evidence),
+            total_bytes=execution.total_bytes,
+        )
+
+
 class BootstrapRunData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -290,6 +350,7 @@ class BootstrapRunData(BaseModel):
     updated_at: datetime
     artifact_acquisition: ArtifactAcquisitionData | None
     configuration_rendering: ConfigurationRenderingData | None
+    trust_provisioning: TrustProvisioningData | None
 
     @classmethod
     def from_domain(cls, record: BootstrapRunRecord) -> BootstrapRunData:
@@ -329,6 +390,11 @@ class BootstrapRunData(BaseModel):
             configuration_rendering=(
                 ConfigurationRenderingData.from_domain(record.configuration_rendering)
                 if record.configuration_rendering is not None
+                else None
+            ),
+            trust_provisioning=(
+                TrustProvisioningData.from_domain(record.trust_provisioning)
+                if record.trust_provisioning is not None
                 else None
             ),
         )

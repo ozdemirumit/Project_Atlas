@@ -4,14 +4,101 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-031 |
-| Title | Governed bootstrap configuration rendering and validation |
+| Task ID | ATLAS-IMP-032 |
+| Title | Governed bootstrap trust bundle and workload identity provisioning |
 | Status | Done |
-| Branch | `agent/bootstrap-configuration-rendering` |
-| Pull Request | [#43](https://github.com/ozdemirumit/Project_Atlas/pull/43) |
-| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
+| Branch | `agent/bootstrap-trust-provisioning` |
+| Pull Request | [#44](https://github.com/ozdemirumit/Project_Atlas/pull/44) |
+| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Merge PR #43, synchronize `main`, and scope the next bootstrap phase |
+| Next Action | Merge PR #44, synchronize `main`, and scope the next bootstrap phase |
+
+### ATLAS-IMP-032 Scope Rationale
+
+- ATLAS-038 orders trust and identity provisioning after effective configuration publication. IMP-023
+  establishes the independent workload-identity lifecycle and IMP-031 completes the exact non-secret
+  configuration checkpoint, but bootstrap cannot yet validate or publish the trust inputs required by
+  later Atlas services.
+- This slice executes only `phase.trust`. It derives a deterministic, profile-bound trust plan,
+  validates public certificate material and opaque secret references, publishes an immutable public
+  trust bundle plus a non-secret workload identity catalog, records safe evidence, and advances the
+  existing checkpoint.
+
+### ATLAS-IMP-032 Acceptance Criteria
+
+- A read-only, versioned trust-plan API derives the exact plan from release, profile, scope, effective
+  configuration digest, and configured trust source. It exposes stable IDs, public certificate
+  fingerprints and validity metadata, workload identity/audience metadata, and opaque secret
+  references only; private keys, tokens, credentials, raw configuration, and filesystem paths are
+  absent.
+- A strict C2 execution request binds the exact run, expected revision, plan digest, resume key,
+  release and profile, configuration digest, trust schema and plan digest, phase ID, bounded human
+  justification, and idempotency key. Unknown fields, malformed values, digest drift, and foreign
+  identifiers fail closed.
+- Execution requires the active lease held by the authenticated browser session, exact scope and
+  revision, completed `phase.acquire` and `phase.configure`, `phase.trust` as the current
+  dependency-satisfied phase, and exact release, plan, resume, configuration, and trust identities.
+- Public trust anchors are bounded, unique, syntactically valid PEM certificates with exact SHA-256
+  fingerprints and validity metadata. Expired/not-yet-valid anchors, duplicate identifiers or
+  fingerprints, unsupported purpose or schema, production-style use of developer trust, and
+  unapproved mutable inputs stop before publication.
+- Workload identity entries are bounded, deterministic, and unique; each binds stable service and
+  instance IDs, exact environment and audience, named owner and purpose, and opaque `secret.*`
+  references. Human identity, shared credential, wildcard audience, raw secret, private key, token,
+  autonomous execution, or connector authority is rejected.
+- Publication uses an attempt-owned staging area beneath a configured trust root, flushes files, and
+  atomically publishes under exact deployment and trust-plan identity. Existing byte-identical output
+  is reusable; unknown, modified, symbolic-link, extra, or conflicting content is never overwritten,
+  and cleanup removes only the current attempt's files.
+- Output is limited to a public PEM trust bundle and canonical UTF-8 workload identity catalog with
+  source/provenance metadata and opaque secret references. No secret value, private key, credential,
+  command, lease-holder identity, raw justification, or infrastructure action appears in files or
+  response evidence.
+- The phase result records stable state and result code, timestamps, trust-plan digest, bounded anchor,
+  identity, file, and byte counts, and per-file safe digest/disposition evidence. Exact replay returns
+  prior evidence without rewriting files; changed replay, stale revision, foreign lease,
+  expired/interrupted execution, and concurrency fail deterministically.
+- Required RBAC, browser CSRF, pre-mutation and pre-finish audit, correlation ID, `no-store`, safe error
+  mapping, and non-disclosing scope behavior apply. A required pre-mutation audit failure prevents
+  execution begin, file publication, and checkpoint mutation; the result audit must succeed before
+  checkpoint completion.
+- The operations UI offers the action only for a current leased `phase.trust` with matching completed
+  configuration and passed trust plan, requires explicit confirmation and justification, communicates
+  trust-store-only impact, and displays bounded evidence or recovery guidance without secret, data,
+  service, rollback, connector, infrastructure, or AI-operation controls.
+- Automated and live tests cover deterministic plan/output, certificate and identity validation,
+  digest drift, exact reuse/replay, changed replay, stale/foreign/expired ownership, interrupted
+  execution, audit failure, path and symbolic-link safety, conflicts, cleanup, strict API parsing,
+  response redaction, PostgreSQL serialization, persisted reload state, and responsive desktop/mobile
+  presentation.
+- This slice does not generate, import, expose, rotate, or revoke private keys or secret values;
+  initialize data; deploy or restart services; configure enterprise login, model, or integrations;
+  execute rollback; invoke infrastructure connectors; or authorize AI-driven operation.
+
+### ATLAS-IMP-032 Validation Evidence
+
+- Domain, filesystem, application, checkpoint, API, audit, and persistence tests cover deterministic
+  trust plans and canonical output, public-certificate and workload-identity validation, exact reuse
+  and replay, changed replay, stale or foreign ownership, interrupted execution, audit failure,
+  conflicts, cleanup, strict request parsing, safe evidence, and PostgreSQL serialization. The trust
+  symbolic-link case is skipped only on this Windows host and remains enabled in Linux CI.
+- Full backend verification passes Ruff format/check across 277 files, strict mypy across 271 source
+  files, and 317 pytest tests with three host-specific symbolic-link skips. Full frontend verification
+  passes ESLint, TypeScript, 25 Vitest tests, and the production build.
+- Live browser validation established the exact coordination lease with explicit justification,
+  acquired three immutable offline artifacts, rendered the approved non-secret configuration, and
+  published one public trust anchor plus one workload identity record in two files. The run advanced
+  through revision 7, completed three of nine phases, and selected `phase.data` next without exposing
+  a data, service, rollback, connector, infrastructure, or AI operation.
+- Direct filesystem verification found only `trust-bundle.pem` and canonical
+  `workload-identities.json` beneath the exact deployment and trust-plan identities. The bundle
+  contains a public certificate only; the catalog contains one opaque `secret.*` reference and no
+  private key, credential, password, token, raw secret, temporary file, or remaining staging content.
+- A page reload retained the completed trust evidence and did not offer the trust action again. Live
+  presentation passed at 1440x900 and 390x844 with no horizontal overflow, and browser warning/error
+  logs were empty.
+- GitHub backend and frontend CI jobs passed for source commit `e9b8b7c` in
+  [run 30932367122](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30932367122).
 
 ### ATLAS-IMP-031 Scope Rationale
 
@@ -1485,6 +1572,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-029 | Controlled bootstrap plan rebase and checkpoint invalidation | Completed through [PR #41](https://github.com/ozdemirumit/Project_Atlas/pull/41) from source commit `f2feecc`; 291 backend tests, 21 frontend tests, live enterprise-session rebase and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-030 | Governed bootstrap artifact acquisition and verification | Completed through [PR #42](https://github.com/ozdemirumit/Project_Atlas/pull/42) from source commit `270d625`; 301 backend tests, 23 frontend tests, live exact-lease artifact acquisition and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-031 | Governed bootstrap configuration rendering and validation | Completed through [PR #43](https://github.com/ozdemirumit/Project_Atlas/pull/43) from source commit `26c21eb`; 309 backend tests, 24 frontend tests, live exact-lease artifact/configuration execution and desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-032 | Governed bootstrap trust bundle and workload identity provisioning | Completed through [PR #44](https://github.com/ozdemirumit/Project_Atlas/pull/44) from source commit `e9b8b7c`; 317 backend tests, 25 frontend tests, live exact-lease trust publication and desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 

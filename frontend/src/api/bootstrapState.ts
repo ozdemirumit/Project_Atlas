@@ -28,6 +28,7 @@ export type BootstrapState = {
     updated_at: string;
     artifact_acquisition: BootstrapArtifactExecution | null;
     configuration_rendering: BootstrapConfigurationExecution | null;
+    trust_provisioning: BootstrapTrustExecution | null;
   };
   durable: boolean;
   lease_available: boolean;
@@ -68,6 +69,30 @@ export type BootstrapConfigurationExecution = {
   result_code: string;
   started_at: string;
   completed_at: string | null;
+  evidence: Array<{
+    file_id: string;
+    sha256: string;
+    size_bytes: number;
+    disposition: "published" | "reused";
+  }>;
+  file_count: number;
+  total_bytes: number;
+};
+
+export type BootstrapTrustExecution = {
+  execution_id: string;
+  phase_id: "phase.trust";
+  release_id: string;
+  profile: string;
+  configuration_digest: string;
+  trust_schema_version: "atlas.bootstrap-trust-plan.v1";
+  trust_plan_digest: string;
+  state: "running" | "completed" | "failed";
+  result_code: string;
+  started_at: string;
+  completed_at: string | null;
+  anchor_count: number;
+  workload_identity_count: number;
   evidence: Array<{
     file_id: string;
     sha256: string;
@@ -159,6 +184,41 @@ export function isConfigurationExecution(
   );
 }
 
+export function isTrustExecution(value: unknown): value is BootstrapTrustExecution {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.execution_id === "string" &&
+    candidate.phase_id === "phase.trust" &&
+    typeof candidate.release_id === "string" &&
+    typeof candidate.profile === "string" &&
+    typeof candidate.configuration_digest === "string" &&
+    candidate.trust_schema_version === "atlas.bootstrap-trust-plan.v1" &&
+    typeof candidate.trust_plan_digest === "string" &&
+    (candidate.state === "running" ||
+      candidate.state === "completed" ||
+      candidate.state === "failed") &&
+    typeof candidate.result_code === "string" &&
+    typeof candidate.started_at === "string" &&
+    (candidate.completed_at === null || typeof candidate.completed_at === "string") &&
+    typeof candidate.anchor_count === "number" &&
+    typeof candidate.workload_identity_count === "number" &&
+    Array.isArray(candidate.evidence) &&
+    candidate.evidence.every((item) => {
+      if (typeof item !== "object" || item === null) return false;
+      const evidence = item as Record<string, unknown>;
+      return (
+        typeof evidence.file_id === "string" &&
+        typeof evidence.sha256 === "string" &&
+        typeof evidence.size_bytes === "number" &&
+        (evidence.disposition === "published" || evidence.disposition === "reused")
+      );
+    }) &&
+    typeof candidate.file_count === "number" &&
+    typeof candidate.total_bytes === "number"
+  );
+}
+
 export function isBootstrapRun(value: unknown): value is NonNullable<BootstrapState["run"]> {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
@@ -188,7 +248,9 @@ export function isBootstrapRun(value: unknown): value is NonNullable<BootstrapSt
     (candidate.artifact_acquisition === null ||
       isArtifactExecution(candidate.artifact_acquisition)) &&
     (candidate.configuration_rendering === null ||
-      isConfigurationExecution(candidate.configuration_rendering))
+      isConfigurationExecution(candidate.configuration_rendering)) &&
+    (candidate.trust_provisioning === null ||
+      isTrustExecution(candidate.trust_provisioning))
   );
 }
 

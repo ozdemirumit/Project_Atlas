@@ -65,6 +65,11 @@ import { getBootstrapPlan } from "./api/bootstrapPlan";
 import { previewBootstrapInvalidation } from "./api/bootstrapInvalidation";
 import { rebaseBootstrapPlan, type BootstrapRebaseResult } from "./api/bootstrapRebase";
 import { getBootstrapState } from "./api/bootstrapState";
+import {
+  previewBootstrapTrustPlan,
+  provisionBootstrapTrust,
+  type BootstrapTrustProvisioningResult,
+} from "./api/bootstrapTrust";
 import { previewDeploymentConfiguration } from "./api/deploymentConfiguration";
 import { getStorageImpact, type GraphEntity } from "./api/graph";
 import {
@@ -271,6 +276,10 @@ export function App() {
   const [configurationRenderingPending, setConfigurationRenderingPending] = useState(false);
   const [configurationRenderingResult, setConfigurationRenderingResult] =
     useState<BootstrapConfigurationRenderingResult | null>(null);
+  const [trustProvisioningJustification, setTrustProvisioningJustification] = useState("");
+  const [trustProvisioningPending, setTrustProvisioningPending] = useState(false);
+  const [trustProvisioningResult, setTrustProvisioningResult] =
+    useState<BootstrapTrustProvisioningResult | null>(null);
   const [bootstrapClaimJustification, setBootstrapClaimJustification] = useState("");
   const [bootstrapClaimPending, setBootstrapClaimPending] = useState(false);
   const [bootstrapClaimResult, setBootstrapClaimResult] =
@@ -328,6 +337,9 @@ export function App() {
       setConfigurationRenderingJustification("");
       setConfigurationRenderingPending(false);
       setConfigurationRenderingResult(null);
+      setTrustProvisioningJustification("");
+      setTrustProvisioningPending(false);
+      setTrustProvisioningResult(null);
       setBootstrapClaimJustification("");
       setBootstrapClaimPending(false);
       setBootstrapClaimResult(null);
@@ -465,6 +477,17 @@ export function App() {
     retry: false,
   });
   const deploymentConfiguration = deploymentConfigurationQuery.data?.data;
+  const bootstrapTrustPlanQuery = useQuery({
+    queryKey: [
+      "bootstrap-trust-plan",
+      deploymentConfiguration?.configuration_digest,
+      identity?.scope,
+    ],
+    queryFn: () => previewBootstrapTrustPlan(deploymentConfiguration!, identity!.scope),
+    enabled: Boolean(identity && deploymentConfiguration),
+    retry: false,
+  });
+  const bootstrapTrustPlan = bootstrapTrustPlanQuery.data?.data;
   const bootstrapPlanQuery = useQuery({
     queryKey: [
       "bootstrap-plan",
@@ -553,6 +576,25 @@ export function App() {
       ]);
     },
   });
+  const trustProvisioningMutation = useMutation({
+    mutationFn: () =>
+      provisionBootstrapTrust({
+        state: bootstrapState!,
+        configuration: deploymentConfiguration!,
+        trustPlan: bootstrapTrustPlan!,
+        scope: identity!.scope,
+        justification: trustProvisioningJustification.trim(),
+      }),
+    onSuccess: async (response) => {
+      setTrustProvisioningResult(response.data);
+      setTrustProvisioningPending(false);
+      setTrustProvisioningJustification("");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-state"] }),
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-invalidation"] }),
+      ]);
+    },
+  });
   const bootstrapClaimMutation = useMutation({
     mutationFn: () =>
       claimBootstrapLease({
@@ -576,6 +618,8 @@ export function App() {
     artifactAcquisitionResult?.execution ?? bootstrapState?.run?.artifact_acquisition;
   const configurationExecution =
     configurationRenderingResult?.execution ?? bootstrapState?.run?.configuration_rendering;
+  const trustExecution =
+    trustProvisioningResult?.execution ?? bootstrapState?.run?.trust_provisioning;
   const artifactPhaseAvailable = Boolean(
     bootstrapState?.run &&
       bootstrapState.lease_held_by_current_actor &&
@@ -607,6 +651,22 @@ export function App() {
       deploymentConfiguration.profile === bootstrapState.run.profile &&
       deploymentConfiguration.configuration_digest ===
         bootstrapState.run.configuration_digest,
+  );
+  const trustPhaseAvailable = Boolean(
+    bootstrapState?.run &&
+      bootstrapState.lease_held_by_current_actor &&
+      bootstrapState.run.current_phase_id === "phase.trust" &&
+      bootstrapState.run.trust_provisioning?.state !== "running" &&
+      bootstrapState.run.completed_phase_ids.includes("phase.configure") &&
+      bootstrapState.run.configuration_rendering?.state === "completed" &&
+      deploymentConfiguration?.state === "passed" &&
+      deploymentConfiguration.release_id === bootstrapState.run.release_id &&
+      deploymentConfiguration.profile === bootstrapState.run.profile &&
+      deploymentConfiguration.configuration_digest === bootstrapState.run.configuration_digest &&
+      bootstrapTrustPlan?.state === "passed" &&
+      bootstrapTrustPlan.release_id === bootstrapState.run.release_id &&
+      bootstrapTrustPlan.profile === bootstrapState.run.profile &&
+      bootstrapTrustPlan.configuration_digest === bootstrapState.run.configuration_digest,
   );
   const retryAuditExportMutation = useMutation({
     mutationFn: retryAuditExport,
@@ -1699,6 +1759,136 @@ export function App() {
                           {configurationExecution.state === "failed" && (
                             <p className="configuration-recovery-note">
                               Prior verified configuration was preserved. Correct the bounded failure
+                              and retry under the active lease.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      {trustPhaseAvailable && !trustProvisioningPending && (
+                        <div className="trust-provisioning-action">
+                          <div>
+                            <strong>Provision public trust and workload identities</strong>
+                            <p>
+                              Publishes only approved public certificates and opaque secret-reference
+                              metadata. Private keys, credential values, data, services, and
+                              infrastructure remain unchanged.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTrustProvisioningResult(null);
+                              setTrustProvisioningPending(true);
+                            }}
+                          >
+                            <ShieldCheck size={14} /> Review trust
+                          </button>
+                        </div>
+                      )}
+                      {trustProvisioningPending &&
+                        trustPhaseAvailable &&
+                        bootstrapTrustPlan && (
+                          <div className="trust-provisioning-confirmation" role="dialog">
+                            <div>
+                              <strong>Confirm public trust-store change</strong>
+                              <p>
+                                Trust plan {bootstrapTrustPlan.trust_plan_digest.slice(0, 12)}... will
+                                publish {bootstrapTrustPlan.anchors.length} public anchor and {" "}
+                                {bootstrapTrustPlan.workload_identities.length} workload identity
+                                record. Existing exact output is reused.
+                              </p>
+                            </div>
+                            <label>
+                              Trust justification
+                              <input
+                                value={trustProvisioningJustification}
+                                maxLength={500}
+                                onChange={(event) =>
+                                  setTrustProvisioningJustification(event.target.value)
+                                }
+                                placeholder="Record the approved reason for publishing trust metadata"
+                              />
+                            </label>
+                            {trustProvisioningMutation.isError && (
+                              <div className="impact-message impact-error" role="alert">
+                                <AlertTriangle size={16} /> Trust metadata was not published. Refresh
+                                the governed state and trust plan before retrying.
+                              </div>
+                            )}
+                            <div className="trust-provisioning-confirm-actions">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setTrustProvisioningPending(false);
+                                  setTrustProvisioningJustification("");
+                                }}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                className="trust-provisioning-confirm"
+                                type="button"
+                                disabled={
+                                  trustProvisioningJustification.trim().length < 12 ||
+                                  trustProvisioningMutation.isPending
+                                }
+                                onClick={() => trustProvisioningMutation.mutate()}
+                              >
+                                <ShieldCheck size={14} /> Confirm trust
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      {trustExecution && (
+                        <div className={`trust-provisioning-result ${trustExecution.state}`}>
+                          <div className="trust-provisioning-result-heading">
+                            {trustExecution.state === "completed" ? (
+                              <CheckCircle2 size={18} />
+                            ) : (
+                              <AlertTriangle size={18} />
+                            )}
+                            <div>
+                              <strong>Trust provisioning {trustExecution.state}</strong>
+                              <code>{trustExecution.result_code}</code>
+                            </div>
+                            <span className={`state-badge ${trustExecution.state}`}>
+                              {trustExecution.state}
+                            </span>
+                          </div>
+                          <div className="trust-provisioning-summary">
+                            <div>
+                              <span>Anchors</span>
+                              <strong>{trustExecution.anchor_count}</strong>
+                            </div>
+                            <div>
+                              <span>Identities</span>
+                              <strong>{trustExecution.workload_identity_count}</strong>
+                            </div>
+                            <div>
+                              <span>Files</span>
+                              <strong>{trustExecution.file_count}</strong>
+                            </div>
+                            <div>
+                              <span>Verified bytes</span>
+                              <strong>{trustExecution.total_bytes.toLocaleString()}</strong>
+                            </div>
+                          </div>
+                          {trustExecution.evidence.length > 0 && (
+                            <div className="trust-evidence-list">
+                              {trustExecution.evidence.map((item) => (
+                                <div key={item.file_id}>
+                                  <div>
+                                    <code>{item.file_id}</code>
+                                    <span>{item.disposition}</span>
+                                  </div>
+                                  <code>{item.sha256.slice(0, 20)}...</code>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {trustExecution.state === "failed" && (
+                            <p className="trust-recovery-note">
+                              Prior verified trust content was preserved. Correct the bounded failure
                               and retry under the active lease.
                             </p>
                           )}
