@@ -137,5 +137,9 @@ class AuthorizationService:
                 decision_id=decision.decision_id,
                 outcome=decision.outcome.value,
                 result_code=decision.reason_code,
+                target_subject_id=request.target_subject_id,
+                reason=request.reason,
+                idempotency_key=request.idempotency_key,
+                target_metadata=request.target_metadata,
             )
         )

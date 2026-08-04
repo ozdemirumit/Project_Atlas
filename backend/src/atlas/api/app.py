@@ -18,6 +18,7 @@ from atlas.api.routes import (
     health,
     health_checks,
     identity,
+    identity_governance,
     investigations,
     platform,
     rca,
@@ -61,6 +62,7 @@ from atlas.modules.identity.adapters.development import DevelopmentIdentityProvi
 from atlas.modules.identity.adapters.directory import build_directory_identity_provider
 from atlas.modules.identity.adapters.sessions import InMemorySessionRepository
 from atlas.modules.identity.application.api_credentials import ApiCredentialService
+from atlas.modules.identity.application.governance import IdentityGovernanceService
 from atlas.modules.identity.application.ports import IdentityProvider
 from atlas.modules.identity.application.service import IdentityService
 from atlas.modules.identity.application.sessions import SessionService
@@ -105,6 +107,7 @@ def create_app(
     security_export_service: SecurityExportService | None = None,
     session_service: SessionService | None = None,
     api_credential_service: ApiCredentialService | None = None,
+    identity_governance_service: IdentityGovernanceService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -126,19 +129,26 @@ def create_app(
         provider=resolved_identity_provider,
         audit_sink=resolved_audit_sink,
     )
+    session_repository = InMemorySessionRepository()
+    api_credential_repository = InMemoryApiCredentialRepository()
     resolved_session_service = session_service or SessionService(
         identity_service=identity_service,
-        repository=InMemorySessionRepository(),
+        repository=session_repository,
         audit_sink=resolved_audit_sink,
         absolute_timeout=timedelta(minutes=resolved_settings.session_absolute_timeout_minutes),
         idle_timeout=timedelta(minutes=resolved_settings.session_idle_timeout_minutes),
         max_sessions_per_subject=resolved_settings.session_max_per_subject,
     )
     resolved_api_credential_service = api_credential_service or ApiCredentialService(
-        repository=InMemoryApiCredentialRepository(),
+        repository=api_credential_repository,
         audit_sink=resolved_audit_sink,
         max_lifetime=timedelta(minutes=resolved_settings.api_credential_max_lifetime_minutes),
         max_active_per_subject=resolved_settings.api_credential_max_active_per_subject,
+    )
+    resolved_identity_governance_service = identity_governance_service or IdentityGovernanceService(
+        session_repository=session_repository,
+        api_credential_repository=api_credential_repository,
+        audit_sink=resolved_audit_sink,
     )
     resolved_authorization_service = (
         authorization_service
@@ -262,6 +272,7 @@ def create_app(
         app.state.identity_service = identity_service
         app.state.session_service = resolved_session_service
         app.state.api_credential_service = resolved_api_credential_service
+        app.state.identity_governance_service = resolved_identity_governance_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -305,6 +316,7 @@ def create_app(
     app.include_router(sessions.router, prefix="/api/v1")
     app.include_router(api_credentials.router, prefix="/api/v1")
     app.include_router(identity.router, prefix="/api/v1")
+    app.include_router(identity_governance.router, prefix="/api/v1")
     app.include_router(platform.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

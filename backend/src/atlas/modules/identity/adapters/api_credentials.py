@@ -49,3 +49,6 @@ class InMemoryApiCredentialRepository:
             for record in self._records.values()
             if record.subject.subject_id == subject_id and record.state is ApiCredentialState.ACTIVE
         )
+
+    async def all_records(self) -> tuple[ApiCredentialRecord, ...]:
+        return tuple(self._records.values())

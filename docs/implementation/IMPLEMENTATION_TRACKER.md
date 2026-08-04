@@ -4,14 +4,78 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-019 |
-| Title | Governed personal API credential lifecycle |
+| Task ID | ATLAS-IMP-020 |
+| Title | Administrative identity access governance |
 | Status | Done |
-| Branch | `agent/governed-api-credentials` |
-| Pull Request | [PR #31](https://github.com/ozdemirumit/Project_Atlas/pull/31) |
+| Branch | `agent/administrative-identity-access-governance` |
+| Pull Request | [PR #32](https://github.com/ozdemirumit/Project_Atlas/pull/32) |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
 | Last Updated | 2026-08-04 |
 | Next Action | Select the next approved vertical slice and record its dependencies and acceptance criteria |
+
+### ATLAS-IMP-020 Acceptance Criteria
+
+- Dedicated administrative identity permissions and a Security Administrator role apply only to
+  authenticated human enterprise identities within exact organization, environment, and site scope;
+  development and non-human identities cannot use the administrative surface.
+- A bounded, filtered, deterministic inventory exposes secret-free lifecycle metadata for active
+  browser sessions and personal API credentials belonging to other subjects in the authorized scope.
+- Exact session and personal API credential revocation require current administrative RBAC, a
+  browser session, CSRF, reason, correlation, idempotency, and optimistic concurrency. Bearer tokens
+  cannot invoke administrative mutation endpoints.
+- Missing, foreign, hidden, inactive, stale, and concurrently changed targets behave equivalently
+  without leaking existence, counts, or unauthorized subject metadata and cannot resurrect state.
+- The current administrator browser session cannot be revoked through the administrative endpoint;
+  revoking another subject's session or credential leaves the administrator session active.
+- Required inventory, allow, deny, and revoke audit events fail closed and include actor, target
+  subject, safe lifecycle metadata, reason, correlation, and idempotency evidence without secrets.
+- A searchable governance view is discovered only after the backend confirms administrative access.
+  Ordinary operators treat a 403 discovery response as an unavailable capability rather than a
+  disruptive application error.
+- Tests cover role and identity-class boundaries, exact scope, filtering and bounds, secret
+  redaction, hidden targets, current-session protection, CSRF, bearer denial, idempotency,
+  concurrency, audit failure, revocation propagation, and responsive UI.
+- Identity-disablement fan-out, OIDC/SAML setup, service or workload credentials, break-glass,
+  secret recovery or rotation, and infrastructure-changing grants remain outside this slice.
+
+### ATLAS-IMP-020 Validation Evidence
+
+- Dedicated `identity.governance.read`, `identity.session.admin.revoke`, and
+  `identity.api-credential.admin.revoke` permissions are bound to a versioned Security Administrator
+  role at exact organization, environment, site, identity domain, resource, and capability scope.
+  The development operator has no assignment, and enterprise-human enforcement independently rejects
+  development, service, workload, and other non-human identities.
+- The bounded governance service filters deterministic active session and personal-token inventory for
+  other subjects in the administrator's organization. Responses and audit metadata exclude cookie,
+  CSRF, raw-token, and token-digest material.
+- Administrative revocation is browser-session and CSRF only, requires a bounded reason,
+  idempotency key, and expected version, protects the current administrator session, and collapses
+  missing, foreign, hidden, inactive, stale, and concurrently changed targets into one external
+  result. Repository versioning prevents revoked sessions or credentials from being resurrected.
+- RBAC allow and deny decisions and governance inventory, replay, denial, and revoke events fail
+  closed. Mutation audit evidence includes actor, target subject, secrets-free lifecycle metadata,
+  reason, correlation, and idempotency context.
+- Backend Ruff formatting and lint and strict mypy checks passed across 206 source files. The complete
+  backend suite passed with 223 tests, including ten focused governance scenarios covering exact
+  scope, identity class, redaction, filtering and bounds, CSRF, bearer denial, current-session
+  protection, indistinguishable hidden targets, idempotency, concurrency, propagation, and audit
+  failure.
+- Frontend ESLint and TypeScript checks passed, seven Vitest scenarios passed across two files, and
+  the production Vite bundle built successfully. The web view is discovered only after a successful
+  administrative inventory response; an ordinary enterprise operator's 403 is treated as an absent
+  capability without a disruptive error.
+- The implementation source commit is `de53b00`; GitHub Actions passed on review head `8813822`:
+  the backend job completed successfully in 32 seconds and the frontend job completed successfully
+  in 42 seconds.
+- A live injected enterprise authorization/provider configuration showed another subject's active
+  browser session and personal API credential without secrets, revoked both, confirmed the old
+  session and bearer token returned HTTP 401, and confirmed the administrator's current session
+  stayed active. A normal enterprise operator received HTTP 403 and did not see the governance view.
+- Desktop 1440x900 and mobile 390x844 views were visually inspected in a real Chromium session.
+  Document width matched each viewport, with no page-level horizontal overflow or incoherent overlap.
+- Identity-disablement fan-out, OIDC/SAML setup, service and workload credentials, break-glass,
+  token secret recovery or rotation, and infrastructure-changing grants remain intentionally outside
+  this slice.
 
 ### ATLAS-IMP-019 Acceptance Criteria
 
@@ -707,6 +771,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-017 | Self-service session inventory and governed revocation | Completed through [PR #29](https://github.com/ozdemirumit/Project_Atlas/pull/29); 192 backend tests, four frontend scenarios, live API and desktop/390px mobile validation, and all GitHub quality gates passed |
 | ATLAS-IMP-018 | Immutable approval packet and human review foundation | Completed through [PR #30](https://github.com/ozdemirumit/Project_Atlas/pull/30); 203 backend tests, five frontend scenarios, live desktop/390px mobile validation, and all GitHub quality gates passed |
 | ATLAS-IMP-019 | Governed personal API credential lifecycle | Completed through [PR #31](https://github.com/ozdemirumit/Project_Atlas/pull/31); 213 backend tests, five frontend tests, live API/UI enterprise session, token, bearer, revoke, desktop/mobile validation, and all GitHub quality gates passed |
+| ATLAS-IMP-020 | Administrative identity access governance | Completed through [PR #32](https://github.com/ozdemirumit/Project_Atlas/pull/32) from source commit `de53b00`; 223 backend tests, seven frontend tests, live enterprise admin/operator session, personal-token and revoke API/UI validation, desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -213,6 +213,49 @@ const issuedApiCredentialResponse = {
     display_name: "Operations CLI",
     purpose: "Read current storage evidence.",
     token: `atlas_pat_${"A".repeat(43)}`,
+  },
+};
+
+const identityGovernanceResponse = {
+  data: {
+    sessions: [
+      {
+        session_id: "session.governed.operator",
+        version: 3,
+        subject_id: "subject.enterprise.operator",
+        subject_display_name: "Storage Operator",
+        provider_id: "provider.ldap.enterprise",
+        state: "active",
+        credential_kind: "browser_session",
+        created_at: "2026-08-04T09:00:00Z",
+        last_seen_at: "2026-08-04T10:00:00Z",
+        absolute_expires_at: "2026-08-04T17:00:00Z",
+        idle_expires_at: "2026-08-04T10:30:00Z",
+      },
+    ],
+    api_credentials: [
+      {
+        credential_id: "credential.governed.operator",
+        version: 4,
+        subject_id: "subject.enterprise.operator",
+        subject_display_name: "Storage Operator",
+        provider_id: "provider.ldap.enterprise",
+        display_name: "Operator dashboard reader",
+        purpose: "Read bounded storage evidence from the operator dashboard.",
+        state: "active",
+        grants: [
+          {
+            permission_id: "storage.overview.read",
+            scope_reference:
+              "organization.enterprise/environment.test/site.local/domain.storage/resource.storage.lab-overview/C1",
+          },
+        ],
+        created_at: "2026-08-04T09:10:00Z",
+        expires_at: "2026-08-04T10:40:00Z",
+        last_used_at: "2026-08-04T09:58:00Z",
+      },
+    ],
+    truncated: false,
   },
 };
 
@@ -1107,6 +1150,7 @@ const reportResponse = {
 };
 
 afterEach(() => {
+  cleanup();
   vi.restoreAllMocks();
   document.cookie = "atlas_csrf=; Max-Age=0; path=/";
   window.history.replaceState({}, "", "/");
@@ -1307,6 +1351,9 @@ describe("Atlas application shell", () => {
       if (url.includes("/identity/me") && !authenticated) {
         return Promise.resolve(new Response(null, { status: 401 }));
       }
+      if (url.includes("/identity-governance")) {
+        return Promise.resolve(new Response(null, { status: 403 }));
+      }
       const payload = url.includes("/identity/me")
         ? enterpriseIdentity
         : url.includes("/security-export/overview")
@@ -1379,6 +1426,193 @@ describe("Atlas application shell", () => {
     expect(logoutHeaders.get("X-CSRF-Token")).toBe("csrf_browser_test");
   });
 
+  it("discovers authorized identity governance and revokes exact foreign access", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    document.cookie = "atlas_csrf=csrf_governance_test; path=/; SameSite=Strict";
+    const governanceRequests: { url: string; init: RequestInit | undefined }[] = [];
+    const adminIdentity = {
+      ...identityResponse,
+      data: {
+        ...identityResponse.data,
+        subject_id: "subject.enterprise.admin",
+        display_name: "Security Administrator",
+        role_ids: ["role.security-administrator"],
+        authentication: {
+          ...identityResponse.data.authentication,
+          provider_id: "provider.ldap.enterprise",
+          method: "ldap",
+          assurance_level: "multi_factor",
+        },
+      },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity-governance") && init?.method === "POST") {
+        governanceRequests.push({ url, init });
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: {} }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/identity-governance")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(identityGovernanceResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+          }),
+        );
+      }
+      const payload = url.includes("/identity/me")
+        ? adminIdentity
+        : url.endsWith("/authentication/sessions")
+          ? sessionInventoryResponse
+          : url.endsWith("/authentication/api-credentials")
+            ? apiCredentialInventoryResponse
+            : url.includes("/security-export/overview")
+              ? securityExportOverviewResponse
+              : url.includes("/storage/overview")
+                ? storageResponse
+                : url.includes("/health-checks/overview")
+                  ? healthCheckResponse
+                  : url.includes("/graph/storage-impact")
+                    ? graphResponse
+                    : platformResponse;
+      return Promise.resolve(
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Security Administrator")).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: "Administrative access review" }),
+    ).toBeVisible();
+    expect(screen.getAllByText("Storage Operator").length).toBeGreaterThan(0);
+    expect(screen.getByText("Operator dashboard reader")).toBeVisible();
+    expect(screen.queryByText(/atlas_pat_/)).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Search identity governance"), {
+      target: { value: "operator" },
+    });
+    await waitFor(() =>
+      expect(
+        vi.mocked(globalThis.fetch).mock.calls.some(([input]) => {
+          const url =
+            typeof input === "string"
+              ? input
+              : input instanceof URL
+                ? input.href
+                : input.url;
+          return url.includes("query=operator");
+        }),
+      ).toBe(true),
+    );
+    fireEvent.change(await screen.findByLabelText("Identity governance revocation reason"), {
+      target: { value: "Operator access is no longer required." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Revoke session" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revoke token" }));
+
+    await waitFor(() => expect(governanceRequests).toHaveLength(2));
+    for (const request of governanceRequests) {
+      const headers = new Headers(request.init?.headers);
+      expect(headers.get("X-CSRF-Token")).toBe("csrf_governance_test");
+      expect(headers.get("Idempotency-Key")).toMatch(/^governance-(session|token)-/);
+      expect(request.init?.body).toContain(
+        '"reason":"Operator access is no longer required."',
+      );
+    }
+    const [sessionRequest, tokenRequest] = governanceRequests;
+    if (!sessionRequest || !tokenRequest) throw new Error("governance requests were not captured");
+    expect(sessionRequest.url).toContain("session.governed.operator/revocations");
+    expect(sessionRequest.init?.body).toContain('"expected_version":3');
+    expect(tokenRequest.url).toContain("credential.governed.operator/revocations");
+    expect(tokenRequest.init?.body).toContain('"expected_version":4');
+  });
+
+  it("keeps identity governance absent when enterprise discovery is forbidden", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    const ordinaryIdentity = {
+      ...identityResponse,
+      data: {
+        ...identityResponse.data,
+        display_name: "Directory Operator",
+        authentication: {
+          ...identityResponse.data.authentication,
+          provider_id: "provider.ldap.enterprise",
+          method: "ldap",
+          assurance_level: "single_factor",
+        },
+      },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity-governance")) {
+        return Promise.resolve(new Response(null, { status: 403 }));
+      }
+      const payload = url.includes("/identity/me")
+        ? ordinaryIdentity
+        : url.endsWith("/authentication/sessions")
+          ? sessionInventoryResponse
+          : url.endsWith("/authentication/api-credentials")
+            ? apiCredentialInventoryResponse
+            : url.includes("/security-export/overview")
+              ? securityExportOverviewResponse
+              : url.includes("/storage/overview")
+                ? storageResponse
+                : url.includes("/health-checks/overview")
+                  ? healthCheckResponse
+                  : url.includes("/graph/storage-impact")
+                    ? graphResponse
+                    : platformResponse;
+      return Promise.resolve(
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Directory Operator")).toBeVisible();
+    await waitFor(() =>
+      expect(
+        vi.mocked(globalThis.fetch).mock.calls.some(([input]) => {
+          const url =
+            typeof input === "string"
+              ? input
+              : input instanceof URL
+                ? input.href
+                : input.url;
+          return url.includes("/identity-governance");
+        }),
+      ).toBe(true),
+    );
+    expect(
+      screen.queryByRole("heading", { name: "Administrative access review" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/governance inventory failed/i)).not.toBeInTheDocument();
+  });
+
   it("opens a linked immutable packet for a separated human decision", async () => {
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
     window.history.replaceState({}, "", "/?approval_request_id=approval_test");
@@ -1409,6 +1643,9 @@ describe("Atlas application shell", () => {
             headers: { "Content-Type": "application/json" },
           }),
         );
+      }
+      if (url.includes("/identity-governance")) {
+        return Promise.resolve(new Response(null, { status: 403 }));
       }
       const payload = url.includes("/identity/me")
         ? reviewerIdentity
