@@ -8,7 +8,7 @@
 | Title | Enterprise audit export and Syslog delivery foundation |
 | Status | Review |
 | Branch | `agent/enterprise-audit-export` |
-| Pull Request | Pending |
+| Pull Request | [PR #34](https://github.com/ozdemirumit/Project_Atlas/pull/34) |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-034, ATLAS-035 |
 | Last Updated | 2026-08-04 |
 | Next Action | Open the ready pull request and validate backend and frontend GitHub Actions on the review head |
