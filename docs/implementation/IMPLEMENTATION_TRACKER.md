@@ -8,7 +8,7 @@
 | Title | Technical Decision Report and controlled ITSM handoff vertical slice |
 | Status | Review |
 | Branch | `agent/technical-decision-report` |
-| Pull Request | Pending |
+| Pull Request | [PR #24](https://github.com/ozdemirumit/Project_Atlas/pull/24) |
 | Governing Documents | ATLAS-002, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-056 |
 | Last Updated | 2026-08-04 |
 | Next Action | Open the pull request, validate CI, and merge after independent review |
