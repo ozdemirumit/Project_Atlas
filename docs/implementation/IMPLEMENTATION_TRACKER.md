@@ -4,14 +4,105 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-032 |
-| Title | Governed bootstrap trust bundle and workload identity provisioning |
+| Task ID | ATLAS-IMP-033 |
+| Title | Governed bootstrap data-service initialization and migration |
 | Status | Done |
-| Branch | `agent/bootstrap-trust-provisioning` |
-| Pull Request | [#44](https://github.com/ozdemirumit/Project_Atlas/pull/44) |
-| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
+| Branch | `agent/bootstrap-data-initialization` |
+| Pull Request | [#45](https://github.com/ozdemirumit/Project_Atlas/pull/45) |
+| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Merge PR #44, synchronize `main`, and scope the next bootstrap phase |
+| Next Action | Select and scope ATLAS-IMP-034 from the approved bootstrap roadmap |
+
+### ATLAS-IMP-033 Scope Rationale
+
+- ATLAS-038 orders data-service initialization and migration after trust provisioning. IMP-030
+  through IMP-032 establish the exact release, configuration, trust, lease, checkpoint, and governed
+  phase boundaries, but the bootstrap run cannot yet validate data ownership or initialize the schema
+  required by Atlas services.
+- This slice executes only `phase.data` for a clean, Atlas-owned non-production target. It derives an
+  immutable release-bound migration plan, verifies the target is empty or an exact reusable Atlas
+  initialization, applies the bounded catalog under a migration lock, records safe verification
+  evidence, and advances the existing checkpoint. Upgrades, destructive migration, backup creation,
+  restore, and external data-service provisioning remain fail-closed until their own governed slices.
+
+### ATLAS-IMP-033 Acceptance Criteria
+
+- A read-only, versioned data-plan API derives the exact plan from release, profile, scope,
+  configuration digest, trust-plan digest, migration artifact digest, supported schema range, and a
+  bounded ordered migration catalog. It exposes immutable migration IDs, checksums, compatibility,
+  reversibility/recovery classification, expected target schema, and non-secret target metadata only;
+  database URLs, credentials, SQL text, filesystem paths, and raw migration content are absent.
+- Migration catalog entries are unique, ordered, immutable, checksummed, and release-bound. Missing,
+  duplicate, reordered, mutable, unrecognized, destructive, irreversible-without-recovery, or
+  checksum-drifted entries stop before target mutation.
+- A strict C2 execution request binds the exact run, expected revision, plan and resume identities,
+  release/profile/scope, configuration and trust digests, data-plan schema and digest, migration
+  artifact digest, target identity and expected state, `phase.data`, bounded human justification, and
+  idempotency key. Unknown fields, malformed values, stale input, and foreign identifiers fail closed.
+- Execution requires the active lease held by the authenticated browser session, exact scope and
+  revision, completed acquire/configure/trust phases, `phase.data` as the current dependency-satisfied
+  phase, and exact release, plan, configuration, trust, migration, and target identities.
+- Pre-mutation inspection accepts only an empty target reserved for Atlas or a byte-for-byte reusable
+  Atlas initialization matching the same deployment and data-plan identity. Unknown schemas, tables,
+  ownership markers, partial foreign state, unsupported schema versions, newer schemas, or ambiguous
+  prior attempts are never overwritten, adopted, dropped, or reported as safely initialized.
+- Clean initialization acquires one target-scoped migration lock, creates only allowlisted Atlas-owned
+  schema metadata, applies the exact ordered catalog once, verifies target revision, ownership,
+  migration checksums, required objects and integrity counts, and releases the lock. Concurrent or
+  expired execution fails deterministically without claiming completion.
+- Initial clean installation records backup and restore requirements as explicitly not applicable only
+  when inspection proves the target empty and every migration non-destructive. Any existing Atlas data,
+  upgrade, destructive/backfill step, or uncertain state requires fresh backup and restore-test evidence
+  and remains blocked in this slice.
+- Partial initialization persists the exact last verified migration, bounded recovery state, retry or
+  restore requirement, and safe operator guidance. Cleanup removes only attempt-owned temporary state;
+  it never drops schemas, deletes data, rewinds an unknown migration, or performs blind rollback.
+- The phase result records stable state/result code, timestamps, data-plan digest, from/to revisions,
+  bounded migration and verified-object counts, lock disposition, backup applicability, and safe digest
+  evidence. Exact replay returns prior evidence without reapplying migrations; changed replay, stale
+  revision, foreign lease, interrupted execution, and concurrency fail deterministically.
+- Required RBAC, browser CSRF, pre-mutation and pre-finish audit, correlation ID, `no-store`, safe error
+  mapping, and non-disclosing scope behavior apply. Required audit failure prevents target inspection or
+  mutation as appropriate, and result audit must succeed before checkpoint completion.
+- The operations UI offers the action only for a current leased `phase.data` with matching completed
+  trust evidence and a passed clean-initialization plan, requires explicit confirmation and
+  justification, communicates database-schema-only impact, and displays bounded migration or recovery
+  evidence without service, identity-provider, model, integration, rollback, connector,
+  infrastructure, or AI-operation controls.
+- Automated and live tests cover deterministic planning, catalog checksum/order drift, empty/reusable
+  targets, unknown and partial state, unsupported/newer schemas, exact replay, changed replay,
+  stale/foreign/expired ownership, migration locking, concurrency, interruption, required audit failure,
+  strict API parsing, safe response evidence, PostgreSQL state serialization, persisted reload, and
+  responsive desktop/mobile presentation.
+- This slice does not provision an external database, expose credentials or SQL, upgrade an existing
+  deployment, execute destructive or irreversible migrations, create or restore backups, deploy or
+  restart services, configure enterprise identity/model/integrations, execute rollback, invoke managed
+  infrastructure connectors, or authorize AI-driven operation.
+
+### ATLAS-IMP-033 Validation Evidence
+
+- Domain, filesystem, application, checkpoint, API, audit, and persistence tests cover deterministic
+  plans, ordered release-bound migrations, empty and exact reusable targets, unknown-state rejection,
+  atomic publication, exact replay, stale ownership, required audit boundaries, strict redacted API
+  contracts, and PostgreSQL JSON serialization. Symbolic-link cases remain covered by the shared Linux
+  CI boundary where Windows cannot create the required test links.
+- Full backend verification passes Ruff format across 286 files, Ruff checks, strict mypy across 246
+  source files, and 321 pytest tests with three host-specific symbolic-link skips. Full frontend
+  verification passes ESLint, TypeScript, 26 Vitest tests, and the production build.
+- Live browser validation established the exact lease, acquired three immutable offline artifacts,
+  rendered canonical non-secret configuration, published bounded public trust metadata, and initialized
+  the clean synthetic schema through three reversible migrations. The run advanced to revision 9,
+  completed four of nine phases, and selected `phase.services` next without exposing a service,
+  external database, backup, rollback, connector, infrastructure, or AI operation.
+- Direct filesystem verification found exactly one `atlas-schema-state.json` beneath the exact
+  deployment, data-plan, and target identities. It records 14 verified objects, ordered migration IDs
+  and checksums, Atlas ownership, revision `schema.atlas-bootstrap.v1`, and no database URL, credential,
+  password, private key, SQL text, temporary file, or remaining staging content.
+- Live presentation passed at 1440x900 and 390x844 with no horizontal overflow. The completed evidence
+  remained visible at `phase.services`, the data action was no longer offered, and browser warning/error
+  logs were empty.
+- GitHub backend and frontend CI jobs passed for source commit `996a25c` in
+  [run 30935856082](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30935856082).
 
 ### ATLAS-IMP-032 Scope Rationale
 
@@ -1573,6 +1664,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-030 | Governed bootstrap artifact acquisition and verification | Completed through [PR #42](https://github.com/ozdemirumit/Project_Atlas/pull/42) from source commit `270d625`; 301 backend tests, 23 frontend tests, live exact-lease artifact acquisition and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-031 | Governed bootstrap configuration rendering and validation | Completed through [PR #43](https://github.com/ozdemirumit/Project_Atlas/pull/43) from source commit `26c21eb`; 309 backend tests, 24 frontend tests, live exact-lease artifact/configuration execution and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-032 | Governed bootstrap trust bundle and workload identity provisioning | Completed through [PR #44](https://github.com/ozdemirumit/Project_Atlas/pull/44) from source commit `e9b8b7c`; 317 backend tests, 25 frontend tests, live exact-lease trust publication and desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-033 | Governed bootstrap data-service initialization and migration | Completed through [PR #45](https://github.com/ozdemirumit/Project_Atlas/pull/45) from source commit `996a25c`; 321 backend tests, 26 frontend tests, live clean synthetic schema initialization and desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 

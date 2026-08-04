@@ -11,6 +11,7 @@ from atlas.modules.platform.domain.bootstrap_artifact_acquisition import (
 from atlas.modules.platform.domain.bootstrap_configuration_rendering import (
     ConfigurationRenderingExecution,
 )
+from atlas.modules.platform.domain.bootstrap_data_initialization import DataInitializationExecution
 from atlas.modules.platform.domain.bootstrap_plan import DIGEST_PATTERN
 from atlas.modules.platform.domain.bootstrap_trust_provisioning import TrustProvisioningExecution
 from atlas.modules.platform.domain.release_preflight import DeploymentProfile
@@ -98,6 +99,7 @@ class BootstrapRunRecord:
     artifact_acquisition: ArtifactAcquisitionExecution | None = None
     configuration_rendering: ConfigurationRenderingExecution | None = None
     trust_provisioning: TrustProvisioningExecution | None = None
+    data_initialization: DataInitializationExecution | None = None
 
     def __post_init__(self) -> None:
         validate_stable_identifier(self.run_id, "run_id")
@@ -152,6 +154,15 @@ class BootstrapRunRecord:
                 or trust_execution.phase_id not in self.identity.phase_ids
             ):
                 raise ValueError("trust provisioning does not match the bootstrap run")
+        if self.data_initialization is not None:
+            data_execution = self.data_initialization
+            if (
+                data_execution.release_id != self.identity.release_id
+                or data_execution.profile is not self.identity.profile
+                or data_execution.configuration_digest != self.identity.configuration_digest
+                or data_execution.phase_id not in self.identity.phase_ids
+            ):
+                raise ValueError("data initialization does not match the bootstrap run")
 
     def lease_is_active(self, at: datetime) -> bool:
         return self.lease_expires_at is not None and at < self.lease_expires_at
@@ -203,3 +214,4 @@ class BootstrapMutationResult:
     artifact_acquisition: ArtifactAcquisitionExecution | None = None
     configuration_rendering: ConfigurationRenderingExecution | None = None
     trust_provisioning: TrustProvisioningExecution | None = None
+    data_initialization: DataInitializationExecution | None = None

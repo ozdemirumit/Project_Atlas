@@ -57,6 +57,11 @@ import {
   type BootstrapArtifactAcquisitionResult,
 } from "./api/bootstrapArtifactAcquisition";
 import {
+  initializeBootstrapData,
+  previewBootstrapDataPlan,
+  type BootstrapDataInitializationResult,
+} from "./api/bootstrapData";
+import {
   renderBootstrapConfiguration,
   type BootstrapConfigurationRenderingResult,
 } from "./api/bootstrapConfigurationRendering";
@@ -280,6 +285,10 @@ export function App() {
   const [trustProvisioningPending, setTrustProvisioningPending] = useState(false);
   const [trustProvisioningResult, setTrustProvisioningResult] =
     useState<BootstrapTrustProvisioningResult | null>(null);
+  const [dataInitializationJustification, setDataInitializationJustification] = useState("");
+  const [dataInitializationPending, setDataInitializationPending] = useState(false);
+  const [dataInitializationResult, setDataInitializationResult] =
+    useState<BootstrapDataInitializationResult | null>(null);
   const [bootstrapClaimJustification, setBootstrapClaimJustification] = useState("");
   const [bootstrapClaimPending, setBootstrapClaimPending] = useState(false);
   const [bootstrapClaimResult, setBootstrapClaimResult] =
@@ -488,6 +497,23 @@ export function App() {
     retry: false,
   });
   const bootstrapTrustPlan = bootstrapTrustPlanQuery.data?.data;
+  const bootstrapDataPlanQuery = useQuery({
+    queryKey: [
+      "bootstrap-data-plan",
+      deploymentConfiguration?.configuration_digest,
+      bootstrapTrustPlan?.trust_plan_digest,
+      identity?.scope,
+    ],
+    queryFn: () =>
+      previewBootstrapDataPlan(
+        deploymentConfiguration!,
+        bootstrapTrustPlan!,
+        identity!.scope,
+      ),
+    enabled: Boolean(identity && deploymentConfiguration && bootstrapTrustPlan),
+    retry: false,
+  });
+  const bootstrapDataPlan = bootstrapDataPlanQuery.data?.data;
   const bootstrapPlanQuery = useQuery({
     queryKey: [
       "bootstrap-plan",
@@ -595,6 +621,27 @@ export function App() {
       ]);
     },
   });
+  const dataInitializationMutation = useMutation({
+    mutationFn: () =>
+      initializeBootstrapData({
+        state: bootstrapState!,
+        configuration: deploymentConfiguration!,
+        trustPlan: bootstrapTrustPlan!,
+        dataPlan: bootstrapDataPlan!,
+        scope: identity!.scope,
+        justification: dataInitializationJustification.trim(),
+      }),
+    onSuccess: async (response) => {
+      setDataInitializationResult(response.data);
+      setDataInitializationPending(false);
+      setDataInitializationJustification("");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-state"] }),
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-invalidation"] }),
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-data-plan"] }),
+      ]);
+    },
+  });
   const bootstrapClaimMutation = useMutation({
     mutationFn: () =>
       claimBootstrapLease({
@@ -620,6 +667,8 @@ export function App() {
     configurationRenderingResult?.execution ?? bootstrapState?.run?.configuration_rendering;
   const trustExecution =
     trustProvisioningResult?.execution ?? bootstrapState?.run?.trust_provisioning;
+  const dataExecution =
+    dataInitializationResult?.execution ?? bootstrapState?.run?.data_initialization;
   const artifactPhaseAvailable = Boolean(
     bootstrapState?.run &&
       bootstrapState.lease_held_by_current_actor &&
@@ -667,6 +716,29 @@ export function App() {
       bootstrapTrustPlan.release_id === bootstrapState.run.release_id &&
       bootstrapTrustPlan.profile === bootstrapState.run.profile &&
       bootstrapTrustPlan.configuration_digest === bootstrapState.run.configuration_digest,
+  );
+  const dataPhaseAvailable = Boolean(
+    bootstrapState?.run &&
+      bootstrapState.lease_held_by_current_actor &&
+      bootstrapState.run.current_phase_id === "phase.data" &&
+      bootstrapState.run.data_initialization?.state !== "running" &&
+      bootstrapState.run.completed_phase_ids.includes("phase.trust") &&
+      bootstrapState.run.trust_provisioning?.state === "completed" &&
+      deploymentConfiguration?.state === "passed" &&
+      deploymentConfiguration.release_id === bootstrapState.run.release_id &&
+      deploymentConfiguration.profile === bootstrapState.run.profile &&
+      deploymentConfiguration.configuration_digest === bootstrapState.run.configuration_digest &&
+      bootstrapTrustPlan?.state === "passed" &&
+      bootstrapTrustPlan.release_id === bootstrapState.run.release_id &&
+      bootstrapTrustPlan.profile === bootstrapState.run.profile &&
+      bootstrapTrustPlan.configuration_digest === bootstrapState.run.configuration_digest &&
+      bootstrapState.run.trust_provisioning?.trust_plan_digest ===
+        bootstrapTrustPlan.trust_plan_digest &&
+      bootstrapDataPlan?.state === "passed" &&
+      bootstrapDataPlan.release_id === bootstrapState.run.release_id &&
+      bootstrapDataPlan.profile === bootstrapState.run.profile &&
+      bootstrapDataPlan.configuration_digest === bootstrapState.run.configuration_digest &&
+      bootstrapDataPlan.trust_plan_digest === bootstrapTrustPlan.trust_plan_digest,
   );
   const retryAuditExportMutation = useMutation({
     mutationFn: retryAuditExport,
@@ -1890,6 +1962,149 @@ export function App() {
                             <p className="trust-recovery-note">
                               Prior verified trust content was preserved. Correct the bounded failure
                               and retry under the active lease.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      {dataPhaseAvailable && bootstrapDataPlan && !dataInitializationPending && (
+                        <div className="data-initialization-action">
+                          <div>
+                            <strong>Initialize governed schema state</strong>
+                            <p>
+                              Applies {bootstrapDataPlan.migrations.length} ordered, reversible
+                              migration records to the approved {bootstrapDataPlan.target_kind} target.
+                              External databases, services, backups, and infrastructure remain unchanged.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDataInitializationResult(null);
+                              setDataInitializationPending(true);
+                            }}
+                          >
+                            <Database size={14} /> Review data
+                          </button>
+                        </div>
+                      )}
+                      {dataInitializationPending && dataPhaseAvailable && bootstrapDataPlan && (
+                        <div className="data-initialization-confirmation" role="dialog">
+                          <div>
+                            <strong>Confirm clean data-schema initialization</strong>
+                            <p>
+                              Target {bootstrapDataPlan.target_id} is {bootstrapDataPlan.target_state}.
+                              Schema revision will move from {bootstrapDataPlan.current_revision} to {" "}
+                              {bootstrapDataPlan.target_revision}. Backup is not applicable to this clean,
+                              synthetic initialization.
+                            </p>
+                          </div>
+                          <div className="data-migration-list">
+                            {bootstrapDataPlan.migrations.map((migration) => (
+                              <div key={migration.migration_id}>
+                                <span>{migration.sequence}</span>
+                                <div>
+                                  <code>{migration.migration_id}</code>
+                                  <small>
+                                    {migration.from_revision} to {migration.to_revision} / {" "}
+                                    {migration.expected_object_count} objects
+                                  </small>
+                                </div>
+                                <strong>reversible</strong>
+                              </div>
+                            ))}
+                          </div>
+                          <label>
+                            Data justification
+                            <input
+                              value={dataInitializationJustification}
+                              maxLength={500}
+                              onChange={(event) =>
+                                setDataInitializationJustification(event.target.value)
+                              }
+                              placeholder="Record the reviewed reason for initializing schema state"
+                            />
+                          </label>
+                          {dataInitializationMutation.isError && (
+                            <div className="impact-message impact-error" role="alert">
+                              <AlertTriangle size={16} /> Schema state was not initialized. Refresh the
+                              governed state and exact data plan before retrying.
+                            </div>
+                          )}
+                          <div className="data-initialization-confirm-actions">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDataInitializationPending(false);
+                                setDataInitializationJustification("");
+                              }}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              className="data-initialization-confirm"
+                              type="button"
+                              disabled={
+                                dataInitializationJustification.trim().length < 12 ||
+                                dataInitializationMutation.isPending
+                              }
+                              onClick={() => dataInitializationMutation.mutate()}
+                            >
+                              <Database size={14} /> Confirm data
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {dataExecution && (
+                        <div className={`data-initialization-result ${dataExecution.state}`}>
+                          <div className="data-initialization-result-heading">
+                            {dataExecution.state === "completed" ? (
+                              <CheckCircle2 size={18} />
+                            ) : (
+                              <AlertTriangle size={18} />
+                            )}
+                            <div>
+                              <strong>Data initialization {dataExecution.state}</strong>
+                              <code>{dataExecution.result_code}</code>
+                            </div>
+                            <span className={`state-badge ${dataExecution.state}`}>
+                              {dataExecution.state}
+                            </span>
+                          </div>
+                          <div className="data-initialization-summary">
+                            <div>
+                              <span>Revision</span>
+                              <strong>{dataExecution.from_revision} to {dataExecution.to_revision}</strong>
+                            </div>
+                            <div>
+                              <span>Migrations</span>
+                              <strong>{dataExecution.migration_count}</strong>
+                            </div>
+                            <div>
+                              <span>Verified objects</span>
+                              <strong>{dataExecution.verified_object_count}</strong>
+                            </div>
+                            <div>
+                              <span>Backup</span>
+                              <strong>Not applicable</strong>
+                            </div>
+                          </div>
+                          {dataExecution.evidence.length > 0 && (
+                            <div className="data-evidence-list">
+                              {dataExecution.evidence.map((item) => (
+                                <div key={item.evidence_id}>
+                                  <div>
+                                    <code>{item.evidence_id}</code>
+                                    <span>{item.disposition}</span>
+                                  </div>
+                                  <code>{item.sha256.slice(0, 20)}...</code>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {dataExecution.state === "failed" && (
+                            <p className="data-recovery-note">
+                              No partial schema state was published. Correct the bounded failure and
+                              retry under the active lease.
                             </p>
                           )}
                         </div>

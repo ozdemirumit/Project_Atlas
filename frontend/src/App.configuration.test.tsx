@@ -160,6 +160,76 @@ const bootstrapTrustPlan = {
   },
 };
 
+const bootstrapDataPlan = {
+  data: {
+    schema_version: "atlas.bootstrap-data-plan.v1",
+    release_id: "release.atlas.lab-0.1.0",
+    profile: "linux_lab",
+    organization_id: "organization.enterprise",
+    environment_id: "environment.test",
+    site_id: "site.local",
+    configuration_digest: "b".repeat(64),
+    trust_plan_digest: "f".repeat(64),
+    migration_artifact_digest: "4".repeat(64),
+    data_plan_digest: "5".repeat(64),
+    target_id: "target.atlas-synthetic-database.primary",
+    target_kind: "target-kind.synthetic-file-database",
+    current_revision: "base",
+    target_revision: "bootstrap",
+    target_state: "empty",
+    state: "passed",
+    result_code: "bootstrap.data-plan.passed",
+    migrations: [
+      {
+        migration_id: "migration.atlas.metadata",
+        sequence: 1,
+        sha256: "6".repeat(64),
+        from_revision: "base",
+        to_revision: "metadata",
+        compatibility: "expand",
+        reversible: true,
+        destructive: false,
+        recovery_code: "recovery.synthetic-state-remove",
+        expected_object_count: 4,
+      },
+      {
+        migration_id: "migration.atlas.core",
+        sequence: 2,
+        sha256: "7".repeat(64),
+        from_revision: "metadata",
+        to_revision: "core",
+        compatibility: "expand",
+        reversible: true,
+        destructive: false,
+        recovery_code: "recovery.synthetic-state-remove",
+        expected_object_count: 6,
+      },
+      {
+        migration_id: "migration.atlas.bootstrap",
+        sequence: 3,
+        sha256: "8".repeat(64),
+        from_revision: "core",
+        to_revision: "bootstrap",
+        compatibility: "expand",
+        reversible: true,
+        destructive: false,
+        recovery_code: "recovery.synthetic-state-remove",
+        expected_object_count: 4,
+      },
+    ],
+    backup_applicability: "not_applicable_clean_install",
+    generated_at: "2026-08-04T16:04:00Z",
+    database_url_present: false,
+    credential_material_present: false,
+    sql_text_present: false,
+    destructive_migration_authorized: false,
+    backup_operation_authorized: false,
+    service_deployment_authorized: false,
+    infrastructure_mutation_authorized: false,
+    ai_operation_authorized: false,
+  },
+};
+
 const bootstrapState = {
   data: {
     run: {
@@ -192,6 +262,7 @@ const bootstrapState = {
       artifact_acquisition: null,
       configuration_rendering: null,
       trust_provisioning: null,
+      data_initialization: null,
     },
     durable: true,
     lease_available: false,
@@ -825,6 +896,7 @@ describe("deployment configuration preview", () => {
           current_phase_id: "phase.trust",
           configuration_rendering: configurationExecution,
           trust_provisioning: null,
+          data_initialization: null,
           updated_at: "2026-08-04T16:02:01Z",
         },
       },
@@ -965,6 +1037,207 @@ describe("deployment configuration preview", () => {
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /deploy service|initialize data|rollback/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("requires confirmation and reports bounded schema initialization evidence", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    vi.stubGlobal("crypto", { randomUUID: () => "data-request-001" });
+    const configurationExecution = {
+      execution_id: "phase-execution.ui-configure-completed",
+      phase_id: "phase.configure",
+      release_id: "release.atlas.lab-0.1.0",
+      profile: "linux_lab",
+      configuration_schema_version: "atlas.deployment-configuration.v1",
+      configuration_digest: "b".repeat(64),
+      state: "completed",
+      result_code: "bootstrap.configuration.completed",
+      started_at: "2026-08-04T16:02:00Z",
+      completed_at: "2026-08-04T16:02:01Z",
+      evidence: [],
+      file_count: 1,
+      total_bytes: 684,
+    };
+    const trustExecution = {
+      execution_id: "phase-execution.ui-trust-completed",
+      phase_id: "phase.trust",
+      release_id: "release.atlas.lab-0.1.0",
+      profile: "linux_lab",
+      configuration_digest: "b".repeat(64),
+      trust_schema_version: "atlas.bootstrap-trust-plan.v1",
+      trust_plan_digest: "f".repeat(64),
+      state: "completed",
+      result_code: "bootstrap.trust.completed",
+      started_at: "2026-08-04T16:03:00Z",
+      completed_at: "2026-08-04T16:03:01Z",
+      anchor_count: 1,
+      workload_identity_count: 1,
+      evidence: [],
+      file_count: 2,
+      total_bytes: 2000,
+    };
+    const dataState = {
+      data: {
+        ...bootstrapState.data,
+        run: {
+          ...bootstrapState.data.run,
+          version: 7,
+          phase_ids: ["phase.acquire", "phase.configure", "phase.trust", "phase.data", "phase.services"],
+          checkpoints: [
+            ...bootstrapState.data.run.checkpoints,
+            {
+              phase_id: "phase.configure",
+              state: "completed",
+              safe_output_references: [`result.configuration.${"b".repeat(32)}`],
+              recorded_at: "2026-08-04T16:02:01Z",
+            },
+            {
+              phase_id: "phase.trust",
+              state: "completed",
+              safe_output_references: [`result.trust.${"f".repeat(32)}`],
+              recorded_at: "2026-08-04T16:03:01Z",
+            },
+          ],
+          completed_phase_ids: ["phase.acquire", "phase.configure", "phase.trust"],
+          current_phase_id: "phase.data",
+          configuration_rendering: configurationExecution,
+          trust_provisioning: trustExecution,
+          data_initialization: null,
+          updated_at: "2026-08-04T16:03:01Z",
+        },
+      },
+    };
+    const requests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) {
+        return Promise.resolve(new Response(JSON.stringify(identity), { status: 200 }));
+      }
+      if (url.includes("/release-preflight")) {
+        return Promise.resolve(new Response(JSON.stringify(preflight), { status: 200 }));
+      }
+      if (url.includes("/deployment-configuration/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(configurationPreview()), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-trust-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapTrustPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-data-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapDataPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-plan")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-state/current")) {
+        return Promise.resolve(new Response(JSON.stringify(dataState), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-invalidation/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapInvalidation), { status: 200 }));
+      }
+      if (url.includes("/phases/data")) {
+        const headers = new Headers(init?.headers);
+        requests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        const execution = {
+          execution_id: "phase-execution.ui-data-001",
+          phase_id: "phase.data",
+          release_id: "release.atlas.lab-0.1.0",
+          profile: "linux_lab",
+          configuration_digest: "b".repeat(64),
+          trust_plan_digest: "f".repeat(64),
+          data_schema_version: "atlas.bootstrap-data-plan.v1",
+          data_plan_digest: "5".repeat(64),
+          migration_artifact_digest: "4".repeat(64),
+          target_id: "target.atlas-synthetic-database.primary",
+          from_revision: "base",
+          to_revision: "bootstrap",
+          state: "completed",
+          result_code: "bootstrap.data.completed",
+          started_at: "2026-08-04T16:04:00Z",
+          completed_at: "2026-08-04T16:04:01Z",
+          migration_count: 3,
+          verified_object_count: 14,
+          lock_acquired: true,
+          backup_applicability: "not_applicable_clean_install",
+          evidence: [
+            {
+              evidence_id: "data.schema-state",
+              sha256: "9".repeat(64),
+              size_bytes: 1240,
+              disposition: "published",
+            },
+          ],
+        };
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                run: {
+                  ...dataState.data.run,
+                  version: 9,
+                  checkpoints: [
+                    ...dataState.data.run.checkpoints,
+                    {
+                      phase_id: "phase.data",
+                      state: "completed",
+                      safe_output_references: [`result.data.${"5".repeat(32)}`],
+                      recorded_at: "2026-08-04T16:04:01Z",
+                    },
+                  ],
+                  completed_phase_ids: ["phase.acquire", "phase.configure", "phase.trust", "phase.data"],
+                  current_phase_id: "phase.services",
+                  data_initialization: execution,
+                  updated_at: "2026-08-04T16:04:01Z",
+                },
+                execution,
+                replayed: false,
+                schema_state_mutation_performed: true,
+                external_database_provisioning_performed: false,
+                destructive_migration_performed: false,
+                backup_operation_performed: false,
+                service_deployment_authorized: false,
+                infrastructure_mutation_authorized: false,
+                ai_operation_authorized: false,
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Review data" }));
+    expect(screen.getByRole("dialog")).toBeVisible();
+    expect(screen.getByText("Confirm clean data-schema initialization")).toBeVisible();
+    expect(screen.getByText("migration.atlas.metadata")).toBeVisible();
+    const confirm = screen.getByRole("button", { name: "Confirm data" });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Data justification"), {
+      target: { value: "Initialize the reviewed synthetic schema state for the lab run." },
+    });
+    fireEvent.click(confirm);
+
+    expect(await screen.findByText("Data initialization completed")).toBeVisible();
+    const evidence = screen.getByText("data.schema-state");
+    expect(evidence).toBeVisible();
+    expect(within(evidence.parentElement!).getByText("published")).toBeVisible();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.body).toContain('"data_plan_digest":"' + "5".repeat(64));
+    expect(requests[0]?.body).toContain('"expected_target_state":"empty"');
+    expect(requests[0]?.idempotencyKey).toBe("bootstrap-data.7.data-request-001");
+    expect(screen.queryByText(/database_url|credential material|sql text/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /deploy services|run backup|provision database|rollback data/i }),
     ).not.toBeInTheDocument();
   });
 });
