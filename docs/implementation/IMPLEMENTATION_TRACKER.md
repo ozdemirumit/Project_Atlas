@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-019 |
 | Title | Governed personal API credential lifecycle |
-| Status | Review |
+| Status | Done |
 | Branch | `agent/governed-api-credentials` |
 | Pull Request | [PR #31](https://github.com/ozdemirumit/Project_Atlas/pull/31) |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
 | Last Updated | 2026-08-04 |
-| Next Action | Open the ATLAS-IMP-019 pull request, pass CI, merge, and synchronize `main` |
+| Next Action | Select the next approved vertical slice and record its dependencies and acceptance criteria |
 
 ### ATLAS-IMP-019 Acceptance Criteria
 
@@ -70,6 +70,8 @@
 - Frontend ESLint and TypeScript checks passed, five Vitest scenarios passed across two files, and the
   production Vite bundle built successfully. The integrated browser-session test verifies CSRF-backed
   creation and revocation, grant selection, one-time display, and dismissal from UI state.
+- GitHub Actions passed on the review head: the backend job completed successfully in 27 seconds and
+  the frontend job completed successfully in 40 seconds.
 - A fresh live enterprise-style browser session created a real token, used it without a cookie to read
   the exact storage scope with HTTP 200, revoked it, and confirmed the same bearer then failed with
   HTTP 401. The raw token disappeared after explicit dismissal.
@@ -704,6 +706,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-016 | Enterprise browser login and CSRF-aware web session lifecycle | Completed through [PR #28](https://github.com/ozdemirumit/Project_Atlas/pull/28); 185 backend tests, four frontend scenarios, live desktop/390px mobile login validation, and all GitHub quality gates passed |
 | ATLAS-IMP-017 | Self-service session inventory and governed revocation | Completed through [PR #29](https://github.com/ozdemirumit/Project_Atlas/pull/29); 192 backend tests, four frontend scenarios, live API and desktop/390px mobile validation, and all GitHub quality gates passed |
 | ATLAS-IMP-018 | Immutable approval packet and human review foundation | Completed through [PR #30](https://github.com/ozdemirumit/Project_Atlas/pull/30); 203 backend tests, five frontend scenarios, live desktop/390px mobile validation, and all GitHub quality gates passed |
+| ATLAS-IMP-019 | Governed personal API credential lifecycle | Completed through [PR #31](https://github.com/ozdemirumit/Project_Atlas/pull/31); 213 backend tests, five frontend tests, live API/UI enterprise session, token, bearer, revoke, desktop/mobile validation, and all GitHub quality gates passed |
 
 ## Status Rules
 
