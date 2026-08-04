@@ -94,8 +94,9 @@
   result card or its descendants. The result displayed eight model checks, four integration checks,
   12 mandatory passes, and zero external operations; browser warning/error logs were empty.
 - Source implementation is committed as `7e1b894` and is under review in
-  [PR #48](https://github.com/ozdemirumit/Project_Atlas/pull/48); final GitHub CI evidence will be
-  attached before merge.
+  [PR #48](https://github.com/ozdemirumit/Project_Atlas/pull/48). GitHub backend and frontend jobs
+  passed for formatting commit `5e2d7c8` in
+  [run 30945473102](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30945473102).
 
 ### ATLAS-IMP-035 Scope Rationale
 
