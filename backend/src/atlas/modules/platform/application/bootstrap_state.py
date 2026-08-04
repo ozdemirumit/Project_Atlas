@@ -201,6 +201,55 @@ class BootstrapStateService:
             now=self._clock(),
         )
 
+    async def rebase(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        lease_holder_id: str,
+        run_id: str,
+        candidate: BootstrapRunIdentity,
+        expected_version: int,
+        preview_source_version: int,
+        justification: str,
+        idempotency_key: str,
+        correlation_id: str,
+    ) -> BootstrapMutationResult:
+        await self._require_scope(actor, candidate, correlation_id)
+        await self._require_run_scope(actor, run_id, correlation_id)
+        fingerprint = self._fingerprint(
+            {
+                "operation": "rebase",
+                "run_id": run_id,
+                "candidate": self._identity_payload(candidate),
+                "expected_version": expected_version,
+                "preview_source_version": preview_source_version,
+                "justification": justification,
+            }
+        )
+        await self._audit(
+            actor=actor,
+            correlation_id=correlation_id,
+            event_type="atlas.platform.bootstrap-state.rebase",
+            permission_id="platform.bootstrap-state.manage",
+            result_code="bootstrap_rebase_authorized",
+            idempotency_key=idempotency_key,
+            target_metadata=(
+                ("run_id", run_id),
+                ("candidate_plan_digest", candidate.plan_digest),
+                ("justification_digest", self._fingerprint({"justification": justification})),
+            ),
+        )
+        return await self._repository.rebase(
+            run_id=run_id,
+            candidate=candidate,
+            lease_holder_id=lease_holder_id,
+            expected_version=expected_version,
+            preview_source_version=preview_source_version,
+            idempotency_key=idempotency_key,
+            request_fingerprint=fingerprint,
+            now=self._clock(),
+        )
+
     async def _require_scope(
         self,
         actor: AuthenticatedSubject,

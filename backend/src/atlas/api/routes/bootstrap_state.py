@@ -3,13 +3,16 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, NoReturn
 
-from fastapi import APIRouter, Depends, Header, Request, Response
+from fastapi import APIRouter, Depends, Header, Path, Request, Response
 
 from atlas.api.bootstrap_state_schemas import (
     BootstrapCheckpointInput,
     BootstrapClaimInput,
     BootstrapMutationData,
     BootstrapMutationResponse,
+    BootstrapRebaseData,
+    BootstrapRebaseInput,
+    BootstrapRebaseResponse,
     BootstrapReleaseInput,
     BootstrapStateData,
     BootstrapStateResponse,
@@ -55,6 +58,7 @@ def _raise_state_error(error: Exception) -> NoReturn:
         "bootstrap_phase_out_of_order",
         "bootstrap_lease_unavailable",
         "bootstrap_run_completed",
+        "bootstrap_plan_unchanged",
     }:
         status = 409
         detail = "The requested bootstrap coordination state is unavailable."
@@ -113,6 +117,37 @@ async def claim_bootstrap_state(
     response.headers["Cache-Control"] = "no-store"
     return BootstrapMutationResponse(
         data=BootstrapMutationData.from_domain(result), meta=_meta(request)
+    )
+
+
+@router.post("/{run_id}/rebase", response_model=BootstrapRebaseResponse)
+async def rebase_bootstrap_state(
+    run_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    payload: BootstrapRebaseInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_bootstrap_state_manage)],
+    idempotency_key: Annotated[str, IDEMPOTENCY_HEADER],
+) -> BootstrapRebaseResponse:
+    service: BootstrapStateService = request.app.state.bootstrap_state_service
+    try:
+        result = await service.rebase(
+            actor=subject,
+            lease_holder_id=str(request.state.authenticated_session_id),
+            run_id=run_id,
+            candidate=payload.to_identity(),
+            expected_version=payload.expected_version,
+            preview_source_version=payload.preview_source_version,
+            justification=payload.justification,
+            idempotency_key=idempotency_key,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except (BootstrapRepositoryError, BootstrapStateScopeError) as error:
+        _raise_state_error(error)
+    response.headers["Cache-Control"] = "no-store"
+    return BootstrapRebaseResponse(
+        data=BootstrapRebaseData.from_domain(result), meta=_meta(request)
     )
 
 

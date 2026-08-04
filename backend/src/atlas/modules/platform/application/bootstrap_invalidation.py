@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from datetime import UTC, datetime
-from hashlib import sha256
 from uuid import uuid4
 
 from atlas import __version__
@@ -11,9 +9,9 @@ from atlas.core.audit import AuditRecord, AuditSink
 from atlas.modules.identity.domain.models import AuthenticatedSubject
 from atlas.modules.platform.application.bootstrap_state_ports import BootstrapStateRepository
 from atlas.modules.platform.domain.bootstrap_invalidation import (
-    BootstrapInputChange,
     BootstrapInvalidationPreview,
     BootstrapInvalidationState,
+    compare_bootstrap_run,
 )
 from atlas.modules.platform.domain.bootstrap_state import BootstrapRunIdentity, BootstrapRunRecord
 
@@ -91,69 +89,11 @@ class BootstrapInvalidationService:
         generated_at: datetime,
         correlation_id: str,
     ) -> BootstrapInvalidationPreview:
-        changes: list[BootstrapInputChange] = []
-        for field, code, field_boundary in (
-            ("release_id", "bootstrap.release.changed", "phase.acquire"),
-            ("profile", "bootstrap.profile.changed", "phase.acquire"),
-            ("plan_digest", "bootstrap.plan.changed", "phase.acquire"),
-            ("resume_key", "bootstrap.resume-key.changed", "phase.acquire"),
-            ("configuration_digest", "bootstrap.configuration.changed", "phase.configure"),
-        ):
-            old = getattr(current, field)
-            new = getattr(candidate, field)
-            old_value = old.value if hasattr(old, "value") else str(old)
-            new_value = new.value if hasattr(new, "value") else str(new)
-            if old_value != new_value:
-                changes.append(
-                    BootstrapInputChange(
-                        field=field,
-                        reason_code=code,
-                        old_reference=self._safe_reference(field, old_value),
-                        new_reference=self._safe_reference(field, new_value),
-                        earliest_affected_phase_id=field_boundary,
-                    )
-                )
-        if current.phase_ids != candidate.phase_ids:
-            mismatch = next(
-                (
-                    index
-                    for index, pair in enumerate(
-                        zip(current.phase_ids, candidate.phase_ids, strict=False)
-                    )
-                    if pair[0] != pair[1]
-                ),
-                min(len(current.phase_ids), len(candidate.phase_ids)),
-            )
-            boundary_index = min(mismatch, len(current.phase_ids) - 1)
-            changes.append(
-                BootstrapInputChange(
-                    field="phase_ids",
-                    reason_code="bootstrap.phase-order.changed",
-                    old_reference=self._safe_reference("phase_ids", current.phase_ids),
-                    new_reference=self._safe_reference("phase_ids", candidate.phase_ids),
-                    earliest_affected_phase_id=current.phase_ids[boundary_index],
-                )
-            )
-        phase_positions = {phase_id: index for index, phase_id in enumerate(current.phase_ids)}
-        earliest_boundary: str | None = min(
-            (item.earliest_affected_phase_id for item in changes),
-            key=lambda item: phase_positions.get(item, 0),
-            default=None,
-        )
-        completed = record.completed_phase_ids
-        if earliest_boundary is None:
-            reusable = completed
-            invalidated: tuple[str, ...] = ()
-            downstream: tuple[str, ...] = ()
+        impact = compare_bootstrap_run(current, candidate, record)
+        if impact.earliest_affected_phase_id is None:
             state = BootstrapInvalidationState.UNCHANGED
             remediation = None
         else:
-            boundary_index = phase_positions.get(earliest_boundary, 0)
-            reusable = tuple(
-                item for item in completed if phase_positions.get(item, 0) < boundary_index
-            )
-            invalidated = tuple(item for item in completed if item not in reusable)
-            downstream = current.phase_ids[boundary_index:]
             state = BootstrapInvalidationState.DRIFTED
             remediation = (
                 "Create a new governed plan and resume only from the earliest affected phase after "
@@ -165,20 +105,15 @@ class BootstrapInvalidationService:
             state=state,
             source_run_id=record.run_id,
             source_run_version=record.version,
-            changes=tuple(changes),
-            earliest_affected_phase_id=earliest_boundary,
-            reusable_checkpoint_phase_ids=reusable,
-            invalidated_checkpoint_phase_ids=invalidated,
-            downstream_phase_ids=downstream,
+            changes=impact.changes,
+            earliest_affected_phase_id=impact.earliest_affected_phase_id,
+            reusable_checkpoint_phase_ids=impact.reusable_checkpoint_phase_ids,
+            invalidated_checkpoint_phase_ids=impact.invalidated_checkpoint_phase_ids,
+            downstream_phase_ids=impact.downstream_phase_ids,
             remediation=remediation,
             generated_at=generated_at,
             correlation_id=correlation_id,
         )
-
-    @staticmethod
-    def _safe_reference(field: str, value: object) -> str:
-        encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()
-        return f"sha256:{sha256(field.encode() + b':' + encoded).hexdigest()}"
 
     async def _audit_read(
         self, actor: AuthenticatedSubject, preview: BootstrapInvalidationPreview

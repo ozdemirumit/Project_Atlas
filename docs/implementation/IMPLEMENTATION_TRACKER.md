@@ -4,14 +4,68 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-028 |
-| Title | Bootstrap input drift and checkpoint invalidation preview |
+| Task ID | ATLAS-IMP-029 |
+| Title | Controlled bootstrap plan rebase and checkpoint invalidation |
 | Status | Done |
-| Branch | `agent/bootstrap-invalidation-preview` |
-| Pull Request | [PR #40](https://github.com/ozdemirumit/Project_Atlas/pull/40) |
+| Branch | `agent/bootstrap-plan-rebase` |
+| Pull Request | [PR #41](https://github.com/ozdemirumit/Project_Atlas/pull/41) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Merge PR #40 and synchronize `main` |
+| Next Action | Merge PR #41 and synchronize `main` |
+
+### ATLAS-IMP-029 Scope Rationale
+
+- ATLAS-038 requires changed bootstrap inputs to invalidate affected downstream phases before a run
+  resumes. IMP-028 explains the boundary, but the current state repository rejects every plan change
+  and cannot safely persist a reviewed candidate plan.
+- This slice atomically rebases the current run onto an exact candidate identity, preserves only the
+  checkpoints proven reusable by the same deterministic comparison, and invalidates the remainder.
+  It changes Atlas coordination metadata only and never executes a bootstrap phase or infrastructure
+  operation.
+
+### ATLAS-IMP-029 Acceptance Criteria
+
+- A strict C2 request binds the exact run, expected revision, candidate release/profile, plan digest,
+  resume key, configuration digest, ordered phase IDs, preview source revision, and bounded human
+  justification. Unknown fields and malformed or foreign identifiers fail closed.
+- Rebase requires the active lease held by the authenticated browser session, exact scope, current
+  expected revision, a drifted candidate, and deterministic recomputation of the invalidation
+  boundary inside the atomic repository operation. Stale, unchanged, completed, foreign, expired,
+  or differently held runs are rejected without disclosure or mutation.
+- The mutation preserves only completed checkpoints before the earliest affected phase, removes all
+  other completed or failed checkpoints, installs the exact candidate identity, returns the stable
+  invalidation reason codes and affected phase IDs, increments the revision once, and remains
+  idempotent for an exact replay.
+- PostgreSQL and in-memory adapters provide equivalent concurrency, replay, and failure semantics.
+  The durable path uses row locking and the existing transaction-scoped coordination boundary.
+- Authorization, CSRF, required audit, `no-store`, safe error mapping, and session-bound lease identity
+  apply. Responses and audit records contain no lease holder, secrets, commands, or raw configuration.
+- The operations UI requires an explicit confirmation before applying a drifted preview, displays the
+  retained and invalidated checkpoints and new revision, and offers no phase or infrastructure
+  execution control.
+- Automated and live tests cover success, exact replay, stale revision, changed replay, missing or
+  foreign lease, unchanged input, completed run, audit failure, strict parsing, owner redaction,
+  PostgreSQL mapping, responsive desktop/mobile presentation, and non-execution boundaries.
+- This slice does not acquire or release the lease, execute a phase, run rollback, write deployment
+  files, invoke connectors, install artifacts, provision secrets, or authorize infrastructure change.
+
+### ATLAS-IMP-029 Validation Evidence
+
+- In-memory tests pass for deterministic partial preservation, exact replay, changed replay conflict,
+  stale revision, foreign lease, unchanged input, completed run, required-audit failure, and
+  non-mutation on every rejected request. PostgreSQL result serialization preserves the same rebase
+  and replay evidence.
+- Full backend verification passes Ruff format/check, mypy across 249 source files, and 291 pytest
+  tests. Full frontend verification passes ESLint, TypeScript, 21 Vitest tests, and production build.
+- Live browser validation used an enterprise browser session holding the exact bootstrap lease. A
+  reviewed drift update advanced revision 2 to 3, invalidated `phase.acquire`, retained the lease,
+  removed the action after recomputation, and returned an unchanged preview for the rebased plan.
+- Reloading the page retained revision 3 and zero completed checkpoints. Lease-holder identity and
+  phase, rollback, or infrastructure execution controls remained absent from the API-driven UI.
+- Live presentation validation passed at 1440x900 and 390x844 with no page-level horizontal overflow.
+  The confirmation, explicit metadata-only boundary, result, and post-reload state remained legible.
+- GitHub backend and frontend CI jobs passed for review commit `7ee47b0` in
+  [run 30920925318](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30920925318).
 
 ### ATLAS-IMP-028 Scope Rationale
 
@@ -1282,6 +1336,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-026 | Deterministic bootstrap plan and resume-state foundation | Completed through [PR #38](https://github.com/ozdemirumit/Project_Atlas/pull/38) from source commit `0a9c38b`; 272 backend tests, 16 frontend tests, live ready/blocked API and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-027 | Persistent bootstrap checkpoint and lease foundation | Completed through [PR #39](https://github.com/ozdemirumit/Project_Atlas/pull/39) from source commit `874fe0a`; 282 backend tests, 18 frontend tests, live non-mutating checkpoint API and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-028 | Bootstrap input drift and checkpoint invalidation preview | Completed through [PR #40](https://github.com/ozdemirumit/Project_Atlas/pull/40) from source commit `8419c94`; 287 backend tests, 20 frontend tests, live non-mutating desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-029 | Controlled bootstrap plan rebase and checkpoint invalidation | Completed through [PR #41](https://github.com/ozdemirumit/Project_Atlas/pull/41) from source commit `f2feecc`; 291 backend tests, 21 frontend tests, live enterprise-session rebase and desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 

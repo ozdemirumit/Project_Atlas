@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from hashlib import sha256
 
 from atlas.modules.platform.application.bootstrap_state_ports import BootstrapRepositoryError
+from atlas.modules.platform.domain.bootstrap_invalidation import compare_bootstrap_run
 from atlas.modules.platform.domain.bootstrap_state import (
     BootstrapCheckpointState,
     BootstrapMutationResult,
@@ -194,6 +195,63 @@ class InMemoryBootstrapStateRepository:
                 updated_at=now,
             )
             result = BootstrapMutationResult(record=updated, replayed=False)
+            self._records[key] = updated
+            self._remember(lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
+    async def rebase(
+        self,
+        *,
+        run_id: str,
+        candidate: BootstrapRunIdentity,
+        lease_holder_id: str,
+        expected_version: int,
+        preview_source_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._lock:
+            replay = self._replay(lease_holder_id, idempotency_key, request_fingerprint)
+            if replay is not None:
+                return replay
+            key, current = self._find(run_id)
+            if (
+                candidate.organization_id != current.identity.organization_id
+                or candidate.environment_id != current.identity.environment_id
+                or candidate.site_id != current.identity.site_id
+            ):
+                raise BootstrapRepositoryError("bootstrap_run_unavailable")
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version or current.version != preview_source_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            if current.state is BootstrapRunState.COMPLETED:
+                raise BootstrapRepositoryError("bootstrap_run_completed")
+            impact = compare_bootstrap_run(current.identity, candidate, current)
+            if impact.earliest_affected_phase_id is None:
+                raise BootstrapRepositoryError("bootstrap_plan_unchanged")
+            reusable = set(impact.reusable_checkpoint_phase_ids)
+            checkpoints = tuple(
+                item
+                for item in current.checkpoints
+                if item.state is BootstrapCheckpointState.COMPLETED and item.phase_id in reusable
+            )
+            updated = replace(
+                current,
+                version=current.version + 1,
+                identity=candidate,
+                state=BootstrapRunState.ACTIVE,
+                checkpoints=checkpoints,
+                updated_at=now,
+            )
+            result = BootstrapMutationResult(
+                record=updated,
+                replayed=False,
+                preserved_checkpoint_phase_ids=impact.reusable_checkpoint_phase_ids,
+                invalidated_checkpoint_phase_ids=impact.invalidated_checkpoint_phase_ids,
+                invalidation_reason_codes=tuple(item.reason_code for item in impact.changes),
+                earliest_affected_phase_id=impact.earliest_affected_phase_id,
+            )
             self._records[key] = updated
             self._remember(lease_holder_id, idempotency_key, request_fingerprint, result)
             return result

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async
 
 from atlas.core.persistence.models import BootstrapRunModel
 from atlas.modules.platform.application.bootstrap_state_ports import BootstrapRepositoryError
+from atlas.modules.platform.domain.bootstrap_invalidation import compare_bootstrap_run
 from atlas.modules.platform.domain.bootstrap_state import (
     BootstrapCheckpointState,
     BootstrapMutationResult,
@@ -240,6 +241,70 @@ class PostgreSQLBootstrapStateRepository:
             self._remember(row, lease_holder_id, idempotency_key, request_fingerprint, result)
             return result
 
+    async def rebase(
+        self,
+        *,
+        run_id: str,
+        candidate: BootstrapRunIdentity,
+        lease_holder_id: str,
+        expected_version: int,
+        preview_source_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._sessions.begin() as session:
+            row = await session.scalar(
+                select(BootstrapRunModel)
+                .where(BootstrapRunModel.run_id == run_id)
+                .with_for_update()
+            )
+            if row is None:
+                raise BootstrapRepositoryError("bootstrap_run_unavailable")
+            replay = self._replay(row, lease_holder_id, idempotency_key, request_fingerprint)
+            if replay is not None:
+                return replay
+            current = self._to_domain(row)
+            if (
+                candidate.organization_id != current.identity.organization_id
+                or candidate.environment_id != current.identity.environment_id
+                or candidate.site_id != current.identity.site_id
+            ):
+                raise BootstrapRepositoryError("bootstrap_run_unavailable")
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version or current.version != preview_source_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            if current.state is BootstrapRunState.COMPLETED:
+                raise BootstrapRepositoryError("bootstrap_run_completed")
+            impact = compare_bootstrap_run(current.identity, candidate, current)
+            if impact.earliest_affected_phase_id is None:
+                raise BootstrapRepositoryError("bootstrap_plan_unchanged")
+            reusable = set(impact.reusable_checkpoint_phase_ids)
+            checkpoints = tuple(
+                item
+                for item in current.checkpoints
+                if item.state is BootstrapCheckpointState.COMPLETED and item.phase_id in reusable
+            )
+            record = replace(
+                current,
+                version=current.version + 1,
+                identity=candidate,
+                state=BootstrapRunState.ACTIVE,
+                checkpoints=checkpoints,
+                updated_at=now,
+            )
+            self._apply(row, record)
+            result = BootstrapMutationResult(
+                record=record,
+                replayed=False,
+                preserved_checkpoint_phase_ids=impact.reusable_checkpoint_phase_ids,
+                invalidated_checkpoint_phase_ids=impact.invalidated_checkpoint_phase_ids,
+                invalidation_reason_codes=tuple(item.reason_code for item in impact.changes),
+                earliest_affected_phase_id=impact.earliest_affected_phase_id,
+            )
+            self._remember(row, lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
     @staticmethod
     def _scope(organization_id: str, environment_id: str, site_id: str) -> str:
         return f"{organization_id}/{environment_id}/{site_id}"
@@ -338,6 +403,12 @@ class PostgreSQLBootstrapStateRepository:
             record=cls._record_from_json(prior["record"]),
             replayed=True,
             reclaimed_expired_lease=bool(prior["reclaimed_expired_lease"]),
+            preserved_checkpoint_phase_ids=tuple(prior.get("preserved_checkpoint_phase_ids", ())),
+            invalidated_checkpoint_phase_ids=tuple(
+                prior.get("invalidated_checkpoint_phase_ids", ())
+            ),
+            invalidation_reason_codes=tuple(prior.get("invalidation_reason_codes", ())),
+            earliest_affected_phase_id=prior.get("earliest_affected_phase_id"),
         )
 
     @classmethod
@@ -354,6 +425,10 @@ class PostgreSQLBootstrapStateRepository:
             "fingerprint": request_fingerprint,
             "record": cls._record_to_json(result.record),
             "reclaimed_expired_lease": result.reclaimed_expired_lease,
+            "preserved_checkpoint_phase_ids": list(result.preserved_checkpoint_phase_ids),
+            "invalidated_checkpoint_phase_ids": list(result.invalidated_checkpoint_phase_ids),
+            "invalidation_reason_codes": list(result.invalidation_reason_codes),
+            "earliest_affected_phase_id": result.earliest_affected_phase_id,
         }
         while len(records) > 100:
             del records[next(iter(records))]

@@ -867,7 +867,18 @@ textarea:focus-visible {
 .bootstrap-invalidation-columns > div { min-width: 0; padding: 12px; border-left: 3px solid #aebdb8; background: #f7f9f8; }
 .bootstrap-invalidation-columns h3 { margin: 0 0 7px; font-size: 0.86rem; }
 .bootstrap-invalidation-columns p { margin: 0; color: #63716d; overflow-wrap: anywhere; }
-@media (max-width: 760px) { .bootstrap-invalidation-summary, .bootstrap-invalidation-columns { grid-template-columns: minmax(0, 1fr); } .bootstrap-change-list article { align-items: flex-start; flex-direction: column; } }
+.bootstrap-rebase-action, .bootstrap-rebase-result { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px; border: 1px solid #bfd8ce; border-radius: 6px; background: #f4faf7; }
+.bootstrap-rebase-action p, .bootstrap-rebase-result p { margin: 4px 0 0; color: #52615c; }
+.bootstrap-rebase-action button, .bootstrap-rebase-confirm-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; }
+.bootstrap-rebase-confirmation { display: grid; gap: 13px; padding: 14px; border: 1px solid #d4b97d; border-radius: 6px; background: #fffaf0; }
+.bootstrap-rebase-confirmation p { margin: 4px 0 0; color: #665b45; }
+.bootstrap-rebase-confirmation label { display: grid; gap: 6px; color: #394742; font-size: 0.78rem; font-weight: 700; }
+.bootstrap-rebase-confirmation input { width: 100%; min-width: 0; height: 38px; padding: 0 10px; border: 1px solid #b9c5c1; border-radius: 5px; background: #fff; color: #1f2d29; }
+.bootstrap-rebase-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.bootstrap-rebase-confirm { border-color: #386b5a; background: #386b5a; color: #fff; }
+.bootstrap-rebase-result { justify-content: flex-start; }
+.bootstrap-rebase-result > div { min-width: 0; }
+@media (max-width: 760px) { .bootstrap-invalidation-summary, .bootstrap-invalidation-columns { grid-template-columns: minmax(0, 1fr); } .bootstrap-change-list article, .bootstrap-rebase-action { align-items: flex-start; flex-direction: column; } .bootstrap-rebase-action button, .bootstrap-rebase-confirm-actions button { width: 100%; } .bootstrap-rebase-confirm-actions { flex-direction: column-reverse; } }
 
 .deployment-configuration-heading .state-badge {
   display: inline-flex;

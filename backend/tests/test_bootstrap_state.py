@@ -365,6 +365,31 @@ def test_postgresql_mapping_and_schema_preserve_safe_state_contract() -> None:
     decoded = PostgreSQLBootstrapStateRepository._record_from_json(encoded)
     assert decoded == record
     assert "token" not in repr(encoded).lower() and "password" not in repr(encoded).lower()
+    model = PostgreSQLBootstrapStateRepository._new_model(record)
+    result = BootstrapMutationResult(
+        record=replace(record, version=record.version + 1),
+        replayed=False,
+        preserved_checkpoint_phase_ids=("phase.acquire",),
+        invalidated_checkpoint_phase_ids=("phase.configure",),
+        invalidation_reason_codes=("bootstrap.configuration.changed",),
+        earliest_affected_phase_id="phase.configure",
+    )
+    PostgreSQLBootstrapStateRepository._remember(
+        model,
+        "session.bootstrap.primary",
+        "postgres-rebase-replay-0001",
+        "f" * 64,
+        result,
+    )
+    replay = PostgreSQLBootstrapStateRepository._replay(
+        model,
+        "session.bootstrap.primary",
+        "postgres-rebase-replay-0001",
+        "f" * 64,
+    )
+    assert replay is not None and replay.replayed is True
+    assert replay.preserved_checkpoint_phase_ids == ("phase.acquire",)
+    assert replay.invalidated_checkpoint_phase_ids == ("phase.configure",)
 
 
 async def _claimed_record() -> BootstrapRunRecord:
@@ -440,3 +465,250 @@ def test_api_c0_read_supports_exact_scope_non_browser_identity() -> None:
         "execution_authorized": False,
         "infrastructure_mutation_authorized": False,
     }
+
+
+async def checkpoint_phase(
+    state_service: BootstrapStateService,
+    run_id: str,
+    version: int,
+    phase_id: str,
+    key: str,
+) -> BootstrapMutationResult:
+    return await state_service.checkpoint(
+        actor=actor(),
+        lease_holder_id="session.bootstrap.primary",
+        run_id=run_id,
+        plan_digest=identity().plan_digest,
+        resume_key=identity().resume_key,
+        phase_id=phase_id,
+        state=BootstrapCheckpointState.COMPLETED,
+        safe_output_references=(f"evidence.{phase_id}",),
+        expected_version=version,
+        idempotency_key=key,
+        correlation_id=f"correlation.{key}",
+    )
+
+
+@pytest.mark.asyncio
+async def test_rebase_preserves_only_safe_checkpoints_and_replays_exactly() -> None:
+    state_service, repository, sink, _ = service()
+    claimed = await claim(state_service)
+    acquired = await checkpoint_phase(
+        state_service, claimed.record.run_id, 1, "phase.acquire", "rebase-acquire-0001"
+    )
+    configured = await checkpoint_phase(
+        state_service, claimed.record.run_id, 2, "phase.configure", "rebase-configure-0001"
+    )
+    candidate = replace(identity(), configuration_digest="d" * 64)
+
+    rebased = await state_service.rebase(
+        actor=actor(),
+        lease_holder_id="session.bootstrap.primary",
+        run_id=claimed.record.run_id,
+        candidate=candidate,
+        expected_version=configured.record.version,
+        preview_source_version=configured.record.version,
+        justification="Approved configuration correction for the lab deployment.",
+        idempotency_key="rebase-config-change-0001",
+        correlation_id="correlation.rebase.config",
+    )
+    replay = await state_service.rebase(
+        actor=actor(),
+        lease_holder_id="session.bootstrap.primary",
+        run_id=claimed.record.run_id,
+        candidate=candidate,
+        expected_version=configured.record.version,
+        preview_source_version=configured.record.version,
+        justification="Approved configuration correction for the lab deployment.",
+        idempotency_key="rebase-config-change-0001",
+        correlation_id="correlation.rebase.replay",
+    )
+
+    assert rebased.record.version == 4
+    assert rebased.record.identity == candidate
+    assert rebased.record.completed_phase_ids == ("phase.acquire",)
+    assert rebased.preserved_checkpoint_phase_ids == ("phase.acquire",)
+    assert rebased.invalidated_checkpoint_phase_ids == ("phase.configure",)
+    assert rebased.invalidation_reason_codes == ("bootstrap.configuration.changed",)
+    assert rebased.earliest_affected_phase_id == "phase.configure"
+    assert replay.replayed is True and replay.record == rebased.record
+    current = await repository.get_current(
+        organization_id=actor().organization_id,
+        environment_id="environment.test",
+        site_id="site.local",
+    )
+    assert current == rebased.record
+    rebase_audit = next(item for item in sink.records if item.event_type.endswith(".rebase"))
+    assert "Approved configuration" not in repr(rebase_audit)
+    assert acquired.record.version == 2
+
+
+@pytest.mark.asyncio
+async def test_rebase_rejects_stale_unchanged_foreign_lease_and_changed_replay() -> None:
+    state_service, _, _, _ = service()
+    claimed = await claim(state_service)
+    candidate = replace(identity(), plan_digest="d" * 64)
+
+    for expected_code, kwargs in (
+        ("bootstrap_stale_revision", {"expected_version": 2}),
+        ("bootstrap_lease_unavailable", {"lease_holder_id": "session.bootstrap.other"}),
+        ("bootstrap_plan_unchanged", {"candidate": identity()}),
+    ):
+        request = {
+            "actor": actor(),
+            "lease_holder_id": "session.bootstrap.primary",
+            "run_id": claimed.record.run_id,
+            "candidate": candidate,
+            "expected_version": 1,
+            "preview_source_version": 1,
+            "justification": "Reviewed plan correction for deterministic resume safety.",
+            "idempotency_key": f"rebase-reject-{expected_code}",
+            "correlation_id": f"correlation.{expected_code}",
+        }
+        request.update(kwargs)
+        with pytest.raises(BootstrapRepositoryError) as error:
+            await state_service.rebase(**request)  # type: ignore[arg-type]
+        assert error.value.code == expected_code
+
+    first = await state_service.rebase(
+        actor=actor(),
+        lease_holder_id="session.bootstrap.primary",
+        run_id=claimed.record.run_id,
+        candidate=candidate,
+        expected_version=1,
+        preview_source_version=1,
+        justification="Reviewed plan correction for deterministic resume safety.",
+        idempotency_key="rebase-conflict-0001",
+        correlation_id="correlation.rebase.first",
+    )
+    assert first.record.version == 2
+    with pytest.raises(BootstrapRepositoryError) as conflict:
+        await state_service.rebase(
+            actor=actor(),
+            lease_holder_id="session.bootstrap.primary",
+            run_id=claimed.record.run_id,
+            candidate=replace(candidate, configuration_digest="e" * 64),
+            expected_version=1,
+            preview_source_version=1,
+            justification="Reviewed plan correction for deterministic resume safety.",
+            idempotency_key="rebase-conflict-0001",
+            correlation_id="correlation.rebase.conflict",
+        )
+    assert conflict.value.code == "bootstrap_idempotency_conflict"
+
+
+@pytest.mark.asyncio
+async def test_completed_run_and_required_audit_block_rebase_without_mutation() -> None:
+    state_service, _, _, _ = service()
+    claimed = await claim(state_service)
+    version = claimed.record.version
+    for index, phase_id in enumerate(identity().phase_ids):
+        completed = await checkpoint_phase(
+            state_service, claimed.record.run_id, version, phase_id, f"complete-{index}-0001"
+        )
+        version = completed.record.version
+    with pytest.raises(BootstrapRepositoryError) as completed_error:
+        await state_service.rebase(
+            actor=actor(),
+            lease_holder_id="session.bootstrap.primary",
+            run_id=claimed.record.run_id,
+            candidate=replace(identity(), plan_digest="f" * 64),
+            expected_version=version,
+            preview_source_version=version,
+            justification="Reviewed replacement plan after completed deployment state.",
+            idempotency_key="rebase-completed-0001",
+            correlation_id="correlation.rebase.completed",
+        )
+    assert completed_error.value.code == "bootstrap_run_completed"
+
+    failing_service, failing_repository, _, _ = service(sink=AuditSink(fail=True))
+    failing_claim = await failing_repository.claim(
+        identity=identity(),
+        lease_holder_id="session.bootstrap.primary",
+        lease_duration=timedelta(minutes=5),
+        idempotency_key="seed-audit-rebase-0001",
+        request_fingerprint="f" * 64,
+        now=NOW,
+    )
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        await failing_service.rebase(
+            actor=actor(),
+            lease_holder_id="session.bootstrap.primary",
+            run_id=failing_claim.record.run_id,
+            candidate=replace(identity(), plan_digest="e" * 64),
+            expected_version=1,
+            preview_source_version=1,
+            justification="Reviewed plan correction while required audit is unavailable.",
+            idempotency_key="rebase-audit-fail-0001",
+            correlation_id="correlation.rebase.audit-fail",
+        )
+    unchanged = await failing_repository.get_current(
+        organization_id=actor().organization_id,
+        environment_id="environment.test",
+        site_id="site.local",
+    )
+    assert unchanged == failing_claim.record
+
+
+def rebase_payload(version: int, **overrides: object) -> dict[str, object]:
+    values = claim_payload()
+    values.pop("lease_minutes")
+    values.update(
+        {
+            "schema_version": "atlas.bootstrap-rebase.v1",
+            "configuration_digest": "d" * 64,
+            "expected_version": version,
+            "preview_source_version": version,
+            "justification": "Approved configuration correction for deterministic resume safety.",
+        }
+    )
+    values.update(overrides)
+    return values
+
+
+def test_api_rebase_requires_csrf_strict_input_and_returns_safe_metadata() -> None:
+    app = create_app(
+        Settings(environment="test", development_identity_enabled=True),
+        identity_provider=IdentityProvider(),
+        audit_sink=AuditSink(),
+    )
+    with TestClient(app) as client:
+        login = client.post(
+            "/api/v1/authentication/sessions",
+            json={"username": "operator", "password": "valid-password"},
+        )
+        csrf = login.headers["X-CSRF-Token"]
+        created = client.post(
+            "/api/v1/platform/bootstrap-state/claims",
+            json=claim_payload(),
+            headers={"Idempotency-Key": "api-rebase-claim-0001", "X-CSRF-Token": csrf},
+        )
+        run_id = created.json()["data"]["run"]["run_id"]
+        denied = client.post(
+            f"/api/v1/platform/bootstrap-state/{run_id}/rebase",
+            json=rebase_payload(1),
+            headers={"Idempotency-Key": "api-rebase-denied-0001"},
+        )
+        malformed = client.post(
+            f"/api/v1/platform/bootstrap-state/{run_id}/rebase",
+            json=rebase_payload(1, unknown="unsafe"),
+            headers={"Idempotency-Key": "api-rebase-malformed-0001", "X-CSRF-Token": csrf},
+        )
+        rebased = client.post(
+            f"/api/v1/platform/bootstrap-state/{run_id}/rebase",
+            json=rebase_payload(1),
+            headers={"Idempotency-Key": "api-rebase-created-0001", "X-CSRF-Token": csrf},
+        )
+        current = client.get("/api/v1/platform/bootstrap-state/current")
+
+    assert denied.status_code == 403 and denied.json()["code"] == "csrf_validation_failed"
+    assert malformed.status_code == 422
+    assert rebased.status_code == 200 and rebased.headers["cache-control"] == "no-store"
+    data = rebased.json()["data"]
+    assert data["run"]["version"] == 2
+    assert data["earliest_affected_phase_id"] == "phase.configure"
+    assert data["invalidation_reason_codes"] == ["bootstrap.configuration.changed"]
+    assert data["execution_authorized"] is False
+    assert data["infrastructure_mutation_authorized"] is False
+    assert "lease_holder" not in rebased.text and "justification" not in rebased.text
+    assert current.json()["data"]["run"]["version"] == 2

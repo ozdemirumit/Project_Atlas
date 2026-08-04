@@ -54,6 +54,7 @@ import {
 import { getAuditExportOverview, retryAuditExport } from "./api/auditExport";
 import { getBootstrapPlan } from "./api/bootstrapPlan";
 import { previewBootstrapInvalidation } from "./api/bootstrapInvalidation";
+import { rebaseBootstrapPlan, type BootstrapRebaseResult } from "./api/bootstrapRebase";
 import { getBootstrapState } from "./api/bootstrapState";
 import { previewDeploymentConfiguration } from "./api/deploymentConfiguration";
 import { getStorageImpact, type GraphEntity } from "./api/graph";
@@ -247,6 +248,10 @@ export function App() {
   const [releaseMode, setReleaseMode] = useState<ReleasePreflightMode>("offline");
   const [releaseProfile, setReleaseProfile] =
     useState<ReleasePreflightProfile>("linux_lab");
+  const [bootstrapRebaseJustification, setBootstrapRebaseJustification] = useState("");
+  const [bootstrapRebasePending, setBootstrapRebasePending] = useState(false);
+  const [bootstrapRebaseResult, setBootstrapRebaseResult] =
+    useState<BootstrapRebaseResult | null>(null);
   const [pendingDisableSubjectId, setPendingDisableSubjectId] = useState<string | null>(null);
   const [investigationQuestion, setInvestigationQuestion] = useState(
     "What evidence explains the current storage warning?",
@@ -290,6 +295,9 @@ export function App() {
       setWorkloadReason("");
       setIssuedWorkloadToken(null);
       setPendingWorkloadAction(null);
+      setBootstrapRebaseJustification("");
+      setBootstrapRebasePending(false);
+      setBootstrapRebaseResult(null);
       await queryClient.invalidateQueries({ queryKey: ["current-identity"] });
     },
   });
@@ -454,6 +462,26 @@ export function App() {
     retry: false,
   });
   const bootstrapInvalidation = bootstrapInvalidationQuery.data?.data;
+  const bootstrapRebaseMutation = useMutation({
+    mutationFn: () =>
+      rebaseBootstrapPlan({
+        state: bootstrapState!,
+        preview: bootstrapInvalidation!,
+        plan: bootstrapPlan!,
+        configuration: deploymentConfiguration!,
+        scope: identity!.scope,
+        justification: bootstrapRebaseJustification.trim(),
+      }),
+    onSuccess: async (response) => {
+      setBootstrapRebaseResult(response.data);
+      setBootstrapRebasePending(false);
+      setBootstrapRebaseJustification("");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-state"] }),
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-invalidation"] }),
+      ]);
+    },
+  });
   const retryAuditExportMutation = useMutation({
     mutationFn: retryAuditExport,
     onSuccess: async () => {
@@ -1365,13 +1393,106 @@ export function App() {
                           <p>{bootstrapInvalidation.downstream_phase_ids.join(", ") || "None"}</p>
                         </div>
                       </div>
+                      {bootstrapInvalidation.state === "drifted" &&
+                        bootstrapState?.run &&
+                        bootstrapState.lease_held_by_current_actor &&
+                        bootstrapInvalidation.source_run_version === bootstrapState.run.version &&
+                        !bootstrapRebasePending && (
+                          <div className="bootstrap-rebase-action">
+                            <div>
+                              <strong>Apply the reviewed checkpoint boundary</strong>
+                              <p>
+                                This updates Atlas coordination metadata only. It does not run any
+                                deployment phase.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBootstrapRebaseResult(null);
+                                setBootstrapRebasePending(true);
+                              }}
+                            >
+                              <RefreshCw size={14} /> Review plan update
+                            </button>
+                          </div>
+                        )}
+                      {bootstrapRebasePending && bootstrapState?.run && (
+                        <div className="bootstrap-rebase-confirmation" role="dialog">
+                          <div>
+                            <strong>Confirm checkpoint metadata update</strong>
+                            <p>
+                              Revision {bootstrapState.run.version} will move to the candidate plan.
+                              Only checkpoints before {" "}
+                              {bootstrapInvalidation.earliest_affected_phase_id} remain reusable.
+                            </p>
+                          </div>
+                          <label>
+                            Review justification
+                            <input
+                              value={bootstrapRebaseJustification}
+                              maxLength={500}
+                              onChange={(event) =>
+                                setBootstrapRebaseJustification(event.target.value)
+                              }
+                              placeholder="Record the reviewed reason for this plan update"
+                            />
+                          </label>
+                          {bootstrapRebaseMutation.isError && (
+                            <div className="impact-message impact-error">
+                              <AlertTriangle size={16} /> The checkpoint update was not completed.
+                            </div>
+                          )}
+                          <div className="bootstrap-rebase-confirm-actions">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBootstrapRebasePending(false);
+                                setBootstrapRebaseJustification("");
+                              }}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              className="bootstrap-rebase-confirm"
+                              type="button"
+                              disabled={
+                                bootstrapRebaseJustification.trim().length < 12 ||
+                                bootstrapRebaseMutation.isPending
+                              }
+                              onClick={() => bootstrapRebaseMutation.mutate()}
+                            >
+                              <RefreshCw size={14} /> Confirm checkpoint update
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {bootstrapRebaseResult && (
+                        <div className="bootstrap-rebase-result" role="status">
+                          <CheckCircle2 size={18} />
+                          <div>
+                            <strong>
+                              Plan metadata updated to revision {bootstrapRebaseResult.run.version}
+                            </strong>
+                            <p>
+                              Preserved: {" "}
+                              {bootstrapRebaseResult.preserved_checkpoint_phase_ids.join(", ") ||
+                                "None"}
+                              . Invalidated: {" "}
+                              {bootstrapRebaseResult.invalidated_checkpoint_phase_ids.join(", ") ||
+                                "None"}
+                              .
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </>
                   )}
                   <div className="safety-notice">
                     <ShieldCheck size={16} />
                     <span>
-                      Preview only. No checkpoint, lease, file, phase, rollback, or infrastructure
-                      state is changed.
+                      Preview is read-only. A confirmed plan update changes checkpoint metadata only;
+                      no lease, file, phase, rollback, or infrastructure operation is authorized.
                     </span>
                   </div>
                 </section>

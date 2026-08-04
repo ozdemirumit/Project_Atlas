@@ -160,3 +160,7 @@ class BootstrapMutationResult:
     record: BootstrapRunRecord
     replayed: bool
     reclaimed_expired_lease: bool = False
+    preserved_checkpoint_phase_ids: tuple[str, ...] = ()
+    invalidated_checkpoint_phase_ids: tuple[str, ...] = ()
+    invalidation_reason_codes: tuple[str, ...] = ()
+    earliest_affected_phase_id: str | None = None

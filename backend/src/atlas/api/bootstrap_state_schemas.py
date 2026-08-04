@@ -88,6 +88,53 @@ class BootstrapReleaseInput(BaseModel):
     expected_version: int = Field(ge=1)
 
 
+class BootstrapRebaseInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["atlas.bootstrap-rebase.v1"]
+    release_id: str = Field(pattern=STABLE_ID_PATTERN)
+    profile: DeploymentProfile
+    organization_id: str = Field(pattern=STABLE_ID_PATTERN)
+    environment_id: str = Field(pattern=STABLE_ID_PATTERN)
+    site_id: str = Field(pattern=STABLE_ID_PATTERN)
+    plan_digest: str = Field(pattern=DIGEST_PATTERN)
+    resume_key: str = Field(pattern=STABLE_ID_PATTERN)
+    configuration_digest: str = Field(pattern=DIGEST_PATTERN)
+    phase_ids: list[str] = Field(min_length=1, max_length=32)
+    expected_version: int = Field(ge=1)
+    preview_source_version: int = Field(ge=1)
+    justification: str = Field(min_length=12, max_length=500)
+
+    @field_validator("phase_ids")
+    @classmethod
+    def validate_rebase_phase_ids(cls, values: list[str]) -> list[str]:
+        if len(values) != len(set(values)) or any(
+            re.fullmatch(STABLE_ID_PATTERN, item) is None for item in values
+        ):
+            raise ValueError("phase IDs must be unique stable identifiers")
+        return values
+
+    @field_validator("justification")
+    @classmethod
+    def validate_justification(cls, value: str) -> str:
+        if value != value.strip() or any(ord(character) < 32 for character in value):
+            raise ValueError("justification must be trimmed single-line text")
+        return value
+
+    def to_identity(self) -> BootstrapRunIdentity:
+        return BootstrapRunIdentity(
+            release_id=self.release_id,
+            profile=self.profile,
+            organization_id=self.organization_id,
+            environment_id=self.environment_id,
+            site_id=self.site_id,
+            plan_digest=self.plan_digest,
+            resume_key=self.resume_key,
+            configuration_digest=self.configuration_digest,
+            phase_ids=tuple(self.phase_ids),
+        )
+
+
 class BootstrapCheckpointData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -193,6 +240,33 @@ class BootstrapMutationData(BaseModel):
         )
 
 
+class BootstrapRebaseData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run: BootstrapRunData
+    replayed: bool
+    preserved_checkpoint_phase_ids: list[str]
+    invalidated_checkpoint_phase_ids: list[str]
+    invalidation_reason_codes: list[str]
+    earliest_affected_phase_id: str
+    execution_authorized: bool = False
+    lease_mutation_authorized: bool = False
+    infrastructure_mutation_authorized: bool = False
+
+    @classmethod
+    def from_domain(cls, result: BootstrapMutationResult) -> BootstrapRebaseData:
+        if result.earliest_affected_phase_id is None:
+            raise ValueError("rebase result requires an invalidation boundary")
+        return cls(
+            run=BootstrapRunData.from_domain(result.record),
+            replayed=result.replayed,
+            preserved_checkpoint_phase_ids=list(result.preserved_checkpoint_phase_ids),
+            invalidated_checkpoint_phase_ids=list(result.invalidated_checkpoint_phase_ids),
+            invalidation_reason_codes=list(result.invalidation_reason_codes),
+            earliest_affected_phase_id=result.earliest_affected_phase_id,
+        )
+
+
 class BootstrapStateResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -204,4 +278,11 @@ class BootstrapMutationResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: BootstrapMutationData
+    meta: ResponseMeta
+
+
+class BootstrapRebaseResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: BootstrapRebaseData
     meta: ResponseMeta
