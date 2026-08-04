@@ -24,6 +24,9 @@ HEALTH_CHECK_RUN_CREATE = "health-check.run.create"
 INVESTIGATION_CREATE = "investigation.create"
 RCA_CREATE = "rca.create"
 RECOMMENDATION_CREATE = "recommendation.create"
+APPROVAL_REQUEST_CREATE = "approval.request.create"
+APPROVAL_REQUEST_READ = "approval.request.read"
+APPROVAL_REQUEST_DECIDE = "approval.request.decide"
 REPORT_CREATE = "report.create"
 SECURITY_EXPORT_OVERVIEW_READ = "security-export.overview.read"
 SECURITY_EXPORT_TEST_CREATE = "security-export.test.create"
@@ -131,6 +134,19 @@ def recommendation_scope(organization_id: str, environment: str) -> ResourceScop
     )
 
 
+def approval_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.approval",
+        resource_id="resource.approval.storage.synthetic",
+        capability_class=capability_class,
+    )
+
+
 def report_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -204,6 +220,18 @@ def build_development_authorization_service(
             description="Create a governed recommendation from an exact authorized RCA case.",
         ),
         PermissionDefinition(
+            permission_id=APPROVAL_REQUEST_CREATE,
+            description="Create an immutable approval packet from an exact recommendation.",
+        ),
+        PermissionDefinition(
+            permission_id=APPROVAL_REQUEST_READ,
+            description="Read an exact-scope immutable approval packet.",
+        ),
+        PermissionDefinition(
+            permission_id=APPROVAL_REQUEST_DECIDE,
+            description="Record a separated human decision on an exact approval packet.",
+        ),
+        PermissionDefinition(
             permission_id=REPORT_CREATE,
             description="Create a governed report and non-dispatching ITSM handoff draft.",
         ),
@@ -232,6 +260,9 @@ def build_development_authorization_service(
                 INVESTIGATION_CREATE,
                 RCA_CREATE,
                 RECOMMENDATION_CREATE,
+                APPROVAL_REQUEST_CREATE,
+                APPROVAL_REQUEST_READ,
+                APPROVAL_REQUEST_DECIDE,
                 REPORT_CREATE,
                 SECURITY_EXPORT_OVERVIEW_READ,
                 SECURITY_EXPORT_TEST_CREATE,
@@ -344,6 +375,30 @@ def build_development_authorization_service(
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=recommendation_scope(
                     settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.approval-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=approval_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C0_INFORMATIONAL,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.approval-governance",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=approval_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),

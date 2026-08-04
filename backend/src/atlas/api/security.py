@@ -9,6 +9,9 @@ from atlas.api.errors import AtlasError
 from atlas.core.capabilities import CapabilityClass
 from atlas.modules.authorization.application.bootstrap import (
     AI_GROUNDED_QUERY_CREATE,
+    APPROVAL_REQUEST_CREATE,
+    APPROVAL_REQUEST_DECIDE,
+    APPROVAL_REQUEST_READ,
     GRAPH_STORAGE_IMPACT_READ,
     HEALTH_CHECK_OVERVIEW_READ,
     HEALTH_CHECK_RUN_CREATE,
@@ -23,6 +26,7 @@ from atlas.modules.authorization.application.bootstrap import (
     SESSION_SELF_REVOKE,
     STORAGE_OVERVIEW_READ,
     ai_grounded_query_scope,
+    approval_scope,
     current_identity_scope,
     graph_storage_impact_scope,
     health_check_scope,
@@ -393,6 +397,72 @@ async def authorize_recommendation_create(
         )
     request.state.authorization_decision = decision
     return decision
+
+
+async def _authorize_approval(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.approval",
+            scope=approval_scope(subject.organization_id, settings.environment, capability_class),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The approval operation is not authorized.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_approval_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_approval(
+        request,
+        subject,
+        permission_id=APPROVAL_REQUEST_CREATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_approval_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_approval(
+        request,
+        subject,
+        permission_id=APPROVAL_REQUEST_READ,
+        capability_class=CapabilityClass.C0_INFORMATIONAL,
+    )
+
+
+async def authorize_approval_decide(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_approval(
+        request,
+        subject,
+        permission_id=APPROVAL_REQUEST_DECIDE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
 
 
 async def authorize_report_create(

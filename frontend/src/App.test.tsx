@@ -859,6 +859,100 @@ const recommendationResponse = {
   },
 };
 
+const approvalResponse = {
+  data: {
+    request_id: "approval_test",
+    version: 1,
+    state: "pending",
+    packet: {
+      canonicalization_version: "atlas-approval-packet.v1",
+      canonical_digest: "d".repeat(64),
+      requested_by: "subject.enterprise.requester",
+      purpose: "Review the bounded evidence-supported operational recommendation.",
+      created_at: "2026-08-04T10:06:00Z",
+      expires_at: "2026-08-04T11:06:00Z",
+      target_id: "asset.storage.lab.b28",
+      recommendation_id: "rec_test",
+      recommendation_version: 1,
+      option_id: "recommendation.option.investigate",
+      option_version: 1,
+      option_title: "Collect current path, event, and service evidence",
+      option_category: "investigate",
+      option_confidence: "supported",
+      confidence_rationale: "The current warning is direct, but path evidence is incomplete.",
+      overall_risk: "low",
+      risk_rationales: ["The bounded diagnostic is read-only and reversible."],
+      evidence_references: ["evidence.health", "evidence.vendor"],
+      evidence_summaries: [
+        "A current controller warning was observed.",
+        "Vendor guidance supports collecting path evidence before change.",
+      ],
+      alternatives: ["Prepare an attributable vendor escalation package"],
+      assumptions: ["The approved read-only connector remains available."],
+      unknowns: ["Current end-to-end path state is unknown."],
+      affected_components: ["asset.storage.lab.b28"],
+      possibly_affected_services: ["ERP Application Service"],
+      blast_radius: "One storage system and possibly dependent ERP services.",
+      impact_confirmed: false,
+      graph_maturity: "D0-D1 dependency analysis",
+      impact_gaps: ["Storage multipathing is not represented."],
+      duration_minimum_minutes: 5,
+      duration_maximum_minutes: 15,
+      interruption_expected_mode: "none expected",
+      interruption_worst_credible_mode: "diagnostic timeout only",
+      interruption_expected_minutes: [0, 0],
+      interruption_worst_credible_minutes: [0, 5],
+      interruption_unknowns: ["Live service telemetry is unavailable."],
+      plan_steps: [
+        {
+          order: 1,
+          step_id: "step.investigate.path-events",
+          conceptual_action: "Collect one bounded current path and event evidence package.",
+          capability_id: "hitachi.opscenter.storage.path-events.read",
+          capability_class: "C1",
+          expected_output: "Current scoped path state and related events.",
+          stop_condition: "Stop on timeout, stale data, scope mismatch, or output limit.",
+        },
+      ],
+      preconditions: ["The target and connector scope remain current."],
+      verification_criteria: ["Evidence is current and attributable."],
+      stop_conditions: ["Stop when evidence freshness cannot be established."],
+      recovery_strategy: "No infrastructure rollback is required for a read-only diagnostic.",
+      rollback_feasible: true,
+      recovery_duration_minimum_minutes: 0,
+      recovery_duration_maximum_minutes: 1,
+      recovery_gaps: ["No operational change is included."],
+      policy_constraints: ["No Atlas execution authority is available."],
+      execution_authorized: false,
+    },
+    decisions: [],
+    execution_authorized: false,
+  },
+  meta: {
+    correlation_id: "test-approval-correlation",
+    generated_at: "2026-08-04T10:06:00Z",
+  },
+};
+
+const approvedApprovalResponse = {
+  ...approvalResponse,
+  data: {
+    ...approvalResponse.data,
+    version: 2,
+    state: "approved",
+    decisions: [
+      {
+        decision_id: "approval_decision_test",
+        request_version: 1,
+        outcome: "approve",
+        reviewer_id: "subject.enterprise.reviewer",
+        decided_at: "2026-08-04T10:10:00Z",
+        rationale: "The evidence supports this bounded read-only diagnostic plan.",
+      },
+    ],
+  },
+};
+
 const reportResponse = {
   data: {
     report_id: "report_test",
@@ -968,6 +1062,7 @@ const reportResponse = {
 afterEach(() => {
   vi.restoreAllMocks();
   document.cookie = "atlas_csrf=; Max-Age=0; path=/";
+  window.history.replaceState({}, "", "/");
 });
 
 describe("Atlas application shell", () => {
@@ -986,6 +1081,8 @@ describe("Atlas application shell", () => {
           ? storageResponse
           : url.includes("/health-checks/overview")
             ? healthCheckResponse
+            : url.includes("/approvals/")
+              ? approvalResponse
             : url.includes("/reports/storage")
               ? reportResponse
               : url.includes("/recommendations/storage")
@@ -1069,6 +1166,13 @@ describe("Atlas application shell", () => {
     expect(screen.getAllByText("Blocked by policy and readiness")).toHaveLength(2);
     expect(screen.getByText("No execution authority")).toBeVisible();
     expect(screen.getByText(/does not authorize Atlas to execute/)).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit for human review" }));
+
+    expect(await screen.findByText("Canonical packet digest")).toBeVisible();
+    expect(screen.getByText("Separated reviewer required")).toBeVisible();
+    expect(screen.getAllByText("No execution authority").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Impact remains unconfirmed/)).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Generate report" }));
 
@@ -1181,5 +1285,81 @@ describe("Atlas application shell", () => {
     const logoutHeaders = new Headers(logoutRequest?.headers);
     expect(logoutRequest?.method).toBe("DELETE");
     expect(logoutHeaders.get("X-CSRF-Token")).toBe("csrf_browser_test");
+  });
+
+  it("opens a linked immutable packet for a separated human decision", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    window.history.replaceState({}, "", "/?approval_request_id=approval_test");
+    document.cookie = "atlas_csrf=csrf_approval_test; path=/; SameSite=Strict";
+    let decisionRequest: RequestInit | undefined;
+    const reviewerIdentity = {
+      ...identityResponse,
+      data: {
+        ...identityResponse.data,
+        subject_id: "subject.enterprise.reviewer",
+        display_name: "Separated Reviewer",
+        authentication: {
+          ...identityResponse.data.authentication,
+          provider_id: "provider.ldap.enterprise",
+          method: "ldap",
+          assurance_level: "single_factor",
+        },
+      },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/approvals/approval_test/decisions")) {
+        decisionRequest = init;
+        return Promise.resolve(
+          new Response(JSON.stringify(approvedApprovalResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      const payload = url.includes("/identity/me")
+        ? reviewerIdentity
+        : url.includes("/approvals/approval_test")
+          ? approvalResponse
+          : url.includes("/security-export/overview")
+            ? securityExportOverviewResponse
+            : url.includes("/storage/overview")
+              ? storageResponse
+              : url.includes("/health-checks/overview")
+                ? healthCheckResponse
+                : url.includes("/graph/storage-impact")
+                  ? graphResponse
+                  : platformResponse;
+      return Promise.resolve(
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Separated Reviewer")).toBeVisible();
+    expect(await screen.findByText("Canonical packet digest")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Decision rationale"), {
+      target: { value: "The evidence supports this bounded read-only diagnostic plan." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    expect(await screen.findByText("Decision history")).toBeVisible();
+    expect(screen.getByText(/by subject.enterprise.reviewer/)).toBeVisible();
+    await waitFor(() => expect(decisionRequest?.method).toBe("POST"));
+    const headers = new Headers(decisionRequest?.headers);
+    expect(headers.get("X-CSRF-Token")).toBe("csrf_approval_test");
+    expect(headers.get("Idempotency-Key")).toMatch(/^approval-ui-/);
+    expect(decisionRequest?.body).toContain('"expected_version":1');
   });
 });
