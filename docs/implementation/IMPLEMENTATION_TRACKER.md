@@ -4,14 +4,46 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-025 |
-| Title | Versioned deployment configuration preview foundation |
-| Status | Done |
-| Branch | `agent/deployment-configuration-preview` |
-| Pull Request | [#37](https://github.com/ozdemirumit/Project_Atlas/pull/37) |
+| Task ID | ATLAS-IMP-026 |
+| Title | Deterministic bootstrap plan and resume-state foundation |
+| Status | In Progress |
+| Branch | `agent/bootstrap-plan-foundation` |
+| Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Merge PR #37 and select the next bounded MVP-005 implementation slice |
+| Next Action | Implement the read-only bootstrap plan and resumability model |
+
+### ATLAS-IMP-026 Scope Rationale
+
+- ATLAS-038 requires every bootstrap phase to record exact inputs, result boundaries, safe
+  diagnostics, dependencies, and resumability. Preflight and configuration preview now provide the
+  immutable evidence needed to calculate such a plan without performing installation.
+- This slice creates a deterministic, exact-input bootstrap plan with stable phases, dependency
+  gates, invalidation inputs, resume semantics, plan digest, and a governed read-only API/UI. It does
+  not persist execution state, acquire artifacts, write configuration, provision trust, initialize
+  data, deploy services, or execute any phase.
+
+### ATLAS-IMP-026 Acceptance Criteria
+
+- A strict request binds release/profile, organization/environment/site, preflight report and
+  manifest digest, configuration preview and digest, and both gate states. Unknown or malformed
+  fields fail closed and foreign scope discloses no plan.
+- The planner produces a deterministic ordered DAG covering acquire, configure, trust, data,
+  services, identity, integrations, verification, and handoff. Every phase has stable dependencies,
+  required input digests, readiness, resumability, and bounded stop/recovery guidance.
+- Failed or unchecked prerequisite evidence blocks all dependent phases; no blocked phase is shown
+  as ready. Reordered equivalent input produces the same plan digest and resume key.
+- The result includes explicit false mutation/execution authorization, no command text or secret
+  values, exact-scope C0 authorization, required audit, correlation ID, and `no-store` delivery.
+- The operations UI renders plan identity, readiness, ordered phases, dependencies, and the explicit
+  non-execution boundary only when discovery succeeds. Automated and live desktop/mobile tests cover
+  ready, blocked, unauthorized, malformed, audit-failed, and responsive behavior.
+- This slice does not persist checkpoints, acquire or install artifacts, lock a deployment, execute
+  rollback/recovery, mutate data, or authorize a bootstrap run.
+
+### ATLAS-IMP-026 Validation Evidence
+
+- Pending implementation and validation.
 
 ### ATLAS-IMP-025 Scope Rationale
 
