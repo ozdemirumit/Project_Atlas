@@ -4,14 +4,60 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-042 |
-| Title | Governed upgrade change review packet foundation |
+| Task ID | ATLAS-IMP-043 |
+| Title | Governed upgrade multi-stage human review foundation |
 | Status | In Progress |
-| Branch | `agent/upgrade-change-review-packet` |
-| Pull Request | [#54](https://github.com/ozdemirumit/Project_Atlas/pull/54) |
+| Branch | `agent/upgrade-change-human-review` |
+| Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-023, ATLAS-025, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-038, ATLAS-044, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-05 |
-| Next Action | Complete final CI, merge, and `main` synchronization |
+| Next Action | Implement and validate the evidence-bound multi-stage human review lifecycle |
+
+### ATLAS-IMP-043 Scope Rationale
+
+- IMP-042 now produces an immutable, evidence-bound operator and CAB-facing change review packet,
+  but it deliberately creates no approval request or decision. ATLAS-037 requires consequential
+  review to bind exact evidence, roles, sequence, quorum, freshness, and requester-reviewer
+  separation before any future handoff can be considered.
+- No named customer approvers, production CAB authority, ITSM approval source, approved maintenance
+  window, notification channel, or deployment executor is available. This slice therefore records
+  only local human review requests and decisions for the exact packet. It will not dispatch to ITSM,
+  notify, issue a handoff token, schedule, deploy, migrate, restart, restore, roll back, or authorize
+  infrastructure execution.
+
+### ATLAS-IMP-043 Acceptance Criteria
+
+- A confirmed C2 request binds one exact change-review packet ID and digest, maintenance window,
+  evidence digests, impacted services, risk and change classes, accountable stages, expiry,
+  requester identity, justification, acknowledgement, and a deterministic canonical digest.
+- Four ordered stages are required: platform technical review, service-owner acknowledgement,
+  security review, and change-authority review. Each stage declares one exact role, one-human quorum,
+  state, expiry, allowed outcomes, and the unchanged packet digest; one person cannot satisfy multiple
+  stages and the requester cannot decide any stage.
+- Eligible human reviewers can record approve, reject, needs-evidence, or defer outcomes with a
+  rationale, exact expected request version, browser CSRF, and an idempotency key. Replays are stable;
+  changed replay, stale version, wrong stage, wrong role, insufficient assurance, non-human identity,
+  duplicate reviewer, expired request, or source digest mismatch fails closed.
+- Decisions are append-only. Rejection stops the request, needs-evidence or defer pauses it, and an
+  approval advances only to the next stage. Completing all stages records human review completion but
+  still leaves approval-granted, ITSM dispatch, handoff, workflow execution, and infrastructure
+  execution authorization false.
+- Read and decision paths revalidate source packet identity, digest, organization, environment, site,
+  maintenance window, freshness, and reviewer eligibility. Required audit failure prevents disclosure
+  or mutation, and no partial state becomes visible.
+- The web flow creates and displays the exact review request, ordered stages, current required role,
+  decision history, expiry, evidence and impact boundary, and an equally visible no-execution
+  statement. The requester remains visibly ineligible to self-review.
+- Default-deny RBAC, correlation, no-store, strict schemas, PostgreSQL metadata and migration,
+  deterministic replay, automated tests, live enterprise-session execution, and desktop/mobile
+  validation apply.
+- This slice performs no external request, ITSM synchronization, notification, artifact acquisition,
+  secret resolution, connector call, model inference, workflow execution, deployment action, data
+  migration, service restart, traffic switch, active restore, rollback, or infrastructure mutation.
+
+### ATLAS-IMP-043 Validation Evidence
+
+- Pending implementation and validation.
 
 ### ATLAS-IMP-042 Scope Rationale
 
@@ -81,7 +127,8 @@
 - Source implementation is committed at `c6ba48f` (`feat: add governed upgrade change review
   packets`). PR #54 CI run `30960577107` passed backend and frontend validation before this final
   evidence-only tracker update.
-- Final evidence CI, merge, and local `main` synchronization remain pending.
+- Final PR #54 CI run `30961375444` passed backend and frontend validation. PR #54 merged as
+  `3e2c5bc077eda5184c10500da73443d73b067bbe`, and local `main` matched `origin/main` afterward.
 
 ### ATLAS-IMP-041 Scope Rationale
 
