@@ -8,7 +8,7 @@
 | Title | Platform workload identity and secret-reference foundation |
 | Status | Review |
 | Branch | `agent/workload-identity-foundation` |
-| Pull Request | Pending |
+| Pull Request | [#35](https://github.com/ozdemirumit/Project_Atlas/pull/35) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-016, ATLAS-023, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047 |
 | Last Updated | 2026-08-04 |
 | Next Action | Push the validated implementation, open a pull request, and complete CI review |
@@ -78,8 +78,8 @@
   workload and credential health, requires explicit create/rotate/revoke confirmations, and displays
   newly issued credentials once with an explicit dismissal control. Automated UI coverage confirms
   dismissal and that forbidden discovery leaves the administration surface absent.
-- Backend validation on 2026-08-04: Ruff format/check clean, strict mypy clean across 195 source
-  files, 253 tests passed including 9 workload identity lifecycle and security tests. The suite
+- Backend validation on 2026-08-04: Ruff format/check clean, strict mypy clean across 219 source
+  and test files, 253 tests passed including 9 workload identity lifecycle and security tests. The suite
   covers clock skew, audience/environment separation, concurrency, overlap, revocation, CSRF,
   role separation, input rejection, idempotency, compensation, audit redaction, and secret-free
   responses.

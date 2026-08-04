@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import base64
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 from fastapi.testclient import TestClient
+from httpx import Response
 
 from atlas.api.app import create_app
 from atlas.core.audit import AuditRecord
@@ -179,11 +181,14 @@ def create_payload() -> dict[str, object]:
     }
 
 
-def create_identity(client: TestClient, csrf: str, key: str = "workload-create-0001"):
-    return client.post(
-        "/api/v1/workload-identities",
-        json=create_payload(),
-        headers={"X-CSRF-Token": csrf, "Idempotency-Key": key},
+def create_identity(client: TestClient, csrf: str, key: str = "workload-create-0001") -> Response:
+    return cast(
+        Response,
+        client.post(
+            "/api/v1/workload-identities",
+            json=create_payload(),
+            headers={"X-CSRF-Token": csrf, "Idempotency-Key": key},
+        ),
     )
 
 
