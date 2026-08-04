@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-036 |
 | Title | Governed bootstrap model gateway and core integration validation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/bootstrap-integration-validation` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-014, ATLAS-030, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Implement bounded synthetic model and core-integration validation for `phase.integrations` |
+| Next Action | Open the implementation PR and complete GitHub CI review |
 
 ### ATLAS-IMP-036 Scope Rationale
 
@@ -70,6 +70,31 @@
 - This slice does not resolve or create a secret, credential, token, certificate, endpoint, route,
   model deployment, vector/object store, directory/ITSM/SIEM/Syslog/notification connection, connector
   session, knowledge record, infrastructure resource, AI recommendation, or operational action.
+
+### ATLAS-IMP-036 Validation Evidence
+
+- Domain, filesystem, application, checkpoint, API, audit, migration, and persistence coverage verifies
+  a deterministic offline plan, one bounded OpenAI-compatible model contract, four inactive core
+  integrations, 12 mandatory synthetic checks, empty/exact-reusable targets, unknown-state rejection,
+  atomic publication, exact replay, interrupted ownership, strict redacted contracts, and PostgreSQL
+  JSON serialization.
+- Full backend verification passes Ruff, strict mypy across 303 source and test files, and 333 pytest
+  tests with three existing Windows symbolic-link skips. Full frontend verification passes ESLint,
+  TypeScript, 29 Vitest tests, and the production build.
+- Live browser validation established an enterprise-style LDAP session and completed acquire,
+  configure, trust, data, services, identity, and integrations under one governed lease. The run
+  advanced to revision 15, completed seven of nine phases, and selected `phase.verify` next.
+- Direct filesystem verification found exactly one `atlas-integration-state.json` beneath the
+  configured synthetic target. It contains schema `atlas.synthetic-integration-state.v1`, four
+  integrations and 12 checks; model request, network request, secret resolution, activation,
+  connector invocation, infrastructure mutation, and AI advice flags are all false. The 6,998-byte
+  evidence has SHA-256 `8c9d720c6cf8962619064016534b02320af85fcf3efcb44af481e966b9b15a64`
+  and no URL, Reader Token, authorization header, prompt, or response text.
+- Live presentation passed at 1440x900 and 390x844 with no horizontal overflow in the integration
+  result card or its descendants. The result displayed eight model checks, four integration checks,
+  12 mandatory passes, and zero external operations; browser warning/error logs were empty.
+- Source implementation is committed as `7e1b894`; pull-request and final GitHub CI evidence will be
+  attached during review.
 
 ### ATLAS-IMP-035 Scope Rationale
 
