@@ -8,7 +8,7 @@
 | Title | Governed bootstrap service deployment and readiness |
 | Status | Review |
 | Branch | `agent/bootstrap-service-deployment` |
-| Pull Request | Pending |
+| Pull Request | [PR #46](https://github.com/ozdemirumit/Project_Atlas/pull/46) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
 | Next Action | Open the implementation pull request, pass GitHub CI, merge, and advance to `phase.identity` |
@@ -95,6 +95,8 @@
 - Live presentation passed at 1440x900 and 390x844 with no horizontal overflow. The completed service
   evidence remained visible, real runtime was explicitly shown as unchanged, and browser warning/error
   logs were empty.
+- Source implementation is committed as `661395f` and is under review in
+  [PR #46](https://github.com/ozdemirumit/Project_Atlas/pull/46).
 
 ### ATLAS-IMP-033 Scope Rationale
 
