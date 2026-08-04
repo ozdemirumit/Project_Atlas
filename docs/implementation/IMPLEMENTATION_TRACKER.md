@@ -4,14 +4,69 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-023 |
-| Title | Platform workload identity and secret-reference foundation |
-| Status | Done |
-| Branch | `agent/workload-identity-foundation` |
-| Pull Request | [#35](https://github.com/ozdemirumit/Project_Atlas/pull/35) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-016, ATLAS-023, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047 |
+| Task ID | ATLAS-IMP-024 |
+| Title | Release manifest and restricted-network preflight foundation |
+| Status | In Progress |
+| Branch | `agent/release-manifest-preflight` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-016, ATLAS-030, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-058, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Merge the validated pull request and select the next implementation slice |
+| Next Action | Implement the bounded release-manifest and read-only preflight vertical slice |
+
+### ATLAS-IMP-024 Scope Rationale
+
+- MVP-005 and ATLAS-038 require clean and restricted-network lab installation foundations before
+  upgrade, rollback, backup, restore, or release claims can be trusted. The existing Compose and
+  developer scripts provide a runnable baseline but do not yet prove artifact completeness,
+  immutable checksums, release compatibility, or fail-closed offline acquisition.
+- The smallest locally verifiable slice is a versioned release manifest, pluggable signature
+  verifier, exact artifact inventory, and read-only developer/Linux-lab preflight report exposed
+  through a governed API and operations view. It validates readiness and remediation only; it does
+  not install packages, open ports, change trust, create secrets, migrate data, or deploy services.
+- Connected, mirrored, and offline modes share one immutable manifest contract. Mirrored and
+  offline modes cannot fall back to public networks, and external production signing, registry
+  publication, malware scanning, SBOM generation, deployment mutation, and durable evidence storage
+  remain follow-on work.
+
+### ATLAS-IMP-024 Acceptance Criteria
+
+- A strict versioned manifest identifies release/build, supported profiles, source commit,
+  components, relative artifact paths, sizes, SHA-256 digests, media types, required/optional state,
+  compatibility, configuration schema, known limitations, publisher, signature algorithm, key
+  reference, signature, and verification instructions. Unknown fields, duplicates, unsafe paths,
+  mutable tags without digests, secret values, and malformed identifiers fail closed.
+- Manifest canonicalization is deterministic and excludes only the detached signature value.
+  Verification uses a bounded injected verifier and records signature identity without exposing key
+  material. The lab adapter may use synthetic HMAC trust but is clearly non-production and cannot
+  be selected for a production profile.
+- Offline and mirrored inventories require every required artifact, reject modified and unexpected
+  files, preserve upstream identity, and never perform public-network fallback. Connected mode
+  validates an explicit approved source allowlist without downloading artifacts in this slice.
+- Preflight is read-only and evaluates exact operating-system/profile compatibility, architecture,
+  Python/runtime version, CPU, memory, disk, required tools, port conflicts, configuration safety,
+  secret references, manifest signature, and artifact inventory. It never mutates the host or
+  represents an unchecked item as passed.
+- Mandatory failure produces an overall blocked result, bounded remediation text, stable evidence
+  codes, and no deployment authorization. Optional warnings remain distinct from passed and failed
+  checks. Reports carry timestamps, correlation ID, manifest digest, selected mode/profile, and a
+  false mutation/execution authorization flag.
+- API access requires an authenticated exact-scope C0 platform-operations permission and required
+  audit. Unauthorized, foreign-scope, malformed, signature-failed, checksum-failed, and required
+  audit-failed requests disclose no hidden artifact inventory or host details.
+- The web operations view shows release identity, mode/profile, overall readiness, mandatory
+  blockers, warnings, artifact verification, host/runtime evidence, remediation, and the explicit
+  read-only boundary. Operators without discovery permission see no release-preflight surface.
+- Tests cover canonicalization, signature substitution, unsafe paths, duplicates, secret rejection,
+  connected allowlists, mirror/offline no-fallback behavior, missing/extra/modified artifacts,
+  compatibility, port conflicts, resource limits, exact scope, audit failure, redaction, and
+  responsive desktop/mobile UI.
+- This slice does not claim a production-ready signer, SBOM/provenance generation, vulnerability or
+  malware scanning, package installation, certificate provisioning, database migration, backup,
+  restore, upgrade, rollback, release approval, or production deployment.
+
+### ATLAS-IMP-024 Validation Evidence
+
+- Pending implementation and validation.
 
 ### ATLAS-IMP-023 Scope Rationale
 
@@ -1006,6 +1061,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-020 | Administrative identity access governance | Completed through [PR #32](https://github.com/ozdemirumit/Project_Atlas/pull/32) from source commit `de53b00`; 223 backend tests, seven frontend tests, live enterprise admin/operator session, personal-token and revoke API/UI validation, desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-021 | Identity disablement and credential revocation fan-out foundation | Completed through [PR #33](https://github.com/ozdemirumit/Project_Atlas/pull/33) from source commit `423f958`; 234 backend tests, seven frontend tests, live enterprise admin/operator disablement, old/new authentication, session/token fan-out API/UI validation, desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-022 | Enterprise audit export and Syslog delivery foundation | Completed through [PR #34](https://github.com/ozdemirumit/Project_Atlas/pull/34) from source commit `7682d0d`; 244 backend tests, nine frontend tests, live Security Auditor/ordinary-operator API/UI validation, fake TLS Syslog retry and secret-free RFC 5424 delivery, desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-023 | Platform workload identity and secret-reference foundation | Completed through [PR #35](https://github.com/ozdemirumit/Project_Atlas/pull/35) from source commit `1c0fac3`; 253 backend tests, 11 frontend tests, live enterprise workload create/rotate/revoke desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
