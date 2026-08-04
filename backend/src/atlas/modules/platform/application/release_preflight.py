@@ -63,6 +63,10 @@ class ReleasePreflightService:
         self._environment_id = environment_id
         self._clock = clock or (lambda: datetime.now(UTC))
 
+    @property
+    def manifest(self) -> ReleaseManifest:
+        return self._manifest
+
     async def run(
         self,
         *,

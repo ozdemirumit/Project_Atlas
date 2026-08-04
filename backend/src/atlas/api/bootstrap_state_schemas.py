@@ -7,6 +7,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from atlas.api.schemas import ResponseMeta
+from atlas.modules.platform.domain.bootstrap_artifact_acquisition import (
+    ArtifactAcquisitionExecution,
+)
 from atlas.modules.platform.domain.bootstrap_state import (
     BootstrapMutationResult,
     BootstrapRunIdentity,
@@ -33,6 +36,7 @@ class BootstrapClaimInput(BaseModel):
     configuration_digest: str = Field(pattern=DIGEST_PATTERN)
     phase_ids: list[str] = Field(min_length=1, max_length=32)
     lease_minutes: int = Field(ge=1, le=15)
+    justification: str | None = Field(default=None, min_length=12, max_length=500)
 
     @field_validator("phase_ids")
     @classmethod
@@ -42,6 +46,15 @@ class BootstrapClaimInput(BaseModel):
         if any(re.fullmatch(STABLE_ID_PATTERN, item) is None for item in values):
             raise ValueError("phase IDs must be stable identifiers")
         return values
+
+    @field_validator("justification")
+    @classmethod
+    def validate_claim_justification(cls, value: str | None) -> str | None:
+        if value is not None and (
+            value != value.strip() or any(ord(character) < 32 for character in value)
+        ):
+            raise ValueError("justification must be trimmed single-line text")
+        return value
 
     def to_identity(self) -> BootstrapRunIdentity:
         return BootstrapRunIdentity(
@@ -144,6 +157,59 @@ class BootstrapCheckpointData(BaseModel):
     recorded_at: datetime
 
 
+class VerifiedArtifactData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    artifact_id: str
+    sha256: str
+    size_bytes: int
+    disposition: str
+
+
+class ArtifactAcquisitionData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    execution_id: str
+    phase_id: str
+    release_id: str
+    manifest_digest: str
+    mode: str
+    preflight_report_id: str
+    state: str
+    result_code: str
+    started_at: datetime
+    completed_at: datetime | None
+    evidence: list[VerifiedArtifactData]
+    artifact_count: int
+    total_bytes: int
+
+    @classmethod
+    def from_domain(cls, execution: ArtifactAcquisitionExecution) -> ArtifactAcquisitionData:
+        return cls(
+            execution_id=execution.execution_id,
+            phase_id=execution.phase_id,
+            release_id=execution.release_id,
+            manifest_digest=execution.manifest_digest,
+            mode=execution.mode.value,
+            preflight_report_id=execution.preflight_report_id,
+            state=execution.state.value,
+            result_code=execution.result_code,
+            started_at=execution.started_at,
+            completed_at=execution.completed_at,
+            evidence=[
+                VerifiedArtifactData(
+                    artifact_id=item.artifact_id,
+                    sha256=item.sha256,
+                    size_bytes=item.size_bytes,
+                    disposition=item.disposition.value,
+                )
+                for item in execution.evidence
+            ],
+            artifact_count=len(execution.evidence),
+            total_bytes=execution.total_bytes,
+        )
+
+
 class BootstrapRunData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -166,6 +232,7 @@ class BootstrapRunData(BaseModel):
     lease_expires_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    artifact_acquisition: ArtifactAcquisitionData | None
 
     @classmethod
     def from_domain(cls, record: BootstrapRunRecord) -> BootstrapRunData:
@@ -197,6 +264,11 @@ class BootstrapRunData(BaseModel):
             lease_expires_at=record.lease_expires_at,
             created_at=record.created_at,
             updated_at=record.updated_at,
+            artifact_acquisition=(
+                ArtifactAcquisitionData.from_domain(record.artifact_acquisition)
+                if record.artifact_acquisition is not None
+                else None
+            ),
         )
 
 

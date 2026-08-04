@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-030 |
 | Title | Governed bootstrap artifact acquisition and verification |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/bootstrap-artifact-acquisition` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Implement the governed `phase.acquire` execution path and validation suite |
+| Next Action | Open the implementation PR, pass GitHub CI, and merge to `main` |
 
 ### ATLAS-IMP-030 Scope Rationale
 
@@ -46,9 +46,10 @@
   changed replay, stale revision, foreign lease, and concurrent execution fail deterministically.
 - Required authorization, browser CSRF, pre-mutation audit, correlation ID, `no-store`, safe error
   mapping, and non-disclosing scope behavior apply. Audit failure prevents staging or state mutation.
-- The operations UI offers the action only for a current leased `phase.acquire`, requires an explicit
-  confirmation and justification, communicates artifact-only impact, and displays verified evidence
-  or bounded failure recovery without phase-general or infrastructure controls.
+- The operations UI can initialize or reclaim only the exact coordination lease after explicit human
+  confirmation and justification. It offers acquisition only for a current leased `phase.acquire`,
+  communicates artifact-only impact, and displays verified evidence or bounded failure recovery without
+  phase-general or infrastructure controls.
 - Automated and live tests cover success, verified-file reuse, exact replay, changed replay, stale
   revision, wrong phase, foreign/expired lease, failed preflight, audit failure, tampered/missing/extra
   artifacts, unsafe paths, cleanup, response redaction, PostgreSQL checkpoint behavior, and responsive
@@ -56,6 +57,29 @@
 - This slice does not render configuration files, provision trust or secrets, initialize or migrate
   data, deploy or restart services, configure identity or integrations, execute rollback, invoke
   infrastructure connectors, or authorize AI-driven operation.
+
+### ATLAS-IMP-030 Validation Evidence
+
+- Filesystem adapter tests cover atomic publication, verified reuse, exact inventory enforcement,
+  tampered size and digest rejection, existing-file conflicts, bounded cleanup, and symbolic-link
+  rejection. The symbolic-link case is skipped only on this Windows host and remains enabled in Linux CI.
+- Application, state, API, and persistence tests cover completion and failed checkpoints, exact replay,
+  changed replay, stale or foreign ownership, authoritative preflight failure, required-audit failure,
+  concurrent execution, expired-attempt interruption, strict request handling, safe response evidence,
+  and PostgreSQL serialization.
+- Full backend verification passes Ruff format/check, mypy across 256 source files, and 301 pytest tests
+  with one host-specific symbolic-link skip. Full frontend verification passes ESLint, TypeScript,
+  23 Vitest tests, and the production build.
+- Live browser validation initialized the exact run lease with explicit justification, acquired three
+  immutable artifacts in offline mode, published and checksum-verified 43 bytes, advanced revision 1
+  through execution to revision 3, completed `phase.acquire`, and selected `phase.configure` next.
+- Direct filesystem verification matched all three expected sizes, SHA-256 digests, and synthetic test
+  contents beneath the immutable release and manifest identity. The attempt-owned staging directory was
+  empty after publication, and a page reload retained the completed evidence without offering acquisition
+  again.
+- Live presentation validation passed at 1440x900 and 390x844 with no horizontal overflow. Browser logs
+  contained no warnings or errors, and no configuration, service, rollback, connector, infrastructure,
+  or AI operation was exposed or authorized.
 
 ### ATLAS-IMP-029 Scope Rationale
 

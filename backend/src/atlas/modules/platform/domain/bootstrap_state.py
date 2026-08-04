@@ -5,6 +5,9 @@ from datetime import datetime
 from enum import StrEnum
 
 from atlas.modules.identity.domain.models import validate_stable_identifier
+from atlas.modules.platform.domain.bootstrap_artifact_acquisition import (
+    ArtifactAcquisitionExecution,
+)
 from atlas.modules.platform.domain.bootstrap_plan import DIGEST_PATTERN
 from atlas.modules.platform.domain.release_preflight import DeploymentProfile
 
@@ -88,6 +91,7 @@ class BootstrapRunRecord:
     lease_expires_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    artifact_acquisition: ArtifactAcquisitionExecution | None = None
 
     def __post_init__(self) -> None:
         validate_stable_identifier(self.run_id, "run_id")
@@ -116,6 +120,13 @@ class BootstrapRunRecord:
             item not in self.identity.phase_ids for item in checkpoint_ids
         ):
             raise ValueError("bootstrap checkpoints do not match the plan")
+        if self.artifact_acquisition is not None:
+            execution = self.artifact_acquisition
+            if (
+                execution.release_id != self.identity.release_id
+                or execution.phase_id not in self.identity.phase_ids
+            ):
+                raise ValueError("artifact acquisition does not match the bootstrap run")
 
     def lease_is_active(self, at: datetime) -> bool:
         return self.lease_expires_at is not None and at < self.lease_expires_at
@@ -164,3 +175,4 @@ class BootstrapMutationResult:
     invalidated_checkpoint_phase_ids: tuple[str, ...] = ()
     invalidation_reason_codes: tuple[str, ...] = ()
     earliest_affected_phase_id: str | None = None
+    artifact_acquisition: ArtifactAcquisitionExecution | None = None

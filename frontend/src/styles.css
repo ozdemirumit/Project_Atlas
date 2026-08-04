@@ -847,6 +847,252 @@ textarea:focus-visible {
 .bootstrap-state-empty p { margin: 4px 0 0; color: #63716d; }
 @media (max-width: 760px) { .bootstrap-state-summary, .bootstrap-state-detail, .bootstrap-checkpoint-grid { grid-template-columns: minmax(0, 1fr); } }
 
+.artifact-acquisition-action,
+.artifact-acquisition-result,
+.bootstrap-claim-action,
+.bootstrap-claim-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid #a9c7bb;
+  border-radius: 6px;
+  background: #f4faf7;
+}
+
+.artifact-acquisition-action p,
+.artifact-recovery-note,
+.bootstrap-claim-action p,
+.bootstrap-claim-result p {
+  margin: 4px 0 0;
+  color: #52615c;
+}
+
+.artifact-acquisition-action button,
+.artifact-acquisition-confirm-actions button,
+.bootstrap-claim-action button,
+.bootstrap-claim-confirm-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+}
+
+.artifact-acquisition-confirmation,
+.bootstrap-claim-confirmation {
+  display: grid;
+  gap: 13px;
+  padding: 14px;
+  border: 1px solid #d4b97d;
+  border-radius: 6px;
+  background: #fffaf0;
+}
+
+.artifact-acquisition-confirmation p,
+.bootstrap-claim-confirmation p {
+  margin: 4px 0 0;
+  color: #665b45;
+}
+
+.artifact-acquisition-confirmation > label:not(.artifact-warning-acceptance) {
+  display: grid;
+  gap: 6px;
+  color: #394742;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.bootstrap-claim-confirmation label {
+  display: grid;
+  gap: 6px;
+  color: #394742;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.artifact-acquisition-confirmation > label > input:not([type="checkbox"]) {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid #b9c5c1;
+  border-radius: 5px;
+  background: #fff;
+  color: #1f2d29;
+}
+
+.bootstrap-claim-confirmation input {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid #b9c5c1;
+  border-radius: 5px;
+  background: #fff;
+  color: #1f2d29;
+}
+
+.artifact-warning-acceptance {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #5f543e;
+  font-size: 0.8rem;
+}
+
+.artifact-warning-acceptance input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+}
+
+.artifact-acquisition-confirm-actions,
+.bootstrap-claim-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.artifact-acquisition-confirm,
+.bootstrap-claim-confirm {
+  border-color: #386b5a;
+  background: #386b5a;
+  color: #fff;
+}
+
+.artifact-acquisition-result {
+  display: grid;
+  border-color: #b9c5c1;
+  background: #fbfcfc;
+}
+
+.bootstrap-claim-result {
+  justify-content: flex-start;
+}
+
+.bootstrap-claim-result > div {
+  min-width: 0;
+}
+
+.bootstrap-claim-result p {
+  overflow-wrap: anywhere;
+}
+
+.artifact-acquisition-result.failed {
+  border-color: #d7a0a0;
+  background: #fffafa;
+}
+
+.artifact-acquisition-result-heading {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.artifact-acquisition-result-heading > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.artifact-acquisition-result-heading code,
+.artifact-evidence-list code {
+  overflow-wrap: anywhere;
+}
+
+.state-badge.running {
+  color: #315f78;
+  background: #e8f1f5;
+  border-color: #b8d0dc;
+}
+
+.artifact-acquisition-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid #dbe3e0;
+  border-radius: 6px;
+  background: #dbe3e0;
+}
+
+.artifact-acquisition-summary > div {
+  min-width: 0;
+  padding: 10px;
+  background: #fff;
+}
+
+.artifact-acquisition-summary span {
+  display: block;
+  margin-bottom: 4px;
+  color: #63716d;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.artifact-evidence-list {
+  display: grid;
+  gap: 6px;
+}
+
+.artifact-evidence-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.7fr);
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 10px;
+  border-left: 3px solid #78ad98;
+  background: #f7f9f8;
+}
+
+.artifact-evidence-list > div > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.artifact-evidence-list span {
+  color: #52615c;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+@media (max-width: 760px) {
+  .artifact-acquisition-action {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .bootstrap-claim-action {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .artifact-acquisition-action button,
+  .artifact-acquisition-confirm-actions button,
+  .bootstrap-claim-action button,
+  .bootstrap-claim-confirm-actions button {
+    width: 100%;
+  }
+
+  .artifact-acquisition-confirm-actions,
+  .bootstrap-claim-confirm-actions {
+    flex-direction: column-reverse;
+  }
+
+  .artifact-acquisition-summary,
+  .artifact-evidence-list > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .bootstrap-invalidation-section { display: grid; gap: 16px; border-top: 1px solid #dbe3e0; }
 .bootstrap-invalidation-heading .state-badge { display: inline-flex; align-items: center; gap: 6px; }
 .bootstrap-invalidation-heading > div > p:last-child { margin: 4px 0 0; color: #63716d; }

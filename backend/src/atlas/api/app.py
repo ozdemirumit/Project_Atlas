@@ -16,6 +16,7 @@ from atlas.api.routes import (
     api_credentials,
     approvals,
     audit_export,
+    bootstrap_artifacts,
     bootstrap_invalidation,
     bootstrap_plan,
     bootstrap_state,
@@ -85,6 +86,10 @@ from atlas.modules.investigations.application.service import InvestigationServic
 from atlas.modules.knowledge.adapters.memory import InMemoryKnowledgeRetriever
 from atlas.modules.knowledge.adapters.synthetic import build_synthetic_knowledge_chunks
 from atlas.modules.knowledge.application.service import KnowledgeRetrievalService
+from atlas.modules.platform.adapters.bootstrap_artifact_filesystem import (
+    FileSystemReleaseArtifactPublisher,
+    MemoryArtifactContentSource,
+)
 from atlas.modules.platform.adapters.bootstrap_state_memory import (
     InMemoryBootstrapStateRepository,
 )
@@ -92,10 +97,14 @@ from atlas.modules.platform.adapters.bootstrap_state_postgres import (
     PostgreSQLBootstrapStateRepository,
 )
 from atlas.modules.platform.adapters.release_preflight import (
+    SYNTHETIC_ARTIFACT_CONTENT,
     LabHmacReleaseSignatureVerifier,
     SyntheticPreflightHostProbe,
     SyntheticReleaseArtifactInventory,
     build_synthetic_release_manifest,
+)
+from atlas.modules.platform.application.bootstrap_artifact_acquisition import (
+    BootstrapArtifactAcquisitionService,
 )
 from atlas.modules.platform.application.bootstrap_invalidation import BootstrapInvalidationService
 from atlas.modules.platform.application.bootstrap_plan import BootstrapPlanService
@@ -148,6 +157,7 @@ def create_app(
     bootstrap_plan_service: BootstrapPlanService | None = None,
     bootstrap_state_service: BootstrapStateService | None = None,
     bootstrap_invalidation_service: BootstrapInvalidationService | None = None,
+    bootstrap_artifact_acquisition_service: BootstrapArtifactAcquisitionService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -247,6 +257,21 @@ def create_app(
             environment_id=f"environment.{resolved_settings.environment}",
             site_id="site.local",
             audit_sink=resolved_audit_sink,
+        )
+    )
+    resolved_bootstrap_artifact_acquisition_service = (
+        bootstrap_artifact_acquisition_service
+        or BootstrapArtifactAcquisitionService(
+            repository=resolved_bootstrap_state_service.repository,
+            preflight_service=resolved_release_preflight_service,
+            publisher=FileSystemReleaseArtifactPublisher(
+                root=resolved_settings.bootstrap_artifact_root,
+                source=MemoryArtifactContentSource(SYNTHETIC_ARTIFACT_CONTENT),
+                max_total_bytes=resolved_settings.bootstrap_artifact_max_total_bytes,
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
         )
     )
     resolved_authorization_service = (
@@ -379,6 +404,9 @@ def create_app(
         app.state.bootstrap_plan_service = resolved_bootstrap_plan_service
         app.state.bootstrap_state_service = resolved_bootstrap_state_service
         app.state.bootstrap_invalidation_service = resolved_bootstrap_invalidation_service
+        app.state.bootstrap_artifact_acquisition_service = (
+            resolved_bootstrap_artifact_acquisition_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -431,6 +459,7 @@ def create_app(
     app.include_router(bootstrap_plan.router, prefix="/api/v1")
     app.include_router(bootstrap_invalidation.router, prefix="/api/v1")
     app.include_router(bootstrap_state.router, prefix="/api/v1")
+    app.include_router(bootstrap_artifacts.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
     app.include_router(health_checks.router, prefix="/api/v1")

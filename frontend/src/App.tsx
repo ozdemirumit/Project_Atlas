@@ -52,6 +52,11 @@ import {
   revokeApiCredential,
 } from "./api/apiCredentials";
 import { getAuditExportOverview, retryAuditExport } from "./api/auditExport";
+import {
+  acquireBootstrapArtifacts,
+  type BootstrapArtifactAcquisitionResult,
+} from "./api/bootstrapArtifactAcquisition";
+import { claimBootstrapLease, type BootstrapClaimResult } from "./api/bootstrapClaim";
 import { getBootstrapPlan } from "./api/bootstrapPlan";
 import { previewBootstrapInvalidation } from "./api/bootstrapInvalidation";
 import { rebaseBootstrapPlan, type BootstrapRebaseResult } from "./api/bootstrapRebase";
@@ -252,6 +257,15 @@ export function App() {
   const [bootstrapRebasePending, setBootstrapRebasePending] = useState(false);
   const [bootstrapRebaseResult, setBootstrapRebaseResult] =
     useState<BootstrapRebaseResult | null>(null);
+  const [artifactAcquisitionJustification, setArtifactAcquisitionJustification] = useState("");
+  const [artifactAcquisitionPending, setArtifactAcquisitionPending] = useState(false);
+  const [artifactWarningAccepted, setArtifactWarningAccepted] = useState(false);
+  const [artifactAcquisitionResult, setArtifactAcquisitionResult] =
+    useState<BootstrapArtifactAcquisitionResult | null>(null);
+  const [bootstrapClaimJustification, setBootstrapClaimJustification] = useState("");
+  const [bootstrapClaimPending, setBootstrapClaimPending] = useState(false);
+  const [bootstrapClaimResult, setBootstrapClaimResult] =
+    useState<BootstrapClaimResult | null>(null);
   const [pendingDisableSubjectId, setPendingDisableSubjectId] = useState<string | null>(null);
   const [investigationQuestion, setInvestigationQuestion] = useState(
     "What evidence explains the current storage warning?",
@@ -298,6 +312,13 @@ export function App() {
       setBootstrapRebaseJustification("");
       setBootstrapRebasePending(false);
       setBootstrapRebaseResult(null);
+      setArtifactAcquisitionJustification("");
+      setArtifactAcquisitionPending(false);
+      setArtifactWarningAccepted(false);
+      setArtifactAcquisitionResult(null);
+      setBootstrapClaimJustification("");
+      setBootstrapClaimPending(false);
+      setBootstrapClaimResult(null);
       await queryClient.invalidateQueries({ queryKey: ["current-identity"] });
     },
   });
@@ -482,6 +503,66 @@ export function App() {
       ]);
     },
   });
+  const artifactAcquisitionMutation = useMutation({
+    mutationFn: () =>
+      acquireBootstrapArtifacts({
+        state: bootstrapState!,
+        preflight: releasePreflight!,
+        scope: identity!.scope,
+        justification: artifactAcquisitionJustification.trim(),
+        warningAccepted: artifactWarningAccepted,
+      }),
+    onSuccess: async (response) => {
+      setArtifactAcquisitionResult(response.data);
+      setArtifactAcquisitionPending(false);
+      setArtifactAcquisitionJustification("");
+      setArtifactWarningAccepted(false);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-state"] }),
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-invalidation"] }),
+      ]);
+    },
+  });
+  const bootstrapClaimMutation = useMutation({
+    mutationFn: () =>
+      claimBootstrapLease({
+        state: bootstrapState!,
+        plan: bootstrapPlan!,
+        configuration: deploymentConfiguration!,
+        scope: identity!.scope,
+        justification: bootstrapClaimJustification.trim(),
+      }),
+    onSuccess: async (response) => {
+      setBootstrapClaimResult(response.data);
+      setBootstrapClaimPending(false);
+      setBootstrapClaimJustification("");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-state"] }),
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-invalidation"] }),
+      ]);
+    },
+  });
+  const artifactExecution =
+    artifactAcquisitionResult?.execution ?? bootstrapState?.run?.artifact_acquisition;
+  const artifactPhaseAvailable = Boolean(
+    bootstrapState?.run &&
+      bootstrapState.lease_held_by_current_actor &&
+      bootstrapState.run.current_phase_id === "phase.acquire" &&
+      bootstrapState.run.artifact_acquisition?.state !== "running" &&
+      bootstrapPlan?.state === "ready" &&
+      bootstrapPlan.plan_digest === bootstrapState.run.plan_digest &&
+      releasePreflight &&
+      releasePreflight.release_id === bootstrapState.run.release_id &&
+      releasePreflight.profile === bootstrapState.run.profile &&
+      releasePreflight.state !== "failed" &&
+      releasePreflight.state !== "unchecked",
+  );
+  const bootstrapLeaseAvailable = Boolean(
+    bootstrapState?.lease_available &&
+      bootstrapPlan?.state === "ready" &&
+      deploymentConfiguration?.state === "passed" &&
+      bootstrapState?.run?.state !== "completed",
+  );
   const retryAuditExportMutation = useMutation({
     mutationFn: retryAuditExport,
     onSuccess: async () => {
@@ -1300,6 +1381,153 @@ export function App() {
                           </strong>
                         </div>
                       </div>
+                      {artifactPhaseAvailable && !artifactAcquisitionPending && (
+                        <div className="artifact-acquisition-action">
+                          <div>
+                            <strong>Acquire and verify release artifacts</strong>
+                            <p>
+                              Writes only the immutable release set to the governed Atlas artifact
+                              store. Configuration, services, and infrastructure remain unchanged.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setArtifactAcquisitionResult(null);
+                              setArtifactAcquisitionPending(true);
+                            }}
+                          >
+                            <PackageCheck size={14} /> Review acquisition
+                          </button>
+                        </div>
+                      )}
+                      {artifactAcquisitionPending &&
+                        artifactPhaseAvailable &&
+                        releasePreflight && (
+                          <div className="artifact-acquisition-confirmation" role="dialog">
+                            <div>
+                              <strong>Confirm artifact storage change</strong>
+                              <p>
+                                Release {releasePreflight.release_version} will be staged and
+                                checksum-verified in {releasePreflight.mode} mode. Existing verified
+                                files are reused and conflicting files are preserved.
+                              </p>
+                            </div>
+                            <label>
+                              Change justification
+                              <input
+                                value={artifactAcquisitionJustification}
+                                maxLength={500}
+                                onChange={(event) =>
+                                  setArtifactAcquisitionJustification(event.target.value)
+                                }
+                                placeholder="Record the approved reason for acquiring this release"
+                              />
+                            </label>
+                            {releasePreflight.state === "warning" && (
+                              <label className="artifact-warning-acceptance">
+                                <input
+                                  type="checkbox"
+                                  checked={artifactWarningAccepted}
+                                  onChange={(event) =>
+                                    setArtifactWarningAccepted(event.target.checked)
+                                  }
+                                />
+                                <span>I accept the reviewed preflight warning for this lab run.</span>
+                              </label>
+                            )}
+                            {artifactAcquisitionMutation.isError && (
+                              <div className="impact-message impact-error" role="alert">
+                                <AlertTriangle size={16} /> Artifact acquisition was not started.
+                                Refresh the governed state before retrying.
+                              </div>
+                            )}
+                            <div className="artifact-acquisition-confirm-actions">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setArtifactAcquisitionPending(false);
+                                  setArtifactAcquisitionJustification("");
+                                  setArtifactWarningAccepted(false);
+                                }}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                className="artifact-acquisition-confirm"
+                                type="button"
+                                disabled={
+                                  artifactAcquisitionJustification.trim().length < 12 ||
+                                  (releasePreflight.state === "warning" &&
+                                    !artifactWarningAccepted) ||
+                                  artifactAcquisitionMutation.isPending
+                                }
+                                onClick={() => artifactAcquisitionMutation.mutate()}
+                              >
+                                <PackageCheck size={14} /> Confirm acquisition
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      {artifactExecution && (
+                        <div className={`artifact-acquisition-result ${artifactExecution.state}`}>
+                          <div className="artifact-acquisition-result-heading">
+                            {artifactExecution.state === "completed" ? (
+                              <CheckCircle2 size={18} />
+                            ) : (
+                              <AlertTriangle size={18} />
+                            )}
+                            <div>
+                              <strong>
+                                Artifact acquisition {artifactExecution.state}
+                              </strong>
+                              <code>{artifactExecution.result_code}</code>
+                            </div>
+                            <span className={`state-badge ${artifactExecution.state}`}>
+                              {artifactExecution.state}
+                            </span>
+                          </div>
+                          <div className="artifact-acquisition-summary">
+                            <div>
+                              <span>Mode</span>
+                              <strong>{artifactExecution.mode}</strong>
+                            </div>
+                            <div>
+                              <span>Artifacts</span>
+                              <strong>{artifactExecution.artifact_count}</strong>
+                            </div>
+                            <div>
+                              <span>Verified bytes</span>
+                              <strong>{artifactExecution.total_bytes.toLocaleString()}</strong>
+                            </div>
+                            <div>
+                              <span>Completed</span>
+                              <strong>
+                                {formatTimestamp(artifactExecution.completed_at ?? undefined)}
+                              </strong>
+                            </div>
+                          </div>
+                          {artifactExecution.evidence.length > 0 && (
+                            <div className="artifact-evidence-list">
+                              {artifactExecution.evidence.map((item) => (
+                                <div key={item.artifact_id}>
+                                  <div>
+                                    <code>{item.artifact_id}</code>
+                                    <span>{item.disposition}</span>
+                                  </div>
+                                  <code>{item.sha256.slice(0, 20)}...</code>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {artifactExecution.state === "failed" && (
+                            <p className="artifact-recovery-note">
+                              Verified prior content was preserved. Correct the bounded failure and
+                              retry this phase under the active lease.
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </>
                   ) : (
                     <div className="bootstrap-state-empty">
@@ -1310,11 +1538,92 @@ export function App() {
                       </div>
                     </div>
                   )}
+                  {bootstrapLeaseAvailable && !bootstrapClaimPending && (
+                    <div className="bootstrap-claim-action">
+                      <div>
+                        <strong>
+                          {bootstrapState.run ? "Reclaim coordination lease" : "Initialize bootstrap run"}
+                        </strong>
+                        <p>
+                          Establishes the exact plan lock and checkpoint boundary. It does not run a
+                          phase or write release artifacts.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBootstrapClaimResult(null);
+                          setBootstrapClaimPending(true);
+                        }}
+                      >
+                        <LockKeyhole size={14} /> Review lease
+                      </button>
+                    </div>
+                  )}
+                  {bootstrapClaimPending && bootstrapLeaseAvailable && (
+                    <div className="bootstrap-claim-confirmation" role="dialog">
+                      <div>
+                        <strong>Confirm bootstrap coordination lease</strong>
+                        <p>
+                          The exact release, configuration, plan, and phase order will be locked to
+                          this browser session for 10 minutes.
+                        </p>
+                      </div>
+                      <label>
+                        Lease justification
+                        <input
+                          value={bootstrapClaimJustification}
+                          maxLength={500}
+                          onChange={(event) => setBootstrapClaimJustification(event.target.value)}
+                          placeholder="Record the reviewed reason for coordinating this bootstrap run"
+                        />
+                      </label>
+                      {bootstrapClaimMutation.isError && (
+                        <div className="impact-message impact-error" role="alert">
+                          <AlertTriangle size={16} /> The coordination lease was not established.
+                        </div>
+                      )}
+                      <div className="bootstrap-claim-confirm-actions">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBootstrapClaimPending(false);
+                            setBootstrapClaimJustification("");
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          className="bootstrap-claim-confirm"
+                          type="button"
+                          disabled={
+                            bootstrapClaimJustification.trim().length < 12 ||
+                            bootstrapClaimMutation.isPending
+                          }
+                          onClick={() => bootstrapClaimMutation.mutate()}
+                        >
+                          <LockKeyhole size={14} /> Confirm lease
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {bootstrapClaimResult && (
+                    <div className="bootstrap-claim-result" role="status">
+                      <CheckCircle2 size={18} />
+                      <div>
+                        <strong>Coordination lease established</strong>
+                        <p>
+                          Run {bootstrapClaimResult.run.run_id} is locked at revision {bootstrapClaimResult.run.version}.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   <div className="safety-notice">
                     <ShieldCheck size={16} />
                     <span>
-                      No phase, command, rollback, installer, or infrastructure mutation is
-                      authorized by checkpoint metadata.
+                      A confirmed acquisition may change only the governed Atlas artifact store. No
+                      configuration, service, rollback, connector, or infrastructure operation is
+                      authorized.
                     </span>
                   </div>
                 </section>

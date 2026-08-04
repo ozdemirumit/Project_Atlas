@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     database_url: str | None = None
     database_required: bool = False
     database_probe_timeout_seconds: float = Field(default=2.0, gt=0.0, le=10.0)
+    bootstrap_artifact_root: Path = Path(".atlas/bootstrap-artifacts")
+    bootstrap_artifact_max_total_bytes: int = Field(
+        default=4 * 1024 * 1024 * 1024, ge=1, le=64 * 1024 * 1024 * 1024
+    )
     cors_origins: tuple[AnyHttpUrl, ...] = (AnyHttpUrl("http://localhost:5173"),)
     development_identity_enabled: bool = False
     development_subject_id: str = "subject.development.operator"

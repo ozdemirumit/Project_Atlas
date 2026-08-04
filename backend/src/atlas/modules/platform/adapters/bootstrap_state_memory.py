@@ -6,6 +6,10 @@ from datetime import datetime, timedelta
 from hashlib import sha256
 
 from atlas.modules.platform.application.bootstrap_state_ports import BootstrapRepositoryError
+from atlas.modules.platform.domain.bootstrap_artifact_acquisition import (
+    ArtifactAcquisitionExecution,
+    ArtifactAcquisitionState,
+)
 from atlas.modules.platform.domain.bootstrap_invalidation import compare_bootstrap_run
 from atlas.modules.platform.domain.bootstrap_state import (
     BootstrapCheckpointState,
@@ -77,6 +81,38 @@ class InMemoryBootstrapStateRepository:
                 if current.lease_is_active(now):
                     raise BootstrapRepositoryError("bootstrap_lease_unavailable")
                 reclaimed = current.lease_expires_at is not None
+                if (
+                    reclaimed
+                    and current.artifact_acquisition is not None
+                    and current.artifact_acquisition.state is ArtifactAcquisitionState.RUNNING
+                ):
+                    interrupted = replace(
+                        current.artifact_acquisition,
+                        state=ArtifactAcquisitionState.FAILED,
+                        result_code="bootstrap.artifact.interrupted",
+                        completed_at=now,
+                    )
+                    failed_checkpoint = BootstrapPhaseCheckpoint(
+                        phase_id="phase.acquire",
+                        state=BootstrapCheckpointState.FAILED,
+                        safe_output_references=(
+                            "result.artifact-acquisition."
+                            f"{sha256(interrupted.execution_id.encode()).hexdigest()[:24]}",
+                        ),
+                        recorded_at=now,
+                    )
+                    current = replace(
+                        current,
+                        checkpoints=(
+                            *(
+                                item
+                                for item in current.checkpoints
+                                if item.phase_id != "phase.acquire"
+                            ),
+                            failed_checkpoint,
+                        ),
+                        artifact_acquisition=interrupted,
+                    )
                 updated = replace(
                     current,
                     version=current.version + 1,
@@ -117,6 +153,7 @@ class InMemoryBootstrapStateRepository:
             if replay is not None:
                 return replay
             key, current = self._find(run_id)
+            self._require_no_running_acquisition(current)
             if (
                 current.identity.plan_digest != plan_digest
                 or current.identity.resume_key != resume_key
@@ -168,6 +205,136 @@ class InMemoryBootstrapStateRepository:
             self._remember(lease_holder_id, idempotency_key, request_fingerprint, result)
             return result
 
+    async def begin_artifact_acquisition(
+        self,
+        *,
+        run_id: str,
+        plan_digest: str,
+        resume_key: str,
+        execution: ArtifactAcquisitionExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._lock:
+            replay = self._replay(lease_holder_id, idempotency_key, request_fingerprint)
+            if replay is not None:
+                return replay
+            key, current = self._find(run_id)
+            self._require_no_running_acquisition(current)
+            if (
+                current.identity.plan_digest != plan_digest
+                or current.identity.resume_key != resume_key
+            ):
+                raise BootstrapRepositoryError("bootstrap_plan_mismatch")
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            if current.state is BootstrapRunState.COMPLETED:
+                raise BootstrapRepositoryError("bootstrap_run_completed")
+            if current.current_phase_id != "phase.acquire" or execution.phase_id != "phase.acquire":
+                raise BootstrapRepositoryError("bootstrap_phase_out_of_order")
+            updated = replace(
+                current,
+                version=current.version + 1,
+                state=BootstrapRunState.ACTIVE,
+                checkpoints=tuple(
+                    item for item in current.checkpoints if item.phase_id != "phase.acquire"
+                ),
+                artifact_acquisition=execution,
+                updated_at=now,
+            )
+            result = BootstrapMutationResult(
+                record=updated,
+                replayed=False,
+                artifact_acquisition=execution,
+            )
+            self._records[key] = updated
+            self._remember(lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
+    async def finish_artifact_acquisition(
+        self,
+        *,
+        run_id: str,
+        execution: ArtifactAcquisitionExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._lock:
+            replay = self._replay(lease_holder_id, idempotency_key, request_fingerprint)
+            if (
+                replay is not None
+                and replay.artifact_acquisition is not None
+                and replay.artifact_acquisition.state is not ArtifactAcquisitionState.RUNNING
+            ):
+                return replay
+            key, current = self._find(run_id)
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            active = current.artifact_acquisition
+            if (
+                active is None
+                or active.state is not ArtifactAcquisitionState.RUNNING
+                or active.execution_id != execution.execution_id
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_execution_unavailable")
+            if (
+                execution.state is ArtifactAcquisitionState.RUNNING
+                or execution.release_id != active.release_id
+                or execution.manifest_digest != active.manifest_digest
+                or execution.mode is not active.mode
+                or execution.preflight_report_id != active.preflight_report_id
+                or execution.started_at != active.started_at
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_execution_conflict")
+            if execution.state is ArtifactAcquisitionState.COMPLETED:
+                reference = f"artifact.receipt.{execution.manifest_digest[:32]}"
+                checkpoint_state = BootstrapCheckpointState.COMPLETED
+                run_state = (
+                    BootstrapRunState.COMPLETED
+                    if len(current.identity.phase_ids) == 1
+                    else BootstrapRunState.ACTIVE
+                )
+            else:
+                reference = (
+                    "result.artifact-acquisition."
+                    f"{sha256(execution.result_code.encode()).hexdigest()[:24]}"
+                )
+                checkpoint_state = BootstrapCheckpointState.FAILED
+                run_state = BootstrapRunState.FAILED
+            checkpoint = BootstrapPhaseCheckpoint(
+                phase_id="phase.acquire",
+                state=checkpoint_state,
+                safe_output_references=(reference,),
+                recorded_at=now,
+            )
+            updated = replace(
+                current,
+                version=current.version + 1,
+                state=run_state,
+                checkpoints=(
+                    *(item for item in current.checkpoints if item.phase_id != "phase.acquire"),
+                    checkpoint,
+                ),
+                artifact_acquisition=execution,
+                updated_at=now,
+            )
+            result = BootstrapMutationResult(
+                record=updated,
+                replayed=False,
+                artifact_acquisition=execution,
+            )
+            self._records[key] = updated
+            self._remember(lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
     async def release(
         self,
         *,
@@ -183,6 +350,7 @@ class InMemoryBootstrapStateRepository:
             if replay is not None:
                 return replay
             key, current = self._find(run_id)
+            self._require_no_running_acquisition(current)
             self._require_lease(current, lease_holder_id, now)
             if current.version != expected_version:
                 raise BootstrapRepositoryError("bootstrap_stale_revision")
@@ -216,6 +384,7 @@ class InMemoryBootstrapStateRepository:
             if replay is not None:
                 return replay
             key, current = self._find(run_id)
+            self._require_no_running_acquisition(current)
             if (
                 candidate.organization_id != current.identity.organization_id
                 or candidate.environment_id != current.identity.environment_id
@@ -242,6 +411,9 @@ class InMemoryBootstrapStateRepository:
                 identity=candidate,
                 state=BootstrapRunState.ACTIVE,
                 checkpoints=checkpoints,
+                artifact_acquisition=(
+                    current.artifact_acquisition if "phase.acquire" in reusable else None
+                ),
                 updated_at=now,
             )
             result = BootstrapMutationResult(
@@ -269,6 +441,14 @@ class InMemoryBootstrapStateRepository:
     def _require_lease(record: BootstrapRunRecord, lease_holder_id: str, now: datetime) -> None:
         if not record.lease_is_active(now) or record.lease_holder_id != lease_holder_id:
             raise BootstrapRepositoryError("bootstrap_lease_unavailable")
+
+    @staticmethod
+    def _require_no_running_acquisition(record: BootstrapRunRecord) -> None:
+        if (
+            record.artifact_acquisition is not None
+            and record.artifact_acquisition.state is ArtifactAcquisitionState.RUNNING
+        ):
+            raise BootstrapRepositoryError("bootstrap_phase_in_progress")
 
     def _replay(
         self, lease_holder_id: str, idempotency_key: str, request_fingerprint: str
