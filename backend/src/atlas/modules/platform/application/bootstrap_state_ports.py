@@ -3,6 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Protocol
 
+from atlas.modules.platform.domain.bootstrap_artifact_acquisition import (
+    ArtifactAcquisitionExecution,
+)
 from atlas.modules.platform.domain.bootstrap_state import (
     BootstrapCheckpointState,
     BootstrapMutationResult,
@@ -41,6 +44,32 @@ class BootstrapStateRepository(Protocol):
         phase_id: str,
         state: BootstrapCheckpointState,
         safe_output_references: tuple[str, ...],
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult: ...
+
+    async def begin_artifact_acquisition(
+        self,
+        *,
+        run_id: str,
+        plan_digest: str,
+        resume_key: str,
+        execution: ArtifactAcquisitionExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult: ...
+
+    async def finish_artifact_acquisition(
+        self,
+        *,
+        run_id: str,
+        execution: ArtifactAcquisitionExecution,
         lease_holder_id: str,
         expected_version: int,
         idempotency_key: str,

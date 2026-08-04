@@ -87,6 +87,7 @@ class BootstrapStateService:
         lease_duration: timedelta,
         idempotency_key: str,
         correlation_id: str,
+        justification: str | None = None,
     ) -> BootstrapMutationResult:
         await self._require_scope(actor, identity, correlation_id)
         fingerprint = self._fingerprint(
@@ -94,6 +95,7 @@ class BootstrapStateService:
                 "operation": "claim",
                 "identity": self._identity_payload(identity),
                 "lease_seconds": int(lease_duration.total_seconds()),
+                "justification": justification,
             }
         )
         await self._audit(
@@ -103,7 +105,19 @@ class BootstrapStateService:
             permission_id="platform.bootstrap-state.manage",
             result_code="bootstrap_state_claim_authorized",
             idempotency_key=idempotency_key,
-            target_metadata=(("plan_digest", identity.plan_digest),),
+            target_metadata=(
+                ("plan_digest", identity.plan_digest),
+                *(
+                    (
+                        (
+                            "justification_digest",
+                            self._fingerprint({"justification": justification}),
+                        ),
+                    )
+                    if justification is not None
+                    else ()
+                ),
+            ),
         )
         return await self._repository.claim(
             identity=identity,

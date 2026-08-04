@@ -59,10 +59,16 @@ def _raise_state_error(error: Exception) -> NoReturn:
         "bootstrap_lease_unavailable",
         "bootstrap_run_completed",
         "bootstrap_plan_unchanged",
+        "bootstrap_phase_in_progress",
+        "bootstrap_phase_execution_conflict",
     }:
         status = 409
         detail = "The requested bootstrap coordination state is unavailable."
-    elif code in {"bootstrap_run_unavailable", "bootstrap_phase_unavailable"}:
+    elif code in {
+        "bootstrap_run_unavailable",
+        "bootstrap_phase_unavailable",
+        "bootstrap_phase_execution_unavailable",
+    }:
         status = 404
         detail = "The requested bootstrap coordination state is unavailable."
     else:
@@ -111,6 +117,7 @@ async def claim_bootstrap_state(
             lease_duration=timedelta(minutes=payload.lease_minutes),
             idempotency_key=idempotency_key,
             correlation_id=str(request.state.correlation_id),
+            justification=payload.justification,
         )
     except (BootstrapRepositoryError, BootstrapStateScopeError) as error:
         _raise_state_error(error)

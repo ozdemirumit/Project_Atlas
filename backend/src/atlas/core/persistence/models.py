@@ -54,6 +54,7 @@ class BootstrapRunModel(Base):
     state: Mapped[str] = mapped_column(String(32), nullable=False)
     phase_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     checkpoints: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    artifact_acquisition: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     idempotency_records: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     lease_holder_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     lease_acquired_at: Mapped[datetime | None] = mapped_column(

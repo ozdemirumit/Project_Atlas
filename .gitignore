@@ -25,3 +25,4 @@ Thumbs.db
 # Runtime output
 *.log
 tmp/
+.atlas/

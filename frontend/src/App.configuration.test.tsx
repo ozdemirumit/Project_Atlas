@@ -145,6 +145,7 @@ const bootstrapState = {
       lease_expires_at: "2026-08-04T16:10:00Z",
       created_at: "2026-08-04T16:00:00Z",
       updated_at: "2026-08-04T16:01:00Z",
+      artifact_acquisition: null,
     },
     durable: true,
     lease_available: false,
@@ -187,6 +188,7 @@ const bootstrapInvalidation = {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("deployment configuration preview", () => {
@@ -414,5 +416,184 @@ describe("deployment configuration preview", () => {
 
     expect(await screen.findByText("Ordered deployment phases")).toBeVisible();
     await waitFor(() => expect(screen.queryByText("Checkpoint invalidation preview")).not.toBeInTheDocument());
+  });
+
+  it("requires confirmation and reports bounded artifact acquisition evidence", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    vi.stubGlobal("crypto", { randomUUID: () => "acquisition-request-001" });
+    const acquireState = {
+      data: {
+        ...bootstrapState.data,
+        run: {
+          ...bootstrapState.data.run,
+          version: 1,
+          checkpoints: [],
+          completed_phase_ids: [],
+          current_phase_id: "phase.acquire",
+          artifact_acquisition: null,
+        },
+      },
+    };
+    const requests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) return Promise.resolve(new Response(JSON.stringify(identity), { status: 200 }));
+      if (url.includes("/release-preflight")) return Promise.resolve(new Response(JSON.stringify(preflight), { status: 200 }));
+      if (url.includes("/deployment-configuration/preview")) return Promise.resolve(new Response(JSON.stringify(configurationPreview()), { status: 200 }));
+      if (url.includes("/bootstrap-plan")) return Promise.resolve(new Response(JSON.stringify(bootstrapPlan), { status: 200 }));
+      if (url.includes("/bootstrap-state/current")) return Promise.resolve(new Response(JSON.stringify(acquireState), { status: 200 }));
+      if (url.includes("/phases/acquire")) {
+        const headers = new Headers(init?.headers);
+        requests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        const execution = {
+          execution_id: "phase-execution.ui-acquire-001",
+          phase_id: "phase.acquire",
+          release_id: "release.atlas.lab-0.1.0",
+          manifest_digest: "a".repeat(64),
+          mode: "offline",
+          preflight_report_id: "preflight.ui.plan",
+          state: "completed",
+          result_code: "bootstrap.artifact.completed",
+          started_at: "2026-08-04T16:02:00Z",
+          completed_at: "2026-08-04T16:02:01Z",
+          evidence: [
+            {
+              artifact_id: "artifact.backend.image",
+              sha256: "d".repeat(64),
+              size_bytes: 13,
+              disposition: "published",
+            },
+          ],
+          artifact_count: 1,
+          total_bytes: 13,
+        };
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                run: {
+                  ...acquireState.data.run,
+                  version: 3,
+                  checkpoints: [
+                    {
+                      phase_id: "phase.acquire",
+                      state: "completed",
+                      safe_output_references: ["artifact.receipt.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+                      recorded_at: "2026-08-04T16:02:01Z",
+                    },
+                  ],
+                  completed_phase_ids: ["phase.acquire"],
+                  current_phase_id: "phase.configure",
+                  updated_at: "2026-08-04T16:02:01Z",
+                  artifact_acquisition: execution,
+                },
+                execution,
+                replayed: false,
+                artifact_storage_mutation_performed: true,
+                configuration_mutation_authorized: false,
+                service_deployment_authorized: false,
+                infrastructure_mutation_authorized: false,
+                ai_operation_authorized: false,
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Review acquisition" }));
+    expect(screen.getByRole("dialog")).toBeVisible();
+    const confirm = screen.getByRole("button", { name: "Confirm acquisition" });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Change justification"), {
+      target: { value: "Acquire approved immutable artifacts for the lab run." },
+    });
+    fireEvent.click(confirm);
+
+    expect(await screen.findByText("Artifact acquisition completed")).toBeVisible();
+    expect(screen.getByText("artifact.backend.image")).toBeVisible();
+    expect(screen.getByText("published")).toBeVisible();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.body).toContain("Acquire approved immutable artifacts");
+    expect(requests[0]?.idempotencyKey).toBe(
+      "bootstrap-acquire.1.acquisition-request-001",
+    );
+    expect(screen.queryByRole("button", { name: /deploy|rollback|run service/i })).not.toBeInTheDocument();
+  });
+
+  it("initializes an exact bootstrap lease before offering phase execution", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    vi.stubGlobal("crypto", { randomUUID: () => "lease-request-001" });
+    const emptyState = {
+      data: {
+        run: null,
+        durable: true,
+        lease_available: true,
+        lease_held_by_current_actor: false,
+        execution_authorized: false,
+        infrastructure_mutation_authorized: false,
+      },
+    };
+    const requests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) return Promise.resolve(new Response(JSON.stringify(identity), { status: 200 }));
+      if (url.includes("/release-preflight")) return Promise.resolve(new Response(JSON.stringify(preflight), { status: 200 }));
+      if (url.includes("/deployment-configuration/preview")) return Promise.resolve(new Response(JSON.stringify(configurationPreview()), { status: 200 }));
+      if (url.includes("/bootstrap-plan")) return Promise.resolve(new Response(JSON.stringify(bootstrapPlan), { status: 200 }));
+      if (url.includes("/bootstrap-state/current")) return Promise.resolve(new Response(JSON.stringify(emptyState), { status: 200 }));
+      if (url.endsWith("/bootstrap-state/claims")) {
+        const headers = new Headers(init?.headers);
+        requests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                run: {
+                  ...bootstrapState.data.run,
+                  version: 1,
+                  checkpoints: [],
+                  completed_phase_ids: [],
+                  current_phase_id: "phase.acquire",
+                  artifact_acquisition: null,
+                },
+                replayed: false,
+                reclaimed_expired_lease: false,
+                execution_authorized: false,
+                infrastructure_mutation_authorized: false,
+              },
+            }),
+            { status: 201 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+
+    expect(screen.queryByRole("button", { name: "Review acquisition" })).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Review lease" }));
+    const confirm = screen.getByRole("button", { name: "Confirm lease" });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Lease justification"), {
+      target: { value: "Coordinate the approved lab bootstrap artifact phase." },
+    });
+    fireEvent.click(confirm);
+
+    expect(await screen.findByText("Coordination lease established")).toBeVisible();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.body).toContain("Coordinate the approved lab bootstrap");
+    expect(requests[0]?.idempotencyKey).toBe("bootstrap-claim.0.lease-request-001");
   });
 });

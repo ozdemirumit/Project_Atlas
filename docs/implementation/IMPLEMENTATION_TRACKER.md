@@ -4,14 +4,84 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-029 |
-| Title | Controlled bootstrap plan rebase and checkpoint invalidation |
+| Task ID | ATLAS-IMP-030 |
+| Title | Governed bootstrap artifact acquisition and verification |
 | Status | Done |
-| Branch | `agent/bootstrap-plan-rebase` |
-| Pull Request | [PR #41](https://github.com/ozdemirumit/Project_Atlas/pull/41) |
+| Branch | `agent/bootstrap-artifact-acquisition` |
+| Pull Request | [#42](https://github.com/ozdemirumit/Project_Atlas/pull/42) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Merge PR #41 and synchronize `main` |
+| Next Action | Select and scope the next approved bootstrap vertical slice |
+
+### ATLAS-IMP-030 Scope Rationale
+
+- ATLAS-038 orders artifact acquisition and verification as the first executable bootstrap phase.
+  IMP-024 through IMP-029 provide the immutable manifest, preflight evidence, deterministic plan,
+  lease, checkpoints, and safe plan-rebase behavior, but no component can yet perform a phase.
+- This slice introduces the common governed phase-execution boundary through one concrete
+  `phase.acquire` implementation. It stages only the exact release artifacts, verifies their size
+  and SHA-256 digest before atomic publication, records safe evidence, and completes or fails the
+  existing checkpoint without deploying services or changing managed infrastructure.
+
+### ATLAS-IMP-030 Acceptance Criteria
+
+- A strict C2 request binds the exact run, expected revision, plan digest, resume key, manifest
+  digest, acquisition mode, preflight report identity and state, phase ID, bounded human
+  justification, and idempotency key. Unknown fields and malformed or foreign identifiers fail
+  closed.
+- Execution requires the active lease held by the authenticated browser session, exact scope,
+  current revision, `phase.acquire` as the next dependency-satisfied phase, a passed or explicitly
+  accepted warning preflight, and the exact release and manifest identities in the current plan.
+- Artifacts are streamed into an attempt-owned staging area beneath a configured root, with bounded
+  total size and item count. Unsafe paths, symbolic links, source fallback, missing or extra items,
+  short or oversized content, and digest mismatch fail before publication.
+- Verified artifacts are published atomically under immutable release identity. Existing matching
+  files are reusable; unknown, modified, or conflicting files are never overwritten. Failed attempts
+  remove only their own temporary files and preserve prior verified content.
+- The phase result records stable status, started/completed timestamps, mode, artifact count, total
+  bytes, per-artifact safe digest evidence, and bounded failure codes without paths, source
+  credentials, lease-holder identity, commands, secrets, or raw content.
+- Checkpoint completion or failure is persisted through the existing versioned bootstrap state
+  contract. Exact replay returns the prior phase result without reacquiring or rewriting artifacts;
+  changed replay, stale revision, foreign lease, and concurrent execution fail deterministically.
+- Required authorization, browser CSRF, pre-mutation audit, correlation ID, `no-store`, safe error
+  mapping, and non-disclosing scope behavior apply. Audit failure prevents staging or state mutation.
+- The operations UI can initialize or reclaim only the exact coordination lease after explicit human
+  confirmation and justification. It offers acquisition only for a current leased `phase.acquire`,
+  communicates artifact-only impact, and displays verified evidence or bounded failure recovery without
+  phase-general or infrastructure controls.
+- Automated and live tests cover success, verified-file reuse, exact replay, changed replay, stale
+  revision, wrong phase, foreign/expired lease, failed preflight, audit failure, tampered/missing/extra
+  artifacts, unsafe paths, cleanup, response redaction, PostgreSQL checkpoint behavior, and responsive
+  desktop/mobile presentation.
+- This slice does not render configuration files, provision trust or secrets, initialize or migrate
+  data, deploy or restart services, configure identity or integrations, execute rollback, invoke
+  infrastructure connectors, or authorize AI-driven operation.
+
+### ATLAS-IMP-030 Validation Evidence
+
+- Filesystem adapter tests cover atomic publication, verified reuse, exact inventory enforcement,
+  tampered size and digest rejection, existing-file conflicts, bounded cleanup, and symbolic-link
+  rejection. The symbolic-link case is skipped only on this Windows host and remains enabled in Linux CI.
+- Application, state, API, and persistence tests cover completion and failed checkpoints, exact replay,
+  changed replay, stale or foreign ownership, authoritative preflight failure, required-audit failure,
+  concurrent execution, expired-attempt interruption, strict request handling, safe response evidence,
+  and PostgreSQL serialization.
+- Full backend verification passes Ruff format/check, mypy across 256 source files, and 301 pytest tests
+  with one host-specific symbolic-link skip. Full frontend verification passes ESLint, TypeScript,
+  23 Vitest tests, and the production build.
+- Live browser validation initialized the exact run lease with explicit justification, acquired three
+  immutable artifacts in offline mode, published and checksum-verified 43 bytes, advanced revision 1
+  through execution to revision 3, completed `phase.acquire`, and selected `phase.configure` next.
+- Direct filesystem verification matched all three expected sizes, SHA-256 digests, and synthetic test
+  contents beneath the immutable release and manifest identity. The attempt-owned staging directory was
+  empty after publication, and a page reload retained the completed evidence without offering acquisition
+  again.
+- Live presentation validation passed at 1440x900 and 390x844 with no horizontal overflow. Browser logs
+  contained no warnings or errors, and no configuration, service, rollback, connector, infrastructure,
+  or AI operation was exposed or authorized.
+- GitHub backend and frontend CI jobs passed for source commit `270d625` in
+  [run 30925116959](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30925116959).
 
 ### ATLAS-IMP-029 Scope Rationale
 
@@ -1337,6 +1407,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-027 | Persistent bootstrap checkpoint and lease foundation | Completed through [PR #39](https://github.com/ozdemirumit/Project_Atlas/pull/39) from source commit `874fe0a`; 282 backend tests, 18 frontend tests, live non-mutating checkpoint API and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-028 | Bootstrap input drift and checkpoint invalidation preview | Completed through [PR #40](https://github.com/ozdemirumit/Project_Atlas/pull/40) from source commit `8419c94`; 287 backend tests, 20 frontend tests, live non-mutating desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-029 | Controlled bootstrap plan rebase and checkpoint invalidation | Completed through [PR #41](https://github.com/ozdemirumit/Project_Atlas/pull/41) from source commit `f2feecc`; 291 backend tests, 21 frontend tests, live enterprise-session rebase and desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-030 | Governed bootstrap artifact acquisition and verification | Completed through [PR #42](https://github.com/ozdemirumit/Project_Atlas/pull/42) from source commit `270d625`; 301 backend tests, 23 frontend tests, live exact-lease artifact acquisition and desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 

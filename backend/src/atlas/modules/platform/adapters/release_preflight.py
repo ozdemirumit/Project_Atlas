@@ -16,6 +16,11 @@ from atlas.modules.platform.domain.release_preflight import (
 )
 
 LAB_SIGNING_KEY_REFERENCE = "secret.release-signing.lab"
+SYNTHETIC_ARTIFACT_CONTENT = {
+    "artifacts/backend.oci": b"atlas-backend",
+    "artifacts/frontend.oci": b"atlas-frontend",
+    "artifacts/migrations.tar": b"atlas-migrations",
+}
 
 
 class LabHmacReleaseSignatureVerifier:
@@ -74,19 +79,22 @@ class SyntheticPreflightHostProbe:
 def build_synthetic_release_manifest(key: bytes) -> ReleaseManifest:
     artifacts = (
         _artifact(
-            "artifact.backend.image", "component.backend", "artifacts/backend.oci", b"atlas-backend"
+            "artifact.backend.image",
+            "component.backend",
+            "artifacts/backend.oci",
+            SYNTHETIC_ARTIFACT_CONTENT["artifacts/backend.oci"],
         ),
         _artifact(
             "artifact.frontend.image",
             "component.frontend",
             "artifacts/frontend.oci",
-            b"atlas-frontend",
+            SYNTHETIC_ARTIFACT_CONTENT["artifacts/frontend.oci"],
         ),
         _artifact(
             "artifact.database.migrations",
             "component.database",
             "artifacts/migrations.tar",
-            b"atlas-migrations",
+            SYNTHETIC_ARTIFACT_CONTENT["artifacts/migrations.tar"],
         ),
     )
     manifest = ReleaseManifest(
