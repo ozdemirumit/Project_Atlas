@@ -23,6 +23,7 @@ API_CREDENTIAL_SELF_REVOKE = "identity.api-credential.self.revoke"
 IDENTITY_GOVERNANCE_READ = "identity.governance.read"
 SESSION_ADMIN_REVOKE = "identity.session.admin.revoke"
 API_CREDENTIAL_ADMIN_REVOKE = "identity.api-credential.admin.revoke"
+IDENTITY_SUBJECT_ADMIN_DISABLE = "identity.subject.admin.disable"
 STORAGE_OVERVIEW_READ = "storage.overview.read"
 AI_GROUNDED_QUERY_CREATE = "ai.grounded-query.create"
 GRAPH_STORAGE_IMPACT_READ = "graph.storage-impact.read"
@@ -105,18 +106,23 @@ def identity_governance_permission_definitions() -> tuple[PermissionDefinition, 
             permission_id=API_CREDENTIAL_ADMIN_REVOKE,
             description="Administratively revoke one exact foreign personal API credential.",
         ),
+        PermissionDefinition(
+            permission_id=IDENTITY_SUBJECT_ADMIN_DISABLE,
+            description="Disable one exact enterprise-human identity and revoke its access.",
+        ),
     )
 
 
 def security_administrator_role_definition() -> RoleDefinition:
     return RoleDefinition(
         role_id=SECURITY_ADMINISTRATOR_ROLE_ID,
-        version=1,
+        version=2,
         permissions=frozenset(
             {
                 IDENTITY_GOVERNANCE_READ,
                 SESSION_ADMIN_REVOKE,
                 API_CREDENTIAL_ADMIN_REVOKE,
+                IDENTITY_SUBJECT_ADMIN_DISABLE,
             }
         ),
     )

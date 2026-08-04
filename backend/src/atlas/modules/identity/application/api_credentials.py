@@ -13,6 +13,7 @@ from uuid import uuid4
 from atlas import __version__
 from atlas.core.audit import AuditRecord, AuditSink
 from atlas.modules.identity.application.api_credential_ports import ApiCredentialRepository
+from atlas.modules.identity.application.identity_status_ports import IdentityStatusRepository
 from atlas.modules.identity.domain.api_credentials import (
     ApiCredentialContext,
     ApiCredentialInventory,
@@ -20,6 +21,7 @@ from atlas.modules.identity.domain.api_credentials import (
     ApiCredentialState,
     IssuedApiCredential,
 )
+from atlas.modules.identity.domain.identity_status import IdentityLifecycleState
 from atlas.modules.identity.domain.models import (
     AuthenticatedSubject,
     AuthenticationMethod,
@@ -44,6 +46,7 @@ class ApiCredentialService:
         audit_sink: AuditSink,
         max_lifetime: timedelta = timedelta(minutes=60),
         max_active_per_subject: int = 10,
+        status_repository: IdentityStatusRepository | None = None,
         clock: Callable[[], datetime] | None = None,
         token_factory: Callable[[], str] | None = None,
     ) -> None:
@@ -55,6 +58,7 @@ class ApiCredentialService:
         self._audit_sink = audit_sink
         self._max_lifetime = max_lifetime
         self._max_active = max_active_per_subject
+        self._status_repository = status_repository
         self._clock = clock or (lambda: datetime.now(UTC))
         self._token_factory = token_factory or (lambda: f"atlas_pat_{token_urlsafe(32)}")
         self._creation_lock = asyncio.Lock()
@@ -72,6 +76,11 @@ class ApiCredentialService:
         if subject.kind is not SubjectKind.HUMAN:
             await self._audit_denial("credential_human_required", correlation_id, subject=subject)
             raise ApiCredentialOperationsError("credential_human_required")
+        if self._status_repository is not None:
+            status = await self._status_repository.observe(subject, observed_at=self._clock())
+            if status.state is IdentityLifecycleState.DISABLED:
+                await self._audit_denial("identity_disabled", correlation_id, subject=subject)
+                raise ApiCredentialOperationsError("identity_disabled")
         if not timedelta(minutes=5) <= lifetime <= self._max_lifetime:
             raise ApiCredentialOperationsError("credential_lifetime_invalid")
         if not 1 <= len(display_name.strip()) <= 80 or not 1 <= len(purpose.strip()) <= 240:
@@ -137,6 +146,13 @@ class ApiCredentialService:
             ):
                 await self._audit_denial("credential_unknown", correlation_id)
                 return None
+            if self._status_repository is not None:
+                status = await self._status_repository.get(record.subject.subject_id)
+                if status is None or status.state is IdentityLifecycleState.DISABLED:
+                    await self._audit_denial(
+                        "identity_disabled", correlation_id, record=record, subject=record.subject
+                    )
+                    return None
             now = self._clock()
             if now >= record.expires_at:
                 if await self._expire(record, now, correlation_id):

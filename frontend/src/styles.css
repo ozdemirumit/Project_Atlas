@@ -450,6 +450,23 @@ textarea:focus-visible {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.governance-subject-panel {
+  margin: 14px 14px 0;
+}
+
+.governance-subject-records {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.governance-subject-record:nth-child(odd) {
+  border-right: 1px solid #e4e9e7;
+}
+
+.governance-subject-record:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
 .governance-panel {
   min-width: 0;
   overflow: hidden;
@@ -550,6 +567,13 @@ textarea:focus-visible {
   border-color: #c3ded5;
 }
 
+.governance-record .state-badge.disabled {
+  flex: 0 0 auto;
+  color: #6f3838;
+  background: #f8eceb;
+  border-color: #e3c9c6;
+}
+
 .governance-record dl {
   display: grid;
   gap: 8px;
@@ -608,6 +632,60 @@ textarea:focus-visible {
 }
 
 .governance-revoke:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.governance-disable-confirmation {
+  display: grid;
+  gap: 10px;
+  margin: 11px 0;
+  padding: 11px;
+  color: #573c39;
+  background: #fff8f6;
+  border: 1px solid #e5c7c2;
+  border-radius: 5px;
+}
+
+.governance-disable-confirmation strong {
+  font-size: 10px;
+}
+
+.governance-disable-confirmation p {
+  margin: 4px 0 0;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.governance-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.governance-confirm-actions button {
+  display: inline-flex;
+  min-height: 31px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  color: #45534f;
+  background: #ffffff;
+  border: 1px solid #cbd5d1;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.governance-confirm-actions .governance-disable-confirm {
+  color: #ffffff;
+  background: #963f3f;
+  border-color: #963f3f;
+}
+
+.governance-confirm-actions button:disabled {
   cursor: not-allowed;
   opacity: 0.48;
 }
@@ -4217,6 +4295,35 @@ tbody tr.selected {
   .governance-toolbar,
   .governance-grid {
     padding: 11px;
+  }
+
+  .governance-subject-panel {
+    margin: 11px 11px 0;
+  }
+
+  .governance-subject-records {
+    grid-template-columns: 1fr;
+  }
+
+  .governance-subject-record:nth-child(odd) {
+    border-right: 0;
+  }
+
+  .governance-subject-record:nth-last-child(-n + 2) {
+    border-bottom: 1px solid #e4e9e7;
+  }
+
+  .governance-subject-record:last-child {
+    border-bottom: 0;
+  }
+
+  .governance-confirm-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .governance-confirm-actions button {
+    width: 100%;
   }
 
   .governance-record dl {

@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-021 |
 | Title | Identity disablement and credential revocation fan-out foundation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/identity-disablement-fanout` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
 | Last Updated | 2026-08-04 |
-| Next Action | Implement durable enterprise-human identity disablement with atomic session and personal-token revocation fan-out, then complete local and live validation |
+| Next Action | Publish the ready pull request, complete GitHub backend/frontend validation on the final tracker head, and merge only while both gates are green |
 
 ### ATLAS-IMP-021 Acceptance Criteria
 
@@ -49,7 +49,49 @@
 
 ### ATLAS-IMP-021 Validation Evidence
 
-- Pending implementation and validation.
+- A versioned identity-status domain, repository port, and in-memory adapter make the lifecycle
+  repository authoritative. Upstream password acceptance, browser-session authentication, bearer
+  authentication, and personal-token issuance all reject disabled subjects without changing the
+  development identity's assignments.
+- A dedicated `identity.subject.admin.disable` permission is bound to version 2 of the Security
+  Administrator role at exact organization, environment, site, identity-domain, resource, and C2
+  scope. Enterprise-human browser authentication, CSRF, bounded reason, idempotency, expected
+  version, and current RBAC are independently required; personal bearers cannot invoke the mutation.
+- Serialized fan-out revokes every active target browser session and personal API credential before
+  committing disabled subject state. Repository or required-audit failure compensates all applied
+  in-memory changes with monotonic versions, leaving no surviving partial disablement; concurrent
+  requests produce exactly one complete result and one indistinguishable unavailable result.
+- Missing, foreign, unsupported, stale, and already-disabled targets share a generic response.
+  Self-disablement is protected, replay is exact, conflicting idempotency reuse fails closed, and
+  service reconstruction against the same repository cannot reactivate a disabled identity.
+- Required allow, deny, start, success, replay, and compensation audit evidence records actor,
+  target, reason, correlation, idempotency, result, and revoked/restored counts without cookie, CSRF,
+  raw-token, or digest material. Audit failure blocks or compensates the state change.
+- Backend Ruff formatting and lint passed, strict mypy passed across 209 source files, and the full
+  backend suite passed with 234 tests. The 21 focused identity-governance scenarios cover exact
+  scope and identity class, secret-free inventory, self-protection, hidden targets, CSRF, bearer
+  denial, idempotency, optimistic concurrency, simultaneous requests, audit failure, compensation,
+  authentication rejection, issuance rejection, administrator-session preservation, and
+  no-resurrection behavior.
+- Frontend ESLint and TypeScript checks passed, seven Vitest scenarios passed across two files, and
+  the production Vite bundle built successfully. The searchable governance view shows bounded
+  identity status and active-access counts, requires an explicit impact confirmation, and treats an
+  ordinary operator's HTTP 403 as an absent capability without a disruptive error.
+- Live validation used a test-only injected enterprise provider and exact authorization assignments,
+  never a privileged development identity. A normal enterprise operator saw no governance surface;
+  a Security Administrator saw the secret-free subject/session/token inventory and disabled the
+  target. The old browser session, old personal token, and a new correct-password login then returned
+  HTTP 401, while the administrator's current session remained active and the inventory showed zero
+  active target sessions and tokens.
+- Desktop 1440x900 and mobile 390x844 views were visually inspected in a real browser. Document
+  width stayed within each viewport; the subject confirmation/status card collapsed to one mobile
+  column without horizontal overflow, overlap, or clipped controls.
+- OIDC/SAML provisioning or deprovisioning hooks, LDAP polling or synchronization, re-enable,
+  service/workload credentials, break-glass, last-administrator global quorum, external ITSM,
+  notifications, token rotation, and infrastructure execution remain intentionally outside this
+  slice.
+- GitHub pull request, Actions durations, review-head source SHA, merge SHA, and final `main` SHA are
+  pending publication and final green-head validation.
 
 ### ATLAS-IMP-020 Acceptance Criteria
 

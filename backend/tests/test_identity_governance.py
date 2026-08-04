@@ -24,8 +24,12 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.authorization.application.service import AuthorizationService
 from atlas.modules.authorization.domain.models import RoleAssignment
 from atlas.modules.identity.adapters.api_credentials import InMemoryApiCredentialRepository
+from atlas.modules.identity.adapters.identity_status import InMemoryIdentityStatusRepository
 from atlas.modules.identity.adapters.sessions import InMemorySessionRepository
-from atlas.modules.identity.application.api_credentials import ApiCredentialService
+from atlas.modules.identity.application.api_credentials import (
+    ApiCredentialOperationsError,
+    ApiCredentialService,
+)
 from atlas.modules.identity.application.governance import (
     IdentityGovernanceError,
     IdentityGovernanceService,
@@ -33,8 +37,13 @@ from atlas.modules.identity.application.governance import (
 from atlas.modules.identity.application.service import IdentityService
 from atlas.modules.identity.application.sessions import SessionService
 from atlas.modules.identity.domain.api_credentials import (
+    ApiCredentialRecord,
     ApiCredentialState,
     IssuedApiCredential,
+)
+from atlas.modules.identity.domain.identity_status import (
+    IdentityDisablementResult,
+    IdentityLifecycleState,
 )
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
@@ -60,6 +69,18 @@ class CollectingAuditSink:
         if event.event_type in self._failing_events:
             raise RuntimeError("identity governance audit unavailable")
         self.records.append(event)
+
+
+class FailingApiCredentialRepository(InMemoryApiCredentialRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.fail_next_update = False
+
+    async def update(self, record: ApiCredentialRecord, *, expected_version: int) -> bool:
+        if self.fail_next_update:
+            self.fail_next_update = False
+            return False
+        return await super().update(record, expected_version=expected_version)
 
 
 class MultiUserIdentityProvider:
@@ -146,7 +167,11 @@ def governance_authorization(
 
 
 class GovernanceFixture:
-    def __init__(self, sink: CollectingAuditSink | None = None) -> None:
+    def __init__(
+        self,
+        sink: CollectingAuditSink | None = None,
+        api_repository: InMemoryApiCredentialRepository | None = None,
+    ) -> None:
         self.sink = sink or CollectingAuditSink()
         self.admin = subject(
             "subject.enterprise.admin",
@@ -163,10 +188,12 @@ class GovernanceFixture:
             {"admin": self.admin, "operator": self.operator, "foreign": self.foreign}
         )
         self.session_repository = InMemorySessionRepository()
-        self.api_repository = InMemoryApiCredentialRepository()
+        self.api_repository = api_repository or InMemoryApiCredentialRepository()
+        self.status_repository = InMemoryIdentityStatusRepository()
         self.identity_service = IdentityService(
             provider=self.provider,
             audit_sink=self.sink,
+            status_repository=self.status_repository,
             clock=lambda: NOW,
         )
         self.session_service = SessionService(
@@ -176,12 +203,14 @@ class GovernanceFixture:
             absolute_timeout=timedelta(hours=1),
             idle_timeout=timedelta(minutes=30),
             max_sessions_per_subject=10,
+            status_repository=self.status_repository,
             clock=lambda: NOW,
         )
         token_sequence = iter(range(1, 20))
         self.api_service = ApiCredentialService(
             repository=self.api_repository,
             audit_sink=self.sink,
+            status_repository=self.status_repository,
             clock=lambda: NOW,
             token_factory=lambda: f"atlas_pat_{next(token_sequence):043d}",
         )
@@ -189,6 +218,7 @@ class GovernanceFixture:
             session_repository=self.session_repository,
             api_credential_repository=self.api_repository,
             audit_sink=self.sink,
+            identity_status_repository=self.status_repository,
             clock=lambda: NOW,
         )
         self.app = create_app(
@@ -199,6 +229,7 @@ class GovernanceFixture:
             session_service=self.session_service,
             api_credential_service=self.api_service,
             identity_governance_service=self.governance_service,
+            identity_status_repository=self.status_repository,
         )
 
     def create_session(self, username: str) -> IssuedSession:
@@ -274,6 +305,7 @@ def test_authorized_inventory_is_bounded_filterable_secret_free_and_excludes_sel
     assert dict(event.target_metadata) == {
         "session_count": "0",
         "api_credential_count": "1",
+        "subject_count": "0",
         "filtered": "true",
         "truncated": "false",
     }
@@ -655,3 +687,505 @@ def test_audit_failure_blocks_inventory_and_revocation_state_change() -> None:
     assert response.status_code == 500
     stored = asyncio.run(revoke_fixture.api_repository.get_by_id(target.record.credential_id))
     assert stored is not None and stored.state is ApiCredentialState.ACTIVE
+
+
+def test_identity_disablement_revokes_all_access_and_preserves_admin_session() -> None:
+    fixture = GovernanceFixture()
+    target_session = fixture.create_session("operator")
+    target_credential = fixture.issue_operator_credential()
+    with TestClient(fixture.app) as admin_client:
+        csrf, _ = login(admin_client)
+        inventory = admin_client.get("/api/v1/identity-governance")
+        assert inventory.status_code == 200
+        target_subject = next(
+            item
+            for item in inventory.json()["data"]["subjects"]
+            if item["subject_id"] == fixture.operator.subject_id
+        )
+        assert target_subject["state"] == "active"
+        assert target_subject["active_session_count"] == 1
+        assert target_subject["active_api_credential_count"] == 1
+        assert "token_digest" not in inventory.text
+        assert target_credential.token not in inventory.text
+
+        disabled = admin_client.post(
+            f"/api/v1/identity-governance/subjects/{fixture.operator.subject_id}/disablements",
+            json={
+                "expected_version": target_subject["version"],
+                "reason": "The employee has left the on-call rotation.",
+            },
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "disable-operator-0001",
+            },
+        )
+        admin_still_active = admin_client.get("/api/v1/identity-governance")
+
+    assert disabled.status_code == 200
+    assert disabled.headers["Cache-Control"] == "no-store"
+    assert disabled.json()["data"]["revoked_session_count"] == 1
+    assert disabled.json()["data"]["revoked_api_credential_count"] == 1
+    assert disabled.json()["data"]["subject"]["state"] == "disabled"
+    assert admin_still_active.status_code == 200
+
+    with TestClient(fixture.app) as old_session_client:
+        old_session_client.cookies.set("atlas_session", target_session.token, path="/api")
+        old_session = old_session_client.get("/api/v1/identity-governance")
+    with TestClient(fixture.app) as old_token_client:
+        old_token = old_token_client.get(
+            "/api/v1/identity-governance",
+            headers={"Authorization": f"Bearer {target_credential.token}"},
+        )
+    with TestClient(fixture.app) as login_client:
+        new_login = login_client.post(
+            "/api/v1/authentication/sessions",
+            json={"username": "operator", "password": "correct-password"},
+        )
+
+    assert old_session.status_code == old_token.status_code == new_login.status_code == 401
+    with pytest.raises(ApiCredentialOperationsError, match="identity_disabled"):
+        asyncio.run(
+            fixture.api_service.issue(
+                subject=fixture.operator,
+                display_name="Replacement reader",
+                purpose="This issue attempt must remain denied after disablement.",
+                lifetime=timedelta(minutes=30),
+                grants=target_credential.record.grants,
+                correlation_id="cor_disabled_issue",
+            )
+        )
+    stored_status = asyncio.run(fixture.status_repository.get(fixture.operator.subject_id))
+    stored_session = asyncio.run(
+        fixture.session_repository.get_by_session_id(target_session.record.session_id)
+    )
+    stored_credential = asyncio.run(
+        fixture.api_repository.get_by_id(target_credential.record.credential_id)
+    )
+    assert stored_status is not None
+    assert stored_status.state is IdentityLifecycleState.DISABLED
+    assert stored_session is not None and stored_session.state is SessionState.REVOKED
+    assert stored_credential is not None
+    assert stored_credential.state is ApiCredentialState.REVOKED
+    event = next(
+        item
+        for item in fixture.sink.records
+        if item.event_type == "atlas.identity.governance.disabled"
+    )
+    assert event.subject_id == fixture.admin.subject_id
+    assert event.target_subject_id == fixture.operator.subject_id
+    assert event.reason == "The employee has left the on-call rotation."
+    assert event.idempotency_key == "disable-operator-0001"
+    assert dict(event.target_metadata)["revoked_session_count"] == "1"
+    assert dict(event.target_metadata)["revoked_api_credential_count"] == "1"
+    assert target_session.token not in repr(fixture.sink.records)
+    assert target_credential.token not in repr(fixture.sink.records)
+
+
+def test_identity_disablement_replay_conflict_and_restart_do_not_resurrect() -> None:
+    fixture = GovernanceFixture()
+    fixture.create_session("operator")
+    with TestClient(fixture.app) as client:
+        csrf, _ = login(client)
+        subject_item = next(
+            item
+            for item in client.get("/api/v1/identity-governance").json()["data"]["subjects"]
+            if item["subject_id"] == fixture.operator.subject_id
+        )
+        headers = {
+            "X-CSRF-Token": csrf,
+            "Idempotency-Key": "disable-replay-0001",
+        }
+        payload = {
+            "expected_version": subject_item["version"],
+            "reason": "Access review closed the enterprise identity.",
+        }
+        first = client.post(
+            f"/api/v1/identity-governance/subjects/{fixture.operator.subject_id}/disablements",
+            json=payload,
+            headers=headers,
+        )
+        replay = client.post(
+            f"/api/v1/identity-governance/subjects/{fixture.operator.subject_id}/disablements",
+            json=payload,
+            headers=headers,
+        )
+        conflict = client.post(
+            f"/api/v1/identity-governance/subjects/{fixture.operator.subject_id}/disablements",
+            json={**payload, "reason": "A conflicting reason."},
+            headers=headers,
+        )
+
+    assert first.status_code == replay.status_code == 200
+    assert first.json()["data"] == replay.json()["data"]
+    assert conflict.status_code == 409
+    assert conflict.json()["code"] == "governance_idempotency_conflict"
+    replay_event = next(
+        item
+        for item in fixture.sink.records
+        if item.event_type == "atlas.identity.governance.disablement_replayed"
+    )
+    assert dict(replay_event.target_metadata)["revoked_session_count"] == "1"
+
+    reconstructed = IdentityService(
+        provider=fixture.provider,
+        audit_sink=fixture.sink,
+        status_repository=fixture.status_repository,
+        clock=lambda: NOW,
+    )
+    credential = base64.b64encode(b"operator:correct-password").decode()
+    assert (
+        asyncio.run(
+            reconstructed.authenticate(
+                AuthenticationInput(
+                    correlation_id="cor_restart_authentication",
+                    authorization_scheme="basic",
+                    credential=credential,
+                )
+            )
+        )
+        is None
+    )
+    observed = asyncio.run(
+        fixture.status_repository.observe(fixture.operator, observed_at=NOW + timedelta(minutes=1))
+    )
+    assert observed.state is IdentityLifecycleState.DISABLED
+
+
+def test_identity_disablement_requires_csrf_browser_session_and_protects_self() -> None:
+    fixture = GovernanceFixture()
+    fixture.create_session("operator")
+    issued = fixture.issue_operator_credential()
+    with TestClient(fixture.app) as client:
+        csrf, admin_session_id = login(client)
+        inventory = client.get("/api/v1/identity-governance").json()["data"]
+        operator = next(
+            item
+            for item in inventory["subjects"]
+            if item["subject_id"] == fixture.operator.subject_id
+        )
+        missing_csrf = client.post(
+            f"/api/v1/identity-governance/subjects/{fixture.operator.subject_id}/disablements",
+            json={"expected_version": operator["version"], "reason": "Security review."},
+            headers={"Idempotency-Key": "disable-csrf-0001"},
+        )
+        client.cookies.clear()
+        unsafe_bearer = client.post(
+            f"/api/v1/identity-governance/subjects/{fixture.operator.subject_id}/disablements",
+            json={"expected_version": operator["version"], "reason": "Security review."},
+            headers={
+                "Authorization": f"Bearer {issued.token}",
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "disable-bearer-0001",
+            },
+        )
+    with TestClient(fixture.app) as self_client:
+        self_csrf, _ = login(self_client)
+        admin_status = asyncio.run(fixture.status_repository.get(fixture.admin.subject_id))
+        assert admin_status is not None
+        self_disable = self_client.post(
+            f"/api/v1/identity-governance/subjects/{fixture.admin.subject_id}/disablements",
+            json={
+                "expected_version": admin_status.version,
+                "reason": "Accidental self-disablement request.",
+            },
+            headers={
+                "X-CSRF-Token": self_csrf,
+                "Idempotency-Key": "disable-self-0001",
+            },
+        )
+        self_still_active = self_client.get("/api/v1/identity-governance")
+
+    assert admin_session_id
+    assert missing_csrf.status_code == 403
+    assert missing_csrf.json()["code"] == "csrf_validation_failed"
+    assert unsafe_bearer.status_code == 403
+    assert unsafe_bearer.json()["code"] == "credential_unsafe_method_denied"
+    assert self_disable.status_code == 409
+    assert self_disable.json()["code"] == "current_admin_identity_protected"
+    assert self_still_active.status_code == 200
+
+
+def test_identity_disablement_hidden_foreign_stale_and_disabled_are_equivalent() -> None:
+    fixture = GovernanceFixture()
+    fixture.create_session("operator")
+    fixture.create_session("foreign")
+    with TestClient(fixture.app) as client:
+        csrf, _ = login(client)
+        operator_status = asyncio.run(fixture.status_repository.get(fixture.operator.subject_id))
+        foreign_status = asyncio.run(fixture.status_repository.get(fixture.foreign.subject_id))
+        assert operator_status is not None and foreign_status is not None
+        base_payload = {
+            "expected_version": operator_status.version,
+            "reason": "Bounded administrative review.",
+        }
+        missing = client.post(
+            "/api/v1/identity-governance/subjects/subject.enterprise.missing/disablements",
+            json=base_payload,
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "disable-hidden-0001",
+            },
+        )
+        foreign = client.post(
+            f"/api/v1/identity-governance/subjects/{fixture.foreign.subject_id}/disablements",
+            json={**base_payload, "expected_version": foreign_status.version},
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "disable-hidden-0002",
+            },
+        )
+        stale = client.post(
+            f"/api/v1/identity-governance/subjects/{fixture.operator.subject_id}/disablements",
+            json={**base_payload, "expected_version": operator_status.version + 10},
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "disable-hidden-0003",
+            },
+        )
+        success = client.post(
+            f"/api/v1/identity-governance/subjects/{fixture.operator.subject_id}/disablements",
+            json=base_payload,
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "disable-hidden-0004",
+            },
+        )
+        disabled = client.post(
+            f"/api/v1/identity-governance/subjects/{fixture.operator.subject_id}/disablements",
+            json={
+                **base_payload,
+                "expected_version": success.json()["data"]["subject"]["version"],
+            },
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "disable-hidden-0005",
+            },
+        )
+
+    assert success.status_code == 200
+    identities = {error_identity(item) for item in (missing, foreign, stale, disabled)}
+    assert identities == {
+        (
+            404,
+            "governance_target_unavailable",
+            "Identity resource unavailable",
+            "The requested identity resource is unavailable.",
+        )
+    }
+
+
+def test_identity_disablement_is_denied_to_ordinary_or_wrong_scope_admin() -> None:
+    fixture = GovernanceFixture()
+    protected_admin = fixture.create_session("admin")
+    fixture.create_session("operator")
+    admin_status = asyncio.run(fixture.status_repository.get(fixture.admin.subject_id))
+    assert admin_status is not None
+    with TestClient(fixture.app) as client:
+        csrf, _ = login(client, "operator")
+        ordinary = client.post(
+            f"/api/v1/identity-governance/subjects/{fixture.admin.subject_id}/disablements",
+            json={
+                "expected_version": admin_status.version,
+                "reason": "Unauthorized attempt.",
+            },
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "disable-ordinary-0001",
+            },
+        )
+    assert ordinary.status_code == 403
+    assert protected_admin.record.state is SessionState.ACTIVE
+    denied = next(
+        item
+        for item in reversed(fixture.sink.records)
+        if item.event_type == "atlas.authorization.access.denied"
+        and item.idempotency_key == "disable-ordinary-0001"
+    )
+    assert denied.target_subject_id == fixture.admin.subject_id
+    assert denied.reason == "Unauthorized attempt."
+
+    with TestClient(fixture.app) as scoped_client:
+        scoped_csrf, _ = login(scoped_client)
+        fixture.app.state.authorization_service = governance_authorization(
+            fixture.sink, environment="development"
+        )
+        wrong_scope = scoped_client.post(
+            f"/api/v1/identity-governance/subjects/{fixture.operator.subject_id}/disablements",
+            json={"expected_version": 1, "reason": "Wrong scope attempt."},
+            headers={
+                "X-CSRF-Token": scoped_csrf,
+                "Idempotency-Key": "disable-scope-0001",
+            },
+        )
+    assert wrong_scope.status_code == 403
+
+
+@pytest.mark.parametrize(
+    ("method", "kind"),
+    [
+        (AuthenticationMethod.DEVELOPMENT, SubjectKind.HUMAN),
+        (AuthenticationMethod.MUTUAL_TLS, SubjectKind.SERVICE),
+    ],
+)
+def test_identity_disablement_rejects_development_and_nonhuman_actors(
+    method: AuthenticationMethod, kind: SubjectKind
+) -> None:
+    fixture = GovernanceFixture()
+    fixture.create_session("operator")
+    actor = subject(
+        "subject.enterprise.privileged-automation",
+        "Unsupported privileged identity",
+        method=method,
+        kind=kind,
+        roles=(SECURITY_ADMINISTRATOR_ROLE_ID,),
+    )
+    with pytest.raises(IdentityGovernanceError, match="enterprise_human_required"):
+        asyncio.run(
+            fixture.governance_service.disable_identity(
+                fixture.operator.subject_id,
+                actor=actor,
+                expected_version=1,
+                reason="Unsupported actor attempt.",
+                idempotency_key="disable-unsupported-0001",
+                correlation_id="cor_unsupported_actor",
+            )
+        )
+
+
+def test_identity_disablement_compensates_when_credential_fanout_fails() -> None:
+    repository = FailingApiCredentialRepository()
+    fixture = GovernanceFixture(api_repository=repository)
+    target_session = fixture.create_session("operator")
+    target_credential = fixture.issue_operator_credential()
+    repository.fail_next_update = True
+    with TestClient(fixture.app) as client:
+        csrf, _ = login(client)
+        target = next(
+            item
+            for item in client.get("/api/v1/identity-governance").json()["data"]["subjects"]
+            if item["subject_id"] == fixture.operator.subject_id
+        )
+        response = client.post(
+            f"/api/v1/identity-governance/subjects/{fixture.operator.subject_id}/disablements",
+            json={
+                "expected_version": target["version"],
+                "reason": "Exercise atomic compensation.",
+            },
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "disable-compensate-0001",
+            },
+        )
+
+    assert response.status_code == 503
+    status = asyncio.run(fixture.status_repository.get(fixture.operator.subject_id))
+    session = asyncio.run(
+        fixture.session_repository.get_by_session_id(target_session.record.session_id)
+    )
+    credential = asyncio.run(
+        fixture.api_repository.get_by_id(target_credential.record.credential_id)
+    )
+    assert status is not None and status.state is IdentityLifecycleState.ACTIVE
+    assert session is not None and session.state is SessionState.ACTIVE
+    assert session.version > target_session.record.version
+    assert credential is not None and credential.state is ApiCredentialState.ACTIVE
+    event = next(
+        item
+        for item in fixture.sink.records
+        if item.event_type == "atlas.identity.governance.disablement_compensated"
+    )
+    assert dict(event.target_metadata) == {
+        "restored_session_count": "1",
+        "restored_api_credential_count": "0",
+    }
+
+
+@pytest.mark.parametrize(
+    "failing_event",
+    [
+        "atlas.identity.governance.disablement_started",
+        "atlas.identity.governance.disabled",
+    ],
+)
+def test_identity_disablement_audit_failure_leaves_no_partial_state(
+    failing_event: str,
+) -> None:
+    fixture = GovernanceFixture(CollectingAuditSink({failing_event}))
+    target_session = fixture.create_session("operator")
+    target_credential = fixture.issue_operator_credential()
+    with TestClient(fixture.app, raise_server_exceptions=False) as client:
+        csrf, _ = login(client)
+        target = next(
+            item
+            for item in client.get("/api/v1/identity-governance").json()["data"]["subjects"]
+            if item["subject_id"] == fixture.operator.subject_id
+        )
+        response = client.post(
+            f"/api/v1/identity-governance/subjects/{fixture.operator.subject_id}/disablements",
+            json={"expected_version": target["version"], "reason": "Audit outage test."},
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": f"disable-audit-{failing_event.rsplit('.', 1)[-1]}",
+            },
+        )
+
+    assert response.status_code in {500, 503}
+    status = asyncio.run(fixture.status_repository.get(fixture.operator.subject_id))
+    session = asyncio.run(
+        fixture.session_repository.get_by_session_id(target_session.record.session_id)
+    )
+    credential = asyncio.run(
+        fixture.api_repository.get_by_id(target_credential.record.credential_id)
+    )
+    assert status is not None and status.state is IdentityLifecycleState.ACTIVE
+    assert session is not None and session.state is SessionState.ACTIVE
+    assert credential is not None and credential.state is ApiCredentialState.ACTIVE
+
+
+def test_concurrent_identity_disablements_apply_exactly_one_complete_fanout() -> None:
+    fixture = GovernanceFixture()
+    target_session = fixture.create_session("operator")
+    target_credential = fixture.issue_operator_credential()
+    status = asyncio.run(fixture.status_repository.get(fixture.operator.subject_id))
+    assert status is not None
+
+    async def race_disablements() -> tuple[object, object]:
+        return await asyncio.gather(
+            fixture.governance_service.disable_identity(
+                fixture.operator.subject_id,
+                actor=fixture.admin,
+                expected_version=status.version,
+                reason="Concurrent security response A.",
+                idempotency_key="disable-race-0001",
+                correlation_id="cor_disable_race_a",
+            ),
+            fixture.governance_service.disable_identity(
+                fixture.operator.subject_id,
+                actor=fixture.admin,
+                expected_version=status.version,
+                reason="Concurrent security response B.",
+                idempotency_key="disable-race-0002",
+                correlation_id="cor_disable_race_b",
+            ),
+            return_exceptions=True,
+        )
+
+    outcomes = asyncio.run(race_disablements())
+    completed = [item for item in outcomes if isinstance(item, IdentityDisablementResult)]
+    rejected = [item for item in outcomes if isinstance(item, IdentityGovernanceError)]
+    assert len(completed) == len(rejected) == 1
+    result = completed[0]
+    assert result.revoked_session_count == 1
+    assert result.revoked_api_credential_count == 1
+    assert str(rejected[0]) == "governance_target_unavailable"
+
+    final_status = asyncio.run(fixture.status_repository.get(fixture.operator.subject_id))
+    final_session = asyncio.run(
+        fixture.session_repository.get_by_session_id(target_session.record.session_id)
+    )
+    final_credential = asyncio.run(
+        fixture.api_repository.get_by_id(target_credential.record.credential_id)
+    )
+    assert final_status is not None and final_status.state is IdentityLifecycleState.DISABLED
+    assert final_session is not None and final_session.state is SessionState.REVOKED
+    assert final_credential is not None and final_credential.state is ApiCredentialState.REVOKED

@@ -60,9 +60,11 @@ from atlas.modules.health_checks.application.service import HealthCheckService
 from atlas.modules.identity.adapters.api_credentials import InMemoryApiCredentialRepository
 from atlas.modules.identity.adapters.development import DevelopmentIdentityProvider
 from atlas.modules.identity.adapters.directory import build_directory_identity_provider
+from atlas.modules.identity.adapters.identity_status import InMemoryIdentityStatusRepository
 from atlas.modules.identity.adapters.sessions import InMemorySessionRepository
 from atlas.modules.identity.application.api_credentials import ApiCredentialService
 from atlas.modules.identity.application.governance import IdentityGovernanceService
+from atlas.modules.identity.application.identity_status_ports import IdentityStatusRepository
 from atlas.modules.identity.application.ports import IdentityProvider
 from atlas.modules.identity.application.service import IdentityService
 from atlas.modules.identity.application.sessions import SessionService
@@ -108,6 +110,7 @@ def create_app(
     session_service: SessionService | None = None,
     api_credential_service: ApiCredentialService | None = None,
     identity_governance_service: IdentityGovernanceService | None = None,
+    identity_status_repository: IdentityStatusRepository | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -125,9 +128,13 @@ def create_app(
         resolved_identity_provider = build_directory_identity_provider(resolved_settings)
     else:
         resolved_identity_provider = DevelopmentIdentityProvider(resolved_settings)
+    resolved_identity_status_repository = (
+        identity_status_repository or InMemoryIdentityStatusRepository()
+    )
     identity_service = IdentityService(
         provider=resolved_identity_provider,
         audit_sink=resolved_audit_sink,
+        status_repository=resolved_identity_status_repository,
     )
     session_repository = InMemorySessionRepository()
     api_credential_repository = InMemoryApiCredentialRepository()
@@ -138,17 +145,20 @@ def create_app(
         absolute_timeout=timedelta(minutes=resolved_settings.session_absolute_timeout_minutes),
         idle_timeout=timedelta(minutes=resolved_settings.session_idle_timeout_minutes),
         max_sessions_per_subject=resolved_settings.session_max_per_subject,
+        status_repository=resolved_identity_status_repository,
     )
     resolved_api_credential_service = api_credential_service or ApiCredentialService(
         repository=api_credential_repository,
         audit_sink=resolved_audit_sink,
         max_lifetime=timedelta(minutes=resolved_settings.api_credential_max_lifetime_minutes),
         max_active_per_subject=resolved_settings.api_credential_max_active_per_subject,
+        status_repository=resolved_identity_status_repository,
     )
     resolved_identity_governance_service = identity_governance_service or IdentityGovernanceService(
         session_repository=session_repository,
         api_credential_repository=api_credential_repository,
         audit_sink=resolved_audit_sink,
+        identity_status_repository=resolved_identity_status_repository,
     )
     resolved_authorization_service = (
         authorization_service
@@ -273,6 +283,7 @@ def create_app(
         app.state.session_service = resolved_session_service
         app.state.api_credential_service = resolved_api_credential_service
         app.state.identity_governance_service = resolved_identity_governance_service
+        app.state.identity_status_repository = resolved_identity_status_repository
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service

@@ -10,9 +10,18 @@ from uuid import uuid4
 from atlas import __version__
 from atlas.core.audit import AuditRecord, AuditSink
 from atlas.modules.identity.application.api_credential_ports import ApiCredentialRepository
+from atlas.modules.identity.application.identity_status_ports import IdentityStatusRepository
 from atlas.modules.identity.application.session_ports import SessionRepository
 from atlas.modules.identity.domain.api_credentials import ApiCredentialRecord, ApiCredentialState
-from atlas.modules.identity.domain.governance import IdentityGovernanceInventory
+from atlas.modules.identity.domain.governance import (
+    IdentityGovernanceInventory,
+    IdentityGovernanceSubject,
+)
+from atlas.modules.identity.domain.identity_status import (
+    IdentityDisablementResult,
+    IdentityLifecycleState,
+    IdentityStatusRecord,
+)
 from atlas.modules.identity.domain.models import (
     AuthenticatedSubject,
     AuthenticationMethod,
@@ -42,14 +51,19 @@ class IdentityGovernanceService:
         session_repository: SessionRepository,
         api_credential_repository: ApiCredentialRepository,
         audit_sink: AuditSink,
+        identity_status_repository: IdentityStatusRepository | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._sessions = session_repository
         self._api_credentials = api_credential_repository
+        self._identity_statuses = identity_status_repository
         self._audit_sink = audit_sink
         self._clock = clock or (lambda: datetime.now(UTC))
         self._mutation_lock = asyncio.Lock()
-        self._idempotent_results: dict[str, tuple[str, SessionRecord | ApiCredentialRecord]] = {}
+        self._idempotent_results: dict[
+            str,
+            tuple[str, SessionRecord | ApiCredentialRecord | IdentityDisablementResult],
+        ] = {}
 
     async def target_audit_fields(
         self, target_kind: str, target_reference: str
@@ -59,6 +73,13 @@ class IdentityGovernanceService:
             target = await self._sessions.get_by_session_id(target_reference)
         elif target_kind == "personal_api_credential":
             target = await self._api_credentials.get_by_id(target_reference)
+        elif target_kind == "identity_subject":
+            if self._identity_statuses is None:
+                return None, (("target_kind", target_kind),)
+            status = await self._identity_statuses.get(target_reference)
+            if status is None:
+                return None, (("target_kind", target_kind),)
+            return status.subject.subject_id, self._safe_identity_metadata(status)
         else:
             raise ValueError("unsupported identity governance target kind")
         if target is None:
@@ -80,6 +101,11 @@ class IdentityGovernanceService:
         if len(normalized_query) > 128:
             raise ValueError("identity governance query is outside platform bounds")
         now = self._clock()
+        status_records = (
+            await self._identity_statuses.all_records()
+            if self._identity_statuses is not None
+            else ()
+        )
         sessions = [
             record
             for record in await self._sessions.all_records()
@@ -101,10 +127,38 @@ class IdentityGovernanceService:
         ]
         sessions.sort(key=lambda item: (item.created_at, item.session_id), reverse=True)
         api_credentials.sort(key=lambda item: (item.created_at, item.credential_id), reverse=True)
+        subjects = [
+            IdentityGovernanceSubject(
+                status=status,
+                active_session_count=sum(
+                    1
+                    for record in sessions
+                    if record.subject.subject_id == status.subject.subject_id
+                ),
+                active_api_credential_count=sum(
+                    1
+                    for record in api_credentials
+                    if record.subject.subject_id == status.subject.subject_id
+                ),
+            )
+            for status in status_records
+            if status.subject.organization_id == actor.organization_id
+            and status.subject.subject_id != actor.subject_id
+            and self._matches_identity_status(status, normalized_query)
+        ]
+        subjects.sort(
+            key=lambda item: (
+                item.status.subject.display_name.casefold(),
+                item.status.subject.subject_id,
+            )
+        )
         inventory = IdentityGovernanceInventory(
+            subjects=tuple(subjects[:limit]),
             sessions=tuple(sessions[:limit]),
             api_credentials=tuple(api_credentials[:limit]),
-            truncated=len(sessions) > limit or len(api_credentials) > limit,
+            truncated=(
+                len(subjects) > limit or len(sessions) > limit or len(api_credentials) > limit
+            ),
         )
         await self._audit(
             actor=actor,
@@ -115,11 +169,195 @@ class IdentityGovernanceService:
             metadata=(
                 ("session_count", str(len(inventory.sessions))),
                 ("api_credential_count", str(len(inventory.api_credentials))),
+                ("subject_count", str(len(inventory.subjects))),
                 ("filtered", str(bool(normalized_query)).lower()),
                 ("truncated", str(inventory.truncated).lower()),
             ),
         )
         return inventory
+
+    async def disable_identity(
+        self,
+        subject_id: str,
+        *,
+        actor: AuthenticatedSubject,
+        expected_version: int,
+        reason: str,
+        idempotency_key: str,
+        correlation_id: str,
+    ) -> IdentityDisablementResult:
+        await self._require_enterprise_human(actor, correlation_id)
+        if subject_id == actor.subject_id:
+            await self._audit_denial(
+                actor=actor,
+                correlation_id=correlation_id,
+                result_code="current_admin_identity_protected",
+                idempotency_key=idempotency_key,
+                resource_type="resource.identity.subject",
+                scope_reference=subject_id,
+                target_subject_id=subject_id,
+                reason=reason,
+                metadata=(("target_kind", "identity_subject"),),
+            )
+            raise IdentityGovernanceError("current_admin_identity_protected")
+        if self._identity_statuses is None:
+            raise RuntimeError("identity status repository is required for disablement")
+        fingerprint = self._fingerprint(
+            "identity_subject", subject_id, expected_version, reason, actor.subject_id
+        )
+        async with self._mutation_lock:
+            replay = await self._replay(
+                idempotency_key=idempotency_key,
+                fingerprint=fingerprint,
+                actor=actor,
+                correlation_id=correlation_id,
+                action="disablement_replayed",
+                target_subject_id=subject_id,
+                reason=reason,
+            )
+            if replay is not None:
+                if not isinstance(replay, IdentityDisablementResult):
+                    raise IdentityGovernanceError("governance_idempotency_conflict")
+                return replay
+
+            status = await self._identity_statuses.get(subject_id)
+            if (
+                status is None
+                or status.subject.organization_id != actor.organization_id
+                or status.subject.kind is not SubjectKind.HUMAN
+                or status.subject.authentication_method not in ENTERPRISE_AUTHENTICATION_METHODS
+                or status.state is not IdentityLifecycleState.ACTIVE
+                or status.version != expected_version
+            ):
+                await self._identity_target_unavailable(
+                    actor=actor,
+                    target=status,
+                    target_reference=subject_id,
+                    reason=reason,
+                    idempotency_key=idempotency_key,
+                    correlation_id=correlation_id,
+                )
+            assert status is not None
+            now = self._clock()
+            active_sessions = tuple(await self._sessions.active_for_subject(subject_id))
+            active_api_credentials = tuple(
+                await self._api_credentials.active_for_subject(subject_id)
+            )
+            revoked_sessions = tuple(
+                replace(
+                    record,
+                    version=record.version + 1,
+                    state=SessionState.REVOKED,
+                    revoked_at=now,
+                    revocation_reason="identity_disabled",
+                )
+                for record in active_sessions
+            )
+            revoked_api_credentials = tuple(
+                replace(
+                    record,
+                    version=record.version + 1,
+                    state=ApiCredentialState.REVOKED,
+                    revoked_at=now,
+                    revocation_reason="identity_disabled",
+                )
+                for record in active_api_credentials
+            )
+            disabled = replace(
+                status,
+                version=status.version + 1,
+                state=IdentityLifecycleState.DISABLED,
+                disabled_at=now,
+                disabled_by=actor.subject_id,
+                disable_reason=reason,
+            )
+            counts = (
+                ("revoked_session_count", str(len(revoked_sessions))),
+                ("revoked_api_credential_count", str(len(revoked_api_credentials))),
+            )
+            await self._audit(
+                actor=actor,
+                action="disablement_started",
+                correlation_id=correlation_id,
+                outcome="started",
+                result_code="identity_disablement_started",
+                resource_type="resource.identity.subject",
+                scope_reference=subject_id,
+                target_subject_id=subject_id,
+                reason=reason,
+                idempotency_key=idempotency_key,
+                metadata=self._safe_identity_metadata(status) + counts,
+            )
+
+            applied_sessions: list[tuple[SessionRecord, SessionRecord]] = []
+            applied_credentials: list[tuple[ApiCredentialRecord, ApiCredentialRecord]] = []
+            status_applied = False
+            try:
+                for original_session, revoked_session in zip(
+                    active_sessions, revoked_sessions, strict=True
+                ):
+                    if not await self._sessions.update(
+                        revoked_session, expected_version=original_session.version
+                    ):
+                        raise RuntimeError("session fan-out update conflicted")
+                    applied_sessions.append((original_session, revoked_session))
+                for original_credential, revoked_credential in zip(
+                    active_api_credentials, revoked_api_credentials, strict=True
+                ):
+                    if not await self._api_credentials.update(
+                        revoked_credential, expected_version=original_credential.version
+                    ):
+                        raise RuntimeError("API credential fan-out update conflicted")
+                    applied_credentials.append((original_credential, revoked_credential))
+                if not await self._identity_statuses.update(
+                    disabled, expected_version=status.version
+                ):
+                    raise RuntimeError("identity status update conflicted")
+                status_applied = True
+                result = IdentityDisablementResult(
+                    status=disabled,
+                    revoked_session_count=len(revoked_sessions),
+                    revoked_api_credential_count=len(revoked_api_credentials),
+                )
+                await self._audit(
+                    actor=actor,
+                    action="disabled",
+                    correlation_id=correlation_id,
+                    outcome="succeeded",
+                    result_code="identity_disabled",
+                    resource_type="resource.identity.subject",
+                    scope_reference=subject_id,
+                    target_subject_id=subject_id,
+                    reason=reason,
+                    idempotency_key=idempotency_key,
+                    metadata=self._safe_identity_metadata(disabled) + counts,
+                )
+            except Exception as exc:
+                await self._compensate_disablement(
+                    original_status=status,
+                    disabled_status=disabled if status_applied else None,
+                    sessions=applied_sessions,
+                    api_credentials=applied_credentials,
+                )
+                await self._audit(
+                    actor=actor,
+                    action="disablement_compensated",
+                    correlation_id=correlation_id,
+                    outcome="compensated",
+                    result_code="identity_disablement_compensated",
+                    resource_type="resource.identity.subject",
+                    scope_reference=subject_id,
+                    target_subject_id=subject_id,
+                    reason=reason,
+                    idempotency_key=idempotency_key,
+                    metadata=(
+                        ("restored_session_count", str(len(applied_sessions))),
+                        ("restored_api_credential_count", str(len(applied_credentials))),
+                    ),
+                )
+                raise IdentityGovernanceError("identity_disablement_unavailable") from exc
+            self._idempotent_results[idempotency_key] = (fingerprint, result)
+            return result
 
     async def revoke_session(
         self,
@@ -287,7 +525,10 @@ class IdentityGovernanceService:
         fingerprint: str,
         actor: AuthenticatedSubject,
         correlation_id: str,
-    ) -> SessionRecord | ApiCredentialRecord | None:
+        action: str = "revocation_replayed",
+        target_subject_id: str | None = None,
+        reason: str | None = None,
+    ) -> SessionRecord | ApiCredentialRecord | IdentityDisablementResult | None:
         prior = self._idempotent_results.get(idempotency_key)
         if prior is None:
             return None
@@ -299,13 +540,31 @@ class IdentityGovernanceService:
                 idempotency_key=idempotency_key,
             )
             raise IdentityGovernanceError("governance_idempotency_conflict")
+        metadata: tuple[tuple[str, str], ...] = ()
+        scope_reference: str | None = None
+        resource_type = "resource.identity.governance"
+        if isinstance(prior[1], IdentityDisablementResult):
+            scope_reference = prior[1].status.subject.subject_id
+            resource_type = "resource.identity.subject"
+            metadata = (
+                ("revoked_session_count", str(prior[1].revoked_session_count)),
+                (
+                    "revoked_api_credential_count",
+                    str(prior[1].revoked_api_credential_count),
+                ),
+            )
         await self._audit(
             actor=actor,
-            action="revocation_replayed",
+            action=action,
             correlation_id=correlation_id,
             outcome="succeeded",
-            result_code="identity_governance_revocation_replayed",
+            result_code=f"identity_governance_{action}",
             idempotency_key=idempotency_key,
+            target_subject_id=target_subject_id,
+            reason=reason,
+            resource_type=resource_type,
+            scope_reference=scope_reference,
+            metadata=metadata,
         )
         return prior[1]
 
@@ -342,6 +601,63 @@ class IdentityGovernanceService:
             metadata=metadata,
         )
         raise IdentityGovernanceError("governance_target_unavailable")
+
+    async def _identity_target_unavailable(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        target: IdentityStatusRecord | None,
+        target_reference: str,
+        reason: str,
+        idempotency_key: str,
+        correlation_id: str,
+    ) -> None:
+        await self._audit_denial(
+            actor=actor,
+            correlation_id=correlation_id,
+            result_code="governance_target_unavailable",
+            idempotency_key=idempotency_key,
+            resource_type="resource.identity.subject",
+            scope_reference=target_reference,
+            target_subject_id=target.subject.subject_id if target is not None else None,
+            reason=reason,
+            metadata=(
+                (("target_kind", "identity_subject"),)
+                if target is None
+                else self._safe_identity_metadata(target)
+            ),
+        )
+        raise IdentityGovernanceError("governance_target_unavailable")
+
+    async def _compensate_disablement(
+        self,
+        *,
+        original_status: IdentityStatusRecord,
+        disabled_status: IdentityStatusRecord | None,
+        sessions: list[tuple[SessionRecord, SessionRecord]],
+        api_credentials: list[tuple[ApiCredentialRecord, ApiCredentialRecord]],
+    ) -> None:
+        for original_credential, revoked_credential in reversed(api_credentials):
+            restored_credential = replace(
+                original_credential, version=revoked_credential.version + 1
+            )
+            if not await self._api_credentials.update(
+                restored_credential, expected_version=revoked_credential.version
+            ):
+                raise RuntimeError("API credential compensation failed")
+        for original_session, revoked_session in reversed(sessions):
+            restored_session = replace(original_session, version=revoked_session.version + 1)
+            if not await self._sessions.update(
+                restored_session, expected_version=revoked_session.version
+            ):
+                raise RuntimeError("session compensation failed")
+        if disabled_status is not None:
+            assert self._identity_statuses is not None
+            restored_status = replace(original_status, version=disabled_status.version + 1)
+            if not await self._identity_statuses.update(
+                restored_status, expected_version=disabled_status.version
+            ):
+                raise RuntimeError("identity status compensation failed")
 
     async def _audit_revoke(
         self,
@@ -503,6 +819,20 @@ class IdentityGovernanceService:
         )
 
     @staticmethod
+    def _matches_identity_status(record: IdentityStatusRecord, query: str) -> bool:
+        if not query:
+            return True
+        return any(
+            query in value.casefold()
+            for value in (
+                record.subject.subject_id,
+                record.subject.display_name,
+                record.subject.provider_id,
+                record.state.value,
+            )
+        )
+
+    @staticmethod
     def _fingerprint(
         resource_kind: str,
         resource_id: str,
@@ -540,3 +870,20 @@ class IdentityGovernanceService:
             ("created_at", target.created_at.isoformat()),
             ("expires_at", target.expires_at.isoformat()),
         )
+
+    @staticmethod
+    def _safe_identity_metadata(
+        status: IdentityStatusRecord,
+    ) -> tuple[tuple[str, str], ...]:
+        metadata: tuple[tuple[str, str], ...] = (
+            ("target_kind", "identity_subject"),
+            ("target_version", str(status.version)),
+            ("provider_id", status.subject.provider_id),
+            ("subject_kind", status.subject.kind.value),
+            ("authentication_method", status.subject.authentication_method.value),
+            ("state", status.state.value),
+            ("observed_at", status.observed_at.isoformat()),
+        )
+        if status.disabled_at is not None:
+            metadata += (("disabled_at", status.disabled_at.isoformat()),)
+        return metadata
