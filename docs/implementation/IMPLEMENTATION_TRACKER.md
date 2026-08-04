@@ -8,10 +8,10 @@
 | Title | Governed support bundle preview and local export foundation |
 | Status | Review |
 | Branch | `agent/support-bundle-foundation` |
-| Pull Request | Pending |
+| Pull Request | [#51](https://github.com/ozdemirumit/Project_Atlas/pull/51) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-033, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Open the support bundle pull request, verify CI, merge, and synchronize `main` |
+| Next Action | Verify PR #51 CI, merge, and synchronize `main` |
 
 ### ATLAS-IMP-039 Scope Rationale
 
