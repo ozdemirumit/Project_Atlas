@@ -50,6 +50,15 @@ async def create_session(
         samesite="strict",
         path="/api",
     )
+    response.set_cookie(
+        key=settings.csrf_cookie_name,
+        value=issued.csrf_token,
+        max_age=settings.session_absolute_timeout_minutes * 60,
+        httponly=False,
+        secure=settings.environment == "production",
+        samesite="strict",
+        path="/",
+    )
     response.headers[settings.csrf_header_name] = issued.csrf_token
     response.headers["Cache-Control"] = "no-store"
     now = datetime.now(UTC)
@@ -90,6 +99,13 @@ async def logout_session(request: Request, response: Response) -> None:
         path="/api",
         secure=settings.environment == "production",
         httponly=True,
+        samesite="strict",
+    )
+    response.delete_cookie(
+        settings.csrf_cookie_name,
+        path="/",
+        secure=settings.environment == "production",
+        httponly=False,
         samesite="strict",
     )
     response.headers["Cache-Control"] = "no-store"

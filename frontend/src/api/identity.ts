@@ -33,7 +33,7 @@ type CurrentIdentityResponse = {
 };
 
 export async function getCurrentIdentity(): Promise<CurrentIdentityResponse | null> {
-  const response = await fetch("/api/v1/identity/me", {
+  const response = await apiFetch("/api/v1/identity/me", {
     headers: { Accept: "application/json" },
   });
 
@@ -46,3 +46,4 @@ export async function getCurrentIdentity(): Promise<CurrentIdentityResponse | nu
 
   return (await response.json()) as CurrentIdentityResponse;
 }
+import { apiFetch } from "./client";

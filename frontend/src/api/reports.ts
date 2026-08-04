@@ -87,7 +87,7 @@ export async function createStorageTechnicalReport(
   recommendationVersion: number,
   incidentReference: string,
 ): Promise<TechnicalReportResponse> {
-  const response = await fetch(`/api/v1/reports/storage/${encodeURIComponent(targetId)}`, {
+  const response = await apiFetch(`/api/v1/reports/storage/${encodeURIComponent(targetId)}`, {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -105,3 +105,4 @@ export async function createStorageTechnicalReport(
   }
   return (await response.json()) as TechnicalReportResponse;
 }
+import { apiFetch } from "./client";

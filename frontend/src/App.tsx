@@ -19,6 +19,8 @@ import {
   GitBranch,
   HardDrive,
   Layers3,
+  LogIn,
+  LogOut,
   Menu,
   MessageSquareText,
   Monitor,
@@ -31,11 +33,12 @@ import {
   Server,
   Settings,
   ShieldCheck,
+  LockKeyhole,
   Scale,
   Workflow,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { type FormEvent, useState } from "react";
 
 import { getStorageImpact, type GraphEntity } from "./api/graph";
 import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
@@ -45,6 +48,7 @@ import { getPlatformStatus } from "./api/platform";
 import { createStorageRca } from "./api/rca";
 import { createStorageRecommendation } from "./api/recommendations";
 import { createStorageTechnicalReport } from "./api/reports";
+import { createBrowserSession, logoutBrowserSession } from "./api/sessions";
 import {
   getSecurityExportOverview,
   sendSecurityExportTestEvent,
@@ -133,6 +137,8 @@ export function App() {
   const [inspectorOpen, setInspectorOpen] = useState(shouldOpenInspector);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [selectedHealthCheckId, setSelectedHealthCheckId] = useState<string | null>(null);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [investigationQuestion, setInvestigationQuestion] = useState(
     "What evidence explains the current storage warning?",
   );
@@ -148,6 +154,23 @@ export function App() {
     retry: false,
   });
   const identity = identityQuery.data?.data;
+  const loginMutation = useMutation({
+    mutationFn: () => createBrowserSession(username, password),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["current-identity"] });
+    },
+    onSettled: () => setPassword(""),
+  });
+  const logoutMutation = useMutation({
+    mutationFn: logoutBrowserSession,
+    onSuccess: async () => {
+      queryClient.removeQueries({ queryKey: ["storage-overview"] });
+      queryClient.removeQueries({ queryKey: ["storage-impact"] });
+      queryClient.removeQueries({ queryKey: ["health-check-overview"] });
+      queryClient.removeQueries({ queryKey: ["security-export-overview"] });
+      await queryClient.invalidateQueries({ queryKey: ["current-identity"] });
+    },
+  });
   const storageQuery = useQuery({
     queryKey: ["storage-overview"],
     queryFn: getStorageOverview,
@@ -255,6 +278,62 @@ export function App() {
   const healthyCount =
     overview?.assets.filter((asset) => asset.health === "healthy").length ?? 0;
 
+  if (!identityQuery.isLoading && identityQuery.data === null) {
+    const submitLogin = (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (username && password && !loginMutation.isPending) loginMutation.mutate();
+    };
+    return (
+      <main className="login-shell">
+        <section className="login-panel" aria-labelledby="login-title">
+          <div className="login-brand">
+            <div className="brand-mark" aria-hidden="true">A</div>
+            <div><strong>ATLAS</strong><span>Enterprise Operations</span></div>
+          </div>
+          <div className="login-heading">
+            <LockKeyhole size={22} />
+            <div><h1 id="login-title">Sign in</h1><p>Enterprise identity</p></div>
+          </div>
+          <form onSubmit={submitLogin}>
+            <label htmlFor="atlas-username">Username</label>
+            <input
+              id="atlas-username"
+              name="username"
+              autoComplete="username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              maxLength={128}
+              required
+              autoFocus
+            />
+            <label htmlFor="atlas-password">Password</label>
+            <input
+              id="atlas-password"
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              maxLength={1024}
+              required
+            />
+            {loginMutation.isError && (
+              <p className="login-error" role="alert">Sign-in was not accepted.</p>
+            )}
+            <button
+              className="login-submit"
+              type="submit"
+              disabled={!username || !password || loginMutation.isPending}
+            >
+              <LogIn size={18} />
+              {loginMutation.isPending ? "Signing in" : "Sign in"}
+            </button>
+          </form>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <div className="app-frame">
       <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
@@ -355,6 +434,18 @@ export function App() {
             <button className="icon-button" type="button" aria-label="Help">
               <CircleHelp size={19} />
             </button>
+            {identity?.authentication.method !== "development" && (
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="Sign out"
+                title="Sign out"
+                disabled={logoutMutation.isPending}
+                onClick={() => logoutMutation.mutate()}
+              >
+                <LogOut size={19} />
+              </button>
+            )}
             <button
               className="icon-button"
               type="button"

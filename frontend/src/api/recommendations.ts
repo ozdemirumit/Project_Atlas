@@ -124,7 +124,7 @@ export async function createStorageRecommendation(
   sourceCaseId: string,
   sourceCaseVersion: number,
 ): Promise<RecommendationResponse> {
-  const response = await fetch(
+  const response = await apiFetch(
     `/api/v1/recommendations/storage/${encodeURIComponent(targetId)}`,
     {
       method: "POST",
@@ -146,3 +146,4 @@ export async function createStorageRecommendation(
   }
   return (await response.json()) as RecommendationResponse;
 }
+import { apiFetch } from "./client";

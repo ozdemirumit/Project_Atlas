@@ -1,4 +1,5 @@
 import type { InvestigationEvidence } from "./investigations";
+import { apiFetch } from "./client";
 
 export type RcaDiagnosticStep = {
   step_id: string;
@@ -127,7 +128,7 @@ export async function createStorageRca(
 ): Promise<RcaResponse> {
   const windowEnd = new Date();
   const windowStart = new Date(windowEnd.getTime() - 24 * 60 * 60 * 1000);
-  const response = await fetch(`/api/v1/rca/storage/${encodeURIComponent(targetId)}`, {
+  const response = await apiFetch(`/api/v1/rca/storage/${encodeURIComponent(targetId)}`, {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify({

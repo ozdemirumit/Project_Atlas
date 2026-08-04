@@ -101,7 +101,7 @@ type HealthCheckRunResponse = {
 };
 
 export async function getHealthCheckOverview(): Promise<HealthCheckOverviewResponse> {
-  const response = await fetch("/api/v1/health-checks/overview", {
+  const response = await apiFetch("/api/v1/health-checks/overview", {
     headers: { Accept: "application/json" },
   });
   if (!response.ok) {
@@ -111,7 +111,7 @@ export async function getHealthCheckOverview(): Promise<HealthCheckOverviewRespo
 }
 
 export async function runHealthCheck(definitionId: string): Promise<HealthCheckRunResponse> {
-  const response = await fetch(`/api/v1/health-checks/${encodeURIComponent(definitionId)}/runs`, {
+  const response = await apiFetch(`/api/v1/health-checks/${encodeURIComponent(definitionId)}/runs`, {
     method: "POST",
     headers: { Accept: "application/json" },
   });
@@ -120,3 +120,4 @@ export async function runHealthCheck(definitionId: string): Promise<HealthCheckR
   }
   return (await response.json()) as HealthCheckRunResponse;
 }
+import { apiFetch } from "./client";

@@ -81,7 +81,7 @@ type StorageOverviewResponse = {
 };
 
 export async function getStorageOverview(): Promise<StorageOverviewResponse> {
-  const response = await fetch("/api/v1/storage/overview", {
+  const response = await apiFetch("/api/v1/storage/overview", {
     headers: { Accept: "application/json" },
   });
   if (!response.ok) {
@@ -89,3 +89,4 @@ export async function getStorageOverview(): Promise<StorageOverviewResponse> {
   }
   return (await response.json()) as StorageOverviewResponse;
 }
+import { apiFetch } from "./client";

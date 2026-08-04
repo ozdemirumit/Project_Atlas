@@ -84,7 +84,7 @@ type StorageImpactResponse = {
 export async function getStorageImpact(
   entityId: string,
 ): Promise<StorageImpactResponse> {
-  const response = await fetch(
+  const response = await apiFetch(
     `/api/v1/graph/storage-impact/${encodeURIComponent(entityId)}?max_depth=5`,
     { headers: { Accept: "application/json" } },
   );
@@ -93,3 +93,4 @@ export async function getStorageImpact(
   }
   return (await response.json()) as StorageImpactResponse;
 }
+import { apiFetch } from "./client";

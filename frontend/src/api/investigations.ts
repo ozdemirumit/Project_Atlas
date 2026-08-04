@@ -131,7 +131,7 @@ export async function createStorageInvestigation(
 ): Promise<InvestigationResponse> {
   const windowEnd = new Date();
   const windowStart = new Date(windowEnd.getTime() - 24 * 60 * 60 * 1000);
-  const response = await fetch(`/api/v1/investigations/storage/${encodeURIComponent(targetId)}`, {
+  const response = await apiFetch(`/api/v1/investigations/storage/${encodeURIComponent(targetId)}`, {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -147,3 +147,4 @@ export async function createStorageInvestigation(
   }
   return (await response.json()) as InvestigationResponse;
 }
+import { apiFetch } from "./client";

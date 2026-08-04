@@ -4,14 +4,64 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-015 |
-| Title | Secure browser-session and bounded API-credential foundation |
-| Status | Done |
-| Branch | `agent/secure-browser-session` |
-| Pull Request | [PR #27](https://github.com/ozdemirumit/Project_Atlas/pull/27) |
+| Task ID | ATLAS-IMP-016 |
+| Title | Enterprise browser login and CSRF-aware web session lifecycle |
+| Status | In Progress |
+| Branch | `agent/browser-login-session-lifecycle` |
+| Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
 | Last Updated | 2026-08-04 |
-| Next Action | Define and implement the next approved security or operations slice |
+| Next Action | Open the implementation pull request and run GitHub quality gates |
+
+### ATLAS-IMP-016 Acceptance Criteria
+
+- The web client presents a focused login form only after the identity boundary returns an
+  authentication-required response; development identity and already-authenticated sessions enter
+  the operations workspace without a second client-side identity path.
+- Credentials are submitted only to the same-origin session endpoint over the existing provider
+  boundary, are never retained after the request, and never enter query strings, logs, browser
+  storage, response JSON, UI diagnostics, or model context.
+- Successful login sets the existing opaque HTTP-only session cookie plus a separate non-HTTP-only,
+  SameSite Strict, Secure-in-production CSRF cookie whose path permits the web client to read it;
+  neither raw value is stored server-side.
+- A single frontend API client sends same-origin credentials and copies the CSRF cookie into the
+  configured header for every unsafe API request; safe requests do not add the header and no feature
+  API can silently bypass the shared client.
+- Page reload and a second same-origin browser tab retain mutation capability without exposing the
+  session credential or weakening CSRF validation.
+- Logout requires the cookie-authenticated CSRF check, revokes the server-side session, clears both
+  browser cookies with matching attributes, removes protected client state, and returns to login.
+- Invalid credentials, validation errors, unavailable identity providers, expired sessions, missing
+  CSRF, and logout failures produce bounded user feedback without account discovery or secret echo.
+- Authentication success does not grant roles or scopes; every post-login API call continues through
+  existing exact RBAC, policy, audit, and capability controls.
+- Tests cover login rendering, credential submission, cookie attributes, reload-safe CSRF forwarding,
+  safe-request behavior, invalid login, logout and cookie clearing, protected-state removal, and the
+  unchanged direct-development-identity path.
+- Session inventory, administrator revocation, API-token issuance, approval, and infrastructure
+  execution remain outside this slice.
+
+### ATLAS-IMP-016 Validation Evidence
+
+- Backend Ruff check and format verification passed across 185 source and test files.
+- Strict backend type checking passed across all 185 source and test files.
+- Full backend test suite passed: 185 tests; browser-session integration now verifies separate
+  HTTP-only session and readable CSRF cookies, production Secure attributes, matching paths, and
+  deterministic clearing of both cookies on logout.
+- Frontend TypeScript and ESLint passed, four Vitest scenarios passed across two test files, and the
+  production Vite bundle built successfully.
+- The shared frontend API client is the only raw fetch boundary, always uses same-origin credentials,
+  adds CSRF only to unsafe methods, and rejects cross-origin requests before credential material can
+  be attached.
+- Integrated web tests covered authentication-required rendering, credential submission, password
+  state removal, LDAP-normalized identity entry, protected workspace loading, CSRF-backed logout,
+  return to login, and the unchanged direct development-identity workspace.
+- A fresh live API with no enabled provider failed closed and drove the live login screen. Desktop
+  and 390-pixel mobile views were visually inspected with no horizontal overflow, overlap, or browser
+  console warnings/errors.
+- Real enterprise LDAPS login was not attempted because no customer directory endpoint, trust bundle,
+  or test account is configured; successful provider behavior remains covered at the full FastAPI
+  integration boundary with a deterministic injected provider.
 
 ### ATLAS-IMP-015 Acceptance Criteria
 
