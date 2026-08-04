@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-035 |
 | Title | Governed bootstrap identity and enterprise authentication handoff |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/bootstrap-identity-handoff` |
-| Pull Request | Pending |
+| Pull Request | [PR #47](https://github.com/ozdemirumit/Project_Atlas/pull/47) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Implement the governed synthetic `phase.identity` bootstrap and enterprise-authentication handoff evidence |
+| Next Action | Complete GitHub review and CI, merge PR #47, then scope `phase.integrations` |
 
 ### ATLAS-IMP-035 Scope Rationale
 
@@ -55,6 +55,31 @@
 - This slice does not create or modify a user, group, password, verifier, secret, LDAP/AD/federation
   provider, directory object, role assignment, session, API token, workload credential, certificate,
   network path, external system, infrastructure resource, or AI operation.
+
+### ATLAS-IMP-035 Validation Evidence
+
+- Domain, filesystem, application, checkpoint, API, audit, and persistence coverage verifies a
+  deterministic secret-free identity plan, mandatory first-use replacement, sealed recovery policy,
+  LDAPS-only provider metadata, two bounded group mappings, pilot evidence, empty/exact-reusable
+  targets, unknown-state rejection, atomic publication, exact replay, interrupted ownership, strict
+  redacted contracts, and PostgreSQL JSON serialization.
+- Full backend verification passes Ruff, strict mypy across 260 source files, and 329 pytest tests with
+  three existing Windows symbolic-link skips. Full frontend verification passes ESLint, TypeScript,
+  28 Vitest tests, and the production build.
+- Live browser validation established an enterprise-style LDAP session and completed acquire,
+  configure, trust, data, services, and identity under one governed lease. The run advanced to
+  revision 13, completed six of nine phases, and selected `phase.integrations` next; the prior service
+  evidence remained two ready services with six passing probes.
+- Direct filesystem verification found exactly one `atlas-identity-state.json` beneath the configured
+  synthetic target. It contains schema `atlas.synthetic-identity-state.v1`, LDAPS metadata, two group
+  mappings, `credential_material_present=false`, `directory_mutation_performed=false`, and
+  `provider_activation_performed=false`, with no password or token text.
+- Live presentation passed at 1440x900 and 390x844 with no horizontal overflow. The identity result
+  displayed two mappings, five validations, verified recovery seal, and real identity systems as
+  unchanged; the mobile result card had no overflowing descendants and browser warning/error logs
+  were empty.
+- Source implementation is committed as `652218f` and is under review in
+  [PR #47](https://github.com/ozdemirumit/Project_Atlas/pull/47).
 
 ### ATLAS-IMP-034 Scope Rationale
 
