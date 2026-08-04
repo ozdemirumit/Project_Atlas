@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-032 |
 | Title | Governed bootstrap trust bundle and workload identity provisioning |
-| Status | Review |
+| Status | Done |
 | Branch | `agent/bootstrap-trust-provisioning` |
 | Pull Request | [#44](https://github.com/ozdemirumit/Project_Atlas/pull/44) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Complete final documentation CI and merge PR #44 |
+| Next Action | Merge PR #44, synchronize `main`, and scope the next bootstrap phase |
 
 ### ATLAS-IMP-032 Scope Rationale
 
@@ -1572,6 +1572,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-029 | Controlled bootstrap plan rebase and checkpoint invalidation | Completed through [PR #41](https://github.com/ozdemirumit/Project_Atlas/pull/41) from source commit `f2feecc`; 291 backend tests, 21 frontend tests, live enterprise-session rebase and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-030 | Governed bootstrap artifact acquisition and verification | Completed through [PR #42](https://github.com/ozdemirumit/Project_Atlas/pull/42) from source commit `270d625`; 301 backend tests, 23 frontend tests, live exact-lease artifact acquisition and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-031 | Governed bootstrap configuration rendering and validation | Completed through [PR #43](https://github.com/ozdemirumit/Project_Atlas/pull/43) from source commit `26c21eb`; 309 backend tests, 24 frontend tests, live exact-lease artifact/configuration execution and desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-032 | Governed bootstrap trust bundle and workload identity provisioning | Completed through [PR #44](https://github.com/ozdemirumit/Project_Atlas/pull/44) from source commit `e9b8b7c`; 317 backend tests, 25 frontend tests, live exact-lease trust publication and desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
