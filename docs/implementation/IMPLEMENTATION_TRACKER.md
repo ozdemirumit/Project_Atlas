@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-039 |
 | Title | Governed support bundle preview and local export foundation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/support-bundle-foundation` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-033, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Implement the bounded support bundle preview and local export vertical slice |
+| Next Action | Open the support bundle pull request, verify CI, merge, and synchronize `main` |
 
 ### ATLAS-IMP-039 Scope Rationale
 
@@ -55,6 +55,29 @@
 - This slice performs no network request, support-system upload, ticket creation, notification,
   model inference, connector invocation, knowledge mutation, workflow execution, approval creation,
   backup or restore, infrastructure mutation, deployment action, or AI recommendation.
+
+### ATLAS-IMP-039 Validation Evidence
+
+- Domain, filesystem, application, API, authorization, audit, migration, memory, and PostgreSQL
+  coverage verifies deterministic preview/archive generation, exact replay, changed-replay and
+  stale-source rejection, target conflict handling, redaction, fail-closed audit behavior, browser
+  CSRF, strict parsing, and local-only safety boundaries.
+- Full backend verification passes Ruff formatting and lint, strict mypy across 330 source and test
+  files, one Alembic head at `20260804_0012`, and 348 pytest tests with three existing Windows
+  symbolic-link skips. Full frontend verification passes ESLint, TypeScript, 32 Vitest tests, and
+  the production build.
+- Live enterprise-style LDAP browser validation reused completed run
+  `bootstrap-run.56b078c71ba36043ace3805a` at revision 19. The governed preview included five
+  allowlisted entries, excluded none, completed 54 redaction checks, and authorized no external
+  transfer.
+- The confirmed local export `support-export.927b3683d8ade6e99e422378` published six deterministic
+  ZIP members in 4,700 bytes at `target.support-bundle.0f76646c6cae1d49bb95bec6.zip`. Its SHA-256
+  is `c1ea039554367efd54e73b5bb90ccc10e835dce043597e2485800bf37948f115`; an independent archive
+  scan found zero prohibited content markers and confirmed all five manifest entry digests.
+- Desktop validation at 1440x900 and mobile validation at 390x844 showed no support-section
+  overflow or incoherent overlap. The browser emitted no warning or error logs; both live service
+  listeners were stopped after validation.
+- Source implementation is committed at `3fb49cc` (`feat: add governed local support bundles`).
 
 ### ATLAS-IMP-038 Scope Rationale
 
