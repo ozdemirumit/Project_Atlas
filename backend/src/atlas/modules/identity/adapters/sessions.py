@@ -14,6 +14,12 @@ class InMemorySessionRepository:
         async with self._lock:
             return self._records.get(token_digest)
 
+    async def get_by_session_id(self, session_id: str) -> SessionRecord | None:
+        async with self._lock:
+            return next(
+                (item for item in self._records.values() if item.session_id == session_id), None
+            )
+
     async def add(self, record: SessionRecord) -> None:
         async with self._lock:
             if record.token_digest in self._records:
@@ -34,4 +40,10 @@ class InMemorySessionRepository:
                 item
                 for item in self._records.values()
                 if item.subject.subject_id == subject_id and item.state is SessionState.ACTIVE
+            )
+
+    async def for_subject(self, subject_id: str) -> tuple[SessionRecord, ...]:
+        async with self._lock:
+            return tuple(
+                item for item in self._records.values() if item.subject.subject_id == subject_id
             )

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -132,6 +132,40 @@ const identityResponse = {
   meta: {
     correlation_id: "test-identity-correlation",
     generated_at: "2026-08-03T10:00:00Z",
+  },
+};
+
+const sessionInventoryResponse = {
+  data: {
+    sessions: [
+      {
+        session_id: "session.test",
+        version: 1,
+        state: "active",
+        credential_kind: "browser_session",
+        created_at: "2026-08-04T09:00:00Z",
+        last_seen_at: "2026-08-04T10:00:00Z",
+        absolute_expires_at: "2026-08-04T17:00:00Z",
+        idle_expires_at: "2026-08-04T10:15:00Z",
+        current: true,
+      },
+      {
+        session_id: "session.other",
+        version: 2,
+        state: "active",
+        credential_kind: "browser_session",
+        created_at: "2026-08-04T08:00:00Z",
+        last_seen_at: "2026-08-04T09:55:00Z",
+        absolute_expires_at: "2026-08-04T16:00:00Z",
+        idle_expires_at: "2026-08-04T10:10:00Z",
+        current: false,
+      },
+    ],
+    truncated: false,
+  },
+  meta: {
+    correlation_id: "test-session-inventory-correlation",
+    generated_at: "2026-08-04T10:00:00Z",
   },
 };
 
@@ -1051,6 +1085,7 @@ describe("Atlas application shell", () => {
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
     let authenticated = false;
     let logoutRequest: RequestInit | undefined;
+    let revokeRequest: RequestInit | undefined;
     const enterpriseIdentity = {
       ...identityResponse,
       data: {
@@ -1073,12 +1108,24 @@ describe("Atlas application shell", () => {
         document.cookie = "atlas_csrf=; Max-Age=0; path=/";
         return Promise.resolve(new Response(null, { status: 204 }));
       }
-      if (url.endsWith("/authentication/sessions")) {
+      if (url.endsWith("/authentication/sessions/session.other")) {
+        revokeRequest = init;
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (url.endsWith("/authentication/sessions") && init?.method === "POST") {
         authenticated = true;
         document.cookie = "atlas_csrf=csrf_browser_test; path=/; SameSite=Strict";
         return Promise.resolve(
           new Response(JSON.stringify({ data: { session_id: "session.test" } }), {
             status: 201,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.endsWith("/authentication/sessions")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(sessionInventoryResponse), {
+            status: 200,
             headers: { "Content-Type": "application/json" },
           }),
         );
@@ -1121,6 +1168,13 @@ describe("Atlas application shell", () => {
 
     expect(await screen.findByText("Directory Operator")).toBeVisible();
     expect(screen.queryByDisplayValue("temporary-secret")).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Browser sessions" })).toBeVisible();
+    expect(screen.getByText("Current session")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Revoke browser session" }));
+
+    await waitFor(() => expect(revokeRequest?.method).toBe("DELETE"));
+    const revokeHeaders = new Headers(revokeRequest?.headers);
+    expect(revokeHeaders.get("X-CSRF-Token")).toBe("csrf_browser_test");
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
 
     expect(await screen.findByRole("heading", { name: "Sign in" })).toBeVisible();

@@ -18,6 +18,7 @@ from atlas.modules.identity.domain.sessions import (
     CredentialKind,
     IssuedSession,
     SessionContext,
+    SessionInventory,
     SessionRecord,
     SessionState,
 )
@@ -180,6 +181,74 @@ class SessionService:
         await self._audit_denial("session_state_conflict", correlation_id)
         raise SessionOperationsError("authentication_required")
 
+    async def inventory(
+        self, subject_id: str, *, correlation_id: str, limit: int = 50
+    ) -> SessionInventory:
+        if not 1 <= limit <= 100:
+            raise ValueError("session inventory limit is outside platform bounds")
+        now = self._clock()
+        normalized: list[SessionRecord] = []
+        for record in await self._repository.for_subject(subject_id):
+            if record.state is SessionState.ACTIVE and (
+                now >= record.absolute_expires_at or now >= record.idle_expires_at
+            ):
+                expired = replace(
+                    record,
+                    version=record.version + 1,
+                    state=SessionState.EXPIRED,
+                    revoked_at=now,
+                    revocation_reason="session_expired",
+                )
+                if await self._repository.update(expired, expected_version=record.version):
+                    await self._audit(expired, "expired", correlation_id)
+                    record = expired
+                else:
+                    refreshed = await self._repository.get_by_session_id(record.session_id)
+                    if refreshed is not None:
+                        record = refreshed
+            normalized.append(record)
+        records = sorted(
+            normalized,
+            key=lambda item: (item.created_at, item.session_id),
+            reverse=True,
+        )
+        inventory = SessionInventory(
+            records=tuple(records[:limit]),
+            truncated=len(records) > limit,
+        )
+        await self._audit_inventory(subject_id, correlation_id)
+        return inventory
+
+    async def revoke_by_session_id(
+        self,
+        session_id: str,
+        *,
+        subject_id: str,
+        correlation_id: str,
+    ) -> SessionRecord:
+        for _ in range(3):
+            record = await self._repository.get_by_session_id(session_id)
+            if (
+                record is None
+                or record.subject.subject_id != subject_id
+                or record.state is not SessionState.ACTIVE
+            ):
+                await self._audit_denial("session_not_found", correlation_id)
+                raise SessionOperationsError("session_not_found")
+            now = self._clock()
+            revoked = replace(
+                record,
+                version=record.version + 1,
+                state=SessionState.REVOKED,
+                revoked_at=now,
+                revocation_reason="self_service_revocation",
+            )
+            if await self._repository.update(revoked, expected_version=record.version):
+                await self._audit(revoked, "revoked", correlation_id)
+                return revoked
+        await self._audit_denial("session_state_conflict", correlation_id)
+        raise SessionOperationsError("session_not_found")
+
     async def _audit(self, record: SessionRecord, action: str, correlation_id: str) -> None:
         await self._audit_sink.record(
             AuditRecord(
@@ -198,8 +267,31 @@ class SessionService:
                 resource_type="resource.identity.session",
                 scope_reference=record.session_id,
                 decision_id=None,
-                outcome="succeeded" if action in {"created", "revoked"} else "denied",
+                outcome="succeeded" if action in {"created", "revoked", "expired"} else "denied",
                 result_code=f"session_{action}",
+            )
+        )
+
+    async def _audit_inventory(self, subject_id: str, correlation_id: str) -> None:
+        await self._audit_sink.record(
+            AuditRecord(
+                event_id=f"evt_{uuid4().hex}",
+                event_type="atlas.identity.session.inventory_read",
+                schema_version="1.0",
+                producer="project-atlas-api",
+                producer_version=__version__,
+                occurred_at=self._clock(),
+                correlation_id=correlation_id,
+                subject_id=subject_id,
+                actor_type=None,
+                authentication_method=None,
+                assurance_level=None,
+                permission_id=None,
+                resource_type="resource.identity.session",
+                scope_reference="self",
+                decision_id=None,
+                outcome="succeeded",
+                result_code="session_inventory_read",
             )
         )
 

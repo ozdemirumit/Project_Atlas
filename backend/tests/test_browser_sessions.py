@@ -51,6 +51,17 @@ class SessionCreationFailingAuditSink(CollectingAuditSink):
         await super().record(event)
 
 
+class SessionLifecycleFailingAuditSink(CollectingAuditSink):
+    async def record(self, event: AuditRecord) -> None:
+        if event.event_type in {
+            "atlas.identity.session.expired",
+            "atlas.identity.session.inventory_read",
+            "atlas.identity.session.revoked",
+        }:
+            raise RuntimeError("session lifecycle audit unavailable")
+        await super().record(event)
+
+
 class BasicTestIdentityProvider:
     def __init__(self, authenticated_subject: AuthenticatedSubject | None = None) -> None:
         self.calls = 0
@@ -506,3 +517,196 @@ async def test_repository_retains_only_digests_and_api_token_kind_is_not_issued(
     assert issued.csrf_token not in repr(stored)
     assert len(stored.token_digest) == len(stored.csrf_digest) == 64
     assert CredentialKind.API_TOKEN.value == "api_token"
+
+
+def test_self_session_inventory_is_bounded_current_marked_and_secret_free() -> None:
+    with TestClient(
+        create_app(
+            settings(),
+            identity_provider=BasicTestIdentityProvider(),
+            audit_sink=CollectingAuditSink(),
+        )
+    ) as client:
+        first = login(client)
+        second = login(client)
+        response = client.get("/api/v1/authentication/sessions?limit=1")
+
+    assert first.status_code == second.status_code == 201
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    payload = response.json()["data"]
+    assert payload["truncated"] is True
+    assert len(payload["sessions"]) == 1
+    assert payload["sessions"][0]["session_id"] == second.json()["data"]["session_id"]
+    assert payload["sessions"][0]["current"] is True
+    assert "token_digest" not in response.text
+    assert "csrf_digest" not in response.text
+    assert second.headers["X-CSRF-Token"] not in response.text
+
+
+def test_revoke_other_own_session_keeps_current_session_active() -> None:
+    with TestClient(
+        create_app(
+            settings(),
+            identity_provider=BasicTestIdentityProvider(),
+            audit_sink=CollectingAuditSink(),
+        )
+    ) as client:
+        first = login(client)
+        second = login(client)
+        csrf = second.headers["X-CSRF-Token"]
+        denied = client.delete(
+            f"/api/v1/authentication/sessions/{first.json()['data']['session_id']}"
+        )
+        response = client.delete(
+            f"/api/v1/authentication/sessions/{first.json()['data']['session_id']}",
+            headers={"X-CSRF-Token": csrf},
+        )
+        repeated = client.delete(
+            f"/api/v1/authentication/sessions/{first.json()['data']['session_id']}",
+            headers={"X-CSRF-Token": csrf},
+        )
+        identity = client.get("/api/v1/identity/me")
+        inventory = client.get("/api/v1/authentication/sessions")
+
+    assert denied.status_code == 403
+    assert denied.json()["code"] == "csrf_validation_failed"
+    assert response.status_code == 204
+    assert repeated.status_code == 404
+    assert repeated.json()["code"] == "session_not_found"
+    assert "set-cookie" not in response.headers
+    assert identity.status_code == 200
+    first_record = next(
+        item
+        for item in inventory.json()["data"]["sessions"]
+        if item["session_id"] == first.json()["data"]["session_id"]
+    )
+    assert first_record["state"] == "revoked"
+    assert first_record["current"] is False
+
+
+def test_revoke_current_session_clears_cookies_and_protected_state() -> None:
+    with TestClient(
+        create_app(
+            settings(),
+            identity_provider=BasicTestIdentityProvider(),
+            audit_sink=CollectingAuditSink(),
+        )
+    ) as client:
+        created = login(client)
+        response = client.delete(
+            f"/api/v1/authentication/sessions/{created.json()['data']['session_id']}",
+            headers={"X-CSRF-Token": created.headers["X-CSRF-Token"]},
+        )
+        identity = client.get("/api/v1/identity/me")
+
+    assert response.status_code == 204
+    assert len(response.headers.get_list("set-cookie")) == 2
+    assert identity.status_code == 401
+
+
+def test_session_inventory_still_requires_exact_rbac_assignment() -> None:
+    unassigned_subject = replace(subject(), subject_id="subject.enterprise.session-unassigned")
+    with TestClient(
+        create_app(
+            settings(),
+            identity_provider=BasicTestIdentityProvider(unassigned_subject),
+            audit_sink=CollectingAuditSink(),
+        )
+    ) as client:
+        assert login(client).status_code == 201
+        response = client.get("/api/v1/authentication/sessions")
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "authorization_denied"
+
+
+@pytest.mark.asyncio
+async def test_foreign_session_is_hidden_from_inventory_and_self_revocation() -> None:
+    service, repository, _, _ = direct_service()
+    own = await service.create(
+        AuthenticationInput(
+            correlation_id="cor_inventory_own",
+            authorization_scheme="basic",
+            credential=base64.b64encode(b"operator:correct-password").decode(),
+        )
+    )
+    foreign = replace(
+        own.record,
+        session_id="session.foreign",
+        token_digest="a" * 64,
+        csrf_digest="b" * 64,
+        subject=replace(own.record.subject, subject_id="subject.enterprise.foreign"),
+    )
+    await repository.add(foreign)
+
+    inventory = await service.inventory(
+        own.record.subject.subject_id, correlation_id="cor_inventory_list"
+    )
+
+    assert [item.session_id for item in inventory.records] == [own.record.session_id]
+    with pytest.raises(SessionOperationsError, match="session_not_found"):
+        await service.revoke_by_session_id(
+            foreign.session_id,
+            subject_id=own.record.subject.subject_id,
+            correlation_id="cor_inventory_revoke",
+        )
+
+
+@pytest.mark.asyncio
+async def test_inventory_normalizes_expired_sessions_and_records_successful_audit() -> None:
+    service, repository, sink, clock = direct_service()
+    issued = await service.create(
+        AuthenticationInput(
+            correlation_id="cor_inventory_expired_create",
+            authorization_scheme="basic",
+            credential=base64.b64encode(b"operator:correct-password").decode(),
+        )
+    )
+    clock.now = NOW + timedelta(minutes=16)
+
+    inventory = await service.inventory(
+        issued.record.subject.subject_id,
+        correlation_id="cor_inventory_expired_list",
+    )
+    stored = await repository.get_by_session_id(issued.record.session_id)
+
+    assert inventory.records[0].state is SessionState.EXPIRED
+    assert stored is not None and stored.state is SessionState.EXPIRED
+    expired_audit = next(
+        item for item in sink.records if item.event_type == "atlas.identity.session.expired"
+    )
+    assert expired_audit.outcome == "succeeded"
+    assert sink.records[-1].event_type == "atlas.identity.session.inventory_read"
+
+
+@pytest.mark.asyncio
+async def test_required_lifecycle_audit_failure_blocks_inventory_and_revocation() -> None:
+    sink = SessionLifecycleFailingAuditSink()
+    service, _, _, _ = direct_service(audit_sink=sink)
+    inventory_subject = await service.create(
+        AuthenticationInput(
+            correlation_id="cor_audit_inventory_create",
+            authorization_scheme="basic",
+            credential=base64.b64encode(b"operator:correct-password").decode(),
+        )
+    )
+    with pytest.raises(RuntimeError, match="session lifecycle audit unavailable"):
+        await service.inventory(
+            inventory_subject.record.subject.subject_id,
+            correlation_id="cor_audit_inventory_list",
+        )
+
+    revoking = await service.create(
+        AuthenticationInput(
+            correlation_id="cor_audit_revoke_create",
+            authorization_scheme="basic",
+            credential=base64.b64encode(b"operator:correct-password").decode(),
+        )
+    )
+    with pytest.raises(RuntimeError, match="session lifecycle audit unavailable"):
+        await service.revoke_by_session_id(
+            revoking.record.session_id,
+            subject_id=revoking.record.subject.subject_id,
+            correlation_id="cor_audit_revoke",
+        )

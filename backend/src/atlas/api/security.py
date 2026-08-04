@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 
 from atlas.api.errors import AtlasError
+from atlas.core.capabilities import CapabilityClass
 from atlas.modules.authorization.application.bootstrap import (
     AI_GROUNDED_QUERY_CREATE,
     GRAPH_STORAGE_IMPACT_READ,
@@ -18,6 +19,8 @@ from atlas.modules.authorization.application.bootstrap import (
     REPORT_CREATE,
     SECURITY_EXPORT_OVERVIEW_READ,
     SECURITY_EXPORT_TEST_CREATE,
+    SESSION_SELF_READ,
+    SESSION_SELF_REVOKE,
     STORAGE_OVERVIEW_READ,
     ai_grounded_query_scope,
     current_identity_scope,
@@ -28,6 +31,7 @@ from atlas.modules.authorization.application.bootstrap import (
     recommendation_scope,
     report_scope,
     security_export_scope,
+    session_self_scope,
     storage_overview_scope,
 )
 from atlas.modules.authorization.application.service import AuthorizationService
@@ -128,6 +132,62 @@ async def authorize_identity_self_read(
         )
     request.state.authorization_decision = decision
     return decision
+
+
+async def _authorize_session_self(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.identity.session",
+            scope=session_self_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_session_self_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_session_self(
+        request,
+        subject,
+        permission_id=SESSION_SELF_READ,
+        capability_class=CapabilityClass.C0_INFORMATIONAL,
+    )
+
+
+async def authorize_session_self_revoke(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_session_self(
+        request,
+        subject,
+        permission_id=SESSION_SELF_REVOKE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
 
 
 async def authorize_storage_overview_read(
