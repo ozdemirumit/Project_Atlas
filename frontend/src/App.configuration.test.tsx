@@ -230,6 +230,72 @@ const bootstrapDataPlan = {
   },
 };
 
+const bootstrapServicePlan = {
+  data: {
+    schema_version: "atlas.bootstrap-service-plan.v1",
+    release_id: "release.atlas.lab-0.1.0",
+    profile: "linux_lab",
+    organization_id: "organization.enterprise",
+    environment_id: "environment.test",
+    site_id: "site.local",
+    configuration_digest: "b".repeat(64),
+    trust_plan_digest: "f".repeat(64),
+    data_plan_digest: "5".repeat(64),
+    migration_artifact_digest: "4".repeat(64),
+    service_plan_digest: "d".repeat(64),
+    target_id: "target.atlas-synthetic-runtime.primary",
+    target_kind: "target-kind.synthetic-file-runtime",
+    target_state: "empty",
+    state: "passed",
+    result_code: "bootstrap.service-plan.passed",
+    services: [
+      {
+        service_id: "service.atlas-api",
+        sequence: 1,
+        artifact_id: "artifact.backend.image",
+        artifact_sha256: "1".repeat(64),
+        dependencies: [],
+        workload_identity_id: "workload.atlas-api.primary",
+        endpoint_class: "private",
+        cpu_limit_millicores: 1000,
+        memory_limit_mb: 1024,
+        startup_probe_id: "probe.atlas-api.startup",
+        readiness_probe_id: "probe.atlas-api.readiness",
+        liveness_probe_id: "probe.atlas-api.liveness",
+        run_as_root: false,
+        privileged: false,
+        arbitrary_public_egress: false,
+      },
+      {
+        service_id: "service.atlas-web",
+        sequence: 2,
+        artifact_id: "artifact.frontend.image",
+        artifact_sha256: "2".repeat(64),
+        dependencies: ["service.atlas-api"],
+        workload_identity_id: null,
+        endpoint_class: "private",
+        cpu_limit_millicores: 500,
+        memory_limit_mb: 256,
+        startup_probe_id: "probe.atlas-web.startup",
+        readiness_probe_id: "probe.atlas-web.readiness",
+        liveness_probe_id: "probe.atlas-web.liveness",
+        run_as_root: false,
+        privileged: false,
+        arbitrary_public_egress: false,
+      },
+    ],
+    generated_at: "2026-08-04T16:05:00Z",
+    real_process_mutation_authorized: false,
+    container_runtime_mutation_authorized: false,
+    operating_system_service_mutation_authorized: false,
+    network_mutation_authorized: false,
+    secret_mutation_authorized: false,
+    external_data_mutation_authorized: false,
+    infrastructure_mutation_authorized: false,
+    ai_operation_authorized: false,
+  },
+};
+
 const bootstrapState = {
   data: {
     run: {
@@ -263,6 +329,7 @@ const bootstrapState = {
       configuration_rendering: null,
       trust_provisioning: null,
       data_initialization: null,
+      service_deployment: null,
     },
     durable: true,
     lease_available: false,
@@ -897,6 +964,7 @@ describe("deployment configuration preview", () => {
           configuration_rendering: configurationExecution,
           trust_provisioning: null,
           data_initialization: null,
+          service_deployment: null,
           updated_at: "2026-08-04T16:02:01Z",
         },
       },
@@ -1103,6 +1171,7 @@ describe("deployment configuration preview", () => {
           configuration_rendering: configurationExecution,
           trust_provisioning: trustExecution,
           data_initialization: null,
+          service_deployment: null,
           updated_at: "2026-08-04T16:03:01Z",
         },
       },
@@ -1190,6 +1259,7 @@ describe("deployment configuration preview", () => {
                   completed_phase_ids: ["phase.acquire", "phase.configure", "phase.trust", "phase.data"],
                   current_phase_id: "phase.services",
                   data_initialization: execution,
+                  service_deployment: null,
                   updated_at: "2026-08-04T16:04:01Z",
                 },
                 execution,
@@ -1238,6 +1308,213 @@ describe("deployment configuration preview", () => {
     expect(screen.queryByText(/database_url|credential material|sql text/i)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /deploy services|run backup|provision database|rollback data/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reviews synthetic services and reports readiness without runtime controls", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    vi.stubGlobal("crypto", { randomUUID: () => "services-request-001" });
+    const dataExecution = {
+      execution_id: "phase-execution.ui-data-completed",
+      phase_id: "phase.data",
+      release_id: "release.atlas.lab-0.1.0",
+      profile: "linux_lab",
+      configuration_digest: "b".repeat(64),
+      trust_plan_digest: "f".repeat(64),
+      data_schema_version: "atlas.bootstrap-data-plan.v1",
+      data_plan_digest: "5".repeat(64),
+      migration_artifact_digest: "4".repeat(64),
+      target_id: "target.atlas-synthetic-database.primary",
+      from_revision: "base",
+      to_revision: "bootstrap",
+      state: "completed",
+      result_code: "bootstrap.data.completed",
+      started_at: "2026-08-04T16:04:00Z",
+      completed_at: "2026-08-04T16:04:01Z",
+      migration_count: 3,
+      verified_object_count: 14,
+      lock_acquired: true,
+      backup_applicability: "not_applicable_clean_install",
+      evidence: [],
+    };
+    const servicesState = {
+      data: {
+        ...bootstrapState.data,
+        run: {
+          ...bootstrapState.data.run,
+          version: 9,
+          phase_ids: [
+            "phase.acquire",
+            "phase.configure",
+            "phase.trust",
+            "phase.data",
+            "phase.services",
+            "phase.identity",
+          ],
+          checkpoints: [
+            ...bootstrapState.data.run.checkpoints,
+            ...["phase.configure", "phase.trust", "phase.data"].map((phaseId) => ({
+              phase_id: phaseId,
+              state: "completed",
+              safe_output_references: [`result.${phaseId.slice(6)}.verified`],
+              recorded_at: "2026-08-04T16:04:01Z",
+            })),
+          ],
+          completed_phase_ids: ["phase.acquire", "phase.configure", "phase.trust", "phase.data"],
+          current_phase_id: "phase.services",
+          configuration_rendering: null,
+          trust_provisioning: null,
+          data_initialization: dataExecution,
+          service_deployment: null,
+          updated_at: "2026-08-04T16:04:01Z",
+        },
+      },
+    };
+    const requests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) {
+        return Promise.resolve(new Response(JSON.stringify(identity), { status: 200 }));
+      }
+      if (url.includes("/release-preflight")) {
+        return Promise.resolve(new Response(JSON.stringify(preflight), { status: 200 }));
+      }
+      if (url.includes("/deployment-configuration/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(configurationPreview()), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-trust-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapTrustPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-data-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapDataPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-service-plan/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapServicePlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-plan")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-state/current")) {
+        return Promise.resolve(new Response(JSON.stringify(servicesState), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-invalidation/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapInvalidation), { status: 200 }));
+      }
+      if (url.includes("/phases/services")) {
+        const headers = new Headers(init?.headers);
+        requests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        const execution = {
+          execution_id: "phase-execution.ui-services-001",
+          phase_id: "phase.services",
+          release_id: "release.atlas.lab-0.1.0",
+          profile: "linux_lab",
+          configuration_digest: "b".repeat(64),
+          trust_plan_digest: "f".repeat(64),
+          data_plan_digest: "5".repeat(64),
+          migration_artifact_digest: "4".repeat(64),
+          service_schema_version: "atlas.bootstrap-service-plan.v1",
+          service_plan_digest: "d".repeat(64),
+          target_id: "target.atlas-synthetic-runtime.primary",
+          state: "completed",
+          result_code: "bootstrap.services.completed",
+          started_at: "2026-08-04T16:05:00Z",
+          completed_at: "2026-08-04T16:05:01Z",
+          deployed_service_count: 2,
+          ready_service_count: 2,
+          passed_probe_count: 6,
+          service_statuses: ["service.atlas-api", "service.atlas-web"].map((serviceId) => ({
+            service_id: serviceId,
+            state: "ready",
+            startup_passed: true,
+            readiness_passed: true,
+            liveness_passed: true,
+          })),
+          evidence: [
+            {
+              evidence_id: "services.runtime-state",
+              sha256: "e".repeat(64),
+              size_bytes: 1800,
+              disposition: "published",
+            },
+          ],
+        };
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                run: {
+                  ...servicesState.data.run,
+                  version: 11,
+                  checkpoints: [
+                    ...servicesState.data.run.checkpoints,
+                    {
+                      phase_id: "phase.services",
+                      state: "completed",
+                      safe_output_references: [`result.services.${"d".repeat(32)}`],
+                      recorded_at: "2026-08-04T16:05:01Z",
+                    },
+                  ],
+                  completed_phase_ids: [
+                    "phase.acquire",
+                    "phase.configure",
+                    "phase.trust",
+                    "phase.data",
+                    "phase.services",
+                  ],
+                  current_phase_id: "phase.identity",
+                  service_deployment: execution,
+                  updated_at: "2026-08-04T16:05:01Z",
+                },
+                execution,
+                replayed: false,
+                synthetic_state_mutation_performed: true,
+                real_process_mutation_performed: false,
+                container_runtime_mutation_performed: false,
+                operating_system_service_mutation_performed: false,
+                port_or_network_mutation_performed: false,
+                secret_mutation_performed: false,
+                external_data_mutation_performed: false,
+                infrastructure_mutation_performed: false,
+                ai_operation_performed: false,
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Review services" }));
+    expect(screen.getByRole("dialog")).toBeVisible();
+    expect(screen.getByText("Confirm synthetic service-state deployment")).toBeVisible();
+    expect(screen.getAllByText("service.atlas-api").length).toBeGreaterThan(0);
+    const confirm = screen.getByRole("button", { name: "Confirm services" });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Service-state justification"), {
+      target: { value: "Publish the reviewed synthetic service state for the lab run." },
+    });
+    fireEvent.click(confirm);
+
+    expect(await screen.findByText("Service-state deployment completed")).toBeVisible();
+    expect(screen.getByText("services.runtime-state")).toBeVisible();
+    expect(screen.getByText("Unchanged")).toBeVisible();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.body).toContain('"service_plan_digest":"' + "d".repeat(64));
+    expect(requests[0]?.body).toContain('"expected_target_state":"empty"');
+    expect(requests[0]?.idempotencyKey).toBe("bootstrap-services.9.services-request-001");
+    expect(
+      screen.queryByRole("button", { name: /start process|run container|open port|restart service/i }),
     ).not.toBeInTheDocument();
   });
 });

@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-034 |
 | Title | Governed bootstrap service deployment and readiness |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/bootstrap-service-deployment` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Implement the governed synthetic `phase.services` deployment plan and readiness suite |
+| Next Action | Open the implementation pull request, pass GitHub CI, merge, and advance to `phase.identity` |
 
 ### ATLAS-IMP-034 Scope Rationale
 
@@ -73,6 +73,28 @@
   container, operating-system service, cluster workload, ingress, or external dependency; it does not
   read secret values, configure identity/model/integrations, execute rollback, invoke managed
   infrastructure connectors, or authorize AI-driven operation.
+
+### ATLAS-IMP-034 Validation Evidence
+
+- Domain, filesystem, application, checkpoint, API, audit, and persistence coverage verifies the
+  deterministic two-service catalog, API-before-web dependency order, immutable artifact binding,
+  private endpoints, bounded resources, non-root/non-privileged policy, empty and exact reusable
+  targets, unknown-state rejection, atomic publication, exact replay, strict redacted contracts, and
+  PostgreSQL JSON serialization.
+- Full backend verification passes Ruff format across 295 files, Ruff checks, strict mypy across 287
+  source and test files, and 325 pytest tests with three existing Windows symbolic-link skips. Full
+  frontend verification passes ESLint, TypeScript, 27 Vitest tests, and the production build.
+- Live browser validation established an enterprise-style LDAP session and completed acquire,
+  configure, trust, data, and services under the same governed lease. The run advanced to revision 11,
+  completed five of nine phases, selected `phase.identity` next, and reported two deployed and ready
+  services with six passing startup/readiness/liveness probes.
+- Direct filesystem verification found exactly one `atlas-service-state.json` under the configured
+  synthetic target. It contains the exact API and web service identities, dependency and probe
+  evidence, `real_runtime_mutation_performed=false`, and no command, port, secret, process, container,
+  operating-system service, network, external database, or infrastructure operation field.
+- Live presentation passed at 1440x900 and 390x844 with no horizontal overflow. The completed service
+  evidence remained visible, real runtime was explicitly shown as unchanged, and browser warning/error
+  logs were empty.
 
 ### ATLAS-IMP-033 Scope Rationale
 

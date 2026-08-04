@@ -1279,6 +1279,94 @@ textarea:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.service-plan-list,
+.service-status-list {
+  display: grid;
+  gap: 7px;
+}
+
+.service-plan-list > div {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #d8c79e;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.service-plan-list > div > span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: #edf1ef;
+  color: #52615c;
+  font-size: 0.76rem;
+}
+
+.service-plan-list code,
+.service-plan-list small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.service-plan-list small {
+  margin-top: 4px;
+  color: #665b45;
+}
+
+.service-status-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, auto);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 10px;
+  border-left: 3px solid #78ad98;
+  background: #f7f9f8;
+}
+
+.service-status-list code {
+  overflow-wrap: anywhere;
+}
+
+.service-status-list span {
+  color: #386b5a;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.service-state-evidence {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.7fr);
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 10px;
+  border-left: 3px solid #78ad98;
+  background: #f7f9f8;
+}
+
+.service-state-evidence > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.service-state-evidence span {
+  color: #386b5a;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.service-state-evidence code {
+  overflow-wrap: anywhere;
+}
+
 .artifact-evidence-list {
   display: grid;
   gap: 6px;
