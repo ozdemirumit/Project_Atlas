@@ -53,6 +53,7 @@ import {
 } from "./api/apiCredentials";
 import { getAuditExportOverview, retryAuditExport } from "./api/auditExport";
 import { getBootstrapPlan } from "./api/bootstrapPlan";
+import { previewBootstrapInvalidation } from "./api/bootstrapInvalidation";
 import { getBootstrapState } from "./api/bootstrapState";
 import { previewDeploymentConfiguration } from "./api/deploymentConfiguration";
 import { getStorageImpact, type GraphEntity } from "./api/graph";
@@ -441,6 +442,18 @@ export function App() {
     retry: false,
   });
   const bootstrapState = bootstrapStateQuery.data?.data;
+  const bootstrapInvalidationQuery = useQuery({
+    queryKey: [
+      "bootstrap-invalidation",
+      bootstrapPlan?.plan_digest,
+      deploymentConfiguration?.configuration_digest,
+    ],
+    queryFn: () =>
+      previewBootstrapInvalidation(bootstrapPlan!, deploymentConfiguration!, identity!.scope),
+    enabled: Boolean(identity && bootstrapPlan && deploymentConfiguration),
+    retry: false,
+  });
+  const bootstrapInvalidation = bootstrapInvalidationQuery.data?.data;
   const retryAuditExportMutation = useMutation({
     mutationFn: retryAuditExport,
     onSuccess: async () => {
@@ -1274,6 +1287,91 @@ export function App() {
                     <span>
                       No phase, command, rollback, installer, or infrastructure mutation is
                       authorized by checkpoint metadata.
+                    </span>
+                  </div>
+                </section>
+              )}
+
+              {bootstrapInvalidation && (
+                <section className="workspace-section bootstrap-invalidation-section">
+                  <div className="section-heading bootstrap-invalidation-heading">
+                    <div>
+                      <p className="eyebrow">RESUME SAFETY</p>
+                      <h2>Checkpoint invalidation preview</h2>
+                      <p>Candidate inputs compared with the current run without changing it.</p>
+                    </div>
+                    <span className={`state-badge ${bootstrapInvalidation.state}`}>
+                      <Scale size={14} /> {bootstrapInvalidation.state}
+                    </span>
+                  </div>
+                  {bootstrapInvalidation.state === "empty" ? (
+                    <div className="bootstrap-state-empty">
+                      <Scale size={18} />
+                      <div>
+                        <strong>No current run is available for drift comparison.</strong>
+                        <p>Initialize governed checkpoint state before evaluating resume safety.</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="bootstrap-invalidation-summary">
+                        <div>
+                          <span>Source revision</span>
+                          <strong>{bootstrapInvalidation.source_run_version}</strong>
+                        </div>
+                        <div>
+                          <span>Earliest boundary</span>
+                          <code>{bootstrapInvalidation.earliest_affected_phase_id ?? "none"}</code>
+                        </div>
+                        <div>
+                          <span>Reusable</span>
+                          <strong>{bootstrapInvalidation.reusable_checkpoint_phase_ids.length}</strong>
+                        </div>
+                        <div>
+                          <span>Invalidated</span>
+                          <strong>{bootstrapInvalidation.invalidated_checkpoint_phase_ids.length}</strong>
+                        </div>
+                      </div>
+                      {bootstrapInvalidation.changes.length > 0 && (
+                        <div className="bootstrap-change-list">
+                          {bootstrapInvalidation.changes.map((change) => (
+                            <article key={change.reason_code}>
+                              <div>
+                                <code>{change.reason_code}</code>
+                                <strong>{change.field.replaceAll("_", " ")}</strong>
+                              </div>
+                              <span>from {change.earliest_affected_phase_id}</span>
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                      <div className="bootstrap-invalidation-columns">
+                        <div>
+                          <h3>Reusable checkpoints</h3>
+                          <p>
+                            {bootstrapInvalidation.reusable_checkpoint_phase_ids.join(", ") ||
+                              "None"}
+                          </p>
+                        </div>
+                        <div>
+                          <h3>Invalidated checkpoints</h3>
+                          <p>
+                            {bootstrapInvalidation.invalidated_checkpoint_phase_ids.join(", ") ||
+                              "None"}
+                          </p>
+                        </div>
+                        <div>
+                          <h3>Downstream review</h3>
+                          <p>{bootstrapInvalidation.downstream_phase_ids.join(", ") || "None"}</p>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                  <div className="safety-notice">
+                    <ShieldCheck size={16} />
+                    <span>
+                      Preview only. No checkpoint, lease, file, phase, rollback, or infrastructure
+                      state is changed.
                     </span>
                   </div>
                 </section>

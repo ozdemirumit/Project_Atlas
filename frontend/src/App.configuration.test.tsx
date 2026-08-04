@@ -154,6 +154,36 @@ const bootstrapState = {
   },
 };
 
+const bootstrapInvalidation = {
+  data: {
+    preview_id: "bootstrap-invalidation.ui-001",
+    schema_version: "atlas.bootstrap-invalidation-preview.v1",
+    state: "drifted",
+    source_run_id: "bootstrap-run.ui-001",
+    source_run_version: 3,
+    changes: [
+      {
+        field: "configuration_digest",
+        reason_code: "bootstrap.configuration.changed",
+        old_reference: `sha256:${"a".repeat(64)}`,
+        new_reference: `sha256:${"b".repeat(64)}`,
+        earliest_affected_phase_id: "phase.configure",
+      },
+    ],
+    earliest_affected_phase_id: "phase.configure",
+    reusable_checkpoint_phase_ids: ["phase.acquire"],
+    invalidated_checkpoint_phase_ids: ["phase.configure"],
+    downstream_phase_ids: ["phase.configure", "phase.trust"],
+    remediation: "Create a new governed plan.",
+    generated_at: "2026-08-04T16:05:00Z",
+    correlation_id: "correlation.invalidation.ui",
+    execution_authorized: false,
+    lease_mutation_authorized: false,
+    checkpoint_mutation_authorized: false,
+    infrastructure_mutation_authorized: false,
+  },
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -280,5 +310,43 @@ describe("deployment configuration preview", () => {
 
     expect(await screen.findByText("Platform Operator")).toBeVisible();
     await waitFor(() => expect(screen.queryByText("Resume and lease state")).not.toBeInTheDocument());
+  });
+
+  it("shows deterministic checkpoint invalidation without mutation controls", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) return Promise.resolve(new Response(JSON.stringify(identity), { status: 200 }));
+      if (url.includes("/release-preflight")) return Promise.resolve(new Response(JSON.stringify(preflight), { status: 200 }));
+      if (url.includes("/deployment-configuration/preview")) return Promise.resolve(new Response(JSON.stringify(configurationPreview()), { status: 200 }));
+      if (url.includes("/bootstrap-plan")) return Promise.resolve(new Response(JSON.stringify(bootstrapPlan), { status: 200 }));
+      if (url.includes("/bootstrap-invalidation-preview")) return Promise.resolve(new Response(JSON.stringify(bootstrapInvalidation), { status: 200 }));
+      return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+
+    expect(await screen.findByText("Checkpoint invalidation preview")).toBeVisible();
+    expect(screen.getByText("bootstrap.configuration.changed")).toBeVisible();
+    expect(screen.getByText(/No checkpoint, lease, file, phase/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /invalidate/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps malformed invalidation evidence absent", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) return Promise.resolve(new Response(JSON.stringify(identity), { status: 200 }));
+      if (url.includes("/release-preflight")) return Promise.resolve(new Response(JSON.stringify(preflight), { status: 200 }));
+      if (url.includes("/deployment-configuration/preview")) return Promise.resolve(new Response(JSON.stringify(configurationPreview()), { status: 200 }));
+      if (url.includes("/bootstrap-plan")) return Promise.resolve(new Response(JSON.stringify(bootstrapPlan), { status: 200 }));
+      if (url.includes("/bootstrap-invalidation-preview")) return Promise.resolve(new Response(JSON.stringify({ data: { state: "drifted", execution_authorized: true } }), { status: 200 }));
+      return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+
+    expect(await screen.findByText("Ordered deployment phases")).toBeVisible();
+    await waitFor(() => expect(screen.queryByText("Checkpoint invalidation preview")).not.toBeInTheDocument());
   });
 });

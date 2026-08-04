@@ -4,14 +4,61 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-027 |
-| Title | Persistent bootstrap checkpoint and lease foundation |
+| Task ID | ATLAS-IMP-028 |
+| Title | Bootstrap input drift and checkpoint invalidation preview |
 | Status | Done |
-| Branch | `agent/bootstrap-checkpoint-lease` |
-| Pull Request | [#39](https://github.com/ozdemirumit/Project_Atlas/pull/39) |
-| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
+| Branch | `agent/bootstrap-invalidation-preview` |
+| Pull Request | [PR #40](https://github.com/ozdemirumit/Project_Atlas/pull/40) |
+| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Merge PR #39 and select the next bounded MVP-005 implementation slice |
+| Next Action | Merge PR #40 and synchronize `main` |
+
+### ATLAS-IMP-028 Scope Rationale
+
+- ATLAS-038 requires changed bootstrap inputs to invalidate every affected downstream phase before
+  resume. The state foundation now rejects plan substitution, but operators still need a safe,
+  deterministic explanation of what changed and which checkpoints can no longer be reused.
+- This slice compares one exact candidate release, profile, plan, configuration digest, and phase
+  order with the current authorized run. It produces a read-only invalidation preview and never
+  updates the run, releases or acquires its lease, or executes a phase.
+
+### ATLAS-IMP-028 Acceptance Criteria
+
+- A strict request binds organization, environment, site, candidate release/profile, plan digest,
+  resume key, configuration digest, and ordered phase IDs. Unknown fields, malformed identifiers,
+  foreign scope, duplicates, and unbounded phase sets fail closed.
+- Equivalent input is reported as unchanged with all completed checkpoints reusable. Release,
+  profile, or plan-identity change invalidates from acquisition; configuration change invalidates
+  from configuration; phase-order change invalidates from the earliest affected phase.
+- Every changed field has a stable non-secret reason code, safe old/new digest references, earliest
+  affected phase, invalidated completed checkpoints, downstream phase IDs, and bounded remediation.
+  No raw configuration, output, lease-holder, token, secret, or command is returned.
+- The preview is calculated from the current exact-scope repository state without mutation and
+  includes source run/version, freshness timestamp, correlation ID, and explicit false execution,
+  lease-mutation, checkpoint-mutation, and infrastructure-mutation authorization.
+- Exact-scope C0 authorization, required audit, `no-store` delivery, and indistinguishable empty or
+  foreign state apply. Required audit failure blocks disclosure.
+- The operations UI shows unchanged/drifted state, changed inputs, earliest invalidation boundary,
+  reusable and invalidated checkpoints, downstream phases, and the explicit read-only boundary.
+- Automated and live tests cover identical inputs, each drift class, combined drift precedence,
+  phase reordering, empty state, foreign scope, strict parsing, audit failure, malformed response,
+  non-mutation, owner redaction, and responsive desktop/mobile presentation.
+- This slice does not mutate bootstrap state, acquire or release leases, execute a phase, invalidate
+  data physically, run rollback, write files, invoke connectors, or authorize infrastructure change.
+
+### ATLAS-IMP-028 Validation Evidence
+
+- Backend tests cover unchanged input, configuration drift, combined drift precedence, strict input
+  handling, exact scope, audit failure, and non-mutation. Full backend verification passes Ruff
+  format/check, mypy across 249 source files, and 287 pytest tests.
+- Frontend verification passes ESLint, TypeScript, 20 Vitest tests, and production build. Tests cover
+  drift presentation, malformed-response handling, and the absence of mutation controls.
+- Live UI validation returned source and run revision 2 before and after repeated reads, reported the
+  earliest invalidation boundary as `phase.acquire`, and exposed no lease-owner identity.
+- Live presentation validation passed at 1440x900 and 390x844. The invalidation preview, drift state,
+  boundary, and read-only notice remained visible with no page-level horizontal overflow.
+- GitHub backend and frontend CI jobs passed for review commit `8352ab3` in
+  [run 30918524000](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30918524000).
 
 ### ATLAS-IMP-027 Scope Rationale
 
@@ -1234,6 +1281,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-025 | Versioned deployment configuration preview foundation | Completed through [PR #37](https://github.com/ozdemirumit/Project_Atlas/pull/37) from source commit `4917f22`; 268 backend tests, 15 frontend tests, live safe/unsafe configuration API and Linux-lab/developer desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-026 | Deterministic bootstrap plan and resume-state foundation | Completed through [PR #38](https://github.com/ozdemirumit/Project_Atlas/pull/38) from source commit `0a9c38b`; 272 backend tests, 16 frontend tests, live ready/blocked API and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-027 | Persistent bootstrap checkpoint and lease foundation | Completed through [PR #39](https://github.com/ozdemirumit/Project_Atlas/pull/39) from source commit `874fe0a`; 282 backend tests, 18 frontend tests, live non-mutating checkpoint API and desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-028 | Bootstrap input drift and checkpoint invalidation preview | Completed through [PR #40](https://github.com/ozdemirumit/Project_Atlas/pull/40) from source commit `8419c94`; 287 backend tests, 20 frontend tests, live non-mutating desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 

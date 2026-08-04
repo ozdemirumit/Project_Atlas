@@ -847,6 +847,28 @@ textarea:focus-visible {
 .bootstrap-state-empty p { margin: 4px 0 0; color: #63716d; }
 @media (max-width: 760px) { .bootstrap-state-summary, .bootstrap-state-detail, .bootstrap-checkpoint-grid { grid-template-columns: minmax(0, 1fr); } }
 
+.bootstrap-invalidation-section { display: grid; gap: 16px; border-top: 1px solid #dbe3e0; }
+.bootstrap-invalidation-heading .state-badge { display: inline-flex; align-items: center; gap: 6px; }
+.bootstrap-invalidation-heading > div > p:last-child { margin: 4px 0 0; color: #63716d; }
+.state-badge.unchanged { color: #26614f; background: #e7f2ed; border-color: #bfd8ce; }
+.state-badge.drifted { color: #843c3c; background: #f8eaea; border-color: #e6bcbc; }
+.state-badge.empty { color: #596763; background: #edf1ef; border-color: #cbd5d1; }
+.bootstrap-invalidation-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid #dbe3e0; border-radius: 6px; background: #dbe3e0; }
+.bootstrap-invalidation-summary > div { min-width: 0; padding: 12px; background: #fbfcfc; }
+.bootstrap-invalidation-summary span { display: block; margin-bottom: 5px; color: #63716d; font-size: 0.72rem; text-transform: uppercase; }
+.bootstrap-invalidation-summary code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bootstrap-change-list { display: grid; gap: 8px; }
+.bootstrap-change-list article { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 11px; border: 1px solid #e6bcbc; border-radius: 6px; background: #fffafa; }
+.bootstrap-change-list article div { min-width: 0; }
+.bootstrap-change-list code, .bootstrap-change-list strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bootstrap-change-list strong { margin-top: 4px; text-transform: capitalize; }
+.bootstrap-change-list span { flex: 0 0 auto; color: #63716d; font-size: 0.78rem; }
+.bootstrap-invalidation-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.bootstrap-invalidation-columns > div { min-width: 0; padding: 12px; border-left: 3px solid #aebdb8; background: #f7f9f8; }
+.bootstrap-invalidation-columns h3 { margin: 0 0 7px; font-size: 0.86rem; }
+.bootstrap-invalidation-columns p { margin: 0; color: #63716d; overflow-wrap: anywhere; }
+@media (max-width: 760px) { .bootstrap-invalidation-summary, .bootstrap-invalidation-columns { grid-template-columns: minmax(0, 1fr); } .bootstrap-change-list article { align-items: flex-start; flex-direction: column; } }
+
 .deployment-configuration-heading .state-badge {
   display: inline-flex;
   align-items: center;
