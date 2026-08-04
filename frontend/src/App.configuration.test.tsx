@@ -3030,9 +3030,74 @@ describe("deployment configuration preview", () => {
         infrastructure_mutation_performed: false,
       },
     };
+    const changeReviewPreview = {
+      data: {
+        preview_id: "change-review-preview.ui-001",
+        schema_version: "atlas.upgrade-change-review-preview.v1",
+        source_run_id: completedState.data.run.run_id,
+        source_run_version: 19,
+        plan_id: upgradeReadiness.data.plan_id,
+        plan_digest: upgradeReadiness.data.plan_digest,
+        simulation_id: upgradeSimulation.data.simulation_id,
+        simulation_digest: upgradeSimulation.data.simulation_digest,
+        source_release_id: upgradeReadiness.data.source_release_id,
+        source_release_version: upgradeReadiness.data.source_release_version,
+        target_release_id: upgradeReadiness.data.target_release_id,
+        target_release_version: upgradeReadiness.data.target_release_version,
+        backup_id: upgradeReadiness.data.backup_id,
+        restore_validation_id: upgradeReadiness.data.restore_validation_id,
+        risk_class: "risk.medium",
+        change_class: "change.reviewed-standard",
+        impacted_service_ids: upgradeReadiness.data.service_dependency_ids,
+        migration_step_ids: upgradeReadiness.data.migration_steps.map((item) => item.step_id),
+        abort_criterion_ids: upgradeReadiness.data.abort_criterion_ids,
+        rollback_step_ids: upgradeReadiness.data.rollback_step_ids,
+        post_verification_check_ids: upgradeReadiness.data.post_verification_check_ids,
+        assumption_ids: Array.from({ length: 4 }, (_, index) => `assumption.ui-${index + 1}`),
+        unknown_ids: Array.from({ length: 4 }, (_, index) => `unknown.ui-${index + 1}`),
+        residual_risk_ids: Array.from({ length: 3 }, (_, index) => `risk.ui-${index + 1}`),
+        owner_role_ids: Array.from({ length: 4 }, (_, index) => `role.ui-${index + 1}`),
+        evidence_digests: ["6", "7", "8", "5"].map((item) => item.repeat(64)),
+        estimated_downtime_min_minutes: 6,
+        estimated_downtime_max_minutes: 12,
+        rollback_window_minutes: 60,
+        state: "ready",
+        preview_digest: "4".repeat(64),
+        generated_at: "2026-08-04T16:13:00Z",
+        expires_at: "2026-08-04T16:43:00Z",
+        approval_granted: false,
+        execution_authorized: false,
+        dispatch_authorized: false,
+        infrastructure_mutation_performed: false,
+      },
+    };
+    const changeReviewPacket = {
+      data: {
+        ...changeReviewPreview.data,
+        packet_id: "change-review-packet.ui-001",
+        schema_version: "atlas.upgrade-change-review-packet.v1",
+        state: "created",
+        proposed_window_start: "2026-08-05T10:00:00Z",
+        proposed_window_end: "2026-08-05T11:00:00Z",
+        itsm_draft_id: "itsm-draft.ui-001",
+        itsm_draft_title: "Review Atlas upgrade 0.1.0 to 0.2.0",
+        itsm_draft_digest: "3".repeat(64),
+        packet_digest: "2".repeat(64),
+        created_at: "2026-08-04T16:14:00Z",
+        reused: false,
+        itsm_dispatched: false,
+        notification_sent: false,
+        workflow_executed: false,
+      },
+    };
     const requests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const recoveryRequests: Array<{ path: string; body: string }> = [];
     const upgradeRequests: Array<{ path: string; body: string; idempotencyKey: string | null }> = [];
+    const changeReviewRequests: Array<{
+      path: string;
+      body: string;
+      idempotencyKey: string | null;
+    }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -3134,6 +3199,30 @@ describe("deployment configuration preview", () => {
           new Response(JSON.stringify(upgradeSimulation), { status: 200 }),
         );
       }
+      if (url.endsWith("/platform/upgrade-change-reviews/preview")) {
+        changeReviewRequests.push({
+          path: url,
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: new Headers(init?.headers).get("Idempotency-Key"),
+        });
+        return Promise.resolve(
+          new Response(JSON.stringify(changeReviewPreview), { status: 200 }),
+        );
+      }
+      if (
+        url.endsWith(
+          `/platform/upgrade-change-reviews/${completedState.data.run.run_id}/packets`,
+        )
+      ) {
+        changeReviewRequests.push({
+          path: url,
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: new Headers(init?.headers).get("Idempotency-Key"),
+        });
+        return Promise.resolve(
+          new Response(JSON.stringify(changeReviewPacket), { status: 200 }),
+        );
+      }
       return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
     });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -3205,6 +3294,32 @@ describe("deployment configuration preview", () => {
     expect(upgradeRequests[1]?.body).not.toContain("production_authorized");
     expect(upgradeRequests[1]?.idempotencyKey).toBe(
       "upgrade-simulation.19.support-request-001",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Review change packet" }));
+    expect(await screen.findByText("Confirm upgrade change review packet")).toBeVisible();
+    expect(screen.getByText("Medium risk")).toBeVisible();
+    const packetConfirm = screen.getByRole("button", { name: "Create review packet" });
+    expect(packetConfirm).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Change review justification"), {
+      target: { value: "Prepare this evidence packet for the scheduled human CAB review." },
+    });
+    fireEvent.click(
+      screen.getByLabelText(
+        "I acknowledge this packet does not approve or execute the change.",
+      ),
+    );
+    fireEvent.click(packetConfirm);
+
+    expect(await screen.findByText("Upgrade change review packet created")).toBeVisible();
+    expect(screen.getByText("Review Atlas upgrade 0.1.0 to 0.2.0")).toBeVisible();
+    expect(screen.getAllByText("No").length).toBeGreaterThanOrEqual(3);
+    expect(changeReviewRequests).toHaveLength(2);
+    expect(changeReviewRequests[0]?.body).toContain('"simulation_id":"upgrade-simulation.ui-001"');
+    expect(changeReviewRequests[1]?.body).toContain('"acknowledged_no_authority":true');
+    expect(changeReviewRequests[1]?.body).not.toContain("execution_authorized");
+    expect(changeReviewRequests[1]?.idempotencyKey).toBe(
+      "change-review.19.support-request-001",
     );
   });
 });

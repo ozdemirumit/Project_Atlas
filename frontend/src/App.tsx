@@ -111,6 +111,12 @@ import {
 import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
 import {
+  createUpgradeChangeReviewPacket,
+  previewUpgradeChangeReview,
+  type UpgradeChangeReviewPacket,
+  type UpgradeChangeReviewPreview,
+} from "./api/changeReviews";
+import {
   disableGovernedIdentity,
   getIdentityGovernance,
   revokeGovernedApiCredential,
@@ -175,6 +181,11 @@ const navigation = [
 function statusLabel(status: string | undefined): string {
   if (!status) return "Connecting";
   return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function localDateTimeInput(value: Date): string {
+  const local = new Date(value.getTime() - value.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
 }
 
 function shouldOpenInspector(): boolean {
@@ -371,6 +382,15 @@ export function App() {
   const [upgradeJustification, setUpgradeJustification] = useState("");
   const [upgradePending, setUpgradePending] = useState(false);
   const [upgradeSimulation, setUpgradeSimulation] = useState<UpgradeSimulation | null>(null);
+  const [changeReviewPreview, setChangeReviewPreview] =
+    useState<UpgradeChangeReviewPreview | null>(null);
+  const [changeReviewPacket, setChangeReviewPacket] =
+    useState<UpgradeChangeReviewPacket | null>(null);
+  const [changeReviewPending, setChangeReviewPending] = useState(false);
+  const [changeReviewJustification, setChangeReviewJustification] = useState("");
+  const [changeReviewWindowStart, setChangeReviewWindowStart] = useState("");
+  const [changeReviewWindowEnd, setChangeReviewWindowEnd] = useState("");
+  const [changeReviewAcknowledged, setChangeReviewAcknowledged] = useState(false);
   const [bootstrapClaimJustification, setBootstrapClaimJustification] = useState("");
   const [bootstrapClaimPending, setBootstrapClaimPending] = useState(false);
   const [bootstrapClaimResult, setBootstrapClaimResult] =
@@ -1096,6 +1116,8 @@ export function App() {
       setUpgradePending(false);
       setUpgradeJustification("");
       setUpgradeSimulation(null);
+      setChangeReviewPreview(null);
+      setChangeReviewPacket(null);
     },
   });
   const restoreValidationMutation = useMutation({
@@ -1105,6 +1127,8 @@ export function App() {
       setUpgradePending(false);
       setUpgradeJustification("");
       setUpgradeSimulation(null);
+      setChangeReviewPreview(null);
+      setChangeReviewPacket(null);
     },
   });
   const upgradeSimulationMutation = useMutation({
@@ -1114,6 +1138,37 @@ export function App() {
       setUpgradeSimulation(response.data);
       setUpgradePending(false);
       setUpgradeJustification("");
+      setChangeReviewPreview(null);
+      setChangeReviewPacket(null);
+    },
+  });
+  const changeReviewPreviewMutation = useMutation({
+    mutationFn: () => previewUpgradeChangeReview(upgradeReadiness!, upgradeSimulation!),
+    onSuccess: (response) => {
+      const now = Date.now();
+      setChangeReviewPreview(response.data);
+      setChangeReviewWindowStart(localDateTimeInput(new Date(now + 60 * 60_000)));
+      setChangeReviewWindowEnd(localDateTimeInput(new Date(now + 2 * 60 * 60_000)));
+      setChangeReviewJustification("");
+      setChangeReviewAcknowledged(false);
+      setChangeReviewPending(true);
+    },
+  });
+  const changeReviewPacketMutation = useMutation({
+    mutationFn: () =>
+      createUpgradeChangeReviewPacket({
+        preview: changeReviewPreview!,
+        plan: upgradeReadiness!,
+        simulation: upgradeSimulation!,
+        justification: changeReviewJustification.trim(),
+        proposedWindowStart: changeReviewWindowStart,
+        proposedWindowEnd: changeReviewWindowEnd,
+      }),
+    onSuccess: (response) => {
+      setChangeReviewPacket(response.data);
+      setChangeReviewPending(false);
+      setChangeReviewJustification("");
+      setChangeReviewAcknowledged(false);
     },
   });
   const bootstrapClaimMutation = useMutation({
@@ -4066,6 +4121,200 @@ export function App() {
                                       checks modeled with no network request or infrastructure mutation.
                                     </p>
                                     <code>{upgradeSimulation.simulation_digest.slice(0, 20)}...</code>
+                                  </div>
+                                </div>
+                                {!changeReviewPacket && (
+                                  <div className="data-initialization-action upgrade-review-action">
+                                    <div>
+                                      <strong>Prepare change review packet</strong>
+                                      <p>
+                                        Reconcile this exact plan and simulation into a local,
+                                        non-authorizing ITSM draft.
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      disabled={changeReviewPreviewMutation.isPending}
+                                      onClick={() => changeReviewPreviewMutation.mutate()}
+                                    >
+                                      <FileText size={14} /> Review change packet
+                                    </button>
+                                  </div>
+                                )}
+                                {changeReviewPreviewMutation.isError && (
+                                  <div className="inline-error">
+                                    <AlertTriangle size={16} /> Change evidence failed closed.
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            {changeReviewPending && changeReviewPreview && (
+                              <div
+                                className="data-initialization-confirmation change-review-confirmation"
+                                role="dialog"
+                                aria-label="Confirm upgrade change review packet"
+                              >
+                                <div>
+                                  <strong>Confirm upgrade change review packet</strong>
+                                  <p>
+                                    This records evidence for human review. It grants no approval,
+                                    dispatch, notification, workflow, or execution authority.
+                                  </p>
+                                </div>
+                                <div className="identity-plan-summary upgrade-plan-summary">
+                                  <div>
+                                    <span>Classification</span>
+                                    <strong>Medium risk</strong>
+                                    <small>Reviewed standard change</small>
+                                  </div>
+                                  <div>
+                                    <span>Services</span>
+                                    <strong>{changeReviewPreview.impacted_service_ids.length}</strong>
+                                    <small>{changeReviewPreview.impacted_service_ids.join(", ")}</small>
+                                  </div>
+                                  <div>
+                                    <span>Interruption</span>
+                                    <strong>
+                                      {changeReviewPreview.estimated_downtime_min_minutes}-
+                                      {changeReviewPreview.estimated_downtime_max_minutes} min
+                                    </strong>
+                                    <small>Estimate only</small>
+                                  </div>
+                                  <div>
+                                    <span>Evidence</span>
+                                    <strong>{changeReviewPreview.evidence_digests.length} digests</strong>
+                                    <small>Exact plan and simulation</small>
+                                  </div>
+                                </div>
+                                <div className="upgrade-policy-columns">
+                                  <div>
+                                    <strong>Residual risks</strong>
+                                    {changeReviewPreview.residual_risk_ids.map((item) => (
+                                      <code key={item}>{item}</code>
+                                    ))}
+                                  </div>
+                                  <div>
+                                    <strong>Required owners</strong>
+                                    {changeReviewPreview.owner_role_ids.map((item) => (
+                                      <code key={item}>{item}</code>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div className="change-review-window">
+                                  <label>
+                                    Proposed UTC-aware start
+                                    <input
+                                      type="datetime-local"
+                                      value={changeReviewWindowStart}
+                                      onChange={(event) =>
+                                        setChangeReviewWindowStart(event.target.value)
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    Proposed UTC-aware end
+                                    <input
+                                      type="datetime-local"
+                                      value={changeReviewWindowEnd}
+                                      onChange={(event) =>
+                                        setChangeReviewWindowEnd(event.target.value)
+                                      }
+                                    />
+                                  </label>
+                                </div>
+                                <label>
+                                  Change review justification
+                                  <input
+                                    value={changeReviewJustification}
+                                    maxLength={500}
+                                    onChange={(event) =>
+                                      setChangeReviewJustification(event.target.value)
+                                    }
+                                    placeholder="Record why this packet is being prepared for review"
+                                  />
+                                </label>
+                                <label className="change-review-acknowledgement">
+                                  <input
+                                    type="checkbox"
+                                    checked={changeReviewAcknowledged}
+                                    onChange={(event) =>
+                                      setChangeReviewAcknowledged(event.target.checked)
+                                    }
+                                  />
+                                  <span>
+                                    I acknowledge this packet does not approve or execute the change.
+                                  </span>
+                                </label>
+                                {changeReviewPacketMutation.isError && (
+                                  <div className="inline-error">
+                                    <AlertTriangle size={16} /> Change packet creation failed closed.
+                                  </div>
+                                )}
+                                <div className="data-initialization-confirm-actions">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setChangeReviewPending(false);
+                                      setChangeReviewJustification("");
+                                      setChangeReviewAcknowledged(false);
+                                    }}
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    className="data-initialization-confirm"
+                                    type="button"
+                                    disabled={
+                                      changeReviewJustification.trim().length < 12 ||
+                                      !changeReviewWindowStart ||
+                                      !changeReviewWindowEnd ||
+                                      !changeReviewAcknowledged ||
+                                      changeReviewPacketMutation.isPending
+                                    }
+                                    onClick={() => changeReviewPacketMutation.mutate()}
+                                  >
+                                    <FileText size={14} /> Create review packet
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                            {changeReviewPacket && (
+                              <div className="change-review-result">
+                                <div className="data-initialization-result-heading">
+                                  <CheckCircle2 size={18} />
+                                  <div>
+                                    <strong>Upgrade change review packet created</strong>
+                                    <code>{changeReviewPacket.packet_id}</code>
+                                  </div>
+                                  <span className="state-badge completed">local draft</span>
+                                </div>
+                                <div className="data-initialization-summary">
+                                  <div>
+                                    <span>Approval granted</span>
+                                    <strong>No</strong>
+                                  </div>
+                                  <div>
+                                    <span>ITSM dispatched</span>
+                                    <strong>No</strong>
+                                  </div>
+                                  <div>
+                                    <span>Execution authorized</span>
+                                    <strong>No</strong>
+                                  </div>
+                                  <div>
+                                    <span>Evidence retained</span>
+                                    <strong>{changeReviewPacket.evidence_digests.length}</strong>
+                                  </div>
+                                </div>
+                                <div className="recovery-validation-result">
+                                  <ShieldCheck size={18} />
+                                  <div>
+                                    <strong>{changeReviewPacket.itsm_draft_title}</strong>
+                                    <p>
+                                      Immutable local review record; human CAB and service-owner
+                                      decisions remain outstanding.
+                                    </p>
+                                    <code>{changeReviewPacket.packet_digest.slice(0, 20)}...</code>
                                   </div>
                                 </div>
                               </div>

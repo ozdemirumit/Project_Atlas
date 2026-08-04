@@ -36,6 +36,16 @@ class PostgreSQLUpgradeSimulationRepository:
             )
             return self._to_domain(row) if row is not None else None
 
+    async def get_by_id(self, *, actor_id: str, simulation_id: str) -> UpgradeSimulation | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(UpgradeSimulationModel).where(
+                    UpgradeSimulationModel.actor_id == actor_id,
+                    UpgradeSimulationModel.simulation_id == simulation_id,
+                )
+            )
+            return self._to_domain(row) if row is not None else None
+
     async def add(self, record: UpgradeSimulation) -> bool:
         try:
             async with self._sessions.begin() as session:

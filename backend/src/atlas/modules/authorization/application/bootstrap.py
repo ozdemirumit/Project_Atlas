@@ -57,6 +57,8 @@ BACKUP_LOGICAL_CREATE = "backup.logical.create"
 BACKUP_LOGICAL_RESTORE_VALIDATE = "backup.logical.restore-validate"
 UPGRADE_READINESS_PREVIEW = "platform.upgrade.readiness-preview"
 UPGRADE_ROLLBACK_SIMULATE = "platform.upgrade.simulate"
+UPGRADE_CHANGE_REVIEW_PREVIEW = "platform.upgrade-change-review.preview"
+UPGRADE_CHANGE_REVIEW_CREATE = "platform.upgrade-change-review.create"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -302,6 +304,19 @@ def upgrade_simulation_scope(
         site_id="site.local",
         domain_id="domain.platform",
         resource_id="resource.platform.upgrade-simulation",
+        capability_class=capability_class,
+    )
+
+
+def upgrade_change_review_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.platform",
+        resource_id="resource.platform.upgrade-change-review",
         capability_class=capability_class,
     )
 
@@ -611,6 +626,14 @@ def build_development_authorization_service(
             permission_id=UPGRADE_ROLLBACK_SIMULATE,
             description="Run one confirmed isolated upgrade and rollback simulation.",
         ),
+        PermissionDefinition(
+            permission_id=UPGRADE_CHANGE_REVIEW_PREVIEW,
+            description="Preview one exact evidence-bound upgrade change review packet.",
+        ),
+        PermissionDefinition(
+            permission_id=UPGRADE_CHANGE_REVIEW_CREATE,
+            description="Create one confirmed local upgrade change review packet.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -650,6 +673,8 @@ def build_development_authorization_service(
                 BACKUP_LOGICAL_RESTORE_VALIDATE,
                 UPGRADE_READINESS_PREVIEW,
                 UPGRADE_ROLLBACK_SIMULATE,
+                UPGRADE_CHANGE_REVIEW_PREVIEW,
+                UPGRADE_CHANGE_REVIEW_CREATE,
             }
         ),
     )
@@ -870,6 +895,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=upgrade_simulation_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.upgrade-change-review-preview",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=upgrade_change_review_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.upgrade-change-review-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=upgrade_change_review_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C2_DIAGNOSTIC,

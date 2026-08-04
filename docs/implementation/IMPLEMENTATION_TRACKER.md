@@ -4,14 +4,84 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-041 |
-| Title | Governed upgrade readiness and rollback simulation foundation |
-| Status | CI Passed - Merge Pending |
-| Branch | `agent/upgrade-rollback-foundation` |
-| Pull Request | [#53](https://github.com/ozdemirumit/Project_Atlas/pull/53) |
-| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
+| Task ID | ATLAS-IMP-042 |
+| Title | Governed upgrade change review packet foundation |
+| Status | In Progress |
+| Branch | `agent/upgrade-change-review-packet` |
+| Pull Request | [#54](https://github.com/ozdemirumit/Project_Atlas/pull/54) |
+| Governing Documents | ATLAS-003, ATLAS-023, ATLAS-025, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-038, ATLAS-044, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-05 |
-| Next Action | Record final CI evidence, merge PR #53, and synchronize local `main` |
+| Next Action | Complete final CI, merge, and `main` synchronization |
+
+### ATLAS-IMP-042 Scope Rationale
+
+- IMP-041 now supplies exact source/target readiness, current backup and restore evidence, reversible
+  migration boundaries, service dependencies, downtime assumptions, abort criteria, rollback steps,
+  and an isolated simulation result. Enterprise change review needs those facts reconciled into one
+  immutable operator and CAB-facing record before any future execution path can be considered.
+- No approved production maintenance window, named change owner, CAB authority, production service
+  map, ITSM destination, customer communication channel, or deployment executor is available. This
+  slice therefore creates and stores only a bounded local review packet and safe handoff draft. It
+  will not schedule, approve, dispatch, notify, deploy, migrate, restart, route, restore, or roll back.
+
+### ATLAS-IMP-042 Acceptance Criteria
+
+- A read-only preview binds the exact readiness plan and isolated simulation identities and digests,
+  source/target releases and schemas, backup/restore evidence, reversible migration sequence,
+  affected services, expected interruption range, rollback window, abort and post-verification
+  criteria, assumptions, unknowns, residual risks, and accountable owner roles.
+- The preview deterministically derives risk and change classes from typed evidence, distinguishes
+  confirmed facts from assumptions, requires every mandatory source, and fails closed for stale,
+  mismatched, reused-from-another-actor, unsupported, incomplete, or operation-authorizing evidence.
+- A separate confirmed C2 create request binds the exact preview digest, actor scope, justification,
+  idempotency key, proposed UTC maintenance window, and explicit acknowledgement that the packet is
+  not approval or execution authority. Changed replay, expired preview, invalid window, audit
+  failure, or concurrent source change creates no visible partial packet.
+- The immutable packet includes impact, interruption, migration, abort, rollback or forward-recovery,
+  verification, evidence, unknown, limitation, and owner sections plus a deterministic packet digest
+  and safe local ITSM handoff draft. The draft contains no credential, command, private endpoint,
+  unrestricted topology, customer content, executable workflow, approval decision, or dispatch token.
+- The web flow presents the reviewed source/target path, impacted services, downtime and maintenance
+  proposal, risk, abort/rollback decisions, mandatory evidence, unknowns, and explicit human/CAB
+  boundary. It requires separate review, justification, window confirmation, and acknowledgement.
+- Default-deny RBAC, browser CSRF, audit, correlation, no-store, strict schemas, PostgreSQL metadata,
+  deterministic replay, automated tests, live enterprise-session execution, and desktop/mobile
+  validation apply.
+- This slice performs no ITSM/network dispatch, approval creation or decision, notification, artifact
+  acquisition, database migration, service restart, traffic switch, active restore, secret
+  resolution, connector call, model inference, workflow execution, or infrastructure mutation.
+
+### ATLAS-IMP-042 Validation Evidence
+
+- Domain, application, API, authorization, audit, memory, PostgreSQL, and migration coverage verifies
+  exact plan and simulation binding, deterministic review classification, complete impact, migration,
+  abort, rollback, verification, assumption, unknown, risk, owner, and evidence sections, immutable
+  replay, actor isolation, expired-preview rejection, invalid-window rejection, and fail-closed audit.
+- The generated local ITSM draft and packet retain every reviewed evidence section while approval,
+  dispatch, notification, workflow execution, and infrastructure mutation remain false.
+- Backend verification passes Ruff and strict mypy across 367 source files, one Alembic head at
+  `20260805_0015`, six focused change-review tests, and 363 full pytest tests with three existing
+  Windows symbolic-link skips. Frontend verification passes ESLint, TypeScript, all 32 Vitest tests,
+  and the production build.
+- Live enterprise-style LDAP session validation completed all nine bootstrap phases for
+  `bootstrap-run.56b078c71ba36043ace3805a` at revision 19, created logical backup
+  `logical-backup.3d48e7779ab2d94b3563d3a1`, passed six isolated restore checks, and enabled the
+  exact upgrade evidence path without claiming production readiness.
+- Live readiness plan `upgrade-plan.3ca5ac040ac345e103f37296` passed the `0.1.0` to `0.2.0`
+  release path before isolated simulation `upgrade-simulation.950ca01baa52899eb6b87638` modeled
+  eight steps, a target-deployment abort, applicable rollback, and no active operation.
+- Live desktop packet `change-review-packet.488510f876ec06134bb7d0d7` retained four evidence
+  digests while approval, ITSM dispatch, and execution authorization remained false. A separate
+  mobile run produced `change-review-packet.4f3af560d5bc3d5f53c32b15` under the same boundaries.
+- Desktop validation at 1440x900 and mobile validation at 390x844 showed no root-page horizontal
+  overflow or incoherent overlap. The change-review result was 1123 pixels wide on desktop and 349
+  pixels wide on mobile, every inspected child fit its container, and browser warning/error logs
+  plus backend error scans were empty. The live application remains available at
+  `http://127.0.0.1:5198/`.
+- Source implementation is committed at `c6ba48f` (`feat: add governed upgrade change review
+  packets`). PR #54 CI run `30960577107` passed backend and frontend validation before this final
+  evidence-only tracker update.
+- Final evidence CI, merge, and local `main` synchronization remain pending.
 
 ### ATLAS-IMP-041 Scope Rationale
 
@@ -78,6 +148,8 @@
 - Source implementation is committed at `a93ef6b` (`feat: add governed upgrade rollback simulation`).
 - PR #53 CI run `30958879463` passed backend and frontend validation before the final
   evidence-only tracker update.
+- Final PR #53 CI run `30958988718` passed backend and frontend validation. PR #53 merged as
+  `f207a81fcd012d4cd2dafd0f2e3813b1a385f9a8`, and local `main` matched `origin/main` afterward.
 
 ### ATLAS-IMP-040 Scope Rationale
 

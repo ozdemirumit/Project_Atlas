@@ -1483,7 +1483,8 @@ textarea:focus-visible {
 }
 
 .upgrade-readiness-panel,
-.upgrade-simulation-result {
+.upgrade-simulation-result,
+.change-review-result {
   display: grid;
   gap: 12px;
   padding: 14px;
@@ -1493,12 +1494,45 @@ textarea:focus-visible {
 
 .upgrade-readiness-panel code,
 .upgrade-simulation-result code,
-.upgrade-confirmation code {
+.upgrade-confirmation code,
+.change-review-confirmation code,
+.change-review-result code {
   overflow-wrap: anywhere;
 }
 
 .upgrade-review-action {
   margin-top: 0;
+}
+
+.change-review-window {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.change-review-window label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #394742;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.data-initialization-confirmation > label.change-review-acknowledgement {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.data-initialization-confirmation > label.change-review-acknowledgement input {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  padding: 0;
 }
 
 .upgrade-plan-summary {
@@ -1903,6 +1937,7 @@ textarea:focus-visible {
 
   .upgrade-plan-summary,
   .upgrade-policy-columns,
+  .change-review-window,
   .upgrade-timeline > div {
     grid-template-columns: minmax(0, 1fr);
   }

@@ -28,6 +28,7 @@ from atlas.api.routes import (
     bootstrap_state,
     bootstrap_trust,
     bootstrap_verification,
+    change_reviews,
     deployment_configuration,
     graph,
     health,
@@ -68,6 +69,11 @@ from atlas.modules.authorization.application.bootstrap import (
     build_development_authorization_service,
 )
 from atlas.modules.authorization.application.service import AuthorizationService
+from atlas.modules.change_review.adapters.memory import InMemoryChangeReviewPacketRepository
+from atlas.modules.change_review.adapters.postgres import (
+    PostgreSQLChangeReviewPacketRepository,
+)
+from atlas.modules.change_review.application.service import ChangeReviewService
 from atlas.modules.graph.adapters.synthetic import build_synthetic_graph_snapshot
 from atlas.modules.graph.application.engine import InMemoryGraphImpactAnalyzer
 from atlas.modules.graph.application.service import GraphImpactService
@@ -262,6 +268,7 @@ def create_app(
     support_bundle_service: SupportBundleService | None = None,
     recovery_service: RecoveryService | None = None,
     upgrade_service: UpgradeService | None = None,
+    change_review_service: ChangeReviewService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -618,6 +625,22 @@ def create_app(
             environment_id=f"environment.{resolved_settings.environment}",
             site_id="site.local",
         )
+    if change_review_service is not None:
+        resolved_change_review_service = change_review_service
+    else:
+        change_review_repository = (
+            PostgreSQLChangeReviewPacketRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryChangeReviewPacketRepository()
+        )
+        resolved_change_review_service = ChangeReviewService(
+            upgrade_service=resolved_upgrade_service,
+            simulation_repository=resolved_upgrade_service.simulation_repository,
+            packet_repository=change_review_repository,
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -783,6 +806,7 @@ def create_app(
         app.state.support_bundle_service = resolved_support_bundle_service
         app.state.recovery_service = resolved_recovery_service
         app.state.upgrade_service = resolved_upgrade_service
+        app.state.change_review_service = resolved_change_review_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -795,6 +819,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_change_review_service.close()
         await resolved_upgrade_service.close()
         await resolved_recovery_service.close()
         await resolved_support_bundle_service.close()
@@ -850,6 +875,7 @@ def create_app(
     app.include_router(support_bundles.router, prefix="/api/v1")
     app.include_router(recovery.router, prefix="/api/v1")
     app.include_router(upgrades.router, prefix="/api/v1")
+    app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
     app.include_router(health_checks.router, prefix="/api/v1")
