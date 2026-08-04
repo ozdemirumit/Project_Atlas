@@ -12,6 +12,7 @@ import {
   CircleHelp,
   Clock3,
   Database,
+  Download,
   FileChartColumn,
   FileText,
   FlaskConical,
@@ -43,6 +44,7 @@ import { createStorageInvestigation } from "./api/investigations";
 import { getPlatformStatus } from "./api/platform";
 import { createStorageRca } from "./api/rca";
 import { createStorageRecommendation } from "./api/recommendations";
+import { createStorageTechnicalReport } from "./api/reports";
 import { getStorageOverview, type StorageAsset } from "./api/storage";
 
 const navigation = [
@@ -110,6 +112,15 @@ function graphEntityIcon(entityType: GraphEntity["entity_type"]) {
   if (entityType === "virtual_machine") return <Monitor {...props} />;
   if (entityType === "technical_service") return <Workflow {...props} />;
   return <Building2 {...props} />;
+}
+
+function downloadMarkdown(filename: string, content: string): void {
+  const url = URL.createObjectURL(new Blob([content], { type: "text/markdown;charset=utf-8" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 export function App() {
@@ -192,6 +203,29 @@ export function App() {
       createStorageRecommendation(targetId, caseId, version),
   });
   const recommendation = recommendationMutation.data?.data;
+  const reportMutation = useMutation({
+    mutationFn: ({
+      targetId,
+      recommendationId,
+      recommendationVersion,
+      incidentReference,
+    }: {
+      targetId: string;
+      recommendationId: string;
+      recommendationVersion: number;
+      incidentReference: string;
+    }) =>
+      createStorageTechnicalReport(
+        targetId,
+        recommendationId,
+        recommendationVersion,
+        incidentReference,
+      ),
+  });
+  const technicalReport = reportMutation.data?.data;
+  const incidentReference = rcaCase?.incident_references.find(
+    (reference) => reference.reference_type === "incident",
+  )?.reference_id;
   const longestImpactPath = impact
     ? [...impact.paths].sort((left, right) => right.entity_ids.length - left.entity_ids.length)[0]
     : undefined;
@@ -416,6 +450,9 @@ export function App() {
                                   onClick={() => {
                                     setSelectedAssetId(asset.asset_id);
                                     investigationMutation.reset();
+                                    rcaMutation.reset();
+                                    recommendationMutation.reset();
+                                    reportMutation.reset();
                                   }}
                                 >
                                   <Database size={17} />
@@ -859,6 +896,7 @@ export function App() {
                         onClick={() => {
                           if (reasoningArtifact && selectedAsset) {
                             recommendationMutation.reset();
+                            reportMutation.reset();
                             rcaMutation.mutate({
                               targetId: selectedAsset.asset_id,
                               actualBehavior:
@@ -1054,6 +1092,7 @@ export function App() {
                         disabled={!rcaCase || recommendationMutation.isPending}
                         onClick={() => {
                           if (rcaCase) {
+                            reportMutation.reset();
                             recommendationMutation.mutate({
                               targetId: rcaCase.target_id,
                               caseId: rcaCase.case_id,
@@ -1268,6 +1307,241 @@ export function App() {
                     )}
                   </section>
 
+                  <section className="workspace-section report-section" aria-live="polite">
+                    <div className="section-heading report-heading">
+                      <div>
+                        <p className="eyebrow">TECHNICAL REPORT</p>
+                        <h2>Decision report and ITSM handoff</h2>
+                      </div>
+                      <div className="report-heading-actions">
+                        {technicalReport && (
+                          <button
+                            className="icon-button report-download"
+                            type="button"
+                            aria-label="Download technical report"
+                            title="Download Markdown report"
+                            onClick={() =>
+                              downloadMarkdown(
+                                `atlas-${technicalReport.target_id.split(".").at(-1) ?? "storage"}-decision-report-v${technicalReport.version}.md`,
+                                technicalReport.rendered_markdown,
+                              )
+                            }
+                          >
+                            <Download size={15} />
+                          </button>
+                        )}
+                        <button
+                          className="run-check-button report-button"
+                          type="button"
+                          disabled={
+                            !recommendation ||
+                            !incidentReference ||
+                            reportMutation.isPending
+                          }
+                          onClick={() => {
+                            if (recommendation && incidentReference) {
+                              reportMutation.mutate({
+                                targetId: recommendation.target_id,
+                                recommendationId: recommendation.recommendation_id,
+                                recommendationVersion: recommendation.version,
+                                incidentReference,
+                              });
+                            }
+                          }}
+                        >
+                          {reportMutation.isPending ? (
+                            <RefreshCw className="spin" size={14} />
+                          ) : (
+                            <FileChartColumn size={14} />
+                          )}
+                          Generate report
+                        </button>
+                      </div>
+                    </div>
+
+                    {!technicalReport &&
+                      !reportMutation.isPending &&
+                      !reportMutation.isError && (
+                        <div className="reasoning-empty">
+                          <FileChartColumn size={21} />
+                          <div>
+                            <strong>Governed recommendation required</strong>
+                            <p>
+                              Generate a source-bound technical report and a review-only ITSM
+                              handoff draft after the option comparison is available.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    {reportMutation.isPending && (
+                      <div className="reasoning-empty">
+                        <Clock3 size={20} />
+                        <div>
+                          <strong>Validating report source and evidence</strong>
+                          <p>Lineage, classification, redaction, integrity, and audit are being checked.</p>
+                        </div>
+                      </div>
+                    )}
+                    {reportMutation.isError && (
+                      <div className="reasoning-empty reasoning-error">
+                        <AlertTriangle size={20} />
+                        <div>
+                          <strong>Technical report unavailable</strong>
+                          <p>No partial report or ITSM draft is disclosed after a validation failure.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {technicalReport && (
+                      <>
+                        <div className="report-summary-grid">
+                          <div>
+                            <span>Report</span>
+                            <strong>Version {technicalReport.version}</strong>
+                            <small>{technicalReport.state.replaceAll("_", " ")}</small>
+                          </div>
+                          <div>
+                            <span>Audience</span>
+                            <strong>{technicalReport.audience.replaceAll("_", " ")}</strong>
+                            <small>{technicalReport.classification}</small>
+                          </div>
+                          <div>
+                            <span>Human review</span>
+                            <strong>{technicalReport.review.status}</strong>
+                            <small>{technicalReport.owner}</small>
+                          </div>
+                          <div>
+                            <span>Redaction</span>
+                            <strong>{technicalReport.redaction_state}</strong>
+                            <small>Expires {formatTimestamp(technicalReport.expires_at)}</small>
+                          </div>
+                        </div>
+
+                        <div className="report-lineage">
+                          <FileText size={18} />
+                          <div>
+                            <span>Immutable source lineage</span>
+                            <strong>
+                              Recommendation v{technicalReport.source.recommendation_version} · RCA v
+                              {technicalReport.source.rca_case_version}
+                            </strong>
+                            <p>
+                              {technicalReport.source.evidence_ids.length} authorized evidence references ·
+                              digest {technicalReport.content_digest.slice(0, 16)}…
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="report-sections">
+                          <h3>Structured report sections</h3>
+                          <div>
+                            {technicalReport.sections.map((section) => (
+                              <article key={section.section_id} className={section.state}>
+                                <div className="report-section-head">
+                                  <strong>{section.title}</strong>
+                                  <span>{section.state}</span>
+                                </div>
+                                <ul>
+                                  {section.statements.map((statement) => (
+                                    <li key={statement}>{statement}</li>
+                                  ))}
+                                </ul>
+                                {section.evidence_references.length > 0 && (
+                                  <div className="report-evidence">
+                                    <span>Evidence</span>
+                                    {section.evidence_references.map((reference) => (
+                                      <code key={reference}>{reference}</code>
+                                    ))}
+                                  </div>
+                                )}
+                                {section.limitations.length > 0 && (
+                                  <div className="report-limitations">
+                                    <strong>Limitations</strong>
+                                    <ul>
+                                      {section.limitations.map((limitation) => (
+                                        <li key={limitation}>{limitation}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                              </article>
+                            ))}
+                          </div>
+                        </div>
+
+                        {technicalReport.itsm_handoff && (
+                          <div className="itsm-handoff">
+                            <div>
+                              <span>ITSM HANDOFF DRAFT</span>
+                              <h3>{technicalReport.itsm_handoff.incident_reference}</h3>
+                              <p>{technicalReport.itsm_handoff.generated_content_label}</p>
+                            </div>
+                            <dl>
+                              <div>
+                                <dt>Status</dt>
+                                <dd>{technicalReport.itsm_handoff.state.replaceAll("_", " ")}</dd>
+                              </div>
+                              <div>
+                                <dt>Operation</dt>
+                                <dd>{technicalReport.itsm_handoff.operation.replaceAll("_", " ")}</dd>
+                              </div>
+                              <div>
+                                <dt>External dispatch</dt>
+                                <dd>
+                                  {technicalReport.itsm_handoff.dispatch_authorized
+                                    ? "Authorized"
+                                    : "Not authorized"}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt>Record mutation</dt>
+                                <dd>
+                                  {technicalReport.itsm_handoff.external_record_mutated
+                                    ? "Recorded"
+                                    : "None"}
+                                </dd>
+                              </div>
+                            </dl>
+                            <div className="itsm-fields">
+                              {technicalReport.itsm_handoff.field_mappings.map((mapping) => (
+                                <div key={mapping.field}>
+                                  <span>{mapping.field.replaceAll("_", " ")}</span>
+                                  <strong>{mapping.value}</strong>
+                                </div>
+                              ))}
+                            </div>
+                            <p className="itsm-idempotency">
+                              Idempotency {technicalReport.itsm_handoff.idempotency_key.slice(0, 20)}…
+                            </p>
+                          </div>
+                        )}
+
+                        <div className="report-boundary-grid">
+                          <div>
+                            <h3>Execution boundary</h3>
+                            <strong>
+                              {technicalReport.execution_authorized
+                                ? "Execution authority present"
+                                : "No execution authority"}
+                            </strong>
+                          </div>
+                          <div>
+                            <h3>External-system boundary</h3>
+                            <strong>
+                              {technicalReport.external_mutation_authorized
+                                ? "External mutation authority present"
+                                : "No external mutation authority"}
+                            </strong>
+                          </div>
+                        </div>
+                        <div className="safety-notice">
+                          <ShieldCheck size={16} />
+                          <span>{technicalReport.safety_notice}</span>
+                        </div>
+                      </>
+                    )}
+                  </section>
+
                   <section className="workspace-section impact-section">
                     <div className="section-heading">
                       <div>
@@ -1422,6 +1696,7 @@ export function App() {
                   if (selectedAsset && question) {
                     rcaMutation.reset();
                     recommendationMutation.reset();
+                    reportMutation.reset();
                     investigationMutation.mutate({ targetId: selectedAsset.asset_id, question });
                   }
                 }}

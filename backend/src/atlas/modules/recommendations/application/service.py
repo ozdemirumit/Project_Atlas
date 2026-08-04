@@ -68,6 +68,7 @@ class RecommendationService:
         self._assembler = assembler
         self._audit_sink = audit_sink
         self._latest: dict[tuple[str, str], RecommendationArtifact] = {}
+        self._artifacts: dict[str, RecommendationArtifact] = {}
         self._lock = asyncio.Lock()
 
     async def create(
@@ -124,7 +125,19 @@ class RecommendationService:
                 result_code="recommendation_artifact_returned",
             )
             self._latest[key] = artifact
+            self._artifacts[artifact.recommendation_id] = artifact
             return artifact
+
+    async def get_recommendation(
+        self,
+        recommendation_id: str,
+        version: int,
+        target_id: str,
+    ) -> RecommendationArtifact:
+        artifact = self._artifacts.get(recommendation_id)
+        if artifact is None or artifact.version != version or artifact.target_id != target_id:
+            raise KeyError(recommendation_id)
+        return artifact
 
     @staticmethod
     def _validate_scope(

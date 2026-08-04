@@ -15,6 +15,7 @@ from atlas.modules.authorization.application.bootstrap import (
     INVESTIGATION_CREATE,
     RCA_CREATE,
     RECOMMENDATION_CREATE,
+    REPORT_CREATE,
     STORAGE_OVERVIEW_READ,
     ai_grounded_query_scope,
     current_identity_scope,
@@ -23,6 +24,7 @@ from atlas.modules.authorization.application.bootstrap import (
     investigation_scope,
     rca_scope,
     recommendation_scope,
+    report_scope,
     storage_overview_scope,
 )
 from atlas.modules.authorization.application.service import AuthorizationService
@@ -279,6 +281,33 @@ async def authorize_recommendation_create(
             permission_id=RECOMMENDATION_CREATE,
             resource_type="resource.recommendation",
             scope=recommendation_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_report_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=REPORT_CREATE,
+            resource_type="resource.report",
+            scope=report_scope(subject.organization_id, settings.environment),
             correlation_id=str(request.state.correlation_id),
             requested_at=datetime.now(UTC),
         )

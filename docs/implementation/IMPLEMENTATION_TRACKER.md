@@ -4,14 +4,61 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-011 |
-| Title | Storage Recommendation Engine vertical slice |
-| Status | Done |
-| Branch | `agent/storage-recommendations` |
-| Pull Request | [PR #23](https://github.com/ozdemirumit/Project_Atlas/pull/23) |
-| Governing Documents | ATLAS-002, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-032, ATLAS-037, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-045, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052 |
+| Task ID | ATLAS-IMP-012 |
+| Title | Technical Decision Report and controlled ITSM handoff vertical slice |
+| Status | Review |
+| Branch | `agent/technical-decision-report` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-002, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-056 |
 | Last Updated | 2026-08-04 |
-| Next Action | Select the next Approved implementation slice |
+| Next Action | Open the pull request, validate CI, and merge after independent review |
+
+### ATLAS-IMP-012 Acceptance Criteria
+
+- Report requests bind to one authorized storage target and one exact immutable recommendation ID
+  and version, report type, audience, classification boundary, and optional incident reference.
+- Reports are immutable and versioned and retain owner, source lineage, creation and expiry,
+  classification, redaction state, reviewer state, component versions, and content digest.
+- Technical report sections expose section-level complete, partial, or failed state; scope,
+  evidence, preference, alternatives, risk, impact, interruption, duration, recovery, unknowns,
+  policy, and human-review boundaries remain visible.
+- Material report statements cite authorized evidence from the exact source recommendation;
+  inaccessible, stale, missing, or conflicting evidence remains a limitation and is never rendered
+  as a successful conclusion.
+- The first export is deterministic Markdown generated from the validated structured artifact;
+  report rendering cannot add claims, targets, permissions, approval, or execution authority.
+- Optional ITSM handoff is a labeled draft bound to an exact incident reference and report version,
+  with normalized field mapping, artifact references, classification, redaction, and an idempotency
+  key.
+- Repeating the same report request returns the same artifact and handoff draft; a changed source
+  version or material request creates a distinct artifact.
+- The ITSM draft never changes an external record, closes an incident, approves a change, grants
+  permission, or represents recommendation review as execution authority.
+- Hidden targets, unauthorized evidence, source-version mismatch, unsupported report type,
+  classification overflow, invalid incident reference, content-digest mismatch, and required audit
+  failure fail closed without partial report disclosure.
+- The web workspace generates and displays report state, source lineage, section status, evidence
+  references, limitations, redaction, reviewer state, ITSM draft status, and safety boundaries and
+  offers a deterministic Markdown download.
+- Atlas remains decision support; report generation and ITSM handoff preparation do not authorize
+  or execute infrastructure operations or external ticket mutations.
+
+### ATLAS-IMP-012 Validation Evidence
+
+- Backend Ruff check and format verification passed across 166 files.
+- Strict backend type checking passed across 163 source and test files.
+- Full backend test suite passed: 139 tests, including thirteen report tests for authentication,
+  exact assignment and scope, source lineage, section state and evidence, Markdown integrity,
+  idempotent review-only ITSM drafts, optional handoff, linked versions, safe source errors,
+  incident validation, fail-closed audit, and digest validation.
+- Frontend TypeScript, ESLint, integrated user-flow test, and production build all passed.
+- Live API validation produced six section-level states with attributable evidence and limitations,
+  a 64-character SHA-256 digest, pending review, and an idempotent ITSM draft with dispatch and
+  external mutation both denied.
+- The live web flow completed investigation, RCA, recommendation, report, and ITSM draft creation;
+  source lineage, section states, limitations, download, and both authority boundaries were visible.
+- The 1280-pixel desktop report workspace was visually inspected without incoherent overlap or
+  page-level horizontal overflow; wide comparison content remains internally scrollable.
 
 ### ATLAS-IMP-011 Acceptance Criteria
 

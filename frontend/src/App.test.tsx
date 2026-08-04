@@ -741,6 +741,112 @@ const recommendationResponse = {
   },
 };
 
+const reportResponse = {
+  data: {
+    report_id: "report_test",
+    version: 1,
+    prior_version_id: null,
+    owner: "Storage Operations",
+    state: "ready_for_review",
+    requested_by: "subject.development.operator",
+    created_at: "2026-08-04T10:10:00Z",
+    expires_at: "2026-08-04T14:05:00Z",
+    organization_id: "organization.development",
+    environment_id: "environment.test",
+    site_id: "site.local",
+    target_id: "asset.storage.lab.b28",
+    report_type: "technical_decision",
+    audience: "technical_operations",
+    classification: "internal",
+    redaction_state: "complete",
+    source: {
+      recommendation_id: "rec_test",
+      recommendation_version: 1,
+      recommendation_state: "ready_for_review",
+      recommendation_created_at: "2026-08-04T10:05:00Z",
+      recommendation_expires_at: "2026-08-04T14:05:00Z",
+      rca_case_id: "rca_test",
+      rca_case_version: 1,
+      target_id: "asset.storage.lab.b28",
+      evidence_ids: ["evidence.health", "evidence.vendor"],
+      component_versions: ["recommendation-artifact.v1"],
+    },
+    sections: [
+      {
+        section_id: "report.section.scope",
+        title: "Scope and source lineage",
+        state: "complete",
+        statements: ["Target: asset.storage.lab.b28.", "Recommendation: rec_test version 1."],
+        evidence_references: [],
+        limitations: [],
+      },
+      {
+        section_id: "report.section.preference",
+        title: "Preferred option",
+        state: "partial",
+        statements: ["Collect current path, event, and service evidence"],
+        evidence_references: ["evidence.health", "evidence.vendor"],
+        limitations: ["Current service state is not independently observed."],
+      },
+      {
+        section_id: "report.section.governance",
+        title: "Governance and review boundary",
+        state: "partial",
+        statements: ["No Atlas execution authority is present."],
+        evidence_references: [],
+        limitations: ["An accountable human review remains pending."],
+      },
+    ],
+    review: {
+      status: "pending",
+      reviewer_id: null,
+      reviewed_at: null,
+      rationale: null,
+    },
+    itsm_handoff: {
+      draft_id: "itsm_draft_test",
+      idempotency_key: "a".repeat(64),
+      state: "review_required",
+      external_system: "unconfigured_itsm",
+      operation: "append_labeled_analysis",
+      incident_reference: "INC-LOCAL-B28",
+      report_id: "report_test",
+      report_version: 1,
+      generated_content_label: "Atlas generated decision-support draft",
+      field_mappings: [
+        {
+          field: "work_notes",
+          value: "Collect current path, event, and service evidence",
+          source_reference: "report.section.preference",
+        },
+        {
+          field: "u_atlas_report_reference",
+          value: "report_test:v1",
+          source_reference: "report_test",
+        },
+      ],
+      artifact_references: ["recommendation:rec_test:v1", "report:report_test:v1"],
+      classification: "internal",
+      redaction_state: "complete",
+      human_review_required: true,
+      dispatch_authorized: false,
+      external_record_mutated: false,
+    },
+    rendered_markdown: "# Atlas Technical Decision Report\n\nNo execution authority.",
+    content_digest: "b".repeat(64),
+    component_versions: ["technical-decision-report.v1"],
+    data_profile: "synthetic_lab",
+    execution_authorized: false,
+    external_mutation_authorized: false,
+    safety_notice:
+      "Decision support only. Report generation and ITSM handoff preparation do not authorize Atlas to execute infrastructure changes or mutate an external ticket.",
+  },
+  meta: {
+    correlation_id: "test-report-correlation",
+    generated_at: "2026-08-04T10:10:00Z",
+  },
+};
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -757,12 +863,14 @@ describe("Atlas application shell", () => {
           ? storageResponse
           : url.includes("/health-checks/overview")
             ? healthCheckResponse
-            : url.includes("/recommendations/storage")
-              ? recommendationResponse
-              : url.includes("/rca/storage")
-                ? rcaResponse
-                : url.includes("/investigations/storage")
-                  ? investigationResponse
+            : url.includes("/reports/storage")
+              ? reportResponse
+              : url.includes("/recommendations/storage")
+                ? recommendationResponse
+                : url.includes("/rca/storage")
+                  ? rcaResponse
+                  : url.includes("/investigations/storage")
+                    ? investigationResponse
           : url.includes("/graph/storage-impact")
             ? graphResponse
           : platformResponse;
@@ -831,5 +939,15 @@ describe("Atlas application shell", () => {
     expect(screen.getAllByText("Blocked by policy and readiness")).toHaveLength(2);
     expect(screen.getByText("No execution authority")).toBeVisible();
     expect(screen.getByText(/does not authorize Atlas to execute/)).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate report" }));
+
+    expect(await screen.findByText("Structured report sections")).toBeVisible();
+    expect(screen.getByText("Immutable source lineage")).toBeVisible();
+    expect(screen.getByText("ITSM HANDOFF DRAFT")).toBeVisible();
+    expect(screen.getByText("Not authorized")).toBeVisible();
+    expect(screen.getByText("No external mutation authority")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Download technical report" })).toBeEnabled();
+    expect(screen.getByText(/mutate an external ticket/)).toBeVisible();
   });
 });
