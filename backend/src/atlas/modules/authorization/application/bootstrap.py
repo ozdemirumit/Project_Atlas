@@ -23,6 +23,8 @@ INVESTIGATION_CREATE = "investigation.create"
 RCA_CREATE = "rca.create"
 RECOMMENDATION_CREATE = "recommendation.create"
 REPORT_CREATE = "report.create"
+SECURITY_EXPORT_OVERVIEW_READ = "security-export.overview.read"
+SECURITY_EXPORT_TEST_CREATE = "security-export.test.create"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 
 
@@ -125,6 +127,17 @@ def report_scope(organization_id: str, environment: str) -> ResourceScope:
     )
 
 
+def security_export_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.security-export",
+        resource_id="resource.security-export.synthetic",
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
 def build_development_authorization_service(
     settings: Settings, audit_sink: AuditSink
 ) -> AuthorizationService:
@@ -171,6 +184,14 @@ def build_development_authorization_service(
             permission_id=REPORT_CREATE,
             description="Create a governed report and non-dispatching ITSM handoff draft.",
         ),
+        PermissionDefinition(
+            permission_id=SECURITY_EXPORT_OVERVIEW_READ,
+            description="Read exact-scope governed Syslog and SIEM export health.",
+        ),
+        PermissionDefinition(
+            permission_id=SECURITY_EXPORT_TEST_CREATE,
+            description="Dispatch an explicit synthetic security event over TLS.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -187,6 +208,8 @@ def build_development_authorization_service(
                 RCA_CREATE,
                 RECOMMENDATION_CREATE,
                 REPORT_CREATE,
+                SECURITY_EXPORT_OVERVIEW_READ,
+                SECURITY_EXPORT_TEST_CREATE,
             }
         ),
     )
@@ -281,6 +304,16 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=report_scope(settings.development_organization_id, settings.environment),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.security-export",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=security_export_scope(
+                    settings.development_organization_id, settings.environment
+                ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),
         )

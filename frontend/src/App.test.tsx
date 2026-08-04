@@ -19,6 +19,90 @@ const platformResponse = {
   },
 };
 
+const securityExportOverviewResponse = {
+  data: {
+    generated_at: "2026-08-04T10:00:00Z",
+    mapping_version: "atlas-siem-mapping.v1",
+    normalized_schema_version: "atlas-security-event.v1",
+    destinations: [
+      {
+        destination_id: "destination.syslog.synthetic-siem",
+        version: 1,
+        name: "Enterprise SIEM synthetic TLS collector",
+        state: "active",
+        transport: "tls",
+        host: "siem-collector.synthetic.local",
+        port: 6514,
+        tls_server_authentication: true,
+        tls_hostname_validation: true,
+        certificate_not_after: "2026-11-02T10:00:00Z",
+        facility: 16,
+        selected_categories: ["audit", "security", "platform"],
+        classification_ceiling: "internal",
+        max_queue_records: 100,
+        max_attempts: 3,
+      },
+    ],
+    health: [
+      {
+        destination_id: "destination.syslog.synthetic-siem",
+        state: "active",
+        queue_depth: 0,
+        delivered_count: 4,
+        retrying_count: 0,
+        dead_letter_count: 0,
+        certificate_days_remaining: 90,
+        last_transport_handoff_at: "2026-08-04T09:58:00Z",
+        collector_acknowledgement_available: true,
+        siem_ingestion_confirmed: false,
+        limitations: ["Transport handoff does not prove SIEM ingestion or parsing."],
+      },
+    ],
+    recent_deliveries: [],
+    preview_message: {
+      priority: 134,
+      message_id: "ATLAS_AUTHORIZATION_DECISION",
+      payload:
+        '<134>1 2026-08-04T10:00:00Z atlas-local atlas - ATLAS_AUTHORIZATION_DECISION [atlas@32473 eventId="evt_preview"] preview only',
+      payload_bytes: 144,
+      content_digest: "c".repeat(64),
+    },
+    safety_notice:
+      "Transport delivery confirms only Syslog handoff. SIEM ingestion remains unconfirmed and no infrastructure action is authorized.",
+  },
+  meta: {
+    correlation_id: "test-security-export-correlation",
+    generated_at: "2026-08-04T10:00:00Z",
+  },
+};
+
+const securityExportTestResponse = {
+  data: {
+    delivery_id: "delivery_test",
+    destination_id: "destination.syslog.synthetic-siem",
+    event_id: "evt_test",
+    state: "transport_delivered",
+    attempts: 1,
+    queued_at: "2026-08-04T10:01:00Z",
+    updated_at: "2026-08-04T10:01:00Z",
+    next_attempt_at: null,
+    last_error_code: null,
+    receipt: {
+      receipt_id: "receipt_test",
+      destination_id: "destination.syslog.synthetic-siem",
+      event_id: "evt_test",
+      accepted_at: "2026-08-04T10:01:00Z",
+      transport: "tls",
+      collector_acknowledged: true,
+      siem_ingestion_confirmed: false,
+    },
+  },
+  meta: {
+    correlation_id: "test-security-export-event-correlation",
+    generated_at: "2026-08-04T10:01:00Z",
+  },
+};
+
 const identityResponse = {
   data: {
     subject_id: "subject.development.operator",
@@ -859,6 +943,10 @@ describe("Atlas application shell", () => {
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       const payload = url.includes("/identity/me")
         ? identityResponse
+        : url.includes("/security-export/test-event")
+          ? securityExportTestResponse
+          : url.includes("/security-export/overview")
+            ? securityExportOverviewResponse
         : url.includes("/storage/overview")
           ? storageResponse
           : url.includes("/health-checks/overview")
@@ -893,6 +981,13 @@ describe("Atlas application shell", () => {
     expect(screen.getByText("Human decision required")).toBeVisible();
     expect(await screen.findByText("test")).toBeVisible();
     expect(await screen.findByText("Local Operator")).toBeVisible();
+    expect(await screen.findByText("Syslog and SIEM delivery")).toBeVisible();
+    expect(screen.getByText("Enterprise SIEM synthetic TLS collector")).toBeVisible();
+    expect(screen.getByText("Not confirmed")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Send test event" }));
+    expect(
+      await screen.findByText(/Transport handoff recorded. SIEM ingestion remains unconfirmed/),
+    ).toBeVisible();
     expect(await screen.findAllByText("VSP One B28")).not.toHaveLength(0);
     expect(screen.getByText("VSP G400")).toBeVisible();
     expect(screen.getAllByText("CTL01").length).toBeGreaterThan(0);

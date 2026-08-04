@@ -20,6 +20,7 @@ from atlas.api.routes import (
     rca,
     recommendations,
     reports,
+    security_export,
     storage,
 )
 from atlas.core.audit import AuditSink, LoggingAuditSink
@@ -67,6 +68,11 @@ from atlas.modules.recommendations.adapters.synthetic import (
 from atlas.modules.recommendations.application.service import RecommendationService
 from atlas.modules.reports.adapters.synthetic import SyntheticTechnicalReportAssembler
 from atlas.modules.reports.application.service import ReportService
+from atlas.modules.security_export.adapters.synthetic import (
+    SyntheticTlsSyslogTransport,
+    build_synthetic_syslog_destinations,
+)
+from atlas.modules.security_export.application.service import SecurityExportService
 from atlas.modules.storage.adapters.synthetic import build_synthetic_storage_overview
 from atlas.modules.storage.application.service import StorageOperationsService
 
@@ -85,9 +91,18 @@ def create_app(
     recommendation_service: RecommendationService | None = None,
     report_service: ReportService | None = None,
     grounded_answer_service: GroundedAnswerService | None = None,
+    security_export_service: SecurityExportService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
-    resolved_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
+    base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
+    resolved_security_export_service = security_export_service or SecurityExportService(
+        delegate=base_audit_sink,
+        destinations=build_synthetic_syslog_destinations(),
+        transport=SyntheticTlsSyslogTransport(),
+        environment_id=f"environment.{resolved_settings.environment}",
+        site_id="site.local",
+    )
+    resolved_audit_sink: AuditSink = resolved_security_export_service
     resolved_identity_provider = identity_provider or DevelopmentIdentityProvider(resolved_settings)
     identity_service = IdentityService(
         provider=resolved_identity_provider,
@@ -207,6 +222,7 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.settings = resolved_settings
         app.state.audit_sink = resolved_audit_sink
+        app.state.security_export_service = resolved_security_export_service
         app.state.identity_service = identity_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
@@ -249,4 +265,5 @@ def create_app(
     app.include_router(recommendations.router, prefix="/api/v1")
     app.include_router(reports.router, prefix="/api/v1")
     app.include_router(ai.router, prefix="/api/v1")
+    app.include_router(security_export.router, prefix="/api/v1")
     return app

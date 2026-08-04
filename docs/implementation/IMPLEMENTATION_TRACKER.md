@@ -4,14 +4,59 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-012 |
-| Title | Technical Decision Report and controlled ITSM handoff vertical slice |
+| Task ID | ATLAS-IMP-013 |
+| Title | Governed Syslog and SIEM security-event export vertical slice |
 | Status | Done |
-| Branch | `agent/technical-decision-report` |
-| Pull Request | [PR #24](https://github.com/ozdemirumit/Project_Atlas/pull/24) |
-| Governing Documents | ATLAS-002, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-056 |
+| Branch | `agent/syslog-siem-export` |
+| Pull Request | [#25](https://github.com/ozdemirumit/Project_Atlas/pull/25) |
+| Governing Documents | ATLAS-002, ATLAS-003, ATLAS-016, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-034, ATLAS-035, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
 | Last Updated | 2026-08-04 |
-| Next Action | Select the next Approved implementation slice |
+| Next Action | Select ATLAS-IMP-014 from the documented implementation sequence |
+
+### ATLAS-IMP-013 Acceptance Criteria
+
+- Selected audit and security events are normalized into a versioned vendor-neutral contract that
+  retains original event ID and type, occurrence time, correlation, category, severity and reason,
+  outcome, result code, mapping version, classification, and redaction state.
+- RFC 5424 messages use UTC timestamps, stable priority, logical hostname, app name, message ID,
+  escaped structured data, bounded UTF-8 content, and a digest without treating free-form text as
+  the machine-authoritative source.
+- The first destination is versioned, TLS-only, server-authenticated, independently queued, bounded,
+  and monitored for certificate expiry; TCP and UDP are disabled with no insecure downgrade.
+- Schema, classification, filter, mapping, redaction, message-size, destination, certificate, and
+  queue validation occurs before transport dispatch and fails closed without leaking event data.
+- Stable event IDs survive retries; duplicate transport delivery is possible and explicitly
+  documented, while retry uses bounded attempts and deterministic backoff in the synthetic slice.
+- Delivery states distinguish queued, retrying, transport-delivered, and dead-letter outcomes;
+  unknown or failed delivery is never represented as successful SIEM ingestion.
+- Transport acceptance proves only Syslog handoff. SIEM ingestion, parsing, correlation, alerting,
+  and ticket creation remain unknown unless independently acknowledged.
+- Required security-export authorization and audit failure blocks overview or explicit test-event
+  operations; hidden destinations and fields do not leak through errors or counts.
+- An explicit user-initiated test event exercises the same normalization, redaction, mapping, queue,
+  TLS transport, receipt, and audit path as selected production events.
+- The web workspace shows destination profile and version, TLS and certificate state, queue depth,
+  delivery counts, last transport receipt, mapping/redaction preview, limitations, and a test-event
+  control without exposing secrets or raw credentials.
+- Export processing cannot authorize infrastructure action, alter source audit records, downgrade
+  transport security, claim SIEM ingestion, or trigger autonomous remediation.
+
+### ATLAS-IMP-013 Validation Evidence
+
+- Backend Ruff check and format verification passed across 177 files.
+- Strict backend type checking passed across all 174 source and test files.
+- Full backend test suite passed: 150 tests, including eleven security-export tests for
+  authentication, exact assignment and scope, TLS-only destination health, RFC 5424 preview,
+  explicit test delivery, redaction and framing, stable retry identity, bounded dead-letter,
+  expired-certificate failure, queue capacity, and required-audit failure.
+- Frontend TypeScript, ESLint, integrated user-flow test, and production build all passed.
+- Live API validation returned one server-authenticated TLS destination, zero queued records,
+  transport-delivered test-event state, and explicit false SIEM-ingestion confirmation.
+- The live web workspace displayed destination and certificate health, queue and handoff counts,
+  RFC 5424 mapping preview, safety limitations, and successful explicit test-event feedback without
+  claiming SIEM ingestion or infrastructure authority.
+- GitHub backend CI passed in 24 seconds and frontend CI passed in 30 seconds on PR #25 head
+  `1e96eac042297fbed383e0a269a8ea79eed2d59f` before the final documentation-only update.
 
 ### ATLAS-IMP-012 Acceptance Criteria
 
