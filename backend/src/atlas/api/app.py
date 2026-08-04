@@ -17,6 +17,7 @@ from atlas.api.routes import (
     approvals,
     audit_export,
     bootstrap_artifacts,
+    bootstrap_configuration,
     bootstrap_invalidation,
     bootstrap_plan,
     bootstrap_state,
@@ -90,6 +91,9 @@ from atlas.modules.platform.adapters.bootstrap_artifact_filesystem import (
     FileSystemReleaseArtifactPublisher,
     MemoryArtifactContentSource,
 )
+from atlas.modules.platform.adapters.bootstrap_configuration_filesystem import (
+    FilesystemEffectiveConfigurationPublisher,
+)
 from atlas.modules.platform.adapters.bootstrap_state_memory import (
     InMemoryBootstrapStateRepository,
 )
@@ -105,6 +109,9 @@ from atlas.modules.platform.adapters.release_preflight import (
 )
 from atlas.modules.platform.application.bootstrap_artifact_acquisition import (
     BootstrapArtifactAcquisitionService,
+)
+from atlas.modules.platform.application.bootstrap_configuration_rendering import (
+    BootstrapConfigurationRenderingService,
 )
 from atlas.modules.platform.application.bootstrap_invalidation import BootstrapInvalidationService
 from atlas.modules.platform.application.bootstrap_plan import BootstrapPlanService
@@ -158,6 +165,7 @@ def create_app(
     bootstrap_state_service: BootstrapStateService | None = None,
     bootstrap_invalidation_service: BootstrapInvalidationService | None = None,
     bootstrap_artifact_acquisition_service: BootstrapArtifactAcquisitionService | None = None,
+    bootstrap_configuration_rendering_service: BootstrapConfigurationRenderingService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -268,6 +276,20 @@ def create_app(
                 root=resolved_settings.bootstrap_artifact_root,
                 source=MemoryArtifactContentSource(SYNTHETIC_ARTIFACT_CONTENT),
                 max_total_bytes=resolved_settings.bootstrap_artifact_max_total_bytes,
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
+        )
+    )
+    resolved_bootstrap_configuration_rendering_service = (
+        bootstrap_configuration_rendering_service
+        or BootstrapConfigurationRenderingService(
+            repository=resolved_bootstrap_state_service.repository,
+            configuration_service=resolved_deployment_configuration_service,
+            publisher=FilesystemEffectiveConfigurationPublisher(
+                root=resolved_settings.bootstrap_configuration_root,
+                max_bytes=resolved_settings.bootstrap_configuration_max_bytes,
             ),
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
@@ -407,6 +429,9 @@ def create_app(
         app.state.bootstrap_artifact_acquisition_service = (
             resolved_bootstrap_artifact_acquisition_service
         )
+        app.state.bootstrap_configuration_rendering_service = (
+            resolved_bootstrap_configuration_rendering_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -460,6 +485,7 @@ def create_app(
     app.include_router(bootstrap_invalidation.router, prefix="/api/v1")
     app.include_router(bootstrap_state.router, prefix="/api/v1")
     app.include_router(bootstrap_artifacts.router, prefix="/api/v1")
+    app.include_router(bootstrap_configuration.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
     app.include_router(health_checks.router, prefix="/api/v1")

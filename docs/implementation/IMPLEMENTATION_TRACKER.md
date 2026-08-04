@@ -4,14 +4,90 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-030 |
-| Title | Governed bootstrap artifact acquisition and verification |
+| Task ID | ATLAS-IMP-031 |
+| Title | Governed bootstrap configuration rendering and validation |
 | Status | Done |
-| Branch | `agent/bootstrap-artifact-acquisition` |
-| Pull Request | [#42](https://github.com/ozdemirumit/Project_Atlas/pull/42) |
+| Branch | `agent/bootstrap-configuration-rendering` |
+| Pull Request | [#43](https://github.com/ozdemirumit/Project_Atlas/pull/43) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Select and scope the next approved bootstrap vertical slice |
+| Next Action | Merge PR #43, synchronize `main`, and scope the next bootstrap phase |
+
+### ATLAS-IMP-031 Scope Rationale
+
+- ATLAS-038 orders configuration rendering and validation immediately after verified artifact
+  acquisition. IMP-025 provides a deterministic, redacted, read-only preview and IMP-030 establishes
+  the common governed phase boundary, but no component can yet materialize the approved effective
+  configuration for a bootstrap run.
+- This slice executes only `phase.configure`. It recomputes the exact versioned configuration,
+  validates it against the secure schema, renders canonical non-secret JSON, publishes it atomically
+  beneath the Atlas configuration root, records safe evidence, and advances the existing checkpoint.
+
+### ATLAS-IMP-031 Acceptance Criteria
+
+- A strict C2 request binds the exact run, expected revision, plan digest, resume key, release and
+  profile, configuration digest and schema version, complete bounded overlay, phase ID, human
+  justification, and idempotency key. Unknown fields, malformed values, and foreign identifiers fail
+  closed.
+- Execution requires the active lease held by the authenticated browser session, exact scope and
+  revision, completed `phase.acquire`, `phase.configure` as the current dependency-satisfied phase,
+  and the exact release, profile, plan, resume, and configuration identities recorded by the run.
+- The backend recomputes the effective configuration from release defaults plus the exact overlay.
+  Failed validation, digest drift, unsupported schema, unsafe bind or URL, mutable component reference,
+  duplicate resource, raw secret value, or autonomous-execution enablement stops before publication.
+- Rendered output is deterministic canonical UTF-8 JSON with explicit schema, release, profile, scope,
+  effective non-secret values, source precedence, and opaque secret references. Secret values,
+  credentials, commands, lease-holder identity, and raw justification are absent from files and output.
+- Configuration is written into an attempt-owned staging area beneath a configured root, flushed, and
+  atomically published under exact deployment and configuration identity. Existing byte-identical
+  output is reusable; unknown, modified, symbolic-link, extra, or conflicting content is never
+  overwritten. Failure cleanup removes only files owned by the current attempt.
+- The phase result records stable state and result code, timestamps, schema and configuration digest,
+  bounded file count and bytes, and per-file safe digest/disposition evidence without exposing paths or
+  configuration values.
+- Checkpoint completion or failure is persisted through the versioned bootstrap state contract. Exact
+  replay returns prior evidence without rewriting files; changed replay, stale revision, foreign lease,
+  expired/interrupted execution, and concurrent execution fail deterministically.
+- Required RBAC, browser CSRF, pre-mutation and pre-finish audit, correlation ID, `no-store`, safe error
+  mapping, and non-disclosing scope behavior apply. A required pre-mutation audit failure prevents
+  execution begin, file publication, and checkpoint mutation; the result audit must succeed before
+  checkpoint completion.
+- The operations UI offers the action only for a current leased `phase.configure` with matching passed
+  preview, requires explicit confirmation and justification, communicates configuration-only impact,
+  and displays bounded evidence or recovery guidance without trust, secret, data, service, rollback,
+  connector, infrastructure, or AI-operation controls.
+- Automated and live tests cover canonical output, validation and digest drift, exact reuse and replay,
+  changed replay, stale/foreign/expired ownership, interrupted execution, audit failure, path and
+  symbolic-link safety, existing conflicts, cleanup, strict API parsing, response redaction, PostgreSQL
+  serialization, persisted reload state, and responsive desktop/mobile presentation.
+- This slice does not provision trust, certificates, secret values or identities; initialize or migrate
+  data; deploy or restart services; configure enterprise identity, model, or integrations; execute
+  rollback; invoke infrastructure connectors; or authorize AI-driven operation.
+
+### ATLAS-IMP-031 Validation Evidence
+
+- Filesystem, application, state, API, and persistence tests cover deterministic canonical output,
+  immutable publication and exact reuse, digest and validation drift, changed replay, stale or foreign
+  ownership, interrupted execution, required audit failure, path and symbolic-link safety, existing
+  conflicts, bounded cleanup, strict request parsing, safe response evidence, PostgreSQL serialization,
+  and persisted reload state. The two symbolic-link cases are skipped only on this Windows host and
+  remain enabled in Linux CI.
+- Full backend verification passes Ruff format/check across 269 files, mypy across 263 source files,
+  and 309 pytest tests with two host-specific symbolic-link skips. Full frontend verification passes
+  ESLint, TypeScript, 24 Vitest tests, and the production build.
+- Live browser validation established the exact coordination lease with explicit justification,
+  acquired and verified three immutable offline artifacts, rendered the approved non-secret effective
+  configuration, published one 1,324-byte file, advanced the run through revisions 1 to 5, completed
+  `phase.acquire` and `phase.configure`, and selected `phase.trust` next without exposing a trust action.
+- Direct filesystem verification found one canonical JSON document beneath the exact release and
+  configuration identities. It contains only effective non-secret values, source precedence, and two
+  opaque secret references; no raw credentials, temporary files, or attempt-owned staging content
+  remained after publication.
+- A page reload retained the completed artifact and configuration evidence without offering either
+  action again. Live presentation passed at 1440x900 and 390x844 with no horizontal overflow, and the
+  browser produced no warning or error logs.
+- GitHub backend and frontend CI jobs passed for source commit `26c21eb` in
+  [run 30928899479](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30928899479).
 
 ### ATLAS-IMP-030 Scope Rationale
 
@@ -1408,6 +1484,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-028 | Bootstrap input drift and checkpoint invalidation preview | Completed through [PR #40](https://github.com/ozdemirumit/Project_Atlas/pull/40) from source commit `8419c94`; 287 backend tests, 20 frontend tests, live non-mutating desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-029 | Controlled bootstrap plan rebase and checkpoint invalidation | Completed through [PR #41](https://github.com/ozdemirumit/Project_Atlas/pull/41) from source commit `f2feecc`; 291 backend tests, 21 frontend tests, live enterprise-session rebase and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-030 | Governed bootstrap artifact acquisition and verification | Completed through [PR #42](https://github.com/ozdemirumit/Project_Atlas/pull/42) from source commit `270d625`; 301 backend tests, 23 frontend tests, live exact-lease artifact acquisition and desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-031 | Governed bootstrap configuration rendering and validation | Completed through [PR #43](https://github.com/ozdemirumit/Project_Atlas/pull/43) from source commit `26c21eb`; 309 backend tests, 24 frontend tests, live exact-lease artifact/configuration execution and desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
