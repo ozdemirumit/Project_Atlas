@@ -4,14 +4,75 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-033 |
-| Title | Governed bootstrap data-service initialization and migration |
-| Status | Done |
-| Branch | `agent/bootstrap-data-initialization` |
-| Pull Request | [#45](https://github.com/ozdemirumit/Project_Atlas/pull/45) |
-| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
+| Task ID | ATLAS-IMP-034 |
+| Title | Governed bootstrap service deployment and readiness |
+| Status | In Progress |
+| Branch | `agent/bootstrap-service-deployment` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Select and scope ATLAS-IMP-034 from the approved bootstrap roadmap |
+| Next Action | Implement the governed synthetic `phase.services` deployment plan and readiness suite |
+
+### ATLAS-IMP-034 Scope Rationale
+
+- ATLAS-038 orders dependency-aware Atlas service deployment after data initialization and requires
+  bounded readiness and liveness checks before traffic or later identity bootstrap. IMP-030 through
+  IMP-033 establish exact artifacts, configuration, trust, data ownership, lease, and checkpoint
+  evidence, but bootstrap cannot yet bind those inputs to an observable service rollout.
+- No production orchestration runtime is selected by approved ADR and this workstation has no governed
+  container runtime. This first slice therefore deploys only an Atlas-owned synthetic service-state
+  target for the developer and Linux-lab profiles. It proves catalog ordering, immutable input binding,
+  runtime-policy validation, readiness evidence, idempotency, recovery, and checkpoint behavior without
+  starting a process, container, operating-system service, ingress, or external workload.
+
+### ATLAS-IMP-034 Acceptance Criteria
+
+- A read-only versioned service-plan API derives the exact plan from release and profile, scope,
+  configuration and trust-plan digests, completed data-plan and migration identities, verified artifact
+  evidence, and a bounded release service catalog. It exposes stable service IDs, immutable artifact
+  IDs and checksums, dependency order, workload identity references, private endpoint class, resource
+  bounds, probe definitions, and non-secret target metadata only.
+- The initial catalog contains only the synthetic Atlas API and web services required by the selected
+  profile. IDs and dependency edges are unique and acyclic; artifacts must match completed acquisition
+  evidence; configuration, public trust, workload identity, and supported schema references must match
+  completed checkpoints; mutable tags, unknown services, public administration binds, privileged/root
+  runtime, wildcard egress, unbounded resources, secret values, shell commands, and autonomous
+  infrastructure capability fail before target mutation.
+- A strict C2 execution request binds the exact run and revision, lease, plan and resume identities,
+  release/profile/scope, configuration, trust, data-plan and migration digests, service-plan schema and
+  digest, target identity and expected state, `phase.services`, bounded human justification, and
+  idempotency key. Unknown, stale, malformed, foreign, or changed input fails closed.
+- Execution requires the authenticated browser session to hold the active lease, all four prior phases
+  to be completed with exact safe evidence, `phase.services` to be current, and the target to be empty or
+  byte-for-byte reusable Atlas synthetic service state. Unknown, partial, modified, symbolic-link,
+  foreign, newer, or ambiguous state is never adopted, overwritten, stopped, or reported ready.
+- Deployment validates services in dependency order, records `deployed`, `ready`, or bounded failure
+  state, and requires passing startup, readiness, and liveness evidence for every selected service before
+  checkpoint completion. A dependency failure prevents downstream readiness; partial attempts retain
+  explicit recovery guidance and never claim rollout success.
+- Publication uses attempt-owned staging, bounded file size, flush, exact-content reuse, atomic rename,
+  and safe cleanup. The only target mutation is one canonical synthetic service-state document beneath
+  the configured Atlas root; no process, container, operating-system service, port, firewall, DNS,
+  route, load balancer, network policy, secret store, external database, or infrastructure is changed.
+- The phase result records stable state/result code, timestamps, service-plan digest, target identity,
+  bounded deployed/ready/probe counts, ordered per-service status, and safe digest/disposition evidence.
+  Exact replay returns prior evidence without redeployment; changed replay, concurrency, interruption,
+  stale revision, foreign lease, and expired ownership fail deterministically.
+- Required RBAC, browser CSRF, pre-mutation and pre-finish audit, correlation ID, `no-store`, safe errors,
+  PostgreSQL serialization, interrupted-phase reclaim, and non-disclosing scope behavior apply. Required
+  audit failure prevents target inspection/publication or checkpoint completion at the relevant boundary.
+- The operations UI offers the action only for a current leased `phase.services` with matching completed
+  data evidence and a passed plan, requires confirmation and justification, explains synthetic
+  service-state-only impact, and displays dependency/readiness evidence without identity-provider,
+  model, integration, rollback, connector, real service-control, infrastructure, or AI-operation controls.
+- Automated and live tests cover deterministic plans, catalog drift and cycles, artifact and checkpoint
+  mismatch, empty/reusable/unknown targets, dependency failure, probe failure, exact and changed replay,
+  stale/foreign/expired ownership, concurrency, interruption, audit failure, path safety, strict API
+  parsing, safe evidence, persistence/reload, and responsive desktop/mobile presentation.
+- This slice does not start, stop, restart, install, remove, or route traffic to any real process,
+  container, operating-system service, cluster workload, ingress, or external dependency; it does not
+  read secret values, configure identity/model/integrations, execute rollback, invoke managed
+  infrastructure connectors, or authorize AI-driven operation.
 
 ### ATLAS-IMP-033 Scope Rationale
 
