@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-012 |
 | Title | Technical Decision Report and controlled ITSM handoff vertical slice |
-| Status | Review |
+| Status | Done |
 | Branch | `agent/technical-decision-report` |
 | Pull Request | [PR #24](https://github.com/ozdemirumit/Project_Atlas/pull/24) |
 | Governing Documents | ATLAS-002, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-056 |
 | Last Updated | 2026-08-04 |
-| Next Action | Open the pull request, validate CI, and merge after independent review |
+| Next Action | Select the next Approved implementation slice |
 
 ### ATLAS-IMP-012 Acceptance Criteria
 
@@ -59,6 +59,7 @@
   source lineage, section states, limitations, download, and both authority boundaries were visible.
 - The 1280-pixel desktop report workspace was visually inspected without incoherent overlap or
   page-level horizontal overflow; wide comparison content remains internally scrollable.
+- GitHub backend and frontend CI jobs passed before merge.
 
 ### ATLAS-IMP-011 Acceptance Criteria
 
@@ -317,6 +318,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-009 | Evidence-grounded investigation and reasoning vertical slice | Completed through [PR #21](https://github.com/ozdemirumit/Project_Atlas/pull/21); 103 backend tests, live desktop/mobile investigation validation, and all GitHub quality gates passed |
 | ATLAS-IMP-010 | Storage fault-family Root Cause Analysis vertical slice | Completed through [PR #22](https://github.com/ozdemirumit/Project_Atlas/pull/22); 114 backend tests, live API and desktop UI validation, and all GitHub quality gates passed |
 | ATLAS-IMP-011 | Storage Recommendation Engine vertical slice | Completed through [PR #23](https://github.com/ozdemirumit/Project_Atlas/pull/23); 126 backend tests, live recommendation API/UI validation, and all GitHub quality gates passed |
+| ATLAS-IMP-012 | Technical Decision Report and controlled ITSM handoff vertical slice | Completed through [PR #24](https://github.com/ozdemirumit/Project_Atlas/pull/24); 139 backend tests, live report and ITSM draft API/UI validation, and all GitHub quality gates passed |
 
 ## Status Rules
 
