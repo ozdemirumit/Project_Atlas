@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Annotated
+from uuid import uuid4
 
 from fastapi import Depends, Request
 
+from atlas import __version__
 from atlas.api.errors import AtlasError
+from atlas.core.audit import AuditRecord
 from atlas.core.capabilities import CapabilityClass
 from atlas.modules.authorization.application.bootstrap import (
     AI_GROUNDED_QUERY_CREATE,
@@ -16,6 +19,8 @@ from atlas.modules.authorization.application.bootstrap import (
     APPROVAL_REQUEST_CREATE,
     APPROVAL_REQUEST_DECIDE,
     APPROVAL_REQUEST_READ,
+    AUDIT_EXPORT,
+    AUDIT_READ,
     GRAPH_STORAGE_IMPACT_READ,
     HEALTH_CHECK_OVERVIEW_READ,
     HEALTH_CHECK_RUN_CREATE,
@@ -35,6 +40,7 @@ from atlas.modules.authorization.application.bootstrap import (
     ai_grounded_query_scope,
     api_credential_self_scope,
     approval_scope,
+    audit_export_scope,
     current_identity_scope,
     graph_storage_impact_scope,
     health_check_scope,
@@ -55,7 +61,12 @@ from atlas.modules.identity.application.api_credentials import (
 )
 from atlas.modules.identity.application.service import IdentityService
 from atlas.modules.identity.application.sessions import SessionOperationsError, SessionService
-from atlas.modules.identity.domain.models import AuthenticatedSubject, AuthenticationInput
+from atlas.modules.identity.domain.models import (
+    AuthenticatedSubject,
+    AuthenticationInput,
+    AuthenticationMethod,
+    SubjectKind,
+)
 from atlas.modules.identity.domain.sessions import CredentialKind
 
 
@@ -810,4 +821,95 @@ async def authorize_security_export_test_create(
 ) -> AuthorizationDecision:
     return await _authorize_security_export(
         request, subject, permission_id=SECURITY_EXPORT_TEST_CREATE
+    )
+
+
+async def _authorize_audit_export(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    settings = request.app.state.settings
+    scope = audit_export_scope(
+        subject.organization_id,
+        settings.environment,
+        capability_class,
+    )
+    requested_at = datetime.now(UTC)
+    if (
+        subject.kind is not SubjectKind.HUMAN
+        or subject.authentication_method is AuthenticationMethod.DEVELOPMENT
+    ):
+        await request.app.state.audit_sink.record(
+            AuditRecord(
+                event_id=f"evt_{uuid4().hex}",
+                event_type="atlas.audit.access.denied",
+                schema_version="1.0",
+                producer="project-atlas-api",
+                producer_version=__version__,
+                occurred_at=requested_at,
+                correlation_id=str(request.state.correlation_id),
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                assurance_level=subject.assurance_level.value,
+                permission_id=permission_id,
+                resource_type="resource.audit.events",
+                scope_reference=scope.reference,
+                decision_id=None,
+                outcome="denied",
+                result_code="enterprise_human_browser_required",
+            )
+        )
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    service: AuthorizationService = request.app.state.authorization_service
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.audit.events",
+            scope=scope,
+            correlation_id=str(request.state.correlation_id),
+            requested_at=requested_at,
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_audit_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_audit_export(
+        request,
+        subject,
+        permission_id=AUDIT_READ,
+        capability_class=CapabilityClass.C0_INFORMATIONAL,
+    )
+
+
+async def authorize_audit_export(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_audit_export(
+        request,
+        subject,
+        permission_id=AUDIT_EXPORT,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
     )

@@ -45,12 +45,15 @@ class AtlasError(Exception):
         self.retryable = retryable
 
 
-def problem_response(problem: ProblemDetails) -> JSONResponse:
+def problem_response(problem: ProblemDetails, *, no_store: bool = False) -> JSONResponse:
+    headers = {"X-Correlation-ID": problem.correlation_id}
+    if no_store:
+        headers["Cache-Control"] = "no-store"
     return JSONResponse(
         status_code=problem.status,
         content=problem.model_dump(mode="json"),
         media_type="application/problem+json",
-        headers={"X-Correlation-ID": problem.correlation_id},
+        headers=headers,
     )
 
 
@@ -84,7 +87,8 @@ def register_error_handlers(app: FastAPI) -> None:
                 detail=exc.detail,
                 correlation_id=_correlation_id(request),
                 retryable=exc.retryable,
-            )
+            ),
+            no_store=request.url.path.startswith("/api/v1/audit-export"),
         )
 
     @app.exception_handler(RequestValidationError)
@@ -100,7 +104,8 @@ def register_error_handlers(app: FastAPI) -> None:
                 detail="One or more request fields are invalid.",
                 correlation_id=_correlation_id(request),
                 errors=_validation_errors(exc),
-            )
+            ),
+            no_store=request.url.path.startswith("/api/v1/audit-export"),
         )
 
     @app.exception_handler(Exception)
@@ -118,5 +123,6 @@ def register_error_handlers(app: FastAPI) -> None:
                 detail="The request could not be completed.",
                 correlation_id=_correlation_id(request),
                 retryable=False,
-            )
+            ),
+            no_store=request.url.path.startswith("/api/v1/audit-export"),
         )

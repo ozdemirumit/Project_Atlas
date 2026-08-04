@@ -33,6 +33,8 @@ export type SecurityExportOverview = {
     port: number;
     tls_server_authentication: boolean;
     tls_hostname_validation: boolean;
+    trust_reference_id: string;
+    client_identity_secret_reference_id: string | null;
     certificate_not_after: string;
     facility: number;
     selected_categories: string[];

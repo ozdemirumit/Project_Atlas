@@ -120,6 +120,8 @@ class SyslogDestination:
     port: int
     tls_server_authentication: bool
     tls_hostname_validation: bool
+    trust_reference_id: str
+    client_identity_secret_reference_id: str | None
     certificate_not_after: datetime
     facility: int
     selected_categories: tuple[SecurityCategory, ...]
@@ -132,6 +134,13 @@ class SyslogDestination:
             raise ValueError("the MVP destination must be versioned and TLS-only")
         if not self.tls_server_authentication or not self.tls_hostname_validation:
             raise ValueError("TLS server and hostname validation are mandatory")
+        if not self.trust_reference_id.startswith("trust."):
+            raise ValueError("a non-secret trust reference is required")
+        if (
+            self.client_identity_secret_reference_id is not None
+            and not self.client_identity_secret_reference_id.startswith("secret.")
+        ):
+            raise ValueError("client identity must be an opaque secret reference")
         if self.certificate_not_after.tzinfo is None:
             raise ValueError("certificate expiry must be timezone-aware")
         if not 1 <= self.port <= 65535 or not 1 <= self.max_queue_records <= 1000:
@@ -195,3 +204,57 @@ class SecurityExportOverview:
     preview_event: NormalizedSecurityEvent
     preview_message: SyslogMessage
     safety_notice: str
+
+
+@dataclass(frozen=True, slots=True)
+class AuditEventProjection:
+    sequence: int
+    event_id: str
+    event_type: str
+    schema_version: str
+    occurred_at: datetime
+    accepted_at: datetime
+    correlation_id: str
+    subject_id: str | None
+    actor_type: str | None
+    authentication_method: str | None
+    assurance_level: str | None
+    permission_id: str | None
+    resource_type: str | None
+    scope_reference: str
+    decision_id: str | None
+    outcome: str
+    result_code: str
+    target_subject_id: str | None
+
+    def __post_init__(self) -> None:
+        if self.sequence < 1:
+            raise ValueError("audit sequence must be positive")
+        if self.occurred_at.tzinfo is None or self.accepted_at.tzinfo is None:
+            raise ValueError("audit event times must be timezone-aware")
+
+
+@dataclass(frozen=True, slots=True)
+class AuditEventPage:
+    events: tuple[AuditEventProjection, ...]
+    limit: int
+    next_cursor: str | None
+    has_more: bool
+
+
+@dataclass(frozen=True, slots=True)
+class AuditExportOverview:
+    generated_at: datetime
+    page: AuditEventPage
+    health: tuple[DestinationHealth, ...]
+    recent_deliveries: tuple[DeliveryRecord, ...]
+    safety_notice: str
+
+
+@dataclass(frozen=True, slots=True)
+class AuditRetryResult:
+    attempted: int
+    delivered: int
+    retrying: int
+    dead_letter: int
+    generated_at: datetime

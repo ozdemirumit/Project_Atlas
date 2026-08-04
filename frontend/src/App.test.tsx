@@ -103,6 +103,89 @@ const securityExportTestResponse = {
   },
 };
 
+const auditExportOverviewResponse = {
+  data: {
+    generated_at: "2026-08-04T10:05:00Z",
+    page: {
+      events: [
+        {
+          sequence: 42,
+          event_id: "evt_audit_ui",
+          event_type: "atlas.authorization.decision",
+          schema_version: "1.0",
+          occurred_at: "2026-08-04T10:04:00Z",
+          accepted_at: "2026-08-04T10:04:01Z",
+          correlation_id: "cor_audit_ui",
+          subject_id: "subject.enterprise.operator",
+          actor_type: "human",
+          authentication_method: "ldap",
+          assurance_level: "multi_factor",
+          permission_id: "storage.overview.read",
+          resource_type: "resource.storage.overview",
+          scope_reference:
+            "organization.enterprise/environment.test/site.local/domain.storage/resource.storage.lab-overview/C1",
+          decision_id: "decision.audit.ui",
+          outcome: "allowed",
+          result_code: "matching_assignment",
+          target_subject_id: null,
+        },
+      ],
+      limit: 25,
+      next_cursor: null,
+      has_more: false,
+    },
+    health: [
+      {
+        destination_id: "destination.syslog.synthetic-siem",
+        state: "degraded",
+        queue_depth: 1,
+        delivered_count: 8,
+        retrying_count: 1,
+        dead_letter_count: 1,
+        certificate_days_remaining: 90,
+        last_transport_handoff_at: "2026-08-04T10:03:00Z",
+        collector_acknowledgement_available: true,
+        siem_ingestion_confirmed: false,
+        limitations: ["Transport handoff does not prove SIEM ingestion or parsing."],
+      },
+    ],
+    recent_deliveries: [
+      {
+        delivery_id: "delivery.audit.ui",
+        destination_id: "destination.syslog.synthetic-siem",
+        event_id: "evt_audit_ui",
+        state: "retrying",
+        attempts: 1,
+        queued_at: "2026-08-04T10:04:00Z",
+        updated_at: "2026-08-04T10:04:00Z",
+        next_attempt_at: "2026-08-04T10:04:01Z",
+        last_error_code: "synthetic_transport_unavailable",
+        receipt: null,
+      },
+    ],
+    safety_notice:
+      "Transport handoff does not prove SIEM ingestion and cannot authorize infrastructure action.",
+  },
+  meta: {
+    correlation_id: "cor_audit_overview_ui",
+    generated_at: "2026-08-04T10:05:00Z",
+  },
+};
+
+const auditRetryResponse = {
+  data: {
+    attempted: 1,
+    delivered: 1,
+    retrying: 0,
+    dead_letter: 0,
+    generated_at: "2026-08-04T10:06:00Z",
+  },
+  meta: {
+    correlation_id: "cor_audit_retry_ui",
+    generated_at: "2026-08-04T10:06:00Z",
+  },
+};
+
 const identityResponse = {
   data: {
     subject_id: "subject.development.operator",
@@ -1720,5 +1803,190 @@ describe("Atlas application shell", () => {
     expect(headers.get("X-CSRF-Token")).toBe("csrf_approval_test");
     expect(headers.get("Idempotency-Key")).toMatch(/^approval-ui-/);
     expect(decisionRequest?.body).toContain('"expected_version":1');
+  });
+
+  it("discovers bounded audit governance for a Security Auditor and retries with CSRF", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    document.cookie = "atlas_csrf=csrf_audit_test; path=/; SameSite=Strict";
+    let retryRequest: RequestInit | undefined;
+    const auditorIdentity = {
+      ...identityResponse,
+      data: {
+        ...identityResponse.data,
+        subject_id: "subject.enterprise.auditor",
+        display_name: "Security Auditor",
+        role_ids: ["role.security-auditor"],
+        authentication: {
+          ...identityResponse.data.authentication,
+          provider_id: "provider.ldap.enterprise",
+          method: "ldap",
+          assurance_level: "multi_factor",
+        },
+      },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/audit-export/retry")) {
+        retryRequest = init;
+        return Promise.resolve(
+          new Response(JSON.stringify(auditRetryResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+          }),
+        );
+      }
+      if (url.includes("/audit-export/overview")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(auditExportOverviewResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+          }),
+        );
+      }
+      if (url.includes("/identity/me")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(auditorIdentity), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.endsWith("/authentication/sessions")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(sessionInventoryResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.endsWith("/authentication/api-credentials")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(apiCredentialInventoryResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url === "/health" || url.endsWith("/health")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(platformResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(new Response(null, { status: 403 }));
+    });
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Security Auditor")).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Enterprise audit delivery" })).toBeVisible();
+    expect(screen.getByText("atlas.authorization.decision")).toBeVisible();
+    expect(screen.getAllByText("evt_audit_ui")).toHaveLength(2);
+    expect(screen.getByText("At least once")).toBeVisible();
+    expect(screen.getByText(/SIEM receipt not inferred/)).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Search audit events"), {
+      target: { value: "authorization" },
+    });
+    await waitFor(() =>
+      expect(
+        vi.mocked(globalThis.fetch).mock.calls.some(([input]) => {
+          const url =
+            typeof input === "string"
+              ? input
+              : input instanceof URL
+                ? input.href
+                : input.url;
+          return url.includes("/audit-export/overview") && url.includes("query=authorization");
+        }),
+      ).toBe(true),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Retry queued delivery" }),
+    );
+    expect(await screen.findByText(/Retry completed: 1 transport handoff/)).toBeVisible();
+    await waitFor(() => expect(retryRequest?.method).toBe("POST"));
+    expect(new Headers(retryRequest?.headers).get("X-CSRF-Token")).toBe("csrf_audit_test");
+  });
+
+  it("keeps audit governance silent when an ordinary enterprise operator receives 403", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    const operatorIdentity = {
+      ...identityResponse,
+      data: {
+        ...identityResponse.data,
+        display_name: "Directory Operator",
+        authentication: {
+          ...identityResponse.data.authentication,
+          provider_id: "provider.ldap.enterprise",
+          method: "ldap",
+          assurance_level: "single_factor",
+        },
+      },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/audit-export/overview")) {
+        return Promise.resolve(new Response(null, { status: 403 }));
+      }
+      if (url.includes("/identity-governance")) {
+        return Promise.resolve(new Response(null, { status: 403 }));
+      }
+      const payload = url.includes("/identity/me")
+        ? operatorIdentity
+        : url.endsWith("/authentication/sessions")
+          ? sessionInventoryResponse
+          : url.endsWith("/authentication/api-credentials")
+            ? apiCredentialInventoryResponse
+            : url.includes("/security-export/overview")
+              ? securityExportOverviewResponse
+              : url.includes("/storage/overview")
+                ? storageResponse
+                : url.includes("/health-checks/overview")
+                  ? healthCheckResponse
+                  : url.includes("/graph/storage-impact")
+                    ? graphResponse
+                    : platformResponse;
+      return Promise.resolve(
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Directory Operator")).toBeVisible();
+    await waitFor(() =>
+      expect(
+        vi.mocked(globalThis.fetch).mock.calls.some(([input]) => {
+          const url =
+            typeof input === "string"
+              ? input
+              : input instanceof URL
+                ? input.href
+                : input.url;
+          return url.includes("/audit-export/overview");
+        }),
+      ).toBe(true),
+    );
+    expect(
+      screen.queryByRole("heading", { name: "Enterprise audit delivery" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/audit export inventory failed/i)).not.toBeInTheDocument();
   });
 });

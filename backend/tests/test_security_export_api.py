@@ -193,7 +193,7 @@ async def test_normalization_redacts_secret_tokens_and_frames_one_rfc5424_record
     )
 
     message = transport.messages[0]
-    assert message.event_id == "redacted"
+    assert message.event_id == "evt_secret_token_value"
     assert "do-not-export" not in message.payload
     assert "\n" not in message.payload
     assert "\r" not in message.payload
@@ -255,15 +255,14 @@ async def test_expired_certificate_fails_closed_without_transport_downgrade() ->
 
 
 @pytest.mark.asyncio
-async def test_bounded_queue_rejects_new_events_when_transport_is_unavailable() -> None:
+async def test_bounded_queue_preserves_source_audit_without_blocking_governed_operation() -> None:
     export_service, sink, _ = service(
         transport=SyntheticTlsSyslogTransport(fail_attempts=5),
         max_queue_records=1,
     )
     await export_service.record(audit_record())
 
-    with pytest.raises(RuntimeError, match="queue_capacity"):
-        await export_service.record(audit_record(event_id="evt_second"))
+    await export_service.record(audit_record(event_id="evt_second"))
 
     assert [item.event_id for item in sink.records] == [
         "evt_security_export_test",

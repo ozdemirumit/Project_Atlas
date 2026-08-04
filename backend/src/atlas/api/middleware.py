@@ -32,7 +32,8 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
                     code="invalid_correlation_id",
                     detail="X-Correlation-ID has an invalid format.",
                     correlation_id=generated_id,
-                )
+                ),
+                no_store=request.url.path.startswith("/api/v1/audit-export"),
             )
 
         correlation_id = incoming_id or generated_id
@@ -45,6 +46,8 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
 class ApiCredentialNoStoreMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         response = await call_next(request)
-        if getattr(request.state, "authenticated_api_credential_id", None) is not None:
+        if getattr(
+            request.state, "authenticated_api_credential_id", None
+        ) is not None or request.url.path.startswith("/api/v1/audit-export"):
             response.headers["Cache-Control"] = "no-store"
         return response

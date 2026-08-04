@@ -26,6 +26,8 @@ def build_synthetic_syslog_destinations() -> tuple[SyslogDestination, ...]:
             port=6514,
             tls_server_authentication=True,
             tls_hostname_validation=True,
+            trust_reference_id="trust.syslog.synthetic-siem",
+            client_identity_secret_reference_id="secret.syslog.synthetic-client",
             certificate_not_after=datetime.now(UTC) + timedelta(days=90),
             facility=16,
             selected_categories=(

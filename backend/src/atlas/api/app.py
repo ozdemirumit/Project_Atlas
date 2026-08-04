@@ -14,6 +14,7 @@ from atlas.api.routes import (
     ai,
     api_credentials,
     approvals,
+    audit_export,
     graph,
     health,
     health_checks,
@@ -339,4 +340,5 @@ def create_app(
     app.include_router(reports.router, prefix="/api/v1")
     app.include_router(ai.router, prefix="/api/v1")
     app.include_router(security_export.router, prefix="/api/v1")
+    app.include_router(audit_export.router, prefix="/api/v1")
     return app
