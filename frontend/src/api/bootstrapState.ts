@@ -34,6 +34,7 @@ export type BootstrapState = {
     identity_handoff: BootstrapIdentityExecution | null;
     integration_validation: BootstrapIntegrationExecution | null;
     end_to_end_verification: BootstrapVerificationExecution | null;
+    operational_handoff: BootstrapHandoffExecution | null;
   };
   durable: boolean;
   lease_available: boolean;
@@ -280,6 +281,50 @@ export type BootstrapVerificationExecution = {
     size_bytes: number;
     disposition: "published" | "reused";
   }>;
+};
+
+export type BootstrapHandoffExecution = {
+  execution_id: string;
+  phase_id: "phase.handoff";
+  release_id: string;
+  profile: string;
+  configuration_digest: string;
+  trust_plan_digest: string;
+  data_plan_digest: string;
+  service_plan_digest: string;
+  identity_plan_digest: string;
+  integration_plan_digest: string;
+  verification_plan_digest: string;
+  verification_report_digest: string;
+  source_evidence_digest: string;
+  handoff_schema_version: "atlas.bootstrap-handoff-plan.v1";
+  suite_version: "atlas.bootstrap-handoff-suite.v1";
+  handoff_plan_digest: string;
+  target_id: string;
+  readiness_class: "developer_linux_lab_bootstrap_complete";
+  readiness_claims: {
+    production_ready: false;
+    customer_integrations_validated: false;
+    support_accepted: false;
+    ha_certified: false;
+    dr_certified: false;
+    backup_restore_validated: false;
+    release_approved: false;
+  };
+  state: "running" | "completed" | "failed";
+  result_code: string;
+  started_at: string;
+  completed_at: string | null;
+  passed_count: number;
+  not_applicable_count: number;
+  mandatory_pass_count: number;
+  known_limitation_count: number;
+  pending_action_count: number;
+  owner_role_count: number;
+  missing_production_evidence_count: number;
+  external_operation_count: 0;
+  checks: BootstrapVerificationExecution["checks"];
+  evidence: BootstrapVerificationExecution["evidence"];
 };
 
 type BootstrapStateResponse = { data: BootstrapState };
@@ -645,6 +690,57 @@ export function isVerificationExecution(value: unknown): value is BootstrapVerif
   );
 }
 
+export function isHandoffExecution(value: unknown): value is BootstrapHandoffExecution {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  const claims = candidate.readiness_claims as Record<string, unknown> | null;
+  return (
+    typeof candidate.execution_id === "string" &&
+    candidate.phase_id === "phase.handoff" &&
+    typeof candidate.release_id === "string" &&
+    typeof candidate.profile === "string" &&
+    typeof candidate.configuration_digest === "string" &&
+    typeof candidate.trust_plan_digest === "string" &&
+    typeof candidate.data_plan_digest === "string" &&
+    typeof candidate.service_plan_digest === "string" &&
+    typeof candidate.identity_plan_digest === "string" &&
+    typeof candidate.integration_plan_digest === "string" &&
+    typeof candidate.verification_plan_digest === "string" &&
+    typeof candidate.verification_report_digest === "string" &&
+    typeof candidate.source_evidence_digest === "string" &&
+    candidate.handoff_schema_version === "atlas.bootstrap-handoff-plan.v1" &&
+    candidate.suite_version === "atlas.bootstrap-handoff-suite.v1" &&
+    typeof candidate.handoff_plan_digest === "string" &&
+    typeof candidate.target_id === "string" &&
+    candidate.readiness_class === "developer_linux_lab_bootstrap_complete" &&
+    claims !== null &&
+    typeof claims === "object" &&
+    claims.production_ready === false &&
+    claims.customer_integrations_validated === false &&
+    claims.support_accepted === false &&
+    claims.ha_certified === false &&
+    claims.dr_certified === false &&
+    claims.backup_restore_validated === false &&
+    claims.release_approved === false &&
+    (candidate.state === "running" ||
+      candidate.state === "completed" ||
+      candidate.state === "failed") &&
+    typeof candidate.result_code === "string" &&
+    typeof candidate.started_at === "string" &&
+    (candidate.completed_at === null || typeof candidate.completed_at === "string") &&
+    typeof candidate.passed_count === "number" &&
+    typeof candidate.not_applicable_count === "number" &&
+    typeof candidate.mandatory_pass_count === "number" &&
+    typeof candidate.known_limitation_count === "number" &&
+    typeof candidate.pending_action_count === "number" &&
+    typeof candidate.owner_role_count === "number" &&
+    typeof candidate.missing_production_evidence_count === "number" &&
+    candidate.external_operation_count === 0 &&
+    Array.isArray(candidate.checks) &&
+    Array.isArray(candidate.evidence)
+  );
+}
+
 export function isBootstrapRun(value: unknown): value is NonNullable<BootstrapState["run"]> {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
@@ -687,7 +783,10 @@ export function isBootstrapRun(value: unknown): value is NonNullable<BootstrapSt
       isIntegrationExecution(candidate.integration_validation)) &&
     (candidate.end_to_end_verification === undefined ||
       candidate.end_to_end_verification === null ||
-      isVerificationExecution(candidate.end_to_end_verification))
+      isVerificationExecution(candidate.end_to_end_verification)) &&
+    (candidate.operational_handoff === undefined ||
+      candidate.operational_handoff === null ||
+      isHandoffExecution(candidate.operational_handoff))
   );
 }
 

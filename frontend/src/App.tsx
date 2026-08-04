@@ -82,6 +82,11 @@ import {
   type BootstrapVerificationResult,
 } from "./api/bootstrapVerification";
 import {
+  completeBootstrapHandoff,
+  previewBootstrapHandoffPlan,
+  type BootstrapHandoffResult,
+} from "./api/bootstrapHandoff";
+import {
   renderBootstrapConfiguration,
   type BootstrapConfigurationRenderingResult,
 } from "./api/bootstrapConfigurationRendering";
@@ -326,6 +331,9 @@ export function App() {
   const [verificationPending, setVerificationPending] = useState(false);
   const [verificationResult, setVerificationResult] =
     useState<BootstrapVerificationResult | null>(null);
+  const [handoffJustification, setHandoffJustification] = useState("");
+  const [handoffPending, setHandoffPending] = useState(false);
+  const [handoffResult, setHandoffResult] = useState<BootstrapHandoffResult | null>(null);
   const [bootstrapClaimJustification, setBootstrapClaimJustification] = useState("");
   const [bootstrapClaimPending, setBootstrapClaimPending] = useState(false);
   const [bootstrapClaimResult, setBootstrapClaimResult] =
@@ -690,6 +698,38 @@ export function App() {
     retry: false,
   });
   const bootstrapVerificationPlan = bootstrapVerificationPlanQuery.data?.data;
+  const bootstrapHandoffPlanQuery = useQuery({
+    queryKey: [
+      "bootstrap-handoff-plan",
+      bootstrapState?.run?.run_id,
+      bootstrapState?.run?.version,
+      bootstrapState?.run?.end_to_end_verification?.verification_plan_digest,
+    ],
+    queryFn: () =>
+      previewBootstrapHandoffPlan({
+        state: bootstrapState!,
+        configuration: deploymentConfiguration!,
+        trustPlan: bootstrapTrustPlan!,
+        dataPlan: bootstrapDataPlan!,
+        servicePlan: bootstrapServicePlan!,
+        identityPlan: bootstrapIdentityPlan!,
+        integrationPlan: bootstrapIntegrationPlan!,
+        scope: identity!.scope,
+      }),
+    enabled: Boolean(
+      identity &&
+        bootstrapState?.run?.current_phase_id === "phase.handoff" &&
+        bootstrapState.run.end_to_end_verification?.state === "completed" &&
+        deploymentConfiguration &&
+        bootstrapTrustPlan &&
+        bootstrapDataPlan &&
+        bootstrapServicePlan &&
+        bootstrapIdentityPlan &&
+        bootstrapIntegrationPlan,
+    ),
+    retry: false,
+  });
+  const bootstrapHandoffPlan = bootstrapHandoffPlanQuery.data?.data;
   const bootstrapInvalidationQuery = useQuery({
     queryKey: [
       "bootstrap-invalidation",
@@ -888,6 +928,25 @@ export function App() {
       ]);
     },
   });
+  const handoffMutation = useMutation({
+    mutationFn: () =>
+      completeBootstrapHandoff({
+        state: bootstrapState!,
+        plan: bootstrapHandoffPlan!,
+        scope: identity!.scope,
+        justification: handoffJustification.trim(),
+      }),
+    onSuccess: async (response) => {
+      setHandoffResult(response.data);
+      setHandoffPending(false);
+      setHandoffJustification("");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-state"] }),
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-invalidation"] }),
+        queryClient.invalidateQueries({ queryKey: ["bootstrap-handoff-plan"] }),
+      ]);
+    },
+  });
   const bootstrapClaimMutation = useMutation({
     mutationFn: () =>
       claimBootstrapLease({
@@ -923,6 +982,8 @@ export function App() {
     integrationValidationResult?.execution ?? bootstrapState?.run?.integration_validation;
   const verificationExecution =
     verificationResult?.execution ?? bootstrapState?.run?.end_to_end_verification;
+  const handoffExecution =
+    handoffResult?.execution ?? bootstrapState?.run?.operational_handoff;
   const artifactPhaseAvailable = Boolean(
     bootstrapState?.run &&
       bootstrapState.lease_held_by_current_actor &&
@@ -1087,6 +1148,23 @@ export function App() {
       bootstrapVerificationPlan?.state === "passed" &&
       bootstrapVerificationPlan.source_run_id === bootstrapState.run.run_id &&
       bootstrapVerificationPlan.source_run_version === bootstrapState.run.version,
+  );
+  const handoffPhaseAvailable = Boolean(
+    bootstrapState?.run &&
+      bootstrapState.lease_held_by_current_actor &&
+      bootstrapState.run.current_phase_id === "phase.handoff" &&
+      bootstrapState.run.operational_handoff?.state !== "running" &&
+      bootstrapState.run.completed_phase_ids.includes("phase.verify") &&
+      bootstrapState.run.end_to_end_verification?.state === "completed" &&
+      bootstrapState.run.end_to_end_verification.failed_count === 0 &&
+      bootstrapState.run.end_to_end_verification.skipped_count === 0 &&
+      bootstrapState.run.end_to_end_verification.unresolved_mandatory_count === 0 &&
+      bootstrapHandoffPlan?.state === "passed" &&
+      bootstrapHandoffPlan.source_run_id === bootstrapState.run.run_id &&
+      bootstrapHandoffPlan.source_run_version === bootstrapState.run.version &&
+      bootstrapHandoffPlan.readiness_class ===
+        "developer_linux_lab_bootstrap_complete" &&
+      Object.values(bootstrapHandoffPlan.readiness_claims).every((value) => !value),
   );
   const retryAuditExportMutation = useMutation({
     mutationFn: retryAuditExport,
@@ -3131,6 +3209,164 @@ export function App() {
                           )}
                         </div>
                       )}
+                      {handoffPhaseAvailable && bootstrapHandoffPlan && !handoffPending && (
+                        <div className="data-initialization-action handoff-action">
+                          <div>
+                            <strong>Prepare operational handoff</strong>
+                            <p>
+                              Developer and Linux lab evidence is complete. Production acceptance
+                              remains explicitly unclaimed.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setHandoffResult(null);
+                              setHandoffPending(true);
+                            }}
+                          >
+                            <FileText size={14} /> Review handoff
+                          </button>
+                        </div>
+                      )}
+                      {handoffPending && handoffPhaseAvailable && bootstrapHandoffPlan && (
+                        <div
+                          className="data-initialization-confirmation handoff-confirmation"
+                          role="dialog"
+                        >
+                          <div>
+                            <strong>Confirm operational handoff</strong>
+                            <p>
+                              Target {bootstrapHandoffPlan.target_id} is {" "}
+                              {bootstrapHandoffPlan.target_state}. The report remains local and
+                              contains no production approval.
+                            </p>
+                          </div>
+                          <div className="identity-plan-summary handoff-plan-summary">
+                            <div>
+                              <span>Readiness</span>
+                              <code>{bootstrapHandoffPlan.readiness_class}</code>
+                              <small>Developer and Linux lab only</small>
+                            </div>
+                            <div>
+                              <span>Known limitations</span>
+                              <strong>{bootstrapHandoffPlan.known_limitation_ids.length}</strong>
+                              <small>Recorded in the handoff evidence</small>
+                            </div>
+                            <div>
+                              <span>Pending actions</span>
+                              <strong>{bootstrapHandoffPlan.pending_action_ids.length}</strong>
+                              <small>Required before production review</small>
+                            </div>
+                            <div>
+                              <span>Production claims</span>
+                              <strong>0</strong>
+                              <small>All seven claims remain false</small>
+                            </div>
+                          </div>
+                          <div className="identity-mapping-list handoff-limitation-list">
+                            {bootstrapHandoffPlan.known_limitation_ids.map((limitation) => (
+                              <div key={limitation}>
+                                <div>
+                                  <code>{limitation}</code>
+                                  <small>Bounded handoff limitation</small>
+                                </div>
+                                <strong>recorded</strong>
+                              </div>
+                            ))}
+                          </div>
+                          <label>
+                            Handoff justification
+                            <input
+                              value={handoffJustification}
+                              maxLength={500}
+                              onChange={(event) => setHandoffJustification(event.target.value)}
+                              placeholder="Record the reviewed handoff purpose"
+                            />
+                          </label>
+                          {handoffMutation.isError && (
+                            <div className="impact-message impact-error" role="alert">
+                              <AlertTriangle size={16} /> Handoff was not completed. Refresh the
+                              governed evidence before retrying.
+                            </div>
+                          )}
+                          <div className="data-initialization-confirm-actions">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setHandoffPending(false);
+                                setHandoffJustification("");
+                              }}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              className="data-initialization-confirm"
+                              type="button"
+                              disabled={
+                                handoffJustification.trim().length < 12 ||
+                                handoffMutation.isPending
+                              }
+                              onClick={() => handoffMutation.mutate()}
+                            >
+                              <FileText size={14} /> Confirm handoff
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {handoffExecution && (
+                        <div
+                          className={`data-initialization-result handoff-result ${handoffExecution.state}`}
+                        >
+                          <div className="data-initialization-result-heading">
+                            {handoffExecution.state === "completed" ? (
+                              <CheckCircle2 size={18} />
+                            ) : (
+                              <AlertTriangle size={18} />
+                            )}
+                            <div>
+                              <strong>Operational handoff {handoffExecution.state}</strong>
+                              <code>{handoffExecution.result_code}</code>
+                            </div>
+                            <span className={`state-badge ${handoffExecution.state}`}>
+                              {handoffExecution.state}
+                            </span>
+                          </div>
+                          <div className="data-initialization-summary">
+                            <div>
+                              <span>Readiness</span>
+                              <strong>Lab complete</strong>
+                            </div>
+                            <div>
+                              <span>Limitations</span>
+                              <strong>{handoffExecution.known_limitation_count}</strong>
+                            </div>
+                            <div>
+                              <span>Missing production evidence</span>
+                              <strong>{handoffExecution.missing_production_evidence_count}</strong>
+                            </div>
+                            <div>
+                              <span>External operations</span>
+                              <strong>{handoffExecution.external_operation_count}</strong>
+                            </div>
+                          </div>
+                          {handoffExecution.evidence.map((item) => (
+                            <div className="service-state-evidence" key={item.evidence_id}>
+                              <div>
+                                <code>{item.evidence_id}</code>
+                                <span>{item.disposition}</span>
+                              </div>
+                              <code>{item.sha256.slice(0, 20)}...</code>
+                            </div>
+                          ))}
+                          {handoffExecution.state === "completed" && (
+                            <p className="data-recovery-note">
+                              Bootstrap evidence is complete for the developer and Linux lab
+                              profile. Production readiness remains false.
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </>
                   ) : (
                     <div className="bootstrap-state-empty">
@@ -3216,7 +3452,11 @@ export function App() {
                       <div>
                         <strong>Coordination lease established</strong>
                         <p>
-                          Run {bootstrapClaimResult.run.run_id} is locked at revision {bootstrapClaimResult.run.version}.
+                          Run {bootstrapClaimResult.run.run_id} is locked at revision {" "}
+                          {bootstrapState.run?.run_id === bootstrapClaimResult.run.run_id
+                            ? bootstrapState.run.version
+                            : bootstrapClaimResult.run.version}
+                          .
                         </p>
                       </div>
                     </div>

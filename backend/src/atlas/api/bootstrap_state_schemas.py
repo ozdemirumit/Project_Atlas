@@ -21,6 +21,9 @@ from atlas.modules.platform.domain.bootstrap_identity_handoff import IdentityHan
 from atlas.modules.platform.domain.bootstrap_integration_validation import (
     IntegrationValidationExecution,
 )
+from atlas.modules.platform.domain.bootstrap_operational_handoff import (
+    OperationalHandoffExecution,
+)
 from atlas.modules.platform.domain.bootstrap_service_deployment import ServiceDeploymentExecution
 from atlas.modules.platform.domain.bootstrap_state import (
     BootstrapMutationResult,
@@ -759,6 +762,121 @@ class EndToEndVerificationData(BaseModel):
         )
 
 
+class HandoffReadinessClaimsData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    production_ready: bool
+    customer_integrations_validated: bool
+    support_accepted: bool
+    ha_certified: bool
+    dr_certified: bool
+    backup_restore_validated: bool
+    release_approved: bool
+
+
+class OperationalHandoffData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    execution_id: str
+    phase_id: str
+    release_id: str
+    profile: str
+    configuration_digest: str
+    trust_plan_digest: str
+    data_plan_digest: str
+    service_plan_digest: str
+    identity_plan_digest: str
+    integration_plan_digest: str
+    verification_plan_digest: str
+    verification_report_digest: str
+    source_evidence_digest: str
+    handoff_schema_version: str
+    suite_version: str
+    handoff_plan_digest: str
+    target_id: str
+    readiness_class: str
+    readiness_claims: HandoffReadinessClaimsData
+    state: str
+    result_code: str
+    started_at: datetime
+    completed_at: datetime | None
+    passed_count: int
+    not_applicable_count: int
+    mandatory_pass_count: int
+    known_limitation_count: int
+    pending_action_count: int
+    owner_role_count: int
+    missing_production_evidence_count: int
+    external_operation_count: int
+    checks: list[VerificationCheckData]
+    evidence: list[VerificationReportEvidenceData]
+
+    @classmethod
+    def from_domain(cls, execution: OperationalHandoffExecution) -> OperationalHandoffData:
+        claims = execution.readiness_claims
+        return cls(
+            execution_id=execution.execution_id,
+            phase_id=execution.phase_id,
+            release_id=execution.release_id,
+            profile=execution.profile.value,
+            configuration_digest=execution.configuration_digest,
+            trust_plan_digest=execution.trust_plan_digest,
+            data_plan_digest=execution.data_plan_digest,
+            service_plan_digest=execution.service_plan_digest,
+            identity_plan_digest=execution.identity_plan_digest,
+            integration_plan_digest=execution.integration_plan_digest,
+            verification_plan_digest=execution.verification_plan_digest,
+            verification_report_digest=execution.verification_report_digest,
+            source_evidence_digest=execution.source_evidence_digest,
+            handoff_schema_version=execution.handoff_schema_version,
+            suite_version=execution.suite_version,
+            handoff_plan_digest=execution.handoff_plan_digest,
+            target_id=execution.target_id,
+            readiness_class=execution.readiness_class.value,
+            readiness_claims=HandoffReadinessClaimsData(
+                production_ready=claims.production_ready,
+                customer_integrations_validated=claims.customer_integrations_validated,
+                support_accepted=claims.support_accepted,
+                ha_certified=claims.ha_certified,
+                dr_certified=claims.dr_certified,
+                backup_restore_validated=claims.backup_restore_validated,
+                release_approved=claims.release_approved,
+            ),
+            state=execution.state.value,
+            result_code=execution.result_code,
+            started_at=execution.started_at,
+            completed_at=execution.completed_at,
+            passed_count=execution.passed_count,
+            not_applicable_count=execution.not_applicable_count,
+            mandatory_pass_count=execution.mandatory_pass_count,
+            known_limitation_count=execution.known_limitation_count,
+            pending_action_count=execution.pending_action_count,
+            owner_role_count=execution.owner_role_count,
+            missing_production_evidence_count=execution.missing_production_evidence_count,
+            external_operation_count=execution.external_operation_count,
+            checks=[
+                VerificationCheckData(
+                    check_id=item.check_id,
+                    category_id=item.category_id,
+                    subject_id=item.subject_id,
+                    state=item.state.value,
+                    result_code=item.result_code,
+                    mandatory=item.mandatory,
+                )
+                for item in execution.checks
+            ],
+            evidence=[
+                VerificationReportEvidenceData(
+                    evidence_id=item.evidence_id,
+                    sha256=item.sha256,
+                    size_bytes=item.size_bytes,
+                    disposition=item.disposition.value,
+                )
+                for item in execution.evidence
+            ],
+        )
+
+
 class BootstrapRunData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -789,6 +907,7 @@ class BootstrapRunData(BaseModel):
     identity_handoff: IdentityHandoffData | None
     integration_validation: IntegrationValidationData | None
     end_to_end_verification: EndToEndVerificationData | None
+    operational_handoff: OperationalHandoffData | None
 
     @classmethod
     def from_domain(cls, record: BootstrapRunRecord) -> BootstrapRunData:
@@ -858,6 +977,11 @@ class BootstrapRunData(BaseModel):
             end_to_end_verification=(
                 EndToEndVerificationData.from_domain(record.end_to_end_verification)
                 if record.end_to_end_verification is not None
+                else None
+            ),
+            operational_handoff=(
+                OperationalHandoffData.from_domain(record.operational_handoff)
+                if record.operational_handoff is not None
                 else None
             ),
         )
