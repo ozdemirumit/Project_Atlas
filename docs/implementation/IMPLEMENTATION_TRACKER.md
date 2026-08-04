@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-023 |
 | Title | Platform workload identity and secret-reference foundation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/workload-identity-foundation` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-016, ATLAS-023, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047 |
 | Last Updated | 2026-08-04 |
-| Next Action | Implement the bounded workload identity lifecycle, API, UI, tests, and live validation |
+| Next Action | Push the validated implementation, open a pull request, and complete CI review |
 
 ### ATLAS-IMP-023 Scope Rationale
 
@@ -64,7 +64,34 @@
 
 ### ATLAS-IMP-023 Validation Evidence
 
-- Pending implementation and validation.
+- Backend implementation adds a dedicated workload identity domain, repository port and in-memory
+  adapter, short-lived HMAC-signed credential issuance, exact audience and environment validation,
+  bounded rotation overlap, immediate revocation, idempotency, optimistic concurrency, rollback,
+  secret-reference-only metadata, and fail-closed audit evidence. Workload authentication returns
+  a service subject with no human roles or execution authority.
+- API and authorization wiring add exact C0/C2 workload-governance permissions to the Security
+  Administrator surface. Administrative operations require an enterprise browser session, CSRF,
+  reason, idempotency key, expected version, correlation ID, and exact scope. Invalid workload,
+  personal bearer, foreign audience/environment, expired, future, tampered, retired, and revoked
+  credentials fail closed without exposing secret material.
+- The web workspace discovers authorization without leaking denied inventory, shows secret-free
+  workload and credential health, requires explicit create/rotate/revoke confirmations, and displays
+  newly issued credentials once with an explicit dismissal control. Automated UI coverage confirms
+  dismissal and that forbidden discovery leaves the administration surface absent.
+- Backend validation on 2026-08-04: Ruff format/check clean, strict mypy clean across 195 source
+  files, 253 tests passed including 9 workload identity lifecycle and security tests. The suite
+  covers clock skew, audience/environment separation, concurrency, overlap, revocation, CSRF,
+  role separation, input rejection, idempotency, compensation, audit redaction, and secret-free
+  responses.
+- Frontend validation on 2026-08-04: ESLint clean, TypeScript check clean, production Vite build
+  completed, and 11 Vitest tests passed across 3 files. The workload UI test covers create, rotate,
+  revoke, one-time credential dismissal, CSRF, idempotency headers, confirmation text, and hidden
+  unauthorized discovery.
+- Live local validation used an enterprise LDAP-style Security Administrator session against the
+  real API. Create, two-minute overlap rotation, and immediate revocation completed successfully.
+  Desktop 1440x900 and mobile 390x844 checks found no document-level horizontal overflow or
+  off-screen workload controls, no console warnings/errors, and no raw secret, private-key, or token
+  digest disclosure. The live fixture remained synthetic, in-memory, and non-executing.
 
 ### ATLAS-IMP-022 Scope Rationale
 

@@ -28,6 +28,7 @@ from atlas.api.routes import (
     security_export,
     sessions,
     storage,
+    workload_identities,
 )
 from atlas.core.audit import AuditSink, LoggingAuditSink
 from atlas.core.classification import DataClassification
@@ -63,12 +64,16 @@ from atlas.modules.identity.adapters.development import DevelopmentIdentityProvi
 from atlas.modules.identity.adapters.directory import build_directory_identity_provider
 from atlas.modules.identity.adapters.identity_status import InMemoryIdentityStatusRepository
 from atlas.modules.identity.adapters.sessions import InMemorySessionRepository
+from atlas.modules.identity.adapters.workload_identities import (
+    InMemoryWorkloadIdentityRepository,
+)
 from atlas.modules.identity.application.api_credentials import ApiCredentialService
 from atlas.modules.identity.application.governance import IdentityGovernanceService
 from atlas.modules.identity.application.identity_status_ports import IdentityStatusRepository
 from atlas.modules.identity.application.ports import IdentityProvider
 from atlas.modules.identity.application.service import IdentityService
 from atlas.modules.identity.application.sessions import SessionService
+from atlas.modules.identity.application.workload_identities import WorkloadIdentityService
 from atlas.modules.investigations.adapters.synthetic import SyntheticInvestigationAssembler
 from atlas.modules.investigations.application.service import InvestigationService
 from atlas.modules.knowledge.adapters.memory import InMemoryKnowledgeRetriever
@@ -112,6 +117,7 @@ def create_app(
     api_credential_service: ApiCredentialService | None = None,
     identity_governance_service: IdentityGovernanceService | None = None,
     identity_status_repository: IdentityStatusRepository | None = None,
+    workload_identity_service: WorkloadIdentityService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -160,6 +166,11 @@ def create_app(
         api_credential_repository=api_credential_repository,
         audit_sink=resolved_audit_sink,
         identity_status_repository=resolved_identity_status_repository,
+    )
+    resolved_workload_identity_service = workload_identity_service or WorkloadIdentityService(
+        repository=InMemoryWorkloadIdentityRepository(),
+        audit_sink=resolved_audit_sink,
+        environment_id=f"environment.{resolved_settings.environment}",
     )
     resolved_authorization_service = (
         authorization_service
@@ -285,6 +296,7 @@ def create_app(
         app.state.api_credential_service = resolved_api_credential_service
         app.state.identity_governance_service = resolved_identity_governance_service
         app.state.identity_status_repository = resolved_identity_status_repository
+        app.state.workload_identity_service = resolved_workload_identity_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -329,6 +341,7 @@ def create_app(
     app.include_router(api_credentials.router, prefix="/api/v1")
     app.include_router(identity.router, prefix="/api/v1")
     app.include_router(identity_governance.router, prefix="/api/v1")
+    app.include_router(workload_identities.router, prefix="/api/v1")
     app.include_router(platform.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

@@ -24,6 +24,10 @@ IDENTITY_GOVERNANCE_READ = "identity.governance.read"
 SESSION_ADMIN_REVOKE = "identity.session.admin.revoke"
 API_CREDENTIAL_ADMIN_REVOKE = "identity.api-credential.admin.revoke"
 IDENTITY_SUBJECT_ADMIN_DISABLE = "identity.subject.admin.disable"
+WORKLOAD_IDENTITY_GOVERNANCE_READ = "identity.workload.governance.read"
+WORKLOAD_IDENTITY_ADMIN_CREATE = "identity.workload.admin.create"
+WORKLOAD_IDENTITY_ADMIN_ROTATE = "identity.workload.admin.rotate"
+WORKLOAD_IDENTITY_ADMIN_REVOKE = "identity.workload.admin.revoke"
 STORAGE_OVERVIEW_READ = "storage.overview.read"
 AI_GROUNDED_QUERY_CREATE = "ai.grounded-query.create"
 GRAPH_STORAGE_IMPACT_READ = "graph.storage-impact.read"
@@ -95,6 +99,19 @@ def identity_governance_scope(
     )
 
 
+def workload_identity_governance_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.workload-identity",
+        resource_id="resource.identity.workloads",
+        capability_class=capability_class,
+    )
+
+
 def identity_governance_permission_definitions() -> tuple[PermissionDefinition, ...]:
     return (
         PermissionDefinition(
@@ -116,17 +133,55 @@ def identity_governance_permission_definitions() -> tuple[PermissionDefinition, 
     )
 
 
-def security_administrator_role_definition() -> RoleDefinition:
+def workload_identity_permission_definitions() -> tuple[PermissionDefinition, ...]:
+    return (
+        PermissionDefinition(
+            permission_id=WORKLOAD_IDENTITY_GOVERNANCE_READ,
+            description="Read bounded secret-free workload identity lifecycle metadata.",
+        ),
+        PermissionDefinition(
+            permission_id=WORKLOAD_IDENTITY_ADMIN_CREATE,
+            description="Create one exact Atlas workload identity and initial credential.",
+        ),
+        PermissionDefinition(
+            permission_id=WORKLOAD_IDENTITY_ADMIN_ROTATE,
+            description="Rotate credentials for one exact Atlas workload identity.",
+        ),
+        PermissionDefinition(
+            permission_id=WORKLOAD_IDENTITY_ADMIN_REVOKE,
+            description="Revoke one exact Atlas workload credential.",
+        ),
+    )
+
+
+def security_administrator_role_definition(
+    *, include_workload_identity: bool = False
+) -> RoleDefinition:
+    workload_permissions = (
+        frozenset(
+            {
+                WORKLOAD_IDENTITY_GOVERNANCE_READ,
+                WORKLOAD_IDENTITY_ADMIN_CREATE,
+                WORKLOAD_IDENTITY_ADMIN_ROTATE,
+                WORKLOAD_IDENTITY_ADMIN_REVOKE,
+            }
+        )
+        if include_workload_identity
+        else frozenset()
+    )
     return RoleDefinition(
         role_id=SECURITY_ADMINISTRATOR_ROLE_ID,
-        version=2,
-        permissions=frozenset(
-            {
-                IDENTITY_GOVERNANCE_READ,
-                SESSION_ADMIN_REVOKE,
-                API_CREDENTIAL_ADMIN_REVOKE,
-                IDENTITY_SUBJECT_ADMIN_DISABLE,
-            }
+        version=3 if include_workload_identity else 2,
+        permissions=(
+            frozenset(
+                {
+                    IDENTITY_GOVERNANCE_READ,
+                    SESSION_ADMIN_REVOKE,
+                    API_CREDENTIAL_ADMIN_REVOKE,
+                    IDENTITY_SUBJECT_ADMIN_DISABLE,
+                }
+            )
+            | workload_permissions
         ),
     )
 
@@ -311,6 +366,7 @@ def build_development_authorization_service(
 ) -> AuthorizationService:
     permissions = (
         *identity_governance_permission_definitions(),
+        *workload_identity_permission_definitions(),
         *audit_permission_definitions(),
         PermissionDefinition(
             permission_id=IDENTITY_SELF_READ,
@@ -604,7 +660,7 @@ def build_development_authorization_service(
         permissions=permissions,
         roles=(
             role,
-            security_administrator_role_definition(),
+            security_administrator_role_definition(include_workload_identity=True),
             security_auditor_role_definition(),
         ),
         assignments=assignments,
