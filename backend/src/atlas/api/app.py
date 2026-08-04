@@ -18,6 +18,7 @@ from atlas.api.routes import (
     investigations,
     platform,
     rca,
+    recommendations,
     storage,
 )
 from atlas.core.audit import AuditSink, LoggingAuditSink
@@ -59,6 +60,10 @@ from atlas.modules.knowledge.application.service import KnowledgeRetrievalServic
 from atlas.modules.platform.application.service import PlatformStatusService
 from atlas.modules.rca.adapters.synthetic import SyntheticStorageRcaAssembler
 from atlas.modules.rca.application.service import RcaService
+from atlas.modules.recommendations.adapters.synthetic import (
+    SyntheticStorageRecommendationAssembler,
+)
+from atlas.modules.recommendations.application.service import RecommendationService
 from atlas.modules.storage.adapters.synthetic import build_synthetic_storage_overview
 from atlas.modules.storage.application.service import StorageOperationsService
 
@@ -74,6 +79,7 @@ def create_app(
     health_check_service: HealthCheckService | None = None,
     investigation_service: InvestigationService | None = None,
     rca_service: RcaService | None = None,
+    recommendation_service: RecommendationService | None = None,
     grounded_answer_service: GroundedAnswerService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
@@ -126,6 +132,11 @@ def create_app(
     )
     resolved_rca_service = rca_service or RcaService(
         assembler=SyntheticStorageRcaAssembler(),
+        audit_sink=resolved_audit_sink,
+    )
+    resolved_recommendation_service = recommendation_service or RecommendationService(
+        source_provider=resolved_rca_service,
+        assembler=SyntheticStorageRecommendationAssembler(),
         audit_sink=resolved_audit_sink,
     )
     synthetic_model_id = "atlas-local-synthetic"
@@ -195,6 +206,7 @@ def create_app(
         app.state.health_check_service = resolved_health_check_service
         app.state.investigation_service = resolved_investigation_service
         app.state.rca_service = resolved_rca_service
+        app.state.recommendation_service = resolved_recommendation_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
         await database_probe.close()
@@ -224,5 +236,6 @@ def create_app(
     app.include_router(health_checks.router, prefix="/api/v1")
     app.include_router(investigations.router, prefix="/api/v1")
     app.include_router(rca.router, prefix="/api/v1")
+    app.include_router(recommendations.router, prefix="/api/v1")
     app.include_router(ai.router, prefix="/api/v1")
     return app
