@@ -12,6 +12,7 @@ from atlas.modules.platform.domain.bootstrap_configuration_rendering import (
     ConfigurationRenderingExecution,
 )
 from atlas.modules.platform.domain.bootstrap_plan import DIGEST_PATTERN
+from atlas.modules.platform.domain.bootstrap_trust_provisioning import TrustProvisioningExecution
 from atlas.modules.platform.domain.release_preflight import DeploymentProfile
 
 
@@ -96,6 +97,7 @@ class BootstrapRunRecord:
     updated_at: datetime
     artifact_acquisition: ArtifactAcquisitionExecution | None = None
     configuration_rendering: ConfigurationRenderingExecution | None = None
+    trust_provisioning: TrustProvisioningExecution | None = None
 
     def __post_init__(self) -> None:
         validate_stable_identifier(self.run_id, "run_id")
@@ -141,6 +143,15 @@ class BootstrapRunRecord:
                 or configuration_execution.phase_id not in self.identity.phase_ids
             ):
                 raise ValueError("configuration rendering does not match the bootstrap run")
+        if self.trust_provisioning is not None:
+            trust_execution = self.trust_provisioning
+            if (
+                trust_execution.release_id != self.identity.release_id
+                or trust_execution.profile is not self.identity.profile
+                or trust_execution.configuration_digest != self.identity.configuration_digest
+                or trust_execution.phase_id not in self.identity.phase_ids
+            ):
+                raise ValueError("trust provisioning does not match the bootstrap run")
 
     def lease_is_active(self, at: datetime) -> bool:
         return self.lease_expires_at is not None and at < self.lease_expires_at
@@ -191,3 +202,4 @@ class BootstrapMutationResult:
     earliest_affected_phase_id: str | None = None
     artifact_acquisition: ArtifactAcquisitionExecution | None = None
     configuration_rendering: ConfigurationRenderingExecution | None = None
+    trust_provisioning: TrustProvisioningExecution | None = None

@@ -21,6 +21,7 @@ from atlas.api.routes import (
     bootstrap_invalidation,
     bootstrap_plan,
     bootstrap_state,
+    bootstrap_trust,
     deployment_configuration,
     graph,
     health,
@@ -100,6 +101,10 @@ from atlas.modules.platform.adapters.bootstrap_state_memory import (
 from atlas.modules.platform.adapters.bootstrap_state_postgres import (
     PostgreSQLBootstrapStateRepository,
 )
+from atlas.modules.platform.adapters.bootstrap_trust_filesystem import (
+    FilesystemBootstrapTrustPublisher,
+)
+from atlas.modules.platform.adapters.bootstrap_trust_synthetic import SyntheticBootstrapTrustSource
 from atlas.modules.platform.adapters.release_preflight import (
     SYNTHETIC_ARTIFACT_CONTENT,
     LabHmacReleaseSignatureVerifier,
@@ -116,6 +121,10 @@ from atlas.modules.platform.application.bootstrap_configuration_rendering import
 from atlas.modules.platform.application.bootstrap_invalidation import BootstrapInvalidationService
 from atlas.modules.platform.application.bootstrap_plan import BootstrapPlanService
 from atlas.modules.platform.application.bootstrap_state import BootstrapStateService
+from atlas.modules.platform.application.bootstrap_trust_provisioning import (
+    BootstrapTrustPlanService,
+    BootstrapTrustProvisioningService,
+)
 from atlas.modules.platform.application.deployment_configuration import (
     DeploymentConfigurationService,
 )
@@ -166,6 +175,8 @@ def create_app(
     bootstrap_invalidation_service: BootstrapInvalidationService | None = None,
     bootstrap_artifact_acquisition_service: BootstrapArtifactAcquisitionService | None = None,
     bootstrap_configuration_rendering_service: BootstrapConfigurationRenderingService | None = None,
+    bootstrap_trust_plan_service: BootstrapTrustPlanService | None = None,
+    bootstrap_trust_provisioning_service: BootstrapTrustProvisioningService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -290,6 +301,29 @@ def create_app(
             publisher=FilesystemEffectiveConfigurationPublisher(
                 root=resolved_settings.bootstrap_configuration_root,
                 max_bytes=resolved_settings.bootstrap_configuration_max_bytes,
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
+        )
+    )
+    resolved_bootstrap_trust_plan_service = (
+        bootstrap_trust_plan_service
+        or BootstrapTrustPlanService(
+            source=SyntheticBootstrapTrustSource(),
+            configuration_service=resolved_deployment_configuration_service,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
+        )
+    )
+    resolved_bootstrap_trust_provisioning_service = (
+        bootstrap_trust_provisioning_service
+        or BootstrapTrustProvisioningService(
+            repository=resolved_bootstrap_state_service.repository,
+            plan_service=resolved_bootstrap_trust_plan_service,
+            publisher=FilesystemBootstrapTrustPublisher(
+                root=resolved_settings.bootstrap_trust_root,
+                max_total_bytes=resolved_settings.bootstrap_trust_max_total_bytes,
             ),
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
@@ -432,6 +466,10 @@ def create_app(
         app.state.bootstrap_configuration_rendering_service = (
             resolved_bootstrap_configuration_rendering_service
         )
+        app.state.bootstrap_trust_plan_service = resolved_bootstrap_trust_plan_service
+        app.state.bootstrap_trust_provisioning_service = (
+            resolved_bootstrap_trust_provisioning_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -486,6 +524,7 @@ def create_app(
     app.include_router(bootstrap_state.router, prefix="/api/v1")
     app.include_router(bootstrap_artifacts.router, prefix="/api/v1")
     app.include_router(bootstrap_configuration.router, prefix="/api/v1")
+    app.include_router(bootstrap_trust.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
     app.include_router(health_checks.router, prefix="/api/v1")

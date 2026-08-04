@@ -116,6 +116,50 @@ const bootstrapPlan = {
   },
 };
 
+const bootstrapTrustPlan = {
+  data: {
+    schema_version: "atlas.bootstrap-trust-plan.v1",
+    release_id: "release.atlas.lab-0.1.0",
+    profile: "linux_lab",
+    organization_id: "organization.enterprise",
+    environment_id: "environment.test",
+    site_id: "site.local",
+    configuration_digest: "b".repeat(64),
+    trust_plan_digest: "f".repeat(64),
+    state: "passed",
+    result_code: "bootstrap.trust-plan.passed",
+    anchors: [
+      {
+        anchor_id: "trust-anchor.atlas-synthetic-lab-root",
+        source_id: "trust-source.synthetic-lab",
+        purpose: "internal_service",
+        subject_summary: "CN=Atlas Synthetic Lab Root",
+        sha256: "e".repeat(64),
+        not_before: "2026-08-04T16:31:32Z",
+        not_after: "2036-08-01T16:31:32Z",
+        non_production_only: true,
+      },
+    ],
+    workload_identities: [
+      {
+        identity_id: "workload.atlas-api.primary",
+        service_id: "service.atlas-api",
+        instance_id: "instance.primary",
+        owner_subject_id: "subject.platform.security",
+        purpose: "Authenticate the primary Atlas API workload to internal services.",
+        environment_id: "environment.test",
+        audiences: ["audience.atlas-internal"],
+        secret_reference_ids: ["secret.workload.atlas-api"],
+      },
+    ],
+    generated_at: "2026-08-04T16:02:00Z",
+    private_key_material_present: false,
+    credential_material_present: false,
+    infrastructure_mutation_authorized: false,
+    ai_operation_authorized: false,
+  },
+};
+
 const bootstrapState = {
   data: {
     run: {
@@ -147,6 +191,7 @@ const bootstrapState = {
       updated_at: "2026-08-04T16:01:00Z",
       artifact_acquisition: null,
       configuration_rendering: null,
+      trust_provisioning: null,
     },
     durable: true,
     lease_available: false,
@@ -734,5 +779,192 @@ describe("deployment configuration preview", () => {
       "bootstrap-configure.3.configuration-request-001",
     );
     expect(screen.queryByRole("button", { name: /provision trust|deploy service|rollback/i })).not.toBeInTheDocument();
+  });
+
+  it("requires confirmation and reports bounded public trust evidence", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    vi.stubGlobal("crypto", { randomUUID: () => "trust-request-001" });
+    const configurationExecution = {
+      execution_id: "phase-execution.ui-configure-completed",
+      phase_id: "phase.configure",
+      release_id: "release.atlas.lab-0.1.0",
+      profile: "linux_lab",
+      configuration_schema_version: "atlas.deployment-configuration.v1",
+      configuration_digest: "b".repeat(64),
+      state: "completed",
+      result_code: "bootstrap.configuration.completed",
+      started_at: "2026-08-04T16:02:00Z",
+      completed_at: "2026-08-04T16:02:01Z",
+      evidence: [
+        {
+          file_id: "configuration.effective",
+          sha256: "d".repeat(64),
+          size_bytes: 684,
+          disposition: "published",
+        },
+      ],
+      file_count: 1,
+      total_bytes: 684,
+    };
+    const trustState = {
+      data: {
+        ...bootstrapState.data,
+        run: {
+          ...bootstrapState.data.run,
+          version: 5,
+          checkpoints: [
+            ...bootstrapState.data.run.checkpoints,
+            {
+              phase_id: "phase.configure",
+              state: "completed",
+              safe_output_references: [`result.configuration.${"b".repeat(32)}`],
+              recorded_at: "2026-08-04T16:02:01Z",
+            },
+          ],
+          completed_phase_ids: ["phase.acquire", "phase.configure"],
+          current_phase_id: "phase.trust",
+          configuration_rendering: configurationExecution,
+          trust_provisioning: null,
+          updated_at: "2026-08-04T16:02:01Z",
+        },
+      },
+    };
+    const requests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) {
+        return Promise.resolve(new Response(JSON.stringify(identity), { status: 200 }));
+      }
+      if (url.includes("/release-preflight")) {
+        return Promise.resolve(new Response(JSON.stringify(preflight), { status: 200 }));
+      }
+      if (url.includes("/deployment-configuration/preview")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(configurationPreview()), { status: 200 }),
+        );
+      }
+      if (url.includes("/bootstrap-trust-plan/preview")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(bootstrapTrustPlan), { status: 200 }),
+        );
+      }
+      if (url.includes("/bootstrap-plan")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-state/current")) {
+        return Promise.resolve(new Response(JSON.stringify(trustState), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-invalidation/preview")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(bootstrapInvalidation), { status: 200 }),
+        );
+      }
+      if (url.includes("/phases/trust")) {
+        const headers = new Headers(init?.headers);
+        requests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        const execution = {
+          execution_id: "phase-execution.ui-trust-001",
+          phase_id: "phase.trust",
+          release_id: "release.atlas.lab-0.1.0",
+          profile: "linux_lab",
+          configuration_digest: "b".repeat(64),
+          trust_schema_version: "atlas.bootstrap-trust-plan.v1",
+          trust_plan_digest: "f".repeat(64),
+          state: "completed",
+          result_code: "bootstrap.trust.completed",
+          started_at: "2026-08-04T16:03:00Z",
+          completed_at: "2026-08-04T16:03:01Z",
+          anchor_count: 1,
+          workload_identity_count: 1,
+          evidence: [
+            {
+              file_id: "trust.bundle",
+              sha256: "1".repeat(64),
+              size_bytes: 1280,
+              disposition: "published",
+            },
+            {
+              file_id: "trust.workload-identities",
+              sha256: "2".repeat(64),
+              size_bytes: 720,
+              disposition: "published",
+            },
+          ],
+          file_count: 2,
+          total_bytes: 2000,
+        };
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                run: {
+                  ...trustState.data.run,
+                  version: 7,
+                  checkpoints: [
+                    ...trustState.data.run.checkpoints,
+                    {
+                      phase_id: "phase.trust",
+                      state: "completed",
+                      safe_output_references: [`result.trust.${"f".repeat(32)}`],
+                      recorded_at: "2026-08-04T16:03:01Z",
+                    },
+                  ],
+                  completed_phase_ids: ["phase.acquire", "phase.configure", "phase.trust"],
+                  current_phase_id: null,
+                  trust_provisioning: execution,
+                  updated_at: "2026-08-04T16:03:01Z",
+                },
+                execution,
+                replayed: false,
+                trust_storage_mutation_performed: true,
+                private_key_mutation_performed: false,
+                secret_value_mutation_performed: false,
+                data_mutation_authorized: false,
+                service_deployment_authorized: false,
+                infrastructure_mutation_authorized: false,
+                ai_operation_authorized: false,
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Review trust" }));
+    expect(screen.getByRole("dialog")).toBeVisible();
+    const confirm = screen.getByRole("button", { name: "Confirm trust" });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Trust justification"), {
+      target: { value: "Publish the approved public trust metadata for the lab run." },
+    });
+    fireEvent.click(confirm);
+
+    expect(await screen.findByText("Trust provisioning completed")).toBeVisible();
+    const bundleEvidence = screen.getByText("trust.bundle");
+    expect(bundleEvidence).toBeVisible();
+    expect(within(bundleEvidence.parentElement!).getByText("published")).toBeVisible();
+    expect(screen.getByText("trust.workload-identities")).toBeVisible();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.body).toContain('"trust_plan_digest":"' + "f".repeat(64));
+    expect(requests[0]?.body).toContain("Publish the approved public trust metadata");
+    expect(requests[0]?.idempotencyKey).toBe("bootstrap-trust.5.trust-request-001");
+    expect(
+      screen.queryByText(/BEGIN PRIVATE KEY|raw-token-value|top-secret/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /deploy service|initialize data|rollback/i }),
+    ).not.toBeInTheDocument();
   });
 });

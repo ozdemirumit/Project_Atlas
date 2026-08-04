@@ -31,6 +31,12 @@ from atlas.modules.platform.domain.bootstrap_state import (
     BootstrapRunRecord,
     BootstrapRunState,
 )
+from atlas.modules.platform.domain.bootstrap_trust_provisioning import (
+    TrustFileDisposition,
+    TrustFileEvidence,
+    TrustProvisioningExecution,
+    TrustProvisioningState,
+)
 from atlas.modules.platform.domain.release_preflight import AcquisitionMode, DeploymentProfile
 
 
@@ -180,6 +186,38 @@ class PostgreSQLBootstrapStateRepository:
                             failed_configuration_checkpoint,
                         ),
                         configuration_rendering=interrupted_configuration,
+                    )
+                if (
+                    reclaimed
+                    and current.trust_provisioning is not None
+                    and current.trust_provisioning.state is TrustProvisioningState.RUNNING
+                ):
+                    interrupted_trust = replace(
+                        current.trust_provisioning,
+                        state=TrustProvisioningState.FAILED,
+                        result_code="bootstrap.trust.interrupted",
+                        completed_at=now,
+                    )
+                    failed_trust_checkpoint = BootstrapPhaseCheckpoint(
+                        phase_id="phase.trust",
+                        state=BootstrapCheckpointState.FAILED,
+                        safe_output_references=(
+                            "result.trust-provisioning."
+                            f"{sha256(interrupted_trust.execution_id.encode()).hexdigest()[:24]}",
+                        ),
+                        recorded_at=now,
+                    )
+                    current = replace(
+                        current,
+                        checkpoints=(
+                            *(
+                                item
+                                for item in current.checkpoints
+                                if item.phase_id != "phase.trust"
+                            ),
+                            failed_trust_checkpoint,
+                        ),
+                        trust_provisioning=interrupted_trust,
                     )
                 record = replace(
                     current,
@@ -485,6 +523,152 @@ class PostgreSQLBootstrapStateRepository:
             self._remember(row, lease_holder_id, idempotency_key, request_fingerprint, result)
             return result
 
+    async def begin_trust_provisioning(
+        self,
+        *,
+        run_id: str,
+        plan_digest: str,
+        resume_key: str,
+        execution: TrustProvisioningExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._sessions.begin() as session:
+            row = await session.scalar(
+                select(BootstrapRunModel)
+                .where(BootstrapRunModel.run_id == run_id)
+                .with_for_update()
+            )
+            if row is None:
+                raise BootstrapRepositoryError("bootstrap_run_unavailable")
+            replay = self._replay(row, lease_holder_id, idempotency_key, request_fingerprint)
+            if replay is not None:
+                return replay
+            current = self._to_domain(row)
+            self._require_no_running_phase(current)
+            if (
+                current.identity.plan_digest != plan_digest
+                or current.identity.resume_key != resume_key
+            ):
+                raise BootstrapRepositoryError("bootstrap_plan_mismatch")
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            if current.state is BootstrapRunState.COMPLETED:
+                raise BootstrapRepositoryError("bootstrap_run_completed")
+            if current.current_phase_id != "phase.trust" or execution.phase_id != "phase.trust":
+                raise BootstrapRepositoryError("bootstrap_phase_out_of_order")
+            record = replace(
+                current,
+                version=current.version + 1,
+                state=BootstrapRunState.ACTIVE,
+                checkpoints=tuple(
+                    item for item in current.checkpoints if item.phase_id != "phase.trust"
+                ),
+                trust_provisioning=execution,
+                updated_at=now,
+            )
+            self._apply(row, record)
+            result = BootstrapMutationResult(
+                record=record,
+                replayed=False,
+                trust_provisioning=execution,
+            )
+            self._remember(row, lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
+    async def finish_trust_provisioning(
+        self,
+        *,
+        run_id: str,
+        execution: TrustProvisioningExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._sessions.begin() as session:
+            row = await session.scalar(
+                select(BootstrapRunModel)
+                .where(BootstrapRunModel.run_id == run_id)
+                .with_for_update()
+            )
+            if row is None:
+                raise BootstrapRepositoryError("bootstrap_run_unavailable")
+            replay = self._replay(row, lease_holder_id, idempotency_key, request_fingerprint)
+            if (
+                replay is not None
+                and replay.trust_provisioning is not None
+                and replay.trust_provisioning.state is not TrustProvisioningState.RUNNING
+            ):
+                return replay
+            current = self._to_domain(row)
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            active = current.trust_provisioning
+            if (
+                active is None
+                or active.state is not TrustProvisioningState.RUNNING
+                or active.execution_id != execution.execution_id
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_execution_unavailable")
+            if (
+                execution.state is TrustProvisioningState.RUNNING
+                or execution.release_id != active.release_id
+                or execution.profile is not active.profile
+                or execution.configuration_digest != active.configuration_digest
+                or execution.trust_schema_version != active.trust_schema_version
+                or execution.trust_plan_digest != active.trust_plan_digest
+                or execution.started_at != active.started_at
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_execution_conflict")
+            if execution.state is TrustProvisioningState.COMPLETED:
+                reference = f"result.trust.{execution.trust_plan_digest[:32]}"
+                checkpoint_state = BootstrapCheckpointState.COMPLETED
+                completed_after = len(current.completed_phase_ids) + 1
+                run_state = (
+                    BootstrapRunState.COMPLETED
+                    if completed_after == len(current.identity.phase_ids)
+                    else BootstrapRunState.ACTIVE
+                )
+            else:
+                reference = (
+                    "result.trust-provisioning."
+                    f"{sha256(execution.result_code.encode()).hexdigest()[:24]}"
+                )
+                checkpoint_state = BootstrapCheckpointState.FAILED
+                run_state = BootstrapRunState.FAILED
+            checkpoint = BootstrapPhaseCheckpoint(
+                phase_id="phase.trust",
+                state=checkpoint_state,
+                safe_output_references=(reference,),
+                recorded_at=now,
+            )
+            record = replace(
+                current,
+                version=current.version + 1,
+                state=run_state,
+                checkpoints=(
+                    *(item for item in current.checkpoints if item.phase_id != "phase.trust"),
+                    checkpoint,
+                ),
+                trust_provisioning=execution,
+                updated_at=now,
+            )
+            self._apply(row, record)
+            result = BootstrapMutationResult(
+                record=record,
+                replayed=False,
+                trust_provisioning=execution,
+            )
+            self._remember(row, lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
     async def finish_artifact_acquisition(
         self,
         *,
@@ -668,6 +852,9 @@ class PostgreSQLBootstrapStateRepository:
                 configuration_rendering=(
                     current.configuration_rendering if "phase.configure" in reusable else None
                 ),
+                trust_provisioning=(
+                    current.trust_provisioning if "phase.trust" in reusable else None
+                ),
                 updated_at=now,
             )
             self._apply(row, record)
@@ -694,11 +881,18 @@ class PostgreSQLBootstrapStateRepository:
     @staticmethod
     def _require_no_running_phase(record: BootstrapRunRecord) -> None:
         if (
-            record.artifact_acquisition is not None
-            and record.artifact_acquisition.state is ArtifactAcquisitionState.RUNNING
-        ) or (
-            record.configuration_rendering is not None
-            and record.configuration_rendering.state is ConfigurationRenderingState.RUNNING
+            (
+                record.artifact_acquisition is not None
+                and record.artifact_acquisition.state is ArtifactAcquisitionState.RUNNING
+            )
+            or (
+                record.configuration_rendering is not None
+                and record.configuration_rendering.state is ConfigurationRenderingState.RUNNING
+            )
+            or (
+                record.trust_provisioning is not None
+                and record.trust_provisioning.state is TrustProvisioningState.RUNNING
+            )
         ):
             raise BootstrapRepositoryError("bootstrap_phase_in_progress")
 
@@ -736,6 +930,7 @@ class PostgreSQLBootstrapStateRepository:
         model.configuration_rendering = cls._configuration_execution_to_json(
             record.configuration_rendering
         )
+        model.trust_provisioning = cls._trust_execution_to_json(record.trust_provisioning)
         model.lease_holder_id = record.lease_holder_id
         model.lease_acquired_at = record.lease_acquired_at
         model.lease_expires_at = record.lease_expires_at
@@ -777,6 +972,7 @@ class PostgreSQLBootstrapStateRepository:
             configuration_rendering=cls._configuration_execution_from_json(
                 model.configuration_rendering
             ),
+            trust_provisioning=cls._trust_execution_from_json(model.trust_provisioning),
         )
 
     @classmethod
@@ -809,6 +1005,7 @@ class PostgreSQLBootstrapStateRepository:
             configuration_rendering=cls._configuration_execution_from_json(
                 prior.get("configuration_rendering")
             ),
+            trust_provisioning=cls._trust_execution_from_json(prior.get("trust_provisioning")),
         )
 
     @classmethod
@@ -833,6 +1030,7 @@ class PostgreSQLBootstrapStateRepository:
             "configuration_rendering": cls._configuration_execution_to_json(
                 result.configuration_rendering
             ),
+            "trust_provisioning": cls._trust_execution_to_json(result.trust_provisioning),
         }
         while len(records) > 100:
             del records[next(iter(records))]
@@ -881,6 +1079,7 @@ class PostgreSQLBootstrapStateRepository:
             "configuration_rendering": cls._configuration_execution_to_json(
                 record.configuration_rendering
             ),
+            "trust_provisioning": cls._trust_execution_to_json(record.trust_provisioning),
         }
 
     @classmethod
@@ -926,6 +1125,7 @@ class PostgreSQLBootstrapStateRepository:
             configuration_rendering=cls._configuration_execution_from_json(
                 data.get("configuration_rendering")
             ),
+            trust_provisioning=cls._trust_execution_from_json(data.get("trust_provisioning")),
         )
 
     @staticmethod
@@ -1048,6 +1248,76 @@ class PostgreSQLBootstrapStateRepository:
                     sha256=item["sha256"],
                     size_bytes=item["size_bytes"],
                     disposition=ConfigurationFileDisposition(item["disposition"]),
+                )
+                for item in data["evidence"]
+            ),
+            total_bytes=data["total_bytes"],
+        )
+
+    @staticmethod
+    def _trust_execution_to_json(
+        execution: TrustProvisioningExecution | None,
+    ) -> dict[str, Any] | None:
+        if execution is None:
+            return None
+        return {
+            "execution_id": execution.execution_id,
+            "phase_id": execution.phase_id,
+            "release_id": execution.release_id,
+            "profile": execution.profile.value,
+            "configuration_digest": execution.configuration_digest,
+            "trust_schema_version": execution.trust_schema_version,
+            "trust_plan_digest": execution.trust_plan_digest,
+            "state": execution.state.value,
+            "result_code": execution.result_code,
+            "started_at": execution.started_at.isoformat(),
+            "completed_at": (
+                execution.completed_at.isoformat() if execution.completed_at is not None else None
+            ),
+            "anchor_count": execution.anchor_count,
+            "workload_identity_count": execution.workload_identity_count,
+            "evidence": [
+                {
+                    "file_id": item.file_id,
+                    "sha256": item.sha256,
+                    "size_bytes": item.size_bytes,
+                    "disposition": item.disposition.value,
+                }
+                for item in execution.evidence
+            ],
+            "total_bytes": execution.total_bytes,
+        }
+
+    @staticmethod
+    def _trust_execution_from_json(
+        data: dict[str, Any] | None,
+    ) -> TrustProvisioningExecution | None:
+        if data is None:
+            return None
+        return TrustProvisioningExecution(
+            execution_id=data["execution_id"],
+            phase_id=data["phase_id"],
+            release_id=data["release_id"],
+            profile=DeploymentProfile(data["profile"]),
+            configuration_digest=data["configuration_digest"],
+            trust_schema_version=data["trust_schema_version"],
+            trust_plan_digest=data["trust_plan_digest"],
+            state=TrustProvisioningState(data["state"]),
+            result_code=data["result_code"],
+            started_at=datetime.fromisoformat(data["started_at"]),
+            completed_at=(
+                datetime.fromisoformat(data["completed_at"])
+                if data["completed_at"] is not None
+                else None
+            ),
+            anchor_count=data["anchor_count"],
+            workload_identity_count=data["workload_identity_count"],
+            evidence=tuple(
+                TrustFileEvidence(
+                    file_id=item["file_id"],
+                    sha256=item["sha256"],
+                    size_bytes=item["size_bytes"],
+                    disposition=TrustFileDisposition(item["disposition"]),
                 )
                 for item in data["evidence"]
             ),

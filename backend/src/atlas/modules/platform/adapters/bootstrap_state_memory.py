@@ -23,6 +23,10 @@ from atlas.modules.platform.domain.bootstrap_state import (
     BootstrapRunRecord,
     BootstrapRunState,
 )
+from atlas.modules.platform.domain.bootstrap_trust_provisioning import (
+    TrustProvisioningExecution,
+    TrustProvisioningState,
+)
 
 
 class InMemoryBootstrapStateRepository:
@@ -148,6 +152,38 @@ class InMemoryBootstrapStateRepository:
                             failed_configuration_checkpoint,
                         ),
                         configuration_rendering=interrupted_configuration,
+                    )
+                if (
+                    reclaimed
+                    and current.trust_provisioning is not None
+                    and current.trust_provisioning.state is TrustProvisioningState.RUNNING
+                ):
+                    interrupted_trust = replace(
+                        current.trust_provisioning,
+                        state=TrustProvisioningState.FAILED,
+                        result_code="bootstrap.trust.interrupted",
+                        completed_at=now,
+                    )
+                    failed_trust_checkpoint = BootstrapPhaseCheckpoint(
+                        phase_id="phase.trust",
+                        state=BootstrapCheckpointState.FAILED,
+                        safe_output_references=(
+                            "result.trust-provisioning."
+                            f"{sha256(interrupted_trust.execution_id.encode()).hexdigest()[:24]}",
+                        ),
+                        recorded_at=now,
+                    )
+                    current = replace(
+                        current,
+                        checkpoints=(
+                            *(
+                                item
+                                for item in current.checkpoints
+                                if item.phase_id != "phase.trust"
+                            ),
+                            failed_trust_checkpoint,
+                        ),
+                        trust_provisioning=interrupted_trust,
                     )
                 updated = replace(
                     current,
@@ -425,6 +461,138 @@ class InMemoryBootstrapStateRepository:
             self._remember(lease_holder_id, idempotency_key, request_fingerprint, result)
             return result
 
+    async def begin_trust_provisioning(
+        self,
+        *,
+        run_id: str,
+        plan_digest: str,
+        resume_key: str,
+        execution: TrustProvisioningExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._lock:
+            replay = self._replay(lease_holder_id, idempotency_key, request_fingerprint)
+            if replay is not None:
+                return replay
+            key, current = self._find(run_id)
+            self._require_no_running_phase(current)
+            if (
+                current.identity.plan_digest != plan_digest
+                or current.identity.resume_key != resume_key
+            ):
+                raise BootstrapRepositoryError("bootstrap_plan_mismatch")
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            if current.state is BootstrapRunState.COMPLETED:
+                raise BootstrapRepositoryError("bootstrap_run_completed")
+            if current.current_phase_id != "phase.trust" or execution.phase_id != "phase.trust":
+                raise BootstrapRepositoryError("bootstrap_phase_out_of_order")
+            updated = replace(
+                current,
+                version=current.version + 1,
+                state=BootstrapRunState.ACTIVE,
+                checkpoints=tuple(
+                    item for item in current.checkpoints if item.phase_id != "phase.trust"
+                ),
+                trust_provisioning=execution,
+                updated_at=now,
+            )
+            result = BootstrapMutationResult(
+                record=updated,
+                replayed=False,
+                trust_provisioning=execution,
+            )
+            self._records[key] = updated
+            self._remember(lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
+    async def finish_trust_provisioning(
+        self,
+        *,
+        run_id: str,
+        execution: TrustProvisioningExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._lock:
+            replay = self._replay(lease_holder_id, idempotency_key, request_fingerprint)
+            if (
+                replay is not None
+                and replay.trust_provisioning is not None
+                and replay.trust_provisioning.state is not TrustProvisioningState.RUNNING
+            ):
+                return replay
+            key, current = self._find(run_id)
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            active = current.trust_provisioning
+            if (
+                active is None
+                or active.state is not TrustProvisioningState.RUNNING
+                or active.execution_id != execution.execution_id
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_execution_unavailable")
+            if (
+                execution.state is TrustProvisioningState.RUNNING
+                or execution.release_id != active.release_id
+                or execution.profile is not active.profile
+                or execution.configuration_digest != active.configuration_digest
+                or execution.trust_schema_version != active.trust_schema_version
+                or execution.trust_plan_digest != active.trust_plan_digest
+                or execution.started_at != active.started_at
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_execution_conflict")
+            if execution.state is TrustProvisioningState.COMPLETED:
+                reference = f"result.trust.{execution.trust_plan_digest[:32]}"
+                checkpoint_state = BootstrapCheckpointState.COMPLETED
+                completed_after = len(current.completed_phase_ids) + 1
+                run_state = (
+                    BootstrapRunState.COMPLETED
+                    if completed_after == len(current.identity.phase_ids)
+                    else BootstrapRunState.ACTIVE
+                )
+            else:
+                reference = (
+                    "result.trust-provisioning."
+                    f"{sha256(execution.result_code.encode()).hexdigest()[:24]}"
+                )
+                checkpoint_state = BootstrapCheckpointState.FAILED
+                run_state = BootstrapRunState.FAILED
+            checkpoint = BootstrapPhaseCheckpoint(
+                phase_id="phase.trust",
+                state=checkpoint_state,
+                safe_output_references=(reference,),
+                recorded_at=now,
+            )
+            updated = replace(
+                current,
+                version=current.version + 1,
+                state=run_state,
+                checkpoints=(
+                    *(item for item in current.checkpoints if item.phase_id != "phase.trust"),
+                    checkpoint,
+                ),
+                trust_provisioning=execution,
+                updated_at=now,
+            )
+            result = BootstrapMutationResult(
+                record=updated,
+                replayed=False,
+                trust_provisioning=execution,
+            )
+            self._records[key] = updated
+            self._remember(lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
     async def finish_artifact_acquisition(
         self,
         *,
@@ -587,6 +755,9 @@ class InMemoryBootstrapStateRepository:
                 configuration_rendering=(
                     current.configuration_rendering if "phase.configure" in reusable else None
                 ),
+                trust_provisioning=(
+                    current.trust_provisioning if "phase.trust" in reusable else None
+                ),
                 updated_at=now,
             )
             result = BootstrapMutationResult(
@@ -618,11 +789,18 @@ class InMemoryBootstrapStateRepository:
     @staticmethod
     def _require_no_running_phase(record: BootstrapRunRecord) -> None:
         if (
-            record.artifact_acquisition is not None
-            and record.artifact_acquisition.state is ArtifactAcquisitionState.RUNNING
-        ) or (
-            record.configuration_rendering is not None
-            and record.configuration_rendering.state is ConfigurationRenderingState.RUNNING
+            (
+                record.artifact_acquisition is not None
+                and record.artifact_acquisition.state is ArtifactAcquisitionState.RUNNING
+            )
+            or (
+                record.configuration_rendering is not None
+                and record.configuration_rendering.state is ConfigurationRenderingState.RUNNING
+            )
+            or (
+                record.trust_provisioning is not None
+                and record.trust_provisioning.state is TrustProvisioningState.RUNNING
+            )
         ):
             raise BootstrapRepositoryError("bootstrap_phase_in_progress")
 

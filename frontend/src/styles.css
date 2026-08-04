@@ -851,6 +851,8 @@ textarea:focus-visible {
 .artifact-acquisition-result,
 .configuration-rendering-action,
 .configuration-rendering-result,
+.trust-provisioning-action,
+.trust-provisioning-result,
 .bootstrap-claim-action,
 .bootstrap-claim-result {
   display: flex;
@@ -867,6 +869,8 @@ textarea:focus-visible {
 .artifact-recovery-note,
 .configuration-rendering-action p,
 .configuration-recovery-note,
+.trust-provisioning-action p,
+.trust-recovery-note,
 .bootstrap-claim-action p,
 .bootstrap-claim-result p {
   margin: 4px 0 0;
@@ -877,6 +881,8 @@ textarea:focus-visible {
 .artifact-acquisition-confirm-actions button,
 .configuration-rendering-action button,
 .configuration-rendering-confirm-actions button,
+.trust-provisioning-action button,
+.trust-provisioning-confirm-actions button,
 .bootstrap-claim-action button,
 .bootstrap-claim-confirm-actions button {
   display: inline-flex;
@@ -888,6 +894,7 @@ textarea:focus-visible {
 
 .artifact-acquisition-confirmation,
 .configuration-rendering-confirmation,
+.trust-provisioning-confirmation,
 .bootstrap-claim-confirmation {
   display: grid;
   gap: 13px;
@@ -899,6 +906,7 @@ textarea:focus-visible {
 
 .artifact-acquisition-confirmation p,
 .configuration-rendering-confirmation p,
+.trust-provisioning-confirmation p,
 .bootstrap-claim-confirmation p {
   margin: 4px 0 0;
   color: #665b45;
@@ -913,6 +921,14 @@ textarea:focus-visible {
 }
 
 .configuration-rendering-confirmation > label {
+  display: grid;
+  gap: 6px;
+  color: #394742;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.trust-provisioning-confirmation > label {
   display: grid;
   gap: 6px;
   color: #394742;
@@ -940,6 +956,17 @@ textarea:focus-visible {
 }
 
 .configuration-rendering-confirmation input {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid #b9c5c1;
+  border-radius: 5px;
+  background: #fff;
+  color: #1f2d29;
+}
+
+.trust-provisioning-confirmation input {
   width: 100%;
   min-width: 0;
   height: 38px;
@@ -978,6 +1005,7 @@ textarea:focus-visible {
 
 .artifact-acquisition-confirm-actions,
 .configuration-rendering-confirm-actions,
+.trust-provisioning-confirm-actions,
 .bootstrap-claim-confirm-actions {
   display: flex;
   justify-content: flex-end;
@@ -986,6 +1014,7 @@ textarea:focus-visible {
 
 .artifact-acquisition-confirm,
 .configuration-rendering-confirm,
+.trust-provisioning-confirm,
 .bootstrap-claim-confirm {
   border-color: #386b5a;
   background: #386b5a;
@@ -999,6 +1028,12 @@ textarea:focus-visible {
 }
 
 .configuration-rendering-result {
+  display: grid;
+  border-color: #b9c5c1;
+  background: #fbfcfc;
+}
+
+.trust-provisioning-result {
   display: grid;
   border-color: #b9c5c1;
   background: #fbfcfc;
@@ -1026,6 +1061,11 @@ textarea:focus-visible {
   background: #fffafa;
 }
 
+.trust-provisioning-result.failed {
+  border-color: #d7a0a0;
+  background: #fffafa;
+}
+
 .artifact-acquisition-result-heading {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) auto;
@@ -1035,6 +1075,14 @@ textarea:focus-visible {
 }
 
 .configuration-rendering-result-heading {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.trust-provisioning-result-heading {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) auto;
   align-items: center;
@@ -1054,10 +1102,18 @@ textarea:focus-visible {
   gap: 4px;
 }
 
+.trust-provisioning-result-heading > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
 .artifact-acquisition-result-heading code,
 .artifact-evidence-list code,
 .configuration-rendering-result-heading code,
-.configuration-evidence-list code {
+.configuration-evidence-list code,
+.trust-provisioning-result-heading code,
+.trust-evidence-list code {
   overflow-wrap: anywhere;
 }
 
@@ -1087,6 +1143,16 @@ textarea:focus-visible {
   background: #dbe3e0;
 }
 
+.trust-provisioning-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid #dbe3e0;
+  border-radius: 6px;
+  background: #dbe3e0;
+}
+
 .artifact-acquisition-summary > div {
   min-width: 0;
   padding: 10px;
@@ -1094,6 +1160,12 @@ textarea:focus-visible {
 }
 
 .configuration-rendering-summary > div {
+  min-width: 0;
+  padding: 10px;
+  background: #fff;
+}
+
+.trust-provisioning-summary > div {
   min-width: 0;
   padding: 10px;
   background: #fff;
@@ -1115,12 +1187,25 @@ textarea:focus-visible {
   text-transform: uppercase;
 }
 
+.trust-provisioning-summary span {
+  display: block;
+  margin-bottom: 4px;
+  color: #63716d;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
 .artifact-evidence-list {
   display: grid;
   gap: 6px;
 }
 
 .configuration-evidence-list {
+  display: grid;
+  gap: 6px;
+}
+
+.trust-evidence-list {
   display: grid;
   gap: 6px;
 }
@@ -1136,6 +1221,16 @@ textarea:focus-visible {
 }
 
 .configuration-evidence-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.7fr);
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 10px;
+  border-left: 3px solid #78ad98;
+  background: #f7f9f8;
+}
+
+.trust-evidence-list > div {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 0.7fr);
   gap: 10px;
@@ -1161,6 +1256,14 @@ textarea:focus-visible {
   min-width: 0;
 }
 
+.trust-evidence-list > div > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
 .artifact-evidence-list span {
   color: #52615c;
   font-size: 0.72rem;
@@ -1168,6 +1271,12 @@ textarea:focus-visible {
 }
 
 .configuration-evidence-list span {
+  color: #52615c;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.trust-evidence-list span {
   color: #52615c;
   font-size: 0.72rem;
   text-transform: uppercase;
@@ -1184,6 +1293,11 @@ textarea:focus-visible {
     flex-direction: column;
   }
 
+  .trust-provisioning-action {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .bootstrap-claim-action {
     align-items: flex-start;
     flex-direction: column;
@@ -1193,6 +1307,8 @@ textarea:focus-visible {
   .artifact-acquisition-confirm-actions button,
   .configuration-rendering-action button,
   .configuration-rendering-confirm-actions button,
+  .trust-provisioning-action button,
+  .trust-provisioning-confirm-actions button,
   .bootstrap-claim-action button,
   .bootstrap-claim-confirm-actions button {
     width: 100%;
@@ -1200,6 +1316,7 @@ textarea:focus-visible {
 
   .artifact-acquisition-confirm-actions,
   .configuration-rendering-confirm-actions,
+  .trust-provisioning-confirm-actions,
   .bootstrap-claim-confirm-actions {
     flex-direction: column-reverse;
   }
@@ -1207,7 +1324,9 @@ textarea:focus-visible {
   .artifact-acquisition-summary,
   .artifact-evidence-list > div,
   .configuration-rendering-summary,
-  .configuration-evidence-list > div {
+  .configuration-evidence-list > div,
+  .trust-provisioning-summary,
+  .trust-evidence-list > div {
     grid-template-columns: minmax(0, 1fr);
   }
 }
