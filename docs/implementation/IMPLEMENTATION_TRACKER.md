@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-020 |
 | Title | Administrative identity access governance |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/administrative-identity-access-governance` |
-| Pull Request | Pending |
+| Pull Request | [PR #32](https://github.com/ozdemirumit/Project_Atlas/pull/32) |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
 | Last Updated | 2026-08-04 |
-| Next Action | Commit the validated implementation, open the pull request, and verify GitHub Actions on the review head |
+| Next Action | Verify backend and frontend GitHub Actions, record final CI evidence, and merge the reviewed pull request |
 
 ### ATLAS-IMP-020 Acceptance Criteria
 
