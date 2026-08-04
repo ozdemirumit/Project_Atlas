@@ -4,14 +4,55 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-025 |
-| Title | Versioned deployment configuration preview foundation |
+| Task ID | ATLAS-IMP-026 |
+| Title | Deterministic bootstrap plan and resume-state foundation |
 | Status | Done |
-| Branch | `agent/deployment-configuration-preview` |
-| Pull Request | [#37](https://github.com/ozdemirumit/Project_Atlas/pull/37) |
+| Branch | `agent/bootstrap-plan-foundation` |
+| Pull Request | [#38](https://github.com/ozdemirumit/Project_Atlas/pull/38) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Merge PR #37 and select the next bounded MVP-005 implementation slice |
+| Next Action | Merge PR #38 and select the next bounded MVP-005 implementation slice |
+
+### ATLAS-IMP-026 Scope Rationale
+
+- ATLAS-038 requires every bootstrap phase to record exact inputs, result boundaries, safe
+  diagnostics, dependencies, and resumability. Preflight and configuration preview now provide the
+  immutable evidence needed to calculate such a plan without performing installation.
+- This slice creates a deterministic, exact-input bootstrap plan with stable phases, dependency
+  gates, invalidation inputs, resume semantics, plan digest, and a governed read-only API/UI. It does
+  not persist execution state, acquire artifacts, write configuration, provision trust, initialize
+  data, deploy services, or execute any phase.
+
+### ATLAS-IMP-026 Acceptance Criteria
+
+- A strict request binds release/profile, organization/environment/site, preflight report and
+  manifest digest, configuration preview and digest, and both gate states. Unknown or malformed
+  fields fail closed and foreign scope discloses no plan.
+- The planner produces a deterministic ordered DAG covering acquire, configure, trust, data,
+  services, identity, integrations, verification, and handoff. Every phase has stable dependencies,
+  required input digests, readiness, resumability, and bounded stop/recovery guidance.
+- Failed or unchecked prerequisite evidence blocks all dependent phases; no blocked phase is shown
+  as ready. Reordered equivalent input produces the same plan digest and resume key.
+- The result includes explicit false mutation/execution authorization, no command text or secret
+  values, exact-scope C0 authorization, required audit, correlation ID, and `no-store` delivery.
+- The operations UI renders plan identity, readiness, ordered phases, dependencies, and the explicit
+  non-execution boundary only when discovery succeeds. Automated and live desktop/mobile tests cover
+  ready, blocked, unauthorized, malformed, audit-failed, and responsive behavior.
+- This slice does not persist checkpoints, acquire or install artifacts, lock a deployment, execute
+  rollback/recovery, mutate data, or authorize a bootstrap run.
+
+### ATLAS-IMP-026 Validation Evidence
+
+- Backend tests pass for deterministic plan and resume identity, nine ordered dependency phases,
+  ready and fully blocked gates, exact-scope denial audit, strict parsing, authorization, required
+  audit failure, and false mutation/execution authorization.
+- Full backend verification passes: Ruff format/check, mypy across 236 source files, and 272 pytest
+  tests. Full frontend verification passes ESLint, TypeScript, 16 Vitest tests, and production build.
+- Live API validation passed for nine ready phases and fail-closed propagation of a failed
+  configuration gate to every phase. Live UI validation passed at 1440x900 and 390x844 with no
+  horizontal overflow or browser warning/error logs.
+- GitHub backend and frontend CI jobs passed for source commit `0a9c38b` in
+  [run 30913934611](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30913934611).
 
 ### ATLAS-IMP-025 Scope Rationale
 
@@ -1137,6 +1178,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-023 | Platform workload identity and secret-reference foundation | Completed through [PR #35](https://github.com/ozdemirumit/Project_Atlas/pull/35) from source commit `1c0fac3`; 253 backend tests, 11 frontend tests, live enterprise workload create/rotate/revoke desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-024 | Release manifest and restricted-network preflight foundation | Completed through [PR #36](https://github.com/ozdemirumit/Project_Atlas/pull/36) from source commit `1f93456`; 261 backend tests, 13 frontend tests, live connected/mirrored/offline API/UI and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-025 | Versioned deployment configuration preview foundation | Completed through [PR #37](https://github.com/ozdemirumit/Project_Atlas/pull/37) from source commit `4917f22`; 268 backend tests, 15 frontend tests, live safe/unsafe configuration API and Linux-lab/developer desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-026 | Deterministic bootstrap plan and resume-state foundation | Completed through [PR #38](https://github.com/ozdemirumit/Project_Atlas/pull/38) from source commit `0a9c38b`; 272 backend tests, 16 frontend tests, live ready/blocked API and desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 

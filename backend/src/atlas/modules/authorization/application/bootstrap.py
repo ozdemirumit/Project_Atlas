@@ -46,6 +46,7 @@ AUDIT_READ = "audit.read"
 AUDIT_EXPORT = "audit.export"
 RELEASE_PREFLIGHT_READ = "platform.release-preflight.read"
 DEPLOYMENT_CONFIGURATION_PREVIEW = "platform.deployment-configuration.preview"
+BOOTSTRAP_PLAN_READ = "platform.bootstrap-plan.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -217,6 +218,17 @@ def deployment_configuration_scope(organization_id: str, environment: str) -> Re
         site_id="site.local",
         domain_id="domain.platform",
         resource_id="resource.platform.deployment-configuration",
+        capability_class=CapabilityClass.C0_INFORMATIONAL,
+    )
+
+
+def bootstrap_plan_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.platform",
+        resource_id="resource.platform.bootstrap-plan",
         capability_class=CapabilityClass.C0_INFORMATIONAL,
     )
 
@@ -482,6 +494,10 @@ def build_development_authorization_service(
             permission_id=DEPLOYMENT_CONFIGURATION_PREVIEW,
             description="Preview one exact-scope deployment configuration without mutation.",
         ),
+        PermissionDefinition(
+            permission_id=BOOTSTRAP_PLAN_READ,
+            description="Read one exact-input bootstrap plan without executing it.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -510,6 +526,7 @@ def build_development_authorization_service(
                 SECURITY_EXPORT_TEST_CREATE,
                 RELEASE_PREFLIGHT_READ,
                 DEPLOYMENT_CONFIGURATION_PREVIEW,
+                BOOTSTRAP_PLAN_READ,
             }
         ),
     )
@@ -604,6 +621,16 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=deployment_configuration_scope(
+                    settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.bootstrap-plan",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=bootstrap_plan_scope(
                     settings.development_organization_id, settings.environment
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),

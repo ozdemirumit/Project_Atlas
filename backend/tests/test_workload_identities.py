@@ -246,9 +246,10 @@ def test_audience_environment_signature_and_expiry_fail_closed() -> None:
             "/api/v1/workload-identities/current",
             headers={**headers, "X-Atlas-Environment": "environment.production"},
         )
+        replacement = "A" if token[-1] != "A" else "B"
         tampered = client.get(
             "/api/v1/workload-identities/current",
-            headers={**headers, "Authorization": f"Workload {token[:-1]}A"},
+            headers={**headers, "Authorization": f"Workload {token[:-1]}{replacement}"},
         )
         fixture.clock.now += timedelta(minutes=11)
         expired = client.get("/api/v1/workload-identities/current", headers=headers)

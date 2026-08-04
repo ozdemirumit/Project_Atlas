@@ -21,6 +21,7 @@ from atlas.modules.authorization.application.bootstrap import (
     APPROVAL_REQUEST_READ,
     AUDIT_EXPORT,
     AUDIT_READ,
+    BOOTSTRAP_PLAN_READ,
     DEPLOYMENT_CONFIGURATION_PREVIEW,
     GRAPH_STORAGE_IMPACT_READ,
     HEALTH_CHECK_OVERVIEW_READ,
@@ -47,6 +48,7 @@ from atlas.modules.authorization.application.bootstrap import (
     api_credential_self_scope,
     approval_scope,
     audit_export_scope,
+    bootstrap_plan_scope,
     current_identity_scope,
     deployment_configuration_scope,
     graph_storage_impact_scope,
@@ -661,6 +663,33 @@ async def authorize_deployment_configuration_preview(
             permission_id=DEPLOYMENT_CONFIGURATION_PREVIEW,
             resource_type="resource.platform.deployment-configuration",
             scope=deployment_configuration_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_bootstrap_plan_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=BOOTSTRAP_PLAN_READ,
+            resource_type="resource.platform.bootstrap-plan",
+            scope=bootstrap_plan_scope(subject.organization_id, settings.environment),
             correlation_id=str(request.state.correlation_id),
             requested_at=datetime.now(UTC),
         )

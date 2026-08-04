@@ -52,6 +52,7 @@ import {
   revokeApiCredential,
 } from "./api/apiCredentials";
 import { getAuditExportOverview, retryAuditExport } from "./api/auditExport";
+import { getBootstrapPlan } from "./api/bootstrapPlan";
 import { previewDeploymentConfiguration } from "./api/deploymentConfiguration";
 import { getStorageImpact, type GraphEntity } from "./api/graph";
 import {
@@ -421,6 +422,17 @@ export function App() {
     retry: false,
   });
   const deploymentConfiguration = deploymentConfigurationQuery.data?.data;
+  const bootstrapPlanQuery = useQuery({
+    queryKey: [
+      "bootstrap-plan",
+      releasePreflight?.report_id,
+      deploymentConfiguration?.preview_id,
+    ],
+    queryFn: () => getBootstrapPlan(releasePreflight!, deploymentConfiguration!, identity!.scope),
+    enabled: Boolean(identity && releasePreflight && deploymentConfiguration),
+    retry: false,
+  });
+  const bootstrapPlan = bootstrapPlanQuery.data?.data;
   const retryAuditExportMutation = useMutation({
     mutationFn: retryAuditExport,
     onSuccess: async () => {
@@ -1117,6 +1129,46 @@ export function App() {
                       Preview only. No file write, secret provisioning, port change, installation, or
                       service execution is authorized.
                     </span>
+                  </div>
+                </section>
+              )}
+
+              {bootstrapPlan && (
+                <section className="workspace-section bootstrap-plan-section">
+                  <div className="section-heading bootstrap-plan-heading">
+                    <div>
+                      <p className="eyebrow">BOOTSTRAP PLAN</p>
+                      <h2>Ordered deployment phases</h2>
+                      <p>Exact-input readiness and resume boundaries without execution.</p>
+                    </div>
+                    <span className={`state-badge ${bootstrapPlan.state}`}>
+                      <Workflow size={14} /> {bootstrapPlan.state}
+                    </span>
+                  </div>
+                  <div className="bootstrap-plan-identity">
+                    <div><span>Plan digest</span><code>{bootstrapPlan.plan_digest.slice(0, 20)}...</code></div>
+                    <div><span>Resume key</span><code>{bootstrapPlan.resume_key}</code></div>
+                    <div><span>Phases</span><strong>{bootstrapPlan.phases.length}</strong></div>
+                  </div>
+                  <ol className="bootstrap-phase-list">
+                    {bootstrapPlan.phases.map((phase) => (
+                      <li key={phase.phase_id}>
+                        <span className="bootstrap-phase-number">{phase.sequence}</span>
+                        <div>
+                          <div className="bootstrap-phase-title">
+                            <strong>{phase.title}</strong>
+                            <span className={`state-badge ${phase.state}`}>{phase.state}</span>
+                          </div>
+                          <code>{phase.phase_id}</code>
+                          <p>{phase.dependencies.length ? `After ${phase.dependencies.join(", ")}` : "No phase dependency"}</p>
+                          <small>{phase.stop_guidance}</small>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                  <div className="safety-notice">
+                    <ShieldCheck size={16} />
+                    <span>Planning evidence only. No phase, command, rollback, or infrastructure mutation is authorized.</span>
                   </div>
                 </section>
               )}

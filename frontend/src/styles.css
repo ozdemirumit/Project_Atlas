@@ -812,6 +812,21 @@ textarea:focus-visible {
   border-top: 1px solid #dbe3e0;
 }
 
+.bootstrap-plan-section { border-top: 1px solid #dbe3e0; }
+.bootstrap-plan-heading .state-badge { display: inline-flex; align-items: center; gap: 6px; }
+.state-badge.ready { color: #26614f; background: #e7f2ed; border-color: #bfd8ce; }
+.state-badge.blocked { color: #843c3c; background: #f8eaea; border-color: #e6bcbc; }
+.bootstrap-plan-identity { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; margin: 18px 0 12px; border: 1px solid #dbe3e0; background: #dbe3e0; }
+.bootstrap-plan-identity > div { display: grid; min-width: 0; gap: 5px; padding: 11px; background: #fbfcfc; }
+.bootstrap-plan-identity span { color: #63716d; font-size: 0.72rem; text-transform: uppercase; }
+.bootstrap-plan-identity code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bootstrap-phase-list { display: grid; gap: 8px; margin: 0 0 14px; padding: 0; list-style: none; }
+.bootstrap-phase-list li { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; padding: 11px; border: 1px solid #dbe3e0; border-radius: 6px; }
+.bootstrap-phase-number { display: grid; width: 28px; height: 28px; place-items: center; color: #ffffff; background: #315f78; border-radius: 50%; font-weight: 750; }
+.bootstrap-phase-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.bootstrap-phase-list p, .bootstrap-phase-list small { display: block; margin: 5px 0 0; color: #63716d; overflow-wrap: anywhere; }
+@media (max-width: 620px) { .bootstrap-plan-identity { grid-template-columns: minmax(0, 1fr); } }
+
 .deployment-configuration-heading .state-badge {
   display: inline-flex;
   align-items: center;
