@@ -17,6 +17,16 @@ class InMemoryUpgradeSimulationRepository:
     async def get(self, *, actor_id: str, idempotency_key: str) -> UpgradeSimulation | None:
         return self._records.get((actor_id, idempotency_key))
 
+    async def get_by_id(self, *, actor_id: str, simulation_id: str) -> UpgradeSimulation | None:
+        return next(
+            (
+                item
+                for (owner, _), item in self._records.items()
+                if owner == actor_id and item.simulation_id == simulation_id
+            ),
+            None,
+        )
+
     async def add(self, record: UpgradeSimulation) -> bool:
         async with self._lock:
             key = (record.actor_id, record.idempotency_key)

@@ -205,3 +205,60 @@ class UpgradeSimulationModel(Base):
     estimated_downtime_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     simulation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class UpgradeChangeReviewPacketModel(Base):
+    __tablename__ = "platform_upgrade_change_review_packets"
+    __table_args__ = (
+        CheckConstraint(
+            "source_run_version > 0",
+            name="ck_platform_upgrade_change_review_packets_source",
+        ),
+        UniqueConstraint(
+            "actor_id",
+            "idempotency_key",
+            name="uq_platform_upgrade_change_review_packets_actor_idempotency",
+        ),
+    )
+
+    packet_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_run_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_run_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    preview_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    preview_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    plan_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    plan_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    simulation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    simulation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    backup_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    restore_validation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    risk_class: Mapped[str] = mapped_column(String(128), nullable=False)
+    change_class: Mapped[str] = mapped_column(String(128), nullable=False)
+    impacted_service_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    migration_step_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    abort_criterion_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    rollback_step_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    post_verification_check_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    assumption_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    unknown_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    residual_risk_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    owner_role_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    evidence_digests: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    proposed_window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    proposed_window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    estimated_downtime_min_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    estimated_downtime_max_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    rollback_window_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    itsm_draft_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    itsm_draft_title: Mapped[str] = mapped_column(String(160), nullable=False)
+    itsm_draft_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    packet_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

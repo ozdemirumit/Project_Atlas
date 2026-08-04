@@ -100,6 +100,10 @@ class UpgradeService:
     async def close(self) -> None:
         await self._simulation_repository.close()
 
+    @property
+    def simulation_repository(self) -> UpgradeSimulationRepository:
+        return self._simulation_repository
+
     async def preview(
         self,
         *,
