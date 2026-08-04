@@ -18,6 +18,7 @@ from atlas.api.routes import (
     audit_export,
     bootstrap_artifacts,
     bootstrap_configuration,
+    bootstrap_data,
     bootstrap_invalidation,
     bootstrap_plan,
     bootstrap_state,
@@ -95,6 +96,8 @@ from atlas.modules.platform.adapters.bootstrap_artifact_filesystem import (
 from atlas.modules.platform.adapters.bootstrap_configuration_filesystem import (
     FilesystemEffectiveConfigurationPublisher,
 )
+from atlas.modules.platform.adapters.bootstrap_data_filesystem import FilesystemBootstrapDataTarget
+from atlas.modules.platform.adapters.bootstrap_data_synthetic import SyntheticBootstrapDataCatalog
 from atlas.modules.platform.adapters.bootstrap_state_memory import (
     InMemoryBootstrapStateRepository,
 )
@@ -117,6 +120,10 @@ from atlas.modules.platform.application.bootstrap_artifact_acquisition import (
 )
 from atlas.modules.platform.application.bootstrap_configuration_rendering import (
     BootstrapConfigurationRenderingService,
+)
+from atlas.modules.platform.application.bootstrap_data_initialization import (
+    BootstrapDataInitializationService,
+    BootstrapDataPlanService,
 )
 from atlas.modules.platform.application.bootstrap_invalidation import BootstrapInvalidationService
 from atlas.modules.platform.application.bootstrap_plan import BootstrapPlanService
@@ -177,6 +184,8 @@ def create_app(
     bootstrap_configuration_rendering_service: BootstrapConfigurationRenderingService | None = None,
     bootstrap_trust_plan_service: BootstrapTrustPlanService | None = None,
     bootstrap_trust_provisioning_service: BootstrapTrustProvisioningService | None = None,
+    bootstrap_data_plan_service: BootstrapDataPlanService | None = None,
+    bootstrap_data_initialization_service: BootstrapDataInitializationService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -330,6 +339,29 @@ def create_app(
             site_id="site.local",
         )
     )
+    resolved_bootstrap_data_target = FilesystemBootstrapDataTarget(
+        root=resolved_settings.bootstrap_data_root,
+        max_state_bytes=resolved_settings.bootstrap_data_max_state_bytes,
+    )
+    resolved_bootstrap_data_plan_service = bootstrap_data_plan_service or BootstrapDataPlanService(
+        catalog=SyntheticBootstrapDataCatalog(),
+        target=resolved_bootstrap_data_target,
+        configuration_service=resolved_deployment_configuration_service,
+        trust_plan_service=resolved_bootstrap_trust_plan_service,
+        environment_id=f"environment.{resolved_settings.environment}",
+        site_id="site.local",
+    )
+    resolved_bootstrap_data_initialization_service = (
+        bootstrap_data_initialization_service
+        or BootstrapDataInitializationService(
+            repository=resolved_bootstrap_state_service.repository,
+            plan_service=resolved_bootstrap_data_plan_service,
+            target=resolved_bootstrap_data_target,
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
+        )
+    )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -470,6 +502,10 @@ def create_app(
         app.state.bootstrap_trust_provisioning_service = (
             resolved_bootstrap_trust_provisioning_service
         )
+        app.state.bootstrap_data_plan_service = resolved_bootstrap_data_plan_service
+        app.state.bootstrap_data_initialization_service = (
+            resolved_bootstrap_data_initialization_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -525,6 +561,7 @@ def create_app(
     app.include_router(bootstrap_artifacts.router, prefix="/api/v1")
     app.include_router(bootstrap_configuration.router, prefix="/api/v1")
     app.include_router(bootstrap_trust.router, prefix="/api/v1")
+    app.include_router(bootstrap_data.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
     app.include_router(health_checks.router, prefix="/api/v1")

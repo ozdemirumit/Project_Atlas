@@ -9,6 +9,7 @@ from atlas.modules.platform.domain.bootstrap_artifact_acquisition import (
 from atlas.modules.platform.domain.bootstrap_configuration_rendering import (
     ConfigurationRenderingExecution,
 )
+from atlas.modules.platform.domain.bootstrap_data_initialization import DataInitializationExecution
 from atlas.modules.platform.domain.bootstrap_state import (
     BootstrapCheckpointState,
     BootstrapMutationResult,
@@ -126,6 +127,32 @@ class BootstrapStateRepository(Protocol):
         *,
         run_id: str,
         execution: TrustProvisioningExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult: ...
+
+    async def begin_data_initialization(
+        self,
+        *,
+        run_id: str,
+        plan_digest: str,
+        resume_key: str,
+        execution: DataInitializationExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult: ...
+
+    async def finish_data_initialization(
+        self,
+        *,
+        run_id: str,
+        execution: DataInitializationExecution,
         lease_holder_id: str,
         expected_version: int,
         idempotency_key: str,

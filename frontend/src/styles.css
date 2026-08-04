@@ -853,6 +853,8 @@ textarea:focus-visible {
 .configuration-rendering-result,
 .trust-provisioning-action,
 .trust-provisioning-result,
+.data-initialization-action,
+.data-initialization-result,
 .bootstrap-claim-action,
 .bootstrap-claim-result {
   display: flex;
@@ -871,6 +873,8 @@ textarea:focus-visible {
 .configuration-recovery-note,
 .trust-provisioning-action p,
 .trust-recovery-note,
+.data-initialization-action p,
+.data-recovery-note,
 .bootstrap-claim-action p,
 .bootstrap-claim-result p {
   margin: 4px 0 0;
@@ -883,6 +887,8 @@ textarea:focus-visible {
 .configuration-rendering-confirm-actions button,
 .trust-provisioning-action button,
 .trust-provisioning-confirm-actions button,
+.data-initialization-action button,
+.data-initialization-confirm-actions button,
 .bootstrap-claim-action button,
 .bootstrap-claim-confirm-actions button {
   display: inline-flex;
@@ -895,6 +901,7 @@ textarea:focus-visible {
 .artifact-acquisition-confirmation,
 .configuration-rendering-confirmation,
 .trust-provisioning-confirmation,
+.data-initialization-confirmation,
 .bootstrap-claim-confirmation {
   display: grid;
   gap: 13px;
@@ -907,6 +914,7 @@ textarea:focus-visible {
 .artifact-acquisition-confirmation p,
 .configuration-rendering-confirmation p,
 .trust-provisioning-confirmation p,
+.data-initialization-confirmation p,
 .bootstrap-claim-confirmation p {
   margin: 4px 0 0;
   color: #665b45;
@@ -929,6 +937,14 @@ textarea:focus-visible {
 }
 
 .trust-provisioning-confirmation > label {
+  display: grid;
+  gap: 6px;
+  color: #394742;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.data-initialization-confirmation > label {
   display: grid;
   gap: 6px;
   color: #394742;
@@ -977,6 +993,17 @@ textarea:focus-visible {
   color: #1f2d29;
 }
 
+.data-initialization-confirmation input {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid #b9c5c1;
+  border-radius: 5px;
+  background: #fff;
+  color: #1f2d29;
+}
+
 .bootstrap-claim-confirmation input {
   width: 100%;
   min-width: 0;
@@ -1006,6 +1033,7 @@ textarea:focus-visible {
 .artifact-acquisition-confirm-actions,
 .configuration-rendering-confirm-actions,
 .trust-provisioning-confirm-actions,
+.data-initialization-confirm-actions,
 .bootstrap-claim-confirm-actions {
   display: flex;
   justify-content: flex-end;
@@ -1015,6 +1043,7 @@ textarea:focus-visible {
 .artifact-acquisition-confirm,
 .configuration-rendering-confirm,
 .trust-provisioning-confirm,
+.data-initialization-confirm,
 .bootstrap-claim-confirm {
   border-color: #386b5a;
   background: #386b5a;
@@ -1034,6 +1063,12 @@ textarea:focus-visible {
 }
 
 .trust-provisioning-result {
+  display: grid;
+  border-color: #b9c5c1;
+  background: #fbfcfc;
+}
+
+.data-initialization-result {
   display: grid;
   border-color: #b9c5c1;
   background: #fbfcfc;
@@ -1066,6 +1101,11 @@ textarea:focus-visible {
   background: #fffafa;
 }
 
+.data-initialization-result.failed {
+  border-color: #d7a0a0;
+  background: #fffafa;
+}
+
 .artifact-acquisition-result-heading {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) auto;
@@ -1083,6 +1123,14 @@ textarea:focus-visible {
 }
 
 .trust-provisioning-result-heading {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.data-initialization-result-heading {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) auto;
   align-items: center;
@@ -1108,12 +1156,20 @@ textarea:focus-visible {
   gap: 4px;
 }
 
+.data-initialization-result-heading > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
 .artifact-acquisition-result-heading code,
 .artifact-evidence-list code,
 .configuration-rendering-result-heading code,
 .configuration-evidence-list code,
 .trust-provisioning-result-heading code,
-.trust-evidence-list code {
+.trust-evidence-list code,
+.data-initialization-result-heading code,
+.data-evidence-list code {
   overflow-wrap: anywhere;
 }
 
@@ -1153,6 +1209,16 @@ textarea:focus-visible {
   background: #dbe3e0;
 }
 
+.data-initialization-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid #dbe3e0;
+  border-radius: 6px;
+  background: #dbe3e0;
+}
+
 .artifact-acquisition-summary > div {
   min-width: 0;
   padding: 10px;
@@ -1166,6 +1232,12 @@ textarea:focus-visible {
 }
 
 .trust-provisioning-summary > div {
+  min-width: 0;
+  padding: 10px;
+  background: #fff;
+}
+
+.data-initialization-summary > div {
   min-width: 0;
   padding: 10px;
   background: #fff;
@@ -1195,6 +1267,18 @@ textarea:focus-visible {
   text-transform: uppercase;
 }
 
+.data-initialization-summary span {
+  display: block;
+  margin-bottom: 4px;
+  color: #63716d;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.data-initialization-summary strong {
+  overflow-wrap: anywhere;
+}
+
 .artifact-evidence-list {
   display: grid;
   gap: 6px;
@@ -1206,6 +1290,11 @@ textarea:focus-visible {
 }
 
 .trust-evidence-list {
+  display: grid;
+  gap: 6px;
+}
+
+.data-evidence-list {
   display: grid;
   gap: 6px;
 }
@@ -1240,6 +1329,16 @@ textarea:focus-visible {
   background: #f7f9f8;
 }
 
+.data-evidence-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.7fr);
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 10px;
+  border-left: 3px solid #78ad98;
+  background: #f7f9f8;
+}
+
 .artifact-evidence-list > div > div {
   display: flex;
   align-items: center;
@@ -1257,6 +1356,14 @@ textarea:focus-visible {
 }
 
 .trust-evidence-list > div > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.data-evidence-list > div > div {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1282,6 +1389,61 @@ textarea:focus-visible {
   text-transform: uppercase;
 }
 
+.data-evidence-list span {
+  color: #52615c;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.data-migration-list {
+  display: grid;
+  gap: 6px;
+}
+
+.data-migration-list > div {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid #e1d3b2;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.data-migration-list > div > span {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 50%;
+  background: #edf1ef;
+  color: #52615c;
+  font-size: 0.72rem;
+}
+
+.data-migration-list > div > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.data-migration-list code,
+.data-migration-list small {
+  overflow-wrap: anywhere;
+}
+
+.data-migration-list small {
+  color: #63716d;
+}
+
+.data-migration-list strong {
+  color: #386b5a;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
 @media (max-width: 760px) {
   .artifact-acquisition-action {
     align-items: flex-start;
@@ -1298,6 +1460,11 @@ textarea:focus-visible {
     flex-direction: column;
   }
 
+  .data-initialization-action {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .bootstrap-claim-action {
     align-items: flex-start;
     flex-direction: column;
@@ -1309,6 +1476,8 @@ textarea:focus-visible {
   .configuration-rendering-confirm-actions button,
   .trust-provisioning-action button,
   .trust-provisioning-confirm-actions button,
+  .data-initialization-action button,
+  .data-initialization-confirm-actions button,
   .bootstrap-claim-action button,
   .bootstrap-claim-confirm-actions button {
     width: 100%;
@@ -1317,6 +1486,7 @@ textarea:focus-visible {
   .artifact-acquisition-confirm-actions,
   .configuration-rendering-confirm-actions,
   .trust-provisioning-confirm-actions,
+  .data-initialization-confirm-actions,
   .bootstrap-claim-confirm-actions {
     flex-direction: column-reverse;
   }
@@ -1326,7 +1496,10 @@ textarea:focus-visible {
   .configuration-rendering-summary,
   .configuration-evidence-list > div,
   .trust-provisioning-summary,
-  .trust-evidence-list > div {
+  .trust-evidence-list > div,
+  .data-initialization-summary,
+  .data-evidence-list > div,
+  .data-migration-list > div {
     grid-template-columns: minmax(0, 1fr);
   }
 }

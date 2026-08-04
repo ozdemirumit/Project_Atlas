@@ -13,6 +13,7 @@ from atlas.modules.platform.domain.bootstrap_artifact_acquisition import (
 from atlas.modules.platform.domain.bootstrap_configuration_rendering import (
     ConfigurationRenderingExecution,
 )
+from atlas.modules.platform.domain.bootstrap_data_initialization import DataInitializationExecution
 from atlas.modules.platform.domain.bootstrap_state import (
     BootstrapMutationResult,
     BootstrapRunIdentity,
@@ -326,6 +327,75 @@ class TrustProvisioningData(BaseModel):
         )
 
 
+class DataStateEvidenceData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_id: str
+    sha256: str
+    size_bytes: int
+    disposition: str
+
+
+class DataInitializationData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    execution_id: str
+    phase_id: str
+    release_id: str
+    profile: str
+    configuration_digest: str
+    trust_plan_digest: str
+    data_schema_version: str
+    data_plan_digest: str
+    migration_artifact_digest: str
+    target_id: str
+    from_revision: str
+    to_revision: str
+    state: str
+    result_code: str
+    started_at: datetime
+    completed_at: datetime | None
+    migration_count: int
+    verified_object_count: int
+    lock_acquired: bool
+    backup_applicability: str
+    evidence: list[DataStateEvidenceData]
+
+    @classmethod
+    def from_domain(cls, execution: DataInitializationExecution) -> DataInitializationData:
+        return cls(
+            execution_id=execution.execution_id,
+            phase_id=execution.phase_id,
+            release_id=execution.release_id,
+            profile=execution.profile.value,
+            configuration_digest=execution.configuration_digest,
+            trust_plan_digest=execution.trust_plan_digest,
+            data_schema_version=execution.data_schema_version,
+            data_plan_digest=execution.data_plan_digest,
+            migration_artifact_digest=execution.migration_artifact_digest,
+            target_id=execution.target_id,
+            from_revision=execution.from_revision,
+            to_revision=execution.to_revision,
+            state=execution.state.value,
+            result_code=execution.result_code,
+            started_at=execution.started_at,
+            completed_at=execution.completed_at,
+            migration_count=execution.migration_count,
+            verified_object_count=execution.verified_object_count,
+            lock_acquired=execution.lock_acquired,
+            backup_applicability=execution.backup_applicability.value,
+            evidence=[
+                DataStateEvidenceData(
+                    evidence_id=item.evidence_id,
+                    sha256=item.sha256,
+                    size_bytes=item.size_bytes,
+                    disposition=item.disposition.value,
+                )
+                for item in execution.evidence
+            ],
+        )
+
+
 class BootstrapRunData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -351,6 +421,7 @@ class BootstrapRunData(BaseModel):
     artifact_acquisition: ArtifactAcquisitionData | None
     configuration_rendering: ConfigurationRenderingData | None
     trust_provisioning: TrustProvisioningData | None
+    data_initialization: DataInitializationData | None
 
     @classmethod
     def from_domain(cls, record: BootstrapRunRecord) -> BootstrapRunData:
@@ -395,6 +466,11 @@ class BootstrapRunData(BaseModel):
             trust_provisioning=(
                 TrustProvisioningData.from_domain(record.trust_provisioning)
                 if record.trust_provisioning is not None
+                else None
+            ),
+            data_initialization=(
+                DataInitializationData.from_domain(record.data_initialization)
+                if record.data_initialization is not None
                 else None
             ),
         )

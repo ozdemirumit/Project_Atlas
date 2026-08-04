@@ -22,6 +22,13 @@ from atlas.modules.platform.domain.bootstrap_configuration_rendering import (
     ConfigurationRenderingState,
     RenderedConfigurationEvidence,
 )
+from atlas.modules.platform.domain.bootstrap_data_initialization import (
+    BackupApplicability,
+    DataInitializationExecution,
+    DataInitializationState,
+    DataStateDisposition,
+    DataStateEvidence,
+)
 from atlas.modules.platform.domain.bootstrap_invalidation import compare_bootstrap_run
 from atlas.modules.platform.domain.bootstrap_state import (
     BootstrapCheckpointState,
@@ -218,6 +225,39 @@ class PostgreSQLBootstrapStateRepository:
                             failed_trust_checkpoint,
                         ),
                         trust_provisioning=interrupted_trust,
+                    )
+                if (
+                    reclaimed
+                    and current.data_initialization is not None
+                    and current.data_initialization.state is DataInitializationState.RUNNING
+                ):
+                    interrupted_data = replace(
+                        current.data_initialization,
+                        state=DataInitializationState.FAILED,
+                        result_code="bootstrap.data.interrupted",
+                        completed_at=now,
+                        lock_acquired=False,
+                    )
+                    failed_data_checkpoint = BootstrapPhaseCheckpoint(
+                        phase_id="phase.data",
+                        state=BootstrapCheckpointState.FAILED,
+                        safe_output_references=(
+                            "result.data-initialization."
+                            f"{sha256(interrupted_data.execution_id.encode()).hexdigest()[:24]}",
+                        ),
+                        recorded_at=now,
+                    )
+                    current = replace(
+                        current,
+                        checkpoints=(
+                            *(
+                                item
+                                for item in current.checkpoints
+                                if item.phase_id != "phase.data"
+                            ),
+                            failed_data_checkpoint,
+                        ),
+                        data_initialization=interrupted_data,
                     )
                 record = replace(
                     current,
@@ -795,6 +835,150 @@ class PostgreSQLBootstrapStateRepository:
             self._remember(row, lease_holder_id, idempotency_key, request_fingerprint, result)
             return result
 
+    async def begin_data_initialization(
+        self,
+        *,
+        run_id: str,
+        plan_digest: str,
+        resume_key: str,
+        execution: DataInitializationExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._sessions.begin() as session:
+            row = await session.scalar(
+                select(BootstrapRunModel)
+                .where(BootstrapRunModel.run_id == run_id)
+                .with_for_update()
+            )
+            if row is None:
+                raise BootstrapRepositoryError("bootstrap_run_unavailable")
+            replay = self._replay(row, lease_holder_id, idempotency_key, request_fingerprint)
+            if replay is not None:
+                return replay
+            current = self._to_domain(row)
+            self._require_no_running_phase(current)
+            if (
+                current.identity.plan_digest != plan_digest
+                or current.identity.resume_key != resume_key
+            ):
+                raise BootstrapRepositoryError("bootstrap_plan_mismatch")
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            if current.state is BootstrapRunState.COMPLETED:
+                raise BootstrapRepositoryError("bootstrap_run_completed")
+            if current.current_phase_id != "phase.data" or execution.phase_id != "phase.data":
+                raise BootstrapRepositoryError("bootstrap_phase_out_of_order")
+            record = replace(
+                current,
+                version=current.version + 1,
+                state=BootstrapRunState.ACTIVE,
+                checkpoints=tuple(
+                    item for item in current.checkpoints if item.phase_id != "phase.data"
+                ),
+                data_initialization=execution,
+                updated_at=now,
+            )
+            self._apply(row, record)
+            result = BootstrapMutationResult(
+                record=record, replayed=False, data_initialization=execution
+            )
+            self._remember(row, lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
+    async def finish_data_initialization(
+        self,
+        *,
+        run_id: str,
+        execution: DataInitializationExecution,
+        lease_holder_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> BootstrapMutationResult:
+        async with self._sessions.begin() as session:
+            row = await session.scalar(
+                select(BootstrapRunModel)
+                .where(BootstrapRunModel.run_id == run_id)
+                .with_for_update()
+            )
+            if row is None:
+                raise BootstrapRepositoryError("bootstrap_run_unavailable")
+            replay = self._replay(row, lease_holder_id, idempotency_key, request_fingerprint)
+            if (
+                replay is not None
+                and replay.data_initialization is not None
+                and replay.data_initialization.state is not DataInitializationState.RUNNING
+            ):
+                return replay
+            current = self._to_domain(row)
+            self._require_lease(current, lease_holder_id, now)
+            if current.version != expected_version:
+                raise BootstrapRepositoryError("bootstrap_stale_revision")
+            active = current.data_initialization
+            if (
+                active is None
+                or active.state is not DataInitializationState.RUNNING
+                or active.execution_id != execution.execution_id
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_execution_unavailable")
+            if (
+                execution.state is DataInitializationState.RUNNING
+                or execution.release_id != active.release_id
+                or execution.profile is not active.profile
+                or execution.configuration_digest != active.configuration_digest
+                or execution.trust_plan_digest != active.trust_plan_digest
+                or execution.data_schema_version != active.data_schema_version
+                or execution.data_plan_digest != active.data_plan_digest
+                or execution.migration_artifact_digest != active.migration_artifact_digest
+                or execution.target_id != active.target_id
+                or execution.started_at != active.started_at
+            ):
+                raise BootstrapRepositoryError("bootstrap_phase_execution_conflict")
+            if execution.state is DataInitializationState.COMPLETED:
+                reference = f"result.data.{execution.data_plan_digest[:32]}"
+                checkpoint_state = BootstrapCheckpointState.COMPLETED
+                run_state = (
+                    BootstrapRunState.COMPLETED
+                    if len(current.completed_phase_ids) + 1 == len(current.identity.phase_ids)
+                    else BootstrapRunState.ACTIVE
+                )
+            else:
+                reference = (
+                    "result.data-initialization."
+                    f"{sha256(execution.result_code.encode()).hexdigest()[:24]}"
+                )
+                checkpoint_state = BootstrapCheckpointState.FAILED
+                run_state = BootstrapRunState.FAILED
+            checkpoint = BootstrapPhaseCheckpoint(
+                phase_id="phase.data",
+                state=checkpoint_state,
+                safe_output_references=(reference,),
+                recorded_at=now,
+            )
+            record = replace(
+                current,
+                version=current.version + 1,
+                state=run_state,
+                checkpoints=(
+                    *(item for item in current.checkpoints if item.phase_id != "phase.data"),
+                    checkpoint,
+                ),
+                data_initialization=execution,
+                updated_at=now,
+            )
+            self._apply(row, record)
+            result = BootstrapMutationResult(
+                record=record, replayed=False, data_initialization=execution
+            )
+            self._remember(row, lease_holder_id, idempotency_key, request_fingerprint, result)
+            return result
+
     async def rebase(
         self,
         *,
@@ -855,6 +1039,9 @@ class PostgreSQLBootstrapStateRepository:
                 trust_provisioning=(
                     current.trust_provisioning if "phase.trust" in reusable else None
                 ),
+                data_initialization=(
+                    current.data_initialization if "phase.data" in reusable else None
+                ),
                 updated_at=now,
             )
             self._apply(row, record)
@@ -892,6 +1079,10 @@ class PostgreSQLBootstrapStateRepository:
             or (
                 record.trust_provisioning is not None
                 and record.trust_provisioning.state is TrustProvisioningState.RUNNING
+            )
+            or (
+                record.data_initialization is not None
+                and record.data_initialization.state is DataInitializationState.RUNNING
             )
         ):
             raise BootstrapRepositoryError("bootstrap_phase_in_progress")
@@ -931,6 +1122,7 @@ class PostgreSQLBootstrapStateRepository:
             record.configuration_rendering
         )
         model.trust_provisioning = cls._trust_execution_to_json(record.trust_provisioning)
+        model.data_initialization = cls._data_execution_to_json(record.data_initialization)
         model.lease_holder_id = record.lease_holder_id
         model.lease_acquired_at = record.lease_acquired_at
         model.lease_expires_at = record.lease_expires_at
@@ -973,6 +1165,7 @@ class PostgreSQLBootstrapStateRepository:
                 model.configuration_rendering
             ),
             trust_provisioning=cls._trust_execution_from_json(model.trust_provisioning),
+            data_initialization=cls._data_execution_from_json(model.data_initialization),
         )
 
     @classmethod
@@ -1006,6 +1199,7 @@ class PostgreSQLBootstrapStateRepository:
                 prior.get("configuration_rendering")
             ),
             trust_provisioning=cls._trust_execution_from_json(prior.get("trust_provisioning")),
+            data_initialization=cls._data_execution_from_json(prior.get("data_initialization")),
         )
 
     @classmethod
@@ -1031,6 +1225,7 @@ class PostgreSQLBootstrapStateRepository:
                 result.configuration_rendering
             ),
             "trust_provisioning": cls._trust_execution_to_json(result.trust_provisioning),
+            "data_initialization": cls._data_execution_to_json(result.data_initialization),
         }
         while len(records) > 100:
             del records[next(iter(records))]
@@ -1080,6 +1275,7 @@ class PostgreSQLBootstrapStateRepository:
                 record.configuration_rendering
             ),
             "trust_provisioning": cls._trust_execution_to_json(record.trust_provisioning),
+            "data_initialization": cls._data_execution_to_json(record.data_initialization),
         }
 
     @classmethod
@@ -1126,6 +1322,7 @@ class PostgreSQLBootstrapStateRepository:
                 data.get("configuration_rendering")
             ),
             trust_provisioning=cls._trust_execution_from_json(data.get("trust_provisioning")),
+            data_initialization=cls._data_execution_from_json(data.get("data_initialization")),
         )
 
     @staticmethod
@@ -1322,4 +1519,86 @@ class PostgreSQLBootstrapStateRepository:
                 for item in data["evidence"]
             ),
             total_bytes=data["total_bytes"],
+        )
+
+    @staticmethod
+    def _data_execution_to_json(
+        execution: DataInitializationExecution | None,
+    ) -> dict[str, Any] | None:
+        if execution is None:
+            return None
+        return {
+            "execution_id": execution.execution_id,
+            "phase_id": execution.phase_id,
+            "release_id": execution.release_id,
+            "profile": execution.profile.value,
+            "configuration_digest": execution.configuration_digest,
+            "trust_plan_digest": execution.trust_plan_digest,
+            "data_schema_version": execution.data_schema_version,
+            "data_plan_digest": execution.data_plan_digest,
+            "migration_artifact_digest": execution.migration_artifact_digest,
+            "target_id": execution.target_id,
+            "from_revision": execution.from_revision,
+            "to_revision": execution.to_revision,
+            "state": execution.state.value,
+            "result_code": execution.result_code,
+            "started_at": execution.started_at.isoformat(),
+            "completed_at": (
+                execution.completed_at.isoformat() if execution.completed_at is not None else None
+            ),
+            "migration_count": execution.migration_count,
+            "verified_object_count": execution.verified_object_count,
+            "lock_acquired": execution.lock_acquired,
+            "backup_applicability": execution.backup_applicability.value,
+            "evidence": [
+                {
+                    "evidence_id": item.evidence_id,
+                    "sha256": item.sha256,
+                    "size_bytes": item.size_bytes,
+                    "disposition": item.disposition.value,
+                }
+                for item in execution.evidence
+            ],
+        }
+
+    @staticmethod
+    def _data_execution_from_json(
+        data: dict[str, Any] | None,
+    ) -> DataInitializationExecution | None:
+        if data is None:
+            return None
+        return DataInitializationExecution(
+            execution_id=data["execution_id"],
+            phase_id=data["phase_id"],
+            release_id=data["release_id"],
+            profile=DeploymentProfile(data["profile"]),
+            configuration_digest=data["configuration_digest"],
+            trust_plan_digest=data["trust_plan_digest"],
+            data_schema_version=data["data_schema_version"],
+            data_plan_digest=data["data_plan_digest"],
+            migration_artifact_digest=data["migration_artifact_digest"],
+            target_id=data["target_id"],
+            from_revision=data["from_revision"],
+            to_revision=data["to_revision"],
+            state=DataInitializationState(data["state"]),
+            result_code=data["result_code"],
+            started_at=datetime.fromisoformat(data["started_at"]),
+            completed_at=(
+                datetime.fromisoformat(data["completed_at"])
+                if data["completed_at"] is not None
+                else None
+            ),
+            migration_count=data["migration_count"],
+            verified_object_count=data["verified_object_count"],
+            lock_acquired=data["lock_acquired"],
+            backup_applicability=BackupApplicability(data["backup_applicability"]),
+            evidence=tuple(
+                DataStateEvidence(
+                    evidence_id=item["evidence_id"],
+                    sha256=item["sha256"],
+                    size_bytes=item["size_bytes"],
+                    disposition=DataStateDisposition(item["disposition"]),
+                )
+                for item in data["evidence"]
+            ),
         )

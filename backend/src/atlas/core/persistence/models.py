@@ -57,6 +57,7 @@ class BootstrapRunModel(Base):
     artifact_acquisition: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     configuration_rendering: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     trust_provisioning: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    data_initialization: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     idempotency_records: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     lease_holder_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     lease_acquired_at: Mapped[datetime | None] = mapped_column(

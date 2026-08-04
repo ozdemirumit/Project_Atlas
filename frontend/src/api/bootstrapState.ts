@@ -29,6 +29,7 @@ export type BootstrapState = {
     artifact_acquisition: BootstrapArtifactExecution | null;
     configuration_rendering: BootstrapConfigurationExecution | null;
     trust_provisioning: BootstrapTrustExecution | null;
+    data_initialization: BootstrapDataExecution | null;
   };
   durable: boolean;
   lease_available: boolean;
@@ -101,6 +102,35 @@ export type BootstrapTrustExecution = {
   }>;
   file_count: number;
   total_bytes: number;
+};
+
+export type BootstrapDataExecution = {
+  execution_id: string;
+  phase_id: "phase.data";
+  release_id: string;
+  profile: string;
+  configuration_digest: string;
+  trust_plan_digest: string;
+  data_schema_version: "atlas.bootstrap-data-plan.v1";
+  data_plan_digest: string;
+  migration_artifact_digest: string;
+  target_id: string;
+  from_revision: string;
+  to_revision: string;
+  state: "running" | "completed" | "failed";
+  result_code: string;
+  started_at: string;
+  completed_at: string | null;
+  lock_acquired: boolean;
+  migration_count: number;
+  verified_object_count: number;
+  backup_applicability: "not_applicable_clean_install";
+  evidence: Array<{
+    evidence_id: string;
+    sha256: string;
+    size_bytes: number;
+    disposition: "published" | "reused";
+  }>;
 };
 
 type BootstrapStateResponse = { data: BootstrapState };
@@ -219,6 +249,46 @@ export function isTrustExecution(value: unknown): value is BootstrapTrustExecuti
   );
 }
 
+export function isDataExecution(value: unknown): value is BootstrapDataExecution {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.execution_id === "string" &&
+    candidate.phase_id === "phase.data" &&
+    typeof candidate.release_id === "string" &&
+    typeof candidate.profile === "string" &&
+    typeof candidate.configuration_digest === "string" &&
+    typeof candidate.trust_plan_digest === "string" &&
+    candidate.data_schema_version === "atlas.bootstrap-data-plan.v1" &&
+    typeof candidate.data_plan_digest === "string" &&
+    typeof candidate.migration_artifact_digest === "string" &&
+    typeof candidate.target_id === "string" &&
+    typeof candidate.from_revision === "string" &&
+    typeof candidate.to_revision === "string" &&
+    (candidate.state === "running" ||
+      candidate.state === "completed" ||
+      candidate.state === "failed") &&
+    typeof candidate.result_code === "string" &&
+    typeof candidate.started_at === "string" &&
+    (candidate.completed_at === null || typeof candidate.completed_at === "string") &&
+    typeof candidate.lock_acquired === "boolean" &&
+    typeof candidate.migration_count === "number" &&
+    typeof candidate.verified_object_count === "number" &&
+    candidate.backup_applicability === "not_applicable_clean_install" &&
+    Array.isArray(candidate.evidence) &&
+    candidate.evidence.every((item) => {
+      if (typeof item !== "object" || item === null) return false;
+      const evidence = item as Record<string, unknown>;
+      return (
+        typeof evidence.evidence_id === "string" &&
+        typeof evidence.sha256 === "string" &&
+        typeof evidence.size_bytes === "number" &&
+        (evidence.disposition === "published" || evidence.disposition === "reused")
+      );
+    })
+  );
+}
+
 export function isBootstrapRun(value: unknown): value is NonNullable<BootstrapState["run"]> {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
@@ -250,7 +320,9 @@ export function isBootstrapRun(value: unknown): value is NonNullable<BootstrapSt
     (candidate.configuration_rendering === null ||
       isConfigurationExecution(candidate.configuration_rendering)) &&
     (candidate.trust_provisioning === null ||
-      isTrustExecution(candidate.trust_provisioning))
+      isTrustExecution(candidate.trust_provisioning)) &&
+    (candidate.data_initialization === null ||
+      isDataExecution(candidate.data_initialization))
   );
 }
 
