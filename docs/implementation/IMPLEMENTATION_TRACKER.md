@@ -8,10 +8,10 @@
 | Title | Governed backup capture and isolated restore-validation foundation |
 | Status | Review |
 | Branch | `agent/backup-restore-foundation` |
-| Pull Request | Pending |
+| Pull Request | [#52](https://github.com/ozdemirumit/Project_Atlas/pull/52) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Open the backup/restore pull request, verify CI, merge, and synchronize `main` |
+| Next Action | Verify PR #52 CI, merge, and synchronize `main` |
 
 ### ATLAS-IMP-040 Scope Rationale
 
