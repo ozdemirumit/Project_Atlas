@@ -45,6 +45,7 @@ SECURITY_EXPORT_TEST_CREATE = "security-export.test.create"
 AUDIT_READ = "audit.read"
 AUDIT_EXPORT = "audit.export"
 RELEASE_PREFLIGHT_READ = "platform.release-preflight.read"
+DEPLOYMENT_CONFIGURATION_PREVIEW = "platform.deployment-configuration.preview"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -205,6 +206,17 @@ def release_preflight_scope(organization_id: str, environment: str) -> ResourceS
         site_id="site.local",
         domain_id="domain.platform",
         resource_id="resource.platform.release-preflight",
+        capability_class=CapabilityClass.C0_INFORMATIONAL,
+    )
+
+
+def deployment_configuration_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.platform",
+        resource_id="resource.platform.deployment-configuration",
         capability_class=CapabilityClass.C0_INFORMATIONAL,
     )
 
@@ -466,6 +478,10 @@ def build_development_authorization_service(
             permission_id=RELEASE_PREFLIGHT_READ,
             description="Read one bounded release and host preflight report without mutation.",
         ),
+        PermissionDefinition(
+            permission_id=DEPLOYMENT_CONFIGURATION_PREVIEW,
+            description="Preview one exact-scope deployment configuration without mutation.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -493,6 +509,7 @@ def build_development_authorization_service(
                 SECURITY_EXPORT_OVERVIEW_READ,
                 SECURITY_EXPORT_TEST_CREATE,
                 RELEASE_PREFLIGHT_READ,
+                DEPLOYMENT_CONFIGURATION_PREVIEW,
             }
         ),
     )
@@ -577,6 +594,16 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=release_preflight_scope(
+                    settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.deployment-configuration",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=deployment_configuration_scope(
                     settings.development_organization_id, settings.environment
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
