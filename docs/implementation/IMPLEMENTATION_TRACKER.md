@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-024 |
 | Title | Release manifest and restricted-network preflight foundation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/release-manifest-preflight` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-016, ATLAS-030, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-058, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Implement the bounded release-manifest and read-only preflight vertical slice |
+| Next Action | Open the implementation pull request and complete GitHub CI review |
 
 ### ATLAS-IMP-024 Scope Rationale
 
@@ -66,7 +66,21 @@
 
 ### ATLAS-IMP-024 Validation Evidence
 
-- Pending implementation and validation.
+- Backend release-manifest, signature-verifier, acquisition inventory, host-probe, authorization,
+  audit, and API tests pass, including signature substitution, unsafe paths, embedded credentials,
+  missing/extra/modified artifacts, public fallback rejection, host incompatibility, exact-scope
+  denial, and required-audit failure.
+- Full backend verification passes: Ruff format/check, mypy across 226 source files, and 261 pytest
+  tests. The three reported warnings are existing third-party deprecations from Starlette and ldap3.
+- Full frontend verification passes: ESLint, TypeScript, 13 Vitest tests, and the Vite production
+  build. The API boundary also ignores malformed/legacy preflight payloads rather than rendering an
+  invalid report.
+- Live API and web verification passed for connected, mirrored, and offline acquisition behavior and
+  developer/Linux-lab profiles. The rendered report remained read-only with 14 passing checks and
+  false mutation/execution authorization.
+- Browser validation passed at 1440x900 and 390x844 with no horizontal overflow, incoherent overlap,
+  or warning/error console entries. The mobile view starts with navigation and context panels closed.
+- GitHub pull request and required CI evidence are pending.
 
 ### ATLAS-IMP-023 Scope Rationale
 

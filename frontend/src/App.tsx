@@ -26,6 +26,7 @@ import {
   Menu,
   MessageSquareText,
   Monitor,
+  PackageCheck,
   Network,
   PanelRightClose,
   Play,
@@ -69,6 +70,11 @@ import { createStorageInvestigation } from "./api/investigations";
 import { getPlatformStatus } from "./api/platform";
 import { createStorageRca } from "./api/rca";
 import { createStorageRecommendation } from "./api/recommendations";
+import {
+  getReleasePreflight,
+  type ReleasePreflightMode,
+  type ReleasePreflightProfile,
+} from "./api/releasePreflight";
 import { createStorageTechnicalReport } from "./api/reports";
 import {
   createBrowserSession,
@@ -234,6 +240,9 @@ export function App() {
     useState<PendingWorkloadAction | null>(null);
   const [auditSearch, setAuditSearch] = useState("");
   const [auditOutcome, setAuditOutcome] = useState("");
+  const [releaseMode, setReleaseMode] = useState<ReleasePreflightMode>("offline");
+  const [releaseProfile, setReleaseProfile] =
+    useState<ReleasePreflightProfile>("linux_lab");
   const [pendingDisableSubjectId, setPendingDisableSubjectId] = useState<string | null>(null);
   const [investigationQuestion, setInvestigationQuestion] = useState(
     "What evidence explains the current storage warning?",
@@ -397,6 +406,13 @@ export function App() {
   });
   const auditExport = auditExportQuery.data?.data;
   const auditHealth = auditExport?.health?.[0];
+  const releasePreflightQuery = useQuery({
+    queryKey: ["release-preflight", releaseMode, releaseProfile],
+    queryFn: () => getReleasePreflight(releaseMode, releaseProfile),
+    enabled: Boolean(identity),
+    retry: false,
+  });
+  const releasePreflight = releasePreflightQuery.data?.data;
   const retryAuditExportMutation = useMutation({
     mutationFn: retryAuditExport,
     onSuccess: async () => {
@@ -950,6 +966,80 @@ export function App() {
                   <div className="safety-notice">
                     <ShieldCheck size={16} />
                     <span>{auditExport.safety_notice}</span>
+                  </div>
+                </section>
+              )}
+
+              {releasePreflight && (
+                <section className="workspace-section release-preflight-section">
+                  <div className="section-heading release-preflight-heading">
+                    <div>
+                      <p className="eyebrow">RELEASE READINESS</p>
+                      <h2>Read-only deployment preflight</h2>
+                      <p>Immutable artifact and host checks before any installation activity.</p>
+                    </div>
+                    <span className={`state-badge ${releasePreflight.state}`}>
+                      <PackageCheck size={14} /> {releasePreflight.state}
+                    </span>
+                  </div>
+                  <div className="release-preflight-controls">
+                    <label>
+                      <span>Acquisition mode</span>
+                      <select
+                        aria-label="Release acquisition mode"
+                        value={releaseMode}
+                        onChange={(event) =>
+                          setReleaseMode(event.target.value as ReleasePreflightMode)
+                        }
+                      >
+                        <option value="connected">Connected</option>
+                        <option value="mirrored">Mirrored</option>
+                        <option value="offline">Offline</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Deployment profile</span>
+                      <select
+                        aria-label="Release deployment profile"
+                        value={releaseProfile}
+                        onChange={(event) =>
+                          setReleaseProfile(event.target.value as ReleasePreflightProfile)
+                        }
+                      >
+                        <option value="developer">Developer</option>
+                        <option value="linux_lab">Linux lab</option>
+                      </select>
+                    </label>
+                    <div className="release-identity">
+                      <span>Release</span>
+                      <strong>{releasePreflight.release_version}</strong>
+                      <code>{releasePreflight.build_id}</code>
+                    </div>
+                    <div className="release-identity">
+                      <span>Manifest</span>
+                      <strong>{releasePreflight.checks.length} checks</strong>
+                      <code>{releasePreflight.manifest_digest.slice(0, 16)}...</code>
+                    </div>
+                  </div>
+                  <div className="release-check-grid">
+                    {releasePreflight.checks.map((check) => (
+                      <article className="release-check" key={check.code}>
+                        <div>
+                          <span className={`state-badge ${check.state}`}>{check.state}</span>
+                          <code>{check.code}</code>
+                        </div>
+                        <strong>{check.summary}</strong>
+                        <p>{check.evidence}</p>
+                        {check.remediation && <small>{check.remediation}</small>}
+                      </article>
+                    ))}
+                  </div>
+                  <div className="safety-notice">
+                    <ShieldCheck size={16} />
+                    <span>
+                      Read-only evidence only. No installation, mutation, deployment, or execution
+                      is authorized.
+                    </span>
                   </div>
                 </section>
               )}

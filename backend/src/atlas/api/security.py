@@ -30,6 +30,7 @@ from atlas.modules.authorization.application.bootstrap import (
     INVESTIGATION_CREATE,
     RCA_CREATE,
     RECOMMENDATION_CREATE,
+    RELEASE_PREFLIGHT_READ,
     REPORT_CREATE,
     SECURITY_EXPORT_OVERVIEW_READ,
     SECURITY_EXPORT_TEST_CREATE,
@@ -52,6 +53,7 @@ from atlas.modules.authorization.application.bootstrap import (
     investigation_scope,
     rca_scope,
     recommendation_scope,
+    release_preflight_scope,
     report_scope,
     security_export_scope,
     session_self_scope,
@@ -603,6 +605,33 @@ async def authorize_storage_overview_read(
             permission_id=STORAGE_OVERVIEW_READ,
             resource_type="resource.storage.overview",
             scope=storage_overview_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_release_preflight_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=RELEASE_PREFLIGHT_READ,
+            resource_type="resource.platform.release-preflight",
+            scope=release_preflight_scope(subject.organization_id, settings.environment),
             correlation_id=str(request.state.correlation_id),
             requested_at=datetime.now(UTC),
         )
