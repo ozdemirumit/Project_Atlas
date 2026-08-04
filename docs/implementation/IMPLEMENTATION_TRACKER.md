@@ -4,14 +4,64 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-014 |
-| Title | Secure LDAP and Active Directory authentication-provider vertical slice |
-| Status | Done |
-| Branch | `agent/ldap-directory-auth` |
-| Pull Request | [#26](https://github.com/ozdemirumit/Project_Atlas/pull/26) |
-| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-056, ADR-003 |
+| Task ID | ATLAS-IMP-015 |
+| Title | Secure browser-session and bounded API-credential foundation |
+| Status | In Progress |
+| Branch | `agent/secure-browser-session` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
 | Last Updated | 2026-08-04 |
-| Next Action | Begin ATLAS-IMP-015 secure browser-session and API-token foundation |
+| Next Action | Open the implementation pull request and run GitHub quality gates |
+
+### ATLAS-IMP-015 Acceptance Criteria
+
+- Browser login authenticates through the existing identity-provider port, then creates an opaque
+  session without storing the raw session or CSRF credential server-side.
+- Session records retain a stable session ID, credential digests, normalized subject snapshot,
+  creation and activity times, absolute and idle expiry, lifecycle state, and revocation reason.
+- Session cookies are HTTP-only, SameSite Strict, path-bounded, Secure in production, and cleared on
+  logout; credential values never appear in response JSON, audit, logs, repr, URLs, or model context.
+- Unsafe cookie-authenticated requests require a matching CSRF credential using constant-time digest
+  comparison; safe requests, direct development identity, and non-cookie authentication do not gain
+  or bypass session authority.
+- Expired, idle, revoked, missing, malformed, ambiguous cookie-plus-Authorization, and unknown
+  sessions fail closed with generic errors and cannot extend their own lifetime.
+- Login rotates session identity, enforces absolute/idle timeout bounds and a per-subject concurrent
+  session limit, while logout deterministically revokes the current session.
+- Session creation, expiry, denial, and revocation are audited without raw credentials; required
+  authentication and creation audit failures block session issuance.
+- Existing RBAC evaluates the normalized session subject on every request; session creation never
+  grants a role, assignment, scope, approval, policy outcome, or infrastructure authority.
+- API-token domain and repository boundaries remain distinct from browser sessions; external token
+  issuance stays disabled until permission-scope enforcement is implemented and tested.
+- Configuration enforces secure production cookies and bounded timeout/session limits; browser
+  security cannot be weakened by environment input below platform minimums.
+- Tests cover creation, cookie flags, CSRF, safe reads, logout, expiry, idle timeout, concurrency,
+  ambiguity, unknown credentials, audit failure, secret redaction, and authentication/RBAC separation.
+- Approval workflow and infrastructure-changing execution remain outside this slice.
+
+### ATLAS-IMP-015 Validation Evidence
+
+- Backend Ruff check and format verification passed across 185 source and test files.
+- Strict backend type checking passed across all 185 source and test files.
+- Full backend test suite passed: 185 tests, including 22 browser-session tests for opaque
+  credential handling, cookie attributes, CSRF enforcement, safe reads, logout and revocation,
+  absolute and idle expiry, malformed and ambiguous authentication, exact RBAC separation,
+  configuration bounds, concurrent-session limits, required-audit failure, digest-only storage,
+  secret-safe validation errors, and stale-update protection against revocation races.
+- Session state changes use optimistic version checks, so a concurrent request cannot overwrite and
+  resurrect a revoked or expired session; concurrent creation is serialized before enforcing the
+  per-subject limit.
+- Frontend TypeScript, ESLint, integrated user-flow test, and production build all passed without a
+  frontend contract change in this backend security foundation.
+- A fresh live API process exposed the new endpoint and failed closed when no identity provider was
+  enabled: invalid login returned a generic 401 and emitted neither a cookie nor CSRF credential.
+- Successful cookie creation and authenticated safe/unsafe request behavior were exercised through
+  the full FastAPI integration boundary using an injected deterministic identity-provider adapter.
+- Real enterprise directory login was not attempted because no customer LDAPS endpoint, trust
+  bundle, or test account is configured; that environment-bound validation remains outstanding.
+- External API-token issuance remains disabled; only its distinct credential-kind domain boundary
+  exists until exact token permission and scope enforcement is implemented.
 
 ### ATLAS-IMP-014 Acceptance Criteria
 
@@ -419,6 +469,8 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-010 | Storage fault-family Root Cause Analysis vertical slice | Completed through [PR #22](https://github.com/ozdemirumit/Project_Atlas/pull/22); 114 backend tests, live API and desktop UI validation, and all GitHub quality gates passed |
 | ATLAS-IMP-011 | Storage Recommendation Engine vertical slice | Completed through [PR #23](https://github.com/ozdemirumit/Project_Atlas/pull/23); 126 backend tests, live recommendation API/UI validation, and all GitHub quality gates passed |
 | ATLAS-IMP-012 | Technical Decision Report and controlled ITSM handoff vertical slice | Completed through [PR #24](https://github.com/ozdemirumit/Project_Atlas/pull/24); 139 backend tests, live report and ITSM draft API/UI validation, and all GitHub quality gates passed |
+| ATLAS-IMP-013 | TLS Syslog security export vertical slice | Completed through [PR #25](https://github.com/ozdemirumit/Project_Atlas/pull/25); 150 backend tests, live API/UI validation, and all GitHub quality gates passed |
+| ATLAS-IMP-014 | Enterprise LDAP/AD identity provider | Completed through [PR #26](https://github.com/ozdemirumit/Project_Atlas/pull/26); 163 backend tests, live development-adapter validation, and all GitHub quality gates passed |
 
 ## Status Rules
 

@@ -1,0 +1,15 @@
+from __future__ import annotations
+
+from typing import Protocol
+
+from atlas.modules.identity.domain.sessions import SessionRecord
+
+
+class SessionRepository(Protocol):
+    async def get_by_token_digest(self, token_digest: str) -> SessionRecord | None: ...
+
+    async def add(self, record: SessionRecord) -> None: ...
+
+    async def update(self, record: SessionRecord, *, expected_version: int) -> bool: ...
+
+    async def active_for_subject(self, subject_id: str) -> tuple[SessionRecord, ...]: ...

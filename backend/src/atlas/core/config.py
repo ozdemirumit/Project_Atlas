@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     directory_nested_group_depth: int = Field(default=0, ge=0, le=5)
     directory_connect_timeout_seconds: float = Field(default=3.0, ge=0.1, le=15)
     directory_response_timeout_seconds: float = Field(default=5.0, ge=0.1, le=30)
+    session_cookie_name: str = Field(default="atlas_session", pattern=r"^[A-Za-z0-9_-]{3,64}$")
+    csrf_header_name: str = Field(default="X-CSRF-Token", pattern=r"^X-[A-Za-z0-9-]{3,64}$")
+    session_absolute_timeout_minutes: int = Field(default=480, ge=5, le=1440)
+    session_idle_timeout_minutes: int = Field(default=30, ge=1, le=240)
+    session_max_per_subject: int = Field(default=5, ge=1, le=20)
     local_model_enabled: bool = False
     local_model_base_url: AnyHttpUrl | None = None
     local_model_id: str | None = None
@@ -122,6 +127,8 @@ class Settings(BaseSettings):
             (self.local_model_base_url, self.local_model_id, self.local_model_reader_token)
         ):
             raise ValueError("enabled local model requires base URL, model ID, and reader token")
+        if self.session_idle_timeout_minutes > self.session_absolute_timeout_minutes:
+            raise ValueError("session idle timeout cannot exceed absolute timeout")
         return self
 
     @property
