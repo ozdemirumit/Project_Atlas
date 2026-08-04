@@ -4,14 +4,64 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-030 |
-| Title | Governed bootstrap artifact acquisition and verification |
-| Status | Done |
-| Branch | `agent/bootstrap-artifact-acquisition` |
-| Pull Request | [#42](https://github.com/ozdemirumit/Project_Atlas/pull/42) |
+| Task ID | ATLAS-IMP-031 |
+| Title | Governed bootstrap configuration rendering and validation |
+| Status | In Progress |
+| Branch | `agent/bootstrap-configuration-rendering` |
+| Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Select and scope the next approved bootstrap vertical slice |
+| Next Action | Implement the governed `phase.configure` execution path and validation suite |
+
+### ATLAS-IMP-031 Scope Rationale
+
+- ATLAS-038 orders configuration rendering and validation immediately after verified artifact
+  acquisition. IMP-025 provides a deterministic, redacted, read-only preview and IMP-030 establishes
+  the common governed phase boundary, but no component can yet materialize the approved effective
+  configuration for a bootstrap run.
+- This slice executes only `phase.configure`. It recomputes the exact versioned configuration,
+  validates it against the secure schema, renders canonical non-secret JSON, publishes it atomically
+  beneath the Atlas configuration root, records safe evidence, and advances the existing checkpoint.
+
+### ATLAS-IMP-031 Acceptance Criteria
+
+- A strict C2 request binds the exact run, expected revision, plan digest, resume key, release and
+  profile, configuration digest and schema version, complete bounded overlay, phase ID, human
+  justification, and idempotency key. Unknown fields, malformed values, and foreign identifiers fail
+  closed.
+- Execution requires the active lease held by the authenticated browser session, exact scope and
+  revision, completed `phase.acquire`, `phase.configure` as the current dependency-satisfied phase,
+  and the exact release, profile, plan, resume, and configuration identities recorded by the run.
+- The backend recomputes the effective configuration from release defaults plus the exact overlay.
+  Failed validation, digest drift, unsupported schema, unsafe bind or URL, mutable component reference,
+  duplicate resource, raw secret value, or autonomous-execution enablement stops before publication.
+- Rendered output is deterministic canonical UTF-8 JSON with explicit schema, release, profile, scope,
+  effective non-secret values, source precedence, and opaque secret references. Secret values,
+  credentials, commands, lease-holder identity, and raw justification are absent from files and output.
+- Configuration is written into an attempt-owned staging area beneath a configured root, flushed, and
+  atomically published under exact deployment and configuration identity. Existing byte-identical
+  output is reusable; unknown, modified, symbolic-link, extra, or conflicting content is never
+  overwritten. Failure cleanup removes only files owned by the current attempt.
+- The phase result records stable state and result code, timestamps, schema and configuration digest,
+  bounded file count and bytes, and per-file safe digest/disposition evidence without exposing paths or
+  configuration values.
+- Checkpoint completion or failure is persisted through the versioned bootstrap state contract. Exact
+  replay returns prior evidence without rewriting files; changed replay, stale revision, foreign lease,
+  expired/interrupted execution, and concurrent execution fail deterministically.
+- Required RBAC, browser CSRF, pre-mutation and pre-finish audit, correlation ID, `no-store`, safe error
+  mapping, and non-disclosing scope behavior apply. Required audit failure prevents file or state
+  mutation.
+- The operations UI offers the action only for a current leased `phase.configure` with matching passed
+  preview, requires explicit confirmation and justification, communicates configuration-only impact,
+  and displays bounded evidence or recovery guidance without trust, secret, data, service, rollback,
+  connector, infrastructure, or AI-operation controls.
+- Automated and live tests cover canonical output, validation and digest drift, exact reuse and replay,
+  changed replay, stale/foreign/expired ownership, interrupted execution, audit failure, path and
+  symbolic-link safety, existing conflicts, cleanup, strict API parsing, response redaction, PostgreSQL
+  serialization, persisted reload state, and responsive desktop/mobile presentation.
+- This slice does not provision trust, certificates, secret values or identities; initialize or migrate
+  data; deploy or restart services; configure enterprise identity, model, or integrations; execute
+  rollback; invoke infrastructure connectors; or authorize AI-driven operation.
 
 ### ATLAS-IMP-030 Scope Rationale
 
