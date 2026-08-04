@@ -21,6 +21,7 @@ from atlas.modules.authorization.application.bootstrap import (
     APPROVAL_REQUEST_READ,
     AUDIT_EXPORT,
     AUDIT_READ,
+    BOOTSTRAP_INVALIDATION_PREVIEW,
     BOOTSTRAP_PLAN_READ,
     BOOTSTRAP_STATE_MANAGE,
     BOOTSTRAP_STATE_READ,
@@ -50,6 +51,7 @@ from atlas.modules.authorization.application.bootstrap import (
     api_credential_self_scope,
     approval_scope,
     audit_export_scope,
+    bootstrap_invalidation_scope,
     bootstrap_plan_scope,
     bootstrap_state_scope,
     current_identity_scope,
@@ -703,6 +705,33 @@ async def authorize_bootstrap_plan_read(
             code="authorization_denied",
             title="Request denied",
             detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_bootstrap_invalidation_preview(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=BOOTSTRAP_INVALIDATION_PREVIEW,
+            resource_type="resource.platform.bootstrap-invalidation",
+            scope=bootstrap_invalidation_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="Bootstrap invalidation preview is not authorized.",
         )
     request.state.authorization_decision = decision
     return decision

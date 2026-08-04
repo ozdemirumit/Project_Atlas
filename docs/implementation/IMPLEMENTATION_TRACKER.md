@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Implement deterministic drift comparison, downstream invalidation preview, governed API, and read-only UI |
+| Next Action | Open the implementation pull request and complete GitHub quality gates |
 
 ### ATLAS-IMP-028 Scope Rationale
 
@@ -45,6 +45,19 @@
   non-mutation, owner redaction, and responsive desktop/mobile presentation.
 - This slice does not mutate bootstrap state, acquire or release leases, execute a phase, invalidate
   data physically, run rollback, write files, invoke connectors, or authorize infrastructure change.
+
+### ATLAS-IMP-028 Validation Evidence
+
+- Backend tests cover unchanged input, configuration drift, combined drift precedence, strict input
+  handling, exact scope, audit failure, and non-mutation. Full backend verification passes Ruff
+  format/check, mypy across 249 source files, and 287 pytest tests.
+- Frontend verification passes ESLint, TypeScript, 20 Vitest tests, and production build. Tests cover
+  drift presentation, malformed-response handling, and the absence of mutation controls.
+- Live UI validation returned source and run revision 2 before and after repeated reads, reported the
+  earliest invalidation boundary as `phase.acquire`, and exposed no lease-owner identity.
+- Live presentation validation passed at 1440x900 and 390x844. The invalidation preview, drift state,
+  boundary, and read-only notice remained visible with no page-level horizontal overflow.
+- GitHub pull request and CI evidence are pending.
 
 ### ATLAS-IMP-027 Scope Rationale
 

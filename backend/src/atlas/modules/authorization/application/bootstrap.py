@@ -49,6 +49,7 @@ DEPLOYMENT_CONFIGURATION_PREVIEW = "platform.deployment-configuration.preview"
 BOOTSTRAP_PLAN_READ = "platform.bootstrap-plan.read"
 BOOTSTRAP_STATE_READ = "platform.bootstrap-state.read"
 BOOTSTRAP_STATE_MANAGE = "platform.bootstrap-state.manage"
+BOOTSTRAP_INVALIDATION_PREVIEW = "platform.bootstrap-invalidation.preview"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -245,6 +246,17 @@ def bootstrap_state_scope(
         domain_id="domain.platform",
         resource_id="resource.platform.bootstrap-state",
         capability_class=capability_class,
+    )
+
+
+def bootstrap_invalidation_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.platform",
+        resource_id="resource.platform.bootstrap-invalidation",
+        capability_class=CapabilityClass.C0_INFORMATIONAL,
     )
 
 
@@ -521,6 +533,10 @@ def build_development_authorization_service(
             permission_id=BOOTSTRAP_STATE_MANAGE,
             description="Coordinate bootstrap metadata without executing a phase.",
         ),
+        PermissionDefinition(
+            permission_id=BOOTSTRAP_INVALIDATION_PREVIEW,
+            description="Preview checkpoint invalidation caused by exact bootstrap input drift.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -552,6 +568,7 @@ def build_development_authorization_service(
                 BOOTSTRAP_PLAN_READ,
                 BOOTSTRAP_STATE_READ,
                 BOOTSTRAP_STATE_MANAGE,
+                BOOTSTRAP_INVALIDATION_PREVIEW,
             }
         ),
     )
@@ -681,6 +698,16 @@ def build_development_authorization_service(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.bootstrap-invalidation",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=bootstrap_invalidation_scope(
+                    settings.development_organization_id, settings.environment
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),
