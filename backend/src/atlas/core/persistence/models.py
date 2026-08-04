@@ -73,3 +73,41 @@ class BootstrapRunModel(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SupportBundleExportModel(Base):
+    __tablename__ = "platform_support_bundle_exports"
+    __table_args__ = (
+        CheckConstraint(
+            "source_run_version > 0",
+            name="ck_platform_support_bundle_exports_source_version_positive",
+        ),
+        CheckConstraint(
+            "archive_size_bytes > 0",
+            name="ck_platform_support_bundle_exports_archive_size_positive",
+        ),
+        UniqueConstraint(
+            "actor_id",
+            "idempotency_key",
+            name="uq_platform_support_bundle_exports_actor_idempotency",
+        ),
+    )
+
+    export_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_run_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_run_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    preview_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    archive_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    archive_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    archive_name: Mapped[str] = mapped_column(String(180), nullable=False)
+    included_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    excluded_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

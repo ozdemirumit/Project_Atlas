@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   AlertTriangle,
+  Archive,
   Bell,
   BrainCircuit,
   Building2,
@@ -136,6 +137,12 @@ import {
   sendSecurityExportTestEvent,
 } from "./api/securityExport";
 import { getStorageOverview, type StorageAsset } from "./api/storage";
+import {
+  exportSupportBundle,
+  previewSupportBundle,
+  SUPPORT_BUNDLE_COMPONENTS,
+  type SupportBundleExport,
+} from "./api/supportBundles";
 import {
   createWorkloadIdentity,
   getWorkloadIdentities,
@@ -334,6 +341,13 @@ export function App() {
   const [handoffJustification, setHandoffJustification] = useState("");
   const [handoffPending, setHandoffPending] = useState(false);
   const [handoffResult, setHandoffResult] = useState<BootstrapHandoffResult | null>(null);
+  const [supportComponentIds, setSupportComponentIds] = useState<string[]>([
+    ...SUPPORT_BUNDLE_COMPONENTS,
+  ]);
+  const [supportLookbackHours, setSupportLookbackHours] = useState(24);
+  const [supportJustification, setSupportJustification] = useState("");
+  const [supportPending, setSupportPending] = useState(false);
+  const [supportResult, setSupportResult] = useState<SupportBundleExport | null>(null);
   const [bootstrapClaimJustification, setBootstrapClaimJustification] = useState("");
   const [bootstrapClaimPending, setBootstrapClaimPending] = useState(false);
   const [bootstrapClaimResult, setBootstrapClaimResult] =
@@ -406,6 +420,17 @@ export function App() {
       setIntegrationValidationJustification("");
       setIntegrationValidationPending(false);
       setIntegrationValidationResult(null);
+      setVerificationJustification("");
+      setVerificationPending(false);
+      setVerificationResult(null);
+      setHandoffJustification("");
+      setHandoffPending(false);
+      setHandoffResult(null);
+      setSupportComponentIds([...SUPPORT_BUNDLE_COMPONENTS]);
+      setSupportLookbackHours(24);
+      setSupportJustification("");
+      setSupportPending(false);
+      setSupportResult(null);
       setBootstrapClaimJustification("");
       setBootstrapClaimPending(false);
       setBootstrapClaimResult(null);
@@ -730,6 +755,30 @@ export function App() {
     retry: false,
   });
   const bootstrapHandoffPlan = bootstrapHandoffPlanQuery.data?.data;
+  const supportBundlePreviewQuery = useQuery({
+    queryKey: [
+      "support-bundle-preview",
+      bootstrapState?.run?.run_id,
+      bootstrapState?.run?.version,
+      supportComponentIds,
+      supportLookbackHours,
+    ],
+    queryFn: () =>
+      previewSupportBundle({
+        sourceRunId: bootstrapState!.run!.run_id,
+        componentIds: supportComponentIds,
+        lookbackHours: supportLookbackHours,
+      }),
+    enabled: Boolean(
+      identity &&
+        bootstrapState?.run?.state === "completed" &&
+        bootstrapState.run.operational_handoff?.state === "completed" &&
+        supportComponentIds.includes("support.release-manifest") &&
+        supportComponentIds.includes("support.bootstrap-summary"),
+    ),
+    retry: false,
+  });
+  const supportBundlePreview = supportBundlePreviewQuery.data?.data;
   const bootstrapInvalidationQuery = useQuery({
     queryKey: [
       "bootstrap-invalidation",
@@ -945,6 +994,18 @@ export function App() {
         queryClient.invalidateQueries({ queryKey: ["bootstrap-invalidation"] }),
         queryClient.invalidateQueries({ queryKey: ["bootstrap-handoff-plan"] }),
       ]);
+    },
+  });
+  const supportBundleMutation = useMutation({
+    mutationFn: () =>
+      exportSupportBundle({
+        preview: supportBundlePreview!,
+        justification: supportJustification.trim(),
+      }),
+    onSuccess: (response) => {
+      setSupportResult(response.data);
+      setSupportPending(false);
+      setSupportJustification("");
     },
   });
   const bootstrapClaimMutation = useMutation({
@@ -3367,6 +3428,223 @@ export function App() {
                           )}
                         </div>
                       )}
+                      {bootstrapState.run.state === "completed" &&
+                        bootstrapState.run.operational_handoff?.state === "completed" && (
+                          <section className="support-bundle-section">
+                            <div className="support-bundle-heading">
+                              <div>
+                                <span className="eyebrow">Local support evidence</span>
+                                <h3>Governed support bundle</h3>
+                              </div>
+                              <span className="state-badge completed">C2 local export</span>
+                            </div>
+                            <div className="support-bundle-controls">
+                              <label>
+                                Evidence window
+                                <select
+                                  aria-label="Support evidence window"
+                                  value={supportLookbackHours}
+                                  onChange={(event) => {
+                                    setSupportResult(null);
+                                    setSupportPending(false);
+                                    setSupportLookbackHours(Number(event.target.value));
+                                  }}
+                                >
+                                  <option value={12}>12 hours</option>
+                                  <option value={24}>24 hours</option>
+                                  <option value={72}>72 hours</option>
+                                  <option value={168}>7 days</option>
+                                </select>
+                              </label>
+                              <fieldset>
+                                <legend>Bundle components</legend>
+                                {SUPPORT_BUNDLE_COMPONENTS.map((componentId) => {
+                                  const required =
+                                    componentId === "support.release-manifest" ||
+                                    componentId === "support.bootstrap-summary";
+                                  return (
+                                    <label key={componentId}>
+                                      <input
+                                        type="checkbox"
+                                        checked={supportComponentIds.includes(componentId)}
+                                        disabled={required}
+                                        onChange={(event) => {
+                                          setSupportResult(null);
+                                          setSupportPending(false);
+                                          setSupportComponentIds((current) =>
+                                            event.target.checked
+                                              ? [...current, componentId]
+                                              : current.filter((item) => item !== componentId),
+                                          );
+                                        }}
+                                      />
+                                      <span>{componentId.replace("support.", "").replaceAll("-", " ")}</span>
+                                      {required && <small>Required</small>}
+                                    </label>
+                                  );
+                                })}
+                              </fieldset>
+                            </div>
+                            {supportBundlePreviewQuery.isLoading && (
+                              <div className="inline-state">
+                                <RefreshCw className="spin" size={16} /> Building bounded preview
+                              </div>
+                            )}
+                            {supportBundlePreviewQuery.isError && (
+                              <div className="inline-error">
+                                <AlertTriangle size={16} /> Support preview is unavailable for this
+                                evidence selection.
+                              </div>
+                            )}
+                            {supportBundlePreview && !supportPending && !supportResult && (
+                              <div className="data-initialization-action support-bundle-action">
+                                <div>
+                                  <strong>Preview passed all export gates</strong>
+                                  <p>
+                                    {supportBundlePreview.included_count} included, {" "}
+                                    {supportBundlePreview.excluded_count} excluded, {" "}
+                                    {supportBundlePreview.redaction_check_count} redaction checks.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSupportResult(null);
+                                    setSupportPending(true);
+                                  }}
+                                >
+                                  <Archive size={14} /> Review export
+                                </button>
+                              </div>
+                            )}
+                            {supportPending && supportBundlePreview && (
+                              <div
+                                className="data-initialization-confirmation support-bundle-confirmation"
+                                role="dialog"
+                              >
+                                <div>
+                                  <strong>Confirm local support bundle</strong>
+                                  <p>
+                                    Archive {supportBundlePreview.target_state}; no external transfer
+                                    or arbitrary host-file collection is authorized.
+                                  </p>
+                                </div>
+                                <div className="identity-plan-summary support-bundle-summary">
+                                  <div>
+                                    <span>Archive</span>
+                                    <strong>{supportBundlePreview.archive_size_bytes} bytes</strong>
+                                    <small>{supportBundlePreview.archive_sha256.slice(0, 20)}...</small>
+                                  </div>
+                                  <div>
+                                    <span>Content budget</span>
+                                    <strong>{supportBundlePreview.content_bytes} bytes</strong>
+                                    <small>of {supportBundlePreview.max_content_bytes}</small>
+                                  </div>
+                                  <div>
+                                    <span>Classification</span>
+                                    <strong>Internal</strong>
+                                    <small>Typed Atlas evidence only</small>
+                                  </div>
+                                  <div>
+                                    <span>Transfer</span>
+                                    <strong>Local only</strong>
+                                    <small>External operation false</small>
+                                  </div>
+                                </div>
+                                <div className="identity-mapping-list support-entry-list">
+                                  {supportBundlePreview.entries.map((entry) => (
+                                    <div key={entry.entry_id}>
+                                      <div>
+                                        <code>{entry.entry_id}</code>
+                                        <small>{entry.file_name}</small>
+                                      </div>
+                                      <strong>{entry.disposition}</strong>
+                                    </div>
+                                  ))}
+                                </div>
+                                <label>
+                                  Support-export justification
+                                  <input
+                                    value={supportJustification}
+                                    maxLength={500}
+                                    onChange={(event) =>
+                                      setSupportJustification(event.target.value)
+                                    }
+                                    placeholder="Record the reviewed diagnostic purpose"
+                                  />
+                                </label>
+                                {supportBundleMutation.isError && (
+                                  <div className="inline-error">
+                                    <AlertTriangle size={16} /> The support bundle was not created.
+                                  </div>
+                                )}
+                                <div className="data-initialization-confirm-actions">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSupportPending(false);
+                                      setSupportJustification("");
+                                    }}
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    className="data-initialization-confirm"
+                                    type="button"
+                                    disabled={
+                                      supportJustification.trim().length < 12 ||
+                                      supportBundleMutation.isPending
+                                    }
+                                    onClick={() => supportBundleMutation.mutate()}
+                                  >
+                                    <Archive size={14} /> Confirm local export
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                            {supportResult && (
+                              <div className="data-initialization-result completed support-bundle-result">
+                                <div className="data-initialization-result-heading">
+                                  <CheckCircle2 size={18} />
+                                  <div>
+                                    <strong>Support bundle completed</strong>
+                                    <code>{supportResult.export_id}</code>
+                                  </div>
+                                  <span className="state-badge completed">local only</span>
+                                </div>
+                                <div className="data-initialization-summary">
+                                  <div>
+                                    <span>Entries</span>
+                                    <strong>{supportResult.included_count}</strong>
+                                  </div>
+                                  <div>
+                                    <span>Archive bytes</span>
+                                    <strong>{supportResult.archive_size_bytes}</strong>
+                                  </div>
+                                  <div>
+                                    <span>Reuse</span>
+                                    <strong>{supportResult.reused ? "Exact bytes" : "Published"}</strong>
+                                  </div>
+                                  <div>
+                                    <span>External transfer</span>
+                                    <strong>No</strong>
+                                  </div>
+                                </div>
+                                <div className="service-state-evidence">
+                                  <div>
+                                    <code>{supportResult.archive_name}</code>
+                                    <span>Integrity verified</span>
+                                  </div>
+                                  <code>{supportResult.archive_sha256.slice(0, 20)}...</code>
+                                </div>
+                                <p className="data-recovery-note">
+                                  Retain only through {formatTimestamp(supportResult.expires_at)}.
+                                  Support-system upload remains outside this operation.
+                                </p>
+                              </div>
+                            )}
+                          </section>
+                        )}
                     </>
                   ) : (
                     <div className="bootstrap-state-empty">

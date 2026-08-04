@@ -81,6 +81,13 @@ class Settings(BaseSettings):
     bootstrap_handoff_max_report_bytes: int = Field(
         default=4 * 1024 * 1024, ge=1024, le=64 * 1024 * 1024
     )
+    support_bundle_root: Path = Path(".atlas/support-bundles")
+    support_bundle_max_content_bytes: int = Field(
+        default=2 * 1024 * 1024, ge=1024, le=32 * 1024 * 1024
+    )
+    support_bundle_max_archive_bytes: int = Field(
+        default=4 * 1024 * 1024, ge=2048, le=64 * 1024 * 1024
+    )
     cors_origins: tuple[AnyHttpUrl, ...] = (AnyHttpUrl("http://localhost:5173"),)
     development_identity_enabled: bool = False
     development_subject_id: str = "subject.development.operator"

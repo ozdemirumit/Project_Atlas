@@ -1352,6 +1352,109 @@ textarea:focus-visible {
   font-size: 0.76rem;
 }
 
+.support-bundle-section {
+  display: grid;
+  gap: 13px;
+  padding-top: 16px;
+  border-top: 1px solid #dbe3e0;
+}
+
+.support-bundle-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.support-bundle-heading h3 {
+  margin: 3px 0 0;
+  font-size: 0.95rem;
+}
+
+.support-bundle-controls {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.35fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.support-bundle-controls > label,
+.support-bundle-controls fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 11px;
+  border: 1px solid #dbe3e0;
+  border-radius: 6px;
+  background: #fbfcfc;
+}
+
+.support-bundle-controls > label {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  color: #394742;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.support-bundle-controls select {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 9px;
+  border: 1px solid #b9c5c1;
+  border-radius: 5px;
+  background: #fff;
+  color: #1f2d29;
+}
+
+.support-bundle-controls legend {
+  padding: 0 4px;
+  color: #394742;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.support-bundle-controls fieldset {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.support-bundle-controls fieldset label {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 0.76rem;
+}
+
+.support-bundle-controls fieldset input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+
+.support-bundle-controls fieldset span,
+.support-bundle-controls fieldset small {
+  overflow-wrap: anywhere;
+}
+
+.support-bundle-controls fieldset small {
+  color: #63716d;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+}
+
+.support-entry-list {
+  max-height: 270px;
+  overflow-y: auto;
+}
+
+.support-bundle-result .service-state-evidence {
+  margin-top: 2px;
+}
+
 .service-plan-list > div {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) auto;
@@ -1657,6 +1760,16 @@ textarea:focus-visible {
   .data-migration-list > div,
   .identity-plan-summary,
   .identity-mapping-list > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .support-bundle-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .support-bundle-controls,
+  .support-bundle-controls fieldset {
     grid-template-columns: minmax(0, 1fr);
   }
 }

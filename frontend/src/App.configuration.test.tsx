@@ -2716,4 +2716,235 @@ describe("deployment configuration preview", () => {
       }),
     ).not.toBeInTheDocument();
   });
+
+  it("previews and creates a bounded local support bundle after handoff", async () => {
+    vi.stubGlobal("crypto", { randomUUID: () => "support-request-001" });
+    const handoffExecution = {
+      execution_id: "phase-execution.ui-handoff-complete",
+      phase_id: "phase.handoff",
+      release_id: "release.atlas.lab-0.1.0",
+      profile: "linux_lab",
+      configuration_digest: "b".repeat(64),
+      trust_plan_digest: "f".repeat(64),
+      data_plan_digest: "5".repeat(64),
+      service_plan_digest: "d".repeat(64),
+      identity_plan_digest: "9".repeat(64),
+      integration_plan_digest: "7".repeat(64),
+      verification_plan_digest: "4".repeat(64),
+      verification_report_digest: "3".repeat(64),
+      source_evidence_digest: "8".repeat(64),
+      handoff_schema_version: "atlas.bootstrap-handoff-plan.v1",
+      suite_version: "atlas.bootstrap-handoff-suite.v1",
+      handoff_plan_digest: "2".repeat(64),
+      target_id: "target.bootstrap-handoff-report",
+      readiness_class: "developer_linux_lab_bootstrap_complete",
+      readiness_claims: bootstrapHandoffPlan.data.readiness_claims,
+      state: "completed",
+      result_code: "bootstrap.handoff.completed",
+      started_at: "2026-08-04T16:09:00Z",
+      completed_at: "2026-08-04T16:09:01Z",
+      passed_count: 12,
+      not_applicable_count: 3,
+      mandatory_pass_count: 12,
+      known_limitation_count: 7,
+      pending_action_count: 7,
+      owner_role_count: 5,
+      missing_production_evidence_count: 7,
+      external_operation_count: 0,
+      checks: bootstrapHandoffPlan.data.checks,
+      evidence: [
+        {
+          evidence_id: "handoff.operational-report",
+          sha256: "1".repeat(64),
+          size_bytes: 4100,
+          disposition: "published",
+        },
+      ],
+    };
+    const completedState = {
+      data: {
+        ...bootstrapState.data,
+        run: {
+          ...bootstrapState.data.run,
+          version: 19,
+          state: "completed",
+          phase_ids: [
+            "phase.acquire",
+            "phase.configure",
+            "phase.trust",
+            "phase.data",
+            "phase.services",
+            "phase.identity",
+            "phase.integrations",
+            "phase.verify",
+            "phase.handoff",
+          ],
+          checkpoints: [
+            "phase.acquire",
+            "phase.configure",
+            "phase.trust",
+            "phase.data",
+            "phase.services",
+            "phase.identity",
+            "phase.integrations",
+            "phase.verify",
+            "phase.handoff",
+          ].map((phaseId) => ({
+            phase_id: phaseId,
+            state: "completed",
+            safe_output_references: [`result.${phaseId.slice(6)}.verified`],
+            recorded_at: "2026-08-04T16:09:01Z",
+          })),
+          completed_phase_ids: [
+            "phase.acquire",
+            "phase.configure",
+            "phase.trust",
+            "phase.data",
+            "phase.services",
+            "phase.identity",
+            "phase.integrations",
+            "phase.verify",
+            "phase.handoff",
+          ],
+          current_phase_id: null,
+          operational_handoff: handoffExecution,
+          updated_at: "2026-08-04T16:09:01Z",
+        },
+      },
+    };
+    const entries = [
+      ["support.release-manifest", "10-release-manifest.json", true],
+      ["support.bootstrap-summary", "20-bootstrap-summary.json", true],
+      ["support.service-health", "30-service-health.json", false],
+      ["support.configuration-schema", "40-configuration-schema.json", false],
+      ["support.sanitized-diagnostics", "50-sanitized-diagnostics.json", false],
+    ];
+    const supportPreview = {
+      data: {
+        preview_id: "support-preview.ui-001",
+        schema_version: "atlas.support-bundle-preview.v1",
+        catalog_version: "atlas.synthetic-support-catalog.v1",
+        source_run_id: completedState.data.run.run_id,
+        source_run_version: 19,
+        release_id: completedState.data.run.release_id,
+        handoff_report_digest: "1".repeat(64),
+        source_evidence_digest: "6".repeat(64),
+        component_ids: entries.map((item) => item[0]),
+        lookback_hours: 24,
+        window_start: "2026-08-03T16:09:01Z",
+        window_end: "2026-08-04T16:09:01Z",
+        entries: entries.map(([entryId, fileName, mandatory], index) => ({
+          entry_id: entryId,
+          file_name: fileName,
+          classification: "internal",
+          mandatory,
+          disposition: "included",
+          reason_code: "selected_and_sanitized",
+          size_bytes: 200 + index,
+          sha256: `${index + 1}`.repeat(64),
+        })),
+        included_count: 5,
+        excluded_count: 0,
+        content_bytes: 1010,
+        max_content_bytes: 524288,
+        redaction_check_count: 54,
+        preview_digest: "a".repeat(64),
+        target_id: "target.support-bundle.ui-001",
+        target_state: "empty",
+        archive_sha256: "c".repeat(64),
+        archive_size_bytes: 2500,
+        generated_at: "2026-08-04T16:10:00Z",
+        expires_at: "2026-08-05T16:10:00Z",
+        exportable: true,
+        external_transfer_performed: false,
+        arbitrary_file_collection_performed: false,
+        network_request_performed: false,
+        model_inference_performed: false,
+        infrastructure_mutation_performed: false,
+      },
+    };
+    const requests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) {
+        return Promise.resolve(new Response(JSON.stringify(identity), { status: 200 }));
+      }
+      if (url.includes("/release-preflight")) {
+        return Promise.resolve(new Response(JSON.stringify(preflight), { status: 200 }));
+      }
+      if (url.includes("/deployment-configuration/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(configurationPreview()), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-plan")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapPlan), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-state/current")) {
+        return Promise.resolve(new Response(JSON.stringify(completedState), { status: 200 }));
+      }
+      if (url.includes("/bootstrap-invalidation/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(bootstrapInvalidation), { status: 200 }));
+      }
+      if (url.endsWith("/platform/support-bundles/preview")) {
+        return Promise.resolve(new Response(JSON.stringify(supportPreview), { status: 200 }));
+      }
+      if (url.includes("/platform/support-bundles/") && url.endsWith("/exports")) {
+        const headers = new Headers(init?.headers);
+        requests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                export_id: "support-export.ui-001",
+                state: "completed",
+                source_run_id: completedState.data.run.run_id,
+                source_run_version: 19,
+                preview_digest: "a".repeat(64),
+                archive_sha256: "c".repeat(64),
+                archive_size_bytes: 2500,
+                archive_name: "target.support-bundle.ui-001.zip",
+                included_count: 5,
+                excluded_count: 0,
+                created_at: "2026-08-04T16:10:01Z",
+                expires_at: "2026-08-11T16:10:01Z",
+                reused: false,
+                external_transfer_performed: false,
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    const review = await screen.findByRole("button", { name: "Review export" });
+    expect(screen.getByText(/54 redaction checks/)).toBeVisible();
+    fireEvent.click(review);
+    expect(screen.getByText("Confirm local support bundle")).toBeVisible();
+    expect(screen.getAllByText("included")).toHaveLength(5);
+    const confirm = screen.getByRole("button", { name: "Confirm local export" });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Support-export justification"), {
+      target: { value: "Create the reviewed local support package for diagnostic triage." },
+    });
+    fireEvent.click(confirm);
+
+    expect(await screen.findByText("Support bundle completed")).toBeVisible();
+    expect(screen.getByText("target.support-bundle.ui-001.zip")).toBeVisible();
+    expect(screen.getByText("External transfer")).toBeVisible();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.body).toContain('"confirmed":true');
+    expect(requests[0]?.body).not.toContain('"external_transfer_performed"');
+    expect(requests[0]?.idempotencyKey).toBe("support-bundle.19.support-request-001");
+  });
 });

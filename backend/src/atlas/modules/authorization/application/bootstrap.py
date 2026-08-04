@@ -50,6 +50,8 @@ BOOTSTRAP_PLAN_READ = "platform.bootstrap-plan.read"
 BOOTSTRAP_STATE_READ = "platform.bootstrap-state.read"
 BOOTSTRAP_STATE_MANAGE = "platform.bootstrap-state.manage"
 BOOTSTRAP_INVALIDATION_PREVIEW = "platform.bootstrap-invalidation.preview"
+SUPPORT_BUNDLE_PREVIEW = "support.bundle.preview"
+SUPPORT_BUNDLE_EXPORT = "support.bundle.export"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -257,6 +259,19 @@ def bootstrap_invalidation_scope(organization_id: str, environment: str) -> Reso
         domain_id="domain.platform",
         resource_id="resource.platform.bootstrap-invalidation",
         capability_class=CapabilityClass.C0_INFORMATIONAL,
+    )
+
+
+def support_bundle_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.support",
+        resource_id="resource.support.bundle",
+        capability_class=capability_class,
     )
 
 
@@ -537,6 +552,14 @@ def build_development_authorization_service(
             permission_id=BOOTSTRAP_INVALIDATION_PREVIEW,
             description="Preview checkpoint invalidation caused by exact bootstrap input drift.",
         ),
+        PermissionDefinition(
+            permission_id=SUPPORT_BUNDLE_PREVIEW,
+            description="Preview one bounded local support bundle without collecting host files.",
+        ),
+        PermissionDefinition(
+            permission_id=SUPPORT_BUNDLE_EXPORT,
+            description="Create one confirmed local support bundle from an exact safe preview.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -569,6 +592,8 @@ def build_development_authorization_service(
                 BOOTSTRAP_STATE_READ,
                 BOOTSTRAP_STATE_MANAGE,
                 BOOTSTRAP_INVALIDATION_PREVIEW,
+                SUPPORT_BUNDLE_PREVIEW,
+                SUPPORT_BUNDLE_EXPORT,
             }
         ),
     )
@@ -708,6 +733,30 @@ def build_development_authorization_service(
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=bootstrap_invalidation_scope(
                     settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.support-bundle-preview",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=support_bundle_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.support-bundle-export",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=support_bundle_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),
