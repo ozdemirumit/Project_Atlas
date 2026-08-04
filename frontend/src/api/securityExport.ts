@@ -75,7 +75,7 @@ type SecurityExportTestResponse = {
 };
 
 export async function getSecurityExportOverview(): Promise<SecurityExportOverviewResponse> {
-  const response = await fetch("/api/v1/security-export/overview", {
+  const response = await apiFetch("/api/v1/security-export/overview", {
     headers: { Accept: "application/json" },
   });
   if (!response.ok) {
@@ -85,7 +85,7 @@ export async function getSecurityExportOverview(): Promise<SecurityExportOvervie
 }
 
 export async function sendSecurityExportTestEvent(): Promise<SecurityExportTestResponse> {
-  const response = await fetch("/api/v1/security-export/test-event", {
+  const response = await apiFetch("/api/v1/security-export/test-event", {
     method: "POST",
     headers: { Accept: "application/json" },
   });
@@ -94,3 +94,4 @@ export async function sendSecurityExportTestEvent(): Promise<SecurityExportTestR
   }
   return (await response.json()) as SecurityExportTestResponse;
 }
+import { apiFetch } from "./client";

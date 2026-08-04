@@ -933,6 +933,7 @@ const reportResponse = {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  document.cookie = "atlas_csrf=; Max-Age=0; path=/";
 });
 
 describe("Atlas application shell", () => {
@@ -1044,5 +1045,87 @@ describe("Atlas application shell", () => {
     expect(screen.getByText("No external mutation authority")).toBeVisible();
     expect(screen.getByRole("button", { name: "Download technical report" })).toBeEnabled();
     expect(screen.getByText(/mutate an external ticket/)).toBeVisible();
+  });
+
+  it("signs in through the browser session and signs out with CSRF", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    let authenticated = false;
+    let logoutRequest: RequestInit | undefined;
+    const enterpriseIdentity = {
+      ...identityResponse,
+      data: {
+        ...identityResponse.data,
+        display_name: "Directory Operator",
+        authentication: {
+          ...identityResponse.data.authentication,
+          provider_id: "provider.ldap.enterprise",
+          method: "ldap",
+          assurance_level: "single_factor",
+        },
+      },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/authentication/sessions/current")) {
+        logoutRequest = init;
+        authenticated = false;
+        document.cookie = "atlas_csrf=; Max-Age=0; path=/";
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (url.endsWith("/authentication/sessions")) {
+        authenticated = true;
+        document.cookie = "atlas_csrf=csrf_browser_test; path=/; SameSite=Strict";
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: { session_id: "session.test" } }), {
+            status: 201,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/identity/me") && !authenticated) {
+        return Promise.resolve(new Response(null, { status: 401 }));
+      }
+      const payload = url.includes("/identity/me")
+        ? enterpriseIdentity
+        : url.includes("/security-export/overview")
+          ? securityExportOverviewResponse
+          : url.includes("/storage/overview")
+            ? storageResponse
+            : url.includes("/health-checks/overview")
+              ? healthCheckResponse
+              : url.includes("/graph/storage-impact")
+                ? graphResponse
+                : platformResponse;
+      return Promise.resolve(
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Sign in" })).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "operator" } });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "temporary-secret" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByText("Directory Operator")).toBeVisible();
+    expect(screen.queryByDisplayValue("temporary-secret")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+    expect(await screen.findByRole("heading", { name: "Sign in" })).toBeVisible();
+    const logoutHeaders = new Headers(logoutRequest?.headers);
+    expect(logoutRequest?.method).toBe("DELETE");
+    expect(logoutHeaders.get("X-CSRF-Token")).toBe("csrf_browser_test");
   });
 });

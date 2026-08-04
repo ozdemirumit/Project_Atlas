@@ -25,6 +25,7 @@ body {
 }
 
 button,
+input,
 textarea {
   font: inherit;
 }
@@ -34,9 +35,129 @@ button {
 }
 
 button:focus-visible,
+input:focus-visible,
 textarea:focus-visible {
   outline: 2px solid #168477;
   outline-offset: 2px;
+}
+
+.login-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  background: #e9eeec;
+}
+
+.login-panel {
+  width: min(100%, 380px);
+  padding: 28px;
+  background: #ffffff;
+  border: 1px solid #d3ddda;
+  border-radius: 7px;
+  box-shadow: 0 16px 40px rgb(28 37 36 / 10%);
+}
+
+.login-brand,
+.login-heading {
+  display: flex;
+  align-items: center;
+}
+
+.login-brand {
+  gap: 11px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid #e2e8e5;
+}
+
+.login-brand strong,
+.login-brand span {
+  display: block;
+}
+
+.login-brand strong {
+  font-size: 14px;
+}
+
+.login-brand span {
+  margin-top: 2px;
+  color: #677773;
+  font-size: 11px;
+}
+
+.login-heading {
+  gap: 10px;
+  margin: 24px 0 20px;
+  color: #24443e;
+}
+
+.login-heading h1,
+.login-heading p {
+  margin: 0;
+}
+
+.login-heading h1 {
+  color: #1c2524;
+  font-size: 21px;
+}
+
+.login-heading p {
+  margin-top: 3px;
+  color: #71807c;
+  font-size: 12px;
+}
+
+.login-panel form,
+.login-panel label {
+  display: block;
+}
+
+.login-panel label {
+  margin: 14px 0 6px;
+  color: #41504d;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.login-panel input {
+  width: 100%;
+  height: 42px;
+  padding: 0 11px;
+  color: #1c2524;
+  background: #fbfcfc;
+  border: 1px solid #bcc9c5;
+  border-radius: 5px;
+}
+
+.login-submit {
+  display: flex;
+  width: 100%;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 20px;
+  color: #ffffff;
+  background: #176f64;
+  border: 1px solid #176f64;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.login-submit:hover:not(:disabled) {
+  background: #125a52;
+}
+
+.login-submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.login-error {
+  margin: 12px 0 0;
+  color: #a43e3e;
+  font-size: 12px;
 }
 
 .app-frame {

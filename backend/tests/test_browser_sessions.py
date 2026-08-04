@@ -153,13 +153,19 @@ def test_login_sets_opaque_http_only_strict_cookie_and_csrf_header() -> None:
         response = login(client)
 
     assert response.status_code == 201
-    cookie = response.headers["set-cookie"]
-    assert "atlas_session=" in cookie
-    assert "HttpOnly" in cookie
-    assert "SameSite=strict" in cookie
-    assert "Path=/api" in cookie
-    assert "Max-Age=3600" in cookie
-    assert "Secure" not in cookie
+    cookies = response.headers.get_list("set-cookie")
+    session_cookie = next(item for item in cookies if item.startswith("atlas_session="))
+    csrf_cookie = next(item for item in cookies if item.startswith("atlas_csrf="))
+    assert "HttpOnly" in session_cookie
+    assert "SameSite=strict" in session_cookie
+    assert "Path=/api" in session_cookie
+    assert "Max-Age=3600" in session_cookie
+    assert "Secure" not in session_cookie
+    assert "HttpOnly" not in csrf_cookie
+    assert "SameSite=strict" in csrf_cookie
+    assert "Path=/" in csrf_cookie
+    assert "Max-Age=3600" in csrf_cookie
+    assert "Secure" not in csrf_cookie
     assert len(response.headers["X-CSRF-Token"]) >= 32
     assert "correct-password" not in response.text
     assert "atlas_session" not in response.text
@@ -184,7 +190,7 @@ def test_production_session_cookie_is_secure() -> None:
         response = login(client)
 
     assert response.status_code == 201
-    assert "Secure" in response.headers["set-cookie"]
+    assert all("Secure" in item for item in response.headers.get_list("set-cookie"))
 
 
 def test_invalid_login_is_generic_and_does_not_issue_cookie() -> None:
@@ -355,7 +361,9 @@ def test_logout_requires_csrf_revokes_session_and_clears_cookie() -> None:
 
     assert denied.status_code == 403
     assert response.status_code == 204
-    assert "Max-Age=0" in response.headers["set-cookie"]
+    cleared = response.headers.get_list("set-cookie")
+    assert len(cleared) == 2
+    assert all("Max-Age=0" in item for item in cleared)
     assert after_logout.status_code == 401
     assert any(item.event_type == "atlas.identity.session.revoked" for item in sink.records)
 
