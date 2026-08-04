@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-027 |
 | Title | Persistent bootstrap checkpoint and lease foundation |
-| Status | Review |
+| Status | Done |
 | Branch | `agent/bootstrap-checkpoint-lease` |
-| Pull Request | Pending |
+| Pull Request | [#39](https://github.com/ozdemirumit/Project_Atlas/pull/39) |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Open the implementation pull request and complete GitHub CI review |
+| Next Action | Merge PR #39 and select the next bounded MVP-005 implementation slice |
 
 ### ATLAS-IMP-027 Scope Rationale
 
@@ -64,7 +64,8 @@
 - Live UI validation passed at 1440x900 and 390x844. Checkpoint progress, current phase, lease state,
   durability boundary, and non-execution notice remained visible with no page-level horizontal
   overflow.
-- GitHub pull request and required CI evidence are pending.
+- GitHub backend and frontend CI jobs passed for source commit `874fe0a` in
+  [run 30917032240](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30917032240).
 
 ### ATLAS-IMP-026 Scope Rationale
 
@@ -1232,6 +1233,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-024 | Release manifest and restricted-network preflight foundation | Completed through [PR #36](https://github.com/ozdemirumit/Project_Atlas/pull/36) from source commit `1f93456`; 261 backend tests, 13 frontend tests, live connected/mirrored/offline API/UI and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-025 | Versioned deployment configuration preview foundation | Completed through [PR #37](https://github.com/ozdemirumit/Project_Atlas/pull/37) from source commit `4917f22`; 268 backend tests, 15 frontend tests, live safe/unsafe configuration API and Linux-lab/developer desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-026 | Deterministic bootstrap plan and resume-state foundation | Completed through [PR #38](https://github.com/ozdemirumit/Project_Atlas/pull/38) from source commit `0a9c38b`; 272 backend tests, 16 frontend tests, live ready/blocked API and desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-027 | Persistent bootstrap checkpoint and lease foundation | Completed through [PR #39](https://github.com/ozdemirumit/Project_Atlas/pull/39) from source commit `874fe0a`; 282 backend tests, 18 frontend tests, live non-mutating checkpoint API and desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
