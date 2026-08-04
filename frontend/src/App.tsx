@@ -37,11 +37,17 @@ import {
   Trash2,
   Scale,
   Workflow,
+  UserCheck,
   X,
 } from "lucide-react";
 import { type FormEvent, useState } from "react";
 
 import { getStorageImpact, type GraphEntity } from "./api/graph";
+import {
+  createApprovalRequest,
+  decideApprovalRequest,
+  getApprovalRequest,
+} from "./api/approvals";
 import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
 import { createStorageInvestigation } from "./api/investigations";
@@ -145,6 +151,10 @@ export function App() {
   const [selectedHealthCheckId, setSelectedHealthCheckId] = useState<string | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [approvalRequestId, setApprovalRequestId] = useState<string | null>(() =>
+    new URLSearchParams(window.location.search).get("approval_request_id"),
+  );
+  const [approvalRationale, setApprovalRationale] = useState("");
   const [investigationQuestion, setInvestigationQuestion] = useState(
     "What evidence explains the current storage warning?",
   );
@@ -174,6 +184,9 @@ export function App() {
       queryClient.removeQueries({ queryKey: ["storage-impact"] });
       queryClient.removeQueries({ queryKey: ["health-check-overview"] });
       queryClient.removeQueries({ queryKey: ["security-export-overview"] });
+      queryClient.removeQueries({ queryKey: ["approval-request"] });
+      setApprovalRequestId(null);
+      setApprovalRationale("");
       await queryClient.invalidateQueries({ queryKey: ["current-identity"] });
     },
   });
@@ -273,6 +286,60 @@ export function App() {
       createStorageRecommendation(targetId, caseId, version),
   });
   const recommendation = recommendationMutation.data?.data;
+  const approvalQuery = useQuery({
+    queryKey: ["approval-request", approvalRequestId],
+    queryFn: () => getApprovalRequest(approvalRequestId ?? ""),
+    enabled: Boolean(identity && approvalRequestId),
+    retry: false,
+  });
+  const approvalCreateMutation = useMutation({
+    mutationFn: ({
+      targetId,
+      recommendationId,
+      recommendationVersion,
+      optionId,
+    }: {
+      targetId: string;
+      recommendationId: string;
+      recommendationVersion: number;
+      optionId: string;
+    }) => createApprovalRequest(targetId, recommendationId, recommendationVersion, optionId),
+    onSuccess: (result) => {
+      const requestId = result.data.request_id;
+      setApprovalRequestId(requestId);
+      const url = new URL(window.location.href);
+      url.searchParams.set("approval_request_id", requestId);
+      window.history.replaceState({}, "", url);
+    },
+  });
+  const approvalDecisionMutation = useMutation({
+    mutationFn: ({
+      requestId,
+      version,
+      outcome,
+      rationale,
+    }: {
+      requestId: string;
+      version: number;
+      outcome: "approve" | "reject" | "needs_evidence" | "defer";
+      rationale: string;
+    }) => decideApprovalRequest(requestId, version, outcome, rationale),
+    onSuccess: (result) => {
+      queryClient.setQueryData(["approval-request", result.data.request_id], result);
+      setApprovalRationale("");
+    },
+  });
+  const approval =
+    approvalDecisionMutation.data?.data ??
+    approvalCreateMutation.data?.data ??
+    approvalQuery.data?.data;
+  const canReviewApproval = Boolean(
+    approval &&
+      approval.state === "pending" &&
+      identity?.subject_kind === "human" &&
+      identity.subject_id !== approval.packet.requested_by &&
+      identity.authentication.assurance_level !== "development",
+  );
   const reportMutation = useMutation({
     mutationFn: ({
       targetId,
@@ -1409,6 +1476,12 @@ export function App() {
                         onClick={() => {
                           if (rcaCase) {
                             reportMutation.reset();
+                            approvalCreateMutation.reset();
+                            approvalDecisionMutation.reset();
+                            setApprovalRequestId(null);
+                            const url = new URL(window.location.href);
+                            url.searchParams.delete("approval_request_id");
+                            window.history.replaceState({}, "", url);
                             recommendationMutation.mutate({
                               targetId: rcaCase.target_id,
                               caseId: rcaCase.case_id,
@@ -1619,6 +1692,129 @@ export function App() {
                           <ShieldCheck size={16} />
                           <span>{recommendation.safety_notice}</span>
                         </div>
+                      </>
+                    )}
+                  </section>
+
+                  <section className="workspace-section approval-section" aria-live="polite">
+                    <div className="section-heading approval-heading">
+                      <div>
+                        <p className="eyebrow">HUMAN GOVERNANCE</p>
+                        <h2>Immutable approval review</h2>
+                      </div>
+                      <button
+                        className="run-check-button approval-submit"
+                        type="button"
+                        disabled={
+                          !recommendation?.preferred_option_id || approvalCreateMutation.isPending
+                          || Boolean(approval)
+                        }
+                        onClick={() => {
+                          if (recommendation?.preferred_option_id) {
+                            approvalCreateMutation.mutate({
+                              targetId: recommendation.target_id,
+                              recommendationId: recommendation.recommendation_id,
+                              recommendationVersion: recommendation.version,
+                              optionId: recommendation.preferred_option_id,
+                            });
+                          }
+                        }}
+                      >
+                        {approvalCreateMutation.isPending ? (
+                          <RefreshCw className="spin" size={14} />
+                        ) : (
+                          <UserCheck size={14} />
+                        )}
+                        Submit for human review
+                      </button>
+                    </div>
+
+                    {!approval &&
+                      !approvalQuery.isLoading &&
+                      !approvalCreateMutation.isPending &&
+                      !approvalQuery.isError &&
+                      !approvalCreateMutation.isError && (
+                        <div className="reasoning-empty">
+                          <UserCheck size={21} />
+                          <div>
+                            <strong>Governed recommendation required</strong>
+                            <p>An exact option is bound to an immutable packet before human review.</p>
+                          </div>
+                        </div>
+                      )}
+                    {(approvalQuery.isLoading || approvalCreateMutation.isPending) && (
+                      <div className="reasoning-empty">
+                        <Clock3 size={20} />
+                        <div><strong>Building immutable packet</strong><p>Source versions, evidence, risk, impact, recovery, and expiry are being bound.</p></div>
+                      </div>
+                    )}
+                    {(approvalQuery.isError || approvalCreateMutation.isError) && (
+                      <div className="reasoning-empty reasoning-error">
+                        <AlertTriangle size={20} />
+                        <div><strong>Approval unavailable</strong><p>No review controls are shown when packet validation fails.</p></div>
+                      </div>
+                    )}
+
+                    {approval && (
+                      <>
+                        <div className="approval-summary-grid">
+                          <div><span>State</span><strong>{approval.state.replaceAll("_", " ")}</strong><small>Version {approval.version}</small></div>
+                          <div><span>Requester</span><strong>{approval.packet.requested_by}</strong><small>{approval.packet.purpose}</small></div>
+                          <div><span>Risk</span><strong>{approval.packet.overall_risk}</strong><small>{approval.packet.option_confidence} confidence</small></div>
+                          <div><span>Expires</span><strong>{formatTimestamp(approval.packet.expires_at)}</strong><small>{approval.packet.canonicalization_version}</small></div>
+                        </div>
+
+                        <div className="approval-digest">
+                          <ShieldCheck size={17} />
+                          <div><span>Canonical packet digest</span><strong>{approval.packet.canonical_digest}</strong></div>
+                        </div>
+
+                        <div className="approval-focus">
+                          <div><span>Exact option</span><strong>{approval.packet.option_title}</strong><p>{approval.packet.confidence_rationale}</p></div>
+                          <div><span>Impact boundary</span><strong>{approval.packet.blast_radius}</strong><p>{approval.packet.impact_confirmed ? "Impact confirmed" : "Impact remains unconfirmed"} · {approval.packet.graph_maturity}</p></div>
+                          <div><span>Interruption</span><strong>{approval.packet.interruption_expected_mode}</strong><p>Worst credible: {approval.packet.interruption_worst_credible_mode}</p></div>
+                          <div><span>Recovery</span><strong>{approval.packet.rollback_feasible ? "Rollback described" : "Rollback not established"}</strong><p>{approval.packet.recovery_strategy}</p></div>
+                        </div>
+
+                        <div className="approval-evidence-grid">
+                          <div><h3>Evidence and assumptions</h3><ul>{approval.packet.evidence_summaries.map((item) => <li key={item}>{item}</li>)}{approval.packet.assumptions.map((item) => <li key={item}>Assumption: {item}</li>)}</ul></div>
+                          <div><h3>Unknowns and gaps</h3><ul>{[...approval.packet.unknowns, ...approval.packet.impact_gaps, ...approval.packet.recovery_gaps].map((item) => <li key={item}>{item}</li>)}</ul></div>
+                        </div>
+
+                        <div className="approval-plan">
+                          <h3>Bound ordered plan</h3>
+                          {approval.packet.plan_steps.map((step) => (
+                            <div key={step.step_id}><span>{step.order}</span><p>{step.conceptual_action}</p><small>{step.capability_class} · {step.stop_condition}</small></div>
+                          ))}
+                        </div>
+
+                        <div className="approval-review-boundary">
+                          <div><strong>{approval.execution_authorized ? "Execution authority present" : "No execution authority"}</strong><p>An approval records a human decision only. It grants no RBAC, connector, or runtime permission.</p></div>
+                          {approval.decisions.length > 0 && (
+                            <div className="approval-history"><span>Decision history</span>{approval.decisions.map((item) => <p key={item.decision_id}><strong>{item.outcome.replaceAll("_", " ")}</strong> by {item.reviewer_id}: {item.rationale}</p>)}</div>
+                          )}
+                        </div>
+
+                        {approval.state === "pending" && !canReviewApproval && (
+                          <div className="approval-ineligible"><LockKeyhole size={17} /><div><strong>Separated reviewer required</strong><p>The requester, a non-human identity, or development assurance cannot decide this packet.</p></div></div>
+                        )}
+                        {canReviewApproval && (
+                          <div className="approval-controls">
+                            <label htmlFor="approval-rationale">Decision rationale</label>
+                            <textarea id="approval-rationale" value={approvalRationale} onChange={(event) => setApprovalRationale(event.target.value)} maxLength={1000} placeholder="Record the evidence-based reason for this decision..." />
+                            <div>
+                              {([
+                                ["approve", "Approve", CheckCircle2],
+                                ["reject", "Reject", X],
+                                ["needs_evidence", "Needs evidence", CircleHelp],
+                                ["defer", "Defer", Clock3],
+                              ] as const).map(([outcome, label, Icon]) => (
+                                <button key={outcome} type="button" disabled={approvalRationale.trim().length < 5 || approvalDecisionMutation.isPending} onClick={() => approvalDecisionMutation.mutate({ requestId: approval.request_id, version: approval.version, outcome, rationale: approvalRationale.trim() })}><Icon size={14} />{label}</button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {approvalDecisionMutation.isError && <div className="impact-message impact-error"><AlertTriangle size={18} /> Decision was not recorded; reload the immutable packet before retrying.</div>}
                       </>
                     )}
                   </section>

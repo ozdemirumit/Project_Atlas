@@ -4,14 +4,73 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-017 |
-| Title | Self-service session inventory and governed revocation |
+| Task ID | ATLAS-IMP-018 |
+| Title | Immutable approval packet and human review foundation |
 | Status | Ready for Review |
-| Branch | `agent/session-inventory-revocation` |
+| Branch | `agent/immutable-approval-review` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-043, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-056 |
 | Last Updated | 2026-08-04 |
-| Next Action | Publish the review branch, pass GitHub quality gates, and merge the slice |
+| Next Action | Open the ATLAS-IMP-018 pull request, pass CI, merge, and synchronize `main` |
+
+### ATLAS-IMP-018 Acceptance Criteria
+
+- An approval request can be created only from an authorized, persisted recommendation ID, exact
+  version, target, and one viable option; blocked, missing, stale, expired, or substituted sources
+  fail closed without disclosing hidden resources.
+- The submitted packet is immutable and versioned. Deterministic canonical JSON and a SHA-256 digest
+  bind requester, purpose, source versions, option, target and scope, evidence references, ordered
+  plan, policy constraints, risk, impact, duration, interruption, recovery, and expiry.
+- Packet output visibly preserves facts, assumptions, unknowns, evidence, blast-radius limits,
+  service-impact uncertainty, preconditions, verification, stop conditions, and recovery gaps; no
+  missing field is rewritten as a safe or confirmed claim.
+- The first slice supports one human-review stage with pending, approved, rejected, needs-evidence,
+  deferred, and expired outcomes. Historical decisions are append-only and an approved packet still
+  has `execution_authorized=false` and produces no executable credential or connector invocation.
+- Decision-time authorization requires a dedicated exact-scope permission, a human identity, current
+  eligible role and scope, minimum assurance, and requester-reviewer separation. AI, service,
+  connector, shared, unassigned, and self-review identities cannot decide.
+- Decision mutations require CSRF for browser sessions, a bounded idempotency key, and the expected
+  request version. Replays return the original decision, key substitution or stale concurrency fails
+  closed, and the first valid terminal or review-required transition is never overwritten.
+- Expiry is evaluated before every read and decision. Material source or digest mismatch invalidates
+  decision eligibility; approval cannot supply missing authentication, RBAC, policy, evidence,
+  freshness, or future execution authority.
+- Request creation, read, eligibility denial, decision, replay, conflict, and expiry are audited with
+  stable IDs and no credential material. Required authorization or audit failure blocks protected
+  disclosure or a successful mutation response.
+- The web workspace presents the exact packet, requester, target, evidence and uncertainty, risk,
+  impact, interruption, duration, recovery, expiry, digest, decision history, and an equally visible
+  set of approve, reject, needs-evidence, and defer controls only when the current human is eligible.
+- Tests cover canonical digest stability and substitution, exact RBAC and scope, non-human and
+  self-review denial, assurance, expiry, optimistic concurrency, idempotency, CSRF, audit failure,
+  non-execution invariants, secret-safe responses, and responsive UI. Multi-stage quorum, external
+  ITSM decisions, notifications, emergency approval, revocation, handoff tokens, and infrastructure
+  execution remain outside this slice.
+
+### ATLAS-IMP-018 Validation Evidence
+
+- The approval service binds one exact viable recommendation option to a canonical, versioned packet
+  and SHA-256 digest containing the visible evidence, assumptions, unknowns, plan, risk, impact,
+  interruption, recovery, policy, scope, requester, source versions, and expiry.
+- Create, read, and decision boundaries enforce exact-scope authorization, source and digest
+  revalidation, expiry, optimistic versioning, bounded idempotency, human identity, assurance, and
+  requester-reviewer separation. Required audit failure blocks disclosure or mutation.
+- Approval, rejection, needs-evidence, defer, expiry, replay, conflict, tamper, substitution, CSRF,
+  self-review, non-human review, weak assurance, and audit-failure paths are covered without producing
+  an execution credential or connector call; every record retains `execution_authorized=false`.
+- Backend Ruff and strict type checks passed; the complete backend suite passed with 203 tests,
+  including 11 focused approval API scenarios.
+- Frontend ESLint and TypeScript checks passed, five Vitest scenarios passed across two files, and the
+  production Vite bundle built successfully.
+- The live same-origin browser flow created a real recommendation-bound packet and visibly preserved
+  the digest, requester, evidence, uncertainty, risk, impact, interruption, recovery, expiry, ordered
+  plan, non-execution boundary, and separated-reviewer requirement.
+- Desktop 1440x900 and mobile 390x844 views were visually inspected. The approval workspace remained
+  readable without overlap; page-level horizontal scrolling was removed while bounded data tables
+  retained their own controlled overflow.
+- Multi-stage quorum, external ITSM decisions, notifications, emergency approval, revocation, handoff
+  tokens, and infrastructure execution remain intentionally outside this slice.
 
 ### ATLAS-IMP-017 Acceptance Criteria
 
@@ -576,6 +635,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-014 | Enterprise LDAP/AD identity provider | Completed through [PR #26](https://github.com/ozdemirumit/Project_Atlas/pull/26); 163 backend tests, live development-adapter validation, and all GitHub quality gates passed |
 | ATLAS-IMP-015 | Secure browser-session and bounded API-credential foundation | Completed through [PR #27](https://github.com/ozdemirumit/Project_Atlas/pull/27); 185 backend tests, frontend validation, live fail-closed API validation, and all GitHub quality gates passed |
 | ATLAS-IMP-016 | Enterprise browser login and CSRF-aware web session lifecycle | Completed through [PR #28](https://github.com/ozdemirumit/Project_Atlas/pull/28); 185 backend tests, four frontend scenarios, live desktop/390px mobile login validation, and all GitHub quality gates passed |
+| ATLAS-IMP-017 | Self-service session inventory and governed revocation | Completed through [PR #29](https://github.com/ozdemirumit/Project_Atlas/pull/29); 192 backend tests, four frontend scenarios, live API and desktop/390px mobile validation, and all GitHub quality gates passed |
 
 ## Status Rules
 

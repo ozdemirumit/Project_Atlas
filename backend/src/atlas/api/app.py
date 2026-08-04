@@ -12,6 +12,7 @@ from atlas.api.errors import register_error_handlers
 from atlas.api.middleware import CorrelationIdMiddleware
 from atlas.api.routes import (
     ai,
+    approvals,
     graph,
     health,
     health_checks,
@@ -40,6 +41,7 @@ from atlas.modules.ai.domain.models import (
     ModelEndpointProfile,
     TaskClass,
 )
+from atlas.modules.approvals.application.service import ApprovalService
 from atlas.modules.authorization.application.bootstrap import (
     build_development_authorization_service,
 )
@@ -94,6 +96,7 @@ def create_app(
     investigation_service: InvestigationService | None = None,
     rca_service: RcaService | None = None,
     recommendation_service: RecommendationService | None = None,
+    approval_service: ApprovalService | None = None,
     report_service: ReportService | None = None,
     grounded_answer_service: GroundedAnswerService | None = None,
     security_export_service: SecurityExportService | None = None,
@@ -182,6 +185,10 @@ def create_app(
         assembler=SyntheticTechnicalReportAssembler(),
         audit_sink=resolved_audit_sink,
     )
+    resolved_approval_service = approval_service or ApprovalService(
+        recommendation_provider=resolved_recommendation_service,
+        audit_sink=resolved_audit_sink,
+    )
     synthetic_model_id = "atlas-local-synthetic"
     model_transport: ModelTransport
     if resolved_settings.local_model_enabled:
@@ -252,6 +259,7 @@ def create_app(
         app.state.investigation_service = resolved_investigation_service
         app.state.rca_service = resolved_rca_service
         app.state.recommendation_service = resolved_recommendation_service
+        app.state.approval_service = resolved_approval_service
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
@@ -275,6 +283,7 @@ def create_app(
             "Authorization",
             "Content-Type",
             "X-Correlation-ID",
+            "Idempotency-Key",
             resolved_settings.csrf_header_name,
         ],
         expose_headers=["X-Correlation-ID", resolved_settings.csrf_header_name],
@@ -290,6 +299,7 @@ def create_app(
     app.include_router(investigations.router, prefix="/api/v1")
     app.include_router(rca.router, prefix="/api/v1")
     app.include_router(recommendations.router, prefix="/api/v1")
+    app.include_router(approvals.router, prefix="/api/v1")
     app.include_router(reports.router, prefix="/api/v1")
     app.include_router(ai.router, prefix="/api/v1")
     app.include_router(security_export.router, prefix="/api/v1")
