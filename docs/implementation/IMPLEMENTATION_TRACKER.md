@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-040 |
 | Title | Governed backup capture and isolated restore-validation foundation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/backup-restore-foundation` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Implement the bounded logical backup and isolated restore-validation vertical slice |
+| Next Action | Open the backup/restore pull request, verify CI, merge, and synchronize `main` |
 
 ### ATLAS-IMP-040 Scope Rationale
 
@@ -59,6 +59,29 @@
   restore, secret export, ticket or notification creation, model inference, connector invocation,
   knowledge mutation, workflow execution, approval creation, deployment action, or infrastructure
   mutation.
+
+### ATLAS-IMP-040 Validation Evidence
+
+- Domain, filesystem, application, API, authorization, audit, migration, memory, and PostgreSQL
+  coverage verifies deterministic preview/archive generation, exact create replay, stale-source and
+  changed-archive rejection, strict schemas, local atomic publication, and isolated restore
+  reconstruction without active repository writes.
+- Full backend verification passes Ruff formatting and lint, strict mypy across 343 source and test
+  files, one Alembic head at `20260804_0013`, and 352 pytest tests with three existing Windows
+  symbolic-link skips. Full frontend verification passes ESLint, TypeScript, 32 Vitest tests, and
+  the production build.
+- Live enterprise-style LDAP browser validation completed all nine bootstrap phases for
+  `bootstrap-run.56b078c71ba36043ace3805a` at revision 19, created
+  `logical-backup.29b339003df8cbfe159cb069`, and passed six isolated restore checks with no active
+  repository write or operational recovery.
+- The live deterministic archive `target.logical-backup.8e44d44582ef5b2a37bd9a89.zip` contains
+  seven typed entries plus its integrity manifest in 7,531 bytes. Its SHA-256 is
+  `06092d25d602166e40dd023af1bab21c47dcb39f4bfcf29bf028fb1d60c7e7a0`; independent inspection
+  confirmed every entry digest, all safety flags false, and zero prohibited content markers.
+- Desktop validation at 1440x900 and mobile validation at 390x844 showed no recovery-section
+  overflow or incoherent overlap. Browser warning and error logs were empty, and both live service
+  listeners were stopped afterward.
+- Source implementation is committed at `1d7d6aa` (`feat: add governed logical backup recovery`).
 
 ### ATLAS-IMP-039 Scope Rationale
 
