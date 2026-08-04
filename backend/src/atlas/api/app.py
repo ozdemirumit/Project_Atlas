@@ -21,6 +21,7 @@ from atlas.api.routes import (
     bootstrap_data,
     bootstrap_invalidation,
     bootstrap_plan,
+    bootstrap_services,
     bootstrap_state,
     bootstrap_trust,
     deployment_configuration,
@@ -98,6 +99,12 @@ from atlas.modules.platform.adapters.bootstrap_configuration_filesystem import (
 )
 from atlas.modules.platform.adapters.bootstrap_data_filesystem import FilesystemBootstrapDataTarget
 from atlas.modules.platform.adapters.bootstrap_data_synthetic import SyntheticBootstrapDataCatalog
+from atlas.modules.platform.adapters.bootstrap_services_filesystem import (
+    FilesystemBootstrapServiceTarget,
+)
+from atlas.modules.platform.adapters.bootstrap_services_synthetic import (
+    SyntheticBootstrapServiceCatalog,
+)
 from atlas.modules.platform.adapters.bootstrap_state_memory import (
     InMemoryBootstrapStateRepository,
 )
@@ -127,6 +134,10 @@ from atlas.modules.platform.application.bootstrap_data_initialization import (
 )
 from atlas.modules.platform.application.bootstrap_invalidation import BootstrapInvalidationService
 from atlas.modules.platform.application.bootstrap_plan import BootstrapPlanService
+from atlas.modules.platform.application.bootstrap_service_deployment import (
+    BootstrapServiceDeploymentService,
+    BootstrapServicePlanService,
+)
 from atlas.modules.platform.application.bootstrap_state import BootstrapStateService
 from atlas.modules.platform.application.bootstrap_trust_provisioning import (
     BootstrapTrustPlanService,
@@ -186,6 +197,8 @@ def create_app(
     bootstrap_trust_provisioning_service: BootstrapTrustProvisioningService | None = None,
     bootstrap_data_plan_service: BootstrapDataPlanService | None = None,
     bootstrap_data_initialization_service: BootstrapDataInitializationService | None = None,
+    bootstrap_service_plan_service: BootstrapServicePlanService | None = None,
+    bootstrap_service_deployment_service: BootstrapServiceDeploymentService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -362,6 +375,31 @@ def create_app(
             site_id="site.local",
         )
     )
+    resolved_bootstrap_service_target = FilesystemBootstrapServiceTarget(
+        root=resolved_settings.bootstrap_service_root,
+        max_state_bytes=resolved_settings.bootstrap_service_max_state_bytes,
+    )
+    resolved_bootstrap_service_plan_service = (
+        bootstrap_service_plan_service
+        or BootstrapServicePlanService(
+            catalog=SyntheticBootstrapServiceCatalog(),
+            target=resolved_bootstrap_service_target,
+            data_plan_service=resolved_bootstrap_data_plan_service,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
+        )
+    )
+    resolved_bootstrap_service_deployment_service = (
+        bootstrap_service_deployment_service
+        or BootstrapServiceDeploymentService(
+            repository=resolved_bootstrap_state_service.repository,
+            plan_service=resolved_bootstrap_service_plan_service,
+            target=resolved_bootstrap_service_target,
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
+        )
+    )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -506,6 +544,10 @@ def create_app(
         app.state.bootstrap_data_initialization_service = (
             resolved_bootstrap_data_initialization_service
         )
+        app.state.bootstrap_service_plan_service = resolved_bootstrap_service_plan_service
+        app.state.bootstrap_service_deployment_service = (
+            resolved_bootstrap_service_deployment_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -562,6 +604,7 @@ def create_app(
     app.include_router(bootstrap_configuration.router, prefix="/api/v1")
     app.include_router(bootstrap_trust.router, prefix="/api/v1")
     app.include_router(bootstrap_data.router, prefix="/api/v1")
+    app.include_router(bootstrap_services.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
     app.include_router(health_checks.router, prefix="/api/v1")

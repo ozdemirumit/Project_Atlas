@@ -30,6 +30,7 @@ export type BootstrapState = {
     configuration_rendering: BootstrapConfigurationExecution | null;
     trust_provisioning: BootstrapTrustExecution | null;
     data_initialization: BootstrapDataExecution | null;
+    service_deployment: BootstrapServiceExecution | null;
   };
   durable: boolean;
   lease_available: boolean;
@@ -125,6 +126,40 @@ export type BootstrapDataExecution = {
   migration_count: number;
   verified_object_count: number;
   backup_applicability: "not_applicable_clean_install";
+  evidence: Array<{
+    evidence_id: string;
+    sha256: string;
+    size_bytes: number;
+    disposition: "published" | "reused";
+  }>;
+};
+
+export type BootstrapServiceExecution = {
+  execution_id: string;
+  phase_id: "phase.services";
+  release_id: string;
+  profile: string;
+  configuration_digest: string;
+  trust_plan_digest: string;
+  data_plan_digest: string;
+  migration_artifact_digest: string;
+  service_schema_version: "atlas.bootstrap-service-plan.v1";
+  service_plan_digest: string;
+  target_id: string;
+  state: "running" | "completed" | "failed";
+  result_code: string;
+  started_at: string;
+  completed_at: string | null;
+  deployed_service_count: number;
+  ready_service_count: number;
+  passed_probe_count: number;
+  service_statuses: Array<{
+    service_id: string;
+    state: "ready";
+    startup_passed: boolean;
+    readiness_passed: boolean;
+    liveness_passed: boolean;
+  }>;
   evidence: Array<{
     evidence_id: string;
     sha256: string;
@@ -289,6 +324,56 @@ export function isDataExecution(value: unknown): value is BootstrapDataExecution
   );
 }
 
+export function isServiceExecution(value: unknown): value is BootstrapServiceExecution {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.execution_id === "string" &&
+    candidate.phase_id === "phase.services" &&
+    typeof candidate.release_id === "string" &&
+    typeof candidate.profile === "string" &&
+    typeof candidate.configuration_digest === "string" &&
+    typeof candidate.trust_plan_digest === "string" &&
+    typeof candidate.data_plan_digest === "string" &&
+    typeof candidate.migration_artifact_digest === "string" &&
+    candidate.service_schema_version === "atlas.bootstrap-service-plan.v1" &&
+    typeof candidate.service_plan_digest === "string" &&
+    typeof candidate.target_id === "string" &&
+    (candidate.state === "running" ||
+      candidate.state === "completed" ||
+      candidate.state === "failed") &&
+    typeof candidate.result_code === "string" &&
+    typeof candidate.started_at === "string" &&
+    (candidate.completed_at === null || typeof candidate.completed_at === "string") &&
+    typeof candidate.deployed_service_count === "number" &&
+    typeof candidate.ready_service_count === "number" &&
+    typeof candidate.passed_probe_count === "number" &&
+    Array.isArray(candidate.service_statuses) &&
+    candidate.service_statuses.every((item) => {
+      if (typeof item !== "object" || item === null) return false;
+      const status = item as Record<string, unknown>;
+      return (
+        typeof status.service_id === "string" &&
+        status.state === "ready" &&
+        typeof status.startup_passed === "boolean" &&
+        typeof status.readiness_passed === "boolean" &&
+        typeof status.liveness_passed === "boolean"
+      );
+    }) &&
+    Array.isArray(candidate.evidence) &&
+    candidate.evidence.every((item) => {
+      if (typeof item !== "object" || item === null) return false;
+      const evidence = item as Record<string, unknown>;
+      return (
+        typeof evidence.evidence_id === "string" &&
+        typeof evidence.sha256 === "string" &&
+        typeof evidence.size_bytes === "number" &&
+        (evidence.disposition === "published" || evidence.disposition === "reused")
+      );
+    })
+  );
+}
+
 export function isBootstrapRun(value: unknown): value is NonNullable<BootstrapState["run"]> {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
@@ -322,7 +407,9 @@ export function isBootstrapRun(value: unknown): value is NonNullable<BootstrapSt
     (candidate.trust_provisioning === null ||
       isTrustExecution(candidate.trust_provisioning)) &&
     (candidate.data_initialization === null ||
-      isDataExecution(candidate.data_initialization))
+      isDataExecution(candidate.data_initialization)) &&
+    (candidate.service_deployment === null ||
+      isServiceExecution(candidate.service_deployment))
   );
 }
 

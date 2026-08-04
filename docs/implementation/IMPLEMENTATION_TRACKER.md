@@ -4,14 +4,101 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-033 |
-| Title | Governed bootstrap data-service initialization and migration |
-| Status | Done |
-| Branch | `agent/bootstrap-data-initialization` |
-| Pull Request | [#45](https://github.com/ozdemirumit/Project_Atlas/pull/45) |
-| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-056, ATLAS-057, ATLAS-059 |
+| Task ID | ATLAS-IMP-034 |
+| Title | Governed bootstrap service deployment and readiness |
+| Status | Review |
+| Branch | `agent/bootstrap-service-deployment` |
+| Pull Request | [PR #46](https://github.com/ozdemirumit/Project_Atlas/pull/46) |
+| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Select and scope ATLAS-IMP-034 from the approved bootstrap roadmap |
+| Next Action | Open the implementation pull request, pass GitHub CI, merge, and advance to `phase.identity` |
+
+### ATLAS-IMP-034 Scope Rationale
+
+- ATLAS-038 orders dependency-aware Atlas service deployment after data initialization and requires
+  bounded readiness and liveness checks before traffic or later identity bootstrap. IMP-030 through
+  IMP-033 establish exact artifacts, configuration, trust, data ownership, lease, and checkpoint
+  evidence, but bootstrap cannot yet bind those inputs to an observable service rollout.
+- No production orchestration runtime is selected by approved ADR and this workstation has no governed
+  container runtime. This first slice therefore deploys only an Atlas-owned synthetic service-state
+  target for the developer and Linux-lab profiles. It proves catalog ordering, immutable input binding,
+  runtime-policy validation, readiness evidence, idempotency, recovery, and checkpoint behavior without
+  starting a process, container, operating-system service, ingress, or external workload.
+
+### ATLAS-IMP-034 Acceptance Criteria
+
+- A read-only versioned service-plan API derives the exact plan from release and profile, scope,
+  configuration and trust-plan digests, completed data-plan and migration identities, verified artifact
+  evidence, and a bounded release service catalog. It exposes stable service IDs, immutable artifact
+  IDs and checksums, dependency order, workload identity references, private endpoint class, resource
+  bounds, probe definitions, and non-secret target metadata only.
+- The initial catalog contains only the synthetic Atlas API and web services required by the selected
+  profile. IDs and dependency edges are unique and acyclic; artifacts must match completed acquisition
+  evidence; configuration, public trust, workload identity, and supported schema references must match
+  completed checkpoints; mutable tags, unknown services, public administration binds, privileged/root
+  runtime, wildcard egress, unbounded resources, secret values, shell commands, and autonomous
+  infrastructure capability fail before target mutation.
+- A strict C2 execution request binds the exact run and revision, lease, plan and resume identities,
+  release/profile/scope, configuration, trust, data-plan and migration digests, service-plan schema and
+  digest, target identity and expected state, `phase.services`, bounded human justification, and
+  idempotency key. Unknown, stale, malformed, foreign, or changed input fails closed.
+- Execution requires the authenticated browser session to hold the active lease, all four prior phases
+  to be completed with exact safe evidence, `phase.services` to be current, and the target to be empty or
+  byte-for-byte reusable Atlas synthetic service state. Unknown, partial, modified, symbolic-link,
+  foreign, newer, or ambiguous state is never adopted, overwritten, stopped, or reported ready.
+- Deployment validates services in dependency order, records `deployed`, `ready`, or bounded failure
+  state, and requires passing startup, readiness, and liveness evidence for every selected service before
+  checkpoint completion. A dependency failure prevents downstream readiness; partial attempts retain
+  explicit recovery guidance and never claim rollout success.
+- Publication uses attempt-owned staging, bounded file size, flush, exact-content reuse, atomic rename,
+  and safe cleanup. The only target mutation is one canonical synthetic service-state document beneath
+  the configured Atlas root; no process, container, operating-system service, port, firewall, DNS,
+  route, load balancer, network policy, secret store, external database, or infrastructure is changed.
+- The phase result records stable state/result code, timestamps, service-plan digest, target identity,
+  bounded deployed/ready/probe counts, ordered per-service status, and safe digest/disposition evidence.
+  Exact replay returns prior evidence without redeployment; changed replay, concurrency, interruption,
+  stale revision, foreign lease, and expired ownership fail deterministically.
+- Required RBAC, browser CSRF, pre-mutation and pre-finish audit, correlation ID, `no-store`, safe errors,
+  PostgreSQL serialization, interrupted-phase reclaim, and non-disclosing scope behavior apply. Required
+  audit failure prevents target inspection/publication or checkpoint completion at the relevant boundary.
+- The operations UI offers the action only for a current leased `phase.services` with matching completed
+  data evidence and a passed plan, requires confirmation and justification, explains synthetic
+  service-state-only impact, and displays dependency/readiness evidence without identity-provider,
+  model, integration, rollback, connector, real service-control, infrastructure, or AI-operation controls.
+- Automated and live tests cover deterministic plans, catalog drift and cycles, artifact and checkpoint
+  mismatch, empty/reusable/unknown targets, dependency failure, probe failure, exact and changed replay,
+  stale/foreign/expired ownership, concurrency, interruption, audit failure, path safety, strict API
+  parsing, safe evidence, persistence/reload, and responsive desktop/mobile presentation.
+- This slice does not start, stop, restart, install, remove, or route traffic to any real process,
+  container, operating-system service, cluster workload, ingress, or external dependency; it does not
+  read secret values, configure identity/model/integrations, execute rollback, invoke managed
+  infrastructure connectors, or authorize AI-driven operation.
+
+### ATLAS-IMP-034 Validation Evidence
+
+- Domain, filesystem, application, checkpoint, API, audit, and persistence coverage verifies the
+  deterministic two-service catalog, API-before-web dependency order, immutable artifact binding,
+  private endpoints, bounded resources, non-root/non-privileged policy, empty and exact reusable
+  targets, unknown-state rejection, atomic publication, exact replay, strict redacted contracts, and
+  PostgreSQL JSON serialization.
+- Full backend verification passes Ruff format across 295 files, Ruff checks, strict mypy across 287
+  source and test files, and 325 pytest tests with three existing Windows symbolic-link skips. Full
+  frontend verification passes ESLint, TypeScript, 27 Vitest tests, and the production build.
+- Live browser validation established an enterprise-style LDAP session and completed acquire,
+  configure, trust, data, and services under the same governed lease. The run advanced to revision 11,
+  completed five of nine phases, selected `phase.identity` next, and reported two deployed and ready
+  services with six passing startup/readiness/liveness probes.
+- Direct filesystem verification found exactly one `atlas-service-state.json` under the configured
+  synthetic target. It contains the exact API and web service identities, dependency and probe
+  evidence, `real_runtime_mutation_performed=false`, and no command, port, secret, process, container,
+  operating-system service, network, external database, or infrastructure operation field.
+- Live presentation passed at 1440x900 and 390x844 with no horizontal overflow. The completed service
+  evidence remained visible, real runtime was explicitly shown as unchanged, and browser warning/error
+  logs were empty.
+- Source implementation is committed as `661395f` and is under review in
+  [PR #46](https://github.com/ozdemirumit/Project_Atlas/pull/46).
+- GitHub backend and frontend CI jobs passed for review commit `f0a50c5` in
+  [run 30938895711](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30938895711).
 
 ### ATLAS-IMP-033 Scope Rationale
 

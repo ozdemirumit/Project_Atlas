@@ -14,6 +14,7 @@ from atlas.modules.platform.domain.bootstrap_configuration_rendering import (
     ConfigurationRenderingExecution,
 )
 from atlas.modules.platform.domain.bootstrap_data_initialization import DataInitializationExecution
+from atlas.modules.platform.domain.bootstrap_service_deployment import ServiceDeploymentExecution
 from atlas.modules.platform.domain.bootstrap_state import (
     BootstrapMutationResult,
     BootstrapRunIdentity,
@@ -396,6 +397,92 @@ class DataInitializationData(BaseModel):
         )
 
 
+class ServiceStatusEvidenceData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    service_id: str
+    state: str
+    startup_passed: bool
+    readiness_passed: bool
+    liveness_passed: bool
+
+
+class ServiceStateEvidenceData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_id: str
+    sha256: str
+    size_bytes: int
+    disposition: str
+
+
+class ServiceDeploymentData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    execution_id: str
+    phase_id: str
+    release_id: str
+    profile: str
+    configuration_digest: str
+    trust_plan_digest: str
+    data_plan_digest: str
+    migration_artifact_digest: str
+    service_schema_version: str
+    service_plan_digest: str
+    target_id: str
+    state: str
+    result_code: str
+    started_at: datetime
+    completed_at: datetime | None
+    deployed_service_count: int
+    ready_service_count: int
+    passed_probe_count: int
+    service_statuses: list[ServiceStatusEvidenceData]
+    evidence: list[ServiceStateEvidenceData]
+
+    @classmethod
+    def from_domain(cls, execution: ServiceDeploymentExecution) -> ServiceDeploymentData:
+        return cls(
+            execution_id=execution.execution_id,
+            phase_id=execution.phase_id,
+            release_id=execution.release_id,
+            profile=execution.profile.value,
+            configuration_digest=execution.configuration_digest,
+            trust_plan_digest=execution.trust_plan_digest,
+            data_plan_digest=execution.data_plan_digest,
+            migration_artifact_digest=execution.migration_artifact_digest,
+            service_schema_version=execution.service_schema_version,
+            service_plan_digest=execution.service_plan_digest,
+            target_id=execution.target_id,
+            state=execution.state.value,
+            result_code=execution.result_code,
+            started_at=execution.started_at,
+            completed_at=execution.completed_at,
+            deployed_service_count=execution.deployed_service_count,
+            ready_service_count=execution.ready_service_count,
+            passed_probe_count=execution.passed_probe_count,
+            service_statuses=[
+                ServiceStatusEvidenceData(
+                    service_id=item.service_id,
+                    state=item.state.value,
+                    startup_passed=item.startup_passed,
+                    readiness_passed=item.readiness_passed,
+                    liveness_passed=item.liveness_passed,
+                )
+                for item in execution.service_statuses
+            ],
+            evidence=[
+                ServiceStateEvidenceData(
+                    evidence_id=item.evidence_id,
+                    sha256=item.sha256,
+                    size_bytes=item.size_bytes,
+                    disposition=item.disposition.value,
+                )
+                for item in execution.evidence
+            ],
+        )
+
+
 class BootstrapRunData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -422,6 +509,7 @@ class BootstrapRunData(BaseModel):
     configuration_rendering: ConfigurationRenderingData | None
     trust_provisioning: TrustProvisioningData | None
     data_initialization: DataInitializationData | None
+    service_deployment: ServiceDeploymentData | None
 
     @classmethod
     def from_domain(cls, record: BootstrapRunRecord) -> BootstrapRunData:
@@ -471,6 +559,11 @@ class BootstrapRunData(BaseModel):
             data_initialization=(
                 DataInitializationData.from_domain(record.data_initialization)
                 if record.data_initialization is not None
+                else None
+            ),
+            service_deployment=(
+                ServiceDeploymentData.from_domain(record.service_deployment)
+                if record.service_deployment is not None
                 else None
             ),
         )
