@@ -391,8 +391,10 @@ describe("deployment configuration preview", () => {
     expect(await screen.findByText("Plan metadata updated to revision 4")).toBeVisible();
     expect(screen.getByText(/Preserved: phase.acquire. Invalidated: phase.configure/)).toBeVisible();
     expect(rebaseRequests).toHaveLength(1);
-    expect(rebaseRequests[0].body).toContain("Reviewed configuration correction");
-    expect(rebaseRequests[0].idempotencyKey).toMatch(/^bootstrap-rebase\.3\.3\./);
+    const [rebaseRequest] = rebaseRequests;
+    expect(rebaseRequest).toBeDefined();
+    expect(rebaseRequest?.body).toContain("Reviewed configuration correction");
+    expect(rebaseRequest?.idempotencyKey).toMatch(/^bootstrap-rebase\.3\.3\./);
     expect(screen.queryByRole("button", { name: /run phase|execute|rollback/i })).not.toBeInTheDocument();
   });
 
