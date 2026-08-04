@@ -4,14 +4,60 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-037 |
-| Title | Governed bootstrap end-to-end verification |
-| Status | Review |
-| Branch | `agent/bootstrap-end-to-end-verification` |
-| Pull Request | [#49](https://github.com/ozdemirumit/Project_Atlas/pull/49) |
-| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-030, ATLAS-032, ATLAS-033, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-056, ATLAS-057, ATLAS-059 |
+| Task ID | ATLAS-IMP-038 |
+| Title | Governed bootstrap operational handoff |
+| Status | In Progress |
+| Branch | `agent/bootstrap-operational-handoff` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-013, ATLAS-030, ATLAS-032, ATLAS-033, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-056, ATLAS-057, ATLAS-059 |
 | Last Updated | 2026-08-04 |
-| Next Action | Open the implementation PR and complete GitHub CI review |
+| Next Action | Implement and validate the bounded developer/Linux-lab operational handoff |
+
+### ATLAS-IMP-038 Scope Rationale
+
+- ATLAS-038 places an integrity-protected operational handoff after successful end-to-end
+  verification. IMP-029 through IMP-037 now provide one governed run with exact phase plans,
+  completed checkpoints, and a passing verification report, but Atlas cannot yet reconcile that
+  evidence into a stable operator-facing record or complete the bootstrap lifecycle.
+- No approved production environment, named customer owners, production endpoints, backup/restore
+  evidence, HA/DR exercise, on-call integration, support destination, or CAB/release approval is
+  available in this workspace. This slice therefore records a developer/Linux-lab handoff only. It
+  must state those limitations explicitly and must never claim production readiness, customer
+  integration validation, support acceptance, HA/DR certification, or release approval.
+
+### ATLAS-IMP-038 Acceptance Criteria
+
+- A read-only versioned handoff plan binds release/profile/scope, configuration and all prior phase
+  digests, eight completed checkpoint executions, the successful verification suite/report digest,
+  a deterministic handoff schema/version/digest, and the exact intended local evidence target.
+- The bounded handoff record contains non-sensitive release and profile identity, completed phase
+  and verification summaries, integrity references, readiness classification, known limitations,
+  pending actions, owner-role placeholders, escalation and support procedure references, and an
+  explicit list of absent production evidence. It contains no secret values, private endpoints,
+  prompts, customer documents, unrestricted topology, arbitrary logs, executable commands, or AI
+  recommendations.
+- Readiness is reported as developer/Linux-lab bootstrap evidence complete only. Production-ready,
+  customer-integrations-validated, support-accepted, HA-certified, DR-certified, backup-restore-
+  validated, and release-approved flags remain false unless separately proven by future governed
+  evidence; this slice cannot override them.
+- A strict C2 request binds the exact leased run/revision, bootstrap identity, all prior digests,
+  handoff schema/version/digest, expected empty or byte-for-byte reusable target, `phase.handoff`,
+  justification, and idempotency key. Scope mismatch, stale or changed replay, foreign lease,
+  interruption, out-of-order execution, failed verification, or unknown evidence fails closed.
+- Execution atomically publishes one sanitized handoff report, records its digest and bounded
+  summary, advances `phase.handoff`, and completes the bootstrap run only after exact verification
+  evidence and all mandatory handoff statements are present.
+- The UI requires review, justification, and confirmation; it displays the readiness class,
+  evidence identity, completed phases, verification totals, limitations, pending actions, and
+  zero-operation evidence without exposing sensitive deployment details or implying production
+  approval.
+- Required RBAC, browser CSRF, audit, correlation, no-store, safe errors, PostgreSQL persistence,
+  exact replay, atomic publication, path safety, interrupted recovery, strict parsing, automated
+  tests, live enterprise-session flow, and desktop/mobile presentation validation apply.
+- This slice performs no network request, support-bundle export, ticket creation, notification,
+  secret resolution, model inference, connector invocation, knowledge mutation, workflow execution,
+  approval creation, backup or restore operation, infrastructure mutation, deployment action, or AI
+  recommendation.
 
 ### ATLAS-IMP-037 Scope Rationale
 
@@ -86,10 +132,9 @@
 - Live presentation passed at 1440x900 and 390x844. The verification confirmation and result were
   width-stable with document, card, and list scroll widths equal to their client widths; browser
   warning/error logs were empty.
-- Source implementation is committed as `3389466` and is under review in
-  [PR #49](https://github.com/ozdemirumit/Project_Atlas/pull/49). GitHub backend and frontend jobs
-  passed in
-  [run 30948571671](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30948571671).
+- Source implementation is committed as `3389466`. GitHub backend and frontend jobs passed in the
+  final [run 30948704103](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30948704103), and
+  [PR #49](https://github.com/ozdemirumit/Project_Atlas/pull/49) merged to `main` as `a66a981`.
 
 ### ATLAS-IMP-036 Scope Rationale
 
