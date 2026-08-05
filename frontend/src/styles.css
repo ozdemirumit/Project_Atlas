@@ -1535,6 +1535,127 @@ textarea:focus-visible {
   padding: 0;
 }
 
+.human-review-confirmation {
+  border-color: #b8cec7;
+  background: #f8fbfa;
+}
+
+.human-review-stage-preview,
+.human-review-stages {
+  display: grid;
+  border: 1px solid #d7e1de;
+}
+
+.human-review-stage-preview > div,
+.human-review-stages > div {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-bottom: 1px solid #dfe7e4;
+}
+
+.human-review-stage-preview > div:last-child,
+.human-review-stages > div:last-child {
+  border-bottom: 0;
+}
+
+.human-review-stage-preview > div > span,
+.human-review-stages > div > span {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  color: #285d50;
+  background: #e5f1ed;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.human-review-stage-preview strong,
+.human-review-stage-preview small,
+.human-review-stages strong,
+.human-review-stages code {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.human-review-stage-preview strong,
+.human-review-stages strong {
+  color: #34423e;
+  font-size: 0.75rem;
+  text-transform: capitalize;
+}
+
+.human-review-stage-preview small,
+.human-review-stages code,
+.human-review-stages > div > small {
+  margin-top: 3px;
+  color: #6a7773;
+  font-size: 0.66rem;
+}
+
+.human-review-stages > div > small {
+  margin-top: 0;
+  text-align: right;
+  text-transform: capitalize;
+}
+
+.human-review-result {
+  display: grid;
+  gap: 11px;
+  padding-top: 13px;
+  border-top: 1px solid #cfddd8;
+}
+
+.human-review-heading,
+.human-review-boundary {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.human-review-heading > div,
+.human-review-boundary > div {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.human-review-heading strong,
+.human-review-heading code,
+.human-review-boundary strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.human-review-heading code {
+  margin-top: 3px;
+  color: #62706c;
+  font-size: 0.68rem;
+}
+
+.human-review-heading .state-badge {
+  flex: 0 0 auto;
+}
+
+.human-review-boundary {
+  padding: 11px;
+  color: #6d5425;
+  background: #fff9ed;
+  border: 1px solid #e5d5b4;
+}
+
+.human-review-boundary p {
+  margin: 4px 0 0;
+  color: #6a665b;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
 .upgrade-plan-summary {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -1944,6 +2065,16 @@ textarea:focus-visible {
 
   .upgrade-timeline > div > span {
     display: none;
+  }
+
+  .human-review-stage-preview > div,
+  .human-review-stages > div {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+
+  .human-review-stages > div > small {
+    grid-column: 2;
+    text-align: left;
   }
 }
 

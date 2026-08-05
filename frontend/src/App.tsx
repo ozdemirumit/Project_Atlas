@@ -111,10 +111,12 @@ import {
 import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
 import {
+  createUpgradeHumanReview,
   createUpgradeChangeReviewPacket,
   previewUpgradeChangeReview,
   type UpgradeChangeReviewPacket,
   type UpgradeChangeReviewPreview,
+  type UpgradeHumanReview,
 } from "./api/changeReviews";
 import {
   disableGovernedIdentity,
@@ -391,6 +393,10 @@ export function App() {
   const [changeReviewWindowStart, setChangeReviewWindowStart] = useState("");
   const [changeReviewWindowEnd, setChangeReviewWindowEnd] = useState("");
   const [changeReviewAcknowledged, setChangeReviewAcknowledged] = useState(false);
+  const [humanReview, setHumanReview] = useState<UpgradeHumanReview | null>(null);
+  const [humanReviewPending, setHumanReviewPending] = useState(false);
+  const [humanReviewJustification, setHumanReviewJustification] = useState("");
+  const [humanReviewAcknowledged, setHumanReviewAcknowledged] = useState(false);
   const [bootstrapClaimJustification, setBootstrapClaimJustification] = useState("");
   const [bootstrapClaimPending, setBootstrapClaimPending] = useState(false);
   const [bootstrapClaimResult, setBootstrapClaimResult] =
@@ -1118,6 +1124,7 @@ export function App() {
       setUpgradeSimulation(null);
       setChangeReviewPreview(null);
       setChangeReviewPacket(null);
+      setHumanReview(null);
     },
   });
   const restoreValidationMutation = useMutation({
@@ -1129,6 +1136,7 @@ export function App() {
       setUpgradeSimulation(null);
       setChangeReviewPreview(null);
       setChangeReviewPacket(null);
+      setHumanReview(null);
     },
   });
   const upgradeSimulationMutation = useMutation({
@@ -1140,6 +1148,7 @@ export function App() {
       setUpgradeJustification("");
       setChangeReviewPreview(null);
       setChangeReviewPacket(null);
+      setHumanReview(null);
     },
   });
   const changeReviewPreviewMutation = useMutation({
@@ -1169,6 +1178,16 @@ export function App() {
       setChangeReviewPending(false);
       setChangeReviewJustification("");
       setChangeReviewAcknowledged(false);
+    },
+  });
+  const humanReviewMutation = useMutation({
+    mutationFn: () =>
+      createUpgradeHumanReview(changeReviewPacket!, humanReviewJustification.trim()),
+    onSuccess: (response) => {
+      setHumanReview(response.data);
+      setHumanReviewPending(false);
+      setHumanReviewJustification("");
+      setHumanReviewAcknowledged(false);
     },
   });
   const bootstrapClaimMutation = useMutation({
@@ -4317,6 +4336,139 @@ export function App() {
                                     <code>{changeReviewPacket.packet_digest.slice(0, 20)}...</code>
                                   </div>
                                 </div>
+                                {!humanReview && !humanReviewPending && (
+                                  <div className="data-initialization-action upgrade-review-action">
+                                    <div>
+                                      <strong>Route to separated human review</strong>
+                                      <p>
+                                        Create four ordered local review stages bound to this exact
+                                        packet. No external approval or execution authority is issued.
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setHumanReviewJustification("");
+                                        setHumanReviewAcknowledged(false);
+                                        setHumanReviewPending(true);
+                                      }}
+                                    >
+                                      <UserCheck size={14} /> Review routing
+                                    </button>
+                                  </div>
+                                )}
+                                {humanReviewPending && (
+                                  <div
+                                    className="data-initialization-confirmation human-review-confirmation"
+                                    role="dialog"
+                                    aria-label="Confirm separated human review"
+                                  >
+                                    <div>
+                                      <strong>Confirm separated human review</strong>
+                                      <p>
+                                        The requester cannot decide any stage. Four distinct eligible
+                                        humans must review the unchanged packet in order.
+                                      </p>
+                                    </div>
+                                    <div className="human-review-stage-preview">
+                                      {changeReviewPacket.owner_role_ids.map((roleId, index) => (
+                                        <div key={roleId}>
+                                          <span>{index + 1}</span>
+                                          <div>
+                                            <strong>{roleId.replaceAll(".", " ")}</strong>
+                                            <small>One distinct human · exact packet digest</small>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                    <label>
+                                      Review routing justification
+                                      <input
+                                        value={humanReviewJustification}
+                                        maxLength={500}
+                                        onChange={(event) =>
+                                          setHumanReviewJustification(event.target.value)
+                                        }
+                                        placeholder="Record why these accountable reviews are required"
+                                      />
+                                    </label>
+                                    <label className="change-review-acknowledgement">
+                                      <input
+                                        type="checkbox"
+                                        checked={humanReviewAcknowledged}
+                                        onChange={(event) =>
+                                          setHumanReviewAcknowledged(event.target.checked)
+                                        }
+                                      />
+                                      <span>
+                                        I acknowledge review completion will not authorize execution.
+                                      </span>
+                                    </label>
+                                    {humanReviewMutation.isError && (
+                                      <div className="inline-error">
+                                        <AlertTriangle size={16} /> Human review creation failed closed.
+                                      </div>
+                                    )}
+                                    <div className="data-initialization-confirm-actions">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setHumanReviewPending(false);
+                                          setHumanReviewJustification("");
+                                          setHumanReviewAcknowledged(false);
+                                        }}
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        className="data-initialization-confirm"
+                                        type="button"
+                                        disabled={
+                                          humanReviewJustification.trim().length < 12 ||
+                                          !humanReviewAcknowledged ||
+                                          humanReviewMutation.isPending
+                                        }
+                                        onClick={() => humanReviewMutation.mutate()}
+                                      >
+                                        <UserCheck size={14} /> Create review stages
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                                {humanReview && (
+                                  <div className="human-review-result">
+                                    <div className="human-review-heading">
+                                      <UserCheck size={18} />
+                                      <div>
+                                        <strong>Separated human review created</strong>
+                                        <code>{humanReview.review_id}</code>
+                                      </div>
+                                      <span className="state-badge pending">{humanReview.state}</span>
+                                    </div>
+                                    <div className="human-review-stages">
+                                      {humanReview.stages.map((stage) => (
+                                        <div key={stage.stage_id} data-state={stage.state}>
+                                          <span>{stage.sequence}</span>
+                                          <div>
+                                            <strong>{stage.required_role_id.replaceAll(".", " ")}</strong>
+                                            <code>{stage.stage_id}</code>
+                                          </div>
+                                          <small>{stage.state.replaceAll("_", " ")}</small>
+                                        </div>
+                                      ))}
+                                    </div>
+                                    <div className="human-review-boundary">
+                                      <LockKeyhole size={17} />
+                                      <div>
+                                        <strong>Requester is ineligible to self-review</strong>
+                                        <p>
+                                          Approval, ITSM dispatch, handoff, workflow, and execution
+                                          authorization remain No. Packet changes invalidate review.
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </section>

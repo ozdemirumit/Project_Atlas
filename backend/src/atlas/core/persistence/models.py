@@ -262,3 +262,42 @@ class UpgradeChangeReviewPacketModel(Base):
     itsm_draft_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     packet_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class UpgradeChangeHumanReviewModel(Base):
+    __tablename__ = "platform_upgrade_change_human_reviews"
+    __table_args__ = (
+        CheckConstraint("version > 0", name="ck_platform_upgrade_human_reviews_version"),
+        UniqueConstraint(
+            "requester_id",
+            "idempotency_key",
+            name="uq_platform_upgrade_human_reviews_requester_idempotency",
+        ),
+    )
+
+    review_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    packet_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    packet_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    requester_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    risk_class: Mapped[str] = mapped_column(String(128), nullable=False)
+    change_class: Mapped[str] = mapped_column(String(128), nullable=False)
+    impacted_service_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    evidence_digests: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    proposed_window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    proposed_window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    justification: Mapped[str] = mapped_column(String(500), nullable=False)
+    required_role_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    stages: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    decisions: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

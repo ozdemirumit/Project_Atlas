@@ -34,6 +34,11 @@ class PostgreSQLChangeReviewPacketRepository:
             )
             return self._to_domain(row) if row is not None else None
 
+    async def get_by_id(self, *, packet_id: str) -> UpgradeChangeReviewPacket | None:
+        async with self._sessions() as session:
+            row = await session.get(UpgradeChangeReviewPacketModel, packet_id)
+            return self._to_domain(row) if row is not None else None
+
     async def add(self, record: UpgradeChangeReviewPacket) -> bool:
         try:
             async with self._sessions.begin() as session:

@@ -75,6 +75,10 @@ class ChangeReviewService:
     async def close(self) -> None:
         await self._packet_repository.close()
 
+    @property
+    def packet_repository(self) -> ChangeReviewPacketRepository:
+        return self._packet_repository
+
     async def preview(
         self,
         *,
