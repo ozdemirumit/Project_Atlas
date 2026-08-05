@@ -3572,4 +3572,235 @@ describe("deployment configuration preview", () => {
     expect(decisionBody).toContain('"acknowledged_no_authority":true');
     expect(decisionBody).not.toContain("execution_authorized");
   });
+
+  it("creates a non-executable receipt after the final accountable approval", async () => {
+    const finalIdentity = {
+      data: {
+        ...identity.data,
+        subject_id: "subject.enterprise.change-reviewer",
+        display_name: "Change Reviewer",
+        role_ids: ["role.change-approver"],
+        effective_role_versions: ["role.change-approver:v1"],
+      },
+    };
+    const packetDigest = "7".repeat(64);
+    const roles = [
+      "role.platform-owner",
+      "role.service-owner",
+      "role.security-reviewer",
+      "role.change-approver",
+    ];
+    const stageIds = [
+      "stage.platform-technical",
+      "stage.service-owner",
+      "stage.security-review",
+      "stage.change-authority",
+    ];
+    const priorReviewers = [
+      "subject.enterprise.platform-reviewer",
+      "subject.enterprise.service-reviewer",
+      "subject.enterprise.security-reviewer",
+    ];
+    const stages = roles.map((roleId, index) => ({
+      stage_id: stageIds[index],
+      sequence: index + 1,
+      required_role_id: roleId,
+      quorum: 1,
+      state: index < 3 ? "approved" : "pending",
+      packet_digest: packetDigest,
+      reviewer_id: index < 3 ? priorReviewers[index] : null,
+      decision_id: index < 3 ? `human-review-decision.receipt-ui-00${index + 1}` : null,
+      decided_at: index < 3 ? `2026-08-05T06:0${index + 1}:00Z` : null,
+      rationale: index < 3 ? `Stage ${index + 1} evidence accepted` : null,
+    }));
+    const priorDecisions = priorReviewers.map((reviewerId, index) => ({
+      decision_id: `human-review-decision.receipt-ui-00${index + 1}`,
+      stage_id: stageIds[index],
+      request_version: index + 1,
+      outcome: "approve",
+      reviewer_id: reviewerId,
+      reviewer_role_id: roles[index],
+      rationale: `Stage ${index + 1} evidence accepted`,
+      acknowledged_no_authority: true,
+      decided_at: `2026-08-05T06:0${index + 1}:00Z`,
+    }));
+    const assignedReview = {
+      review_id: "change-human-review.receipt-ui-001",
+      schema_version: "atlas.upgrade-change-human-review.v1",
+      version: 4,
+      state: "pending",
+      packet_id: "change-review-packet.receipt-ui-001",
+      packet_digest: packetDigest,
+      requester_id: "subject.enterprise.upgrade-requester",
+      risk_class: "risk.medium",
+      change_class: "change.reviewed-standard",
+      impacted_service_ids: ["service.atlas-api", "service.atlas-web"],
+      evidence_digests: ["8", "9", "a", "b"].map((value) => value.repeat(64)),
+      proposed_window_start: "2026-08-05T10:00:00Z",
+      proposed_window_end: "2026-08-05T11:00:00Z",
+      justification: "Review exact upgrade evidence before any external handoff",
+      required_role_ids: roles,
+      stages,
+      decisions: priorDecisions,
+      canonical_digest: "c".repeat(64),
+      created_at: "2026-08-05T06:00:00Z",
+      updated_at: "2026-08-05T06:03:00Z",
+      expires_at: "2026-08-05T09:00:00Z",
+      reused: false,
+      human_review_completed: false,
+      approval_granted: false,
+      itsm_dispatched: false,
+      handoff_issued: false,
+      workflow_executed: false,
+      execution_authorized: false,
+      infrastructure_mutation_performed: false,
+    };
+    const finalDecision = {
+      decision_id: "human-review-decision.receipt-ui-004",
+      stage_id: stageIds[3],
+      request_version: 4,
+      outcome: "approve",
+      reviewer_id: finalIdentity.data.subject_id,
+      reviewer_role_id: roles[3],
+      rationale: "Final change evidence and the no-authority boundary were accepted",
+      acknowledged_no_authority: true,
+      decided_at: "2026-08-05T06:04:00Z",
+    };
+    const completedReview = {
+      ...assignedReview,
+      version: 5,
+      state: "completed",
+      stages: stages.map((stage, index) =>
+        index === 3
+          ? {
+              ...stage,
+              state: "approved",
+              reviewer_id: finalDecision.reviewer_id,
+              decision_id: finalDecision.decision_id,
+              decided_at: finalDecision.decided_at,
+              rationale: finalDecision.rationale,
+            }
+          : stage,
+      ),
+      decisions: [...priorDecisions, finalDecision],
+      updated_at: finalDecision.decided_at,
+      human_review_completed: true,
+    };
+    const receiptStages = completedReview.stages.map((stage, index) => ({
+      stage_id: stage.stage_id,
+      sequence: stage.sequence,
+      required_role_id: stage.required_role_id,
+      reviewer_id: stage.reviewer_id,
+      decision_id: stage.decision_id,
+      request_version: index + 1,
+      outcome: "approve",
+      rationale_digest: `${index + 1}`.repeat(64),
+      acknowledged_no_authority: true,
+      decided_at: stage.decided_at,
+    }));
+    let decisionRecorded = false;
+    let receiptBody = "";
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) {
+        return Promise.resolve(new Response(JSON.stringify(finalIdentity), { status: 200 }));
+      }
+      if (
+        url.endsWith("/platform/upgrade-change-reviews/human-reviews") &&
+        (!init?.method || init.method === "GET")
+      ) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                items: decisionRecorded ? [] : [assignedReview],
+                next_cursor: null,
+                limit: 20,
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url.endsWith(`/${assignedReview.review_id}/decisions`)) {
+        decisionRecorded = true;
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: completedReview }), { status: 200 }),
+        );
+      }
+      if (url.endsWith(`/${assignedReview.review_id}/completion-receipts`)) {
+        receiptBody = typeof init?.body === "string" ? init.body : "";
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                receipt_id: "human-review-completion-receipt.receipt-ui-001",
+                schema_version: "atlas.upgrade-human-review-completion-receipt.v1",
+                version: 1,
+                review_id: completedReview.review_id,
+                review_version: completedReview.version,
+                review_digest: completedReview.canonical_digest,
+                review_expires_at: completedReview.expires_at,
+                packet_id: completedReview.packet_id,
+                packet_digest: completedReview.packet_digest,
+                requester_id: completedReview.requester_id,
+                created_by: finalIdentity.data.subject_id,
+                risk_class: completedReview.risk_class,
+                change_class: completedReview.change_class,
+                impacted_service_ids: completedReview.impacted_service_ids,
+                evidence_digests: completedReview.evidence_digests,
+                proposed_window_start: completedReview.proposed_window_start,
+                proposed_window_end: completedReview.proposed_window_end,
+                stages: receiptStages,
+                canonical_digest: "d".repeat(64),
+                created_at: "2026-08-05T06:05:00Z",
+                reused: false,
+                human_review_completed: true,
+                completion_evidence_only: true,
+                approval_granted: false,
+                itsm_dispatched: false,
+                notification_sent: false,
+                handoff_issued: false,
+                workflow_executed: false,
+                execution_authorized: false,
+                infrastructure_mutation_performed: false,
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("1 assigned")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Review request" }));
+    fireEvent.change(screen.getByLabelText("Decision rationale"), {
+      target: { value: finalDecision.rationale },
+    });
+    fireEvent.click(screen.getByLabelText(/This decision records human review only/i));
+    fireEvent.click(screen.getByRole("button", { name: "Record decision" }));
+
+    expect(await screen.findByText("Create completion receipt")).toBeVisible();
+    const createReceipt = screen.getByRole("button", { name: "Create receipt" });
+    expect(createReceipt).toBeDisabled();
+    fireEvent.click(
+      screen.getByLabelText(/This receipt proves human review completion only/i),
+    );
+    fireEvent.click(createReceipt);
+
+    expect(await screen.findByText("Human-review completion receipt")).toBeVisible();
+    expect(screen.getByText("4 approved")).toBeVisible();
+    expect(screen.getByText("Evidence only. Approval, ITSM dispatch, handoff, workflow execution, and infrastructure mutation remain No.")).toBeVisible();
+    expect(receiptBody).toContain('"expected_review_version":5');
+    expect(receiptBody).toContain('"acknowledged_evidence_only":true');
+    expect(receiptBody).not.toContain("execution_authorized");
+  });
 });

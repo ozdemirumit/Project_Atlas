@@ -147,9 +147,55 @@ export type UpgradeHumanReviewInbox = {
   limit: number;
 };
 
+export type UpgradeReviewCompletionReceipt = {
+  receipt_id: string;
+  schema_version: "atlas.upgrade-human-review-completion-receipt.v1";
+  version: 1;
+  review_id: string;
+  review_version: number;
+  review_digest: string;
+  review_expires_at: string;
+  packet_id: string;
+  packet_digest: string;
+  requester_id: string;
+  created_by: string;
+  risk_class: string;
+  change_class: string;
+  impacted_service_ids: string[];
+  evidence_digests: string[];
+  proposed_window_start: string;
+  proposed_window_end: string;
+  stages: Array<{
+    stage_id: string;
+    sequence: number;
+    required_role_id: string;
+    reviewer_id: string;
+    decision_id: string;
+    request_version: number;
+    outcome: "approve";
+    rationale_digest: string;
+    acknowledged_no_authority: true;
+    decided_at: string;
+  }>;
+  canonical_digest: string;
+  created_at: string;
+  reused: boolean;
+  human_review_completed: true;
+  completion_evidence_only: true;
+  approval_granted: false;
+  itsm_dispatched: false;
+  notification_sent: false;
+  handoff_issued: false;
+  workflow_executed: false;
+  execution_authorized: false;
+  infrastructure_mutation_performed: false;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
+
+const digestPattern = /^[a-f0-9]{64}$/;
 
 function hasExactEvidence(item: Record<string, unknown>): boolean {
   const lengths: Array<[unknown, number]> = [
@@ -263,6 +309,61 @@ function isHumanReviewInbox(value: unknown): value is { data: UpgradeHumanReview
     typeof data.limit === "number" &&
     data.limit >= 1 &&
     data.limit <= 50
+  );
+}
+
+function isCompletionReceipt(
+  value: unknown,
+): value is { data: UpgradeReviewCompletionReceipt } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const item = value.data;
+  return (
+    item.schema_version === "atlas.upgrade-human-review-completion-receipt.v1" &&
+    item.version === 1 &&
+    typeof item.receipt_id === "string" &&
+    typeof item.review_id === "string" &&
+    typeof item.review_version === "number" &&
+    typeof item.review_digest === "string" &&
+    digestPattern.test(item.review_digest) &&
+    typeof item.packet_id === "string" &&
+    typeof item.packet_digest === "string" &&
+    digestPattern.test(item.packet_digest) &&
+    typeof item.canonical_digest === "string" &&
+    digestPattern.test(item.canonical_digest) &&
+    Array.isArray(item.impacted_service_ids) &&
+    item.impacted_service_ids.length === 2 &&
+    Array.isArray(item.evidence_digests) &&
+    item.evidence_digests.length === 4 &&
+    item.evidence_digests.every(
+      (digest) => typeof digest === "string" && digestPattern.test(digest),
+    ) &&
+    Array.isArray(item.stages) &&
+    item.stages.length === 4 &&
+    item.stages.every(
+      (stage) =>
+        isRecord(stage) &&
+        typeof stage.stage_id === "string" &&
+        typeof stage.sequence === "number" &&
+        stage.sequence >= 1 &&
+        stage.sequence <= 4 &&
+        typeof stage.required_role_id === "string" &&
+        typeof stage.reviewer_id === "string" &&
+        typeof stage.decision_id === "string" &&
+        typeof stage.request_version === "number" &&
+        stage.outcome === "approve" &&
+        typeof stage.rationale_digest === "string" &&
+        digestPattern.test(stage.rationale_digest) &&
+        stage.acknowledged_no_authority === true,
+    ) &&
+    item.human_review_completed === true &&
+    item.completion_evidence_only === true &&
+    item.approval_granted === false &&
+    item.itsm_dispatched === false &&
+    item.notification_sent === false &&
+    item.handoff_issued === false &&
+    item.workflow_executed === false &&
+    item.execution_authorized === false &&
+    item.infrastructure_mutation_performed === false
   );
 }
 
@@ -420,5 +521,31 @@ export async function decideUpgradeHumanReview(input: {
   if (!response.ok) throw new Error(`Human review decision failed with ${response.status}`);
   const payload: unknown = await response.json();
   if (!isHumanReview(payload)) throw new Error("Human review decision returned unsafe data");
+  return payload;
+}
+
+export async function createUpgradeHumanReviewCompletionReceipt(input: {
+  review: UpgradeHumanReview;
+  acknowledgedEvidenceOnly: boolean;
+}) {
+  const response = await apiFetch(
+    `/api/v1/platform/upgrade-change-reviews/human-reviews/${encodeURIComponent(input.review.review_id)}/completion-receipts`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": `completion-receipt.${input.review.version}.${nonce()}`,
+      },
+      body: JSON.stringify({
+        schema_version: "atlas.upgrade-human-review-completion-receipt-request.v1",
+        expected_review_version: input.review.version,
+        acknowledged_evidence_only: input.acknowledgedEvidenceOnly,
+      }),
+    },
+  );
+  if (!response.ok) throw new Error(`Completion receipt creation failed with ${response.status}`);
+  const payload: unknown = await response.json();
+  if (!isCompletionReceipt(payload)) throw new Error("Completion receipt returned unsafe data");
   return payload;
 }
