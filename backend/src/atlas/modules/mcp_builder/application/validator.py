@@ -127,7 +127,7 @@ class PythonScaffoldStaticValidator:
             self._regeneration_check(project, checkpoint, contents),
             self._required_files_check(checkpoint, contents),
             self._manifest_check(checkpoint, generation, contents),
-            self._pyproject_check(contents),
+            self._pyproject_check(project, contents),
             self._python_ast_check(contents),
             self._schema_fixture_check(checkpoint, contents),
             self._test_contract_check(contents),
@@ -269,27 +269,38 @@ class PythonScaffoldStaticValidator:
         )
 
     @staticmethod
-    def _pyproject_check(contents: dict[str, str]) -> BuilderValidationCheck:
+    def _pyproject_check(
+        source_project: McpBuilderProject, contents: dict[str, str]
+    ) -> BuilderValidationCheck:
         try:
-            project = tomllib.loads(contents.get("pyproject.toml", ""))
+            document = tomllib.loads(contents.get("pyproject.toml", ""))
         except (tomllib.TOMLDecodeError, UnicodeError):
-            project = {}
-        build = project.get("build-system") if isinstance(project, dict) else None
-        metadata = project.get("project") if isinstance(project, dict) else None
+            document = {}
+        build = document.get("build-system") if isinstance(document, dict) else None
+        metadata = document.get("project") if isinstance(document, dict) else None
+        tool = document.get("tool") if isinstance(document, dict) else None
+        atlas = tool.get("atlas") if isinstance(tool, dict) else None
+        licensing = atlas.get("licensing") if isinstance(atlas, dict) else None
         valid = (
             isinstance(build, dict)
             and build.get("build-backend") == "setuptools.build_meta"
             and build.get("requires") == ["setuptools>=75,<76"]
             and isinstance(metadata, dict)
             and metadata.get("requires-python") == ">=3.12,<3.13"
+            and metadata.get("license") == "LicenseRef-Atlas-Internal-Generated"
             and metadata.get("dependencies") == []
+            and isinstance(licensing, dict)
+            and licensing.get("source-license-id") == source_project.license_id
+            and licensing.get("source-redistribution-allowed")
+            is source_project.redistribution_allowed
+            and licensing.get("distribution-mode") == "internal"
         )
         return PythonScaffoldStaticValidator._check(
             "validation.python.project",
             valid,
-            "Python project metadata uses the approved profile with no runtime dependencies.",
+            "Python project metadata uses the approved runtime and license provenance profile.",
             ("pyproject.toml",),
-            "Restore the approved Python 3.12 project metadata and empty dependency set.",
+            "Restore the approved Python 3.12 and source-license metadata.",
         )
 
     @staticmethod

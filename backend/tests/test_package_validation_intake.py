@@ -161,7 +161,12 @@ def package_files(
             'version = "0.1.0.dev0"\n'
             'description = "Quarantined Project Atlas connector review scaffold"\n'
             'requires-python = ">=3.12,<3.13"\n'
+            'license = "LicenseRef-Atlas-Internal-Generated"\n'
             "dependencies = []\n\n"
+            "[tool.atlas.licensing]\n"
+            'source-license-id = "LicenseRef-Test-Source"\n'
+            "source-redistribution-allowed = true\n"
+            'distribution-mode = "internal"\n\n'
             "[tool.ruff]\n"
             'target-version = "py312"\n'
             "line-length = 100\n\n"

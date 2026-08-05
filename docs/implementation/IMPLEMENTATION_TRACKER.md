@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-063 |
 | Title | Governed connector package license analysis foundation |
-| Status | In Progress |
+| Status | In Review |
 | Branch | `agent/mcp-license-analysis` |
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-019 |
 | Last Updated | 2026-08-05 |
-| Next Action | Implement deterministic package license metadata and immutable offline license-policy analysis across backend, API, persistence, UI, and tests |
+| Next Action | Open the implementation pull request, verify GitHub CI, merge, and record closure evidence |
 
 ### ATLAS-IMP-063 Scope Rationale
 
@@ -68,7 +68,29 @@
 
 ### ATLAS-IMP-063 Validation Evidence
 
-- Pending implementation.
+- Deterministic generated `pyproject.toml` license provenance, bounded inventory validation, domain,
+  application, API, default-deny authorization, audit, memory/PostgreSQL persistence, migration, and
+  Connector workspace integration are implemented. The analyzer consumes only the exact passed
+  IMP-062 report and platform-selected trusted policy evidence; it cannot receive terms, exceptions,
+  suppressions, policy selection, execution, installation, registration, or runtime authority.
+- Fresh permitted, prohibited, unknown, unsatisfied-obligation, stale, invalid-trust, separation,
+  audit-failure, concurrency, PostgreSQL-equivalence, CSRF, no-store, and minimized-response fixtures
+  pass. Invalid-trust policy creates no report; trusted stale or blocking policy creates immutable
+  failed evidence without raw source license IDs, dependency identities, terms, policy bodies, or
+  reviewer notes.
+- Backend Ruff is clean and strict mypy passes across 504 source files. The focused license suite
+  passes 7 tests; the complete backend suite passes 525 tests with 3 expected Windows symlink skips
+  and only the existing dependency warnings.
+- Alembic reports the single head `20260805_0035`; memory and PostgreSQL mapping preserve the same
+  immutable one-to-one report contract.
+- Frontend lint and TypeScript checks pass; all 36 frontend tests pass; the production build
+  succeeds with only the existing non-blocking bundle-size warning. The MCP Builder workflow test
+  verifies the separate license operator, exact request lineage, acknowledgement, safe report, and
+  absence of policy selection, raw legal/dependency payloads, exceptions, and execution controls.
+- The current backend serves the new no-store license endpoints in its OpenAPI contract. Live
+  browser inspection at 1280 x 720 has no horizontal overflow and no captured warning/error logs;
+  focused API and UI tests cover the authorized create/read and responsive workflow states.
+- GitHub pull request, CI, merge, and main-branch closure evidence are pending.
 
 ### ATLAS-IMP-062 Scope Rationale
 

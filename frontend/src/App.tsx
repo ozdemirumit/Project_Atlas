@@ -115,6 +115,7 @@ import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
 import {
   acquireConnectorPackage,
+  analyzeConnectorPackageLicenses,
   analyzeConnectorPackageMalware,
   analyzeConnectorPackageStaticDependencies,
   analyzeConnectorPackageVulnerabilities,
@@ -532,6 +533,7 @@ export function App() {
     useState(false);
   const [builderVulnerabilityAcknowledged, setBuilderVulnerabilityAcknowledged] = useState(false);
   const [builderMalwareAcknowledged, setBuilderMalwareAcknowledged] = useState(false);
+  const [builderLicenseAcknowledged, setBuilderLicenseAcknowledged] = useState(false);
   const [builderSelectedGeneratedFile, setBuilderSelectedGeneratedFile] = useState("");
   const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
     Record<string, McpBuilderDesignDecision>
@@ -591,6 +593,10 @@ export function App() {
     mutationFn: analyzeConnectorPackageMalware,
     onSuccess: () => setBuilderMalwareAcknowledged(false),
   });
+  const builderLicenseMutation = useMutation({
+    mutationFn: analyzeConnectorPackageLicenses,
+    onSuccess: () => setBuilderLicenseAcknowledged(false),
+  });
   const builderCandidateArchiveMutation = useMutation({
     mutationFn: downloadMcpBuilderCandidateArchive,
     onSuccess: ({ blob, filename }) => {
@@ -616,6 +622,7 @@ export function App() {
     builderStaticDependencyMutation.reset();
     builderVulnerabilityMutation.reset();
     builderMalwareMutation.reset();
+    builderLicenseMutation.reset();
     setBuilderCandidateHandoffAcknowledged(false);
     setBuilderPackageAcquisitionAcknowledged(false);
     setBuilderPackageValidationAcknowledged(false);
@@ -626,6 +633,7 @@ export function App() {
     setBuilderStaticDependencyAcknowledged(false);
     setBuilderVulnerabilityAcknowledged(false);
     setBuilderMalwareAcknowledged(false);
+    setBuilderLicenseAcknowledged(false);
   };
   const builderPackageValidationSeparated = Boolean(
     identity &&
@@ -742,6 +750,25 @@ export function App() {
         builderVulnerabilityMutation.data.data.source_domain_reviewed_by,
         builderVulnerabilityMutation.data.data.source_security_reviewed_by,
         builderVulnerabilityMutation.data.data.source_lab_operated_by,
+      ].includes(identity.subject_id),
+  );
+  const builderLicenseSeparated = Boolean(
+    identity &&
+      builderMalwareMutation.data?.data &&
+      ![
+        builderMalwareMutation.data.data.analyzed_by,
+        builderMalwareMutation.data.data.source_vulnerability_analyzed_by,
+        builderMalwareMutation.data.data.source_static_analyzed_by,
+        builderMalwareMutation.data.data.source_authority_validated_by,
+        builderMalwareMutation.data.data.source_schema_validated_by,
+        builderMalwareMutation.data.data.source_content_scanned_by,
+        builderMalwareMutation.data.data.source_inventoried_by,
+        builderMalwareMutation.data.data.source_manifest_validated_by,
+        builderMalwareMutation.data.data.source_acquired_by,
+        builderMalwareMutation.data.data.source_custodied_by,
+        builderMalwareMutation.data.data.source_domain_reviewed_by,
+        builderMalwareMutation.data.data.source_security_reviewed_by,
+        builderMalwareMutation.data.data.source_lab_operated_by,
       ].includes(identity.subject_id),
   );
   const builderLabValidationMutation = useMutation({
@@ -6753,6 +6780,245 @@ export function App() {
                                                                     </div>
                                                                   )}
                                                                 </section>
+                                                              )}
+                                                              {builderMalwareMutation.data?.data
+                                                                .outcome === "passed" &&
+                                                                !builderMalwareMutation.data.data
+                                                                  .promotion_blocked &&
+                                                                !builderLicenseSeparated &&
+                                                                !builderLicenseMutation.data && (
+                                                                  <div
+                                                                    className="workspace-message warning-state"
+                                                                    role="status"
+                                                                  >
+                                                                    <UserX size={20} />
+                                                                    <div>
+                                                                      <h3>
+                                                                        Independent license analyst required
+                                                                      </h3>
+                                                                      <p>
+                                                                        Every prior package-analysis actor is
+                                                                        excluded. Continue with a different
+                                                                        authorized MFA session.
+                                                                      </p>
+                                                                    </div>
+                                                                  </div>
+                                                                )}
+                                                              {builderMalwareMutation.data?.data
+                                                                .outcome === "passed" &&
+                                                                !builderMalwareMutation.data.data
+                                                                  .promotion_blocked &&
+                                                                builderLicenseSeparated &&
+                                                                !builderLicenseMutation.data && (
+                                                                  <section className="mcp-builder-review-panel">
+                                                                    <div className="section-heading">
+                                                                      <div>
+                                                                        <p className="eyebrow">
+                                                                          LICENSE POLICY ANALYSIS
+                                                                        </p>
+                                                                        <h3>
+                                                                          Compare represented licenses to policy
+                                                                        </h3>
+                                                                        <p>
+                                                                          Evaluate opaque package, source, and
+                                                                          dependency subjects against the trusted
+                                                                          internal policy snapshot.
+                                                                        </p>
+                                                                      </div>
+                                                                      <span className="state-badge neutral">
+                                                                        <Scale size={14} /> Decision support
+                                                                      </span>
+                                                                    </div>
+                                                                    <label className="mcp-builder-confirmation">
+                                                                      <input
+                                                                        type="checkbox"
+                                                                        checked={builderLicenseAcknowledged}
+                                                                        onChange={(event) =>
+                                                                          setBuilderLicenseAcknowledged(
+                                                                            event.target.checked,
+                                                                          )
+                                                                        }
+                                                                      />
+                                                                      I am the independent license analyst. I
+                                                                      understand this policy comparison is not
+                                                                      legal advice and grants no redistribution or
+                                                                      runtime authority.
+                                                                    </label>
+                                                                    <button
+                                                                      className="run-check-button mcp-builder-submit"
+                                                                      type="button"
+                                                                      disabled={
+                                                                        !builderLicenseAcknowledged ||
+                                                                        builderLicenseMutation.isPending
+                                                                      }
+                                                                      onClick={() => {
+                                                                        const report =
+                                                                          builderMalwareMutation.data?.data;
+                                                                        if (report) {
+                                                                          builderLicenseMutation.mutate(report);
+                                                                        }
+                                                                      }}
+                                                                    >
+                                                                      {builderLicenseMutation.isPending ? (
+                                                                        <RefreshCw className="spin" size={16} />
+                                                                      ) : (
+                                                                        <Scale size={16} />
+                                                                      )}
+                                                                      Analyze license policy
+                                                                    </button>
+                                                                  </section>
+                                                                )}
+                                                              {builderLicenseMutation.isError && (
+                                                                <div
+                                                                  className="workspace-message error-state"
+                                                                  role="alert"
+                                                                >
+                                                                  <AlertTriangle size={20} />
+                                                                  <div>
+                                                                    <h3>License analysis unavailable</h3>
+                                                                    <p>
+                                                                      Exact lineage, policy trust, coverage, or
+                                                                      package metadata reconciliation did not
+                                                                      pass.
+                                                                    </p>
+                                                                  </div>
+                                                                </div>
+                                                              )}
+                                                              {builderLicenseMutation.data?.data && (
+                                                                <div className="mcp-builder-validation">
+                                                                  <div className="section-heading">
+                                                                    <div>
+                                                                      <p className="eyebrow">
+                                                                        IMMUTABLE LICENSE REPORT
+                                                                      </p>
+                                                                      <strong>
+                                                                        {
+                                                                          builderLicenseMutation.data.data
+                                                                            .analysis_id
+                                                                        }
+                                                                      </strong>
+                                                                      <code>
+                                                                        {
+                                                                          builderLicenseMutation.data.data
+                                                                            .canonical_digest
+                                                                        }
+                                                                      </code>
+                                                                    </div>
+                                                                    <span
+                                                                      className={`state-badge ${
+                                                                        builderLicenseMutation.data.data.outcome ===
+                                                                        "passed"
+                                                                          ? "healthy"
+                                                                          : "critical"
+                                                                      }`}
+                                                                    >
+                                                                      {builderLicenseMutation.data.data.outcome ===
+                                                                      "passed" ? (
+                                                                        <CheckCircle2 size={14} />
+                                                                      ) : (
+                                                                        <AlertTriangle size={14} />
+                                                                      )}
+                                                                      {
+                                                                        builderLicenseMutation.data.data.outcome
+                                                                      }
+                                                                    </span>
+                                                                  </div>
+                                                                  <div className="mcp-builder-facts">
+                                                                    <div>
+                                                                      <span>Policy snapshot</span>
+                                                                      <strong>
+                                                                        {
+                                                                          builderLicenseMutation.data.data
+                                                                            .policy_snapshot.snapshot_version
+                                                                        }
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Scanned subjects</span>
+                                                                      <strong>
+                                                                        {builderLicenseMutation.data.data.subject_summary.scanned_subject_count.toLocaleString()}
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Permitted</span>
+                                                                      <strong>
+                                                                        {builderLicenseMutation.data.data.subject_summary.permitted_count.toLocaleString()}
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Blocking subjects</span>
+                                                                      <strong>
+                                                                        {(
+                                                                          builderLicenseMutation.data.data
+                                                                            .subject_summary.review_required_count +
+                                                                          builderLicenseMutation.data.data
+                                                                            .subject_summary.prohibited_count +
+                                                                          builderLicenseMutation.data.data
+                                                                            .subject_summary.unknown_count
+                                                                        ).toLocaleString()}
+                                                                      </strong>
+                                                                    </div>
+                                                                  </div>
+                                                                  <div className="mcp-builder-validation-checks">
+                                                                    {builderLicenseMutation.data.data.checks.map(
+                                                                      (check) => (
+                                                                        <article
+                                                                          key={check.code}
+                                                                          data-state={check.state}
+                                                                        >
+                                                                          {check.state === "passed" ? (
+                                                                            <CheckCircle2 size={16} />
+                                                                          ) : (
+                                                                            <AlertTriangle size={16} />
+                                                                          )}
+                                                                          <div>
+                                                                            <strong>{check.code}</strong>
+                                                                            <p>{check.summary}</p>
+                                                                          </div>
+                                                                          <span>{check.state}</span>
+                                                                        </article>
+                                                                      ),
+                                                                    )}
+                                                                  </div>
+                                                                  {builderLicenseMutation.data.data.findings.length >
+                                                                    0 && (
+                                                                    <div className="mcp-builder-findings">
+                                                                      {builderLicenseMutation.data.data.findings.map(
+                                                                        (finding) => (
+                                                                          <article
+                                                                            key={`${finding.rule_id}-${finding.subject_fingerprint}`}
+                                                                            data-state="failed"
+                                                                          >
+                                                                            <AlertTriangle size={16} />
+                                                                            <div>
+                                                                              <strong>
+                                                                                {finding.rule_id}
+                                                                              </strong>
+                                                                              <p>{finding.summary}</p>
+                                                                              <small>
+                                                                                {finding.subject_scope} ·{" "}
+                                                                                {finding.disposition}
+                                                                              </small>
+                                                                            </div>
+                                                                            <span>
+                                                                              {finding.severity}
+                                                                            </span>
+                                                                          </article>
+                                                                        ),
+                                                                      )}
+                                                                    </div>
+                                                                  )}
+                                                                  <div className="mcp-builder-limitations">
+                                                                    <strong>License policy boundaries</strong>
+                                                                    <ul>
+                                                                      {builderLicenseMutation.data.data.limitations.map(
+                                                                        (limitation) => (
+                                                                          <li key={limitation}>{limitation}</li>
+                                                                        ),
+                                                                      )}
+                                                                    </ul>
+                                                                  </div>
+                                                                </div>
                                                               )}
                                                               {builderPackageInventoryMutation.data?.data
                                                                 .outcome === "passed" &&

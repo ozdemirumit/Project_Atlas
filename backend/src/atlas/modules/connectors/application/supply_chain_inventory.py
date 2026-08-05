@@ -417,6 +417,7 @@ class PackageSupplyChainInventoryService:
             "version",
             "description",
             "requires-python",
+            "license",
             "dependencies",
         }:
             return None, False
@@ -426,8 +427,9 @@ class PackageSupplyChainInventoryService:
             or project.get("version") != "0.1.0.dev0"
             or project.get("description") != "Quarantined Project Atlas connector review scaffold"
             or project.get("requires-python") != ">=3.12,<3.13"
+            or project.get("license") != "LicenseRef-Atlas-Internal-Generated"
             or build.get("build-backend") != "setuptools.build_meta"
-            or set(tool) != {"ruff", "mypy", "pytest"}
+            or set(tool) != {"atlas", "ruff", "mypy", "pytest"}
             or not cls._valid_tool_contract(tool)
         ):
             return None, False
@@ -461,11 +463,25 @@ class PackageSupplyChainInventoryService:
 
     @staticmethod
     def _valid_tool_contract(tool: dict[object, object]) -> bool:
+        atlas = tool.get("atlas")
         ruff = tool.get("ruff")
         mypy = tool.get("mypy")
         pytest = tool.get("pytest")
         return bool(
-            isinstance(ruff, dict)
+            isinstance(atlas, dict)
+            and set(atlas) == {"licensing"}
+            and isinstance(atlas.get("licensing"), dict)
+            and set(atlas["licensing"])
+            == {
+                "source-license-id",
+                "source-redistribution-allowed",
+                "distribution-mode",
+            }
+            and isinstance(atlas["licensing"].get("source-license-id"), str)
+            and 0 < len(atlas["licensing"]["source-license-id"]) <= 200
+            and isinstance(atlas["licensing"].get("source-redistribution-allowed"), bool)
+            and atlas["licensing"].get("distribution-mode") == "internal"
+            and isinstance(ruff, dict)
             and set(ruff) == {"target-version", "line-length"}
             and ruff.get("target-version") == "py312"
             and ruff.get("line-length") == 100
