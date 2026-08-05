@@ -119,6 +119,8 @@ CONNECTOR_PACKAGE_CONTRACT_VALIDATION_CREATE = "connectors.package-contract-vali
 CONNECTOR_PACKAGE_CONTRACT_VALIDATION_READ = "connectors.package-contract-validations.read"
 CONNECTOR_PACKAGE_RUNNER_VALIDATION_CREATE = "connectors.package-runner-validations.create"
 CONNECTOR_PACKAGE_RUNNER_VALIDATION_READ = "connectors.package-runner-validations.read"
+CONNECTOR_PACKAGE_LAB_SELF_TEST_CREATE = "connectors.package-lab-self-tests.create"
+CONNECTOR_PACKAGE_LAB_SELF_TEST_READ = "connectors.package-lab-self-tests.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -572,6 +574,19 @@ def connector_package_runner_validation_scope(
         site_id="site.local",
         domain_id="domain.connectors",
         resource_id="resource.connector.package-runner-validations",
+        capability_class=capability_class,
+    )
+
+
+def connector_package_lab_self_test_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.connectors",
+        resource_id="resource.connector.package-lab-self-tests",
         capability_class=capability_class,
     )
 
@@ -1073,6 +1088,14 @@ def build_development_authorization_service(
             permission_id=CONNECTOR_PACKAGE_RUNNER_VALIDATION_READ,
             description="Read one immutable connector package runner validation report.",
         ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_PACKAGE_LAB_SELF_TEST_CREATE,
+            description="Run an exact connector package under an approved read-only lab plan.",
+        ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_PACKAGE_LAB_SELF_TEST_READ,
+            description="Read one immutable connector package lab self-test report.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -1160,6 +1183,8 @@ def build_development_authorization_service(
                 CONNECTOR_PACKAGE_CONTRACT_VALIDATION_READ,
                 CONNECTOR_PACKAGE_RUNNER_VALIDATION_CREATE,
                 CONNECTOR_PACKAGE_RUNNER_VALIDATION_READ,
+                CONNECTOR_PACKAGE_LAB_SELF_TEST_CREATE,
+                CONNECTOR_PACKAGE_LAB_SELF_TEST_READ,
             }
         ),
     )
@@ -1796,6 +1821,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=connector_package_runner_validation_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-package-lab-self-test-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_package_lab_self_test_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-package-lab-self-test-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_package_lab_self_test_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,
