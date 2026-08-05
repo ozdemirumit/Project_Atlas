@@ -4,14 +4,62 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-047 |
-| Title | Governed MCP Builder human design checkpoint |
-| Status | Completed |
-| Branch | `agent/mcp-builder-human-design-checkpoint` |
-| Pull Request | [#59](https://github.com/ozdemirumit/Project_Atlas/pull/59) |
-| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056 |
+| Task ID | ATLAS-IMP-048 |
+| Title | Governed MCP Builder isolated Python scaffold generation |
+| Status | In Progress |
+| Branch | `agent/mcp-builder-isolated-scaffold-generation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-004 |
 | Last Updated | 2026-08-05 |
-| Next Action | Select the next approved implementation slice |
+| Next Action | Implement the immutable generation record, quarantined artifact publisher, API, and web review flow |
+
+### ATLAS-IMP-048 Scope Rationale
+
+- IMP-047 supplies the mandatory immutable human design checkpoint. ATLAS-022 next requires isolated
+  code and test generation before automated validation, domain review, security review, lab testing,
+  or candidate packaging can begin.
+- ADR-004 selects the first approved language profile, `atlas.python312.v1`, using deterministic,
+  restricted-network-safe templates. This slice creates real reviewable scaffold files while leaving
+  every generated handler and target client non-executable.
+- Generation output is an untrusted artifact under Atlas-owned quarantine. It cannot become a package,
+  connector registration, installed instance, runtime dependency, or execution authority in this
+  slice.
+
+### ATLAS-IMP-048 Acceptance Criteria
+
+- Only an authorized multi-factor human in the exact project organization and environment can create
+  or inspect a generation. Service and AI identities, wrong roles, insufficient assurance, and
+  out-of-scope actors fail closed without generation or file discovery.
+- Generation binds the exact project version and digest, source digest, design-checkpoint ID and
+  digest, complete confirmed capability set, `atlas.python312.v1` profile, and immutable template
+  version. Stale, tampered, incomplete, unsupported, or changed replay input is rejected.
+- The deterministic scaffold contains a connector manifest, Python project metadata, typed
+  non-executable capability drafts, configuration and capability schemas, synthetic tests and
+  fixtures, permission and network documentation, and source-to-artifact traceability. No original
+  source document, secret value, credential-like text, or mutable external content is copied.
+- Every file has a normalized safe relative path, bounded UTF-8 content, byte size, digest, media type,
+  and source-candidate lineage. Duplicate, absolute, traversal, reserved, control-character, symlink,
+  case-colliding, oversized, or unexpected files fail closed.
+- Files publish atomically into a generation-digest directory under a configured quarantine root.
+  Exact existing output is reused; partial, changed, interrupted, or unsafe existing output is
+  rejected without overwriting it. Metadata persists only after required audit and successful
+  publication, with memory and PostgreSQL behavior matching.
+- Strict no-store APIs require browser CSRF for creation, default-deny RBAC, correlation, bounded
+  schemas, safe errors, and content-safe generated-file reads. The web workspace shows provenance,
+  inventory, per-file digests, safe text previews, and explicit quarantine boundaries.
+- Generated Python files parse as Python 3.12 source, schemas and manifests parse structurally, and the
+  generated tests describe the fail-closed draft contract. Generation itself never imports, compiles,
+  executes, tests, packages, signs, registers, installs, enables, or invokes generated code.
+- Automated backend and frontend coverage, Alembic single-head verification, live authorized and
+  denied API validation, filesystem integrity inspection, desktop and 390-pixel mobile inspection,
+  browser-log inspection, and GitHub CI apply.
+- This slice performs no network request, model inference, subprocess or shell invocation, dynamic
+  code execution, secret resolution, package creation, connector registration, runtime trust grant,
+  workflow execution, deployment, or infrastructure mutation.
+
+### ATLAS-IMP-048 Validation Evidence
+
+- Pending implementation and validation.
 
 ### ATLAS-IMP-047 Scope Rationale
 
