@@ -115,6 +115,7 @@ import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
 import {
   acquireConnectorPackage,
+  analyzeConnectorPackageStaticDependencies,
   inventoryConnectorPackage,
   scanConnectorPackageContent,
   validateConnectorPackage,
@@ -525,6 +526,8 @@ export function App() {
     useState(false);
   const [builderAuthorityBehaviorAcknowledged, setBuilderAuthorityBehaviorAcknowledged] =
     useState(false);
+  const [builderStaticDependencyAcknowledged, setBuilderStaticDependencyAcknowledged] =
+    useState(false);
   const [builderSelectedGeneratedFile, setBuilderSelectedGeneratedFile] = useState("");
   const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
     Record<string, McpBuilderDesignDecision>
@@ -572,6 +575,10 @@ export function App() {
     mutationFn: validateConnectorPackageAuthorityBehavior,
     onSuccess: () => setBuilderAuthorityBehaviorAcknowledged(false),
   });
+  const builderStaticDependencyMutation = useMutation({
+    mutationFn: analyzeConnectorPackageStaticDependencies,
+    onSuccess: () => setBuilderStaticDependencyAcknowledged(false),
+  });
   const builderCandidateArchiveMutation = useMutation({
     mutationFn: downloadMcpBuilderCandidateArchive,
     onSuccess: ({ blob, filename }) => {
@@ -594,6 +601,7 @@ export function App() {
     builderContentPolicyScanMutation.reset();
     builderSchemaSemanticsMutation.reset();
     builderAuthorityBehaviorMutation.reset();
+    builderStaticDependencyMutation.reset();
     setBuilderCandidateHandoffAcknowledged(false);
     setBuilderPackageAcquisitionAcknowledged(false);
     setBuilderPackageValidationAcknowledged(false);
@@ -601,6 +609,7 @@ export function App() {
     setBuilderContentPolicyScanAcknowledged(false);
     setBuilderSchemaSemanticsAcknowledged(false);
     setBuilderAuthorityBehaviorAcknowledged(false);
+    setBuilderStaticDependencyAcknowledged(false);
   };
   const builderPackageValidationSeparated = Boolean(
     identity &&
@@ -666,6 +675,22 @@ export function App() {
         builderSchemaSemanticsMutation.data.data.source_domain_reviewed_by,
         builderSchemaSemanticsMutation.data.data.source_security_reviewed_by,
         builderSchemaSemanticsMutation.data.data.source_lab_operated_by,
+      ].includes(identity.subject_id),
+  );
+  const builderStaticDependencySeparated = Boolean(
+    identity &&
+      builderAuthorityBehaviorMutation.data?.data &&
+      ![
+        builderAuthorityBehaviorMutation.data.data.validated_by,
+        builderAuthorityBehaviorMutation.data.data.source_schema_validated_by,
+        builderAuthorityBehaviorMutation.data.data.source_content_scanned_by,
+        builderAuthorityBehaviorMutation.data.data.source_inventoried_by,
+        builderAuthorityBehaviorMutation.data.data.source_manifest_validated_by,
+        builderAuthorityBehaviorMutation.data.data.source_acquired_by,
+        builderAuthorityBehaviorMutation.data.data.source_custodied_by,
+        builderAuthorityBehaviorMutation.data.data.source_domain_reviewed_by,
+        builderAuthorityBehaviorMutation.data.data.source_security_reviewed_by,
+        builderAuthorityBehaviorMutation.data.data.source_lab_operated_by,
       ].includes(identity.subject_id),
   );
   const builderLabValidationMutation = useMutation({
@@ -5868,6 +5893,256 @@ export function App() {
                                                                         <strong>Behavior boundaries</strong>
                                                                         <ul>
                                                                           {builderAuthorityBehaviorMutation.data.data.limitations.map(
+                                                                            (limitation) => (
+                                                                              <li key={limitation}>
+                                                                                {limitation}
+                                                                              </li>
+                                                                            ),
+                                                                          )}
+                                                                        </ul>
+                                                                      </div>
+                                                                    </div>
+                                                                  )}
+                                                                  {builderAuthorityBehaviorMutation.data?.data
+                                                                    .outcome === "passed" &&
+                                                                    !builderStaticDependencySeparated &&
+                                                                    !builderStaticDependencyMutation.data && (
+                                                                      <div
+                                                                        className="workspace-message warning-state"
+                                                                        role="status"
+                                                                      >
+                                                                        <UserX size={20} />
+                                                                        <div>
+                                                                          <h3>
+                                                                            Independent static analyst required
+                                                                          </h3>
+                                                                          <p>
+                                                                            Prior package validators cannot analyze
+                                                                            this stage. Continue with a different
+                                                                            authorized MFA session.
+                                                                          </p>
+                                                                        </div>
+                                                                      </div>
+                                                                    )}
+                                                                  {builderAuthorityBehaviorMutation.data?.data
+                                                                    .outcome === "passed" &&
+                                                                    builderStaticDependencySeparated &&
+                                                                    !builderStaticDependencyMutation.data && (
+                                                                      <section className="mcp-builder-review-panel">
+                                                                        <div className="section-heading">
+                                                                          <div>
+                                                                            <p className="eyebrow">
+                                                                              STATIC AND DEPENDENCY ANALYSIS
+                                                                            </p>
+                                                                            <h3>
+                                                                              Inspect source structure and dependency
+                                                                              hygiene
+                                                                            </h3>
+                                                                            <p>
+                                                                              Offline structural evidence only. No
+                                                                              package code or dependency is loaded.
+                                                                            </p>
+                                                                          </div>
+                                                                          <span className="state-badge neutral">
+                                                                            <ScanSearch size={14} /> No execution
+                                                                          </span>
+                                                                        </div>
+                                                                        <label className="mcp-builder-confirmation">
+                                                                          <input
+                                                                            type="checkbox"
+                                                                            checked={
+                                                                              builderStaticDependencyAcknowledged
+                                                                            }
+                                                                            onChange={(event) =>
+                                                                              setBuilderStaticDependencyAcknowledged(
+                                                                                event.target.checked,
+                                                                              )
+                                                                            }
+                                                                          />
+                                                                          I am the independent static analyst. I
+                                                                          understand this does not perform
+                                                                          vulnerability, malware, license, build, or
+                                                                          runtime validation.
+                                                                        </label>
+                                                                        <button
+                                                                          className="run-check-button mcp-builder-submit"
+                                                                          type="button"
+                                                                          disabled={
+                                                                            !builderStaticDependencyAcknowledged ||
+                                                                            builderStaticDependencyMutation.isPending
+                                                                          }
+                                                                          onClick={() => {
+                                                                            const report =
+                                                                              builderAuthorityBehaviorMutation.data
+                                                                                ?.data;
+                                                                            if (report) {
+                                                                              builderStaticDependencyMutation.mutate(
+                                                                                report,
+                                                                              );
+                                                                            }
+                                                                          }}
+                                                                        >
+                                                                          {builderStaticDependencyMutation.isPending ? (
+                                                                            <RefreshCw
+                                                                              className="spin"
+                                                                              size={16}
+                                                                            />
+                                                                          ) : (
+                                                                            <ScanSearch size={16} />
+                                                                          )}
+                                                                          Analyze source and dependencies
+                                                                        </button>
+                                                                      </section>
+                                                                    )}
+                                                                  {builderStaticDependencyMutation.isError && (
+                                                                    <div
+                                                                      className="workspace-message error-state"
+                                                                      role="alert"
+                                                                    >
+                                                                      <AlertTriangle size={20} />
+                                                                      <div>
+                                                                        <h3>Static analysis unavailable</h3>
+                                                                        <p>
+                                                                          Exact lineage, source structure, or
+                                                                          dependency hygiene did not pass.
+                                                                        </p>
+                                                                      </div>
+                                                                    </div>
+                                                                  )}
+                                                                  {builderStaticDependencyMutation.data?.data && (
+                                                                    <div className="mcp-builder-validation">
+                                                                      <div className="section-heading">
+                                                                        <div>
+                                                                          <p className="eyebrow">
+                                                                            IMMUTABLE STATIC DEPENDENCY REPORT
+                                                                          </p>
+                                                                          <strong>
+                                                                            {
+                                                                              builderStaticDependencyMutation.data
+                                                                                .data.analysis_id
+                                                                            }
+                                                                          </strong>
+                                                                          <code>
+                                                                            {
+                                                                              builderStaticDependencyMutation.data
+                                                                                .data.canonical_digest
+                                                                            }
+                                                                          </code>
+                                                                        </div>
+                                                                        <span
+                                                                          className={`state-badge ${
+                                                                            builderStaticDependencyMutation.data.data
+                                                                              .outcome === "passed"
+                                                                              ? "healthy"
+                                                                              : "critical"
+                                                                          }`}
+                                                                        >
+                                                                          {builderStaticDependencyMutation.data.data
+                                                                            .outcome === "passed" ? (
+                                                                            <CheckCircle2 size={14} />
+                                                                          ) : (
+                                                                            <AlertTriangle size={14} />
+                                                                          )}
+                                                                          {
+                                                                            builderStaticDependencyMutation.data.data
+                                                                              .outcome
+                                                                          }
+                                                                        </span>
+                                                                      </div>
+                                                                      <div className="mcp-builder-facts">
+                                                                        <div>
+                                                                          <span>Source files</span>
+                                                                          <strong>
+                                                                            {
+                                                                              builderStaticDependencyMutation.data.data
+                                                                                .source_summary.source_file_count
+                                                                            }
+                                                                          </strong>
+                                                                        </div>
+                                                                        <div>
+                                                                          <span>Imports</span>
+                                                                          <strong>
+                                                                            {
+                                                                              builderStaticDependencyMutation.data.data
+                                                                                .source_summary.import_count
+                                                                            }
+                                                                          </strong>
+                                                                        </div>
+                                                                        <div>
+                                                                          <span>Runtime dependencies</span>
+                                                                          <strong>
+                                                                            {
+                                                                              builderStaticDependencyMutation.data.data
+                                                                                .dependency_summary
+                                                                                .runtime_dependency_count
+                                                                            }
+                                                                          </strong>
+                                                                        </div>
+                                                                        <div>
+                                                                          <span>Promotion</span>
+                                                                          <strong>
+                                                                            {builderStaticDependencyMutation.data.data
+                                                                              .promotion_blocked
+                                                                              ? "Blocked"
+                                                                              : "Not blocked"}
+                                                                          </strong>
+                                                                        </div>
+                                                                      </div>
+                                                                      <div className="mcp-builder-validation-checks">
+                                                                        {builderStaticDependencyMutation.data.data.checks.map(
+                                                                          (check) => (
+                                                                            <article
+                                                                              key={check.code}
+                                                                              data-state={check.state}
+                                                                            >
+                                                                              {check.state === "passed" ? (
+                                                                                <CheckCircle2 size={16} />
+                                                                              ) : (
+                                                                                <AlertTriangle size={16} />
+                                                                              )}
+                                                                              <div>
+                                                                                <strong>{check.code}</strong>
+                                                                                <p>{check.summary}</p>
+                                                                              </div>
+                                                                              <span>{check.state}</span>
+                                                                            </article>
+                                                                          ),
+                                                                        )}
+                                                                      </div>
+                                                                      {builderStaticDependencyMutation.data.data
+                                                                        .findings.length > 0 && (
+                                                                        <div className="mcp-builder-validation-checks">
+                                                                          {builderStaticDependencyMutation.data.data.findings.map(
+                                                                            (finding) => (
+                                                                              <article
+                                                                                key={
+                                                                                  finding.evidence_fingerprint
+                                                                                }
+                                                                                data-state="failed"
+                                                                              >
+                                                                                <AlertTriangle size={16} />
+                                                                                <div>
+                                                                                  <strong>
+                                                                                    {finding.rule_code}
+                                                                                  </strong>
+                                                                                  <p>{finding.summary}</p>
+                                                                                  <code>
+                                                                                    {finding.relative_path}:
+                                                                                    {finding.line_number}
+                                                                                  </code>
+                                                                                </div>
+                                                                                <span>
+                                                                                  {finding.category}
+                                                                                </span>
+                                                                              </article>
+                                                                            ),
+                                                                          )}
+                                                                        </div>
+                                                                      )}
+                                                                      <div className="mcp-builder-limitations">
+                                                                        <strong>Static analysis boundaries</strong>
+                                                                        <ul>
+                                                                          {builderStaticDependencyMutation.data.data.limitations.map(
                                                                             (limitation) => (
                                                                               <li key={limitation}>
                                                                                 {limitation}

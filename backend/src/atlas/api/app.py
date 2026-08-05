@@ -50,6 +50,7 @@ from atlas.api.routes import (
     schema_semantics_validations,
     security_export,
     sessions,
+    static_dependency_analyses,
     storage,
     supply_chain_inventories,
     support_bundles,
@@ -124,6 +125,12 @@ from atlas.modules.connectors.adapters.schema_semantics_validation_memory import
 from atlas.modules.connectors.adapters.schema_semantics_validation_postgres import (
     PostgreSQLPackageSchemaSemanticsValidationRepository,
 )
+from atlas.modules.connectors.adapters.static_dependency_analysis_memory import (
+    InMemoryPackageStaticDependencyAnalysisRepository,
+)
+from atlas.modules.connectors.adapters.static_dependency_analysis_postgres import (
+    PostgreSQLPackageStaticDependencyAnalysisRepository,
+)
 from atlas.modules.connectors.adapters.supply_chain_inventory_memory import (
     InMemoryPackageSupplyChainInventoryRepository,
 )
@@ -143,6 +150,9 @@ from atlas.modules.connectors.application.authority_behavior_validation import (
 from atlas.modules.connectors.application.content_policy_scan import PackageContentPolicyScanService
 from atlas.modules.connectors.application.schema_semantics_validation import (
     PackageSchemaSemanticsValidationService,
+)
+from atlas.modules.connectors.application.static_dependency_analysis import (
+    PackageStaticDependencyAnalysisService,
 )
 from atlas.modules.connectors.application.supply_chain_inventory import (
     PackageSupplyChainInventoryService,
@@ -407,6 +417,8 @@ def create_app(
     package_schema_semantics_validation_service: PackageSchemaSemanticsValidationService
     | None = None,
     package_authority_behavior_validation_service: PackageAuthorityBehaviorValidationService
+    | None = None,
+    package_static_dependency_analysis_service: PackageStaticDependencyAnalysisService
     | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
@@ -993,6 +1005,37 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    if package_static_dependency_analysis_service is not None:
+        resolved_package_static_dependency_analysis_service = (
+            package_static_dependency_analysis_service
+        )
+    else:
+        package_static_dependency_analysis_repository = (
+            PostgreSQLPackageStaticDependencyAnalysisRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryPackageStaticDependencyAnalysisRepository()
+        )
+        resolved_package_static_dependency_analysis_service = (
+            PackageStaticDependencyAnalysisService(
+                repository=package_static_dependency_analysis_repository,
+                authority_behavior_source=(
+                    resolved_package_authority_behavior_validation_service.repository
+                ),
+                inventory_source=(
+                    resolved_package_schema_semantics_validation_service.inventory_source
+                ),
+                acquisition_source=(
+                    resolved_package_schema_semantics_validation_service.acquisition_source
+                ),
+                archive_source=(
+                    resolved_package_schema_semantics_validation_service.archive_source
+                ),
+                audit_sink=resolved_audit_sink,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -1174,6 +1217,9 @@ def create_app(
         app.state.package_authority_behavior_validation_service = (
             resolved_package_authority_behavior_validation_service
         )
+        app.state.package_static_dependency_analysis_service = (
+            resolved_package_static_dependency_analysis_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -1186,6 +1232,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_package_static_dependency_analysis_service.close()
         await resolved_package_authority_behavior_validation_service.close()
         await resolved_package_schema_semantics_validation_service.close()
         await resolved_package_content_policy_scan_service.close()
@@ -1258,6 +1305,7 @@ def create_app(
     app.include_router(content_policy_scans.router, prefix="/api/v1")
     app.include_router(schema_semantics_validations.router, prefix="/api/v1")
     app.include_router(authority_behavior_validations.router, prefix="/api/v1")
+    app.include_router(static_dependency_analyses.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

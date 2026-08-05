@@ -278,6 +278,121 @@ const validation = {
   },
 };
 
+const packageStaticDependencyAnalysis = () => ({
+  data: {
+    analysis_id: "connector-static-dependency-analysis.ffffffffffffffffffffffff",
+    schema_version: "atlas.connector-package-static-dependency-analysis.v1",
+    version: 1,
+    lifecycle: "validating",
+    outcome: "passed",
+    source_authority_behavior_validation_id:
+      packageAuthorityBehaviorValidation.data.validation_id,
+    source_authority_behavior_validation_digest:
+      packageAuthorityBehaviorValidation.data.canonical_digest,
+    source_schema_semantics_validation_id:
+      packageAuthorityBehaviorValidation.data.source_schema_semantics_validation_id,
+    source_content_policy_scan_id:
+      packageAuthorityBehaviorValidation.data.source_content_policy_scan_id,
+    source_inventory_id: packageAuthorityBehaviorValidation.data.source_inventory_id,
+    source_validation_id: packageAuthorityBehaviorValidation.data.source_validation_id,
+    source_acquisition_id: packageAuthorityBehaviorValidation.data.source_acquisition_id,
+    source_handoff_id: packageAuthorityBehaviorValidation.data.source_handoff_id,
+    source_project_id: packageAuthorityBehaviorValidation.data.source_project_id,
+    source_acquired_by: packageAuthorityBehaviorValidation.data.source_acquired_by,
+    source_manifest_validated_by:
+      packageAuthorityBehaviorValidation.data.source_manifest_validated_by,
+    source_inventoried_by: packageAuthorityBehaviorValidation.data.source_inventoried_by,
+    source_content_scanned_by:
+      packageAuthorityBehaviorValidation.data.source_content_scanned_by,
+    source_schema_validated_by:
+      packageAuthorityBehaviorValidation.data.source_schema_validated_by,
+    source_authority_validated_by: packageAuthorityBehaviorValidation.data.validated_by,
+    source_custodied_by: packageAuthorityBehaviorValidation.data.source_custodied_by,
+    source_domain_reviewed_by:
+      packageAuthorityBehaviorValidation.data.source_domain_reviewed_by,
+    source_security_reviewed_by:
+      packageAuthorityBehaviorValidation.data.source_security_reviewed_by,
+    source_lab_operated_by: packageAuthorityBehaviorValidation.data.source_lab_operated_by,
+    organization_id: packageAuthorityBehaviorValidation.data.organization_id,
+    environment_id: packageAuthorityBehaviorValidation.data.environment_id,
+    analyzed_by: identity.data.subject_id,
+    analysis_profile: "atlas.connector-static-dependency.python312.v1",
+    analyzer_version: "atlas.connector-static-dependency-analyzer.v1",
+    package_digest: packageAuthorityBehaviorValidation.data.package_digest,
+    package_size_bytes: packageAuthorityBehaviorValidation.data.package_size_bytes,
+    inventory_digest: packageAuthorityBehaviorValidation.data.inventory_digest,
+    source_summary: {
+      source_file_count: 4,
+      module_count: 4,
+      function_count: 1,
+      import_count: 2,
+      external_import_count: 0,
+      unresolved_import_count: 0,
+      source_set_digest: "6".repeat(64),
+    },
+    dependency_summary: {
+      runtime_dependency_count: 0,
+      build_dependency_count: 1,
+      imported_dependency_count: 0,
+      dependency_lock_present: false,
+      dependency_lock_required: false,
+      dependency_set_digest: packageInventory.data.dependency_set_digest,
+      metadata_consistent: true,
+      imports_reconciled: true,
+      deterministic_constraints: true,
+    },
+    findings: [],
+    finding_set_digest: "7".repeat(64),
+    analysis_digest: "8".repeat(64),
+    checks: [
+      "static-dependency.source.accepted",
+      "static-dependency.archive.contract",
+      "static-dependency.source.structure",
+      "static-dependency.import.graph",
+      "static-dependency.metadata.hygiene",
+    ].map((code) => ({
+      code,
+      state: "passed",
+      severity: "informational",
+      summary: `Bounded ${code} evidence completed.`,
+      evidence_paths: [],
+      remediation: "Resolve findings while preserving exact package bytes.",
+    })),
+    limitations: [
+      "This report covers bounded source structure and dependency hygiene only.",
+      "No package or infrastructure authority was granted.",
+    ],
+    promotion_blocked: false,
+    canonical_digest: "9".repeat(64),
+    analyzed_at: "2026-08-05T17:00:00Z",
+    secret_content_scan_completed: true,
+    prohibited_content_scan_completed: true,
+    schema_semantic_validation_completed: true,
+    permission_behavior_validation_completed: true,
+    static_code_validation_completed: true,
+    vulnerability_scan_completed: false,
+    malware_scan_completed: false,
+    license_scan_completed: false,
+    contract_validation_completed: false,
+    runner_validation_completed: false,
+    lab_validation_completed: false,
+    package_signed: false,
+    publisher_attested: false,
+    connector_rejected: false,
+    connector_registered: false,
+    connector_approved: false,
+    connector_installed: false,
+    connector_enabled: false,
+    target_configured: false,
+    credentials_resolved: false,
+    runtime_trust_granted: false,
+    execution_authorized: false,
+    deployment_approved: false,
+    infrastructure_mutation_performed: false,
+    reused: false,
+  },
+});
+
 const domainReview = {
   data: {
     review_id: "mcp-builder-domain-review.222222222222222222222222",
@@ -1073,7 +1188,7 @@ const packageAuthorityBehaviorValidation = {
     source_lab_operated_by: packageSchemaSemanticsValidation.data.source_lab_operated_by,
     organization_id: packageSchemaSemanticsValidation.data.organization_id,
     environment_id: packageSchemaSemanticsValidation.data.environment_id,
-    validated_by: identity.data.subject_id,
+    validated_by: "subject.authority-behavior.validator",
     validation_profile: "atlas.connector-authority-behavior.python312.v1",
     analyzer_version: "atlas.connector-declared-authority-ast-analyzer.v1",
     package_digest: packageSchemaSemanticsValidation.data.package_digest,
@@ -1181,6 +1296,10 @@ describe("MCP Builder workspace", () => {
       idempotencyKey: string | null;
     }> = [];
     const packageAuthorityBehaviorRequests: Array<{
+      body: string;
+      idempotencyKey: string | null;
+    }> = [];
+    const packageStaticDependencyRequests: Array<{
       body: string;
       idempotencyKey: string | null;
     }> = [];
@@ -1306,6 +1425,16 @@ describe("MCP Builder workspace", () => {
         });
         return Promise.resolve(
           new Response(JSON.stringify(packageAuthorityBehaviorValidation), { status: 201 }),
+        );
+      }
+      if (url.endsWith("/api/v1/connectors/package-static-dependency-analyses")) {
+        const headers = new Headers(init?.headers);
+        packageStaticDependencyRequests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(
+          new Response(JSON.stringify(packageStaticDependencyAnalysis()), { status: 201 }),
         );
       }
       if (
@@ -1503,6 +1632,15 @@ describe("MCP Builder workspace", () => {
     expect(screen.getByText("authority-behavior.implementation.contract")).toBeVisible();
     expect(screen.getByText("storage.system.read")).toBeVisible();
     expect(screen.getAllByText("Not blocked").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Analyze source and dependencies" })).toBeVisible();
+    fireEvent.click(screen.getByLabelText(/I am the independent static analyst/i));
+    fireEvent.click(screen.getByRole("button", { name: "Analyze source and dependencies" }));
+
+    expect(
+      await screen.findByText(packageStaticDependencyAnalysis().data.analysis_id),
+    ).toBeVisible();
+    expect(screen.getByText("IMMUTABLE STATIC DEPENDENCY REPORT")).toBeVisible();
+    expect(screen.getByText("static-dependency.metadata.hygiene")).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|execute|register|enable/i })).not.toBeInTheDocument();
     expect(requests).toHaveLength(1);
     expect(designRequests).toHaveLength(1);
@@ -1518,6 +1656,7 @@ describe("MCP Builder workspace", () => {
     expect(packageContentPolicyRequests).toHaveLength(1);
     expect(packageSchemaSemanticsRequests).toHaveLength(1);
     expect(packageAuthorityBehaviorRequests).toHaveLength(1);
+    expect(packageStaticDependencyRequests).toHaveLength(1);
     expect(requests[0]?.idempotencyKey).toBe("mcp-builder.mcp-builder-ui-001");
     const body = JSON.parse(requests[0]?.body ?? "{}") as Record<string, unknown>;
     expect(body.source_document).toBe(source);
@@ -1741,6 +1880,24 @@ describe("MCP Builder workspace", () => {
     expect(packageAuthorityBehaviorBody.acknowledged_static_analysis_limitations).toBe(true);
     expect(packageAuthorityBehaviorBody).not.toHaveProperty("source_code");
     expect(packageAuthorityBehaviorBody).not.toHaveProperty("execute");
+    expect(packageStaticDependencyRequests[0]?.idempotencyKey).toBe(
+      "connector-static-dependency.mcp-builder-ui-001",
+    );
+    const packageStaticDependencyBody = JSON.parse(
+      packageStaticDependencyRequests[0]?.body ?? "{}",
+    ) as Record<string, unknown>;
+    expect(packageStaticDependencyBody.source_authority_behavior_validation_id).toBe(
+      packageAuthorityBehaviorValidation.data.validation_id,
+    );
+    expect(packageStaticDependencyBody.source_authority_behavior_validation_digest).toBe(
+      packageAuthorityBehaviorValidation.data.canonical_digest,
+    );
+    expect(
+      packageStaticDependencyBody.acknowledged_offline_static_dependency_limitations,
+    ).toBe(true);
+    expect(packageStaticDependencyBody).not.toHaveProperty("source_code");
+    expect(packageStaticDependencyBody).not.toHaveProperty("dependencies");
+    expect(packageStaticDependencyBody).not.toHaveProperty("execute");
   }, 15_000);
 
   it("verifies the downloaded candidate archive against immutable evidence", async () => {
