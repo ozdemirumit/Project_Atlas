@@ -354,6 +354,22 @@ class PackageSchemaSemanticsValidationService:
     async def close(self) -> None:
         await self._repository.close()
 
+    @property
+    def repository(self) -> PackageSchemaSemanticsValidationRepository:
+        return self._repository
+
+    @property
+    def inventory_source(self) -> SchemaSemanticsInventorySource:
+        return self._inventory_source
+
+    @property
+    def acquisition_source(self) -> SchemaSemanticsAcquisitionSource:
+        return self._acquisition_source
+
+    @property
+    def archive_source(self) -> SchemaSemanticsArchiveSource:
+        return self._archive_source
+
     @staticmethod
     def _strict_object(raw: bytes | None, label: str) -> dict[str, Any]:
         if raw is None or len(raw) > 65_536:

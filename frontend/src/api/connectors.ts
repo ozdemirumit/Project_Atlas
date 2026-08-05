@@ -351,6 +351,106 @@ export type ConnectorPackageSchemaSemanticsValidation = {
   reused: boolean;
 };
 
+export type ConnectorPackageAuthorityBehaviorValidation = {
+  validation_id: string;
+  schema_version: "atlas.connector-package-authority-behavior-validation.v1";
+  version: 1;
+  lifecycle: "validating";
+  outcome: "passed" | "failed";
+  source_schema_semantics_validation_id: string;
+  source_schema_semantics_validation_digest: string;
+  source_content_policy_scan_id: string;
+  source_inventory_id: string;
+  source_validation_id: string;
+  source_acquisition_id: string;
+  source_handoff_id: string;
+  source_project_id: string;
+  source_acquired_by: string;
+  source_manifest_validated_by: string;
+  source_inventoried_by: string;
+  source_content_scanned_by: string;
+  source_schema_validated_by: string;
+  source_custodied_by: string;
+  source_domain_reviewed_by: string;
+  source_security_reviewed_by: string;
+  source_lab_operated_by: string;
+  organization_id: string;
+  environment_id: string;
+  validated_by: string;
+  validation_profile: "atlas.connector-authority-behavior.python312.v1";
+  analyzer_version: "atlas.connector-declared-authority-ast-analyzer.v1";
+  package_digest: string;
+  package_size_bytes: number;
+  inventory_digest: string;
+  semantic_validation_digest: string;
+  capabilities: Array<{
+    capability_id: string;
+    declared_class: string;
+    required_permission: string;
+    module_path: string;
+    source_digest: string;
+    observed_categories: Array<
+      | "declaration"
+      | "read"
+      | "mutation"
+      | "network"
+      | "process"
+      | "filesystem"
+      | "dynamic_execution"
+      | "ambiguous"
+    >;
+    network_call_count: number;
+    mutation_call_count: number;
+    declaration_matches: boolean;
+    permission_matches: boolean;
+    behavior_compatible: boolean;
+    statically_resolved: boolean;
+  }>;
+  capability_set_digest: string;
+  findings: Array<{
+    rule_code: string;
+    category: string;
+    severity: "error";
+    relative_path: string;
+    line_number: number;
+    evidence_fingerprint: string;
+    summary: string;
+    remediation: string;
+  }>;
+  finding_set_digest: string;
+  behavior_validation_digest: string;
+  checks: ConnectorPackageValidation["checks"];
+  limitations: string[];
+  promotion_blocked: boolean;
+  canonical_digest: string;
+  validated_at: string;
+  secret_content_scan_completed: true;
+  prohibited_content_scan_completed: true;
+  schema_semantic_validation_completed: true;
+  permission_behavior_validation_completed: true;
+  vulnerability_scan_completed: false;
+  malware_scan_completed: false;
+  license_scan_completed: false;
+  static_code_validation_completed: false;
+  contract_validation_completed: false;
+  runner_validation_completed: false;
+  lab_validation_completed: false;
+  package_signed: false;
+  publisher_attested: false;
+  connector_rejected: false;
+  connector_registered: false;
+  connector_approved: false;
+  connector_installed: false;
+  connector_enabled: false;
+  target_configured: false;
+  credentials_resolved: false;
+  runtime_trust_granted: false;
+  execution_authorized: false;
+  deployment_approved: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -671,6 +771,136 @@ function isSchemaSemanticsFinding(value: unknown): boolean {
     value.evidence_fingerprint.length === 64 &&
     typeof value.summary === "string" &&
     typeof value.remediation === "string"
+  );
+}
+
+function isCapabilityBehaviorSummary(value: unknown): boolean {
+  const categories = [
+    "declaration",
+    "read",
+    "mutation",
+    "network",
+    "process",
+    "filesystem",
+    "dynamic_execution",
+    "ambiguous",
+  ];
+  return (
+    isRecord(value) &&
+    typeof value.capability_id === "string" &&
+    typeof value.declared_class === "string" &&
+    typeof value.required_permission === "string" &&
+    typeof value.module_path === "string" &&
+    typeof value.source_digest === "string" &&
+    value.source_digest.length === 64 &&
+    isStringArray(value.observed_categories) &&
+    value.observed_categories.length > 0 &&
+    value.observed_categories.every((category) => categories.includes(category)) &&
+    typeof value.network_call_count === "number" &&
+    typeof value.mutation_call_count === "number" &&
+    typeof value.declaration_matches === "boolean" &&
+    typeof value.permission_matches === "boolean" &&
+    typeof value.behavior_compatible === "boolean" &&
+    typeof value.statically_resolved === "boolean"
+  );
+}
+
+function isAuthorityBehaviorFinding(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.rule_code === "string" &&
+    typeof value.category === "string" &&
+    value.severity === "error" &&
+    typeof value.relative_path === "string" &&
+    typeof value.line_number === "number" &&
+    typeof value.evidence_fingerprint === "string" &&
+    value.evidence_fingerprint.length === 64 &&
+    typeof value.summary === "string" &&
+    typeof value.remediation === "string"
+  );
+}
+
+function isSafeAuthorityBehaviorValidation(
+  value: unknown,
+): value is { data: ConnectorPackageAuthorityBehaviorValidation } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const report = value.data;
+  const capabilities: unknown[] = Array.isArray(report.capabilities)
+    ? report.capabilities
+    : [];
+  const findings: unknown[] = Array.isArray(report.findings) ? report.findings : [];
+  const checks: unknown[] = Array.isArray(report.checks) ? report.checks : [];
+  const sourceActors = [
+    report.source_acquired_by,
+    report.source_manifest_validated_by,
+    report.source_inventoried_by,
+    report.source_content_scanned_by,
+    report.source_schema_validated_by,
+    report.source_custodied_by,
+    report.source_domain_reviewed_by,
+    report.source_security_reviewed_by,
+    report.source_lab_operated_by,
+  ];
+  const noAuthority = [
+    report.vulnerability_scan_completed,
+    report.malware_scan_completed,
+    report.license_scan_completed,
+    report.static_code_validation_completed,
+    report.contract_validation_completed,
+    report.runner_validation_completed,
+    report.lab_validation_completed,
+    report.package_signed,
+    report.publisher_attested,
+    report.connector_rejected,
+    report.connector_registered,
+    report.connector_approved,
+    report.connector_installed,
+    report.connector_enabled,
+    report.target_configured,
+    report.credentials_resolved,
+    report.runtime_trust_granted,
+    report.execution_authorized,
+    report.deployment_approved,
+    report.infrastructure_mutation_performed,
+  ];
+  return (
+    report.schema_version === "atlas.connector-package-authority-behavior-validation.v1" &&
+    report.version === 1 &&
+    report.lifecycle === "validating" &&
+    (report.outcome === "passed" || report.outcome === "failed") &&
+    report.promotion_blocked === (report.outcome === "failed") &&
+    report.validation_profile === "atlas.connector-authority-behavior.python312.v1" &&
+    report.analyzer_version === "atlas.connector-declared-authority-ast-analyzer.v1" &&
+    report.secret_content_scan_completed === true &&
+    report.prohibited_content_scan_completed === true &&
+    report.schema_semantic_validation_completed === true &&
+    report.permission_behavior_validation_completed === true &&
+    typeof report.validated_by === "string" &&
+    sourceActors.every((actor) => typeof actor === "string") &&
+    !sourceActors.includes(report.validated_by) &&
+    typeof report.package_digest === "string" &&
+    report.package_digest.length === 64 &&
+    typeof report.inventory_digest === "string" &&
+    report.inventory_digest.length === 64 &&
+    typeof report.semantic_validation_digest === "string" &&
+    report.semantic_validation_digest.length === 64 &&
+    typeof report.capability_set_digest === "string" &&
+    report.capability_set_digest.length === 64 &&
+    typeof report.finding_set_digest === "string" &&
+    report.finding_set_digest.length === 64 &&
+    typeof report.behavior_validation_digest === "string" &&
+    report.behavior_validation_digest.length === 64 &&
+    typeof report.canonical_digest === "string" &&
+    report.canonical_digest.length === 64 &&
+    capabilities.length > 0 &&
+    capabilities.every(isCapabilityBehaviorSummary) &&
+    findings.length <= 500 &&
+    findings.every(isAuthorityBehaviorFinding) &&
+    checks.length === 5 &&
+    checks.every(isValidationCheck) &&
+    isStringArray(report.limitations) &&
+    report.limitations.length > 0 &&
+    noAuthority.every((flag) => flag === false)
   );
 }
 
@@ -1061,6 +1291,59 @@ export async function validateConnectorPackageSchemaSemantics(
     report.content_scan_digest !== scan.content_scan_digest
   ) {
     throw new Error("Schema semantics report does not match the exact content-policy scan");
+  }
+  return payload;
+}
+
+export async function validateConnectorPackageAuthorityBehavior(
+  source: ConnectorPackageSchemaSemanticsValidation,
+) {
+  if (source.outcome !== "passed" || source.promotion_blocked) {
+    throw new Error("Only a passed schema semantics report can receive behavior validation");
+  }
+  const response = await apiFetch(
+    "/api/v1/connectors/package-authority-behavior-validations",
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": `connector-authority-behavior.${crypto.randomUUID()}`,
+      },
+      body: JSON.stringify({
+        schema_version: "atlas.connector-package-authority-behavior-validation-request.v1",
+        source_schema_semantics_validation_id: source.validation_id,
+        source_schema_semantics_validation_digest: source.canonical_digest,
+        package_digest: source.package_digest,
+        validation_profile: "atlas.connector-authority-behavior.python312.v1",
+        acknowledged_static_analysis_limitations: true,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Connector package authority behavior validation failed with ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  if (!isSafeAuthorityBehaviorValidation(payload)) {
+    throw new Error("Connector registry returned unsafe authority behavior evidence");
+  }
+  const report = payload.data;
+  if (
+    report.source_schema_semantics_validation_id !== source.validation_id ||
+    report.source_schema_semantics_validation_digest !== source.canonical_digest ||
+    report.source_content_policy_scan_id !== source.source_content_policy_scan_id ||
+    report.source_inventory_id !== source.source_inventory_id ||
+    report.source_validation_id !== source.source_validation_id ||
+    report.source_acquisition_id !== source.source_acquisition_id ||
+    report.source_schema_validated_by !== source.validated_by ||
+    report.organization_id !== source.organization_id ||
+    report.environment_id !== source.environment_id ||
+    report.package_digest !== source.package_digest ||
+    report.package_size_bytes !== source.package_size_bytes ||
+    report.inventory_digest !== source.inventory_digest ||
+    report.semantic_validation_digest !== source.semantic_validation_digest
+  ) {
+    throw new Error("Authority behavior report does not match the exact schema validation");
   }
   return payload;
 }
