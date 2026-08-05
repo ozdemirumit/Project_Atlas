@@ -315,7 +315,7 @@ const packageStaticDependencyAnalysis = () => ({
     source_lab_operated_by: packageAuthorityBehaviorValidation.data.source_lab_operated_by,
     organization_id: packageAuthorityBehaviorValidation.data.organization_id,
     environment_id: packageAuthorityBehaviorValidation.data.environment_id,
-    analyzed_by: identity.data.subject_id,
+    analyzed_by: "subject.static-dependency.analyst",
     analysis_profile: "atlas.connector-static-dependency.python312.v1",
     analyzer_version: "atlas.connector-static-dependency-analyzer.v1",
     package_digest: packageAuthorityBehaviorValidation.data.package_digest,
@@ -371,6 +371,131 @@ const packageStaticDependencyAnalysis = () => ({
     permission_behavior_validation_completed: true,
     static_code_validation_completed: true,
     vulnerability_scan_completed: false,
+    malware_scan_completed: false,
+    license_scan_completed: false,
+    contract_validation_completed: false,
+    runner_validation_completed: false,
+    lab_validation_completed: false,
+    package_signed: false,
+    publisher_attested: false,
+    connector_rejected: false,
+    connector_registered: false,
+    connector_approved: false,
+    connector_installed: false,
+    connector_enabled: false,
+    target_configured: false,
+    credentials_resolved: false,
+    runtime_trust_granted: false,
+    execution_authorized: false,
+    deployment_approved: false,
+    infrastructure_mutation_performed: false,
+    reused: false,
+  },
+});
+
+const packageVulnerabilityAnalysis = () => ({
+  data: {
+    analysis_id: "connector-vulnerability-analysis.aaaaaaaaaaaaaaaaaaaaaaaa",
+    schema_version: "atlas.connector-package-vulnerability-analysis.v1",
+    version: 1,
+    lifecycle: "validating",
+    outcome: "passed",
+    source_static_dependency_analysis_id: packageStaticDependencyAnalysis().data.analysis_id,
+    source_static_dependency_analysis_digest:
+      packageStaticDependencyAnalysis().data.canonical_digest,
+    source_authority_behavior_validation_id:
+      packageStaticDependencyAnalysis().data.source_authority_behavior_validation_id,
+    source_schema_semantics_validation_id:
+      packageStaticDependencyAnalysis().data.source_schema_semantics_validation_id,
+    source_content_policy_scan_id:
+      packageStaticDependencyAnalysis().data.source_content_policy_scan_id,
+    source_inventory_id: packageStaticDependencyAnalysis().data.source_inventory_id,
+    source_validation_id: packageStaticDependencyAnalysis().data.source_validation_id,
+    source_acquisition_id: packageStaticDependencyAnalysis().data.source_acquisition_id,
+    source_handoff_id: packageStaticDependencyAnalysis().data.source_handoff_id,
+    source_project_id: packageStaticDependencyAnalysis().data.source_project_id,
+    source_acquired_by: packageStaticDependencyAnalysis().data.source_acquired_by,
+    source_manifest_validated_by:
+      packageStaticDependencyAnalysis().data.source_manifest_validated_by,
+    source_inventoried_by: packageStaticDependencyAnalysis().data.source_inventoried_by,
+    source_content_scanned_by:
+      packageStaticDependencyAnalysis().data.source_content_scanned_by,
+    source_schema_validated_by:
+      packageStaticDependencyAnalysis().data.source_schema_validated_by,
+    source_authority_validated_by:
+      packageStaticDependencyAnalysis().data.source_authority_validated_by,
+    source_static_analyzed_by: packageStaticDependencyAnalysis().data.analyzed_by,
+    source_custodied_by: packageStaticDependencyAnalysis().data.source_custodied_by,
+    source_domain_reviewed_by:
+      packageStaticDependencyAnalysis().data.source_domain_reviewed_by,
+    source_security_reviewed_by:
+      packageStaticDependencyAnalysis().data.source_security_reviewed_by,
+    source_lab_operated_by: packageStaticDependencyAnalysis().data.source_lab_operated_by,
+    organization_id: packageStaticDependencyAnalysis().data.organization_id,
+    environment_id: packageStaticDependencyAnalysis().data.environment_id,
+    analyzed_by: identity.data.subject_id,
+    analysis_profile: "atlas.connector-vulnerability.python312.v1",
+    analyzer_version: "atlas.connector-vulnerability-analyzer.v1",
+    package_digest: packageStaticDependencyAnalysis().data.package_digest,
+    package_size_bytes: packageStaticDependencyAnalysis().data.package_size_bytes,
+    inventory_digest: packageStaticDependencyAnalysis().data.inventory_digest,
+    advisory_snapshot: {
+      snapshot_id: "advisory-snapshot.test.v1",
+      snapshot_version: "snapshot.test.v1",
+      snapshot_digest: "a".repeat(64),
+      signing_key_id: "signing-key.test.v1",
+      issued_at: "2026-08-04T00:00:00Z",
+      expires_at: "2026-09-04T00:00:00Z",
+      ecosystem: "pypi",
+      record_count: 24,
+      coverage_complete: true,
+      fresh: true,
+    },
+    subject_summary: {
+      runtime_dependency_count: 0,
+      transitive_dependency_count: 0,
+      build_dependency_count: 1,
+      scanned_subject_count: 1,
+      affected_subject_count: 0,
+      advisory_match_count: 0,
+      withdrawn_record_count: 0,
+      low_count: 0,
+      medium_count: 0,
+      high_count: 0,
+      critical_count: 0,
+      dependency_set_digest:
+        packageStaticDependencyAnalysis().data.dependency_summary.dependency_set_digest,
+    },
+    findings: [],
+    finding_set_digest: "b".repeat(64),
+    analysis_digest: "c".repeat(64),
+    checks: [
+      "vulnerability.source.accepted",
+      "vulnerability.archive.contract",
+      "vulnerability.dataset.trusted",
+      "vulnerability.dataset.coverage",
+      "vulnerability.subjects.complete",
+      "vulnerability.advisories.clear",
+    ].map((code) => ({
+      code,
+      state: "passed",
+      severity: "informational",
+      summary: `Bounded ${code} evidence completed.`,
+      remediation: "Resolve blocking evidence before retrying.",
+    })),
+    limitations: [
+      "This report covers represented dependencies against one advisory snapshot only.",
+      "No package or infrastructure authority was granted.",
+    ],
+    promotion_blocked: false,
+    canonical_digest: "d".repeat(64),
+    analyzed_at: "2026-08-05T18:00:00Z",
+    secret_content_scan_completed: true,
+    prohibited_content_scan_completed: true,
+    schema_semantic_validation_completed: true,
+    permission_behavior_validation_completed: true,
+    static_code_validation_completed: true,
+    vulnerability_scan_completed: true,
     malware_scan_completed: false,
     license_scan_completed: false,
     contract_validation_completed: false,
@@ -1303,6 +1428,10 @@ describe("MCP Builder workspace", () => {
       body: string;
       idempotencyKey: string | null;
     }> = [];
+    const packageVulnerabilityRequests: Array<{
+      body: string;
+      idempotencyKey: string | null;
+    }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -1435,6 +1564,16 @@ describe("MCP Builder workspace", () => {
         });
         return Promise.resolve(
           new Response(JSON.stringify(packageStaticDependencyAnalysis()), { status: 201 }),
+        );
+      }
+      if (url.endsWith("/api/v1/connectors/package-vulnerability-analyses")) {
+        const headers = new Headers(init?.headers);
+        packageVulnerabilityRequests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(
+          new Response(JSON.stringify(packageVulnerabilityAnalysis()), { status: 201 }),
         );
       }
       if (
@@ -1641,6 +1780,16 @@ describe("MCP Builder workspace", () => {
     ).toBeVisible();
     expect(screen.getByText("IMMUTABLE STATIC DEPENDENCY REPORT")).toBeVisible();
     expect(screen.getByText("static-dependency.metadata.hygiene")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Analyze known vulnerabilities" })).toBeVisible();
+    fireEvent.click(screen.getByLabelText(/I am the independent vulnerability analyst/i));
+    fireEvent.click(screen.getByRole("button", { name: "Analyze known vulnerabilities" }));
+
+    expect(
+      await screen.findByText(packageVulnerabilityAnalysis().data.analysis_id),
+    ).toBeVisible();
+    expect(screen.getByText("IMMUTABLE VULNERABILITY REPORT")).toBeVisible();
+    expect(screen.getByText("vulnerability.dataset.trusted")).toBeVisible();
+    expect(screen.getByText("Current and complete")).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|execute|register|enable/i })).not.toBeInTheDocument();
     expect(requests).toHaveLength(1);
     expect(designRequests).toHaveLength(1);
@@ -1657,6 +1806,7 @@ describe("MCP Builder workspace", () => {
     expect(packageSchemaSemanticsRequests).toHaveLength(1);
     expect(packageAuthorityBehaviorRequests).toHaveLength(1);
     expect(packageStaticDependencyRequests).toHaveLength(1);
+    expect(packageVulnerabilityRequests).toHaveLength(1);
     expect(requests[0]?.idempotencyKey).toBe("mcp-builder.mcp-builder-ui-001");
     const body = JSON.parse(requests[0]?.body ?? "{}") as Record<string, unknown>;
     expect(body.source_document).toBe(source);
@@ -1898,6 +2048,23 @@ describe("MCP Builder workspace", () => {
     expect(packageStaticDependencyBody).not.toHaveProperty("source_code");
     expect(packageStaticDependencyBody).not.toHaveProperty("dependencies");
     expect(packageStaticDependencyBody).not.toHaveProperty("execute");
+    expect(packageVulnerabilityRequests[0]?.idempotencyKey).toBe(
+      "connector-vulnerability.mcp-builder-ui-001",
+    );
+    const packageVulnerabilityBody = JSON.parse(
+      packageVulnerabilityRequests[0]?.body ?? "{}",
+    ) as Record<string, unknown>;
+    expect(packageVulnerabilityBody.source_static_dependency_analysis_id).toBe(
+      packageStaticDependencyAnalysis().data.analysis_id,
+    );
+    expect(packageVulnerabilityBody.source_static_dependency_analysis_digest).toBe(
+      packageStaticDependencyAnalysis().data.canonical_digest,
+    );
+    expect(packageVulnerabilityBody.acknowledged_offline_advisory_limitations).toBe(true);
+    expect(packageVulnerabilityBody).not.toHaveProperty("snapshot_id");
+    expect(packageVulnerabilityBody).not.toHaveProperty("dependencies");
+    expect(packageVulnerabilityBody).not.toHaveProperty("versions");
+    expect(packageVulnerabilityBody).not.toHaveProperty("execute");
   }, 15_000);
 
   it("verifies the downloaded candidate archive against immutable evidence", async () => {

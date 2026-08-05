@@ -548,6 +548,115 @@ export type ConnectorPackageStaticDependencyAnalysis = {
   reused: boolean;
 };
 
+export type ConnectorPackageVulnerabilityAnalysis = {
+  analysis_id: string;
+  schema_version: "atlas.connector-package-vulnerability-analysis.v1";
+  version: 1;
+  lifecycle: "validating";
+  outcome: "passed" | "failed";
+  source_static_dependency_analysis_id: string;
+  source_static_dependency_analysis_digest: string;
+  source_authority_behavior_validation_id: string;
+  source_schema_semantics_validation_id: string;
+  source_content_policy_scan_id: string;
+  source_inventory_id: string;
+  source_validation_id: string;
+  source_acquisition_id: string;
+  source_handoff_id: string;
+  source_project_id: string;
+  source_acquired_by: string;
+  source_manifest_validated_by: string;
+  source_inventoried_by: string;
+  source_content_scanned_by: string;
+  source_schema_validated_by: string;
+  source_authority_validated_by: string;
+  source_static_analyzed_by: string;
+  source_custodied_by: string;
+  source_domain_reviewed_by: string;
+  source_security_reviewed_by: string;
+  source_lab_operated_by: string;
+  organization_id: string;
+  environment_id: string;
+  analyzed_by: string;
+  analysis_profile: "atlas.connector-vulnerability.python312.v1";
+  analyzer_version: "atlas.connector-vulnerability-analyzer.v1";
+  package_digest: string;
+  package_size_bytes: number;
+  inventory_digest: string;
+  advisory_snapshot: {
+    snapshot_id: string;
+    snapshot_version: string;
+    snapshot_digest: string;
+    signing_key_id: string;
+    issued_at: string;
+    expires_at: string;
+    ecosystem: "pypi";
+    record_count: number;
+    coverage_complete: boolean;
+    fresh: boolean;
+  };
+  subject_summary: {
+    runtime_dependency_count: number;
+    transitive_dependency_count: number;
+    build_dependency_count: number;
+    scanned_subject_count: number;
+    affected_subject_count: number;
+    advisory_match_count: number;
+    withdrawn_record_count: number;
+    low_count: number;
+    medium_count: number;
+    high_count: number;
+    critical_count: number;
+    dependency_set_digest: string;
+  };
+  findings: Array<{
+    advisory_id: string;
+    severity: "low" | "medium" | "high" | "critical";
+    dependency_scope: "runtime" | "transitive" | "build" | "dataset";
+    subject_fingerprint: string;
+    summary: string;
+    remediation: string;
+  }>;
+  finding_set_digest: string;
+  analysis_digest: string;
+  checks: Array<{
+    code: string;
+    state: "passed" | "failed";
+    severity: "informational" | "error";
+    summary: string;
+    remediation: string;
+  }>;
+  limitations: string[];
+  promotion_blocked: boolean;
+  canonical_digest: string;
+  analyzed_at: string;
+  secret_content_scan_completed: true;
+  prohibited_content_scan_completed: true;
+  schema_semantic_validation_completed: true;
+  permission_behavior_validation_completed: true;
+  static_code_validation_completed: true;
+  vulnerability_scan_completed: true;
+  malware_scan_completed: false;
+  license_scan_completed: false;
+  contract_validation_completed: false;
+  runner_validation_completed: false;
+  lab_validation_completed: false;
+  package_signed: false;
+  publisher_attested: false;
+  connector_rejected: false;
+  connector_registered: false;
+  connector_approved: false;
+  connector_installed: false;
+  connector_enabled: false;
+  target_configured: false;
+  credentials_resolved: false;
+  runtime_trust_granted: false;
+  execution_authorized: false;
+  deployment_approved: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -1104,6 +1213,148 @@ function isSafeStaticDependencyAnalysis(
   );
 }
 
+function isVulnerabilityFinding(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.advisory_id === "string" &&
+    ["low", "medium", "high", "critical"].includes(String(value.severity)) &&
+    ["runtime", "transitive", "build", "dataset"].includes(
+      String(value.dependency_scope),
+    ) &&
+    typeof value.subject_fingerprint === "string" &&
+    value.subject_fingerprint.length === 64 &&
+    typeof value.summary === "string" &&
+    typeof value.remediation === "string"
+  );
+}
+
+function isVulnerabilityCheck(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.code === "string" &&
+    (value.state === "passed" || value.state === "failed") &&
+    (value.severity === "informational" || value.severity === "error") &&
+    typeof value.summary === "string" &&
+    typeof value.remediation === "string"
+  );
+}
+
+function isSafeVulnerabilityAnalysis(
+  value: unknown,
+): value is { data: ConnectorPackageVulnerabilityAnalysis } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const report = value.data;
+  if (!isRecord(report.advisory_snapshot) || !isRecord(report.subject_summary)) return false;
+  const snapshot = report.advisory_snapshot;
+  const subjects = report.subject_summary;
+  const findings: unknown[] = Array.isArray(report.findings) ? report.findings : [];
+  const checks: unknown[] = Array.isArray(report.checks) ? report.checks : [];
+  const sourceActors = [
+    report.source_acquired_by,
+    report.source_manifest_validated_by,
+    report.source_inventoried_by,
+    report.source_content_scanned_by,
+    report.source_schema_validated_by,
+    report.source_authority_validated_by,
+    report.source_static_analyzed_by,
+    report.source_custodied_by,
+    report.source_domain_reviewed_by,
+    report.source_security_reviewed_by,
+    report.source_lab_operated_by,
+  ];
+  const counts = [
+    snapshot.record_count,
+    subjects.runtime_dependency_count,
+    subjects.transitive_dependency_count,
+    subjects.build_dependency_count,
+    subjects.scanned_subject_count,
+    subjects.affected_subject_count,
+    subjects.advisory_match_count,
+    subjects.withdrawn_record_count,
+    subjects.low_count,
+    subjects.medium_count,
+    subjects.high_count,
+    subjects.critical_count,
+  ];
+  const noAuthority = [
+    report.malware_scan_completed,
+    report.license_scan_completed,
+    report.contract_validation_completed,
+    report.runner_validation_completed,
+    report.lab_validation_completed,
+    report.package_signed,
+    report.publisher_attested,
+    report.connector_rejected,
+    report.connector_registered,
+    report.connector_approved,
+    report.connector_installed,
+    report.connector_enabled,
+    report.target_configured,
+    report.credentials_resolved,
+    report.runtime_trust_granted,
+    report.execution_authorized,
+    report.deployment_approved,
+    report.infrastructure_mutation_performed,
+  ];
+  return (
+    report.schema_version === "atlas.connector-package-vulnerability-analysis.v1" &&
+    report.version === 1 &&
+    report.lifecycle === "validating" &&
+    (report.outcome === "passed" || report.outcome === "failed") &&
+    report.promotion_blocked === (report.outcome === "failed") &&
+    report.analysis_profile === "atlas.connector-vulnerability.python312.v1" &&
+    report.analyzer_version === "atlas.connector-vulnerability-analyzer.v1" &&
+    report.secret_content_scan_completed === true &&
+    report.prohibited_content_scan_completed === true &&
+    report.schema_semantic_validation_completed === true &&
+    report.permission_behavior_validation_completed === true &&
+    report.static_code_validation_completed === true &&
+    report.vulnerability_scan_completed === true &&
+    typeof report.analyzed_by === "string" &&
+    sourceActors.every((actor) => typeof actor === "string") &&
+    !sourceActors.includes(report.analyzed_by) &&
+    typeof snapshot.snapshot_id === "string" &&
+    typeof snapshot.snapshot_version === "string" &&
+    typeof snapshot.snapshot_digest === "string" &&
+    snapshot.snapshot_digest.length === 64 &&
+    typeof snapshot.signing_key_id === "string" &&
+    snapshot.ecosystem === "pypi" &&
+    typeof snapshot.issued_at === "string" &&
+    typeof snapshot.expires_at === "string" &&
+    typeof snapshot.coverage_complete === "boolean" &&
+    typeof snapshot.fresh === "boolean" &&
+    counts.every((count) => typeof count === "number" && count >= 0) &&
+    subjects.scanned_subject_count ===
+      Number(subjects.runtime_dependency_count) +
+        Number(subjects.transitive_dependency_count) +
+        Number(subjects.build_dependency_count) &&
+    subjects.advisory_match_count ===
+      Number(subjects.low_count) +
+        Number(subjects.medium_count) +
+        Number(subjects.high_count) +
+        Number(subjects.critical_count) &&
+    typeof subjects.dependency_set_digest === "string" &&
+    subjects.dependency_set_digest.length === 64 &&
+    typeof report.package_digest === "string" &&
+    report.package_digest.length === 64 &&
+    typeof report.inventory_digest === "string" &&
+    report.inventory_digest.length === 64 &&
+    typeof report.finding_set_digest === "string" &&
+    report.finding_set_digest.length === 64 &&
+    typeof report.analysis_digest === "string" &&
+    report.analysis_digest.length === 64 &&
+    typeof report.canonical_digest === "string" &&
+    report.canonical_digest.length === 64 &&
+    findings.length <= 500 &&
+    findings.every(isVulnerabilityFinding) &&
+    checks.length === 6 &&
+    checks.every(isVulnerabilityCheck) &&
+    isStringArray(report.limitations) &&
+    report.limitations.length > 0 &&
+    noAuthority.every((flag) => flag === false)
+  );
+}
+
 function isSafeSchemaSemanticsValidation(
   value: unknown,
 ): value is { data: ConnectorPackageSchemaSemanticsValidation } {
@@ -1595,6 +1846,65 @@ export async function analyzeConnectorPackageStaticDependencies(
     report.inventory_digest !== source.inventory_digest
   ) {
     throw new Error("Static dependency report does not match the exact authority validation");
+  }
+  return payload;
+}
+
+export async function analyzeConnectorPackageVulnerabilities(
+  source: ConnectorPackageStaticDependencyAnalysis,
+) {
+  if (
+    source.outcome !== "passed" ||
+    source.promotion_blocked ||
+    !source.static_code_validation_completed
+  ) {
+    throw new Error("Only a passed static dependency report can receive vulnerability analysis");
+  }
+  const response = await apiFetch("/api/v1/connectors/package-vulnerability-analyses", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "Idempotency-Key": `connector-vulnerability.${crypto.randomUUID()}`,
+    },
+    body: JSON.stringify({
+      schema_version: "atlas.connector-package-vulnerability-analysis-request.v1",
+      source_static_dependency_analysis_id: source.analysis_id,
+      source_static_dependency_analysis_digest: source.canonical_digest,
+      package_digest: source.package_digest,
+      analysis_profile: "atlas.connector-vulnerability.python312.v1",
+      acknowledged_offline_advisory_limitations: true,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Connector package vulnerability analysis failed with ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  if (!isSafeVulnerabilityAnalysis(payload)) {
+    throw new Error("Connector registry returned unsafe vulnerability evidence");
+  }
+  const report = payload.data;
+  if (
+    report.source_static_dependency_analysis_id !== source.analysis_id ||
+    report.source_static_dependency_analysis_digest !== source.canonical_digest ||
+    report.source_authority_behavior_validation_id !==
+      source.source_authority_behavior_validation_id ||
+    report.source_schema_semantics_validation_id !==
+      source.source_schema_semantics_validation_id ||
+    report.source_content_policy_scan_id !== source.source_content_policy_scan_id ||
+    report.source_inventory_id !== source.source_inventory_id ||
+    report.source_validation_id !== source.source_validation_id ||
+    report.source_acquisition_id !== source.source_acquisition_id ||
+    report.source_static_analyzed_by !== source.analyzed_by ||
+    report.organization_id !== source.organization_id ||
+    report.environment_id !== source.environment_id ||
+    report.package_digest !== source.package_digest ||
+    report.package_size_bytes !== source.package_size_bytes ||
+    report.inventory_digest !== source.inventory_digest ||
+    report.subject_summary.dependency_set_digest !==
+      source.dependency_summary.dependency_set_digest
+  ) {
+    throw new Error("Vulnerability report does not match the exact static dependency analysis");
   }
   return payload;
 }
