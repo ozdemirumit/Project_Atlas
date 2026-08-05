@@ -6,12 +6,80 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-064 |
 | Title | Governed connector contract validation foundation |
-| Status | Planned |
-| Branch | Not created |
-| Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-019 |
+| Status | In Review |
+| Branch | `agent/mcp-contract-validation` |
+| Pull Request | [#76](https://github.com/ozdemirumit/Project_Atlas/pull/76) |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-020 |
 | Last Updated | 2026-08-05 |
-| Next Action | Define and accept ADR-020, then implement exact-package contract validation without runner, target, network, or runtime authority |
+| Next Action | Complete browser evidence, publish PR, pass CI, merge, and record closure evidence |
+
+### ATLAS-IMP-064 Scope Rationale
+
+- IMP-063 proves the exact package satisfies one trusted internal-distribution license policy but
+  does not prove that its manifest, schemas, generated handlers, tests, and fixtures declare one
+  internally consistent connector contract.
+- ADR-020 requires deterministic JSON, TOML, UTF-8, and Python AST inspection before untrusted
+  package code may enter an isolated runner.
+- Runner execution, runtime self-test, simulator behavior, vendor compatibility, lab, final
+  validation, approval, registration, installation, and enablement remain independent later stages.
+
+### ATLAS-IMP-064 Acceptance Criteria
+
+- Only a dedicated multi-factor human contract-validation operator in the exact organization and
+  environment can create or read a report. Every prior-stage actor, AI/service identity,
+  wrong-scope actor, and insufficient-assurance identity fails closed without evidence discovery.
+- The request accepts only the exact passed IMP-063 report with promotion unblocked and all
+  through-license completion flags, verifies every upstream digest and no-authority flag,
+  independently verifies archive bytes, and reconciles exact package and inventory evidence.
+- The request cannot upload tests or fixtures, choose a profile, set expected values, exclude
+  artifacts, or suppress findings. Platform policy selects the fixed generated-draft profile.
+- Standard parsers and Python AST inspection validate exact manifest, configuration/input/output
+  schemas, capability modules, bounded or fail-closed handlers, contract test declarations, synthetic fixtures,
+  and one-to-one capability coverage without importing or executing package code.
+- Missing, duplicate, orphaned, malformed, oversized, unsupported, changed, unexpectedly permissive, executable,
+  inconsistent, target-connected, secret-bearing, non-synthetic, or unbound artifacts fail the
+  report and block promotion.
+- Passing proves only static consistency of a quarantined generated draft. It grants no runtime
+  trust and makes no claim about handler success, mock realism, vendor behavior, or target
+  compatibility.
+- Reports expose only public rule identity, category, severity, artifact scope, safe fingerprints,
+  aggregate counts, generic summaries, and remediation. Package internals and parser details never
+  enter API, audit, logs, errors, or model context.
+- Reports are one-to-one, deterministic, immutable, idempotent, concurrency-safe,
+  audit-before-persist, and equivalent in memory and PostgreSQL. Integrity, parse, audit, or
+  persistence failure cannot fabricate success.
+- Failed validation sets `promotion_blocked=true`; either outcome preserves all through-license
+  completion and marks only `contract_validation_completed=true`. No package or infrastructure
+  state changes.
+- Strict no-store APIs require CSRF for creation, dedicated default-deny RBAC, correlation, bounded
+  schemas, safe errors, exact tenant scope, acknowledgement, and full-lineage separation of duties.
+- The Connector workspace displays safe profile, coverage, finding, limitation, lineage, and
+  promotion summaries without package internals or later-stage controls.
+- Backend/frontend coverage, one Alembic head, live authorized/denied HTTP checks, valid/invalid
+  contract fixtures, desktop and 390-pixel mobile inspection, browser logs, and GitHub CI apply.
+- This slice performs no package rewrite, build, installation, import, compilation, execution,
+  child process, network/model/secret/target access, runner/self-test/lab validation, and grants no
+  lifecycle or runtime authority.
+
+### ATLAS-IMP-064 Validation Evidence
+
+- Backend formatting and lint passed across 549 files; strict source type checking passed across
+  455 files.
+- Focused contract-validation coverage passed 4 tests; the full backend suite passed 529 tests with
+  3 expected Windows symlink skips and one Alembic head at `20260805_0036`.
+- Authorized live in-process HTTP checks returned `201` for report creation and `200` for immutable
+  report retrieval; missing CSRF returned `403`, responses were `no-store`, and payloads remained
+  minimized.
+- Memory/PostgreSQL equivalence, audit-before-persist failure, idempotency, concurrency,
+  separation-of-duties, and tampered handler/test/fixture/orphan cases passed.
+- Frontend lint and type checking passed; 36 tests and the production build passed. The existing
+  bundle-size advisory remains non-blocking.
+- Playwright/Edge inspection at 1440x1000 and 390x844 found no horizontal overflow, clipping, or
+  page exceptions in the live sign-in boundary. The unauthenticated identity probe returned the
+  expected `401`; the desktop favicon request returned a non-functional `404`. Integrated web tests
+  exercised the complete contract-validation workflow and immutable report at both responsive
+  layout semantics.
+- GitHub PR CI, merge, and main-branch CI evidence remain pending until publication.
 
 ### ATLAS-IMP-063 Scope Rationale
 

@@ -123,6 +123,7 @@ import {
   scanConnectorPackageContent,
   validateConnectorPackage,
   validateConnectorPackageAuthorityBehavior,
+  validateConnectorPackageContracts,
   validateConnectorPackageSchemaSemantics,
 } from "./api/connectors";
 import {
@@ -534,6 +535,7 @@ export function App() {
   const [builderVulnerabilityAcknowledged, setBuilderVulnerabilityAcknowledged] = useState(false);
   const [builderMalwareAcknowledged, setBuilderMalwareAcknowledged] = useState(false);
   const [builderLicenseAcknowledged, setBuilderLicenseAcknowledged] = useState(false);
+  const [builderContractAcknowledged, setBuilderContractAcknowledged] = useState(false);
   const [builderSelectedGeneratedFile, setBuilderSelectedGeneratedFile] = useState("");
   const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
     Record<string, McpBuilderDesignDecision>
@@ -597,6 +599,10 @@ export function App() {
     mutationFn: analyzeConnectorPackageLicenses,
     onSuccess: () => setBuilderLicenseAcknowledged(false),
   });
+  const builderContractMutation = useMutation({
+    mutationFn: validateConnectorPackageContracts,
+    onSuccess: () => setBuilderContractAcknowledged(false),
+  });
   const builderCandidateArchiveMutation = useMutation({
     mutationFn: downloadMcpBuilderCandidateArchive,
     onSuccess: ({ blob, filename }) => {
@@ -623,6 +629,7 @@ export function App() {
     builderVulnerabilityMutation.reset();
     builderMalwareMutation.reset();
     builderLicenseMutation.reset();
+    builderContractMutation.reset();
     setBuilderCandidateHandoffAcknowledged(false);
     setBuilderPackageAcquisitionAcknowledged(false);
     setBuilderPackageValidationAcknowledged(false);
@@ -634,6 +641,7 @@ export function App() {
     setBuilderVulnerabilityAcknowledged(false);
     setBuilderMalwareAcknowledged(false);
     setBuilderLicenseAcknowledged(false);
+    setBuilderContractAcknowledged(false);
   };
   const builderPackageValidationSeparated = Boolean(
     identity &&
@@ -769,6 +777,26 @@ export function App() {
         builderMalwareMutation.data.data.source_domain_reviewed_by,
         builderMalwareMutation.data.data.source_security_reviewed_by,
         builderMalwareMutation.data.data.source_lab_operated_by,
+      ].includes(identity.subject_id),
+  );
+  const builderContractSeparated = Boolean(
+    identity &&
+      builderLicenseMutation.data?.data &&
+      ![
+        builderLicenseMutation.data.data.analyzed_by,
+        builderLicenseMutation.data.data.source_malware_analyzed_by,
+        builderLicenseMutation.data.data.source_vulnerability_analyzed_by,
+        builderLicenseMutation.data.data.source_static_analyzed_by,
+        builderLicenseMutation.data.data.source_authority_validated_by,
+        builderLicenseMutation.data.data.source_schema_validated_by,
+        builderLicenseMutation.data.data.source_content_scanned_by,
+        builderLicenseMutation.data.data.source_inventoried_by,
+        builderLicenseMutation.data.data.source_manifest_validated_by,
+        builderLicenseMutation.data.data.source_acquired_by,
+        builderLicenseMutation.data.data.source_custodied_by,
+        builderLicenseMutation.data.data.source_domain_reviewed_by,
+        builderLicenseMutation.data.data.source_security_reviewed_by,
+        builderLicenseMutation.data.data.source_lab_operated_by,
       ].includes(identity.subject_id),
   );
   const builderLabValidationMutation = useMutation({
@@ -7012,6 +7040,234 @@ export function App() {
                                                                     <strong>License policy boundaries</strong>
                                                                     <ul>
                                                                       {builderLicenseMutation.data.data.limitations.map(
+                                                                        (limitation) => (
+                                                                          <li key={limitation}>{limitation}</li>
+                                                                        ),
+                                                                      )}
+                                                                    </ul>
+                                                                  </div>
+                                                                </div>
+                                                              )}
+                                                              {builderLicenseMutation.data?.data
+                                                                .outcome === "passed" &&
+                                                                !builderContractSeparated &&
+                                                                !builderContractMutation.data && (
+                                                                  <div
+                                                                    className="workspace-message error-state"
+                                                                    role="alert"
+                                                                  >
+                                                                    <UserX size={20} />
+                                                                    <div>
+                                                                      <h3>
+                                                                        Independent contract validator required
+                                                                      </h3>
+                                                                      <p>
+                                                                        License and prior package actors cannot
+                                                                        validate this contract. Continue with a
+                                                                        different authorized MFA session.
+                                                                      </p>
+                                                                    </div>
+                                                                  </div>
+                                                                )}
+                                                              {builderLicenseMutation.data?.data
+                                                                .outcome === "passed" &&
+                                                                builderContractSeparated &&
+                                                                !builderContractMutation.data && (
+                                                                  <section className="mcp-builder-validation">
+                                                                    <div className="section-heading">
+                                                                      <div>
+                                                                        <p className="eyebrow">
+                                                                          STATIC CONTRACT VALIDATION
+                                                                        </p>
+                                                                        <h3>
+                                                                          Validate package contract bindings
+                                                                        </h3>
+                                                                        <p>
+                                                                          Parse the exact manifest, schemas,
+                                                                          handlers, tests, and synthetic fixtures
+                                                                          without importing or executing package
+                                                                          code.
+                                                                        </p>
+                                                                      </div>
+                                                                      <FileCheck2 size={24} />
+                                                                    </div>
+                                                                    <label className="approval-check">
+                                                                      <input
+                                                                        type="checkbox"
+                                                                        checked={builderContractAcknowledged}
+                                                                        onChange={(event) =>
+                                                                          setBuilderContractAcknowledged(
+                                                                            event.target.checked,
+                                                                          )
+                                                                        }
+                                                                      />
+                                                                      <span>
+                                                                        I am the independent contract validator.
+                                                                        This stage proves static consistency only
+                                                                        and grants no execution authority.
+                                                                      </span>
+                                                                    </label>
+                                                                    <button
+                                                                      className="primary-button"
+                                                                      type="button"
+                                                                      disabled={
+                                                                        !builderContractAcknowledged ||
+                                                                        builderContractMutation.isPending
+                                                                      }
+                                                                      onClick={() => {
+                                                                        const report =
+                                                                          builderLicenseMutation.data?.data;
+                                                                        if (report) {
+                                                                          builderContractMutation.mutate(report);
+                                                                        }
+                                                                      }}
+                                                                    >
+                                                                      {builderContractMutation.isPending ? (
+                                                                        <RefreshCw
+                                                                          className="spin"
+                                                                          size={16}
+                                                                        />
+                                                                      ) : (
+                                                                        <FileCheck2 size={16} />
+                                                                      )}
+                                                                      Validate contracts
+                                                                    </button>
+                                                                  </section>
+                                                                )}
+                                                              {builderContractMutation.isError && (
+                                                                <div
+                                                                  className="workspace-message error-state"
+                                                                  role="alert"
+                                                                >
+                                                                  <AlertTriangle size={20} />
+                                                                  <div>
+                                                                    <h3>Contract validation unavailable</h3>
+                                                                    <p>
+                                                                      Exact lineage, archive integrity, or a
+                                                                      required contract family did not reconcile.
+                                                                    </p>
+                                                                  </div>
+                                                                </div>
+                                                              )}
+                                                              {builderContractMutation.data?.data && (
+                                                                <div className="mcp-builder-validation">
+                                                                  <div className="section-heading">
+                                                                    <div>
+                                                                      <p className="eyebrow">
+                                                                        IMMUTABLE CONTRACT REPORT
+                                                                      </p>
+                                                                      <strong>
+                                                                        {
+                                                                          builderContractMutation.data.data
+                                                                            .validation_id
+                                                                        }
+                                                                      </strong>
+                                                                      <code>
+                                                                        {
+                                                                          builderContractMutation.data.data
+                                                                            .canonical_digest
+                                                                        }
+                                                                      </code>
+                                                                    </div>
+                                                                    <span
+                                                                      className={`state-badge ${
+                                                                        builderContractMutation.data.data
+                                                                          .outcome === "passed"
+                                                                          ? "healthy"
+                                                                          : "critical"
+                                                                      }`}
+                                                                    >
+                                                                      {builderContractMutation.data.data.outcome ===
+                                                                      "passed" ? (
+                                                                        <CheckCircle2 size={14} />
+                                                                      ) : (
+                                                                        <AlertTriangle size={14} />
+                                                                      )}
+                                                                      {
+                                                                        builderContractMutation.data.data.outcome
+                                                                      }
+                                                                    </span>
+                                                                  </div>
+                                                                  <div className="mcp-builder-facts">
+                                                                    <div>
+                                                                      <span>Capabilities</span>
+                                                                      <strong>
+                                                                        {builderContractMutation.data.data.coverage.capability_count.toLocaleString()}
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Covered</span>
+                                                                      <strong>
+                                                                        {builderContractMutation.data.data.coverage.covered_capability_count.toLocaleString()}
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Contract tests</span>
+                                                                      <strong>
+                                                                        {builderContractMutation.data.data.coverage.contract_test_count.toLocaleString()}
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Orphan artifacts</span>
+                                                                      <strong>
+                                                                        {builderContractMutation.data.data.coverage.orphan_artifact_count.toLocaleString()}
+                                                                      </strong>
+                                                                    </div>
+                                                                  </div>
+                                                                  <div className="mcp-builder-validation-checks">
+                                                                    {builderContractMutation.data.data.checks.map(
+                                                                      (check) => (
+                                                                        <article
+                                                                          key={check.code}
+                                                                          data-state={check.state}
+                                                                        >
+                                                                          {check.state === "passed" ? (
+                                                                            <CheckCircle2 size={16} />
+                                                                          ) : (
+                                                                            <AlertTriangle size={16} />
+                                                                          )}
+                                                                          <div>
+                                                                            <strong>{check.code}</strong>
+                                                                            <p>{check.summary}</p>
+                                                                          </div>
+                                                                          <span>{check.state}</span>
+                                                                        </article>
+                                                                      ),
+                                                                    )}
+                                                                  </div>
+                                                                  {builderContractMutation.data.data.findings.length >
+                                                                    0 && (
+                                                                    <div className="mcp-builder-findings">
+                                                                      {builderContractMutation.data.data.findings.map(
+                                                                        (finding) => (
+                                                                          <article
+                                                                            key={`${finding.rule_id}-${finding.subject_fingerprint}`}
+                                                                            data-state="failed"
+                                                                          >
+                                                                            <AlertTriangle size={16} />
+                                                                            <div>
+                                                                              <strong>
+                                                                                {finding.rule_id}
+                                                                              </strong>
+                                                                              <p>{finding.summary}</p>
+                                                                              <small>
+                                                                                {
+                                                                                  finding.artifact_scope
+                                                                                }
+                                                                              </small>
+                                                                            </div>
+                                                                            <span>
+                                                                              {finding.severity}
+                                                                            </span>
+                                                                          </article>
+                                                                        ),
+                                                                      )}
+                                                                    </div>
+                                                                  )}
+                                                                  <div className="mcp-builder-limitations">
+                                                                    <strong>Contract boundaries</strong>
+                                                                    <ul>
+                                                                      {builderContractMutation.data.data.limitations.map(
                                                                         (limitation) => (
                                                                           <li key={limitation}>{limitation}</li>
                                                                         ),

@@ -685,7 +685,7 @@ const packageLicenseAnalysis = () => {
       source_lab_operated_by: malware.source_lab_operated_by,
       organization_id: malware.organization_id,
       environment_id: malware.environment_id,
-      analyzed_by: identity.data.subject_id,
+      analyzed_by: "subject.license.analyst",
       analysis_profile: "atlas.connector-license-policy.python312.v1",
       analyzer_version: "atlas.connector-license-policy-analyzer.v1",
       package_digest: malware.package_digest,
@@ -756,6 +756,123 @@ const packageLicenseAnalysis = () => {
       malware_scan_completed: true,
       license_scan_completed: true,
       contract_validation_completed: false,
+      runner_validation_completed: false,
+      lab_validation_completed: false,
+      package_signed: false,
+      publisher_attested: false,
+      connector_rejected: false,
+      connector_registered: false,
+      connector_approved: false,
+      connector_installed: false,
+      connector_enabled: false,
+      target_configured: false,
+      credentials_resolved: false,
+      runtime_trust_granted: false,
+      execution_authorized: false,
+      deployment_approved: false,
+      infrastructure_mutation_performed: false,
+      reused: false,
+    },
+  };
+};
+
+const packageContractValidation = () => {
+  const license = packageLicenseAnalysis().data;
+  return {
+    data: {
+      validation_id: "connector-contract-validation.dddddddddddddddddddddddd",
+      schema_version: "atlas.connector-package-contract-validation.v1",
+      version: 1,
+      lifecycle: "validating",
+      outcome: "passed",
+      source_license_analysis_id: license.analysis_id,
+      source_license_analysis_digest: license.canonical_digest,
+      source_malware_analysis_id: license.source_malware_analysis_id,
+      source_malware_analysis_digest: license.source_malware_analysis_digest,
+      source_vulnerability_analysis_id: license.source_vulnerability_analysis_id,
+      source_vulnerability_analysis_digest: license.source_vulnerability_analysis_digest,
+      source_static_dependency_analysis_id: license.source_static_dependency_analysis_id,
+      source_static_dependency_analysis_digest:
+        license.source_static_dependency_analysis_digest,
+      source_authority_behavior_validation_id:
+        license.source_authority_behavior_validation_id,
+      source_schema_semantics_validation_id: license.source_schema_semantics_validation_id,
+      source_content_policy_scan_id: license.source_content_policy_scan_id,
+      source_inventory_id: license.source_inventory_id,
+      source_validation_id: license.source_validation_id,
+      source_acquisition_id: license.source_acquisition_id,
+      source_handoff_id: license.source_handoff_id,
+      source_project_id: license.source_project_id,
+      source_acquired_by: license.source_acquired_by,
+      source_manifest_validated_by: license.source_manifest_validated_by,
+      source_inventoried_by: license.source_inventoried_by,
+      source_content_scanned_by: license.source_content_scanned_by,
+      source_schema_validated_by: license.source_schema_validated_by,
+      source_authority_validated_by: license.source_authority_validated_by,
+      source_static_analyzed_by: license.source_static_analyzed_by,
+      source_vulnerability_analyzed_by: license.source_vulnerability_analyzed_by,
+      source_malware_analyzed_by: license.source_malware_analyzed_by,
+      source_license_analyzed_by: license.analyzed_by,
+      source_custodied_by: license.source_custodied_by,
+      source_domain_reviewed_by: license.source_domain_reviewed_by,
+      source_security_reviewed_by: license.source_security_reviewed_by,
+      source_lab_operated_by: license.source_lab_operated_by,
+      organization_id: license.organization_id,
+      environment_id: license.environment_id,
+      validated_by: identity.data.subject_id,
+      validation_profile: "atlas.connector-contract.python312.v1",
+      validator_version: "atlas.connector-contract-validator.v1",
+      package_digest: license.package_digest,
+      package_size_bytes: license.package_size_bytes,
+      inventory_digest: license.inventory_digest,
+      dependency_set_digest: license.dependency_set_digest,
+      coverage: {
+        manifest_count: 1,
+        configuration_schema_count: 1,
+        capability_count: 1,
+        input_schema_count: 1,
+        output_schema_count: 1,
+        handler_count: 1,
+        covered_capability_count: 1,
+        contract_test_count: 1,
+        synthetic_fixture_count: 1,
+        orphan_artifact_count: 0,
+        contract_set_digest: "a".repeat(64),
+      },
+      findings: [],
+      finding_set_digest: "b".repeat(64),
+      validation_digest: "c".repeat(64),
+      checks: [
+        "contract.source.accepted",
+        "contract.archive.contract",
+        "contract.manifest.binding",
+        "contract.schemas.binding",
+        "contract.handlers.binding",
+        "contract.tests.synthetic",
+        "contract.coverage.complete",
+      ].map((code) => ({
+        code,
+        state: "passed",
+        severity: "informational",
+        summary: `Bounded ${code} evidence completed.`,
+        remediation: "Regenerate the package before retrying.",
+      })),
+      limitations: [
+        "Static consistency does not prove vendor behavior.",
+        "No package content was executed.",
+      ],
+      promotion_blocked: false,
+      canonical_digest: "d".repeat(64),
+      validated_at: "2026-08-05T20:10:00Z",
+      secret_content_scan_completed: true,
+      prohibited_content_scan_completed: true,
+      schema_semantic_validation_completed: true,
+      permission_behavior_validation_completed: true,
+      static_code_validation_completed: true,
+      vulnerability_scan_completed: true,
+      malware_scan_completed: true,
+      license_scan_completed: true,
+      contract_validation_completed: true,
       runner_validation_completed: false,
       lab_validation_completed: false,
       package_signed: false,
@@ -1698,6 +1815,10 @@ describe("MCP Builder workspace", () => {
       body: string;
       idempotencyKey: string | null;
     }> = [];
+    const packageContractRequests: Array<{
+      body: string;
+      idempotencyKey: string | null;
+    }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -1860,6 +1981,16 @@ describe("MCP Builder workspace", () => {
         });
         return Promise.resolve(
           new Response(JSON.stringify(packageLicenseAnalysis()), { status: 201 }),
+        );
+      }
+      if (url.endsWith("/api/v1/connectors/package-contract-validations")) {
+        const headers = new Headers(init?.headers);
+        packageContractRequests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(
+          new Response(JSON.stringify(packageContractValidation()), { status: 201 }),
         );
       }
       if (
@@ -2092,6 +2223,16 @@ describe("MCP Builder workspace", () => {
     expect(screen.getByText("IMMUTABLE LICENSE REPORT")).toBeVisible();
     expect(screen.getByText("license.policy.trusted")).toBeVisible();
     expect(screen.getByText("License policy boundaries")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Validate contracts" })).toBeVisible();
+    fireEvent.click(screen.getByLabelText(/I am the independent contract validator/i));
+    fireEvent.click(screen.getByRole("button", { name: "Validate contracts" }));
+
+    expect(
+      await screen.findByText(packageContractValidation().data.validation_id),
+    ).toBeVisible();
+    expect(screen.getByText("IMMUTABLE CONTRACT REPORT")).toBeVisible();
+    expect(screen.getByText("contract.handlers.binding")).toBeVisible();
+    expect(screen.getByText("Contract boundaries")).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|execute|register|enable/i })).not.toBeInTheDocument();
     expect(requests).toHaveLength(1);
     expect(designRequests).toHaveLength(1);
@@ -2111,6 +2252,7 @@ describe("MCP Builder workspace", () => {
     expect(packageVulnerabilityRequests).toHaveLength(1);
     expect(packageMalwareRequests).toHaveLength(1);
     expect(packageLicenseRequests).toHaveLength(1);
+    expect(packageContractRequests).toHaveLength(1);
     expect(requests[0]?.idempotencyKey).toBe("mcp-builder.mcp-builder-ui-001");
     const body = JSON.parse(requests[0]?.body ?? "{}") as Record<string, unknown>;
     expect(body.source_document).toBe(source);
@@ -2405,6 +2547,23 @@ describe("MCP Builder workspace", () => {
     expect(packageLicenseBody).not.toHaveProperty("dependencies");
     expect(packageLicenseBody).not.toHaveProperty("exceptions");
     expect(packageLicenseBody).not.toHaveProperty("execute");
+    expect(packageContractRequests[0]?.idempotencyKey).toBe(
+      "connector-contract.mcp-builder-ui-001",
+    );
+    const packageContractBody = JSON.parse(
+      packageContractRequests[0]?.body ?? "{}",
+    ) as Record<string, unknown>;
+    expect(packageContractBody.source_license_analysis_id).toBe(
+      packageLicenseAnalysis().data.analysis_id,
+    );
+    expect(packageContractBody.source_license_analysis_digest).toBe(
+      packageLicenseAnalysis().data.canonical_digest,
+    );
+    expect(packageContractBody.acknowledged_static_contract_only).toBe(true);
+    expect(packageContractBody).not.toHaveProperty("tests");
+    expect(packageContractBody).not.toHaveProperty("fixtures");
+    expect(packageContractBody).not.toHaveProperty("expected_values");
+    expect(packageContractBody).not.toHaveProperty("execute");
   }, 30_000);
 
   it("verifies the downloaded candidate archive against immutable evidence", async () => {

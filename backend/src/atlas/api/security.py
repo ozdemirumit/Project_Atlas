@@ -34,6 +34,8 @@ from atlas.modules.authorization.application.bootstrap import (
     CONNECTOR_PACKAGE_AUTHORITY_BEHAVIOR_VALIDATION_READ,
     CONNECTOR_PACKAGE_CONTENT_POLICY_SCAN_CREATE,
     CONNECTOR_PACKAGE_CONTENT_POLICY_SCAN_READ,
+    CONNECTOR_PACKAGE_CONTRACT_VALIDATION_CREATE,
+    CONNECTOR_PACKAGE_CONTRACT_VALIDATION_READ,
     CONNECTOR_PACKAGE_LICENSE_ANALYSIS_CREATE,
     CONNECTOR_PACKAGE_LICENSE_ANALYSIS_READ,
     CONNECTOR_PACKAGE_MALWARE_ANALYSIS_CREATE,
@@ -108,6 +110,7 @@ from atlas.modules.authorization.application.bootstrap import (
     connector_package_acquisition_scope,
     connector_package_authority_behavior_validation_scope,
     connector_package_content_policy_scan_scope,
+    connector_package_contract_validation_scope,
     connector_package_license_analysis_scope,
     connector_package_malware_analysis_scope,
     connector_package_schema_semantics_validation_scope,
@@ -2422,5 +2425,61 @@ async def authorize_connector_package_license_analysis_read(
         request,
         subject,
         permission_id=CONNECTOR_PACKAGE_LICENSE_ANALYSIS_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def _authorize_connector_package_contract_validation(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    settings = request.app.state.settings
+    service: AuthorizationService = request.app.state.authorization_service
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.connector.package-contract-validation",
+            scope=connector_package_contract_validation_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail="The connector package contract operation is not authorized.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_connector_package_contract_validation_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_package_contract_validation(
+        request,
+        subject,
+        permission_id=CONNECTOR_PACKAGE_CONTRACT_VALIDATION_CREATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_connector_package_contract_validation_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_package_contract_validation(
+        request,
+        subject,
+        permission_id=CONNECTOR_PACKAGE_CONTRACT_VALIDATION_READ,
         capability_class=CapabilityClass.C1_READ_ONLY,
     )
