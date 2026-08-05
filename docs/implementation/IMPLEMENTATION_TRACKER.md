@@ -4,14 +4,71 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-058 |
-| Title | Governed connector configuration and capability schema semantics foundation |
-| Status | Done |
-| Branch | `main` |
-| Pull Request | [#70](https://github.com/ozdemirumit/Project_Atlas/pull/70) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-014 |
+| Task ID | ATLAS-IMP-059 |
+| Title | Governed connector declared-authority and implementation-behavior comparison foundation |
+| Status | In Progress |
+| Branch | `agent/mcp-authority-behavior-validation` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-015 |
 | Last Updated | 2026-08-05 |
-| Next Action | Select and scope ATLAS-IMP-059 from connector validation pipeline step 6 |
+| Next Action | Implement the immutable authority-behavior report across backend, API, persistence, UI, and tests |
+
+### ATLAS-IMP-059 Scope Rationale
+
+- IMP-058 proves the exact package contains complete, restrictive configuration and capability
+  schemas. ATLAS-020 validation pipeline step 6 next requires comparison of declared permissions,
+  network access, and risk classes to implementation behavior where statically testable.
+- ADR-015 defines a bounded Python 3.12 AST profile that fails closed on ambiguity and never imports,
+  compiles, executes, installs, or contacts connector code, dependencies, targets, networks, or models.
+- This slice compares reviewed authority declarations only. General static analysis, dependency and
+  vulnerability checks, malware and license scans, contract tests, runner execution, self-test, lab
+  targets, final validation, approval, registration, installation, and enablement remain later stages.
+
+### ATLAS-IMP-059 Acceptance Criteria
+
+- Only a dedicated multi-factor human behavior-validation operator in the exact organization and
+  environment can create or read a report. Every prior-stage actor, AI/service identity,
+  wrong-scope actor, and insufficient-assurance identity fails closed without evidence discovery.
+- The request accepts only the exact passed IMP-058 report with promotion unblocked, verifies all
+  upstream canonical lineage and no-authority flags, independently verifies archive bytes, and
+  reconciles manifest, permission/network evidence, and Python source to the passed inventory.
+- A bounded deterministic offline Python 3.12 AST analyzer parses without importing, compiling, or
+  executing code and fails closed on syntax errors, unsupported layouts, excessive complexity,
+  dynamic imports/evaluation, reflection, generated execution, or unresolved indirection.
+- Every manifest capability binds one-to-one to permission evidence, network evidence, a source
+  module, identifier/class/permission constants, and one handler. Missing, duplicate, contradictory,
+  broad, wildcard, or unresolved declarations produce blocking findings.
+- Capability class is compared to observable read, mutation, network, process, filesystem, and
+  dynamic-execution behavior. C0/C1 cannot expose mutation, process, filesystem-write, or dynamic
+  execution; higher classes still require exact reviewed declarations and receive no authority.
+- Network behavior requires explicit enablement and bounded declared destinations. Undeclared,
+  wildcard, credential-bearing, non-literal, redirected, or unresolved destinations fail closed.
+- Findings expose only rule, behavior category, severity, relative path, bounded line number,
+  fingerprint, summary, and remediation. Source snippets, literals, URLs, credentials, arguments,
+  request bodies, and imported content never enter domain state, persistence, APIs, audit, logs,
+  errors, or model context.
+- Reports are one-to-one, deterministic, immutable, idempotent, concurrency-safe,
+  audit-before-persist, and equivalent in memory and PostgreSQL. Trust, audit, parse, or persistence
+  failure cannot fabricate success.
+- Failed comparison sets `promotion_blocked=true`; passed comparison sets it false. Neither outcome
+  changes rejection, registration, approval, installation, enablement, configuration, runtime trust,
+  execution, deployment, or infrastructure state.
+- Strict no-store APIs require browser CSRF for creation, dedicated default-deny RBAC, correlation,
+  bounded schemas, safe errors, exact tenant scope, explicit acknowledgement, and separation of duties.
+- The Connector workspace displays declaration and observation summaries, safe findings, checks,
+  limitations, lineage, and promotion state without source code or later-stage action controls.
+- Automated backend and frontend coverage, one Alembic head, live authorized and denied HTTP checks,
+  passed and failed behavior fixtures, desktop and 390-pixel mobile inspection, browser-log
+  inspection, and GitHub CI apply.
+- This slice performs no package rewrite, import, compilation, execution, dependency installation,
+  target/network/model access, vulnerability/malware/license/general static scan, contract/runner/
+  self-test/lab validation, and grants no lifecycle or runtime authority.
+
+### ATLAS-IMP-059 Validation Evidence
+
+- Pending implementation.
+
+### ATLAS-IMP-058 Scope Rationale
 
 ### ATLAS-IMP-058 Scope Rationale
 
@@ -90,6 +147,7 @@
 - [PR #70](https://github.com/ozdemirumit/Project_Atlas/pull/70) passed GitHub CI in run
   `31019961270` and merged to `main` as `8a4f0ae2`. Post-merge `main` run `31020206411` passed both
   backend and frontend jobs.
+- Tracker closure commit `e368ca1` passed its post-push `main` CI in run `31020487854`.
 
 ### ATLAS-IMP-057 Scope Rationale
 
