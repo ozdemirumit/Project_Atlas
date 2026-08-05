@@ -33,3 +33,4 @@ ADR numbers are permanent and never reused. Material changes require a new ADR r
 | [ADR-016](ADR-016_Connector_Static_Code_Dependency_Hygiene_Contract.md) | Connector static code and dependency hygiene contract | Accepted |
 | [ADR-017](ADR-017_Connector_Dependency_Vulnerability_Analysis_Contract.md) | Connector dependency vulnerability analysis contract | Accepted |
 | [ADR-018](ADR-018_Connector_Package_Malware_Analysis_Contract.md) | Connector package malware analysis contract | Accepted |
+| [ADR-019](ADR-019_Connector_Package_License_Analysis_Contract.md) | Connector package license analysis contract | Accepted |
