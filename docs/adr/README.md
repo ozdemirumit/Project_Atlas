@@ -22,3 +22,4 @@ ADR numbers are permanent and never reused. Material changes require a new ADR r
 | [ADR-005](ADR-005_MCP_Builder_Static_Validation_Profile.md) | MCP Builder static validation profile | Accepted |
 | [ADR-006](ADR-006_MCP_Builder_Domain_Review_Contract.md) | MCP Builder domain review contract | Accepted |
 | [ADR-007](ADR-007_MCP_Builder_Security_Review_Contract.md) | MCP Builder security review contract | Accepted |
+| [ADR-008](ADR-008_MCP_Builder_Isolated_Lab_Validation_Contract.md) | MCP Builder isolated lab validation contract | Accepted |

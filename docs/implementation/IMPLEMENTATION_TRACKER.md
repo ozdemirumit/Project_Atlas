@@ -4,14 +4,63 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-051 |
-| Title | Governed MCP Builder independent security review foundation |
-| Status | Done |
-| Branch | `agent/mcp-builder-security-review` |
-| Pull Request | [#63](https://github.com/ozdemirumit/Project_Atlas/pull/63) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-004, ADR-005, ADR-006, ADR-007 |
+| Task ID | ATLAS-IMP-052 |
+| Title | Governed MCP Builder isolated lab validation foundation |
+| Status | In Progress |
+| Branch | `agent/mcp-builder-lab-validation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008 |
 | Last Updated | 2026-08-05 |
-| Next Action | Select and scope ATLAS-IMP-052 from the approved MCP Builder lifecycle |
+| Next Action | Implement exact-evidence isolated runner validation, APIs, persistence, and the web workspace |
+
+### ATLAS-IMP-052 Scope Rationale
+
+- IMP-051 supplies an accepted independent security assessment for the exact quarantined scaffold.
+  ATLAS-022 next requires isolated laboratory evidence before a candidate package handoff.
+- ADR-008 defines the first Python 3.12 lab profile: exact deterministic generated source is copied
+  into an ephemeral, secret-free, network-denied child runner and exercised against synthetic fixtures.
+- This slice proves bounded fail-closed runtime behavior only. It neither contacts a vendor target nor
+  grants package, installation, runtime, execution, deployment, or infrastructure authority.
+
+### ATLAS-IMP-052 Acceptance Criteria
+
+- Only an authorized multi-factor human lab operator in the exact project organization and environment
+  with dedicated create/read permissions can run or inspect validation. AI and service identities, the
+  domain reviewer, the security reviewer, wrong roles, insufficient assurance, and out-of-scope actors
+  fail closed without project, artifact, review, runner, result, or finding discovery.
+- Validation requires an accepted `atlas.security-review.connector.v1` record and binds the exact
+  project, source, checkpoint, generation, artifact, static-validation, domain-review, security-review,
+  profiles, contracts, digests, capabilities, tenant, and operator. Missing, stale, changed, unsupported,
+  non-accepted, or tampered evidence is rejected before runner launch.
+- Every artifact file is reread through quarantine and reverified against immutable path, media type,
+  size, digest, deterministic regeneration, language profile, and template. Unreadable, missing, extra,
+  changed, unsupported, or human-modified source records failed evidence without executing a child.
+- `atlas.lab-validation.python312.v1` uses `mcp-builder-isolated-runner.v1`, an ephemeral workspace,
+  isolated Python mode, a minimal secret-free environment, hard timeout, bounded output, deny-first
+  socket/process/shell/native-library policy, and guaranteed workspace cleanup. The API process never
+  imports or invokes generated modules itself.
+- Eight stable checks cover artifact integrity, runner isolation, secret-free environment, network
+  denial, package import, quarantine contract, every-capability fail-closed behavior, and bounded output.
+  All pass yields `passed`; any required failed or skipped check yields `failed`. Timeout, abnormal exit,
+  malformed or excessive output, unsupported runtime, or policy failure cannot become success.
+- Result creation is immutable, one-to-one with the exact accepted security review, idempotent,
+  audit-before-persist, concurrency-safe, and behaviorally equivalent for memory and PostgreSQL. Required
+  audit or persistence failure cannot disclose or fabricate success.
+- Strict no-store APIs require browser CSRF for creation, default-deny RBAC, correlation, bounded schemas,
+  safe errors, exact-scope reads, explicit untrusted-execution acknowledgement, synthetic-only
+  confirmation, and separation of duties. The web workspace shows all checks, runner evidence,
+  limitations, operator identity, overall state, and explicit no-package/no-runtime/no-execution bounds.
+- Automated backend and frontend coverage, one Alembic head, live authorized and denied API validation,
+  passed and failed runner fixtures, desktop and 390-pixel mobile inspection, browser-log inspection,
+  guaranteed temporary-workspace cleanup, and GitHub CI apply.
+- This slice performs no model inference, dependency installation or resolution, malware scan, real
+  target request, real credential resolution, package creation or signing, connector registration,
+  installation, enablement, runtime trust grant, production workflow execution, deployment, or
+  infrastructure mutation.
+
+### ATLAS-IMP-052 Validation Evidence
+
+- Pending implementation and validation.
 
 ### ATLAS-IMP-051 Scope Rationale
 
