@@ -49,8 +49,164 @@ export type ConnectorPackageAcquisition = {
   reused: boolean;
 };
 
+export type ConnectorPackageValidation = {
+  validation_id: string;
+  schema_version: "atlas.connector-package-validation.v1";
+  version: 1;
+  lifecycle: "validating";
+  outcome: "passed" | "failed";
+  source_acquisition_id: string;
+  source_acquisition_digest: string;
+  source_handoff_id: string;
+  source_handoff_digest: string;
+  source_project_id: string;
+  source_acquired_by: string;
+  organization_id: string;
+  environment_id: string;
+  validated_by: string;
+  validation_profile: "atlas.connector-validation-intake.builder-v1";
+  validator_version: "atlas.connector-manifest-schema-validator.v1";
+  package_digest: string;
+  package_size_bytes: number;
+  manifest_path: "atlas-connector.yaml";
+  manifest_digest: string | null;
+  capability_ids: string[];
+  schema_evidence: Array<{
+    relative_path: string;
+    digest: string;
+    schema_id: string;
+    purpose: "configuration" | "capability_input" | "capability_output";
+    capability_id: string | null;
+  }>;
+  checks: Array<{
+    code: string;
+    state: "passed" | "failed";
+    severity: "informational" | "error";
+    summary: string;
+    evidence_paths: string[];
+    remediation: string;
+  }>;
+  limitations: string[];
+  canonical_digest: string;
+  validated_at: string;
+  source_integrity_accepted: true;
+  manifest_schema_validation_completed: true;
+  dependency_scan_completed: false;
+  vulnerability_scan_completed: false;
+  malware_scan_completed: false;
+  secret_content_scan_completed: false;
+  license_scan_completed: false;
+  static_code_validation_completed: false;
+  contract_validation_completed: false;
+  runner_validation_completed: false;
+  lab_validation_completed: false;
+  package_signed: false;
+  publisher_attested: false;
+  connector_registered: false;
+  connector_approved: false;
+  connector_installed: false;
+  connector_enabled: false;
+  target_configured: false;
+  credentials_resolved: false;
+  runtime_trust_granted: false;
+  execution_authorized: false;
+  deployment_approved: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isValidationCheck(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.code === "string" &&
+    (value.state === "passed" || value.state === "failed") &&
+    (value.severity === "informational" || value.severity === "error") &&
+    typeof value.summary === "string" &&
+    isStringArray(value.evidence_paths) &&
+    typeof value.remediation === "string"
+  );
+}
+
+function isSchemaEvidence(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.relative_path === "string" &&
+    typeof value.digest === "string" &&
+    value.digest.length === 64 &&
+    typeof value.schema_id === "string" &&
+    ["configuration", "capability_input", "capability_output"].includes(
+      String(value.purpose),
+    ) &&
+    (value.capability_id === null || typeof value.capability_id === "string")
+  );
+}
+
+function isSafeValidation(value: unknown): value is { data: ConnectorPackageValidation } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const validation = value.data;
+  const checks: unknown[] = Array.isArray(validation.checks) ? validation.checks : [];
+  const schemas: unknown[] = Array.isArray(validation.schema_evidence)
+    ? validation.schema_evidence
+    : [];
+  const noAuthority = [
+    validation.dependency_scan_completed,
+    validation.vulnerability_scan_completed,
+    validation.malware_scan_completed,
+    validation.secret_content_scan_completed,
+    validation.license_scan_completed,
+    validation.static_code_validation_completed,
+    validation.contract_validation_completed,
+    validation.runner_validation_completed,
+    validation.lab_validation_completed,
+    validation.package_signed,
+    validation.publisher_attested,
+    validation.connector_registered,
+    validation.connector_approved,
+    validation.connector_installed,
+    validation.connector_enabled,
+    validation.target_configured,
+    validation.credentials_resolved,
+    validation.runtime_trust_granted,
+    validation.execution_authorized,
+    validation.deployment_approved,
+    validation.infrastructure_mutation_performed,
+  ];
+  return (
+    validation.schema_version === "atlas.connector-package-validation.v1" &&
+    validation.version === 1 &&
+    validation.lifecycle === "validating" &&
+    (validation.outcome === "passed" || validation.outcome === "failed") &&
+    validation.validation_profile === "atlas.connector-validation-intake.builder-v1" &&
+    validation.validator_version === "atlas.connector-manifest-schema-validator.v1" &&
+    validation.manifest_path === "atlas-connector.yaml" &&
+    validation.source_integrity_accepted === true &&
+    validation.manifest_schema_validation_completed === true &&
+    typeof validation.validated_by === "string" &&
+    typeof validation.source_acquired_by === "string" &&
+    validation.validated_by !== validation.source_acquired_by &&
+    typeof validation.package_digest === "string" &&
+    validation.package_digest.length === 64 &&
+    typeof validation.canonical_digest === "string" &&
+    validation.canonical_digest.length === 64 &&
+    (validation.manifest_digest === null ||
+      (typeof validation.manifest_digest === "string" && validation.manifest_digest.length === 64)) &&
+    isStringArray(validation.capability_ids) &&
+    validation.capability_ids.length > 0 &&
+    isStringArray(validation.limitations) &&
+    validation.limitations.length > 0 &&
+    checks.length === 4 &&
+    checks.every(isValidationCheck) &&
+    schemas.every(isSchemaEvidence) &&
+    noAuthority.every((flag) => flag === false)
+  );
 }
 
 function isSafeAcquisition(
@@ -152,6 +308,52 @@ export async function acquireConnectorPackage(handoff: McpBuilderCandidateHandof
     )
   ) {
     throw new Error("Connector acquisition does not match the exact Builder handoff");
+  }
+  return payload;
+}
+
+export async function validateConnectorPackage(acquisition: ConnectorPackageAcquisition) {
+  const response = await apiFetch("/api/v1/connectors/package-validations", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "Idempotency-Key": `connector-package-validation.${crypto.randomUUID()}`,
+    },
+    body: JSON.stringify({
+      schema_version: "atlas.connector-package-validation-request.v1",
+      source_acquisition_id: acquisition.acquisition_id,
+      source_acquisition_digest: acquisition.canonical_digest,
+      package_digest: acquisition.package_digest,
+      validation_profile: "atlas.connector-validation-intake.builder-v1",
+      acknowledged_untrusted_quarantined_package: true,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Connector package validation failed with ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  if (!isSafeValidation(payload)) {
+    throw new Error("Connector registry returned unsafe package validation evidence");
+  }
+  const validation = payload.data;
+  if (
+    validation.source_acquisition_id !== acquisition.acquisition_id ||
+    validation.source_acquisition_digest !== acquisition.canonical_digest ||
+    validation.source_handoff_id !== acquisition.source_handoff_id ||
+    validation.source_handoff_digest !== acquisition.source_handoff_digest ||
+    validation.source_project_id !== acquisition.source_project_id ||
+    validation.organization_id !== acquisition.organization_id ||
+    validation.environment_id !== acquisition.environment_id ||
+    validation.source_acquired_by !== acquisition.acquired_by ||
+    validation.package_digest !== acquisition.package_digest ||
+    validation.package_size_bytes !== acquisition.package_size_bytes ||
+    validation.capability_ids.length !== acquisition.capabilities.length ||
+    validation.capability_ids.some(
+      (item, index) => item !== acquisition.capabilities[index]?.capability_id,
+    )
+  ) {
+    throw new Error("Connector validation does not match the exact acquisition receipt");
   }
   return payload;
 }

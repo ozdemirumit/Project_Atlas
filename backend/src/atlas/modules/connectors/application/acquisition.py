@@ -80,6 +80,14 @@ class PackageAcquisitionService:
         self._clock = clock or (lambda: datetime.now(UTC))
         self._mutation_lock = asyncio.Lock()
 
+    @property
+    def repository(self) -> PackageAcquisitionRepository:
+        return self._repository
+
+    @property
+    def archive_publisher(self) -> AcquiredPackagePublisher:
+        return self._publisher
+
     async def create(
         self,
         *,

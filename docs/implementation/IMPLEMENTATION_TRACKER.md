@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009, ADR-010, ADR-011 |
 | Last Updated | 2026-08-05 |
-| Next Action | Implement exact acquisition-to-validating manifest and schema evidence |
+| Next Action | Publish PR, pass GitHub CI, merge, and synchronize `main` |
 
 ### ATLAS-IMP-055 Scope Rationale
 
@@ -59,7 +59,35 @@
 
 ### ATLAS-IMP-055 Validation Evidence
 
-- Pending implementation and validation.
+- Domain, application, API, authorization, audit, memory, PostgreSQL, migration, and web coverage
+  verifies exact acquisition and archive lineage, independent MFA validation, deterministic one-to-one
+  reports, idempotency and concurrency safety, audit-before-persist, tenant confinement, separation of
+  duties, failed-report retention, corrupt-source rejection without persistence, and every no-authority
+  flag.
+- Intake rereads the immutable acquired archive and verifies SHA-256, size, bounded ZIP inventory,
+  ordinal entry order, fixed timestamps, stored regular files, normalized unique paths, the exact
+  Builder handoff envelope, one canonical `atlas-connector.yaml`, and exact draft 2020-12 configuration
+  plus per-capability input/output schema contracts. Raw bodies are never returned.
+- Strict create and read APIs require dedicated default-deny permissions, exact organization and
+  environment, multi-factor human assurance, explicit acknowledgement, safe bounded schemas, and
+  browser CSRF for creation. A fresh live HTTP run returned login 201, denied creation without CSRF
+  with 403, created validation `connector-package-validation.803164ae328314e4a3b94b7d` with 201, and
+  reread its matching canonical digest with 200.
+- The live report was `passed` with four bounded intake checks and three schema evidence records.
+  Connector registration, runtime trust, execution authorization, and infrastructure mutation all
+  remained false; dependency, vulnerability, malware, secret, license, code, contract, runner, and lab
+  validation remain explicitly incomplete.
+- Backend quality gates passed: Ruff formatting across 469 files, Ruff lint, strict mypy across all 440
+  source and test files, 453 tests passed with three existing Windows symlink skips, and Alembic reported
+  the single head `20260805_0027`.
+- Frontend ESLint, TypeScript checking, the focused two-test MCP Builder flow, the isolated full 36-test
+  suite, and the production build passed. The build retains the existing non-blocking large-chunk
+  advisory.
+- Browser validation against the live application at `http://localhost:5202/` confirmed the Connector
+  workspace at desktop and a 390-by-844 mobile override. The mobile document and body widths remained
+  within the viewport, visible form controls stayed bounded, the off-canvas navigation remained
+  intentionally hidden, and browser logs contained no warnings or errors. The temporary viewport was
+  reset afterward.
 
 ### ATLAS-IMP-054 Scope Rationale
 

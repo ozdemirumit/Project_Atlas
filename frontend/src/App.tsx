@@ -112,7 +112,7 @@ import {
 } from "./api/approvals";
 import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
-import { acquireConnectorPackage } from "./api/connectors";
+import { acquireConnectorPackage, validateConnectorPackage } from "./api/connectors";
 import {
   createMcpBuilderDomainReview,
   createMcpBuilderCandidateHandoff,
@@ -507,6 +507,8 @@ export function App() {
     useState(false);
   const [builderPackageAcquisitionAcknowledged, setBuilderPackageAcquisitionAcknowledged] =
     useState(false);
+  const [builderPackageValidationAcknowledged, setBuilderPackageValidationAcknowledged] =
+    useState(false);
   const [builderSelectedGeneratedFile, setBuilderSelectedGeneratedFile] = useState("");
   const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
     Record<string, McpBuilderDesignDecision>
@@ -534,6 +536,10 @@ export function App() {
     mutationFn: acquireConnectorPackage,
     onSuccess: () => setBuilderPackageAcquisitionAcknowledged(false),
   });
+  const builderPackageValidationMutation = useMutation({
+    mutationFn: validateConnectorPackage,
+    onSuccess: () => setBuilderPackageValidationAcknowledged(false),
+  });
   const builderCandidateArchiveMutation = useMutation({
     mutationFn: downloadMcpBuilderCandidateArchive,
     onSuccess: ({ blob, filename }) => {
@@ -551,9 +557,23 @@ export function App() {
     builderCandidateHandoffMutation.reset();
     builderCandidateArchiveMutation.reset();
     builderPackageAcquisitionMutation.reset();
+    builderPackageValidationMutation.reset();
     setBuilderCandidateHandoffAcknowledged(false);
     setBuilderPackageAcquisitionAcknowledged(false);
+    setBuilderPackageValidationAcknowledged(false);
   };
+  const builderPackageValidationSeparated = Boolean(
+    identity &&
+      builderCandidateHandoffMutation.data?.data &&
+      builderPackageAcquisitionMutation.data?.data &&
+      ![
+        builderCandidateHandoffMutation.data.data.custodied_by,
+        builderCandidateHandoffMutation.data.data.domain_reviewed_by,
+        builderCandidateHandoffMutation.data.data.security_reviewed_by,
+        builderCandidateHandoffMutation.data.data.lab_operated_by,
+        builderPackageAcquisitionMutation.data.data.acquired_by,
+      ].includes(identity.subject_id),
+  );
   const builderLabValidationMutation = useMutation({
     mutationFn: createMcpBuilderLabValidation,
     onSuccess: () => {
@@ -4668,6 +4688,7 @@ export function App() {
                                                               </div>
                                                             )}
                                                             {builderPackageAcquisitionMutation.data?.data && (
+                                                              <>
                                                               <div className="mcp-builder-acquisition-result">
                                                                 <div className="mcp-builder-generation-summary">
                                                                   <div>
@@ -4730,6 +4751,219 @@ export function App() {
                                                                   </p>
                                                                 </div>
                                                               </div>
+                                                              {!builderPackageValidationSeparated &&
+                                                                !builderPackageValidationMutation.data && (
+                                                                  <div
+                                                                    className="workspace-message mcp-builder-security-sod"
+                                                                    role="status"
+                                                                  >
+                                                                    <UserX size={20} />
+                                                                    <div>
+                                                                      <h3>
+                                                                        Independent package validator required
+                                                                      </h3>
+                                                                      <p>
+                                                                        The acquisition operator and prior
+                                                                        package custodians or reviewers cannot
+                                                                        validate this intake. Continue with a
+                                                                        different authorized MFA session.
+                                                                      </p>
+                                                                    </div>
+                                                                  </div>
+                                                                )}
+                                                              {builderPackageValidationSeparated &&
+                                                                !builderPackageValidationMutation.data && (
+                                                                  <section className="mcp-builder-validation">
+                                                                    <div className="section-heading">
+                                                                      <div>
+                                                                        <p className="eyebrow">
+                                                                          GOVERNED VALIDATION INTAKE
+                                                                        </p>
+                                                                        <h3>Validate manifest and schemas</h3>
+                                                                        <p>
+                                                                          Inspect the exact quarantined archive
+                                                                          and produce a bounded intake report.
+                                                                        </p>
+                                                                      </div>
+                                                                      <span className="state-badge pending">
+                                                                        <PackageCheck size={14} /> awaiting
+                                                                        validation
+                                                                      </span>
+                                                                    </div>
+                                                                    <label className="mcp-builder-check">
+                                                                      <input
+                                                                        type="checkbox"
+                                                                        checked={
+                                                                          builderPackageValidationAcknowledged
+                                                                        }
+                                                                        onChange={(event) =>
+                                                                          setBuilderPackageValidationAcknowledged(
+                                                                            event.target.checked,
+                                                                          )
+                                                                        }
+                                                                      />
+                                                                      I am the independent package validator. I
+                                                                      understand this checks source, archive,
+                                                                      manifest, and schema contracts only.
+                                                                    </label>
+                                                                    <button
+                                                                      className="run-check-button mcp-builder-submit"
+                                                                      type="button"
+                                                                      disabled={
+                                                                        !builderPackageValidationAcknowledged ||
+                                                                        builderPackageValidationMutation.isPending
+                                                                      }
+                                                                      onClick={() =>
+                                                                        builderPackageValidationMutation.mutate(
+                                                                          builderPackageAcquisitionMutation.data
+                                                                            .data,
+                                                                        )
+                                                                      }
+                                                                    >
+                                                                      {builderPackageValidationMutation.isPending ? (
+                                                                        <RefreshCw className="spin" size={16} />
+                                                                      ) : (
+                                                                        <PackageCheck size={16} />
+                                                                      )}
+                                                                      Run package intake validation
+                                                                    </button>
+                                                                  </section>
+                                                                )}
+                                                              {builderPackageValidationMutation.isError && (
+                                                                <div
+                                                                  className="workspace-message error-state"
+                                                                  role="alert"
+                                                                >
+                                                                  <AlertTriangle size={20} />
+                                                                  <div>
+                                                                    <h3>Package validation rejected</h3>
+                                                                    <p>
+                                                                      Source integrity, archive structure,
+                                                                      separation of duties, or validation policy
+                                                                      did not pass.
+                                                                    </p>
+                                                                  </div>
+                                                                </div>
+                                                              )}
+                                                              {builderPackageValidationMutation.data?.data && (
+                                                                <section className="mcp-builder-validation">
+                                                                  <div className="section-heading">
+                                                                    <div>
+                                                                      <p className="eyebrow">
+                                                                        IMMUTABLE VALIDATION REPORT
+                                                                      </p>
+                                                                      <strong>
+                                                                        {
+                                                                          builderPackageValidationMutation.data
+                                                                            .data.validation_id
+                                                                        }
+                                                                      </strong>
+                                                                      <code>
+                                                                        {
+                                                                          builderPackageValidationMutation.data
+                                                                            .data.canonical_digest
+                                                                        }
+                                                                      </code>
+                                                                    </div>
+                                                                    <span
+                                                                      className={`state-badge ${
+                                                                        builderPackageValidationMutation.data.data
+                                                                          .outcome === "passed"
+                                                                          ? "healthy"
+                                                                          : "critical"
+                                                                      }`}
+                                                                    >
+                                                                      {builderPackageValidationMutation.data.data
+                                                                        .outcome === "passed" ? (
+                                                                        <CheckCircle2 size={14} />
+                                                                      ) : (
+                                                                        <AlertTriangle size={14} />
+                                                                      )}
+                                                                      {
+                                                                        builderPackageValidationMutation.data.data
+                                                                          .outcome
+                                                                      }
+                                                                    </span>
+                                                                  </div>
+                                                                  <div className="mcp-builder-facts">
+                                                                    <div>
+                                                                      <span>Source integrity</span>
+                                                                      <strong>Accepted</strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Manifest</span>
+                                                                      <strong>
+                                                                        {builderPackageValidationMutation.data.data
+                                                                          .manifest_digest
+                                                                          ? "Recorded"
+                                                                          : "Failed"}
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Schemas</span>
+                                                                      <strong>
+                                                                        {
+                                                                          builderPackageValidationMutation.data
+                                                                            .data.schema_evidence.length
+                                                                        }
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Lifecycle</span>
+                                                                      <strong>Validating</strong>
+                                                                    </div>
+                                                                  </div>
+                                                                  <div className="mcp-builder-validation-checks">
+                                                                    {builderPackageValidationMutation.data.data.checks.map(
+                                                                      (check) => (
+                                                                        <article
+                                                                          key={check.code}
+                                                                          data-state={check.state}
+                                                                        >
+                                                                          {check.state === "passed" ? (
+                                                                            <CheckCircle2 size={16} />
+                                                                          ) : (
+                                                                            <AlertTriangle size={16} />
+                                                                          )}
+                                                                          <div>
+                                                                            <strong>{check.code}</strong>
+                                                                            <p>{check.summary}</p>
+                                                                            {check.evidence_paths.length > 0 && (
+                                                                              <small>
+                                                                                {check.evidence_paths.join(
+                                                                                  " · ",
+                                                                                )}
+                                                                              </small>
+                                                                            )}
+                                                                          </div>
+                                                                          <span>{check.state}</span>
+                                                                        </article>
+                                                                      ),
+                                                                    )}
+                                                                  </div>
+                                                                  <div className="mcp-builder-limitations">
+                                                                    <strong>Validation boundaries</strong>
+                                                                    <ul>
+                                                                      {builderPackageValidationMutation.data.data.limitations.map(
+                                                                        (limitation) => (
+                                                                          <li key={limitation}>{limitation}</li>
+                                                                        ),
+                                                                      )}
+                                                                    </ul>
+                                                                  </div>
+                                                                  <div className="mcp-builder-boundary">
+                                                                    <LockKeyhole size={18} />
+                                                                    <p>
+                                                                      Dependency, vulnerability, malware,
+                                                                      secret, license, code, contract, runner,
+                                                                      and lab checks remain incomplete. No
+                                                                      registration, installation, trust, or
+                                                                      execution authority was granted.
+                                                                    </p>
+                                                                  </div>
+                                                                </section>
+                                                              )}
+                                                              </>
                                                             )}
                                                             <div className="mcp-builder-boundary">
                                                               <LockKeyhole size={18} />
