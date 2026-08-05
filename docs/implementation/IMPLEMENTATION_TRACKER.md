@@ -8,7 +8,7 @@
 | Title | Governed connector static-code and dependency-hygiene analysis foundation |
 | Status | Review |
 | Branch | `agent/mcp-static-dependency-analysis` |
-| Pull Request | Not opened |
+| Pull Request | [#72](https://github.com/ozdemirumit/Project_Atlas/pull/72) |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-016 |
 | Last Updated | 2026-08-05 |
 | Next Action | Commit the verified implementation, open its pull request, pass CI, merge, and close the task on `main` |
