@@ -285,6 +285,18 @@ class PackageSupplyChainInventoryService:
     async def close(self) -> None:
         await self._repository.close()
 
+    @property
+    def repository(self) -> PackageSupplyChainInventoryRepository:
+        return self._repository
+
+    @property
+    def acquisition_source(self) -> InventoryAcquisitionSource:
+        return self._acquisition_source
+
+    @property
+    def archive_source(self) -> InventoryArchiveSource:
+        return self._archive_source
+
     @staticmethod
     def _verify_source_validation(validation: ConnectorPackageValidation) -> None:
         try:

@@ -24,3 +24,7 @@ ADR numbers are permanent and never reused. Material changes require a new ADR r
 | [ADR-007](ADR-007_MCP_Builder_Security_Review_Contract.md) | MCP Builder security review contract | Accepted |
 | [ADR-008](ADR-008_MCP_Builder_Isolated_Lab_Validation_Contract.md) | MCP Builder isolated lab validation contract | Accepted |
 | [ADR-009](ADR-009_MCP_Builder_Candidate_Package_Handoff_Contract.md) | MCP Builder candidate package handoff contract | Accepted |
+| [ADR-010](ADR-010_MCP_Builder_Package_Acquisition_Contract.md) | MCP Builder package acquisition contract | Accepted |
+| [ADR-011](ADR-011_Connector_Package_Validation_Intake_Contract.md) | Connector package validation intake contract | Accepted |
+| [ADR-012](ADR-012_Connector_Package_Content_Dependency_Inventory_Contract.md) | Connector package content and dependency inventory contract | Accepted |
+| [ADR-013](ADR-013_Connector_Package_Secret_Prohibited_Content_Scan_Contract.md) | Connector package secret and prohibited-content scan contract | Accepted |

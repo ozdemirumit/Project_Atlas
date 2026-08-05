@@ -188,6 +188,81 @@ export type ConnectorPackageSupplyChainInventory = {
   reused: boolean;
 };
 
+export type ConnectorPackageContentPolicyScan = {
+  scan_id: string;
+  schema_version: "atlas.connector-package-content-policy-scan.v1";
+  version: 1;
+  lifecycle: "validating";
+  outcome: "passed" | "failed";
+  source_inventory_id: string;
+  source_inventory_digest: string;
+  source_validation_id: string;
+  source_validation_digest: string;
+  source_acquisition_id: string;
+  source_acquisition_digest: string;
+  source_handoff_id: string;
+  source_project_id: string;
+  source_acquired_by: string;
+  source_validated_by: string;
+  source_inventoried_by: string;
+  source_custodied_by: string;
+  source_domain_reviewed_by: string;
+  source_security_reviewed_by: string;
+  source_lab_operated_by: string;
+  organization_id: string;
+  environment_id: string;
+  scanned_by: string;
+  scan_profile: "atlas.connector-content-policy-scan.python312.v1";
+  scanner_version: "atlas.connector-secret-prohibited-content-scanner.v1";
+  package_digest: string;
+  package_size_bytes: number;
+  inventory_digest: string;
+  dependency_set_digest: string;
+  scanned_file_count: number;
+  findings: Array<{
+    rule_code: string;
+    kind: "embedded_secret" | "prohibited_content";
+    severity: "error";
+    relative_path: string;
+    line_number: number | null;
+    evidence_fingerprint: string;
+    summary: string;
+    remediation: string;
+  }>;
+  finding_set_digest: string;
+  content_scan_digest: string;
+  checks: ConnectorPackageValidation["checks"];
+  limitations: string[];
+  promotion_blocked: boolean;
+  canonical_digest: string;
+  scanned_at: string;
+  secret_content_scan_completed: true;
+  prohibited_content_scan_completed: true;
+  vulnerability_scan_completed: false;
+  malware_scan_completed: false;
+  license_scan_completed: false;
+  static_code_validation_completed: false;
+  schema_semantic_validation_completed: false;
+  permission_behavior_validation_completed: false;
+  contract_validation_completed: false;
+  runner_validation_completed: false;
+  lab_validation_completed: false;
+  package_signed: false;
+  publisher_attested: false;
+  connector_rejected: false;
+  connector_registered: false;
+  connector_approved: false;
+  connector_installed: false;
+  connector_enabled: false;
+  target_configured: false;
+  credentials_resolved: false;
+  runtime_trust_granted: false;
+  execution_authorized: false;
+  deployment_approved: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -378,6 +453,101 @@ function isSafeInventory(
     inventory.limitations.length > 0 &&
     checks.length === 5 &&
     checks.every(isValidationCheck) &&
+    noAuthority.every((flag) => flag === false)
+  );
+}
+
+function isContentPolicyFinding(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.rule_code === "string" &&
+    (value.kind === "embedded_secret" || value.kind === "prohibited_content") &&
+    value.severity === "error" &&
+    typeof value.relative_path === "string" &&
+    (value.line_number === null ||
+      (typeof value.line_number === "number" && value.line_number > 0)) &&
+    typeof value.evidence_fingerprint === "string" &&
+    value.evidence_fingerprint.length === 64 &&
+    typeof value.summary === "string" &&
+    typeof value.remediation === "string"
+  );
+}
+
+function isSafeContentPolicyScan(
+  value: unknown,
+): value is { data: ConnectorPackageContentPolicyScan } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const scan = value.data;
+  const findings: unknown[] = Array.isArray(scan.findings) ? scan.findings : [];
+  const checks: unknown[] = Array.isArray(scan.checks) ? scan.checks : [];
+  const sourceActors = [
+    scan.source_acquired_by,
+    scan.source_validated_by,
+    scan.source_inventoried_by,
+    scan.source_custodied_by,
+    scan.source_domain_reviewed_by,
+    scan.source_security_reviewed_by,
+    scan.source_lab_operated_by,
+  ];
+  const noAuthority = [
+    scan.vulnerability_scan_completed,
+    scan.malware_scan_completed,
+    scan.license_scan_completed,
+    scan.static_code_validation_completed,
+    scan.schema_semantic_validation_completed,
+    scan.permission_behavior_validation_completed,
+    scan.contract_validation_completed,
+    scan.runner_validation_completed,
+    scan.lab_validation_completed,
+    scan.package_signed,
+    scan.publisher_attested,
+    scan.connector_rejected,
+    scan.connector_registered,
+    scan.connector_approved,
+    scan.connector_installed,
+    scan.connector_enabled,
+    scan.target_configured,
+    scan.credentials_resolved,
+    scan.runtime_trust_granted,
+    scan.execution_authorized,
+    scan.deployment_approved,
+    scan.infrastructure_mutation_performed,
+  ];
+  return (
+    scan.schema_version === "atlas.connector-package-content-policy-scan.v1" &&
+    scan.version === 1 &&
+    scan.lifecycle === "validating" &&
+    (scan.outcome === "passed" || scan.outcome === "failed") &&
+    scan.promotion_blocked === (scan.outcome === "failed") &&
+    scan.scan_profile === "atlas.connector-content-policy-scan.python312.v1" &&
+    scan.scanner_version === "atlas.connector-secret-prohibited-content-scanner.v1" &&
+    scan.secret_content_scan_completed === true &&
+    scan.prohibited_content_scan_completed === true &&
+    typeof scan.scanned_by === "string" &&
+    sourceActors.every((actor) => typeof actor === "string") &&
+    !sourceActors.includes(scan.scanned_by) &&
+    typeof scan.package_digest === "string" &&
+    scan.package_digest.length === 64 &&
+    typeof scan.inventory_digest === "string" &&
+    scan.inventory_digest.length === 64 &&
+    typeof scan.dependency_set_digest === "string" &&
+    scan.dependency_set_digest.length === 64 &&
+    typeof scan.finding_set_digest === "string" &&
+    scan.finding_set_digest.length === 64 &&
+    typeof scan.content_scan_digest === "string" &&
+    scan.content_scan_digest.length === 64 &&
+    typeof scan.canonical_digest === "string" &&
+    scan.canonical_digest.length === 64 &&
+    typeof scan.package_size_bytes === "number" &&
+    scan.package_size_bytes > 0 &&
+    typeof scan.scanned_file_count === "number" &&
+    scan.scanned_file_count > 0 &&
+    findings.length <= 500 &&
+    findings.every(isContentPolicyFinding) &&
+    checks.length === 5 &&
+    checks.every(isValidationCheck) &&
+    isStringArray(scan.limitations) &&
+    scan.limitations.length > 0 &&
     noAuthority.every((flag) => flag === false)
   );
 }
@@ -577,6 +747,61 @@ export async function inventoryConnectorPackage(validation: ConnectorPackageVali
     inventory.package_size_bytes !== validation.package_size_bytes
   ) {
     throw new Error("Connector inventory does not match the exact validation report");
+  }
+  return payload;
+}
+
+export async function scanConnectorPackageContent(
+  inventory: ConnectorPackageSupplyChainInventory,
+) {
+  if (inventory.outcome !== "passed") {
+    throw new Error("Only a passed package inventory can be content-policy scanned");
+  }
+  const response = await apiFetch("/api/v1/connectors/package-content-policy-scans", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "Idempotency-Key": `connector-content-policy-scan.${crypto.randomUUID()}`,
+    },
+    body: JSON.stringify({
+      schema_version: "atlas.connector-package-content-policy-scan-request.v1",
+      source_inventory_id: inventory.inventory_id,
+      source_inventory_digest: inventory.canonical_digest,
+      package_digest: inventory.package_digest,
+      scan_profile: "atlas.connector-content-policy-scan.python312.v1",
+      acknowledged_untrusted_package_content: true,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Connector package content-policy scan failed with ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  if (!isSafeContentPolicyScan(payload)) {
+    throw new Error("Connector registry returned unsafe content-policy evidence");
+  }
+  const scan = payload.data;
+  if (
+    scan.source_inventory_id !== inventory.inventory_id ||
+    scan.source_inventory_digest !== inventory.canonical_digest ||
+    scan.source_validation_id !== inventory.source_validation_id ||
+    scan.source_validation_digest !== inventory.source_validation_digest ||
+    scan.source_acquisition_id !== inventory.source_acquisition_id ||
+    scan.source_acquisition_digest !== inventory.source_acquisition_digest ||
+    scan.source_handoff_id !== inventory.source_handoff_id ||
+    scan.source_project_id !== inventory.source_project_id ||
+    scan.source_acquired_by !== inventory.source_acquired_by ||
+    scan.source_validated_by !== inventory.source_validated_by ||
+    scan.source_inventoried_by !== inventory.inventoried_by ||
+    scan.organization_id !== inventory.organization_id ||
+    scan.environment_id !== inventory.environment_id ||
+    scan.package_digest !== inventory.package_digest ||
+    scan.package_size_bytes !== inventory.package_size_bytes ||
+    scan.inventory_digest !== inventory.inventory_digest ||
+    scan.dependency_set_digest !== inventory.dependency_set_digest ||
+    scan.scanned_file_count !== inventory.files.length
+  ) {
+    throw new Error("Content-policy scan does not match the exact package inventory");
   }
   return payload;
 }
