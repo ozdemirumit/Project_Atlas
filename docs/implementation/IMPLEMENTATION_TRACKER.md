@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-048 |
 | Title | Governed MCP Builder isolated Python scaffold generation |
-| Status | In Progress |
+| Status | Completed |
 | Branch | `agent/mcp-builder-isolated-scaffold-generation` |
-| Pull Request | Pending |
+| Pull Request | [#60](https://github.com/ozdemirumit/Project_Atlas/pull/60) |
 | Governing Documents | ATLAS-003, ATLAS-014, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-004 |
 | Last Updated | 2026-08-05 |
-| Next Action | Publish the implementation branch, complete GitHub CI, and merge the validated slice |
+| Next Action | Scope ATLAS-IMP-049 isolated generated-scaffold validation |
 
 ### ATLAS-IMP-048 Scope Rationale
 
@@ -88,7 +88,8 @@
   live browser. At 1280 pixels the file list and preview remained side by side without overlap or
   horizontal overflow; at 390-by-844 they stacked in order within the viewport. Browser warning and
   error logs were empty.
-- GitHub CI evidence is pending publication of the implementation commit.
+- Source commit `398598d` passed both backend and frontend gates in [GitHub Actions run
+  30981084337](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30981084337).
 
 ### ATLAS-IMP-047 Scope Rationale
 
@@ -2812,6 +2813,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-045 | Governed non-executable human-review completion receipt | Completed through [PR #57](https://github.com/ozdemirumit/Project_Atlas/pull/57) from source commit `53429db`; 379 backend tests, 34 frontend tests, live four-identity API and desktop/mobile receipt validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-046 | Governed MCP Builder project and OpenAPI source-analysis foundation | Completed through [PR #58](https://github.com/ozdemirumit/Project_Atlas/pull/58) from source commit `0e0bccc`; 389 backend tests, 35 frontend tests, live secret-free source-analysis API and desktop/mobile Builder validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-047 | Governed MCP Builder human design checkpoint | Completed through [PR #59](https://github.com/ozdemirumit/Project_Atlas/pull/59) from source commit `318d023`; 393 backend tests, 35 frontend tests, live immutable design-checkpoint API and desktop/mobile Builder validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-048 | Governed MCP Builder isolated Python scaffold generation | Completed through [PR #60](https://github.com/ozdemirumit/Project_Atlas/pull/60) from source commit `398598d`; 397 backend tests, 35 frontend tests, live deterministic quarantine generation, filesystem integrity, and desktop/mobile Builder validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
