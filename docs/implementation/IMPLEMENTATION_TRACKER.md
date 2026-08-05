@@ -96,7 +96,9 @@
   `b64ca12621553e1bd6ec7de597fb2d659ebb6adc`. PR CI run
   [31011400696](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31011400696) and post-merge
   `main` CI run [31011628644](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31011628644)
-  both passed backend and frontend jobs.
+  both passed backend and frontend jobs. Closure CI run
+  [31011934986](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31011934986) also passed both
+  jobs after the final tracker update.
 
 ### ATLAS-IMP-055 Scope Rationale
 
