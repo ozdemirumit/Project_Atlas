@@ -4,14 +4,59 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-052 |
-| Title | Governed MCP Builder isolated lab validation foundation |
-| Status | Done |
-| Branch | `agent/mcp-builder-lab-validation` |
-| Pull Request | [PR #64](https://github.com/ozdemirumit/Project_Atlas/pull/64) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008 |
+| Task ID | ATLAS-IMP-053 |
+| Title | Governed MCP Builder candidate package handoff foundation |
+| Status | In Progress |
+| Branch | `agent/mcp-builder-candidate-handoff` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008, ADR-009 |
 | Last Updated | 2026-08-05 |
-| Next Action | Select and scope ATLAS-IMP-053 from the approved MCP Builder lifecycle |
+| Next Action | Implement deterministic candidate archive, immutable handoff evidence, APIs, download, persistence, and web custody workspace |
+
+### ATLAS-IMP-053 Scope Rationale
+
+- IMP-052 supplies passed bounded runtime evidence for the exact quarantined scaffold. ATLAS-022 next
+  requires a reproducible candidate package and complete custody envelope before ATLAS-020 acquisition.
+- ADR-009 defines an unsigned, content-addressed deterministic ZIP containing only exact verified
+  generated files and bounded handoff metadata. The state remains `candidate_quarantined`.
+- This slice creates a transport artifact and evidence record only. It neither signs nor registers,
+  installs, enables, configures, trusts, executes, deploys, or mutates a connector or infrastructure.
+
+### ATLAS-IMP-053 Acceptance Criteria
+
+- Only an authorized multi-factor human package custodian in the exact project organization and
+  environment with dedicated create/read/download permissions can create or retrieve a handoff. AI and
+  service identities, all prior reviewers/operators, wrong roles, insufficient assurance, and out-of-scope
+  actors fail closed without project, evidence, archive, path, or finding discovery.
+- Handoff requires a passed `atlas.lab-validation.python312.v1` result and binds the complete exact
+  project-through-lab lineage, profiles, contracts, digests, capabilities, tenant, and custodian. Missing,
+  stale, changed, unsupported, failed, non-accepted, or tampered evidence is rejected before publication.
+- Every generated file is reread through quarantine and matched to its immutable inventory and exact
+  deterministic regeneration. The deterministic ZIP has stable ordering, fixed metadata, normalized safe
+  paths, no duplicates or links, bounded entries and total bytes, and a bounded canonical handoff envelope.
+- The envelope records capability, risk, permission, network, review, lab, limitation, unsupported-version,
+  and generated-versus-manual-diff evidence without source bodies, secrets, target addresses, raw child
+  output, or session data. First-profile manual change count is exactly zero.
+- Archive publication is immutable, content-addressed, path-confined, idempotent, concurrency-safe, and
+  integrity-checked on every download. Missing or changed bytes fail closed and are never regenerated under
+  an existing identity.
+- Result creation is immutable, one-to-one with the exact passed lab result, audit-before-persist, and
+  behaviorally equivalent for memory and PostgreSQL. Required audit, artifact, or persistence failure cannot
+  disclose or fabricate success.
+- Strict no-store APIs require browser CSRF for creation, default-deny RBAC, correlation, bounded schemas,
+  safe errors, exact-scope reads, explicit quarantine acknowledgement, and separation of duties. Download
+  returns a verified bounded ZIP attachment with `nosniff`; the web workspace shows digest, custody,
+  contents, limitations, unsigned state, and every no-registration/no-runtime/no-execution boundary.
+- Automated backend and frontend coverage, one Alembic head, live authorized and denied API validation,
+  deterministic archive inspection, corruption and stale fixtures, desktop and 390-pixel mobile inspection,
+  browser-log inspection, downloaded archive verification, and GitHub CI apply.
+- This slice performs no model inference, dependency resolution, vulnerability or malware scan, signing,
+  publisher attestation, registry acquisition or validation, registration, installation, enablement, target
+  configuration, credential resolution, runtime trust, execution, deployment, or infrastructure mutation.
+
+### ATLAS-IMP-053 Validation Evidence
+
+- Pending implementation and validation.
 
 ### ATLAS-IMP-052 Scope Rationale
 
