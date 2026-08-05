@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-061 |
 | Title | Governed connector dependency vulnerability analysis foundation |
-| Status | In Progress |
+| Status | Completed |
 | Branch | `agent/mcp-vulnerability-analysis` |
 | Pull Request | [#73](https://github.com/ozdemirumit/Project_Atlas/pull/73) |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-017 |
 | Last Updated | 2026-08-05 |
-| Next Action | Pass PR #73 CI, merge, and record main-branch and closure-run evidence |
+| Next Action | Begin ATLAS-IMP-062 governed connector package malware analysis |
 
 ### ATLAS-IMP-061 Scope Rationale
 
@@ -79,7 +79,12 @@
 - Browser inspection at 1280 x 720 and 390 x 844 confirms the Connector workspace and source form
   remain present, the mobile document has no horizontal overflow, and captured warning/error logs
   are empty.
-- GitHub pull-request, merge, main-branch CI, and closure-run evidence remain pending.
+- Pull request [#73](https://github.com/ozdemirumit/Project_Atlas/pull/73) passed CI run
+  [31032018653](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31032018653) at head
+  `3f585b71ae8457964e2b2e5745c282354c35be8a`.
+- PR #73 merged as `90450394a4d9f7df3ec7f0896f3f0e3eb744c291`; its main-branch CI run
+  [31032269568](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31032269568) passed.
+- The documentation-only closure commit and its CI run remain pending.
 
 ### ATLAS-IMP-060 Scope Rationale
 
