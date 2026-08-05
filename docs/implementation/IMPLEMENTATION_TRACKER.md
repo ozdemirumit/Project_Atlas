@@ -8,7 +8,7 @@
 | Title | Governed MCP Builder isolated lab validation foundation |
 | Status | In Progress |
 | Branch | `agent/mcp-builder-lab-validation` |
-| Pull Request | Pending |
+| Pull Request | [PR #64](https://github.com/ozdemirumit/Project_Atlas/pull/64) |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008 |
 | Last Updated | 2026-08-05 |
 | Next Action | Publish the completed slice, pass GitHub CI, merge, and synchronize `main` |
@@ -85,7 +85,8 @@
   counts, runtime evidence, all eight checks, limitations, and no-authority statements remained readable
   without horizontal overflow or incoherent overlap. The current page produced no console warnings or
   errors, and the temporary mobile viewport override was reset afterward.
-- GitHub pull request, Actions evidence, merge commit, and synchronized `main` are pending publication.
+- Source commit `d4330b6` and [PR #64](https://github.com/ozdemirumit/Project_Atlas/pull/64)
+  are published; GitHub Actions evidence, merge commit, and synchronized `main` are pending.
 
 ### ATLAS-IMP-051 Scope Rationale
 
