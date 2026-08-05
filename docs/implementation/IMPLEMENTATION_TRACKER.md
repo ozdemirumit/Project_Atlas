@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-059 |
 | Title | Governed connector declared-authority and implementation-behavior comparison foundation |
-| Status | Review |
+| Status | Complete |
 | Branch | `agent/mcp-authority-behavior-validation` |
 | Pull Request | [#71](https://github.com/ozdemirumit/Project_Atlas/pull/71) |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-015 |
 | Last Updated | 2026-08-05 |
-| Next Action | Verify pull-request CI, merge the accepted slice, and verify post-merge `main` CI |
+| Next Action | Scope ATLAS-IMP-060 for validation-pipeline step 7 general static, dependency, vulnerability, malware, and license analysis |
 
 ### ATLAS-IMP-059 Scope Rationale
 
@@ -76,7 +76,9 @@
   authorized creation and read, `no-store` responses, immutable lineage, and all no-authority flags.
 - Desktop inspection at 1280 by 720 and mobile inspection at 390 by 844 showed no horizontal
   overflow; navigation changed to the compact mobile mode and browser error/warning logs were empty.
-- GitHub pull-request and post-merge CI evidence remains pending until publication.
+- [PR #71](https://github.com/ozdemirumit/Project_Atlas/pull/71) merged as
+  `031a8dcd529cdd70a8aa54b5158ee5a77d3b0578`; pull-request CI run
+  `31023958315` and post-merge `main` CI run `31024191600` passed both backend and frontend jobs.
 
 ### ATLAS-IMP-058 Scope Rationale
 
