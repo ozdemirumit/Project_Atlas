@@ -4,14 +4,58 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-053 |
-| Title | Governed MCP Builder candidate package handoff foundation |
-| Status | Completed |
-| Branch | `agent/mcp-builder-candidate-handoff` |
-| Pull Request | [PR #65](https://github.com/ozdemirumit/Project_Atlas/pull/65) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008, ADR-009 |
+| Task ID | ATLAS-IMP-054 |
+| Title | Governed MCP Builder package acquisition foundation |
+| Status | In Progress |
+| Branch | `agent/mcp-package-acquisition` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009, ADR-010 |
 | Last Updated | 2026-08-05 |
-| Next Action | Define and start ATLAS-IMP-054 from the next approved MCP Builder lifecycle boundary |
+| Next Action | Implement the exact Builder handoff-to-ATLAS-020 quarantined acquisition boundary |
+
+### ATLAS-IMP-054 Scope Rationale
+
+- IMP-053 supplies an exact unsigned candidate archive and custody envelope. ATLAS-020 next requires
+  controlled acquisition before package registration validation can begin.
+- ADR-010 defines a separate human registry intake role, immutable byte-for-byte transfer into the
+  connector quarantine, and an attributable acquisition receipt bound to the exact source digest.
+- This slice records controlled package custody only. It neither signs nor validates, registers,
+  approves, installs, enables, configures, trusts, executes, deploys, or mutates a connector.
+
+### ATLAS-IMP-054 Acceptance Criteria
+
+- Only a dedicated multi-factor human registry intake operator in the exact handoff organization and
+  environment with acquisition create/read permissions can acquire or read a receipt. The Builder
+  custodian, all prior reviewers/operators, AI and service identities, wrong-scope actors, and
+  insufficient assurance fail closed without source or archive discovery.
+- Acquisition accepts only the exact supported Builder handoff profile and archive contract. It binds
+  the complete immutable handoff identity, package digest, size, filename, capabilities, source
+  custodian, publisher claim, signature state, organization, environment, and intake operator.
+- Source bytes are reread and integrity checked, then copied unchanged into a separate immutable,
+  content-addressed, path-confined connector quarantine. Missing, changed, corrupt, stale, oversized,
+  unsupported, or mismatched source evidence is rejected without partial success.
+- The one-to-one acquisition receipt is deterministic, immutable, idempotent, concurrency-safe,
+  audit-before-persist, and behaviorally equivalent in memory and PostgreSQL. Audit, archive, or
+  persistence failure cannot fabricate success.
+- Strict no-store APIs require browser CSRF for creation, dedicated default-deny RBAC, correlation,
+  bounded schemas, safe errors, exact tenant scope, explicit quarantine acknowledgement, and
+  separation of duties.
+- The web Connector workspace displays acquired custody, source integrity, unsigned and unattested
+  state, quarantine limitations, and every no-registration/no-runtime/no-execution boundary. It offers
+  no signing, validation, registration, installation, enablement, or execution control.
+- Automated backend and frontend coverage, one Alembic head, live authorized and denied API
+  validation, acquired-byte verification, desktop and 390-pixel mobile inspection, browser-log
+  inspection, and GitHub CI apply.
+- This slice performs no model inference, dependency resolution, vulnerability, malware, secret, or
+  license scan, publisher attestation, package signing, registry validation, registration, approval,
+  installation, enablement, target configuration, credential resolution, runtime trust, execution,
+  deployment, or infrastructure mutation.
+
+### ATLAS-IMP-054 Validation Evidence
+
+- Pending implementation and validation.
+
+### ATLAS-IMP-053 Scope Rationale
 
 ### ATLAS-IMP-053 Scope Rationale
 
