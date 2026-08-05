@@ -49,6 +49,33 @@ class PostgreSQLHumanReviewRepository:
             )
             return self._to_domain(row) if row is not None else None
 
+    async def list_scope(
+        self,
+        *,
+        organization_id: str,
+        environment_id: str,
+        site_id: str,
+        limit: int,
+    ) -> tuple[UpgradeChangeHumanReview, ...]:
+        async with self._sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(UpgradeChangeHumanReviewModel)
+                    .where(
+                        UpgradeChangeHumanReviewModel.organization_id == organization_id,
+                        UpgradeChangeHumanReviewModel.environment_id == environment_id,
+                        UpgradeChangeHumanReviewModel.site_id == site_id,
+                        UpgradeChangeHumanReviewModel.state == HumanReviewState.PENDING.value,
+                    )
+                    .order_by(
+                        UpgradeChangeHumanReviewModel.expires_at,
+                        UpgradeChangeHumanReviewModel.review_id,
+                    )
+                    .limit(limit)
+                )
+            ).all()
+            return tuple(self._to_domain(row) for row in rows)
+
     async def add(self, record: UpgradeChangeHumanReview) -> bool:
         try:
             async with self._sessions.begin() as session:
@@ -130,6 +157,7 @@ class PostgreSQLHumanReviewRepository:
             "reviewer_id": decision.reviewer_id,
             "reviewer_role_id": decision.reviewer_role_id,
             "rationale": decision.rationale,
+            "acknowledged_no_authority": decision.acknowledged_no_authority,
             "idempotency_key": decision.idempotency_key,
             "request_fingerprint": decision.request_fingerprint,
             "decided_at": decision.decided_at.isoformat(),
@@ -163,6 +191,7 @@ class PostgreSQLHumanReviewRepository:
                 reviewer_id=item["reviewer_id"],
                 reviewer_role_id=item["reviewer_role_id"],
                 rationale=item["rationale"],
+                acknowledged_no_authority=item.get("acknowledged_no_authority", False),
                 idempotency_key=item["idempotency_key"],
                 request_fingerprint=item["request_fingerprint"],
                 decided_at=datetime.fromisoformat(item["decided_at"]),

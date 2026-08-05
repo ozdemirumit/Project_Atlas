@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
@@ -38,6 +38,14 @@ STAGE_IDS = (
 ELIGIBLE_ASSURANCE = frozenset(
     {AssuranceLevel.SINGLE_FACTOR, AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
 )
+MAX_INBOX_SCAN = 500
+
+
+@dataclass(frozen=True, slots=True)
+class HumanReviewInboxPage:
+    items: tuple[UpgradeChangeHumanReview, ...]
+    next_cursor: str | None
+    limit: int
 
 
 class HumanReviewService:
@@ -212,6 +220,71 @@ class HumanReviewService:
         )
         return record
 
+    async def inbox(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        role_id: str | None,
+        cursor: str | None,
+        limit: int,
+        correlation_id: str,
+    ) -> HumanReviewInboxPage:
+        if not 1 <= limit <= 50:
+            raise ChangeReviewError("human_review_inbox_limit_invalid")
+        candidates = await self._review_repository.list_scope(
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+            site_id=self._site_id,
+            limit=MAX_INBOX_SCAN + 1,
+        )
+        if len(candidates) > MAX_INBOX_SCAN:
+            raise ChangeReviewError("human_review_inbox_capacity_exceeded")
+        selected_roles = set(actor.role_ids)
+        if role_id is not None:
+            selected_roles &= {role_id}
+        now = self._clock()
+        visible: list[UpgradeChangeHumanReview] = []
+        for record in candidates:
+            stage = self._current_stage(record)
+            if (
+                stage is None
+                or record.state is not HumanReviewState.PENDING
+                or now >= record.expires_at
+                or stage.required_role_id not in selected_roles
+                or not self._reviewer_is_eligible(actor, record, stage)
+            ):
+                continue
+            try:
+                await self._revalidate_source(record)
+            except ChangeReviewError:
+                continue
+            visible.append(record)
+
+        start = 0
+        if cursor is not None:
+            cursor_index = next(
+                (index for index, record in enumerate(visible) if record.review_id == cursor),
+                None,
+            )
+            if cursor_index is None:
+                raise ChangeReviewError("human_review_inbox_cursor_invalid")
+            start = cursor_index + 1
+        page_items = tuple(visible[start : start + limit])
+        has_more = start + limit < len(visible)
+        next_cursor = page_items[-1].review_id if has_more and page_items else None
+        await self._audit(
+            actor,
+            correlation_id=correlation_id,
+            idempotency_key=None,
+            result_code="upgrade_human_review_inbox_read",
+            permission_id="platform.upgrade-change-human-review.read",
+            metadata=(
+                ("visible_count", str(len(page_items))),
+                ("role_filter", role_id or "actor.roles"),
+            ),
+        )
+        return HumanReviewInboxPage(items=page_items, next_cursor=next_cursor, limit=limit)
+
     async def decide(
         self,
         *,
@@ -220,11 +293,14 @@ class HumanReviewService:
         stage_id: str,
         outcome: HumanReviewOutcome,
         rationale: str,
+        acknowledged_no_authority: bool,
         expected_version: int,
         idempotency_key: str,
         correlation_id: str,
     ) -> UpgradeChangeHumanReview:
         reason = rationale.strip()
+        if not acknowledged_no_authority:
+            raise ChangeReviewError("human_review_decision_confirmation_required")
         if not 5 <= len(reason) <= 1000:
             raise ChangeReviewError("human_review_rationale_invalid")
         record = await self._load_visible(actor, review_id)
@@ -235,6 +311,7 @@ class HumanReviewService:
                 "stage_id": stage_id,
                 "outcome": outcome.value,
                 "rationale": reason,
+                "acknowledged_no_authority": acknowledged_no_authority,
                 "expected_version": expected_version,
                 "reviewer_id": actor.subject_id,
             }
@@ -281,6 +358,7 @@ class HumanReviewService:
             reviewer_id=actor.subject_id,
             reviewer_role_id=stage.required_role_id,
             rationale=reason,
+            acknowledged_no_authority=acknowledged_no_authority,
             idempotency_key=idempotency_key,
             request_fingerprint=fingerprint,
             decided_at=self._clock(),
@@ -402,10 +480,35 @@ class HumanReviewService:
             raise ChangeReviewError("human_review_separation_required")
         if actor.subject_id in {decision.reviewer_id for decision in record.decisions}:
             raise ChangeReviewError("human_review_distinct_reviewer_required")
+        if any(not decision.acknowledged_no_authority for decision in record.decisions):
+            raise ChangeReviewError("human_review_prior_decision_evidence_incomplete")
         if stage.state is not HumanReviewStageState.PENDING:
             raise ChangeReviewError("human_review_stage_not_pending")
         if stage.required_role_id not in actor.role_ids:
             raise ChangeReviewError("human_review_role_required")
+
+    @staticmethod
+    def _reviewer_is_eligible(
+        actor: AuthenticatedSubject,
+        record: UpgradeChangeHumanReview,
+        stage: HumanReviewStage,
+    ) -> bool:
+        return (
+            actor.kind is SubjectKind.HUMAN
+            and actor.assurance_level in ELIGIBLE_ASSURANCE
+            and actor.subject_id != record.requester_id
+            and actor.subject_id not in {decision.reviewer_id for decision in record.decisions}
+            and all(decision.acknowledged_no_authority for decision in record.decisions)
+            and stage.state is HumanReviewStageState.PENDING
+            and stage.required_role_id in actor.role_ids
+        )
+
+    @staticmethod
+    def _current_stage(record: UpgradeChangeHumanReview) -> HumanReviewStage | None:
+        return next(
+            (stage for stage in record.stages if stage.state is HumanReviewStageState.PENDING),
+            None,
+        )
 
     async def _expire(
         self,

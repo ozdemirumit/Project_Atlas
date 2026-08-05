@@ -3408,4 +3408,168 @@ describe("deployment configuration preview", () => {
       "human-review.19.support-request-001",
     );
   });
+
+  it("shows only assigned human reviews and records an acknowledged non-approval outcome", async () => {
+    const reviewerIdentity = {
+      data: {
+        ...identity.data,
+        subject_id: "subject.enterprise.platform-reviewer",
+        display_name: "Platform Reviewer",
+        role_ids: ["role.platform-owner"],
+        effective_role_versions: ["role.platform-owner:v1"],
+      },
+    };
+    const packetDigest = "2".repeat(64);
+    const roles = [
+      "role.platform-owner",
+      "role.service-owner",
+      "role.security-reviewer",
+      "role.change-approver",
+    ];
+    const stages = roles.map((roleId, index) => ({
+      stage_id: [
+        "stage.platform-technical",
+        "stage.service-owner",
+        "stage.security-review",
+        "stage.change-authority",
+      ][index],
+      sequence: index + 1,
+      required_role_id: roleId,
+      quorum: 1,
+      state: index === 0 ? "pending" : "waiting",
+      packet_digest: packetDigest,
+      reviewer_id: null,
+      decision_id: null,
+      decided_at: null,
+      rationale: null,
+    }));
+    const assignedReview = {
+      review_id: "change-human-review.inbox-ui-001",
+      schema_version: "atlas.upgrade-change-human-review.v1",
+      version: 1,
+      state: "pending",
+      packet_id: "change-review-packet.inbox-ui-001",
+      packet_digest: packetDigest,
+      requester_id: "subject.enterprise.upgrade-requester",
+      risk_class: "risk.medium",
+      change_class: "change.reviewed-standard",
+      impacted_service_ids: ["service.atlas-api", "service.atlas-web"],
+      evidence_digests: ["3", "4", "5", "6"].map((value) => value.repeat(64)),
+      proposed_window_start: "2026-08-05T10:00:00Z",
+      proposed_window_end: "2026-08-05T11:00:00Z",
+      justification: "Review exact upgrade evidence before any external handoff",
+      required_role_ids: roles,
+      stages,
+      decisions: [],
+      canonical_digest: "1".repeat(64),
+      created_at: "2026-08-05T06:00:00Z",
+      updated_at: "2026-08-05T06:00:00Z",
+      expires_at: "2026-08-05T09:00:00Z",
+      reused: false,
+      human_review_completed: false,
+      approval_granted: false,
+      itsm_dispatched: false,
+      handoff_issued: false,
+      workflow_executed: false,
+      execution_authorized: false,
+      infrastructure_mutation_performed: false,
+    };
+    let decisionRecorded = false;
+    let decisionBody = "";
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) {
+        return Promise.resolve(new Response(JSON.stringify(reviewerIdentity), { status: 200 }));
+      }
+      if (
+        url.endsWith("/platform/upgrade-change-reviews/human-reviews") &&
+        (!init?.method || init.method === "GET")
+      ) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                items: decisionRecorded ? [] : [assignedReview],
+                next_cursor: null,
+                limit: 20,
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url.endsWith(`/${assignedReview.review_id}/decisions`)) {
+        decisionBody = typeof init?.body === "string" ? init.body : "";
+        decisionRecorded = true;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                ...assignedReview,
+                version: 2,
+                state: "needs_evidence",
+                stages: stages.map((stage, index) =>
+                  index === 0
+                    ? {
+                        ...stage,
+                        state: "needs_evidence",
+                        reviewer_id: reviewerIdentity.data.subject_id,
+                        decision_id: "human-review-decision.inbox-ui-001",
+                        decided_at: "2026-08-05T06:05:00Z",
+                        rationale: "Current dependency evidence is required before approval",
+                      }
+                    : stage,
+                ),
+                decisions: [
+                  {
+                    decision_id: "human-review-decision.inbox-ui-001",
+                    stage_id: "stage.platform-technical",
+                    request_version: 1,
+                    outcome: "needs_evidence",
+                    reviewer_id: reviewerIdentity.data.subject_id,
+                    reviewer_role_id: "role.platform-owner",
+                    rationale: "Current dependency evidence is required before approval",
+                    acknowledged_no_authority: true,
+                    decided_at: "2026-08-05T06:05:00Z",
+                  },
+                ],
+                updated_at: "2026-08-05T06:05:00Z",
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("1 assigned")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Review request" }));
+    expect(screen.getByRole("button", { name: "Approve" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Needs evidence" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Defer" })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Needs evidence" }));
+    fireEvent.change(screen.getByLabelText("Decision rationale"), {
+      target: { value: "Current dependency evidence is required before approval" },
+    });
+    fireEvent.click(
+      screen.getByLabelText(/This decision records human review only/i),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Record decision" }));
+
+    expect(await screen.findByText("Decision recorded")).toBeVisible();
+    expect(await screen.findByText("0 assigned")).toBeVisible();
+    expect(decisionBody).toContain('"outcome":"needs_evidence"');
+    expect(decisionBody).toContain('"acknowledged_no_authority":true');
+    expect(decisionBody).not.toContain("execution_authorized");
+  });
 });

@@ -73,6 +73,7 @@ class HumanReviewDecision:
     reviewer_id: str
     reviewer_role_id: str
     rationale: str
+    acknowledged_no_authority: bool
     idempotency_key: str
     request_fingerprint: str
     decided_at: datetime

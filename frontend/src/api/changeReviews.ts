@@ -124,6 +124,7 @@ export type UpgradeHumanReview = {
     reviewer_id: string;
     reviewer_role_id: string;
     rationale: string;
+    acknowledged_no_authority: true;
     decided_at: string;
   }>;
   canonical_digest: string;
@@ -138,6 +139,12 @@ export type UpgradeHumanReview = {
   workflow_executed: false;
   execution_authorized: false;
   infrastructure_mutation_performed: false;
+};
+
+export type UpgradeHumanReviewInbox = {
+  items: UpgradeHumanReview[];
+  next_cursor: string | null;
+  limit: number;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -197,9 +204,9 @@ function isPacket(value: unknown): value is { data: UpgradeChangeReviewPacket } 
   );
 }
 
-function isHumanReview(value: unknown): value is { data: UpgradeHumanReview } {
-  if (!isRecord(value) || !isRecord(value.data)) return false;
-  const item = value.data;
+function isHumanReviewData(value: unknown): value is UpgradeHumanReview {
+  if (!isRecord(value)) return false;
+  const item = value;
   const safeStates = ["pending", "needs_evidence", "deferred", "rejected", "completed", "expired"];
   return (
     item.schema_version === "atlas.upgrade-change-human-review.v1" &&
@@ -226,12 +233,36 @@ function isHumanReview(value: unknown): value is { data: UpgradeHumanReview } {
         stage.packet_digest === item.packet_digest,
     ) &&
     Array.isArray(item.decisions) &&
+    item.decisions.every(
+      (decision) =>
+        isRecord(decision) &&
+        typeof decision.decision_id === "string" &&
+        typeof decision.reviewer_id === "string" &&
+        decision.acknowledged_no_authority === true,
+    ) &&
     item.approval_granted === false &&
     item.itsm_dispatched === false &&
     item.handoff_issued === false &&
     item.workflow_executed === false &&
     item.execution_authorized === false &&
     item.infrastructure_mutation_performed === false
+  );
+}
+
+function isHumanReview(value: unknown): value is { data: UpgradeHumanReview } {
+  return isRecord(value) && isHumanReviewData(value.data);
+}
+
+function isHumanReviewInbox(value: unknown): value is { data: UpgradeHumanReviewInbox } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const data = value.data;
+  return (
+    Array.isArray(data.items) &&
+    data.items.every(isHumanReviewData) &&
+    (data.next_cursor === null || typeof data.next_cursor === "string") &&
+    typeof data.limit === "number" &&
+    data.limit >= 1 &&
+    data.limit <= 50
   );
 }
 
@@ -348,11 +379,24 @@ export async function getUpgradeHumanReview(reviewId: string) {
   return payload;
 }
 
+export async function getUpgradeHumanReviewInbox(roleId?: string) {
+  const query = roleId ? `?role_id=${encodeURIComponent(roleId)}` : "";
+  const response = await apiFetch(
+    `/api/v1/platform/upgrade-change-reviews/human-reviews${query}`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (!response.ok) throw new Error(`Human review inbox failed with ${response.status}`);
+  const payload: unknown = await response.json();
+  if (!isHumanReviewInbox(payload)) throw new Error("Human review inbox returned unsafe data");
+  return payload;
+}
+
 export async function decideUpgradeHumanReview(input: {
   review: UpgradeHumanReview;
   stageId: string;
   outcome: "approve" | "reject" | "needs_evidence" | "defer";
   rationale: string;
+  acknowledgedNoAuthority: boolean;
 }) {
   const response = await apiFetch(
     `/api/v1/platform/upgrade-change-reviews/human-reviews/${encodeURIComponent(input.review.review_id)}/decisions`,
@@ -368,6 +412,7 @@ export async function decideUpgradeHumanReview(input: {
         stage_id: input.stageId,
         outcome: input.outcome,
         rationale: input.rationale,
+        acknowledged_no_authority: input.acknowledgedNoAuthority,
         expected_version: input.review.version,
       }),
     },
