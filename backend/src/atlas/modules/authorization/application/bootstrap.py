@@ -85,6 +85,10 @@ CONNECTOR_PACKAGE_ACQUIRE = "connectors.packages.acquire"
 CONNECTOR_PACKAGE_ACQUISITION_READ = "connectors.package-acquisitions.read"
 CONNECTOR_PACKAGE_VALIDATION_CREATE = "connectors.package-validations.create"
 CONNECTOR_PACKAGE_VALIDATION_READ = "connectors.package-validations.read"
+CONNECTOR_PACKAGE_SUPPLY_CHAIN_INVENTORY_CREATE = (
+    "connectors.package-supply-chain-inventories.create"
+)
+CONNECTOR_PACKAGE_SUPPLY_CHAIN_INVENTORY_READ = "connectors.package-supply-chain-inventories.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -408,6 +412,19 @@ def connector_package_validation_scope(
         site_id="site.local",
         domain_id="domain.connectors",
         resource_id="resource.connector.package-validations",
+        capability_class=capability_class,
+    )
+
+
+def connector_package_supply_chain_inventory_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.connectors",
+        resource_id="resource.connector.package-supply-chain-inventories",
         capability_class=capability_class,
     )
 
@@ -829,6 +846,14 @@ def build_development_authorization_service(
             permission_id=CONNECTOR_PACKAGE_VALIDATION_READ,
             description="Read one exact-scope immutable connector package validation report.",
         ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_PACKAGE_SUPPLY_CHAIN_INVENTORY_CREATE,
+            description="Inventory exact content and dependency declarations for one package.",
+        ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_PACKAGE_SUPPLY_CHAIN_INVENTORY_READ,
+            description="Read one immutable connector package supply-chain inventory.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -896,6 +921,8 @@ def build_development_authorization_service(
                 CONNECTOR_PACKAGE_ACQUISITION_READ,
                 CONNECTOR_PACKAGE_VALIDATION_CREATE,
                 CONNECTOR_PACKAGE_VALIDATION_READ,
+                CONNECTOR_PACKAGE_SUPPLY_CHAIN_INVENTORY_CREATE,
+                CONNECTOR_PACKAGE_SUPPLY_CHAIN_INVENTORY_READ,
             }
         ),
     )
@@ -1272,6 +1299,34 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=connector_package_validation_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id=(
+                    "assignment.development.connector-package-supply-chain-inventory-create"
+                ),
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_package_supply_chain_inventory_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id=(
+                    "assignment.development.connector-package-supply-chain-inventory-read"
+                ),
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_package_supply_chain_inventory_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,

@@ -87,7 +87,12 @@ def canonical_json(value: object) -> str:
     return json.dumps(value, sort_keys=True, indent=2, ensure_ascii=True) + "\n"
 
 
-def package_files(*, invalid_manifest: bool = False) -> tuple[BuilderGeneratedContent, ...]:
+def package_files(
+    *,
+    invalid_manifest: bool = False,
+    overrides: dict[str, str] | None = None,
+    additions: dict[str, str] | None = None,
+) -> tuple[BuilderGeneratedContent, ...]:
     capability_id = "capability.storage.health.read"
     manifest = {
         "schema_version": "atlas.connector-manifest.v1",
@@ -142,14 +147,51 @@ def package_files(*, invalid_manifest: bool = False) -> tuple[BuilderGeneratedCo
         "x-atlas-response-code-evidence": ["200"],
         "x-atlas-generation-status": "draft_requires_schema_review",
     }
+    contents = {
+        "atlas-connector.yaml": canonical_json(manifest),
+        "schemas/config/config.schema.json": canonical_json(config_schema),
+        "schemas/inputs/capability_read.schema.json": canonical_json(input_schema),
+        "schemas/outputs/capability_read.schema.json": canonical_json(output_schema),
+        "pyproject.toml": (
+            "[build-system]\n"
+            'requires = ["setuptools>=75,<76"]\n'
+            'build-backend = "setuptools.build_meta"\n\n'
+            "[project]\n"
+            'name = "atlas-generated-0123456789ab"\n'
+            'version = "0.1.0.dev0"\n'
+            'description = "Quarantined Project Atlas connector review scaffold"\n'
+            'requires-python = ">=3.12,<3.13"\n'
+            "dependencies = []\n\n"
+            "[tool.ruff]\n"
+            'target-version = "py312"\n'
+            "line-length = 100\n\n"
+            "[tool.mypy]\n"
+            'python_version = "3.12"\n'
+            "strict = true\n\n"
+            "[tool.pytest.ini_options]\n"
+            'testpaths = ["tests"]\n'
+        ),
+        "README.md": "# Quarantined connector review scaffold\n",
+        "src/atlas_generated_connector/__init__.py": '"""Quarantined draft."""\n',
+        "src/atlas_generated_connector/errors.py": "class DraftError(RuntimeError):\n    pass\n",
+        "src/atlas_generated_connector/capabilities/__init__.py": (
+            '"""Generated capability drafts."""\n'
+        ),
+        "src/atlas_generated_connector/capabilities/capability_read.py": (
+            "def draft_handler() -> None:\n    raise RuntimeError('draft only')\n"
+        ),
+        "tests/contract/test_capability_read.py": "def test_draft() -> None:\n    assert True\n",
+        "tests/fixtures/capability_read.json": canonical_json({"synthetic": True}),
+    }
+    contents.update(overrides or {})
+    contents.update(additions or {})
     return tuple(
-        BuilderGeneratedContent(relative_path=path, media_type="application/json", content=value)
-        for path, value in (
-            ("atlas-connector.yaml", canonical_json(manifest)),
-            ("schemas/config/config.schema.json", canonical_json(config_schema)),
-            ("schemas/inputs/capability_read.schema.json", canonical_json(input_schema)),
-            ("schemas/outputs/capability_read.schema.json", canonical_json(output_schema)),
+        BuilderGeneratedContent(
+            relative_path=path,
+            media_type="application/json" if path.endswith((".json", ".yaml")) else "text/plain",
+            content=value,
         )
+        for path, value in sorted(contents.items())
     )
 
 
@@ -184,6 +226,8 @@ async def service_fixture(
     *,
     invalid_manifest: bool = False,
     audit_sink: CollectingAuditSink | FailingAuditSink | None = None,
+    overrides: dict[str, str] | None = None,
+    additions: dict[str, str] | None = None,
 ) -> tuple[
     PackageValidationService,
     ConnectorPackageAcquisition,
@@ -193,10 +237,11 @@ async def service_fixture(
     handoff, original_content = candidate()
     with zipfile.ZipFile(io.BytesIO(original_content), "r") as source:
         envelope: dict[str, Any] = json.loads(source.read("ATLAS-CANDIDATE-HANDOFF.json"))
-    envelope["generated_file_count"] = 4
-    archive = DeterministicCandidateArchiveBuilder().build(
-        files=package_files(invalid_manifest=invalid_manifest), envelope=envelope
+    files = package_files(
+        invalid_manifest=invalid_manifest, overrides=overrides, additions=additions
     )
+    envelope["generated_file_count"] = len(files)
+    archive = DeterministicCandidateArchiveBuilder().build(files=files, envelope=envelope)
     capability = AcquiredCapabilityEvidence(
         capability_id="capability.storage.health.read",
         capability_class="C1",
