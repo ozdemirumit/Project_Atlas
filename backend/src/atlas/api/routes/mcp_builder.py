@@ -8,6 +8,9 @@ from fastapi import APIRouter, Depends, Header, Path, Request, Response
 from atlas.api.errors import AtlasError
 from atlas.api.mcp_builder_schemas import (
     BuilderGeneratedFileData,
+    McpBuilderCandidateHandoffData,
+    McpBuilderCandidateHandoffInput,
+    McpBuilderCandidateHandoffResponse,
     McpBuilderDesignCheckpointData,
     McpBuilderDesignCheckpointInput,
     McpBuilderDesignCheckpointResponse,
@@ -38,6 +41,9 @@ from atlas.api.mcp_builder_schemas import (
 )
 from atlas.api.schemas import ResponseMeta
 from atlas.api.security import (
+    authorize_mcp_builder_candidate_handoff_create,
+    authorize_mcp_builder_candidate_handoff_download,
+    authorize_mcp_builder_candidate_handoff_read,
     authorize_mcp_builder_create,
     authorize_mcp_builder_design_create,
     authorize_mcp_builder_design_read,
@@ -58,6 +64,7 @@ from atlas.modules.authorization.domain.models import AuthorizationDecision
 from atlas.modules.identity.domain.models import AuthenticatedSubject
 from atlas.modules.mcp_builder.application.ports import McpBuilderError
 from atlas.modules.mcp_builder.application.service import McpBuilderService
+from atlas.modules.mcp_builder.domain.candidate_handoff import McpBuilderCandidateHandoff
 from atlas.modules.mcp_builder.domain.design_review import McpBuilderDesignCheckpoint
 from atlas.modules.mcp_builder.domain.domain_review import McpBuilderDomainReview
 from atlas.modules.mcp_builder.domain.generation import McpBuilderGeneration
@@ -170,6 +177,18 @@ def _lab_validation_response(
     response.headers["Cache-Control"] = "no-store"
     return McpBuilderLabValidationResponse(
         data=McpBuilderLabValidationData.from_domain(validation),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+def _candidate_handoff_response(
+    handoff: McpBuilderCandidateHandoff, request: Request, response: Response
+) -> McpBuilderCandidateHandoffResponse:
+    response.headers["Cache-Control"] = "no-store"
+    return McpBuilderCandidateHandoffResponse(
+        data=McpBuilderCandidateHandoffData.from_domain(handoff),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),
@@ -570,3 +589,85 @@ async def get_mcp_builder_lab_validation(
     except McpBuilderError as error:
         _raise(error)
     return _lab_validation_response(validation, request, response)
+
+
+@router.post(
+    "/{project_id}/candidate-handoffs",
+    response_model=McpBuilderCandidateHandoffResponse,
+    status_code=201,
+)
+async def create_mcp_builder_candidate_handoff(
+    project_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    payload: McpBuilderCandidateHandoffInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_mcp_builder_candidate_handoff_create)
+    ],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> McpBuilderCandidateHandoffResponse:
+    service: McpBuilderService = request.app.state.mcp_builder_service
+    try:
+        handoff = await service.create_candidate_handoff(
+            actor=subject,
+            project_id=project_id,
+            idempotency_key=idempotency_key,
+            correlation_id=str(request.state.correlation_id),
+            **payload.model_dump(exclude={"schema_version"}),
+        )
+    except McpBuilderError as error:
+        _raise(error)
+    return _candidate_handoff_response(handoff, request, response)
+
+
+@router.get("/{project_id}/candidate-handoff", response_model=McpBuilderCandidateHandoffResponse)
+async def get_mcp_builder_candidate_handoff(
+    project_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_mcp_builder_candidate_handoff_read)
+    ],
+) -> McpBuilderCandidateHandoffResponse:
+    service: McpBuilderService = request.app.state.mcp_builder_service
+    try:
+        handoff = await service.get_candidate_handoff(
+            actor=subject,
+            project_id=project_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except McpBuilderError as error:
+        _raise(error)
+    return _candidate_handoff_response(handoff, request, response)
+
+
+@router.get("/{project_id}/candidate-handoff/archive")
+async def download_mcp_builder_candidate_archive(
+    project_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_mcp_builder_candidate_handoff_download)
+    ],
+) -> Response:
+    service: McpBuilderService = request.app.state.mcp_builder_service
+    try:
+        handoff, content = await service.download_candidate_archive(
+            actor=subject,
+            project_id=project_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except McpBuilderError as error:
+        _raise(error)
+    return Response(
+        content=content,
+        media_type="application/zip",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": f'attachment; filename="{handoff.package_filename}"',
+            "X-Content-Type-Options": "nosniff",
+            "X-Atlas-Package-Digest": handoff.package_digest,
+        },
+    )

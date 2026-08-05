@@ -36,6 +36,9 @@ from atlas.modules.authorization.application.bootstrap import (
     IDENTITY_SELF_READ,
     IDENTITY_SUBJECT_ADMIN_DISABLE,
     INVESTIGATION_CREATE,
+    MCP_BUILDER_CANDIDATE_HANDOFF_CREATE,
+    MCP_BUILDER_CANDIDATE_HANDOFF_DOWNLOAD,
+    MCP_BUILDER_CANDIDATE_HANDOFF_READ,
     MCP_BUILDER_DESIGN_CREATE,
     MCP_BUILDER_DESIGN_READ,
     MCP_BUILDER_DOMAIN_REVIEW_CREATE,
@@ -1793,5 +1796,41 @@ async def authorize_mcp_builder_lab_validation_read(
         request,
         subject,
         permission_id=MCP_BUILDER_LAB_VALIDATION_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def authorize_mcp_builder_candidate_handoff_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_mcp_builder(
+        request,
+        subject,
+        permission_id=MCP_BUILDER_CANDIDATE_HANDOFF_CREATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_mcp_builder_candidate_handoff_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_mcp_builder(
+        request,
+        subject,
+        permission_id=MCP_BUILDER_CANDIDATE_HANDOFF_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def authorize_mcp_builder_candidate_handoff_download(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_mcp_builder(
+        request,
+        subject,
+        permission_id=MCP_BUILDER_CANDIDATE_HANDOFF_DOWNLOAD,
         capability_class=CapabilityClass.C1_READ_ONLY,
     )

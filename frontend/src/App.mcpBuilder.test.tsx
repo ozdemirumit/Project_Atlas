@@ -3,6 +3,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
+import {
+  downloadMcpBuilderCandidateArchive,
+  type McpBuilderCandidateHandoff,
+} from "./api/mcpBuilder";
+
+const candidateArchiveBytes = new TextEncoder().encode("candidate archive");
+const candidateArchiveDigest =
+  "2bec12b4b590104ae734d2d91e6d9f1bdbb938b65d031606bdb15ee7b1e9bd41";
 
 const identity = {
   data: {
@@ -461,7 +469,7 @@ const labValidation = {
     security_reviewed_by: securityReview.data.reviewed_by,
     organization_id: identity.data.organization_id,
     environment_id: "environment.development",
-    operated_by: identity.data.subject_id,
+    operated_by: "subject.lab.operator",
     lab_profile: "atlas.lab-validation.python312.v1",
     runner_contract_version: "mcp-builder-isolated-runner.v1",
     runtime_version: "python.3.12.10",
@@ -512,6 +520,82 @@ const labValidation = {
   },
 };
 
+const candidateHandoff = {
+  data: {
+    handoff_id: "mcp-builder-candidate-handoff.666666666666666666666666",
+    schema_version: "atlas.mcp-builder-candidate-handoff.v1",
+    version: 1,
+    state: "candidate_quarantined",
+    project_id: project.data.project_id,
+    project_version: 1,
+    project_digest: project.data.canonical_digest,
+    source_digest: project.data.source_digest,
+    checkpoint_id: checkpoint.data.checkpoint_id,
+    checkpoint_digest: checkpoint.data.canonical_digest,
+    generation_id: generation.data.generation_id,
+    generation_digest: generation.data.canonical_digest,
+    artifact_digest: generation.data.artifact_digest,
+    validation_id: validation.data.validation_id,
+    validation_digest: validation.data.canonical_digest,
+    domain_review_id: domainReview.data.review_id,
+    domain_review_digest: domainReview.data.canonical_digest,
+    domain_reviewed_by: domainReview.data.reviewed_by,
+    security_review_id: securityReview.data.review_id,
+    security_review_digest: securityReview.data.canonical_digest,
+    security_reviewed_by: securityReview.data.reviewed_by,
+    lab_validation_id: labValidation.data.lab_validation_id,
+    lab_validation_digest: labValidation.data.canonical_digest,
+    lab_operated_by: labValidation.data.operated_by,
+    organization_id: identity.data.organization_id,
+    environment_id: "environment.development",
+    custodied_by: identity.data.subject_id,
+    handoff_profile: "atlas.candidate-handoff.python312.v1",
+    archive_contract_version: "mcp-builder-candidate-zip.v1",
+    package_filename: "atlas-synthetic-storage-lab-eeeeeeeeeeee.zip",
+    package_digest: candidateArchiveDigest,
+    package_size_bytes: candidateArchiveBytes.byteLength,
+    package_entry_count: 15,
+    generated_file_count: 14,
+    generated_size_bytes: 8192,
+    envelope_digest: "7".repeat(64),
+    signature_state: "unsigned",
+    capabilities: [
+      {
+        candidate_id: project.data.capability_candidates[0]?.candidate_id,
+        capability_class: "C1",
+        required_permission: "storage.system.read",
+        supported_product_versions: project.data.intended_product_versions,
+        source_citations: [project.data.capability_candidates[0]?.citation],
+      },
+    ],
+    network_destinations: project.data.declared_servers,
+    limitations: [
+      "The archive remains quarantined until later independent lifecycle gates.",
+      "Only the exact reviewed C0/C1 scaffold is included.",
+    ],
+    unsupported_behavior: [
+      "Signing, registration, installation, enablement, and execution are unsupported.",
+    ],
+    manual_change_count: 0,
+    canonical_digest: "8".repeat(64),
+    created_at: "2026-08-05T13:10:00Z",
+    candidate_package_created: true,
+    package_signed: false,
+    publisher_attested: false,
+    registry_validation_completed: false,
+    connector_registered: false,
+    connector_installed: false,
+    connector_enabled: false,
+    target_configured: false,
+    credentials_resolved: false,
+    runtime_trust_granted: false,
+    execution_authorized: false,
+    deployment_approved: false,
+    infrastructure_mutation_performed: false,
+    reused: false,
+  },
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -529,6 +613,7 @@ describe("MCP Builder workspace", () => {
     const domainReviewRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const securityReviewRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const labValidationRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    const candidateHandoffRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -590,6 +675,14 @@ describe("MCP Builder workspace", () => {
           idempotencyKey: headers.get("Idempotency-Key"),
         });
         return Promise.resolve(new Response(JSON.stringify(labValidation), { status: 201 }));
+      }
+      if (url.endsWith(`/mcp-builder/projects/${project.data.project_id}/candidate-handoffs`)) {
+        const headers = new Headers(init?.headers);
+        candidateHandoffRequests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(new Response(JSON.stringify(candidateHandoff), { status: 201 }));
       }
       if (
         url.endsWith(
@@ -709,6 +802,17 @@ describe("MCP Builder workspace", () => {
     expect(screen.getByText("IMMUTABLE LAB EVIDENCE")).toBeVisible();
     expect(screen.getByText(labValidation.data.runtime_version)).toBeVisible();
     expect(screen.getByText("capability fail closed")).toBeVisible();
+    expect(screen.getByText("Create the quarantined candidate")).toBeVisible();
+    fireEvent.click(
+      screen.getByLabelText(/I am the independent package custodian/i),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Create candidate package" }));
+
+    expect(await screen.findByText(candidateHandoff.data.handoff_id)).toBeVisible();
+    expect(screen.getByText("IMMUTABLE PACKAGE EVIDENCE")).toBeVisible();
+    expect(screen.getByText("candidate quarantined")).toBeVisible();
+    expect(screen.getByText("Unsigned")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Download verified archive" })).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|execute|register|enable/i })).not.toBeInTheDocument();
     expect(requests).toHaveLength(1);
     expect(designRequests).toHaveLength(1);
@@ -717,6 +821,7 @@ describe("MCP Builder workspace", () => {
     expect(domainReviewRequests).toHaveLength(1);
     expect(securityReviewRequests).toHaveLength(1);
     expect(labValidationRequests).toHaveLength(1);
+    expect(candidateHandoffRequests).toHaveLength(1);
     expect(requests[0]?.idempotencyKey).toBe("mcp-builder.mcp-builder-ui-001");
     const body = JSON.parse(requests[0]?.body ?? "{}") as Record<string, unknown>;
     expect(body.source_document).toBe(source);
@@ -821,5 +926,52 @@ describe("MCP Builder workspace", () => {
     expect(labValidationBody).not.toHaveProperty("target");
     expect(labValidationBody).not.toHaveProperty("secret");
     expect(labValidationBody).not.toHaveProperty("execute");
+    expect(candidateHandoffRequests[0]?.idempotencyKey).toBe(
+      "mcp-builder-candidate-handoff.mcp-builder-ui-001",
+    );
+    const candidateHandoffBody = JSON.parse(
+      candidateHandoffRequests[0]?.body ?? "{}",
+    ) as Record<string, unknown>;
+    expect(candidateHandoffBody.project_digest).toBe(project.data.canonical_digest);
+    expect(candidateHandoffBody.artifact_digest).toBe(generation.data.artifact_digest);
+    expect(candidateHandoffBody.security_review_digest).toBe(
+      securityReview.data.canonical_digest,
+    );
+    expect(candidateHandoffBody.lab_validation_digest).toBe(
+      labValidation.data.canonical_digest,
+    );
+    expect(candidateHandoffBody.handoff_profile).toBe(
+      "atlas.candidate-handoff.python312.v1",
+    );
+    expect(candidateHandoffBody.acknowledged_unsigned_quarantined_package).toBe(true);
+    expect(candidateHandoffBody).not.toHaveProperty("sign");
+    expect(candidateHandoffBody).not.toHaveProperty("install");
+    expect(candidateHandoffBody).not.toHaveProperty("execute");
+  }, 15_000);
+
+  it("verifies the downloaded candidate archive against immutable evidence", async () => {
+    const digestBytes = Uint8Array.from(
+      candidateArchiveDigest.match(/.{2}/g)?.map((value) => Number.parseInt(value, 16)) ?? [],
+    );
+    const subtleDigest = vi.fn().mockResolvedValue(digestBytes.buffer);
+    vi.stubGlobal("crypto", { subtle: { digest: subtleDigest } });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(candidateArchiveBytes, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/zip",
+          "X-Atlas-Package-Digest": candidateArchiveDigest,
+        },
+      }),
+    );
+
+    const result = await downloadMcpBuilderCandidateArchive(
+      candidateHandoff.data as unknown as McpBuilderCandidateHandoff,
+    );
+
+    expect(result.digest).toBe(candidateArchiveDigest);
+    expect(result.filename).toBe(candidateHandoff.data.package_filename);
+    expect(result.blob.size).toBe(candidateArchiveBytes.byteLength);
+    expect(subtleDigest).toHaveBeenCalledWith("SHA-256", expect.any(ArrayBuffer));
   });
 });

@@ -120,6 +120,15 @@ from atlas.modules.investigations.application.service import InvestigationServic
 from atlas.modules.knowledge.adapters.memory import InMemoryKnowledgeRetriever
 from atlas.modules.knowledge.adapters.synthetic import build_synthetic_knowledge_chunks
 from atlas.modules.knowledge.application.service import KnowledgeRetrievalService
+from atlas.modules.mcp_builder.adapters.candidate_archive_filesystem import (
+    FileSystemMcpBuilderCandidateArchivePublisher,
+)
+from atlas.modules.mcp_builder.adapters.candidate_handoff_memory import (
+    InMemoryMcpBuilderCandidateHandoffRepository,
+)
+from atlas.modules.mcp_builder.adapters.candidate_handoff_postgres import (
+    PostgreSQLMcpBuilderCandidateHandoffRepository,
+)
 from atlas.modules.mcp_builder.adapters.design_review_memory import (
     InMemoryMcpBuilderDesignCheckpointRepository,
 )
@@ -775,6 +784,11 @@ def create_app(
             if resolved_settings.database_url
             else InMemoryMcpBuilderLabValidationRepository()
         )
+        mcp_builder_candidate_handoff_repository = (
+            PostgreSQLMcpBuilderCandidateHandoffRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryMcpBuilderCandidateHandoffRepository()
+        )
         resolved_mcp_builder_service = McpBuilderService(
             repository=mcp_builder_repository,
             design_repository=mcp_builder_design_repository,
@@ -784,6 +798,10 @@ def create_app(
             security_review_repository=mcp_builder_security_review_repository,
             lab_validation_repository=mcp_builder_lab_validation_repository,
             lab_runner=SubprocessMcpBuilderLabRunner(),
+            candidate_handoff_repository=mcp_builder_candidate_handoff_repository,
+            candidate_archive_publisher=FileSystemMcpBuilderCandidateArchivePublisher(
+                root=resolved_settings.mcp_builder_generation_root / "candidate-packages"
+            ),
             artifact_publisher=FileSystemMcpBuilderArtifactPublisher(
                 root=resolved_settings.mcp_builder_generation_root
             ),

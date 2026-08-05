@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from atlas.modules.mcp_builder.application.generator import BuilderGeneratedContent
+from atlas.modules.mcp_builder.domain.candidate_handoff import McpBuilderCandidateHandoff
 from atlas.modules.mcp_builder.domain.design_review import McpBuilderDesignCheckpoint
 from atlas.modules.mcp_builder.domain.domain_review import McpBuilderDomainReview
 from atlas.modules.mcp_builder.domain.generation import BuilderGeneratedFile, McpBuilderGeneration
@@ -177,3 +178,30 @@ class McpBuilderLabRunner(Protocol):
     async def run(
         self, *, files: tuple[BuilderGeneratedContent, ...], lab_profile: str
     ) -> BuilderLabRunnerResult: ...
+
+
+class McpBuilderCandidateHandoffRepository(Protocol):
+    @property
+    def durable(self) -> bool: ...
+
+    async def get_by_id(self, *, handoff_id: str) -> McpBuilderCandidateHandoff | None: ...
+
+    async def get_by_project(self, *, project_id: str) -> McpBuilderCandidateHandoff | None: ...
+
+    async def get_by_lab_validation(
+        self, *, lab_validation_id: str
+    ) -> McpBuilderCandidateHandoff | None: ...
+
+    async def get_by_create_key(
+        self, *, custodied_by: str, idempotency_key: str
+    ) -> McpBuilderCandidateHandoff | None: ...
+
+    async def add(self, handoff: McpBuilderCandidateHandoff) -> bool: ...
+
+    async def close(self) -> None: ...
+
+
+class McpBuilderCandidateArchivePublisher(Protocol):
+    async def publish(self, *, package_digest: str, content: bytes) -> bool: ...
+
+    async def read(self, *, package_digest: str, size_bytes: int) -> bytes: ...

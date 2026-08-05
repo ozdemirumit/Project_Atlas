@@ -78,6 +78,9 @@ MCP_BUILDER_SECURITY_REVIEW_CREATE = "mcp-builder.security-review.create"
 MCP_BUILDER_SECURITY_REVIEW_READ = "mcp-builder.security-review.read"
 MCP_BUILDER_LAB_VALIDATION_CREATE = "mcp-builder.lab-validation.create"
 MCP_BUILDER_LAB_VALIDATION_READ = "mcp-builder.lab-validation.read"
+MCP_BUILDER_CANDIDATE_HANDOFF_CREATE = "mcp-builder.candidate-handoff.create"
+MCP_BUILDER_CANDIDATE_HANDOFF_READ = "mcp-builder.candidate-handoff.read"
+MCP_BUILDER_CANDIDATE_HANDOFF_DOWNLOAD = "mcp-builder.candidate-handoff.download"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -768,6 +771,18 @@ def build_development_authorization_service(
             permission_id=MCP_BUILDER_LAB_VALIDATION_READ,
             description="Read one exact-scope MCP Builder isolated lab validation.",
         ),
+        PermissionDefinition(
+            permission_id=MCP_BUILDER_CANDIDATE_HANDOFF_CREATE,
+            description="Create one unsigned quarantined MCP Builder candidate handoff.",
+        ),
+        PermissionDefinition(
+            permission_id=MCP_BUILDER_CANDIDATE_HANDOFF_READ,
+            description="Read one exact-scope MCP Builder candidate handoff.",
+        ),
+        PermissionDefinition(
+            permission_id=MCP_BUILDER_CANDIDATE_HANDOFF_DOWNLOAD,
+            description="Download one integrity-verified quarantined candidate archive.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -828,6 +843,9 @@ def build_development_authorization_service(
                 MCP_BUILDER_SECURITY_REVIEW_READ,
                 MCP_BUILDER_LAB_VALIDATION_CREATE,
                 MCP_BUILDER_LAB_VALIDATION_READ,
+                MCP_BUILDER_CANDIDATE_HANDOFF_CREATE,
+                MCP_BUILDER_CANDIDATE_HANDOFF_READ,
+                MCP_BUILDER_CANDIDATE_HANDOFF_DOWNLOAD,
             }
         ),
     )

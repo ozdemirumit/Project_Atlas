@@ -9,6 +9,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from atlas.api.schemas import ResponseMeta
 from atlas.core.capabilities import CapabilityClass
 from atlas.core.classification import DataClassification
+from atlas.modules.mcp_builder.domain.candidate_handoff import (
+    CandidateCapabilityEvidence,
+    McpBuilderCandidateHandoff,
+)
 from atlas.modules.mcp_builder.domain.design_review import (
     BuilderCapabilityDecision,
     BuilderCapabilityDecisionKind,
@@ -1004,6 +1008,141 @@ class McpBuilderLabValidationData(BaseModel):
 
 class McpBuilderLabValidationResponse(BaseModel):
     data: McpBuilderLabValidationData
+    meta: ResponseMeta
+
+
+class McpBuilderCandidateHandoffInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: str = Field(
+        default="atlas.mcp-builder-candidate-handoff-request.v1", pattern=STABLE_ID
+    )
+    project_version: int = Field(ge=1)
+    project_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    source_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    checkpoint_id: str = Field(pattern=STABLE_ID)
+    checkpoint_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    generation_id: str = Field(pattern=STABLE_ID)
+    generation_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    artifact_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    validation_id: str = Field(pattern=STABLE_ID)
+    validation_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    domain_review_id: str = Field(pattern=STABLE_ID)
+    domain_review_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    security_review_id: str = Field(pattern=STABLE_ID)
+    security_review_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    lab_validation_id: str = Field(pattern=STABLE_ID)
+    lab_validation_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    handoff_profile: str = Field(default="atlas.candidate-handoff.python312.v1", pattern=STABLE_ID)
+    acknowledged_unsigned_quarantined_package: bool
+
+
+class CandidateCapabilityEvidenceData(BaseModel):
+    candidate_id: str
+    capability_class: str
+    required_permission: str
+    supported_product_versions: list[str]
+    source_citations: list[str]
+
+    @classmethod
+    def from_domain(cls, item: CandidateCapabilityEvidence) -> CandidateCapabilityEvidenceData:
+        return cls(
+            candidate_id=item.candidate_id,
+            capability_class=item.capability_class,
+            required_permission=item.required_permission,
+            supported_product_versions=list(item.supported_product_versions),
+            source_citations=list(item.source_citations),
+        )
+
+
+class McpBuilderCandidateHandoffData(BaseModel):
+    handoff_id: str
+    schema_version: str
+    version: int
+    state: str
+    project_id: str
+    project_version: int
+    project_digest: str
+    source_digest: str
+    checkpoint_id: str
+    checkpoint_digest: str
+    generation_id: str
+    generation_digest: str
+    artifact_digest: str
+    validation_id: str
+    validation_digest: str
+    domain_review_id: str
+    domain_review_digest: str
+    domain_reviewed_by: str
+    security_review_id: str
+    security_review_digest: str
+    security_reviewed_by: str
+    lab_validation_id: str
+    lab_validation_digest: str
+    lab_operated_by: str
+    organization_id: str
+    environment_id: str
+    custodied_by: str
+    handoff_profile: str
+    archive_contract_version: str
+    package_filename: str
+    package_digest: str
+    package_size_bytes: int
+    package_entry_count: int
+    generated_file_count: int
+    generated_size_bytes: int
+    envelope_digest: str
+    signature_state: str
+    capabilities: list[CandidateCapabilityEvidenceData]
+    network_destinations: list[str]
+    limitations: list[str]
+    unsupported_behavior: list[str]
+    manual_change_count: int
+    canonical_digest: str
+    created_at: datetime
+    candidate_package_created: bool
+    package_signed: bool
+    publisher_attested: bool
+    registry_validation_completed: bool
+    connector_registered: bool
+    connector_installed: bool
+    connector_enabled: bool
+    target_configured: bool
+    credentials_resolved: bool
+    runtime_trust_granted: bool
+    execution_authorized: bool
+    deployment_approved: bool
+    infrastructure_mutation_performed: bool
+    reused: bool
+
+    @classmethod
+    def from_domain(cls, handoff: McpBuilderCandidateHandoff) -> McpBuilderCandidateHandoffData:
+        return cls(
+            **{
+                field: getattr(handoff, field)
+                for field in cls.model_fields
+                if field
+                not in {
+                    "state",
+                    "signature_state",
+                    "capabilities",
+                    "network_destinations",
+                    "limitations",
+                    "unsupported_behavior",
+                }
+            },
+            state=handoff.state.value,
+            signature_state=handoff.signature_state.value,
+            capabilities=[
+                CandidateCapabilityEvidenceData.from_domain(item) for item in handoff.capabilities
+            ],
+            network_destinations=list(handoff.network_destinations),
+            limitations=list(handoff.limitations),
+            unsupported_behavior=list(handoff.unsupported_behavior),
+        )
+
+
+class McpBuilderCandidateHandoffResponse(BaseModel):
+    data: McpBuilderCandidateHandoffData
     meta: ResponseMeta
 
 

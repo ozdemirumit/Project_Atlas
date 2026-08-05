@@ -491,6 +491,73 @@ export type McpBuilderLabValidation = {
   reused: boolean;
 };
 
+export type McpBuilderCandidateHandoff = {
+  handoff_id: string;
+  schema_version: "atlas.mcp-builder-candidate-handoff.v1";
+  version: 1;
+  state: "candidate_quarantined";
+  project_id: string;
+  project_version: 1;
+  project_digest: string;
+  source_digest: string;
+  checkpoint_id: string;
+  checkpoint_digest: string;
+  generation_id: string;
+  generation_digest: string;
+  artifact_digest: string;
+  validation_id: string;
+  validation_digest: string;
+  domain_review_id: string;
+  domain_review_digest: string;
+  domain_reviewed_by: string;
+  security_review_id: string;
+  security_review_digest: string;
+  security_reviewed_by: string;
+  lab_validation_id: string;
+  lab_validation_digest: string;
+  lab_operated_by: string;
+  organization_id: string;
+  environment_id: string;
+  custodied_by: string;
+  handoff_profile: "atlas.candidate-handoff.python312.v1";
+  archive_contract_version: "mcp-builder-candidate-zip.v1";
+  package_filename: string;
+  package_digest: string;
+  package_size_bytes: number;
+  package_entry_count: number;
+  generated_file_count: number;
+  generated_size_bytes: number;
+  envelope_digest: string;
+  signature_state: "unsigned";
+  capabilities: Array<{
+    candidate_id: string;
+    capability_class: "C0" | "C1";
+    required_permission: string;
+    supported_product_versions: string[];
+    source_citations: string[];
+  }>;
+  network_destinations: string[];
+  limitations: string[];
+  unsupported_behavior: string[];
+  manual_change_count: 0;
+  canonical_digest: string;
+  created_at: string;
+  candidate_package_created: true;
+  package_signed: false;
+  publisher_attested: false;
+  registry_validation_completed: false;
+  connector_registered: false;
+  connector_installed: false;
+  connector_enabled: false;
+  target_configured: false;
+  credentials_resolved: false;
+  runtime_trust_granted: false;
+  execution_authorized: false;
+  deployment_approved: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -949,6 +1016,82 @@ function isSafeLabValidation(
   );
 }
 
+function isSafeCandidateHandoff(
+  value: unknown,
+): value is { data: McpBuilderCandidateHandoff } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const handoff = value.data;
+  const capabilities: unknown[] = Array.isArray(handoff.capabilities)
+    ? handoff.capabilities
+    : [];
+  const noAuthority = [
+    handoff.package_signed,
+    handoff.publisher_attested,
+    handoff.registry_validation_completed,
+    handoff.connector_registered,
+    handoff.connector_installed,
+    handoff.connector_enabled,
+    handoff.target_configured,
+    handoff.credentials_resolved,
+    handoff.runtime_trust_granted,
+    handoff.execution_authorized,
+    handoff.deployment_approved,
+    handoff.infrastructure_mutation_performed,
+  ];
+  return (
+    handoff.schema_version === "atlas.mcp-builder-candidate-handoff.v1" &&
+    handoff.version === 1 &&
+    handoff.state === "candidate_quarantined" &&
+    handoff.handoff_profile === "atlas.candidate-handoff.python312.v1" &&
+    handoff.archive_contract_version === "mcp-builder-candidate-zip.v1" &&
+    handoff.signature_state === "unsigned" &&
+    handoff.candidate_package_created === true &&
+    handoff.manual_change_count === 0 &&
+    typeof handoff.package_filename === "string" &&
+    handoff.package_filename.endsWith(".zip") &&
+    typeof handoff.package_digest === "string" &&
+    handoff.package_digest.length === 64 &&
+    typeof handoff.envelope_digest === "string" &&
+    handoff.envelope_digest.length === 64 &&
+    typeof handoff.package_size_bytes === "number" &&
+    handoff.package_size_bytes > 0 &&
+    handoff.package_size_bytes <= 25_000_000 &&
+    typeof handoff.generated_file_count === "number" &&
+    handoff.generated_file_count > 0 &&
+    handoff.package_entry_count === handoff.generated_file_count + 1 &&
+    handoff.custodied_by !== handoff.domain_reviewed_by &&
+    handoff.custodied_by !== handoff.security_reviewed_by &&
+    handoff.custodied_by !== handoff.lab_operated_by &&
+    capabilities.length > 0 &&
+    capabilities.every(
+      (item) =>
+        isRecord(item) &&
+        typeof item.candidate_id === "string" &&
+        ["C0", "C1"].includes(String(item.capability_class)) &&
+        typeof item.required_permission === "string" &&
+        Array.isArray(item.supported_product_versions) &&
+        item.supported_product_versions.every((entry) => typeof entry === "string") &&
+        Array.isArray(item.source_citations) &&
+        item.source_citations.every((entry) => typeof entry === "string"),
+    ) &&
+    new Set(
+      capabilities.map((item) =>
+        isRecord(item) && typeof item.candidate_id === "string" ? item.candidate_id : "",
+      ),
+    ).size === capabilities.length &&
+    Array.isArray(handoff.network_destinations) &&
+    handoff.network_destinations.length > 0 &&
+    handoff.network_destinations.every((item) => typeof item === "string") &&
+    Array.isArray(handoff.limitations) &&
+    handoff.limitations.length > 0 &&
+    handoff.limitations.every((item) => typeof item === "string") &&
+    Array.isArray(handoff.unsupported_behavior) &&
+    handoff.unsupported_behavior.length > 0 &&
+    handoff.unsupported_behavior.every((item) => typeof item === "string") &&
+    noAuthority.every((flag) => flag === false)
+  );
+}
+
 function nonce(): string {
   return typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
 }
@@ -1274,4 +1417,120 @@ export async function createMcpBuilderLabValidation(input: {
     throw new Error("MCP Builder returned unsafe lab validation evidence");
   }
   return payload;
+}
+
+export async function createMcpBuilderCandidateHandoff(input: {
+  project: McpBuilderProject;
+  checkpoint: McpBuilderDesignCheckpoint;
+  generation: McpBuilderGeneration;
+  validation: McpBuilderValidation;
+  domainReview: McpBuilderDomainReview;
+  securityReview: McpBuilderSecurityReview;
+  labValidation: McpBuilderLabValidation;
+}) {
+  const response = await apiFetch(
+    `/api/v1/mcp-builder/projects/${input.project.project_id}/candidate-handoffs`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": `mcp-builder-candidate-handoff.${nonce()}`,
+      },
+      body: JSON.stringify({
+        schema_version: "atlas.mcp-builder-candidate-handoff-request.v1",
+        project_version: input.project.version,
+        project_digest: input.project.canonical_digest,
+        source_digest: input.project.source_digest,
+        checkpoint_id: input.checkpoint.checkpoint_id,
+        checkpoint_digest: input.checkpoint.canonical_digest,
+        generation_id: input.generation.generation_id,
+        generation_digest: input.generation.canonical_digest,
+        artifact_digest: input.generation.artifact_digest,
+        validation_id: input.validation.validation_id,
+        validation_digest: input.validation.canonical_digest,
+        domain_review_id: input.domainReview.review_id,
+        domain_review_digest: input.domainReview.canonical_digest,
+        security_review_id: input.securityReview.review_id,
+        security_review_digest: input.securityReview.canonical_digest,
+        lab_validation_id: input.labValidation.lab_validation_id,
+        lab_validation_digest: input.labValidation.canonical_digest,
+        handoff_profile: "atlas.candidate-handoff.python312.v1",
+        acknowledged_unsigned_quarantined_package: true,
+      }),
+    },
+  );
+  if (!response.ok) throw new Error(`MCP Builder candidate handoff failed with ${response.status}`);
+  const payload: unknown = await response.json();
+  if (!isSafeCandidateHandoff(payload)) {
+    throw new Error("MCP Builder returned an unsafe candidate handoff");
+  }
+  const handoff = payload.data;
+  const requestedLineage = [
+    input.project.project_id,
+    input.project.canonical_digest,
+    input.project.source_digest,
+    input.checkpoint.checkpoint_id,
+    input.checkpoint.canonical_digest,
+    input.generation.generation_id,
+    input.generation.canonical_digest,
+    input.generation.artifact_digest,
+    input.validation.validation_id,
+    input.validation.canonical_digest,
+    input.domainReview.review_id,
+    input.domainReview.canonical_digest,
+    input.securityReview.review_id,
+    input.securityReview.canonical_digest,
+    input.labValidation.lab_validation_id,
+    input.labValidation.canonical_digest,
+  ];
+  const returnedLineage = [
+    handoff.project_id,
+    handoff.project_digest,
+    handoff.source_digest,
+    handoff.checkpoint_id,
+    handoff.checkpoint_digest,
+    handoff.generation_id,
+    handoff.generation_digest,
+    handoff.artifact_digest,
+    handoff.validation_id,
+    handoff.validation_digest,
+    handoff.domain_review_id,
+    handoff.domain_review_digest,
+    handoff.security_review_id,
+    handoff.security_review_digest,
+    handoff.lab_validation_id,
+    handoff.lab_validation_digest,
+  ];
+  if (requestedLineage.some((item, index) => item !== returnedLineage[index])) {
+    throw new Error("MCP Builder candidate handoff lineage does not match the reviewed evidence");
+  }
+  return payload;
+}
+
+export async function downloadMcpBuilderCandidateArchive(
+  handoff: McpBuilderCandidateHandoff,
+): Promise<{ blob: Blob; filename: string; digest: string }> {
+  const response = await apiFetch(
+    `/api/v1/mcp-builder/projects/${handoff.project_id}/candidate-handoff/archive`,
+    { headers: { Accept: "application/zip" } },
+  );
+  if (!response.ok) throw new Error(`Candidate archive download failed with ${response.status}`);
+  const digest = response.headers.get("X-Atlas-Package-Digest");
+  if (digest !== handoff.package_digest) {
+    throw new Error("Candidate archive digest header does not match immutable handoff evidence");
+  }
+  const blob = await response.blob();
+  if (blob.size !== handoff.package_size_bytes || blob.type !== "application/zip") {
+    throw new Error("Candidate archive response is outside immutable handoff bounds");
+  }
+  const calculatedDigest = Array.from(
+    new Uint8Array(await crypto.subtle.digest("SHA-256", await blob.arrayBuffer())),
+  )
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  if (calculatedDigest !== handoff.package_digest) {
+    throw new Error("Candidate archive content does not match immutable handoff evidence");
+  }
+  return { blob, filename: handoff.package_filename, digest };
 }
