@@ -11,7 +11,7 @@
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-017 |
 | Last Updated | 2026-08-05 |
-| Next Action | Implement immutable offline advisory-snapshot vulnerability analysis across backend, API, persistence, UI, and tests |
+| Next Action | Commit the verified implementation, open its pull request, pass CI, merge, and record main-branch closure evidence |
 
 ### ATLAS-IMP-061 Scope Rationale
 
@@ -63,7 +63,23 @@
 
 ### ATLAS-IMP-061 Validation Evidence
 
-- Pending implementation.
+- Backend formatting covers 522 files; Ruff is clean; strict mypy passes across 488 source files.
+- The focused vulnerability-analysis suite passes 5 tests. The complete backend suite passes
+  512 tests with 3 expected Windows symlink skips and only the 3 existing dependency warnings.
+- Alembic reports the single head `20260805_0033`; the migration, memory repository, and
+  PostgreSQL repository preserve the immutable one-to-one report contract.
+- Frontend lint and TypeScript checks pass; all 36 frontend tests pass; the production build
+  succeeds with only the existing non-blocking bundle-size warning.
+- Live HTTP verification records login `201`, missing-CSRF denial `403`, authorized creation
+  `201`, and owner-scoped read `200`; create/read both return `Cache-Control: no-store`.
+- The trusted test snapshot `advisory-snapshot.test.v1` is fresh and coverage-complete. Its exact
+  one-subject, zero-match report passes, marks only vulnerability analysis complete, leaves
+  promotion unblocked for this stage, and exposes none of the forbidden dependency or advisory
+  payload fields.
+- Browser inspection at 1280 x 720 and 390 x 844 confirms the Connector workspace and source form
+  remain present, the mobile document has no horizontal overflow, and captured warning/error logs
+  are empty.
+- GitHub pull-request, merge, main-branch CI, and closure-run evidence remain pending.
 
 ### ATLAS-IMP-060 Scope Rationale
 

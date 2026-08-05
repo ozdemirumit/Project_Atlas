@@ -116,6 +116,7 @@ import { getCurrentIdentity } from "./api/identity";
 import {
   acquireConnectorPackage,
   analyzeConnectorPackageStaticDependencies,
+  analyzeConnectorPackageVulnerabilities,
   inventoryConnectorPackage,
   scanConnectorPackageContent,
   validateConnectorPackage,
@@ -528,6 +529,7 @@ export function App() {
     useState(false);
   const [builderStaticDependencyAcknowledged, setBuilderStaticDependencyAcknowledged] =
     useState(false);
+  const [builderVulnerabilityAcknowledged, setBuilderVulnerabilityAcknowledged] = useState(false);
   const [builderSelectedGeneratedFile, setBuilderSelectedGeneratedFile] = useState("");
   const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
     Record<string, McpBuilderDesignDecision>
@@ -579,6 +581,10 @@ export function App() {
     mutationFn: analyzeConnectorPackageStaticDependencies,
     onSuccess: () => setBuilderStaticDependencyAcknowledged(false),
   });
+  const builderVulnerabilityMutation = useMutation({
+    mutationFn: analyzeConnectorPackageVulnerabilities,
+    onSuccess: () => setBuilderVulnerabilityAcknowledged(false),
+  });
   const builderCandidateArchiveMutation = useMutation({
     mutationFn: downloadMcpBuilderCandidateArchive,
     onSuccess: ({ blob, filename }) => {
@@ -602,6 +608,7 @@ export function App() {
     builderSchemaSemanticsMutation.reset();
     builderAuthorityBehaviorMutation.reset();
     builderStaticDependencyMutation.reset();
+    builderVulnerabilityMutation.reset();
     setBuilderCandidateHandoffAcknowledged(false);
     setBuilderPackageAcquisitionAcknowledged(false);
     setBuilderPackageValidationAcknowledged(false);
@@ -610,6 +617,7 @@ export function App() {
     setBuilderSchemaSemanticsAcknowledged(false);
     setBuilderAuthorityBehaviorAcknowledged(false);
     setBuilderStaticDependencyAcknowledged(false);
+    setBuilderVulnerabilityAcknowledged(false);
   };
   const builderPackageValidationSeparated = Boolean(
     identity &&
@@ -691,6 +699,23 @@ export function App() {
         builderAuthorityBehaviorMutation.data.data.source_domain_reviewed_by,
         builderAuthorityBehaviorMutation.data.data.source_security_reviewed_by,
         builderAuthorityBehaviorMutation.data.data.source_lab_operated_by,
+      ].includes(identity.subject_id),
+  );
+  const builderVulnerabilitySeparated = Boolean(
+    identity &&
+      builderStaticDependencyMutation.data?.data &&
+      ![
+        builderStaticDependencyMutation.data.data.analyzed_by,
+        builderStaticDependencyMutation.data.data.source_authority_validated_by,
+        builderStaticDependencyMutation.data.data.source_schema_validated_by,
+        builderStaticDependencyMutation.data.data.source_content_scanned_by,
+        builderStaticDependencyMutation.data.data.source_inventoried_by,
+        builderStaticDependencyMutation.data.data.source_manifest_validated_by,
+        builderStaticDependencyMutation.data.data.source_acquired_by,
+        builderStaticDependencyMutation.data.data.source_custodied_by,
+        builderStaticDependencyMutation.data.data.source_domain_reviewed_by,
+        builderStaticDependencyMutation.data.data.source_security_reviewed_by,
+        builderStaticDependencyMutation.data.data.source_lab_operated_by,
       ].includes(identity.subject_id),
   );
   const builderLabValidationMutation = useMutation({
@@ -6143,6 +6168,283 @@ export function App() {
                                                                         <strong>Static analysis boundaries</strong>
                                                                         <ul>
                                                                           {builderStaticDependencyMutation.data.data.limitations.map(
+                                                                            (limitation) => (
+                                                                              <li key={limitation}>
+                                                                                {limitation}
+                                                                              </li>
+                                                                            ),
+                                                                          )}
+                                                                        </ul>
+                                                                      </div>
+                                                                    </div>
+                                                                  )}
+                                                                  {builderStaticDependencyMutation.data?.data
+                                                                    .outcome === "passed" &&
+                                                                    !builderVulnerabilitySeparated &&
+                                                                    !builderVulnerabilityMutation.data && (
+                                                                      <div
+                                                                        className="workspace-message warning-state"
+                                                                        role="status"
+                                                                      >
+                                                                        <UserX size={20} />
+                                                                        <div>
+                                                                          <h3>
+                                                                            Independent vulnerability analyst
+                                                                            required
+                                                                          </h3>
+                                                                          <p>
+                                                                            Prior package and static-analysis actors
+                                                                            cannot perform this stage. Continue with
+                                                                            a different authorized MFA session.
+                                                                          </p>
+                                                                        </div>
+                                                                      </div>
+                                                                    )}
+                                                                  {builderStaticDependencyMutation.data?.data
+                                                                    .outcome === "passed" &&
+                                                                    builderVulnerabilitySeparated &&
+                                                                    !builderVulnerabilityMutation.data && (
+                                                                      <section className="mcp-builder-review-panel">
+                                                                        <div className="section-heading">
+                                                                          <div>
+                                                                            <p className="eyebrow">
+                                                                              DEPENDENCY VULNERABILITY ANALYSIS
+                                                                            </p>
+                                                                            <h3>
+                                                                              Compare represented dependencies to
+                                                                              trusted advisories
+                                                                            </h3>
+                                                                            <p>
+                                                                              Offline evidence against one immutable,
+                                                                              signed, and platform-selected snapshot.
+                                                                            </p>
+                                                                          </div>
+                                                                          <span className="state-badge neutral">
+                                                                            <ShieldCheck size={14} /> No network
+                                                                          </span>
+                                                                        </div>
+                                                                        <label className="mcp-builder-confirmation">
+                                                                          <input
+                                                                            type="checkbox"
+                                                                            checked={
+                                                                              builderVulnerabilityAcknowledged
+                                                                            }
+                                                                            onChange={(event) =>
+                                                                              setBuilderVulnerabilityAcknowledged(
+                                                                                event.target.checked,
+                                                                              )
+                                                                            }
+                                                                          />
+                                                                          I am the independent vulnerability analyst.
+                                                                          I understand this report is time-bound and
+                                                                          does not perform malware, license, build, or
+                                                                          runtime validation.
+                                                                        </label>
+                                                                        <button
+                                                                          className="run-check-button mcp-builder-submit"
+                                                                          type="button"
+                                                                          disabled={
+                                                                            !builderVulnerabilityAcknowledged ||
+                                                                            builderVulnerabilityMutation.isPending
+                                                                          }
+                                                                          onClick={() => {
+                                                                            const report =
+                                                                              builderStaticDependencyMutation.data
+                                                                                ?.data;
+                                                                            if (report) {
+                                                                              builderVulnerabilityMutation.mutate(
+                                                                                report,
+                                                                              );
+                                                                            }
+                                                                          }}
+                                                                        >
+                                                                          {builderVulnerabilityMutation.isPending ? (
+                                                                            <RefreshCw
+                                                                              className="spin"
+                                                                              size={16}
+                                                                            />
+                                                                          ) : (
+                                                                            <ShieldCheck size={16} />
+                                                                          )}
+                                                                          Analyze known vulnerabilities
+                                                                        </button>
+                                                                      </section>
+                                                                    )}
+                                                                  {builderVulnerabilityMutation.isError && (
+                                                                    <div
+                                                                      className="workspace-message error-state"
+                                                                      role="alert"
+                                                                    >
+                                                                      <AlertTriangle size={20} />
+                                                                      <div>
+                                                                        <h3>Vulnerability analysis unavailable</h3>
+                                                                        <p>
+                                                                          Exact lineage, advisory trust, freshness,
+                                                                          coverage, or subject reconciliation did not
+                                                                          pass.
+                                                                        </p>
+                                                                      </div>
+                                                                    </div>
+                                                                  )}
+                                                                  {builderVulnerabilityMutation.data?.data && (
+                                                                    <div className="mcp-builder-validation">
+                                                                      <div className="section-heading">
+                                                                        <div>
+                                                                          <p className="eyebrow">
+                                                                            IMMUTABLE VULNERABILITY REPORT
+                                                                          </p>
+                                                                          <strong>
+                                                                            {
+                                                                              builderVulnerabilityMutation.data.data
+                                                                                .analysis_id
+                                                                            }
+                                                                          </strong>
+                                                                          <code>
+                                                                            {
+                                                                              builderVulnerabilityMutation.data.data
+                                                                                .canonical_digest
+                                                                            }
+                                                                          </code>
+                                                                        </div>
+                                                                        <span
+                                                                          className={`state-badge ${
+                                                                            builderVulnerabilityMutation.data.data
+                                                                              .outcome === "passed"
+                                                                              ? "healthy"
+                                                                              : "critical"
+                                                                          }`}
+                                                                        >
+                                                                          {builderVulnerabilityMutation.data.data
+                                                                            .outcome === "passed" ? (
+                                                                            <CheckCircle2 size={14} />
+                                                                          ) : (
+                                                                            <AlertTriangle size={14} />
+                                                                          )}
+                                                                          {
+                                                                            builderVulnerabilityMutation.data.data
+                                                                              .outcome
+                                                                          }
+                                                                        </span>
+                                                                      </div>
+                                                                      <div className="mcp-builder-facts">
+                                                                        <div>
+                                                                          <span>Advisory snapshot</span>
+                                                                          <strong>
+                                                                            {
+                                                                              builderVulnerabilityMutation.data.data
+                                                                                .advisory_snapshot.snapshot_version
+                                                                            }
+                                                                          </strong>
+                                                                        </div>
+                                                                        <div>
+                                                                          <span>Dataset status</span>
+                                                                          <strong>
+                                                                            {builderVulnerabilityMutation.data.data
+                                                                              .advisory_snapshot.fresh &&
+                                                                            builderVulnerabilityMutation.data.data
+                                                                              .advisory_snapshot.coverage_complete
+                                                                              ? "Current and complete"
+                                                                              : "Blocking gap"}
+                                                                          </strong>
+                                                                        </div>
+                                                                        <div>
+                                                                          <span>Scanned subjects</span>
+                                                                          <strong>
+                                                                            {
+                                                                              builderVulnerabilityMutation.data.data
+                                                                                .subject_summary.scanned_subject_count
+                                                                            }
+                                                                          </strong>
+                                                                        </div>
+                                                                        <div>
+                                                                          <span>Known matches</span>
+                                                                          <strong>
+                                                                            {
+                                                                              builderVulnerabilityMutation.data.data
+                                                                                .subject_summary.advisory_match_count
+                                                                            }
+                                                                          </strong>
+                                                                        </div>
+                                                                        <div>
+                                                                          <span>Critical / high</span>
+                                                                          <strong>
+                                                                            {
+                                                                              builderVulnerabilityMutation.data.data
+                                                                                .subject_summary.critical_count
+                                                                            }
+                                                                            {" / "}
+                                                                            {
+                                                                              builderVulnerabilityMutation.data.data
+                                                                                .subject_summary.high_count
+                                                                            }
+                                                                          </strong>
+                                                                        </div>
+                                                                        <div>
+                                                                          <span>Promotion</span>
+                                                                          <strong>
+                                                                            {builderVulnerabilityMutation.data.data
+                                                                              .promotion_blocked
+                                                                              ? "Blocked"
+                                                                              : "Not blocked"}
+                                                                          </strong>
+                                                                        </div>
+                                                                      </div>
+                                                                      <div className="mcp-builder-validation-checks">
+                                                                        {builderVulnerabilityMutation.data.data.checks.map(
+                                                                          (check) => (
+                                                                            <article
+                                                                              key={check.code}
+                                                                              data-state={check.state}
+                                                                            >
+                                                                              {check.state === "passed" ? (
+                                                                                <CheckCircle2 size={16} />
+                                                                              ) : (
+                                                                                <AlertTriangle size={16} />
+                                                                              )}
+                                                                              <div>
+                                                                                <strong>{check.code}</strong>
+                                                                                <p>{check.summary}</p>
+                                                                              </div>
+                                                                              <span>{check.state}</span>
+                                                                            </article>
+                                                                          ),
+                                                                        )}
+                                                                      </div>
+                                                                      {builderVulnerabilityMutation.data.data.findings
+                                                                        .length > 0 && (
+                                                                        <div className="mcp-builder-validation-checks">
+                                                                          {builderVulnerabilityMutation.data.data.findings.map(
+                                                                            (finding) => (
+                                                                              <article
+                                                                                key={`${finding.advisory_id}:${finding.subject_fingerprint}`}
+                                                                                data-state="failed"
+                                                                              >
+                                                                                <AlertTriangle size={16} />
+                                                                                <div>
+                                                                                  <strong>
+                                                                                    {
+                                                                                      finding.advisory_id
+                                                                                    }
+                                                                                  </strong>
+                                                                                  <p>{finding.summary}</p>
+                                                                                  <small>
+                                                                                    {
+                                                                                      finding.dependency_scope
+                                                                                    }
+                                                                                  </small>
+                                                                                </div>
+                                                                                <span>
+                                                                                  {finding.severity}
+                                                                                </span>
+                                                                              </article>
+                                                                            ),
+                                                                          )}
+                                                                        </div>
+                                                                      )}
+                                                                      <div className="mcp-builder-limitations">
+                                                                        <strong>Advisory boundaries</strong>
+                                                                        <ul>
+                                                                          {builderVulnerabilityMutation.data.data.limitations.map(
                                                                             (limitation) => (
                                                                               <li key={limitation}>
                                                                                 {limitation}

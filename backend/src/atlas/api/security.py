@@ -42,6 +42,8 @@ from atlas.modules.authorization.application.bootstrap import (
     CONNECTOR_PACKAGE_SUPPLY_CHAIN_INVENTORY_READ,
     CONNECTOR_PACKAGE_VALIDATION_CREATE,
     CONNECTOR_PACKAGE_VALIDATION_READ,
+    CONNECTOR_PACKAGE_VULNERABILITY_ANALYSIS_CREATE,
+    CONNECTOR_PACKAGE_VULNERABILITY_ANALYSIS_READ,
     DEPLOYMENT_CONFIGURATION_PREVIEW,
     GRAPH_STORAGE_IMPACT_READ,
     HEALTH_CHECK_OVERVIEW_READ,
@@ -106,6 +108,7 @@ from atlas.modules.authorization.application.bootstrap import (
     connector_package_static_dependency_analysis_scope,
     connector_package_supply_chain_inventory_scope,
     connector_package_validation_scope,
+    connector_package_vulnerability_analysis_scope,
     current_identity_scope,
     deployment_configuration_scope,
     graph_storage_impact_scope,
@@ -2245,5 +2248,61 @@ async def authorize_connector_package_static_dependency_analysis_read(
         request,
         subject,
         permission_id=CONNECTOR_PACKAGE_STATIC_DEPENDENCY_ANALYSIS_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def _authorize_connector_package_vulnerability_analysis(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    settings = request.app.state.settings
+    service: AuthorizationService = request.app.state.authorization_service
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.connector.package-vulnerability-analysis",
+            scope=connector_package_vulnerability_analysis_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail="The connector package vulnerability operation is not authorized.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_connector_package_vulnerability_analysis_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_package_vulnerability_analysis(
+        request,
+        subject,
+        permission_id=CONNECTOR_PACKAGE_VULNERABILITY_ANALYSIS_CREATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_connector_package_vulnerability_analysis_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_package_vulnerability_analysis(
+        request,
+        subject,
+        permission_id=CONNECTOR_PACKAGE_VULNERABILITY_ANALYSIS_READ,
         capability_class=CapabilityClass.C1_READ_ONLY,
     )
