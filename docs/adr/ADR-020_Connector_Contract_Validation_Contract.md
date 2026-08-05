@@ -49,10 +49,10 @@ The initial generated-draft profile verifies these contract families:
   runtime/execution authority
 - Configuration schema identity, required keys, closed properties, and secret-reference semantics
 - Per-capability input/output schema identity and exact manifest-to-module-to-schema binding
-- Per-capability handler constants, async signature, fail-closed return annotation, and unconditional
-  generated-draft denial without import-time behavior
-- Contract-test AST restricted to the generated quarantine declaration and exact denied-authority
-  assertions
+- Per-capability handler constants, async signature, bounded literal result or fail-closed return,
+  and absence of import-time behavior
+- Contract-test AST restricted to per-capability manifest, schema, handler-binding, and synthetic
+  expected-result declarations, including exact denied-authority assertions for fail-closed handlers
 - Synthetic fixture schema, synthetic classification, disconnected target, absent secret values,
   bounded empty responses, and absence of real-system markers
 - Exact coverage so every declared capability has one module, one input schema, and one output
@@ -63,7 +63,7 @@ that a vendor API behaves as documented, that a handler succeeds, that mocks are
 the package is safe to execute, or that a connector is compatible with a target. A pass cannot be
 used as runner, self-test, lab, registration, approval, installation, or enablement evidence.
 
-Any missing, changed, duplicate, orphaned, ambiguous, malformed, oversized, unsupported, open,
+Any missing, changed, duplicate, orphaned, ambiguous, malformed, oversized, unsupported, unexpectedly permissive,
 inconsistent, executable, non-synthetic, secret-bearing, target-connected, or unbound contract
 artifact fails the report and blocks promotion. Parser, audit, integrity, or persistence failure
 cannot fabricate a report or a passing result.
@@ -96,7 +96,8 @@ or later-stage action controls.
 
 - Untrusted generated tests cannot gain execution merely because they are named contract tests.
 - Exact package contracts become reproducible and reviewable before isolated runner work begins.
-- The initial profile can validate only the deliberately fail-closed generated-draft contract.
+- The initial profile validates only quarantined generated-draft contracts whose handlers either
+  fail closed or return bounded literal results that exactly match synthetic contract evidence.
 - Executable behavioral tests, simulator scenarios, and vendor compatibility require later stages.
 - A package requiring richer contracts must be regenerated through the Builder and repeat every
   prior immutable promotion gate.
@@ -121,7 +122,7 @@ or later-stage action controls.
 - Exact passed-license-report, archive, inventory, and full-lineage tests
 - Manifest, configuration, input, output, handler, test-AST, fixture, and coverage-family tests
 - Missing, duplicate, orphaned, malformed, oversized, changed, unsupported, and ambiguous artifacts
-- Runtime-authority, import-time behavior, unsafe AST, target-connected, secret-bearing, and
+- Runtime-authority, import-time behavior, unsafe AST, unbounded result, target-connected, secret-bearing, and
   non-synthetic fixture failures
 - No import, compilation, build, installation, execution, child-process, network, model, secret, or
   target access tests

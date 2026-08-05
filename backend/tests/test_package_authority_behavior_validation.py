@@ -10,6 +10,7 @@ from test_browser_sessions import BasicTestIdentityProvider, login, settings
 from test_package_acquisition import CollectingAuditSink, FailingAuditSink
 from test_package_content_policy_scan import content_policy_operator
 from test_package_schema_semantics_validation import (
+    canonical,
     reviewed_schema_overrides,
     schema_operator,
     semantics_fixture,
@@ -66,6 +67,28 @@ def reviewed_package_overrides(source: str | None = None) -> dict[str, str]:
     return {
         **reviewed_schema_overrides(),
         MODULE_PATH: source or reviewed_source(),
+        "tests/contract/test_capability_read.py": (
+            "import json\nfrom pathlib import Path\n\n"
+            "def test_capability_contract() -> None:\n"
+            "    fixture = json.loads(\n"
+            "        Path('tests/fixtures/capability_read.json').read_text(encoding='utf-8')\n"
+            "    )\n"
+            "    assert fixture['classification'] == 'synthetic'\n"
+            "    assert fixture['target_connected'] is False\n"
+            "    assert fixture['secret_values_present'] is False\n"
+            "    assert fixture['schema_version'] == 'atlas.generated.capability-fixture.v1'\n"
+        ),
+        "tests/fixtures/capability_read.json": canonical(
+            {
+                "schema_version": "atlas.generated.capability-fixture.v1",
+                "classification": "synthetic",
+                "target_connected": False,
+                "secret_values_present": False,
+                "capability_id": "capability.storage.health.read",
+                "input": {"target_id": "synthetic-target"},
+                "expected_output": {"status": "healthy"},
+            }
+        ),
     }
 
 

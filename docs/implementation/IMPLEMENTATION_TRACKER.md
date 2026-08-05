@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-064 |
 | Title | Governed connector contract validation foundation |
-| Status | In Progress |
+| Status | In Review |
 | Branch | `agent/mcp-contract-validation` |
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-020 |
 | Last Updated | 2026-08-05 |
-| Next Action | Implement exact-package static contract validation, persistence, API, web workflow, tests, and evidence |
+| Next Action | Complete browser evidence, publish PR, pass CI, merge, and record closure evidence |
 
 ### ATLAS-IMP-064 Scope Rationale
 
@@ -34,9 +34,9 @@
 - The request cannot upload tests or fixtures, choose a profile, set expected values, exclude
   artifacts, or suppress findings. Platform policy selects the fixed generated-draft profile.
 - Standard parsers and Python AST inspection validate exact manifest, configuration/input/output
-  schemas, capability modules, fail-closed handlers, quarantine test declaration, synthetic fixture,
+  schemas, capability modules, bounded or fail-closed handlers, contract test declarations, synthetic fixtures,
   and one-to-one capability coverage without importing or executing package code.
-- Missing, duplicate, orphaned, malformed, oversized, unsupported, changed, open, executable,
+- Missing, duplicate, orphaned, malformed, oversized, unsupported, changed, unexpectedly permissive, executable,
   inconsistent, target-connected, secret-bearing, non-synthetic, or unbound artifacts fail the
   report and block promotion.
 - Passing proves only static consistency of a quarantined generated draft. It grants no runtime
@@ -63,7 +63,23 @@
 
 ### ATLAS-IMP-064 Validation Evidence
 
-- Pending implementation.
+- Backend formatting and lint passed across 549 files; strict source type checking passed across
+  455 files.
+- Focused contract-validation coverage passed 4 tests; the full backend suite passed 529 tests with
+  3 expected Windows symlink skips and one Alembic head at `20260805_0036`.
+- Authorized live in-process HTTP checks returned `201` for report creation and `200` for immutable
+  report retrieval; missing CSRF returned `403`, responses were `no-store`, and payloads remained
+  minimized.
+- Memory/PostgreSQL equivalence, audit-before-persist failure, idempotency, concurrency,
+  separation-of-duties, and tampered handler/test/fixture/orphan cases passed.
+- Frontend lint and type checking passed; 36 tests and the production build passed. The existing
+  bundle-size advisory remains non-blocking.
+- Playwright/Edge inspection at 1440x1000 and 390x844 found no horizontal overflow, clipping, or
+  page exceptions in the live sign-in boundary. The unauthenticated identity probe returned the
+  expected `401`; the desktop favicon request returned a non-functional `404`. Integrated web tests
+  exercised the complete contract-validation workflow and immutable report at both responsive
+  layout semantics.
+- GitHub PR CI, merge, and main-branch CI evidence remain pending until publication.
 
 ### ATLAS-IMP-063 Scope Rationale
 

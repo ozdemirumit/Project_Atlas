@@ -897,6 +897,120 @@ export type ConnectorPackageLicenseAnalysis = {
   reused: boolean;
 };
 
+export type ConnectorPackageContractValidation = {
+  validation_id: string;
+  schema_version: "atlas.connector-package-contract-validation.v1";
+  version: 1;
+  lifecycle: "validating";
+  outcome: "passed" | "failed";
+  source_license_analysis_id: string;
+  source_license_analysis_digest: string;
+  source_malware_analysis_id: string;
+  source_malware_analysis_digest: string;
+  source_vulnerability_analysis_id: string;
+  source_vulnerability_analysis_digest: string;
+  source_static_dependency_analysis_id: string;
+  source_static_dependency_analysis_digest: string;
+  source_authority_behavior_validation_id: string;
+  source_schema_semantics_validation_id: string;
+  source_content_policy_scan_id: string;
+  source_inventory_id: string;
+  source_validation_id: string;
+  source_acquisition_id: string;
+  source_handoff_id: string;
+  source_project_id: string;
+  source_acquired_by: string;
+  source_manifest_validated_by: string;
+  source_inventoried_by: string;
+  source_content_scanned_by: string;
+  source_schema_validated_by: string;
+  source_authority_validated_by: string;
+  source_static_analyzed_by: string;
+  source_vulnerability_analyzed_by: string;
+  source_malware_analyzed_by: string;
+  source_license_analyzed_by: string;
+  source_custodied_by: string;
+  source_domain_reviewed_by: string;
+  source_security_reviewed_by: string;
+  source_lab_operated_by: string;
+  organization_id: string;
+  environment_id: string;
+  validated_by: string;
+  validation_profile: "atlas.connector-contract.python312.v1";
+  validator_version: "atlas.connector-contract-validator.v1";
+  package_digest: string;
+  package_size_bytes: number;
+  inventory_digest: string;
+  dependency_set_digest: string;
+  coverage: {
+    manifest_count: number;
+    configuration_schema_count: number;
+    capability_count: number;
+    input_schema_count: number;
+    output_schema_count: number;
+    handler_count: number;
+    covered_capability_count: number;
+    contract_test_count: number;
+    synthetic_fixture_count: number;
+    orphan_artifact_count: number;
+    contract_set_digest: string;
+  };
+  findings: Array<{
+    rule_id: string;
+    category: string;
+    severity: "medium" | "high" | "critical";
+    artifact_scope:
+      | "manifest"
+      | "configuration_schema"
+      | "capability_schema"
+      | "handler"
+      | "contract_test"
+      | "synthetic_fixture"
+      | "coverage";
+    subject_fingerprint: string;
+    summary: string;
+    remediation: string;
+  }>;
+  finding_set_digest: string;
+  validation_digest: string;
+  checks: Array<{
+    code: string;
+    state: "passed" | "failed";
+    severity: "informational" | "error";
+    summary: string;
+    remediation: string;
+  }>;
+  limitations: string[];
+  promotion_blocked: boolean;
+  canonical_digest: string;
+  validated_at: string;
+  secret_content_scan_completed: true;
+  prohibited_content_scan_completed: true;
+  schema_semantic_validation_completed: true;
+  permission_behavior_validation_completed: true;
+  static_code_validation_completed: true;
+  vulnerability_scan_completed: true;
+  malware_scan_completed: true;
+  license_scan_completed: true;
+  contract_validation_completed: true;
+  runner_validation_completed: false;
+  lab_validation_completed: false;
+  package_signed: false;
+  publisher_attested: false;
+  connector_rejected: false;
+  connector_registered: false;
+  connector_approved: false;
+  connector_installed: false;
+  connector_enabled: false;
+  target_configured: false;
+  credentials_resolved: false;
+  runtime_trust_granted: false;
+  execution_authorized: false;
+  deployment_approved: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -1907,6 +2021,143 @@ function isSafeLicenseAnalysis(
   );
 }
 
+function isContractFinding(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.rule_id === "string" &&
+    typeof value.category === "string" &&
+    ["medium", "high", "critical"].includes(String(value.severity)) &&
+    [
+      "manifest",
+      "configuration_schema",
+      "capability_schema",
+      "handler",
+      "contract_test",
+      "synthetic_fixture",
+      "coverage",
+    ].includes(String(value.artifact_scope)) &&
+    typeof value.subject_fingerprint === "string" &&
+    value.subject_fingerprint.length === 64 &&
+    typeof value.summary === "string" &&
+    typeof value.remediation === "string"
+  );
+}
+
+function isSafeContractValidation(
+  value: unknown,
+): value is { data: ConnectorPackageContractValidation } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const report = value.data;
+  if (!isRecord(report.coverage)) return false;
+  const coverage = report.coverage;
+  const findings: unknown[] = Array.isArray(report.findings) ? report.findings : [];
+  const checks: unknown[] = Array.isArray(report.checks) ? report.checks : [];
+  const sourceActors = [
+    report.source_acquired_by,
+    report.source_manifest_validated_by,
+    report.source_inventoried_by,
+    report.source_content_scanned_by,
+    report.source_schema_validated_by,
+    report.source_authority_validated_by,
+    report.source_static_analyzed_by,
+    report.source_vulnerability_analyzed_by,
+    report.source_malware_analyzed_by,
+    report.source_license_analyzed_by,
+    report.source_custodied_by,
+    report.source_domain_reviewed_by,
+    report.source_security_reviewed_by,
+    report.source_lab_operated_by,
+  ];
+  const identifiers = [
+    report.source_license_analysis_id,
+    report.source_malware_analysis_id,
+    report.source_vulnerability_analysis_id,
+    report.source_static_dependency_analysis_id,
+    report.source_authority_behavior_validation_id,
+    report.source_schema_semantics_validation_id,
+    report.source_content_policy_scan_id,
+    report.source_inventory_id,
+    report.source_validation_id,
+    report.source_acquisition_id,
+    report.source_handoff_id,
+    report.source_project_id,
+  ];
+  const digests = [
+    report.source_license_analysis_digest,
+    report.source_malware_analysis_digest,
+    report.source_vulnerability_analysis_digest,
+    report.source_static_dependency_analysis_digest,
+    report.package_digest,
+    report.inventory_digest,
+    report.dependency_set_digest,
+    report.finding_set_digest,
+    report.validation_digest,
+    report.canonical_digest,
+    coverage.contract_set_digest,
+  ];
+  const counts = [
+    coverage.manifest_count,
+    coverage.configuration_schema_count,
+    coverage.capability_count,
+    coverage.input_schema_count,
+    coverage.output_schema_count,
+    coverage.handler_count,
+    coverage.covered_capability_count,
+    coverage.contract_test_count,
+    coverage.synthetic_fixture_count,
+    coverage.orphan_artifact_count,
+  ];
+  const noAuthority = [
+    report.runner_validation_completed,
+    report.lab_validation_completed,
+    report.package_signed,
+    report.publisher_attested,
+    report.connector_rejected,
+    report.connector_registered,
+    report.connector_approved,
+    report.connector_installed,
+    report.connector_enabled,
+    report.target_configured,
+    report.credentials_resolved,
+    report.runtime_trust_granted,
+    report.execution_authorized,
+    report.deployment_approved,
+    report.infrastructure_mutation_performed,
+  ];
+  return (
+    report.schema_version === "atlas.connector-package-contract-validation.v1" &&
+    report.version === 1 &&
+    report.lifecycle === "validating" &&
+    (report.outcome === "passed" || report.outcome === "failed") &&
+    report.promotion_blocked === (report.outcome === "failed") &&
+    report.validation_profile === "atlas.connector-contract.python312.v1" &&
+    report.validator_version === "atlas.connector-contract-validator.v1" &&
+    report.secret_content_scan_completed === true &&
+    report.prohibited_content_scan_completed === true &&
+    report.schema_semantic_validation_completed === true &&
+    report.permission_behavior_validation_completed === true &&
+    report.static_code_validation_completed === true &&
+    report.vulnerability_scan_completed === true &&
+    report.malware_scan_completed === true &&
+    report.license_scan_completed === true &&
+    report.contract_validation_completed === true &&
+    typeof report.validated_by === "string" &&
+    sourceActors.every((actor) => typeof actor === "string") &&
+    !sourceActors.includes(report.validated_by) &&
+    identifiers.every((identifier) => typeof identifier === "string") &&
+    digests.every((digest) => typeof digest === "string" && digest.length === 64) &&
+    counts.every((count) => typeof count === "number" && count >= 0) &&
+    Number(coverage.covered_capability_count) <= Number(coverage.capability_count) &&
+    findings.length <= 500 &&
+    findings.every(isContractFinding) &&
+    checks.length === 7 &&
+    checks.every(isVulnerabilityCheck) &&
+    isStringArray(report.limitations) &&
+    report.limitations.length > 0 &&
+    noAuthority.every((flag) => flag === false)
+  );
+}
+
 function isSafeSchemaSemanticsValidation(
   value: unknown,
 ): value is { data: ConnectorPackageSchemaSemanticsValidation } {
@@ -2595,6 +2846,73 @@ export async function analyzeConnectorPackageLicenses(source: ConnectorPackageMa
     report.inventory_digest !== source.inventory_digest
   ) {
     throw new Error("License report does not match the exact malware analysis");
+  }
+  return payload;
+}
+
+export async function validateConnectorPackageContracts(
+  source: ConnectorPackageLicenseAnalysis,
+) {
+  if (
+    source.outcome !== "passed" ||
+    source.promotion_blocked ||
+    !source.license_scan_completed ||
+    source.contract_validation_completed
+  ) {
+    throw new Error("Only a passed license report can receive contract validation");
+  }
+  const response = await apiFetch("/api/v1/connectors/package-contract-validations", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "Idempotency-Key": `connector-contract.${crypto.randomUUID()}`,
+    },
+    body: JSON.stringify({
+      schema_version: "atlas.connector-package-contract-validation-request.v1",
+      source_license_analysis_id: source.analysis_id,
+      source_license_analysis_digest: source.canonical_digest,
+      package_digest: source.package_digest,
+      validation_profile: "atlas.connector-contract.python312.v1",
+      acknowledged_static_contract_only: true,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Connector package contract validation failed with ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  if (!isSafeContractValidation(payload)) {
+    throw new Error("Connector registry returned unsafe contract validation evidence");
+  }
+  const report = payload.data;
+  if (
+    report.source_license_analysis_id !== source.analysis_id ||
+    report.source_license_analysis_digest !== source.canonical_digest ||
+    report.source_malware_analysis_id !== source.source_malware_analysis_id ||
+    report.source_malware_analysis_digest !== source.source_malware_analysis_digest ||
+    report.source_vulnerability_analysis_id !== source.source_vulnerability_analysis_id ||
+    report.source_vulnerability_analysis_digest !== source.source_vulnerability_analysis_digest ||
+    report.source_static_dependency_analysis_id !== source.source_static_dependency_analysis_id ||
+    report.source_static_dependency_analysis_digest !==
+      source.source_static_dependency_analysis_digest ||
+    report.source_authority_behavior_validation_id !==
+      source.source_authority_behavior_validation_id ||
+    report.source_schema_semantics_validation_id !== source.source_schema_semantics_validation_id ||
+    report.source_content_policy_scan_id !== source.source_content_policy_scan_id ||
+    report.source_inventory_id !== source.source_inventory_id ||
+    report.source_validation_id !== source.source_validation_id ||
+    report.source_acquisition_id !== source.source_acquisition_id ||
+    report.source_handoff_id !== source.source_handoff_id ||
+    report.source_project_id !== source.source_project_id ||
+    report.source_license_analyzed_by !== source.analyzed_by ||
+    report.organization_id !== source.organization_id ||
+    report.environment_id !== source.environment_id ||
+    report.package_digest !== source.package_digest ||
+    report.package_size_bytes !== source.package_size_bytes ||
+    report.inventory_digest !== source.inventory_digest ||
+    report.dependency_set_digest !== source.dependency_set_digest
+  ) {
+    throw new Error("Contract report does not match the exact license analysis");
   }
   return payload;
 }
