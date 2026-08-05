@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-062 |
 | Title | Governed connector package malware analysis foundation |
-| Status | In Progress |
+| Status | Completed |
 | Branch | `agent/mcp-malware-analysis` |
 | Pull Request | [#74](https://github.com/ozdemirumit/Project_Atlas/pull/74) |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-018 |
 | Last Updated | 2026-08-05 |
-| Next Action | Complete pull-request CI, merge IMP-062, and verify post-merge `main` CI |
+| Next Action | Start ATLAS-IMP-063 governed connector package license analysis |
 
 ### ATLAS-IMP-062 Scope Rationale
 
@@ -91,7 +91,11 @@
   for this stage, and exposes none of the forbidden raw definition or subject payload fields.
 - Browser inspection at 1280 x 720 and 390 x 844 confirms the Connector workspace remains usable,
   both documents have no horizontal overflow, and captured warning/error logs are empty.
-- GitHub pull-request, pull-request CI, merge, and post-merge CI evidence remain pending.
+- Pull request [#74](https://github.com/ozdemirumit/Project_Atlas/pull/74) passed CI run
+  [31036119487](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31036119487) at head
+  `3b9a91825694ddbd123fe449da8d479e3b79f1fe`.
+- PR #74 merged as `355ce72cdeef18a8b23663c2c69dbb1db861f342`; its main-branch CI run
+  [31036371832](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31036371832) passed.
 
 ### ATLAS-IMP-061 Scope Rationale
 
