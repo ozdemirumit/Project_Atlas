@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from hashlib import sha256
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
@@ -24,6 +25,9 @@ from atlas.modules.mcp_builder.application.analyzer import (
     BuilderSourceError,
     OpenApiSourceAnalyzer,
 )
+from atlas.modules.mcp_builder.application.candidate_archive import (
+    DeterministicCandidateArchiveBuilder,
+)
 from atlas.modules.mcp_builder.application.generator import (
     LANGUAGE_PROFILE,
     BuilderGeneratedContent,
@@ -33,6 +37,8 @@ from atlas.modules.mcp_builder.application.generator import (
 from atlas.modules.mcp_builder.application.ports import (
     McpBuilderArtifactError,
     McpBuilderArtifactPublisher,
+    McpBuilderCandidateArchivePublisher,
+    McpBuilderCandidateHandoffRepository,
     McpBuilderDesignCheckpointRepository,
     McpBuilderDomainReviewRepository,
     McpBuilderError,
@@ -47,6 +53,12 @@ from atlas.modules.mcp_builder.application.validator import (
     VALIDATION_PROFILE,
     VALIDATOR_VERSION,
     PythonScaffoldStaticValidator,
+)
+from atlas.modules.mcp_builder.domain.candidate_handoff import (
+    CandidateCapabilityEvidence,
+    CandidateHandoffState,
+    CandidateSignatureState,
+    McpBuilderCandidateHandoff,
 )
 from atlas.modules.mcp_builder.domain.design_review import (
     BuilderCapabilityDecision,
@@ -130,6 +142,22 @@ LAB_VALIDATION_LIMITATIONS = (
     "scan, package, signature, installation, registration, enablement, or runtime trust "
     "was exercised or granted.",
 )
+CANDIDATE_HANDOFF_CREATE_PERMISSION = "mcp-builder.candidate-handoff.create"
+CANDIDATE_HANDOFF_READ_PERMISSION = "mcp-builder.candidate-handoff.read"
+CANDIDATE_HANDOFF_DOWNLOAD_PERMISSION = "mcp-builder.candidate-handoff.download"
+CANDIDATE_HANDOFF_SCHEMA = "atlas.mcp-builder-candidate-handoff.v1"
+CANDIDATE_HANDOFF_PROFILE = "atlas.candidate-handoff.python312.v1"
+CANDIDATE_ARCHIVE_CONTRACT_VERSION = "mcp-builder-candidate-zip.v1"
+CANDIDATE_HANDOFF_LIMITATIONS = (
+    "This unsigned archive contains the exact deterministic quarantined scaffold and "
+    "bounded evidence only.",
+    "ATLAS-020 acquisition, package validation, signing, registration, installation, "
+    "enablement, and runtime approval remain required.",
+)
+CANDIDATE_UNSUPPORTED_BEHAVIOR = (
+    "Manual changes are unsupported by the first candidate handoff profile.",
+    "Vendor target compatibility and successful capability execution have not been proven.",
+)
 
 
 class McpBuilderService:
@@ -147,6 +175,9 @@ class McpBuilderService:
         environment_id: str,
         lab_validation_repository: McpBuilderLabValidationRepository | None = None,
         lab_runner: McpBuilderLabRunner | None = None,
+        candidate_handoff_repository: McpBuilderCandidateHandoffRepository | None = None,
+        candidate_archive_publisher: McpBuilderCandidateArchivePublisher | None = None,
+        candidate_archive_builder: DeterministicCandidateArchiveBuilder | None = None,
         analyzer: OpenApiSourceAnalyzer | None = None,
         generator: PythonScaffoldGenerator | None = None,
         validator: PythonScaffoldStaticValidator | None = None,
@@ -172,6 +203,25 @@ class McpBuilderService:
             lab_runner = lab_runner or SubprocessMcpBuilderLabRunner()
         self._lab_validation_repository = lab_validation_repository
         self._lab_runner = lab_runner
+        if candidate_handoff_repository is None or candidate_archive_publisher is None:
+            from atlas.modules.mcp_builder.adapters.candidate_archive_memory import (
+                InMemoryMcpBuilderCandidateArchivePublisher,
+            )
+            from atlas.modules.mcp_builder.adapters.candidate_handoff_memory import (
+                InMemoryMcpBuilderCandidateHandoffRepository,
+            )
+
+            candidate_handoff_repository = (
+                candidate_handoff_repository or InMemoryMcpBuilderCandidateHandoffRepository()
+            )
+            candidate_archive_publisher = (
+                candidate_archive_publisher or InMemoryMcpBuilderCandidateArchivePublisher()
+            )
+        self._candidate_handoff_repository = candidate_handoff_repository
+        self._candidate_archive_publisher = candidate_archive_publisher
+        self._candidate_archive_builder = (
+            candidate_archive_builder or DeterministicCandidateArchiveBuilder()
+        )
         self._artifact_publisher = artifact_publisher
         self._audit_sink = audit_sink
         self._environment_id = environment_id
@@ -185,6 +235,7 @@ class McpBuilderService:
         return self._repository
 
     async def close(self) -> None:
+        await self._candidate_handoff_repository.close()
         await self._lab_validation_repository.close()
         await self._security_review_repository.close()
         await self._domain_review_repository.close()
@@ -1592,6 +1643,287 @@ class McpBuilderService:
         )
         return validation
 
+    async def create_candidate_handoff(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        project_id: str,
+        project_version: int,
+        project_digest: str,
+        source_digest: str,
+        checkpoint_id: str,
+        checkpoint_digest: str,
+        generation_id: str,
+        generation_digest: str,
+        artifact_digest: str,
+        validation_id: str,
+        validation_digest: str,
+        domain_review_id: str,
+        domain_review_digest: str,
+        security_review_id: str,
+        security_review_digest: str,
+        lab_validation_id: str,
+        lab_validation_digest: str,
+        handoff_profile: str,
+        acknowledged_unsigned_quarantined_package: bool,
+        idempotency_key: str,
+        correlation_id: str,
+    ) -> McpBuilderCandidateHandoff:
+        self._require_enterprise_human(actor)
+        if not acknowledged_unsigned_quarantined_package:
+            raise McpBuilderError("builder_candidate_handoff_acknowledgement_required")
+        if handoff_profile != CANDIDATE_HANDOFF_PROFILE:
+            raise McpBuilderError("builder_candidate_handoff_profile_unsupported")
+        if not 8 <= len(idempotency_key) <= 128:
+            raise McpBuilderError("builder_candidate_handoff_idempotency_key_invalid")
+        project, checkpoint = await self._generation_context(actor=actor, project_id=project_id)
+        generation = await self._generation_for_actor(actor=actor, project_id=project_id)
+        validation = await self._validation_for_actor(actor=actor, project_id=project_id)
+        domain_review = await self._domain_review_for_actor(actor=actor, project_id=project_id)
+        security_review = await self._security_review_for_actor(actor=actor, project_id=project_id)
+        lab = await self._lab_validation_for_actor(actor=actor, project_id=project_id)
+        if lab.state is not BuilderLabValidationState.PASSED:
+            raise McpBuilderError("builder_candidate_handoff_passed_lab_required")
+        if actor.subject_id in {
+            domain_review.reviewed_by,
+            security_review.reviewed_by,
+            lab.operated_by,
+        }:
+            raise McpBuilderError("builder_candidate_handoff_separation_of_duties_required")
+        requested = (
+            project_version,
+            project_digest,
+            source_digest,
+            checkpoint_id,
+            checkpoint_digest,
+            generation_id,
+            generation_digest,
+            artifact_digest,
+            validation_id,
+            validation_digest,
+            domain_review_id,
+            domain_review_digest,
+            security_review_id,
+            security_review_digest,
+            lab_validation_id,
+            lab_validation_digest,
+        )
+        observed = (
+            project.version,
+            project.canonical_digest,
+            project.source_digest,
+            checkpoint.checkpoint_id,
+            checkpoint.canonical_digest,
+            generation.generation_id,
+            generation.canonical_digest,
+            generation.artifact_digest,
+            validation.validation_id,
+            validation.canonical_digest,
+            domain_review.review_id,
+            domain_review.canonical_digest,
+            security_review.review_id,
+            security_review.canonical_digest,
+            lab.lab_validation_id,
+            lab.canonical_digest,
+        )
+        if requested != observed:
+            raise McpBuilderError("builder_candidate_handoff_source_stale")
+
+        lineage: dict[str, Any] = {
+            "project_id": project.project_id,
+            "project_version": project.version,
+            "project_digest": project.canonical_digest,
+            "source_digest": project.source_digest,
+            "checkpoint_id": checkpoint.checkpoint_id,
+            "checkpoint_digest": checkpoint.canonical_digest,
+            "generation_id": generation.generation_id,
+            "generation_digest": generation.canonical_digest,
+            "artifact_digest": generation.artifact_digest,
+            "validation_id": validation.validation_id,
+            "validation_digest": validation.canonical_digest,
+            "domain_review_id": domain_review.review_id,
+            "domain_review_digest": domain_review.canonical_digest,
+            "domain_reviewed_by": domain_review.reviewed_by,
+            "security_review_id": security_review.review_id,
+            "security_review_digest": security_review.canonical_digest,
+            "security_reviewed_by": security_review.reviewed_by,
+            "lab_validation_id": lab.lab_validation_id,
+            "lab_validation_digest": lab.canonical_digest,
+            "lab_operated_by": lab.operated_by,
+            "organization_id": actor.organization_id,
+            "environment_id": self._environment_id,
+            "custodied_by": actor.subject_id,
+            "handoff_profile": handoff_profile,
+            "archive_contract_version": CANDIDATE_ARCHIVE_CONTRACT_VERSION,
+        }
+        request_fingerprint = self._digest(
+            {
+                **lineage,
+                "acknowledged_unsigned_quarantined_package": True,
+                "idempotency_key": idempotency_key,
+            }
+        )
+        prior = await self._candidate_handoff_repository.get_by_create_key(
+            custodied_by=actor.subject_id, idempotency_key=idempotency_key
+        )
+        if prior is not None:
+            self._verify_candidate_handoff(prior)
+            if prior.request_fingerprint != request_fingerprint:
+                raise McpBuilderError("builder_candidate_handoff_idempotency_conflict")
+            return replace(prior, reused=True)
+        existing = await self._candidate_handoff_repository.get_by_lab_validation(
+            lab_validation_id=lab.lab_validation_id
+        )
+        if existing is not None:
+            self._verify_candidate_handoff(existing)
+            raise McpBuilderError("builder_candidate_handoff_exists")
+
+        draft = self._generator.generate(project=project, checkpoint=checkpoint)
+        if (
+            draft.language_profile != generation.language_profile
+            or draft.metadata != generation.files
+        ):
+            raise McpBuilderError("builder_candidate_handoff_artifact_stale")
+        verified: list[BuilderGeneratedContent] = []
+        for expected in draft.files:
+            try:
+                content = await self._artifact_publisher.read(
+                    generation_id=generation.generation_id,
+                    artifact_digest=generation.artifact_digest,
+                    inventory=generation.files,
+                    relative_path=expected.relative_path,
+                )
+            except McpBuilderArtifactError as error:
+                raise McpBuilderError(
+                    "builder_candidate_handoff_artifact_integrity_failed"
+                ) from error
+            if content != expected.content:
+                raise McpBuilderError("builder_candidate_handoff_artifact_stale")
+            verified.append(expected)
+        capabilities = tuple(
+            CandidateCapabilityEvidence(
+                candidate_id=item.candidate_id,
+                capability_class=item.confirmed_class.value,
+                required_permission=item.vendor_permission,
+                supported_product_versions=item.supported_product_versions,
+                source_citations=item.evidence_citations,
+            )
+            for item in domain_review.capability_decisions
+        )
+        capability_payload = self._candidate_capability_payload(capabilities)
+        envelope = {
+            "schema_version": "atlas.mcp-builder-candidate-handoff-envelope.v1",
+            **lineage,
+            "state": CandidateHandoffState.CANDIDATE_QUARANTINED.value,
+            "signature_state": CandidateSignatureState.UNSIGNED.value,
+            "capabilities": capability_payload,
+            "network_destinations": checkpoint.network_destinations,
+            "limitations": CANDIDATE_HANDOFF_LIMITATIONS,
+            "unsupported_behavior": CANDIDATE_UNSUPPORTED_BEHAVIOR,
+            "generated_file_count": len(generation.files),
+            "manual_change_count": 0,
+            "package_signed": False,
+            "connector_registered": False,
+            "connector_installed": False,
+            "connector_enabled": False,
+            "runtime_trust_granted": False,
+            "execution_authorized": False,
+            "infrastructure_mutation_performed": False,
+        }
+        archive = self._candidate_archive_builder.build(files=tuple(verified), envelope=envelope)
+        filename_stem = re.sub(r"[^a-z0-9._-]", "-", project.project_id.lower())
+        package_filename = f"{filename_stem}-{generation.artifact_digest[:12]}.zip"
+        payload = {
+            **lineage,
+            "state": CandidateHandoffState.CANDIDATE_QUARANTINED.value,
+            "package_filename": package_filename,
+            "package_digest": archive.digest,
+            "package_size_bytes": archive.size_bytes,
+            "package_entry_count": archive.entry_count,
+            "generated_file_count": len(generation.files),
+            "generated_size_bytes": sum(item.size_bytes for item in generation.files),
+            "envelope_digest": archive.envelope_digest,
+            "signature_state": CandidateSignatureState.UNSIGNED.value,
+            "capabilities": capability_payload,
+            "network_destinations": checkpoint.network_destinations,
+            "limitations": CANDIDATE_HANDOFF_LIMITATIONS,
+            "unsupported_behavior": CANDIDATE_UNSUPPORTED_BEHAVIOR,
+            "manual_change_count": 0,
+        }
+        canonical_digest = self._digest(payload)
+        handoff = McpBuilderCandidateHandoff(
+            handoff_id=f"mcp-builder-candidate-handoff.{canonical_digest[:24]}",
+            schema_version=CANDIDATE_HANDOFF_SCHEMA,
+            version=1,
+            state=CandidateHandoffState.CANDIDATE_QUARANTINED,
+            **lineage,
+            package_filename=package_filename,
+            package_digest=archive.digest,
+            package_size_bytes=archive.size_bytes,
+            package_entry_count=archive.entry_count,
+            generated_file_count=len(generation.files),
+            generated_size_bytes=sum(item.size_bytes for item in generation.files),
+            envelope_digest=archive.envelope_digest,
+            signature_state=CandidateSignatureState.UNSIGNED,
+            capabilities=capabilities,
+            network_destinations=checkpoint.network_destinations,
+            limitations=CANDIDATE_HANDOFF_LIMITATIONS,
+            unsupported_behavior=CANDIDATE_UNSUPPORTED_BEHAVIOR,
+            manual_change_count=0,
+            canonical_digest=canonical_digest,
+            request_fingerprint=request_fingerprint,
+            idempotency_key=idempotency_key,
+            created_at=self._clock(),
+        )
+        await self._audit_candidate_handoff(
+            actor=actor,
+            correlation_id=correlation_id,
+            permission_id=CANDIDATE_HANDOFF_CREATE_PERMISSION,
+            result_code="mcp_builder_candidate_handoff_created",
+            handoff=handoff,
+        )
+        await self._candidate_archive_publisher.publish(
+            package_digest=archive.digest, content=archive.content
+        )
+        if not await self._candidate_handoff_repository.add(handoff):
+            raced = await self._candidate_handoff_repository.get_by_create_key(
+                custodied_by=actor.subject_id, idempotency_key=idempotency_key
+            )
+            if raced is None or raced.request_fingerprint != request_fingerprint:
+                raise McpBuilderError("builder_candidate_handoff_idempotency_conflict")
+            self._verify_candidate_handoff(raced)
+            return replace(raced, reused=True)
+        return handoff
+
+    async def get_candidate_handoff(
+        self, *, actor: AuthenticatedSubject, project_id: str, correlation_id: str
+    ) -> McpBuilderCandidateHandoff:
+        handoff = await self._candidate_handoff_for_actor(actor=actor, project_id=project_id)
+        await self._audit_candidate_handoff(
+            actor=actor,
+            correlation_id=correlation_id,
+            permission_id=CANDIDATE_HANDOFF_READ_PERMISSION,
+            result_code="mcp_builder_candidate_handoff_read",
+            handoff=handoff,
+        )
+        return handoff
+
+    async def download_candidate_archive(
+        self, *, actor: AuthenticatedSubject, project_id: str, correlation_id: str
+    ) -> tuple[McpBuilderCandidateHandoff, bytes]:
+        handoff = await self._candidate_handoff_for_actor(actor=actor, project_id=project_id)
+        content = await self._candidate_archive_publisher.read(
+            package_digest=handoff.package_digest, size_bytes=handoff.package_size_bytes
+        )
+        await self._audit_candidate_handoff(
+            actor=actor,
+            correlation_id=correlation_id,
+            permission_id=CANDIDATE_HANDOFF_DOWNLOAD_PERMISSION,
+            result_code="mcp_builder_candidate_archive_downloaded",
+            handoff=handoff,
+        )
+        return handoff, content
+
     async def _lab_validation_for_actor(
         self, *, actor: AuthenticatedSubject, project_id: str
     ) -> McpBuilderLabValidation:
@@ -1612,6 +1944,27 @@ class McpBuilderService:
             raise McpBuilderError("builder_lab_validation_source_stale")
         self._verify_lab_validation(validation)
         return validation
+
+    async def _candidate_handoff_for_actor(
+        self, *, actor: AuthenticatedSubject, project_id: str
+    ) -> McpBuilderCandidateHandoff:
+        self._require_enterprise_human(actor)
+        handoff = await self._candidate_handoff_repository.get_by_project(project_id=project_id)
+        if (
+            handoff is None
+            or handoff.organization_id != actor.organization_id
+            or handoff.environment_id != self._environment_id
+        ):
+            raise McpBuilderError("builder_candidate_handoff_not_found")
+        lab = await self._lab_validation_for_actor(actor=actor, project_id=project_id)
+        if (
+            handoff.lab_validation_id != lab.lab_validation_id
+            or handoff.lab_validation_digest != lab.canonical_digest
+            or handoff.lab_operated_by != lab.operated_by
+        ):
+            raise McpBuilderError("builder_candidate_handoff_source_stale")
+        self._verify_candidate_handoff(handoff)
+        return handoff
 
     async def _security_review_for_actor(
         self, *, actor: AuthenticatedSubject, project_id: str
@@ -2283,6 +2636,97 @@ class McpBuilderService:
             raise McpBuilderError("builder_lab_validation_integrity_failed")
 
     @staticmethod
+    def _candidate_capability_payload(
+        capabilities: tuple[CandidateCapabilityEvidence, ...],
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "candidate_id": item.candidate_id,
+                "capability_class": item.capability_class,
+                "required_permission": item.required_permission,
+                "supported_product_versions": item.supported_product_versions,
+                "source_citations": item.source_citations,
+            }
+            for item in capabilities
+        ]
+
+    @classmethod
+    def _verify_candidate_handoff(cls, handoff: McpBuilderCandidateHandoff) -> None:
+        payload = {
+            "project_id": handoff.project_id,
+            "project_version": handoff.project_version,
+            "project_digest": handoff.project_digest,
+            "source_digest": handoff.source_digest,
+            "checkpoint_id": handoff.checkpoint_id,
+            "checkpoint_digest": handoff.checkpoint_digest,
+            "generation_id": handoff.generation_id,
+            "generation_digest": handoff.generation_digest,
+            "artifact_digest": handoff.artifact_digest,
+            "validation_id": handoff.validation_id,
+            "validation_digest": handoff.validation_digest,
+            "domain_review_id": handoff.domain_review_id,
+            "domain_review_digest": handoff.domain_review_digest,
+            "domain_reviewed_by": handoff.domain_reviewed_by,
+            "security_review_id": handoff.security_review_id,
+            "security_review_digest": handoff.security_review_digest,
+            "security_reviewed_by": handoff.security_reviewed_by,
+            "lab_validation_id": handoff.lab_validation_id,
+            "lab_validation_digest": handoff.lab_validation_digest,
+            "lab_operated_by": handoff.lab_operated_by,
+            "organization_id": handoff.organization_id,
+            "environment_id": handoff.environment_id,
+            "custodied_by": handoff.custodied_by,
+            "handoff_profile": handoff.handoff_profile,
+            "archive_contract_version": handoff.archive_contract_version,
+            "state": handoff.state.value,
+            "package_filename": handoff.package_filename,
+            "package_digest": handoff.package_digest,
+            "package_size_bytes": handoff.package_size_bytes,
+            "package_entry_count": handoff.package_entry_count,
+            "generated_file_count": handoff.generated_file_count,
+            "generated_size_bytes": handoff.generated_size_bytes,
+            "envelope_digest": handoff.envelope_digest,
+            "signature_state": handoff.signature_state.value,
+            "capabilities": cls._candidate_capability_payload(handoff.capabilities),
+            "network_destinations": handoff.network_destinations,
+            "limitations": handoff.limitations,
+            "unsupported_behavior": handoff.unsupported_behavior,
+            "manual_change_count": handoff.manual_change_count,
+        }
+        fingerprint = cls._digest(
+            {
+                **{
+                    key: value
+                    for key, value in payload.items()
+                    if key
+                    not in {
+                        "state",
+                        "package_filename",
+                        "package_digest",
+                        "package_size_bytes",
+                        "package_entry_count",
+                        "generated_file_count",
+                        "generated_size_bytes",
+                        "envelope_digest",
+                        "signature_state",
+                        "capabilities",
+                        "network_destinations",
+                        "limitations",
+                        "unsupported_behavior",
+                        "manual_change_count",
+                    }
+                },
+                "acknowledged_unsigned_quarantined_package": True,
+                "idempotency_key": handoff.idempotency_key,
+            }
+        )
+        if (
+            cls._digest(payload) != handoff.canonical_digest
+            or fingerprint != handoff.request_fingerprint
+        ):
+            raise McpBuilderError("builder_candidate_handoff_integrity_failed")
+
+    @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
         if (
             actor.kind is not SubjectKind.HUMAN
@@ -2664,6 +3108,49 @@ class McpBuilderService:
                     ("artifact_digest", validation.artifact_digest),
                     ("lab_state", validation.state.value),
                     ("operated_by", validation.operated_by),
+                ),
+            )
+        )
+
+    async def _audit_candidate_handoff(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+        permission_id: str,
+        result_code: str,
+        handoff: McpBuilderCandidateHandoff,
+    ) -> None:
+        await self._audit_sink.record(
+            AuditRecord(
+                event_id=f"evt_{uuid4().hex}",
+                event_type="atlas.mcp-builder.candidate-handoff",
+                schema_version="1.0",
+                producer="atlas-api",
+                producer_version=__version__,
+                occurred_at=self._clock(),
+                correlation_id=correlation_id,
+                subject_id=actor.subject_id,
+                actor_type=actor.kind.value,
+                authentication_method=actor.authentication_method.value,
+                assurance_level=actor.assurance_level.value,
+                permission_id=permission_id,
+                resource_type="resource.mcp-builder.candidate-handoff",
+                scope_reference=(
+                    f"{actor.organization_id}/{self._environment_id}/site.local/"
+                    "domain.mcp-builder/resource.mcp-builder.projects/C2"
+                ),
+                decision_id=None,
+                outcome="succeeded",
+                result_code=result_code,
+                idempotency_key=handoff.idempotency_key,
+                target_metadata=(
+                    ("handoff_id", handoff.handoff_id),
+                    ("project_id", handoff.project_id),
+                    ("lab_validation_id", handoff.lab_validation_id),
+                    ("package_digest", handoff.package_digest),
+                    ("signature_state", handoff.signature_state.value),
+                    ("custodied_by", handoff.custodied_by),
                 ),
             )
         )
