@@ -8,10 +8,10 @@
 | Title | Governed connector isolated runner validation foundation |
 | Status | In Review |
 | Branch | `agent/mcp-runner-validation` |
-| Pull Request | Not opened |
+| Pull Request | [#77](https://github.com/ozdemirumit/Project_Atlas/pull/77) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-021 |
 | Last Updated | 2026-08-05 |
-| Next Action | Publish the implementation PR, pass CI, merge, and record closure evidence |
+| Next Action | Pass PR CI, merge, and record closure evidence |
 
 ### ATLAS-IMP-065 Scope Rationale
 
