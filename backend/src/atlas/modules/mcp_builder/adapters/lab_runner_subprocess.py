@@ -43,7 +43,15 @@ root = Path.cwd()
 sys.path.insert(0, str(root / "src"))
 checks = {}
 checks["lab.runner_isolation"] = sys.flags.isolated == 1 and sys.version_info[:2] == (3, 12)
-allowed = {"ATLAS_LAB_MODE", "ATLAS_LAB_PROFILE", "ATLAS_RUNNER_CONTRACT", "PYTHONHASHSEED"}
+allowed = {
+    "ATLAS_LAB_MODE",
+    "ATLAS_LAB_PROFILE",
+    "ATLAS_RUNNER_CONTRACT",
+    "LC_ALL",
+    "PYTHONCOERCECLOCALE",
+    "PYTHONHASHSEED",
+    "PYTHONUTF8",
+}
 platform_keys = {"SYSTEMROOT", "WINDIR"}
 checks["lab.secret_free_environment"] = (
     all(key in allowed or key in platform_keys for key in os.environ)
@@ -125,7 +133,10 @@ class SubprocessMcpBuilderLabRunner:
                 "ATLAS_LAB_MODE": "synthetic",
                 "ATLAS_LAB_PROFILE": lab_profile,
                 "ATLAS_RUNNER_CONTRACT": RUNNER_CONTRACT_VERSION,
+                "LC_ALL": "C",
+                "PYTHONCOERCECLOCALE": "0",
                 "PYTHONHASHSEED": "0",
+                "PYTHONUTF8": "1",
             }
             for key in ("SYSTEMROOT", "WINDIR"):
                 if value := os.environ.get(key):

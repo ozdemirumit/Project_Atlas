@@ -76,7 +76,7 @@
   browser CSRF for creation, supported validation and runner contracts, explicit untrusted-execution and
   synthetic-only acknowledgements, and `Cache-Control: no-store`. Results expose bounded evidence and
   digests rather than raw child output, credentials, generated source, or target data.
-- Local quality gates passed with Ruff formatting and lint over 440 files, strict mypy over 370 source
+- Local quality gates passed with Ruff formatting and lint over 441 files, strict mypy over 415 source
   files, 419 backend tests, 35 frontend tests, ESLint, TypeScript checking, a production build, and a
   single Alembic head at `20260805_0024`. The three backend skips are the existing Windows symbolic-link
   cases; the production build retains the existing non-blocking bundle-size advisory.
