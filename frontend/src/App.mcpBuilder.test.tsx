@@ -912,7 +912,7 @@ const packageRunnerValidation = () => {
       source_actor_set_digest: "e".repeat(64),
       organization_id: contract.organization_id,
       environment_id: contract.environment_id,
-      validated_by: identity.data.subject_id,
+      validated_by: "subject.runner.validator",
       validation_profile: "atlas.connector-runner.python312.v1",
       adapter_contract: "atlas.connector-isolated-subprocess.v1",
       harness_version: "atlas.connector-runner-harness.v1",
@@ -966,6 +966,110 @@ const packageRunnerValidation = () => {
       contract_validation_completed: true,
       runner_validation_completed: true,
       lab_validation_completed: false,
+      package_signed: false,
+      publisher_attested: false,
+      connector_rejected: false,
+      connector_registered: false,
+      connector_approved: false,
+      connector_installed: false,
+      connector_enabled: false,
+      target_configured: false,
+      credentials_resolved: false,
+      runtime_trust_granted: false,
+      execution_authorized: false,
+      deployment_approved: false,
+      infrastructure_mutation_performed: false,
+      reused: false,
+    },
+  };
+};
+
+const packageLabSelfTest = () => {
+  const runner = packageRunnerValidation().data;
+  return {
+    data: {
+      self_test_id: "connector-lab-self-test.222222222222222222222222",
+      schema_version: "atlas.connector-package-lab-self-test.v1",
+      version: 1,
+      outcome: "passed",
+      source_runner_validation_id: runner.validation_id,
+      source_runner_validation_digest: runner.canonical_digest,
+      source_contract_validation_id: runner.source_contract_validation_id,
+      source_contract_validation_digest: runner.source_contract_validation_digest,
+      source_inventory_id: runner.source_inventory_id,
+      source_acquisition_id: runner.source_acquisition_id,
+      source_project_id: runner.source_project_id,
+      source_runner_validated_by: runner.validated_by,
+      source_actor_set_digest: runner.source_actor_set_digest,
+      lab_plan_id: "connector-lab-plan.development-readonly",
+      lab_plan_digest:
+        "ca40dd40e192ccb62e644cd5151e2445c0fa018f8849ded22eada41a1c93f770",
+      lab_plan_approved_by: "subject.lab.plan-approver",
+      credential_custodied_by: "subject.lab.credential-custodian",
+      organization_id: runner.organization_id,
+      environment_id: runner.environment_id,
+      validated_by: identity.data.subject_id,
+      target_alias: "target.lab.synthetic-storage",
+      product_family: "product.synthetic-storage",
+      observed_product_version: "1.0",
+      validation_profile: "atlas.connector-lab-self-test.readonly.v1",
+      adapter_contract: "atlas.connector-lab-mock-target.v1",
+      runner_runtime: "mock-target.python312.v1",
+      package_digest: runner.package_digest,
+      package_size_bytes: runner.package_size_bytes,
+      inventory_digest: runner.inventory_digest,
+      capability_count: runner.capability_count,
+      tested_capability_count: runner.capability_count,
+      request_count: 3,
+      request_bytes: 384,
+      response_bytes: 1536,
+      checks: [
+        "lab.source.accepted",
+        "lab.plan.approved",
+        "lab.package.integrity",
+        "lab.access.lease",
+        "lab.egress.restricted",
+        "lab.tls.identity",
+        "lab.authentication",
+        "lab.package.import",
+        "lab.capabilities.readonly",
+        "lab.response.bounded",
+        "lab.mutation.absent",
+        "lab.session.closed",
+        "lab.access.revoked",
+        "lab.workspace.cleaned",
+      ].map((code) => ({
+        code,
+        state: "passed",
+        severity: "informational",
+        summary: `Bounded ${code} evidence completed.`,
+        remediation: "Repeat under an approved lab plan before retrying.",
+      })),
+      duration_ms: 25,
+      evidence_digest: "2".repeat(64),
+      lease_issued: true,
+      lease_released: true,
+      credentials_revoked: true,
+      session_closed: true,
+      workspace_removed: true,
+      limitations: [
+        "Read-only mock-target evidence does not prove vendor compatibility.",
+        "Target coordinates, credentials, and raw traffic are not retained.",
+      ],
+      promotion_blocked: false,
+      canonical_digest: "3".repeat(64),
+      validated_at: "2026-08-06T00:10:00Z",
+      secret_content_scan_completed: true,
+      prohibited_content_scan_completed: true,
+      schema_semantic_validation_completed: true,
+      permission_behavior_validation_completed: true,
+      static_code_validation_completed: true,
+      vulnerability_scan_completed: true,
+      malware_scan_completed: true,
+      license_scan_completed: true,
+      contract_validation_completed: true,
+      runner_validation_completed: true,
+      lab_validation_completed: true,
       package_signed: false,
       publisher_attested: false,
       connector_rejected: false,
@@ -1914,6 +2018,10 @@ describe("MCP Builder workspace", () => {
       body: string;
       idempotencyKey: string | null;
     }> = [];
+    const packageLabSelfTestRequests: Array<{
+      body: string;
+      idempotencyKey: string | null;
+    }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -2096,6 +2204,16 @@ describe("MCP Builder workspace", () => {
         });
         return Promise.resolve(
           new Response(JSON.stringify(packageRunnerValidation()), { status: 201 }),
+        );
+      }
+      if (url.endsWith("/api/v1/connectors/package-lab-self-tests")) {
+        const headers = new Headers(init?.headers);
+        packageLabSelfTestRequests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(
+          new Response(JSON.stringify(packageLabSelfTest()), { status: 201 }),
         );
       }
       if (
@@ -2349,6 +2467,15 @@ describe("MCP Builder workspace", () => {
     expect(screen.getByText("runner.authority.denied")).toBeVisible();
     expect(screen.getByText("Runner boundaries")).toBeVisible();
     expect(screen.getByText("Removed")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Run lab self-test" })).toBeVisible();
+    fireEvent.click(screen.getByLabelText(/I am the independent lab operator/i));
+    fireEvent.click(screen.getByRole("button", { name: "Run lab self-test" }));
+
+    expect(await screen.findByText(packageLabSelfTest().data.self_test_id)).toBeVisible();
+    expect(screen.getByText("IMMUTABLE LAB REPORT")).toBeVisible();
+    expect(screen.getByText("lab.mutation.absent")).toBeVisible();
+    expect(screen.getByText("Lab boundaries")).toBeVisible();
+    expect(screen.getByText("Revoked")).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|execute|register|enable/i })).not.toBeInTheDocument();
     expect(requests).toHaveLength(1);
     expect(designRequests).toHaveLength(1);
@@ -2370,6 +2497,7 @@ describe("MCP Builder workspace", () => {
     expect(packageLicenseRequests).toHaveLength(1);
     expect(packageContractRequests).toHaveLength(1);
     expect(packageRunnerRequests).toHaveLength(1);
+    expect(packageLabSelfTestRequests).toHaveLength(1);
     expect(requests[0]?.idempotencyKey).toBe("mcp-builder.mcp-builder-ui-001");
     const body = JSON.parse(requests[0]?.body ?? "{}") as Record<string, unknown>;
     expect(body.source_document).toBe(source);
@@ -2699,6 +2827,29 @@ describe("MCP Builder workspace", () => {
     expect(packageRunnerBody).not.toHaveProperty("environment");
     expect(packageRunnerBody).not.toHaveProperty("target");
     expect(packageRunnerBody).not.toHaveProperty("credentials");
+    expect(packageLabSelfTestRequests[0]?.idempotencyKey).toBe(
+      "connector-lab.mcp-builder-ui-001",
+    );
+    const packageLabSelfTestBody = JSON.parse(
+      packageLabSelfTestRequests[0]?.body ?? "{}",
+    ) as Record<string, unknown>;
+    expect(packageLabSelfTestBody.source_runner_validation_id).toBe(
+      packageRunnerValidation().data.validation_id,
+    );
+    expect(packageLabSelfTestBody.source_runner_validation_digest).toBe(
+      packageRunnerValidation().data.canonical_digest,
+    );
+    expect(packageLabSelfTestBody.lab_plan_id).toBe(
+      "connector-lab-plan.development-readonly",
+    );
+    expect(packageLabSelfTestBody.acknowledged_non_production_read_only_lab_access).toBe(true);
+    expect(packageLabSelfTestBody).not.toHaveProperty("endpoint");
+    expect(packageLabSelfTestBody).not.toHaveProperty("target");
+    expect(packageLabSelfTestBody).not.toHaveProperty("secret_reference_ids");
+    expect(packageLabSelfTestBody).not.toHaveProperty("credential_handle");
+    expect(packageLabSelfTestBody).not.toHaveProperty("capabilities");
+    expect(packageLabSelfTestBody).not.toHaveProperty("command");
+    expect(packageLabSelfTestBody).not.toHaveProperty("environment");
   }, 30_000);
 
   it("verifies the downloaded candidate archive against immutable evidence", async () => {

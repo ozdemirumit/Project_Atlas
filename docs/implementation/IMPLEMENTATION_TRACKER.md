@@ -10,8 +10,8 @@
 | Branch | `agent/mcp-lab-self-test` |
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-022 |
-| Last Updated | 2026-08-05 |
-| Next Action | Implement the accepted isolated lab self-test contract and complete local validation |
+| Last Updated | 2026-08-06 |
+| Next Action | Publish the locally validated implementation, complete GitHub CI, and merge the pull request |
 
 ### ATLAS-IMP-066 Scope Rationale
 
@@ -46,7 +46,7 @@
 - Reports are one-to-one with exact runner evidence and plan, immutable, idempotent,
   concurrency-safe, audit-before-persist, minimized, deterministic for stable evidence, and
   equivalent in memory and PostgreSQL.
-- Failed evidence blocks promotion. Either outcome marks only `lab_self_test_completed=true` and
+- Failed evidence blocks promotion. Either outcome marks only `lab_validation_completed=true` and
   grants no signing, approval, registration, installation, enablement, deployment, runtime trust,
   execution authority, or infrastructure mutation.
 - Strict no-store APIs require dedicated RBAC, CSRF, acknowledgement, exact scope, correlation,
@@ -62,7 +62,31 @@
 
 ### ATLAS-IMP-066 Validation Evidence
 
-- Pending implementation.
+- Domain, application, API, default-deny authorization, audit, memory/PostgreSQL persistence,
+  migration, and web coverage bind one exact passed IMP-065 report to one immutable approved lab
+  plan. The implementation replays archive, inventory, contract, actor-set, plan, and package
+  integrity before issuing a unique 60-second least-privilege lease.
+- Focused coverage passed 9 tests for the accepted path, all prior/plan actor rejection, source and
+  plan tampering, audit-before-persist, idempotency, concurrency, PostgreSQL round-trip, failed
+  control, failed revocation, CSRF, minimized API responses, and immutable no-authority evidence.
+- Backend formatting covered 570 files; Ruff passed; strict mypy passed across 569 source files.
+  The complete backend suite passed 543 tests with 3 expected Windows symlink skips and one
+  Alembic head at `20260806_0038`.
+- The fixed mock-target adapter exercised all 14 source, plan, package, egress, TLS, authentication,
+  import, read-only capability, budget, mutation-absence, session, revocation, and cleanup checks.
+  Target coordinates, trust/secret references, credential handles, raw traffic, package internals,
+  stdout, stderr, and exception details are absent from reports and browser requests.
+- Live in-process HTTP coverage returned missing-CSRF `403`, authorized creation `201`, immutable
+  read `200`, and `no-store` responses. The request contains only exact runner lineage, approved
+  plan ID/digest, the fixed profile, and the explicit read-only acknowledgement.
+- Frontend lint and type checking passed; all 36 tests and the production build passed. Integrated
+  web coverage exercised full separation of duties, the exact minimized request, immutable safe
+  lab evidence, all 14 checks, revocation/cleanup state, and absence of registration, installation,
+  enablement, and execution controls. The existing bundle-size advisory remains non-blocking.
+- In-app browser inspection at 1440x1000 and 390x844 found no horizontal overflow, incoherent
+  overlap, or warning/error logs in the live sign-in boundary. The responsive viewport override was
+  reset after validation.
+- GitHub pull-request and post-merge CI evidence is pending publication.
 
 ### ATLAS-IMP-065 Scope Rationale
 

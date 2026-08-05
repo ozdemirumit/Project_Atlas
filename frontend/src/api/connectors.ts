@@ -1083,6 +1083,86 @@ export type ConnectorPackageRunnerValidation = {
   reused: boolean;
 };
 
+export type ConnectorPackageLabSelfTest = {
+  self_test_id: string;
+  schema_version: "atlas.connector-package-lab-self-test.v1";
+  version: 1;
+  outcome: "passed" | "failed";
+  source_runner_validation_id: string;
+  source_runner_validation_digest: string;
+  source_contract_validation_id: string;
+  source_contract_validation_digest: string;
+  source_inventory_id: string;
+  source_acquisition_id: string;
+  source_project_id: string;
+  source_runner_validated_by: string;
+  source_actor_set_digest: string;
+  lab_plan_id: string;
+  lab_plan_digest: string;
+  lab_plan_approved_by: string;
+  credential_custodied_by: string;
+  organization_id: string;
+  environment_id: string;
+  validated_by: string;
+  target_alias: string;
+  product_family: string;
+  observed_product_version: string;
+  validation_profile: "atlas.connector-lab-self-test.readonly.v1";
+  adapter_contract: "atlas.connector-lab-mock-target.v1";
+  runner_runtime: "mock-target.python312.v1";
+  package_digest: string;
+  package_size_bytes: number;
+  inventory_digest: string;
+  capability_count: number;
+  tested_capability_count: number;
+  request_count: number;
+  request_bytes: number;
+  response_bytes: number;
+  checks: Array<{
+    code: string;
+    state: "passed" | "failed";
+    severity: "informational" | "error";
+    summary: string;
+    remediation: string;
+  }>;
+  duration_ms: number;
+  evidence_digest: string;
+  lease_issued: boolean;
+  lease_released: boolean;
+  credentials_revoked: boolean;
+  session_closed: boolean;
+  workspace_removed: boolean;
+  limitations: string[];
+  promotion_blocked: boolean;
+  canonical_digest: string;
+  validated_at: string;
+  secret_content_scan_completed: true;
+  prohibited_content_scan_completed: true;
+  schema_semantic_validation_completed: true;
+  permission_behavior_validation_completed: true;
+  static_code_validation_completed: true;
+  vulnerability_scan_completed: true;
+  malware_scan_completed: true;
+  license_scan_completed: true;
+  contract_validation_completed: true;
+  runner_validation_completed: true;
+  lab_validation_completed: true;
+  package_signed: false;
+  publisher_attested: false;
+  connector_rejected: false;
+  connector_registered: false;
+  connector_approved: false;
+  connector_installed: false;
+  connector_enabled: false;
+  target_configured: false;
+  credentials_resolved: false;
+  runtime_trust_granted: false;
+  execution_authorized: false;
+  deployment_approved: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -2318,6 +2398,117 @@ function isSafeRunnerValidation(
   );
 }
 
+function isSafeLabSelfTest(value: unknown): value is { data: ConnectorPackageLabSelfTest } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const report = value.data;
+  const checks: unknown[] = Array.isArray(report.checks) ? report.checks : [];
+  const identifiers = [
+    report.source_runner_validation_id,
+    report.source_contract_validation_id,
+    report.source_inventory_id,
+    report.source_acquisition_id,
+    report.source_project_id,
+    report.source_runner_validated_by,
+    report.lab_plan_id,
+    report.lab_plan_approved_by,
+    report.credential_custodied_by,
+    report.organization_id,
+    report.environment_id,
+    report.validated_by,
+    report.target_alias,
+    report.product_family,
+    report.observed_product_version,
+  ];
+  const digests = [
+    report.source_runner_validation_digest,
+    report.source_contract_validation_digest,
+    report.source_actor_set_digest,
+    report.lab_plan_digest,
+    report.package_digest,
+    report.inventory_digest,
+    report.evidence_digest,
+    report.canonical_digest,
+  ];
+  const counts = [
+    report.package_size_bytes,
+    report.capability_count,
+    report.tested_capability_count,
+    report.request_count,
+    report.request_bytes,
+    report.response_bytes,
+    report.duration_ms,
+  ];
+  const completion = [
+    report.secret_content_scan_completed,
+    report.prohibited_content_scan_completed,
+    report.schema_semantic_validation_completed,
+    report.permission_behavior_validation_completed,
+    report.static_code_validation_completed,
+    report.vulnerability_scan_completed,
+    report.malware_scan_completed,
+    report.license_scan_completed,
+    report.contract_validation_completed,
+    report.runner_validation_completed,
+    report.lab_validation_completed,
+  ];
+  const noAuthority = [
+    report.package_signed,
+    report.publisher_attested,
+    report.connector_rejected,
+    report.connector_registered,
+    report.connector_approved,
+    report.connector_installed,
+    report.connector_enabled,
+    report.target_configured,
+    report.credentials_resolved,
+    report.runtime_trust_granted,
+    report.execution_authorized,
+    report.deployment_approved,
+    report.infrastructure_mutation_performed,
+  ];
+  const forbidden = [
+    "destination_references",
+    "tls_trust_reference",
+    "secret_reference_ids",
+    "credential_handle",
+    "endpoint",
+    "request_payload",
+    "response_payload",
+    "stdout",
+    "stderr",
+    "exception",
+  ];
+  return (
+    report.schema_version === "atlas.connector-package-lab-self-test.v1" &&
+    report.version === 1 &&
+    (report.outcome === "passed" || report.outcome === "failed") &&
+    report.promotion_blocked === (report.outcome === "failed") &&
+    report.validation_profile === "atlas.connector-lab-self-test.readonly.v1" &&
+    report.adapter_contract === "atlas.connector-lab-mock-target.v1" &&
+    report.runner_runtime === "mock-target.python312.v1" &&
+    identifiers.every((item) => typeof item === "string") &&
+    report.validated_by !== report.source_runner_validated_by &&
+    report.validated_by !== report.lab_plan_approved_by &&
+    report.validated_by !== report.credential_custodied_by &&
+    report.lab_plan_approved_by !== report.credential_custodied_by &&
+    digests.every((item) => typeof item === "string" && item.length === 64) &&
+    counts.every((item) => typeof item === "number" && item >= 0) &&
+    Number(report.tested_capability_count) <= Number(report.capability_count) &&
+    checks.length === 14 &&
+    checks.every(isVulnerabilityCheck) &&
+    isStringArray(report.limitations) &&
+    report.limitations.length > 0 &&
+    completion.every((item) => item === true) &&
+    noAuthority.every((item) => item === false) &&
+    typeof report.lease_issued === "boolean" &&
+    typeof report.lease_released === "boolean" &&
+    typeof report.credentials_revoked === "boolean" &&
+    typeof report.session_closed === "boolean" &&
+    typeof report.workspace_removed === "boolean" &&
+    forbidden.every((field) => !(field in report))
+  );
+}
+
 function isSafeSchemaSemanticsValidation(
   value: unknown,
 ): value is { data: ConnectorPackageSchemaSemanticsValidation } {
@@ -3129,6 +3320,73 @@ export async function validateConnectorPackageRunner(
     report.capability_count !== source.coverage.capability_count
   ) {
     throw new Error("Runner report does not match the exact contract validation");
+  }
+  return payload;
+}
+
+export async function validateConnectorPackageLabSelfTest(input: {
+  source: ConnectorPackageRunnerValidation;
+  labPlanId: string;
+  labPlanDigest: string;
+}) {
+  const { source, labPlanId, labPlanDigest } = input;
+  if (
+    source.outcome !== "passed" ||
+    source.promotion_blocked ||
+    !source.runner_validation_completed ||
+    source.lab_validation_completed
+  ) {
+    throw new Error("Only a passed runner report can receive lab self-test validation");
+  }
+  if (!/^[a-z][a-z0-9_.:-]{2,127}$/.test(labPlanId) || !/^[a-f0-9]{64}$/.test(labPlanDigest)) {
+    throw new Error("An approved lab plan ID and digest are required");
+  }
+  const response = await apiFetch("/api/v1/connectors/package-lab-self-tests", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "Idempotency-Key": `connector-lab.${crypto.randomUUID()}`,
+    },
+    body: JSON.stringify({
+      schema_version: "atlas.connector-package-lab-self-test-request.v1",
+      source_runner_validation_id: source.validation_id,
+      source_runner_validation_digest: source.canonical_digest,
+      package_digest: source.package_digest,
+      lab_plan_id: labPlanId,
+      lab_plan_digest: labPlanDigest,
+      validation_profile: "atlas.connector-lab-self-test.readonly.v1",
+      acknowledged_non_production_read_only_lab_access: true,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Connector package lab self-test failed with ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  if (!isSafeLabSelfTest(payload)) {
+    throw new Error("Connector registry returned unsafe lab self-test evidence");
+  }
+  const report = payload.data;
+  if (
+    report.source_runner_validation_id !== source.validation_id ||
+    report.source_runner_validation_digest !== source.canonical_digest ||
+    report.source_contract_validation_id !== source.source_contract_validation_id ||
+    report.source_contract_validation_digest !== source.source_contract_validation_digest ||
+    report.source_inventory_id !== source.source_inventory_id ||
+    report.source_acquisition_id !== source.source_acquisition_id ||
+    report.source_project_id !== source.source_project_id ||
+    report.source_runner_validated_by !== source.validated_by ||
+    report.source_actor_set_digest !== source.source_actor_set_digest ||
+    report.lab_plan_id !== labPlanId ||
+    report.lab_plan_digest !== labPlanDigest ||
+    report.organization_id !== source.organization_id ||
+    report.environment_id !== source.environment_id ||
+    report.package_digest !== source.package_digest ||
+    report.package_size_bytes !== source.package_size_bytes ||
+    report.inventory_digest !== source.inventory_digest ||
+    report.capability_count !== source.capability_count
+  ) {
+    throw new Error("Lab self-test report does not match the exact runner report and plan");
   }
   return payload;
 }

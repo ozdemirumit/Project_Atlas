@@ -124,6 +124,7 @@ import {
   validateConnectorPackage,
   validateConnectorPackageAuthorityBehavior,
   validateConnectorPackageContracts,
+  validateConnectorPackageLabSelfTest,
   validateConnectorPackageRunner,
   validateConnectorPackageSchemaSemantics,
 } from "./api/connectors";
@@ -538,6 +539,13 @@ export function App() {
   const [builderLicenseAcknowledged, setBuilderLicenseAcknowledged] = useState(false);
   const [builderContractAcknowledged, setBuilderContractAcknowledged] = useState(false);
   const [builderRunnerAcknowledged, setBuilderRunnerAcknowledged] = useState(false);
+  const [builderLabSelfTestAcknowledged, setBuilderLabSelfTestAcknowledged] = useState(false);
+  const [builderLabPlanId, setBuilderLabPlanId] = useState(
+    "connector-lab-plan.development-readonly",
+  );
+  const [builderLabPlanDigest, setBuilderLabPlanDigest] = useState(
+    "ca40dd40e192ccb62e644cd5151e2445c0fa018f8849ded22eada41a1c93f770",
+  );
   const [builderSelectedGeneratedFile, setBuilderSelectedGeneratedFile] = useState("");
   const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
     Record<string, McpBuilderDesignDecision>
@@ -609,6 +617,10 @@ export function App() {
     mutationFn: validateConnectorPackageRunner,
     onSuccess: () => setBuilderRunnerAcknowledged(false),
   });
+  const builderLabSelfTestMutation = useMutation({
+    mutationFn: validateConnectorPackageLabSelfTest,
+    onSuccess: () => setBuilderLabSelfTestAcknowledged(false),
+  });
   const builderCandidateArchiveMutation = useMutation({
     mutationFn: downloadMcpBuilderCandidateArchive,
     onSuccess: ({ blob, filename }) => {
@@ -637,6 +649,7 @@ export function App() {
     builderLicenseMutation.reset();
     builderContractMutation.reset();
     builderRunnerMutation.reset();
+    builderLabSelfTestMutation.reset();
     setBuilderCandidateHandoffAcknowledged(false);
     setBuilderPackageAcquisitionAcknowledged(false);
     setBuilderPackageValidationAcknowledged(false);
@@ -650,6 +663,7 @@ export function App() {
     setBuilderLicenseAcknowledged(false);
     setBuilderContractAcknowledged(false);
     setBuilderRunnerAcknowledged(false);
+    setBuilderLabSelfTestAcknowledged(false);
   };
   const builderPackageValidationSeparated = Boolean(
     identity &&
@@ -811,6 +825,29 @@ export function App() {
     identity &&
       builderContractMutation.data?.data &&
       ![
+        builderContractMutation.data.data.validated_by,
+        builderContractMutation.data.data.source_license_analyzed_by,
+        builderContractMutation.data.data.source_malware_analyzed_by,
+        builderContractMutation.data.data.source_vulnerability_analyzed_by,
+        builderContractMutation.data.data.source_static_analyzed_by,
+        builderContractMutation.data.data.source_authority_validated_by,
+        builderContractMutation.data.data.source_schema_validated_by,
+        builderContractMutation.data.data.source_content_scanned_by,
+        builderContractMutation.data.data.source_inventoried_by,
+        builderContractMutation.data.data.source_manifest_validated_by,
+        builderContractMutation.data.data.source_acquired_by,
+        builderContractMutation.data.data.source_custodied_by,
+        builderContractMutation.data.data.source_domain_reviewed_by,
+        builderContractMutation.data.data.source_security_reviewed_by,
+        builderContractMutation.data.data.source_lab_operated_by,
+      ].includes(identity.subject_id),
+  );
+  const builderLabSelfTestSeparated = Boolean(
+    identity &&
+      builderRunnerMutation.data?.data &&
+      builderContractMutation.data?.data &&
+      ![
+        builderRunnerMutation.data.data.validated_by,
         builderContractMutation.data.data.validated_by,
         builderContractMutation.data.data.source_license_analyzed_by,
         builderContractMutation.data.data.source_malware_analyzed_by,
@@ -7516,6 +7553,263 @@ export function App() {
                                                                     <strong>Runner boundaries</strong>
                                                                     <ul>
                                                                       {builderRunnerMutation.data.data.limitations.map(
+                                                                        (limitation) => (
+                                                                          <li key={limitation}>{limitation}</li>
+                                                                        ),
+                                                                      )}
+                                                                    </ul>
+                                                                  </div>
+                                                                </div>
+                                                              )}
+                                                              {builderRunnerMutation.data?.data
+                                                                .outcome === "passed" &&
+                                                                !builderLabSelfTestSeparated &&
+                                                                !builderLabSelfTestMutation.data && (
+                                                                  <div
+                                                                    className="workspace-message error-state"
+                                                                    role="alert"
+                                                                  >
+                                                                    <UserX size={20} />
+                                                                    <div>
+                                                                      <h3>
+                                                                        Independent lab operator required
+                                                                      </h3>
+                                                                      <p>
+                                                                        Runner and prior package actors cannot
+                                                                        perform this lab self-test. Continue with a
+                                                                        different authorized MFA session.
+                                                                      </p>
+                                                                    </div>
+                                                                  </div>
+                                                                )}
+                                                              {builderRunnerMutation.data?.data
+                                                                .outcome === "passed" &&
+                                                                builderLabSelfTestSeparated &&
+                                                                !builderLabSelfTestMutation.data && (
+                                                                  <section className="mcp-builder-validation">
+                                                                    <div className="section-heading">
+                                                                      <div>
+                                                                        <p className="eyebrow">
+                                                                          READ-ONLY LAB SELF-TEST
+                                                                        </p>
+                                                                        <h3>
+                                                                          Validate the approved non-production plan
+                                                                        </h3>
+                                                                        <p>
+                                                                          The platform resolves target, trust, and
+                                                                          short-lived access from the approved plan.
+                                                                          No write capability is available.
+                                                                        </p>
+                                                                      </div>
+                                                                      <FlaskConical size={24} />
+                                                                    </div>
+                                                                    <div className="mcp-builder-review-fields">
+                                                                      <label>
+                                                                        <span>Approved lab plan ID</span>
+                                                                        <input
+                                                                          value={builderLabPlanId}
+                                                                          onChange={(event) =>
+                                                                            setBuilderLabPlanId(event.target.value)
+                                                                          }
+                                                                          autoComplete="off"
+                                                                        />
+                                                                      </label>
+                                                                      <label>
+                                                                        <span>Approved plan digest</span>
+                                                                        <input
+                                                                          value={builderLabPlanDigest}
+                                                                          onChange={(event) =>
+                                                                            setBuilderLabPlanDigest(event.target.value)
+                                                                          }
+                                                                          autoComplete="off"
+                                                                          spellCheck={false}
+                                                                        />
+                                                                      </label>
+                                                                    </div>
+                                                                    <label className="approval-check">
+                                                                      <input
+                                                                        type="checkbox"
+                                                                        checked={builderLabSelfTestAcknowledged}
+                                                                        onChange={(event) =>
+                                                                          setBuilderLabSelfTestAcknowledged(
+                                                                            event.target.checked,
+                                                                          )
+                                                                        }
+                                                                      />
+                                                                      <span>
+                                                                        I am the independent lab operator. This run
+                                                                        is restricted to the approved non-production
+                                                                        target and read-only C0/C1 capabilities.
+                                                                      </span>
+                                                                    </label>
+                                                                    <button
+                                                                      className="primary-button"
+                                                                      type="button"
+                                                                      disabled={
+                                                                        !builderLabSelfTestAcknowledged ||
+                                                                        !/^[a-z][a-z0-9_.:-]{2,127}$/.test(
+                                                                          builderLabPlanId,
+                                                                        ) ||
+                                                                        !/^[a-f0-9]{64}$/.test(
+                                                                          builderLabPlanDigest,
+                                                                        ) ||
+                                                                        builderLabSelfTestMutation.isPending
+                                                                      }
+                                                                      onClick={() => {
+                                                                        const source =
+                                                                          builderRunnerMutation.data?.data;
+                                                                        if (source) {
+                                                                          builderLabSelfTestMutation.mutate({
+                                                                            source,
+                                                                            labPlanId: builderLabPlanId,
+                                                                            labPlanDigest: builderLabPlanDigest,
+                                                                          });
+                                                                        }
+                                                                      }}
+                                                                    >
+                                                                      {builderLabSelfTestMutation.isPending ? (
+                                                                        <RefreshCw
+                                                                          className="spin"
+                                                                          size={16}
+                                                                        />
+                                                                      ) : (
+                                                                        <FlaskConical size={16} />
+                                                                      )}
+                                                                      Run lab self-test
+                                                                    </button>
+                                                                  </section>
+                                                                )}
+                                                              {builderLabSelfTestMutation.isError && (
+                                                                <div
+                                                                  className="workspace-message error-state"
+                                                                  role="alert"
+                                                                >
+                                                                  <AlertTriangle size={20} />
+                                                                  <div>
+                                                                    <h3>Lab self-test unavailable</h3>
+                                                                    <p>
+                                                                      Exact lineage, plan approval, lease, read-only
+                                                                      policy, target identity, or cleanup did not
+                                                                      reconcile.
+                                                                    </p>
+                                                                  </div>
+                                                                </div>
+                                                              )}
+                                                              {builderLabSelfTestMutation.data?.data && (
+                                                                <div className="mcp-builder-validation">
+                                                                  <div className="section-heading">
+                                                                    <div>
+                                                                      <p className="eyebrow">
+                                                                        IMMUTABLE LAB REPORT
+                                                                      </p>
+                                                                      <strong>
+                                                                        {
+                                                                          builderLabSelfTestMutation.data.data
+                                                                            .self_test_id
+                                                                        }
+                                                                      </strong>
+                                                                      <code>
+                                                                        {
+                                                                          builderLabSelfTestMutation.data.data
+                                                                            .canonical_digest
+                                                                        }
+                                                                      </code>
+                                                                    </div>
+                                                                    <span
+                                                                      className={`state-badge ${
+                                                                        builderLabSelfTestMutation.data.data
+                                                                          .outcome === "passed"
+                                                                          ? "healthy"
+                                                                          : "critical"
+                                                                      }`}
+                                                                    >
+                                                                      {builderLabSelfTestMutation.data.data
+                                                                        .outcome === "passed" ? (
+                                                                        <CheckCircle2 size={14} />
+                                                                      ) : (
+                                                                        <AlertTriangle size={14} />
+                                                                      )}
+                                                                      {
+                                                                        builderLabSelfTestMutation.data.data
+                                                                          .outcome
+                                                                      }
+                                                                    </span>
+                                                                  </div>
+                                                                  <div className="mcp-builder-facts">
+                                                                    <div>
+                                                                      <span>Target</span>
+                                                                      <strong>
+                                                                        {
+                                                                          builderLabSelfTestMutation.data.data
+                                                                            .target_alias
+                                                                        }
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Product</span>
+                                                                      <strong>
+                                                                        {
+                                                                          builderLabSelfTestMutation.data.data
+                                                                            .product_family
+                                                                        }
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Version</span>
+                                                                      <strong>
+                                                                        {
+                                                                          builderLabSelfTestMutation.data.data
+                                                                            .observed_product_version
+                                                                        }
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Coverage</span>
+                                                                      <strong>
+                                                                        {`${builderLabSelfTestMutation.data.data.tested_capability_count}/${builderLabSelfTestMutation.data.data.capability_count}`}
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Requests</span>
+                                                                      <strong>
+                                                                        {builderLabSelfTestMutation.data.data.request_count.toLocaleString()}
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Access</span>
+                                                                      <strong>
+                                                                        {builderLabSelfTestMutation.data.data
+                                                                          .credentials_revoked
+                                                                          ? "Revoked"
+                                                                          : "Unresolved"}
+                                                                      </strong>
+                                                                    </div>
+                                                                  </div>
+                                                                  <div className="mcp-builder-validation-checks">
+                                                                    {builderLabSelfTestMutation.data.data.checks.map(
+                                                                      (check) => (
+                                                                        <article
+                                                                          key={check.code}
+                                                                          data-state={check.state}
+                                                                        >
+                                                                          {check.state === "passed" ? (
+                                                                            <CheckCircle2 size={16} />
+                                                                          ) : (
+                                                                            <AlertTriangle size={16} />
+                                                                          )}
+                                                                          <div>
+                                                                            <strong>{check.code}</strong>
+                                                                            <p>{check.summary}</p>
+                                                                          </div>
+                                                                          <span>{check.state}</span>
+                                                                        </article>
+                                                                      ),
+                                                                    )}
+                                                                  </div>
+                                                                  <div className="mcp-builder-limitations">
+                                                                    <strong>Lab boundaries</strong>
+                                                                    <ul>
+                                                                      {builderLabSelfTestMutation.data.data.limitations.map(
                                                                         (limitation) => (
                                                                           <li key={limitation}>{limitation}</li>
                                                                         ),

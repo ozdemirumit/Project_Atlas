@@ -94,7 +94,7 @@ evidence.
 
 A failed report blocks promotion but does not reject, rewrite, delete, repair, approve, sign,
 register, install, enable, configure, trust, deploy, or operate a connector. Either outcome marks
-only `lab_self_test_completed=true` while preserving all through-runner completion flags. A pass
+only `lab_validation_completed=true` while preserving all through-runner completion flags. A pass
 proves bounded read-only compatibility only for the exact package, approved lab plan, target
 identity, observed product version, and test time. It does not prove production compatibility,
 performance, availability, broad vendor support, production sandbox strength, signing eligibility,

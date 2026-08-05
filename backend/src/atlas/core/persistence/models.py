@@ -1100,6 +1100,32 @@ class ConnectorPackageRunnerValidationModel(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
+class ConnectorPackageLabSelfTestModel(Base):
+    __tablename__ = "connector_package_lab_self_tests"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_runner_validation_id",
+            name="uq_connector_package_lab_self_tests_source",
+        ),
+        UniqueConstraint(
+            "validated_by",
+            "idempotency_key",
+            name="uq_connector_package_lab_self_tests_actor_idempotency",
+        ),
+    )
+
+    self_test_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source_runner_validation_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    validated_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class RuntimeMetadata(Base):
     __tablename__ = "platform_runtime_metadata"
     __table_args__ = (
