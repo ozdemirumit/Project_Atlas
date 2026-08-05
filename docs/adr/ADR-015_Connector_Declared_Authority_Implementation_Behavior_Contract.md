@@ -101,7 +101,7 @@ or later-stage action controls.
 ## Validation
 
 - Exact passed-schema-semantics and immutable archive/inventory lineage tests
-- Manifest, permission-document, network-document, module, and handler one-to-one binding tests
+- Manifest authority declaration, module, and handler one-to-one binding tests
 - Python AST tests for network, process, filesystem, mutation, dynamic execution, and ambiguity
 - Capability-class, required-permission, network-enablement, and destination comparison tests
 - Safe finding and non-disclosure tests for source, literals, URLs, credentials, and arguments

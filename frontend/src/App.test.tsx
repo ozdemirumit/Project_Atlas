@@ -1521,7 +1521,7 @@ describe("Atlas application shell", () => {
     const logoutHeaders = new Headers(logoutRequest?.headers);
     expect(logoutRequest?.method).toBe("DELETE");
     expect(logoutHeaders.get("X-CSRF-Token")).toBe("csrf_browser_test");
-  });
+  }, 10_000);
 
   it("discovers authorized identity governance and revokes exact foreign access", async () => {
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));

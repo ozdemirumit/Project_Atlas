@@ -451,6 +451,103 @@ export type ConnectorPackageAuthorityBehaviorValidation = {
   reused: boolean;
 };
 
+export type ConnectorPackageStaticDependencyAnalysis = {
+  analysis_id: string;
+  schema_version: "atlas.connector-package-static-dependency-analysis.v1";
+  version: 1;
+  lifecycle: "validating";
+  outcome: "passed" | "failed";
+  source_authority_behavior_validation_id: string;
+  source_authority_behavior_validation_digest: string;
+  source_schema_semantics_validation_id: string;
+  source_content_policy_scan_id: string;
+  source_inventory_id: string;
+  source_validation_id: string;
+  source_acquisition_id: string;
+  source_handoff_id: string;
+  source_project_id: string;
+  source_acquired_by: string;
+  source_manifest_validated_by: string;
+  source_inventoried_by: string;
+  source_content_scanned_by: string;
+  source_schema_validated_by: string;
+  source_authority_validated_by: string;
+  source_custodied_by: string;
+  source_domain_reviewed_by: string;
+  source_security_reviewed_by: string;
+  source_lab_operated_by: string;
+  organization_id: string;
+  environment_id: string;
+  analyzed_by: string;
+  analysis_profile: "atlas.connector-static-dependency.python312.v1";
+  analyzer_version: "atlas.connector-static-dependency-analyzer.v1";
+  package_digest: string;
+  package_size_bytes: number;
+  inventory_digest: string;
+  source_summary: {
+    source_file_count: number;
+    module_count: number;
+    function_count: number;
+    import_count: number;
+    external_import_count: number;
+    unresolved_import_count: number;
+    source_set_digest: string;
+  };
+  dependency_summary: {
+    runtime_dependency_count: number;
+    build_dependency_count: number;
+    imported_dependency_count: number;
+    dependency_lock_present: boolean;
+    dependency_lock_required: boolean;
+    dependency_set_digest: string;
+    metadata_consistent: boolean;
+    imports_reconciled: boolean;
+    deterministic_constraints: boolean;
+  };
+  findings: Array<{
+    rule_code: string;
+    category: string;
+    severity: "error";
+    relative_path: string;
+    line_number: number;
+    evidence_fingerprint: string;
+    summary: string;
+    remediation: string;
+  }>;
+  finding_set_digest: string;
+  analysis_digest: string;
+  checks: ConnectorPackageValidation["checks"];
+  limitations: string[];
+  promotion_blocked: boolean;
+  canonical_digest: string;
+  analyzed_at: string;
+  secret_content_scan_completed: true;
+  prohibited_content_scan_completed: true;
+  schema_semantic_validation_completed: true;
+  permission_behavior_validation_completed: true;
+  static_code_validation_completed: true;
+  vulnerability_scan_completed: false;
+  malware_scan_completed: false;
+  license_scan_completed: false;
+  contract_validation_completed: false;
+  runner_validation_completed: false;
+  lab_validation_completed: false;
+  package_signed: false;
+  publisher_attested: false;
+  connector_rejected: false;
+  connector_registered: false;
+  connector_approved: false;
+  connector_installed: false;
+  connector_enabled: false;
+  target_configured: false;
+  credentials_resolved: false;
+  runtime_trust_granted: false;
+  execution_authorized: false;
+  deployment_approved: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -904,6 +1001,109 @@ function isSafeAuthorityBehaviorValidation(
   );
 }
 
+function isSafeStaticDependencyAnalysis(
+  value: unknown,
+): value is { data: ConnectorPackageStaticDependencyAnalysis } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const report = value.data;
+  if (!isRecord(report.source_summary) || !isRecord(report.dependency_summary)) return false;
+  const source = report.source_summary;
+  const dependency = report.dependency_summary;
+  const findings: unknown[] = Array.isArray(report.findings) ? report.findings : [];
+  const checks: unknown[] = Array.isArray(report.checks) ? report.checks : [];
+  const sourceActors = [
+    report.source_acquired_by,
+    report.source_manifest_validated_by,
+    report.source_inventoried_by,
+    report.source_content_scanned_by,
+    report.source_schema_validated_by,
+    report.source_authority_validated_by,
+    report.source_custodied_by,
+    report.source_domain_reviewed_by,
+    report.source_security_reviewed_by,
+    report.source_lab_operated_by,
+  ];
+  const counts = [
+    source.source_file_count,
+    source.module_count,
+    source.function_count,
+    source.import_count,
+    source.external_import_count,
+    source.unresolved_import_count,
+    dependency.runtime_dependency_count,
+    dependency.build_dependency_count,
+    dependency.imported_dependency_count,
+  ];
+  const noAuthority = [
+    report.vulnerability_scan_completed,
+    report.malware_scan_completed,
+    report.license_scan_completed,
+    report.contract_validation_completed,
+    report.runner_validation_completed,
+    report.lab_validation_completed,
+    report.package_signed,
+    report.publisher_attested,
+    report.connector_rejected,
+    report.connector_registered,
+    report.connector_approved,
+    report.connector_installed,
+    report.connector_enabled,
+    report.target_configured,
+    report.credentials_resolved,
+    report.runtime_trust_granted,
+    report.execution_authorized,
+    report.deployment_approved,
+    report.infrastructure_mutation_performed,
+  ];
+  return (
+    report.schema_version === "atlas.connector-package-static-dependency-analysis.v1" &&
+    report.version === 1 &&
+    report.lifecycle === "validating" &&
+    (report.outcome === "passed" || report.outcome === "failed") &&
+    report.promotion_blocked === (report.outcome === "failed") &&
+    report.analysis_profile === "atlas.connector-static-dependency.python312.v1" &&
+    report.analyzer_version === "atlas.connector-static-dependency-analyzer.v1" &&
+    report.secret_content_scan_completed === true &&
+    report.prohibited_content_scan_completed === true &&
+    report.schema_semantic_validation_completed === true &&
+    report.permission_behavior_validation_completed === true &&
+    report.static_code_validation_completed === true &&
+    typeof report.analyzed_by === "string" &&
+    sourceActors.every((actor) => typeof actor === "string") &&
+    !sourceActors.includes(report.analyzed_by) &&
+    counts.every((count) => typeof count === "number" && count >= 0) &&
+    typeof source.source_file_count === "number" &&
+    source.source_file_count > 0 &&
+    typeof source.source_set_digest === "string" &&
+    source.source_set_digest.length === 64 &&
+    typeof dependency.dependency_set_digest === "string" &&
+    dependency.dependency_set_digest.length === 64 &&
+    typeof dependency.dependency_lock_present === "boolean" &&
+    typeof dependency.runtime_dependency_count === "number" &&
+    dependency.dependency_lock_required === (dependency.runtime_dependency_count > 0) &&
+    typeof dependency.metadata_consistent === "boolean" &&
+    typeof dependency.imports_reconciled === "boolean" &&
+    typeof dependency.deterministic_constraints === "boolean" &&
+    typeof report.package_digest === "string" &&
+    report.package_digest.length === 64 &&
+    typeof report.inventory_digest === "string" &&
+    report.inventory_digest.length === 64 &&
+    typeof report.finding_set_digest === "string" &&
+    report.finding_set_digest.length === 64 &&
+    typeof report.analysis_digest === "string" &&
+    report.analysis_digest.length === 64 &&
+    typeof report.canonical_digest === "string" &&
+    report.canonical_digest.length === 64 &&
+    findings.length <= 500 &&
+    findings.every(isAuthorityBehaviorFinding) &&
+    checks.length === 5 &&
+    checks.every(isValidationCheck) &&
+    isStringArray(report.limitations) &&
+    report.limitations.length > 0 &&
+    noAuthority.every((flag) => flag === false)
+  );
+}
+
 function isSafeSchemaSemanticsValidation(
   value: unknown,
 ): value is { data: ConnectorPackageSchemaSemanticsValidation } {
@@ -1344,6 +1544,57 @@ export async function validateConnectorPackageAuthorityBehavior(
     report.semantic_validation_digest !== source.semantic_validation_digest
   ) {
     throw new Error("Authority behavior report does not match the exact schema validation");
+  }
+  return payload;
+}
+
+export async function analyzeConnectorPackageStaticDependencies(
+  source: ConnectorPackageAuthorityBehaviorValidation,
+) {
+  if (source.outcome !== "passed" || source.promotion_blocked) {
+    throw new Error("Only a passed authority behavior report can receive static analysis");
+  }
+  const response = await apiFetch("/api/v1/connectors/package-static-dependency-analyses", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "Idempotency-Key": `connector-static-dependency.${crypto.randomUUID()}`,
+    },
+    body: JSON.stringify({
+      schema_version: "atlas.connector-package-static-dependency-analysis-request.v1",
+      source_authority_behavior_validation_id: source.validation_id,
+      source_authority_behavior_validation_digest: source.canonical_digest,
+      package_digest: source.package_digest,
+      analysis_profile: "atlas.connector-static-dependency.python312.v1",
+      acknowledged_offline_static_dependency_limitations: true,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Connector package static dependency analysis failed with ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  if (!isSafeStaticDependencyAnalysis(payload)) {
+    throw new Error("Connector registry returned unsafe static dependency evidence");
+  }
+  const report = payload.data;
+  if (
+    report.source_authority_behavior_validation_id !== source.validation_id ||
+    report.source_authority_behavior_validation_digest !== source.canonical_digest ||
+    report.source_schema_semantics_validation_id !==
+      source.source_schema_semantics_validation_id ||
+    report.source_content_policy_scan_id !== source.source_content_policy_scan_id ||
+    report.source_inventory_id !== source.source_inventory_id ||
+    report.source_validation_id !== source.source_validation_id ||
+    report.source_acquisition_id !== source.source_acquisition_id ||
+    report.source_authority_validated_by !== source.validated_by ||
+    report.organization_id !== source.organization_id ||
+    report.environment_id !== source.environment_id ||
+    report.package_digest !== source.package_digest ||
+    report.package_size_bytes !== source.package_size_bytes ||
+    report.inventory_digest !== source.inventory_digest
+  ) {
+    throw new Error("Static dependency report does not match the exact authority validation");
   }
   return payload;
 }

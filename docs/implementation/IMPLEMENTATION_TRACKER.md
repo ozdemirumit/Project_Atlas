@@ -4,14 +4,84 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-059 |
-| Title | Governed connector declared-authority and implementation-behavior comparison foundation |
-| Status | Complete |
-| Branch | `agent/mcp-authority-behavior-validation` |
-| Pull Request | [#71](https://github.com/ozdemirumit/Project_Atlas/pull/71) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-015 |
+| Task ID | ATLAS-IMP-060 |
+| Title | Governed connector static-code and dependency-hygiene analysis foundation |
+| Status | Review |
+| Branch | `agent/mcp-static-dependency-analysis` |
+| Pull Request | [#72](https://github.com/ozdemirumit/Project_Atlas/pull/72) |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-016 |
 | Last Updated | 2026-08-05 |
-| Next Action | Scope ATLAS-IMP-060 for validation-pipeline step 7 general static, dependency, vulnerability, malware, and license analysis |
+| Next Action | Commit the verified implementation, open its pull request, pass CI, merge, and close the task on `main` |
+
+### ATLAS-IMP-060 Scope Rationale
+
+- IMP-059 proves bounded implementation behavior matches declared authority. ATLAS-020 validation
+  pipeline step 7 next requires independent general static and dependency checks.
+- ADR-016 defines an offline Python 3.12 structural analyzer and deterministic dependency-hygiene
+  profile that never imports, compiles, builds, installs, resolves, downloads, or executes package
+  content.
+- Vulnerability, malware, and license decisions require separately governed evidence datasets and
+  remain independent later stages, followed by contract, runner, self-test, lab, final-validation,
+  approval, registration, installation, and enablement stages.
+
+### ATLAS-IMP-060 Acceptance Criteria
+
+- Only a dedicated multi-factor human static-analysis operator in the exact organization and
+  environment can create or read a report. Every prior-stage actor, AI/service identity,
+  wrong-scope actor, and insufficient-assurance identity fails closed without evidence discovery.
+- The request accepts only the exact passed IMP-059 report with promotion unblocked, verifies every
+  upstream digest and no-authority flag, independently verifies archive bytes, and reconciles
+  Python/project metadata paths, digests, sizes, content classes, and dependencies to inventory.
+- A bounded deterministic offline Python 3.12 AST/token profile checks import-graph integrity,
+  top-level execution, exception handling, mutable global state, public annotations, complexity,
+  ambiguity, and resource limits without importing, compiling, or executing package code.
+- Imports are unique and internally resolvable; wildcard, dynamic, path-escaping, ambiguous,
+  undeclared external, or unmapped dependency imports fail closed.
+- Runtime dependencies are exact-pinned; non-empty runtime sets require a deterministic hashed lock
+  artifact. Build dependencies are bounded and consistent with the build backend. Unsupported,
+  duplicate, conflicting, URL, VCS, path, marker, wildcard, editable, or alternate-index forms fail.
+- An empty runtime dependency set may pass without a lock. Passing does not claim security,
+  availability, compatibility, authenticity, licensing, vulnerability, malware, or installability.
+- Findings expose only rule, category, severity, relative path, bounded line, fingerprint, generic
+  summary, and remediation. Source, tokens, literals, imports, constraints, URLs, indexes,
+  credentials, and archive bodies never enter state, persistence, APIs, audit, logs, or errors.
+- Reports are one-to-one, deterministic, immutable, idempotent, concurrency-safe,
+  audit-before-persist, and equivalent in memory and PostgreSQL. Trust, audit, parse, or persistence
+  failure cannot fabricate success.
+- Failed analysis sets `promotion_blocked=true`; passed analysis sets it false and only marks this
+  report's static-code stage complete. Neither outcome changes package or infrastructure state.
+- Strict no-store APIs require CSRF for creation, dedicated default-deny RBAC, correlation, bounded
+  schemas, safe errors, exact tenant scope, acknowledgement, and full-lineage separation of duties.
+- The Connector workspace displays safe source/dependency summaries, findings, checks, limitations,
+  lineage, and promotion state without raw code, dependency values, or later-stage controls.
+- Backend/frontend coverage, one Alembic head, live authorized/denied HTTP checks, passed/failed
+  fixtures, desktop and 390-pixel mobile inspection, browser logs, and GitHub CI apply.
+- This slice performs no package rewrite, import, compilation, build, installation, resolution,
+  network/model/target access, vulnerability/malware/license scan, contract/runner/self-test/lab
+  validation, and grants no lifecycle or runtime authority.
+
+### ATLAS-IMP-060 Validation Evidence
+
+- Domain, application, API, authorization, audit, memory, PostgreSQL, migration, and web coverage
+  verifies exact passed IMP-059 lineage, independent MFA operation, immutable archive and inventory
+  reconciliation, deterministic analysis, safe findings, one-to-one idempotency and concurrency,
+  audit-before-persist, and every no-authority flag.
+- The offline Python 3.12 AST profile checks source structure, internal import resolution, exception
+  handling, mutable global state, public annotations, and bounded complexity without importing,
+  compiling, executing, building, installing, resolving, downloading, or contacting anything.
+- Dependency hygiene verifies exact normalized project metadata, exact-pinned runtime requirements,
+  bounded build requirements, build-backend consistency, and the lock requirement for non-empty
+  runtime dependency sets. The reviewed package passed with four source files and zero runtime
+  dependencies; five focused tests cover passing and blocked analysis, safe findings, separation of
+  duties, audit failure, concurrency, PostgreSQL mapping, CSRF, no-store, and minimized output.
+- Backend formatting, Ruff, strict mypy, and Alembic single-head validation passed; the full backend
+  suite passed with 507 tests and 3 existing Windows symlink skips.
+- Frontend lint and TypeScript checks passed; all 36 frontend tests and the production build passed.
+- Live HTTP verification returned 403 without CSRF and 201 with valid CSRF, followed by a successful
+  immutable read with `no-store`; the report passed with promotion unblocked while runtime trust,
+  execution, mutation, vulnerability, malware, and license stages remained false.
+- Desktop inspection at 1280 by 720 and mobile inspection at 390 by 844 showed no horizontal
+  overflow or incoherent overlap, and browser error/warning logs were empty.
 
 ### ATLAS-IMP-059 Scope Rationale
 
@@ -78,7 +148,8 @@
   overflow; navigation changed to the compact mobile mode and browser error/warning logs were empty.
 - [PR #71](https://github.com/ozdemirumit/Project_Atlas/pull/71) merged as
   `031a8dcd529cdd70a8aa54b5158ee5a77d3b0578`; pull-request CI run
-  `31023958315` and post-merge `main` CI run `31024191600` passed both backend and frontend jobs.
+  `31023958315`, post-merge `main` CI run `31024191600`, and closure CI run `31024446619` passed
+  both backend and frontend jobs.
 
 ### ATLAS-IMP-058 Scope Rationale
 

@@ -30,3 +30,4 @@ ADR numbers are permanent and never reused. Material changes require a new ADR r
 | [ADR-013](ADR-013_Connector_Package_Secret_Prohibited_Content_Scan_Contract.md) | Connector package secret and prohibited-content scan contract | Accepted |
 | [ADR-014](ADR-014_Connector_Configuration_Capability_Schema_Semantics_Contract.md) | Connector configuration and capability schema semantics contract | Accepted |
 | [ADR-015](ADR-015_Connector_Declared_Authority_Implementation_Behavior_Contract.md) | Connector declared authority and implementation behavior contract | Accepted |
+| [ADR-016](ADR-016_Connector_Static_Code_Dependency_Hygiene_Contract.md) | Connector static code and dependency hygiene contract | Accepted |
