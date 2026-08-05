@@ -58,6 +58,36 @@
   import/execution, behavior comparison, vulnerability, malware, license, static-code, contract,
   mock-target, runner, self-test, or lab validation and grants no lifecycle or runtime authority.
 
+### ATLAS-IMP-058 Validation Evidence
+
+- Domain, application, API, authorization, audit, memory, PostgreSQL, and migration coverage verifies
+  exact passed content-policy lineage, independent MFA operation, immutable archive and inventory
+  reconciliation, deterministic schema summaries, safe findings, one-to-one idempotency and
+  concurrency, audit-before-persist, and every no-authority flag.
+- The offline semantic profile distinguishes quarantine-valid generated drafts from reviewed
+  contracts. Tests cover closed objects, exact manifest fields, required/property consistency,
+  supported types, coherent string/numeric/collection bounds, opaque secret references, draft
+  markers, empty placeholders, open outputs, unsupported references/composition, and unknown keys.
+- Tests prove raw schema bodies, fragments, defaults, patterns, enum values, examples, and
+  secret-like content are absent from domain reports, PostgreSQL evidence, API responses, audit
+  metadata, and safe error surfaces.
+- A fresh live HTTP run returned login 201, denied creation without CSRF with 403, created validation
+  `connector-schema-semantics-validation.5cb65e67250afba6c256d845` with 201, and reread its matching
+  canonical digest with 200. Create and read responses used `Cache-Control: no-store`.
+- The generated draft produced a safe failed report for three exact schemas with seven findings and
+  `promotion_blocked=true`; schema validation was complete while rejection, registration, trust,
+  execution, deployment, and infrastructure mutation remained false. No raw-content field was
+  returned. A separate reviewed, closed, bounded fixture passes with zero findings.
+- Backend quality gates passed across the full tree with Ruff formatting and lint, strict mypy over
+  464 source files, the single Alembic head `20260805_0030`, and 496 passing tests. Three existing
+  Windows symlink scenarios remain host-skipped.
+- Frontend ESLint, TypeScript checking, all 36 tests, and the production build passed. The existing
+  non-blocking large-chunk advisory remains.
+- Browser validation against `http://localhost:5207/` confirmed the Connector workspace at
+  1280-by-720 with no horizontal overflow and visually bounded controls. A same-origin mobile frame
+  measured a 375-pixel content/client width with no horizontal overflow. The temporary mobile QA
+  file was removed after inspection.
+
 ### ATLAS-IMP-057 Scope Rationale
 
 - IMP-056 supplies a passed, complete inventory bound to exact immutable package bytes. ATLAS-020
@@ -136,6 +166,8 @@
   passed backend and frontend quality gates. [PR #69](https://github.com/ozdemirumit/Project_Atlas/pull/69)
   merged at `10916c201bb3847569c45f5742dea6505990c2c6`, and post-merge `main` CI
   [run 31016047127](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31016047127) passed both jobs.
+- The closing tracker commit `e4c3998395248519b78c016bd8b279aa70a72eff` also passed final
+  `main` CI [run 31016318691](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31016318691).
 
 ### ATLAS-IMP-056 Scope Rationale
 

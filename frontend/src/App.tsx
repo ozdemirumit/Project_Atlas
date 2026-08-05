@@ -117,6 +117,7 @@ import {
   inventoryConnectorPackage,
   scanConnectorPackageContent,
   validateConnectorPackage,
+  validateConnectorPackageSchemaSemantics,
 } from "./api/connectors";
 import {
   createMcpBuilderDomainReview,
@@ -518,6 +519,8 @@ export function App() {
     useState(false);
   const [builderContentPolicyScanAcknowledged, setBuilderContentPolicyScanAcknowledged] =
     useState(false);
+  const [builderSchemaSemanticsAcknowledged, setBuilderSchemaSemanticsAcknowledged] =
+    useState(false);
   const [builderSelectedGeneratedFile, setBuilderSelectedGeneratedFile] = useState("");
   const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
     Record<string, McpBuilderDesignDecision>
@@ -557,6 +560,10 @@ export function App() {
     mutationFn: scanConnectorPackageContent,
     onSuccess: () => setBuilderContentPolicyScanAcknowledged(false),
   });
+  const builderSchemaSemanticsMutation = useMutation({
+    mutationFn: validateConnectorPackageSchemaSemantics,
+    onSuccess: () => setBuilderSchemaSemanticsAcknowledged(false),
+  });
   const builderCandidateArchiveMutation = useMutation({
     mutationFn: downloadMcpBuilderCandidateArchive,
     onSuccess: ({ blob, filename }) => {
@@ -577,11 +584,13 @@ export function App() {
     builderPackageValidationMutation.reset();
     builderPackageInventoryMutation.reset();
     builderContentPolicyScanMutation.reset();
+    builderSchemaSemanticsMutation.reset();
     setBuilderCandidateHandoffAcknowledged(false);
     setBuilderPackageAcquisitionAcknowledged(false);
     setBuilderPackageValidationAcknowledged(false);
     setBuilderPackageInventoryAcknowledged(false);
     setBuilderContentPolicyScanAcknowledged(false);
+    setBuilderSchemaSemanticsAcknowledged(false);
   };
   const builderPackageValidationSeparated = Boolean(
     identity &&
@@ -618,6 +627,20 @@ export function App() {
         builderPackageInventoryMutation.data.data.source_domain_reviewed_by,
         builderPackageInventoryMutation.data.data.source_security_reviewed_by,
         builderPackageInventoryMutation.data.data.source_lab_operated_by,
+      ].includes(identity.subject_id),
+  );
+  const builderSchemaSemanticsSeparated = Boolean(
+    identity &&
+      builderContentPolicyScanMutation.data?.data &&
+      ![
+        builderContentPolicyScanMutation.data.data.scanned_by,
+        builderContentPolicyScanMutation.data.data.source_inventoried_by,
+        builderContentPolicyScanMutation.data.data.source_validated_by,
+        builderContentPolicyScanMutation.data.data.source_acquired_by,
+        builderContentPolicyScanMutation.data.data.source_custodied_by,
+        builderContentPolicyScanMutation.data.data.source_domain_reviewed_by,
+        builderContentPolicyScanMutation.data.data.source_security_reviewed_by,
+        builderContentPolicyScanMutation.data.data.source_lab_operated_by,
       ].includes(identity.subject_id),
   );
   const builderLabValidationMutation = useMutation({
@@ -5262,6 +5285,280 @@ export function App() {
                                                                       authority was granted.
                                                                     </p>
                                                                   </div>
+                                                                  {builderContentPolicyScanMutation.data?.data
+                                                                    .outcome === "passed" &&
+                                                                    !builderSchemaSemanticsSeparated &&
+                                                                    !builderSchemaSemanticsMutation.data && (
+                                                                      <div
+                                                                        className="workspace-message warning-state"
+                                                                        role="status"
+                                                                      >
+                                                                        <UserX size={20} />
+                                                                        <div>
+                                                                          <h3>
+                                                                            Independent schema validator required
+                                                                          </h3>
+                                                                          <p>
+                                                                            Sign in with an MFA identity that did
+                                                                            not perform Builder, custody, intake,
+                                                                            inventory, or content scanning.
+                                                                          </p>
+                                                                        </div>
+                                                                      </div>
+                                                                    )}
+                                                                  {builderContentPolicyScanMutation.data?.data
+                                                                    .outcome === "passed" &&
+                                                                    builderSchemaSemanticsSeparated &&
+                                                                    !builderSchemaSemanticsMutation.data && (
+                                                                      <section className="mcp-builder-handoff-action">
+                                                                        <div>
+                                                                          <p className="eyebrow">
+                                                                            VALIDATION PIPELINE STEP 5
+                                                                          </p>
+                                                                          <strong>
+                                                                            Validate schema semantics
+                                                                          </strong>
+                                                                          <p>
+                                                                            Check closed, bounded configuration
+                                                                            and capability contracts without
+                                                                            resolving references or executing code.
+                                                                          </p>
+                                                                        </div>
+                                                                        <label className="confirmation-row">
+                                                                          <input
+                                                                            type="checkbox"
+                                                                            checked={
+                                                                              builderSchemaSemanticsAcknowledged
+                                                                            }
+                                                                            onChange={(event) =>
+                                                                              setBuilderSchemaSemanticsAcknowledged(
+                                                                                event.target.checked,
+                                                                              )
+                                                                            }
+                                                                          />
+                                                                          I am the independent schema validator. I
+                                                                          understand draft contracts may block
+                                                                          promotion without changing the package.
+                                                                        </label>
+                                                                        <button
+                                                                          className="run-check-button mcp-builder-submit"
+                                                                          type="button"
+                                                                          disabled={
+                                                                            !builderSchemaSemanticsAcknowledged ||
+                                                                            builderSchemaSemanticsMutation.isPending
+                                                                          }
+                                                                          onClick={() => {
+                                                                            const scan =
+                                                                              builderContentPolicyScanMutation.data
+                                                                                ?.data;
+                                                                            if (scan) {
+                                                                              builderSchemaSemanticsMutation.mutate(
+                                                                                scan,
+                                                                              );
+                                                                            }
+                                                                          }}
+                                                                        >
+                                                                          {builderSchemaSemanticsMutation.isPending ? (
+                                                                            <RefreshCw
+                                                                              className="spin"
+                                                                              size={16}
+                                                                            />
+                                                                          ) : (
+                                                                            <FileCheck2 size={16} />
+                                                                          )}
+                                                                          Validate schema semantics
+                                                                        </button>
+                                                                      </section>
+                                                                    )}
+                                                                  {builderSchemaSemanticsMutation.isError && (
+                                                                    <div
+                                                                      className="workspace-message error-state"
+                                                                      role="alert"
+                                                                    >
+                                                                      <AlertTriangle size={20} />
+                                                                      <div>
+                                                                        <h3>Schema validation unavailable</h3>
+                                                                        <p>
+                                                                          Exact lineage, package bytes,
+                                                                          authorization, or separation of duties did
+                                                                          not pass.
+                                                                        </p>
+                                                                      </div>
+                                                                    </div>
+                                                                  )}
+                                                                  {builderSchemaSemanticsMutation.data?.data && (
+                                                                    <div className="mcp-builder-validation">
+                                                                      <div className="section-heading">
+                                                                        <div>
+                                                                          <p className="eyebrow">
+                                                                            IMMUTABLE SCHEMA SEMANTICS REPORT
+                                                                          </p>
+                                                                          <strong>
+                                                                            {
+                                                                              builderSchemaSemanticsMutation.data
+                                                                                .data.validation_id
+                                                                            }
+                                                                          </strong>
+                                                                          <code>
+                                                                            {
+                                                                              builderSchemaSemanticsMutation.data
+                                                                                .data.canonical_digest
+                                                                            }
+                                                                          </code>
+                                                                        </div>
+                                                                        <span
+                                                                          className={`state-badge ${
+                                                                            builderSchemaSemanticsMutation.data.data
+                                                                              .outcome === "passed"
+                                                                              ? "healthy"
+                                                                              : "critical"
+                                                                          }`}
+                                                                        >
+                                                                          {builderSchemaSemanticsMutation.data.data
+                                                                            .outcome === "passed" ? (
+                                                                            <CheckCircle2 size={14} />
+                                                                          ) : (
+                                                                            <AlertTriangle size={14} />
+                                                                          )}
+                                                                          {
+                                                                            builderSchemaSemanticsMutation.data.data
+                                                                              .outcome
+                                                                          }
+                                                                        </span>
+                                                                      </div>
+                                                                      <div className="mcp-builder-facts">
+                                                                        <div>
+                                                                          <span>Schemas</span>
+                                                                          <strong>
+                                                                            {
+                                                                              builderSchemaSemanticsMutation.data
+                                                                                .data.schemas.length
+                                                                            }
+                                                                          </strong>
+                                                                        </div>
+                                                                        <div>
+                                                                          <span>Findings</span>
+                                                                          <strong>
+                                                                            {
+                                                                              builderSchemaSemanticsMutation.data
+                                                                                .data.findings.length
+                                                                            }
+                                                                          </strong>
+                                                                        </div>
+                                                                        <div>
+                                                                          <span>Closed contracts</span>
+                                                                          <strong>
+                                                                            {
+                                                                              builderSchemaSemanticsMutation.data.data.schemas.filter(
+                                                                                (schema) => schema.closed_object,
+                                                                              ).length
+                                                                            }
+                                                                          </strong>
+                                                                        </div>
+                                                                        <div>
+                                                                          <span>Promotion</span>
+                                                                          <strong>
+                                                                            {builderSchemaSemanticsMutation.data.data
+                                                                              .promotion_blocked
+                                                                              ? "Blocked"
+                                                                              : "Not blocked"}
+                                                                          </strong>
+                                                                        </div>
+                                                                      </div>
+                                                                      <div className="mcp-builder-validation-checks">
+                                                                        {builderSchemaSemanticsMutation.data.data.schemas.map(
+                                                                          (schema) => (
+                                                                            <article
+                                                                              key={schema.digest}
+                                                                              data-state={
+                                                                                schema.semantically_complete
+                                                                                  ? "passed"
+                                                                                  : "failed"
+                                                                              }
+                                                                            >
+                                                                              {schema.semantically_complete ? (
+                                                                                <CheckCircle2 size={16} />
+                                                                              ) : (
+                                                                                <AlertTriangle size={16} />
+                                                                              )}
+                                                                              <div>
+                                                                                <strong>
+                                                                                  {schema.relative_path}
+                                                                                </strong>
+                                                                                <p>
+                                                                                  {schema.property_count} properties,
+                                                                                  {" "}
+                                                                                  {schema.required_count} required
+                                                                                </p>
+                                                                              </div>
+                                                                              <span>{schema.purpose}</span>
+                                                                            </article>
+                                                                          ),
+                                                                        )}
+                                                                      </div>
+                                                                      {builderSchemaSemanticsMutation.data.data
+                                                                        .findings.length > 0 && (
+                                                                        <div className="mcp-builder-validation-checks">
+                                                                          {builderSchemaSemanticsMutation.data.data.findings.map(
+                                                                            (finding) => (
+                                                                              <article
+                                                                                key={
+                                                                                  finding.evidence_fingerprint
+                                                                                }
+                                                                                data-state="failed"
+                                                                              >
+                                                                                <AlertTriangle size={16} />
+                                                                                <div>
+                                                                                  <strong>
+                                                                                    {finding.rule_code}
+                                                                                  </strong>
+                                                                                  <p>{finding.summary}</p>
+                                                                                  <small>
+                                                                                    {finding.relative_path}
+                                                                                    {finding.json_pointer}
+                                                                                  </small>
+                                                                                </div>
+                                                                                <span>{finding.kind}</span>
+                                                                              </article>
+                                                                            ),
+                                                                          )}
+                                                                        </div>
+                                                                      )}
+                                                                      <div className="mcp-builder-validation-checks">
+                                                                        {builderSchemaSemanticsMutation.data.data.checks.map(
+                                                                          (check) => (
+                                                                            <article
+                                                                              key={check.code}
+                                                                              data-state={check.state}
+                                                                            >
+                                                                              {check.state === "passed" ? (
+                                                                                <CheckCircle2 size={16} />
+                                                                              ) : (
+                                                                                <AlertTriangle size={16} />
+                                                                              )}
+                                                                              <div>
+                                                                                <strong>{check.code}</strong>
+                                                                                <p>{check.summary}</p>
+                                                                              </div>
+                                                                              <span>{check.state}</span>
+                                                                            </article>
+                                                                          ),
+                                                                        )}
+                                                                      </div>
+                                                                      <div className="mcp-builder-limitations">
+                                                                        <strong>Schema boundaries</strong>
+                                                                        <ul>
+                                                                          {builderSchemaSemanticsMutation.data.data.limitations.map(
+                                                                            (limitation) => (
+                                                                              <li key={limitation}>
+                                                                                {limitation}
+                                                                              </li>
+                                                                            ),
+                                                                          )}
+                                                                        </ul>
+                                                                      </div>
+                                                                    </div>
+                                                                  )}
                                                                 </section>
                                                               )}
                                                               {builderPackageInventoryMutation.data?.data

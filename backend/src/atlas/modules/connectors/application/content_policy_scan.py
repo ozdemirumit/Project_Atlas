@@ -137,6 +137,22 @@ class PackageContentPolicyScanService:
         self._clock = clock or (lambda: datetime.now(UTC))
         self._mutation_lock = asyncio.Lock()
 
+    @property
+    def repository(self) -> PackageContentPolicyScanRepository:
+        return self._repository
+
+    @property
+    def inventory_source(self) -> ContentPolicyInventorySource:
+        return self._inventory_source
+
+    @property
+    def acquisition_source(self) -> ContentPolicyAcquisitionSource:
+        return self._acquisition_source
+
+    @property
+    def archive_source(self) -> ContentPolicyArchiveSource:
+        return self._archive_source
+
     async def create(
         self,
         *,
