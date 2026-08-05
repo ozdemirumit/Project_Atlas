@@ -84,7 +84,9 @@ async def completion_context(tmp_path: Path) -> tuple[Any, ...]:
     )
 
 
-def receipt_request(review: Any, creator: Any, *, key: str = "completion-receipt-0001"):
+def receipt_request(
+    review: Any, creator: Any, *, key: str = "completion-receipt-0001"
+) -> dict[str, Any]:
     return {
         "actor": creator,
         "review_id": review.review_id,
