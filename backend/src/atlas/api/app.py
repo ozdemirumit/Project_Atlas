@@ -69,6 +69,12 @@ from atlas.modules.authorization.application.bootstrap import (
     build_development_authorization_service,
 )
 from atlas.modules.authorization.application.service import AuthorizationService
+from atlas.modules.change_review.adapters.completion_receipt_memory import (
+    InMemoryCompletionReceiptRepository,
+)
+from atlas.modules.change_review.adapters.completion_receipt_postgres import (
+    PostgreSQLCompletionReceiptRepository,
+)
 from atlas.modules.change_review.adapters.human_review_memory import (
     InMemoryHumanReviewRepository,
 )
@@ -78,6 +84,9 @@ from atlas.modules.change_review.adapters.human_review_postgres import (
 from atlas.modules.change_review.adapters.memory import InMemoryChangeReviewPacketRepository
 from atlas.modules.change_review.adapters.postgres import (
     PostgreSQLChangeReviewPacketRepository,
+)
+from atlas.modules.change_review.application.completion_receipt_service import (
+    CompletionReceiptService,
 )
 from atlas.modules.change_review.application.human_review_service import HumanReviewService
 from atlas.modules.change_review.application.service import ChangeReviewService
@@ -277,6 +286,7 @@ def create_app(
     upgrade_service: UpgradeService | None = None,
     change_review_service: ChangeReviewService | None = None,
     human_review_service: HumanReviewService | None = None,
+    completion_receipt_service: CompletionReceiptService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -664,6 +674,22 @@ def create_app(
             environment_id=f"environment.{resolved_settings.environment}",
             site_id="site.local",
         )
+    if completion_receipt_service is not None:
+        resolved_completion_receipt_service = completion_receipt_service
+    else:
+        completion_receipt_repository = (
+            PostgreSQLCompletionReceiptRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryCompletionReceiptRepository()
+        )
+        resolved_completion_receipt_service = CompletionReceiptService(
+            packet_repository=resolved_change_review_service.packet_repository,
+            review_repository=resolved_human_review_service.repository,
+            receipt_repository=completion_receipt_repository,
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -831,6 +857,7 @@ def create_app(
         app.state.upgrade_service = resolved_upgrade_service
         app.state.change_review_service = resolved_change_review_service
         app.state.human_review_service = resolved_human_review_service
+        app.state.completion_receipt_service = resolved_completion_receipt_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -843,6 +870,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_completion_receipt_service.close()
         await resolved_human_review_service.close()
         await resolved_change_review_service.close()
         await resolved_upgrade_service.close()

@@ -16,6 +16,7 @@ import {
   Database,
   Download,
   FileChartColumn,
+  FileCheck2,
   FileText,
   FlaskConical,
   GitBranch,
@@ -111,6 +112,7 @@ import {
 import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
 import {
+  createUpgradeHumanReviewCompletionReceipt,
   createUpgradeHumanReview,
   createUpgradeChangeReviewPacket,
   decideUpgradeHumanReview,
@@ -119,6 +121,7 @@ import {
   type UpgradeChangeReviewPacket,
   type UpgradeChangeReviewPreview,
   type UpgradeHumanReview,
+  type UpgradeReviewCompletionReceipt,
 } from "./api/changeReviews";
 import {
   disableGovernedIdentity,
@@ -407,6 +410,9 @@ export function App() {
   const [reviewDecisionAcknowledged, setReviewDecisionAcknowledged] = useState(false);
   const [reviewDecisionResult, setReviewDecisionResult] =
     useState<UpgradeHumanReview | null>(null);
+  const [completionReceiptAcknowledged, setCompletionReceiptAcknowledged] = useState(false);
+  const [completionReceipt, setCompletionReceipt] =
+    useState<UpgradeReviewCompletionReceipt | null>(null);
   const [bootstrapClaimJustification, setBootstrapClaimJustification] = useState("");
   const [bootstrapClaimPending, setBootstrapClaimPending] = useState(false);
   const [bootstrapClaimResult, setBootstrapClaimResult] =
@@ -444,11 +450,20 @@ export function App() {
     mutationFn: decideUpgradeHumanReview,
     onSuccess: async (result) => {
       setReviewDecisionResult(result.data);
+      setCompletionReceiptAcknowledged(false);
+      setCompletionReceipt(null);
       setSelectedInboxReviewId(null);
       setReviewDecisionOutcome("approve");
       setReviewDecisionRationale("");
       setReviewDecisionAcknowledged(false);
       await queryClient.invalidateQueries({ queryKey: ["upgrade-human-review-inbox"] });
+    },
+  });
+  const completionReceiptMutation = useMutation({
+    mutationFn: createUpgradeHumanReviewCompletionReceipt,
+    onSuccess: (result) => {
+      setCompletionReceipt(result.data);
+      setCompletionReceiptAcknowledged(false);
     },
   });
   const loginMutation = useMutation({
@@ -480,6 +495,8 @@ export function App() {
       setReviewDecisionRationale("");
       setReviewDecisionAcknowledged(false);
       setReviewDecisionResult(null);
+      setCompletionReceiptAcknowledged(false);
+      setCompletionReceipt(null);
       setGovernanceReason("");
       setWorkloadReason("");
       setIssuedWorkloadToken(null);
@@ -2056,6 +2073,84 @@ export function App() {
                         </p>
                       </div>
                     </div>
+                  )}
+                  {reviewDecisionResult?.state === "completed" && !completionReceipt && (
+                    <div className="completion-receipt-create">
+                      <div className="completion-receipt-heading">
+                        <FileCheck2 size={18} />
+                        <div>
+                          <strong>Create completion receipt</strong>
+                          <p>Preserve the exact four-person review as non-executable evidence.</p>
+                        </div>
+                      </div>
+                      <label className="review-boundary-check completion-receipt-check">
+                        <input
+                          type="checkbox"
+                          checked={completionReceiptAcknowledged}
+                          onChange={(event) =>
+                            setCompletionReceiptAcknowledged(event.target.checked)
+                          }
+                        />
+                        <span>
+                          This receipt proves human review completion only. It grants no approval,
+                          handoff, workflow, or infrastructure execution authority.
+                        </span>
+                      </label>
+                      <button
+                        className="run-check-button completion-receipt-button"
+                        type="button"
+                        disabled={
+                          !completionReceiptAcknowledged || completionReceiptMutation.isPending
+                        }
+                        onClick={() =>
+                          completionReceiptMutation.mutate({
+                            review: reviewDecisionResult,
+                            acknowledgedEvidenceOnly: completionReceiptAcknowledged,
+                          })
+                        }
+                      >
+                        <FileCheck2 size={16} />
+                        {completionReceiptMutation.isPending ? "Creating" : "Create receipt"}
+                      </button>
+                    </div>
+                  )}
+                  {completionReceiptMutation.isError && (
+                    <div className="review-inbox-status error-state" role="alert">
+                      <AlertTriangle size={17} /> The completion receipt was not created.
+                    </div>
+                  )}
+                  {completionReceipt && (
+                    <article className="completion-receipt-result" aria-label="Completion receipt">
+                      <div className="completion-receipt-heading">
+                        <FileCheck2 size={18} />
+                        <div>
+                          <strong>Human-review completion receipt</strong>
+                          <code>{completionReceipt.receipt_id}</code>
+                        </div>
+                      </div>
+                      <dl>
+                        <div>
+                          <dt>Review</dt>
+                          <dd>{completionReceipt.review_id}</dd>
+                        </div>
+                        <div>
+                          <dt>Human stages</dt>
+                          <dd>{completionReceipt.stages.length} approved</dd>
+                        </div>
+                        <div>
+                          <dt>Evidence digests</dt>
+                          <dd>{completionReceipt.evidence_digests.length}</dd>
+                        </div>
+                        <div>
+                          <dt>Execution authority</dt>
+                          <dd>No</dd>
+                        </div>
+                      </dl>
+                      <p>
+                        Evidence only. Approval, ITSM dispatch, handoff, workflow execution, and
+                        infrastructure mutation remain No.
+                      </p>
+                    </article>
                   )}
                   <div className="safety-notice review-inbox-boundary">
                     <ShieldCheck size={16} />

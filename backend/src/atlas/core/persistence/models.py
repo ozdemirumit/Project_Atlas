@@ -301,3 +301,42 @@ class UpgradeChangeHumanReviewModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class HumanReviewCompletionReceiptModel(Base):
+    __tablename__ = "platform_human_review_completion_receipts"
+    __table_args__ = (
+        CheckConstraint("version = 1", name="ck_platform_review_receipts_version"),
+        UniqueConstraint("review_id", name="uq_platform_review_receipts_review"),
+        UniqueConstraint(
+            "created_by",
+            "idempotency_key",
+            name="uq_platform_review_receipts_creator_idempotency",
+        ),
+    )
+
+    receipt_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    review_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    review_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    review_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    review_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    packet_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    packet_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    requester_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    risk_class: Mapped[str] = mapped_column(String(128), nullable=False)
+    change_class: Mapped[str] = mapped_column(String(128), nullable=False)
+    impacted_service_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    evidence_digests: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    proposed_window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    proposed_window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    stages: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

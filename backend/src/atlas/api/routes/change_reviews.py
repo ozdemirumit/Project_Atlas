@@ -15,6 +15,9 @@ from atlas.api.change_review_schemas import (
 )
 from atlas.api.errors import AtlasError
 from atlas.api.human_review_schemas import (
+    CompletionReceiptCreateInput,
+    CompletionReceiptData,
+    CompletionReceiptResponse,
     HumanReviewCreateInput,
     HumanReviewData,
     HumanReviewDecisionInput,
@@ -27,12 +30,17 @@ from atlas.api.security import (
     authenticated_subject,
     authorize_upgrade_change_review_create,
     authorize_upgrade_change_review_preview,
+    authorize_upgrade_completion_receipt_create,
+    authorize_upgrade_completion_receipt_read,
     authorize_upgrade_human_review_create,
     authorize_upgrade_human_review_decide,
     authorize_upgrade_human_review_read,
     browser_session_subject,
 )
 from atlas.modules.authorization.domain.models import AuthorizationDecision
+from atlas.modules.change_review.application.completion_receipt_service import (
+    CompletionReceiptService,
+)
 from atlas.modules.change_review.application.human_review_service import HumanReviewService
 from atlas.modules.change_review.application.ports import ChangeReviewError
 from atlas.modules.change_review.application.service import ChangeReviewService
@@ -242,6 +250,71 @@ async def decide_human_review(
     response.headers["Cache-Control"] = "no-store"
     return HumanReviewResponse(
         data=HumanReviewData.from_domain(result),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.post(
+    "/human-reviews/{review_id}/completion-receipts",
+    response_model=CompletionReceiptResponse,
+)
+async def create_completion_receipt(
+    review_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    payload: CompletionReceiptCreateInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_upgrade_completion_receipt_create)
+    ],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> CompletionReceiptResponse:
+    service: CompletionReceiptService = request.app.state.completion_receipt_service
+    try:
+        result = await service.create(
+            actor=subject,
+            review_id=review_id,
+            expected_review_version=payload.expected_review_version,
+            acknowledged_evidence_only=payload.acknowledged_evidence_only,
+            idempotency_key=idempotency_key,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ChangeReviewError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return CompletionReceiptResponse(
+        data=CompletionReceiptData.from_domain(result),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get(
+    "/completion-receipts/{receipt_id}",
+    response_model=CompletionReceiptResponse,
+)
+async def get_completion_receipt(
+    receipt_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_upgrade_completion_receipt_read)],
+) -> CompletionReceiptResponse:
+    service: CompletionReceiptService = request.app.state.completion_receipt_service
+    try:
+        result = await service.get(
+            actor=subject,
+            receipt_id=receipt_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ChangeReviewError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return CompletionReceiptResponse(
+        data=CompletionReceiptData.from_domain(result),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),

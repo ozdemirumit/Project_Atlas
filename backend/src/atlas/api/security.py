@@ -50,6 +50,8 @@ from atlas.modules.authorization.application.bootstrap import (
     SUPPORT_BUNDLE_PREVIEW,
     UPGRADE_CHANGE_REVIEW_CREATE,
     UPGRADE_CHANGE_REVIEW_PREVIEW,
+    UPGRADE_COMPLETION_RECEIPT_CREATE,
+    UPGRADE_COMPLETION_RECEIPT_READ,
     UPGRADE_HUMAN_REVIEW_CREATE,
     UPGRADE_HUMAN_REVIEW_DECIDE,
     UPGRADE_HUMAN_REVIEW_READ,
@@ -82,6 +84,7 @@ from atlas.modules.authorization.application.bootstrap import (
     storage_overview_scope,
     support_bundle_scope,
     upgrade_change_review_scope,
+    upgrade_completion_receipt_scope,
     upgrade_human_review_scope,
     upgrade_simulation_scope,
     workload_identity_governance_scope,
@@ -1024,6 +1027,62 @@ async def authorize_upgrade_human_review_decide(
         permission_id=UPGRADE_HUMAN_REVIEW_DECIDE,
         capability_class=CapabilityClass.C2_DIAGNOSTIC,
     )
+
+
+async def authorize_upgrade_completion_receipt_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_upgrade_completion_receipt(
+        request,
+        subject,
+        permission_id=UPGRADE_COMPLETION_RECEIPT_CREATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_upgrade_completion_receipt_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_upgrade_completion_receipt(
+        request,
+        subject,
+        permission_id=UPGRADE_COMPLETION_RECEIPT_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def _authorize_upgrade_completion_receipt(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.platform.upgrade-human-review-receipt",
+            scope=upgrade_completion_receipt_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="Human review completion receipt is not authorized.",
+        )
+    request.state.authorization_decision = decision
+    return decision
 
 
 async def _authorize_upgrade_human_review(
