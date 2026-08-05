@@ -147,6 +147,18 @@ class PackageValidationService:
         self._clock = clock or (lambda: datetime.now(UTC))
         self._mutation_lock = asyncio.Lock()
 
+    @property
+    def repository(self) -> PackageValidationRepository:
+        return self._repository
+
+    @property
+    def acquisition_source(self) -> PackageAcquisitionSource:
+        return self._acquisition_source
+
+    @property
+    def archive_source(self) -> AcquiredPackageSource:
+        return self._archive_source
+
     async def create(
         self,
         *,

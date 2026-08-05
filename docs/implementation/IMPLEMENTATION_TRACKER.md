@@ -4,14 +4,96 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-055 |
-| Title | Governed connector package validation intake foundation |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#67](https://github.com/ozdemirumit/Project_Atlas/pull/67) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009, ADR-010, ADR-011 |
+| Task ID | ATLAS-IMP-056 |
+| Title | Governed connector package content and dependency inventory foundation |
+| Status | Review |
+| Branch | `agent/mcp-package-supply-chain-inventory` |
+| Pull Request | [#68](https://github.com/ozdemirumit/Project_Atlas/pull/68) |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009, ADR-010, ADR-011, ADR-012 |
 | Last Updated | 2026-08-05 |
-| Next Action | Select and scope ATLAS-IMP-056 from the approved connector registry sequence |
+| Next Action | Complete PR #68 CI review, merge, and verify post-merge main CI |
+
+### ATLAS-IMP-056 Scope Rationale
+
+- IMP-055 supplies a passed manifest/schema report bound to exact immutable acquired bytes.
+  ATLAS-020 validation pipeline step 3 next requires package-content and dependency inspection.
+- ADR-012 defines a separate MFA supply-chain inventory operator, complete per-entry evidence,
+  bounded Python project metadata parsing, deterministic dependency normalization, and canonical
+  inventory digests.
+- This slice proves input completeness for later scanners only. It does not claim vulnerability,
+  malware, secret, prohibited-content, license, static-code, contract, runner, or lab safety and
+  grants no registration or runtime authority.
+
+### ATLAS-IMP-056 Acceptance Criteria
+
+- Only a dedicated multi-factor human supply-chain inventory operator in the exact package
+  organization and environment with create/read permissions can create or read a report. Every
+  prior Builder, acquisition, and manifest/schema validation actor, AI and service identities,
+  wrong-scope actors, and insufficient assurance fail closed without evidence discovery.
+- Inventory accepts only an exact passed `atlas.connector-validation-intake.builder-v1` report. It
+  verifies report and acquisition canonical digests, source lineage, package digest and size,
+  lifecycle, outcome, validator versions, and every no-authority flag before rereading bytes.
+- The acquired archive is independently reverified for digest, size, bounded ZIP structure, fixed
+  metadata, unique ordinal normalized paths, regular files, and exact handoff binding. Trust failure
+  creates no inventory report.
+- Every entry receives a bounded class, relative path, digest, and byte count. Exact generated-profile
+  top-level files and roots are enforced; missing, duplicate, empty, case-colliding, unclassified, or
+  profile-extraneous content produces a safe failed report without returning bodies.
+- `pyproject.toml` uses standard TOML parsing with exact bounded keys. Project identity, Python range,
+  build backend, build requirements, runtime dependencies, and lint/type/test configuration are
+  normalized without index access, dependency resolution, download, build, import, or execution.
+- Direct runtime and build declarations plus optional lock metadata have deterministic normalized
+  evidence and canonical inventory/dependency digests. Empty runtime dependencies are explicit and
+  do not imply build or vulnerability trust.
+- Reports are one-to-one, deterministic, immutable, idempotent, concurrency-safe,
+  audit-before-persist, and equivalent in memory and PostgreSQL. Audit, trust, parse, or persistence
+  failure cannot fabricate success.
+- Strict no-store APIs require browser CSRF for creation, dedicated default-deny RBAC, correlation,
+  bounded schemas, safe errors, exact tenant scope, explicit acknowledgement, and separation of duties.
+- The Connector workspace displays inventory outcome, digest lineage, content classes, dependency
+  declarations, checks, limitations, and explicit no-registration/no-runtime/no-execution boundaries,
+  with no later-stage action control.
+- Automated backend and frontend coverage, one Alembic head, live authorized and denied HTTP checks,
+  passed and failed fixtures, desktop and 390-pixel mobile inspection, browser-log inspection, and
+  GitHub CI apply.
+- This slice performs no vulnerability, malware, embedded-secret, prohibited-content, license,
+  provenance, static-code, permission-behavior, contract, mock-target, runner, self-test, or lab
+  validation and grants no signing, attestation, rejection, registration, approval, installation,
+  enablement, configuration, credential, trust, execution, deployment, or infrastructure mutation.
+
+### ATLAS-IMP-056 Validation Evidence
+
+- Domain, application, API, authorization, audit, memory, PostgreSQL, migration, and web coverage
+  verifies exact passed-validation, acquisition, archive, and handoff lineage; independent MFA
+  inventory operation; complete per-entry classification; deterministic dependency normalization;
+  one-to-one idempotent and concurrency-safe reports; audit-before-persist; and every no-authority flag.
+- The generated Python 3.12 profile inventories 13 exact archive entries and one constrained build
+  dependency with zero runtime dependencies. Standard TOML parsing enforces the exact build, project,
+  Ruff, mypy, and pytest contracts without resolving, downloading, building, importing, or executing
+  package content. Unclassified content and malformed metadata produce immutable failed reports;
+  corrupted source bytes produce no report.
+- Strict create and read APIs require dedicated default-deny permissions, exact organization and
+  environment, multi-factor human assurance, explicit acknowledgement, safe bounded schemas, and
+  browser CSRF for creation. A fresh live HTTP run returned login 201, denied creation without CSRF
+  with 403, created inventory `connector-package-inventory.2e561fd591abd8b12b8442d3` with 201, and
+  reread its matching canonical digest with 200 and `Cache-Control: no-store`.
+- The live report was `passed` with 13 file evidence records, five checks, one build declaration, no
+  runtime declaration, and no dependency lock. Vulnerability, malware, secret, prohibited-content,
+  license, code, contract, runner, and lab validation remain explicitly incomplete; registration,
+  trust, execution, deployment, and infrastructure mutation remain false.
+- Backend quality gates passed: Ruff formatting and lint, strict mypy across all 448 source and test
+  files, 469 tests passed with three existing Windows symlink skips, and Alembic reported the single
+  head `20260805_0028`.
+- Frontend ESLint, TypeScript checking, all 36 tests, and the production build passed. Vitest files now
+  run sequentially so the two existing long configuration workflows retain deterministic async wait
+  budgets under CI load; test coverage is unchanged. The build retains the existing non-blocking
+  large-chunk advisory.
+- Browser validation against `http://127.0.0.1:5205/` confirmed the application at 1440-by-900 and
+  390-by-844 viewport overrides. Document width remained within the viewport, form controls stayed
+  bounded, and browser logs contained no warnings or errors. The temporary viewport was reset and the
+  live page was left available for review.
+- Pull request [#68](https://github.com/ozdemirumit/Project_Atlas/pull/68) is open; CI and merge
+  evidence pending.
 
 ### ATLAS-IMP-055 Scope Rationale
 
@@ -93,6 +175,8 @@
   [31007303984](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31007303984) passed backend
   and frontend jobs, and post-merge `main` CI run
   [31007473439](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31007473439) passed both jobs.
+- The tracker closure commit `1356e9705091dcfbecc1fac59b52b51e66435940` passed `main` CI run
+  [31007666700](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31007666700).
 
 ### ATLAS-IMP-054 Scope Rationale
 

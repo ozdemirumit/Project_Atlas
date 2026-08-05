@@ -112,7 +112,11 @@ import {
 } from "./api/approvals";
 import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
-import { acquireConnectorPackage, validateConnectorPackage } from "./api/connectors";
+import {
+  acquireConnectorPackage,
+  inventoryConnectorPackage,
+  validateConnectorPackage,
+} from "./api/connectors";
 import {
   createMcpBuilderDomainReview,
   createMcpBuilderCandidateHandoff,
@@ -509,6 +513,8 @@ export function App() {
     useState(false);
   const [builderPackageValidationAcknowledged, setBuilderPackageValidationAcknowledged] =
     useState(false);
+  const [builderPackageInventoryAcknowledged, setBuilderPackageInventoryAcknowledged] =
+    useState(false);
   const [builderSelectedGeneratedFile, setBuilderSelectedGeneratedFile] = useState("");
   const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
     Record<string, McpBuilderDesignDecision>
@@ -540,6 +546,10 @@ export function App() {
     mutationFn: validateConnectorPackage,
     onSuccess: () => setBuilderPackageValidationAcknowledged(false),
   });
+  const builderPackageInventoryMutation = useMutation({
+    mutationFn: inventoryConnectorPackage,
+    onSuccess: () => setBuilderPackageInventoryAcknowledged(false),
+  });
   const builderCandidateArchiveMutation = useMutation({
     mutationFn: downloadMcpBuilderCandidateArchive,
     onSuccess: ({ blob, filename }) => {
@@ -558,9 +568,11 @@ export function App() {
     builderCandidateArchiveMutation.reset();
     builderPackageAcquisitionMutation.reset();
     builderPackageValidationMutation.reset();
+    builderPackageInventoryMutation.reset();
     setBuilderCandidateHandoffAcknowledged(false);
     setBuilderPackageAcquisitionAcknowledged(false);
     setBuilderPackageValidationAcknowledged(false);
+    setBuilderPackageInventoryAcknowledged(false);
   };
   const builderPackageValidationSeparated = Boolean(
     identity &&
@@ -572,6 +584,18 @@ export function App() {
         builderCandidateHandoffMutation.data.data.security_reviewed_by,
         builderCandidateHandoffMutation.data.data.lab_operated_by,
         builderPackageAcquisitionMutation.data.data.acquired_by,
+      ].includes(identity.subject_id),
+  );
+  const builderPackageInventorySeparated = Boolean(
+    identity &&
+      builderPackageValidationMutation.data?.data &&
+      ![
+        builderPackageValidationMutation.data.data.validated_by,
+        builderPackageAcquisitionMutation.data?.data.acquired_by,
+        builderCandidateHandoffMutation.data?.data.custodied_by,
+        builderCandidateHandoffMutation.data?.data.domain_reviewed_by,
+        builderCandidateHandoffMutation.data?.data.security_reviewed_by,
+        builderCandidateHandoffMutation.data?.data.lab_operated_by,
       ].includes(identity.subject_id),
   );
   const builderLabValidationMutation = useMutation({
@@ -4959,6 +4983,261 @@ export function App() {
                                                                       and lab checks remain incomplete. No
                                                                       registration, installation, trust, or
                                                                       execution authority was granted.
+                                                                    </p>
+                                                                  </div>
+                                                                </section>
+                                                              )}
+                                                              {builderPackageValidationMutation.data?.data
+                                                                .outcome === "passed" &&
+                                                                !builderPackageInventorySeparated &&
+                                                                !builderPackageInventoryMutation.data && (
+                                                                  <div
+                                                                    className="workspace-message error-state"
+                                                                    role="alert"
+                                                                  >
+                                                                    <UserX size={20} />
+                                                                    <div>
+                                                                      <h3>Independent inventory required</h3>
+                                                                      <p>
+                                                                        The validator and prior package actors
+                                                                        cannot inventory this package. Continue
+                                                                        with a different authorized MFA session.
+                                                                      </p>
+                                                                    </div>
+                                                                  </div>
+                                                                )}
+                                                              {builderPackageValidationMutation.data?.data
+                                                                .outcome === "passed" &&
+                                                                builderPackageInventorySeparated &&
+                                                                !builderPackageInventoryMutation.data && (
+                                                                  <section className="mcp-builder-validation">
+                                                                    <div className="section-heading">
+                                                                      <div>
+                                                                        <p className="eyebrow">
+                                                                          SUPPLY-CHAIN INVENTORY
+                                                                        </p>
+                                                                        <h3>Inventory content and dependencies</h3>
+                                                                        <p>
+                                                                          Classify every archive entry and
+                                                                          normalize declared dependencies without
+                                                                          installing or executing the package.
+                                                                        </p>
+                                                                      </div>
+                                                                      <span className="state-badge pending">
+                                                                        <FileCheck2 size={14} /> awaiting inventory
+                                                                      </span>
+                                                                    </div>
+                                                                    <label className="mcp-builder-check">
+                                                                      <input
+                                                                        type="checkbox"
+                                                                        checked={
+                                                                          builderPackageInventoryAcknowledged
+                                                                        }
+                                                                        onChange={(event) =>
+                                                                          setBuilderPackageInventoryAcknowledged(
+                                                                            event.target.checked,
+                                                                          )
+                                                                        }
+                                                                      />
+                                                                      I am the independent supply-chain inventory
+                                                                      operator. I understand no package content
+                                                                      will be installed, imported, or executed.
+                                                                    </label>
+                                                                    <button
+                                                                      className="run-check-button mcp-builder-submit"
+                                                                      type="button"
+                                                                      disabled={
+                                                                        !builderPackageInventoryAcknowledged ||
+                                                                        builderPackageInventoryMutation.isPending
+                                                                      }
+                                                                      onClick={() => {
+                                                                        const validation =
+                                                                          builderPackageValidationMutation.data
+                                                                            ?.data;
+                                                                        if (validation) {
+                                                                          builderPackageInventoryMutation.mutate(
+                                                                            validation,
+                                                                          );
+                                                                        }
+                                                                      }}
+                                                                    >
+                                                                      {builderPackageInventoryMutation.isPending ? (
+                                                                        <RefreshCw className="spin" size={16} />
+                                                                      ) : (
+                                                                        <FileCheck2 size={16} />
+                                                                      )}
+                                                                      Create supply-chain inventory
+                                                                    </button>
+                                                                  </section>
+                                                                )}
+                                                              {builderPackageInventoryMutation.isError && (
+                                                                <div
+                                                                  className="workspace-message error-state"
+                                                                  role="alert"
+                                                                >
+                                                                  <AlertTriangle size={20} />
+                                                                  <div>
+                                                                    <h3>Package inventory rejected</h3>
+                                                                    <p>
+                                                                      Exact source evidence, package content,
+                                                                      dependency metadata, or separation of
+                                                                      duties did not pass.
+                                                                    </p>
+                                                                  </div>
+                                                                </div>
+                                                              )}
+                                                              {builderPackageInventoryMutation.data?.data && (
+                                                                <section className="mcp-builder-validation">
+                                                                  <div className="section-heading">
+                                                                    <div>
+                                                                      <p className="eyebrow">
+                                                                        IMMUTABLE SUPPLY-CHAIN INVENTORY
+                                                                      </p>
+                                                                      <strong>
+                                                                        {
+                                                                          builderPackageInventoryMutation.data
+                                                                            .data.inventory_id
+                                                                        }
+                                                                      </strong>
+                                                                      <code>
+                                                                        {
+                                                                          builderPackageInventoryMutation.data
+                                                                            .data.canonical_digest
+                                                                        }
+                                                                      </code>
+                                                                      <small>
+                                                                        Source validation: <code>
+                                                                          {
+                                                                            builderPackageInventoryMutation.data
+                                                                              .data.source_validation_digest
+                                                                          }
+                                                                        </code>
+                                                                      </small>
+                                                                    </div>
+                                                                    <span
+                                                                      className={`state-badge ${
+                                                                        builderPackageInventoryMutation.data.data
+                                                                          .outcome === "passed"
+                                                                          ? "healthy"
+                                                                          : "critical"
+                                                                      }`}
+                                                                    >
+                                                                      {builderPackageInventoryMutation.data.data
+                                                                        .outcome === "passed" ? (
+                                                                        <CheckCircle2 size={14} />
+                                                                      ) : (
+                                                                        <AlertTriangle size={14} />
+                                                                      )}
+                                                                      {
+                                                                        builderPackageInventoryMutation.data.data
+                                                                          .outcome
+                                                                      }
+                                                                    </span>
+                                                                  </div>
+                                                                  <div className="mcp-builder-facts">
+                                                                    <div>
+                                                                      <span>Package entries</span>
+                                                                      <strong>
+                                                                        {
+                                                                          builderPackageInventoryMutation.data
+                                                                            .data.files.length
+                                                                        }
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Build dependencies</span>
+                                                                      <strong>
+                                                                        {
+                                                                          builderPackageInventoryMutation.data
+                                                                            .data.build_dependency_count
+                                                                        }
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Runtime dependencies</span>
+                                                                      <strong>
+                                                                        {
+                                                                          builderPackageInventoryMutation.data
+                                                                            .data.runtime_dependency_count
+                                                                        }
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Dependency lock</span>
+                                                                      <strong>Not present</strong>
+                                                                    </div>
+                                                                  </div>
+                                                                  <div className="mcp-builder-limitations">
+                                                                    <strong>Content classes</strong>
+                                                                    <p>
+                                                                      {Array.from(
+                                                                        new Set(
+                                                                          builderPackageInventoryMutation.data.data.files.map(
+                                                                            (file) => file.content_class,
+                                                                          ),
+                                                                        ),
+                                                                      ).join(", ")}
+                                                                    </p>
+                                                                  </div>
+                                                                  <div className="mcp-builder-limitations">
+                                                                    <strong>Declared dependencies</strong>
+                                                                    {builderPackageInventoryMutation.data.data
+                                                                      .dependencies.length > 0 ? (
+                                                                      <ul>
+                                                                        {builderPackageInventoryMutation.data.data.dependencies.map(
+                                                                          (dependency) => (
+                                                                            <li
+                                                                              key={`${dependency.kind}:${dependency.name}`}
+                                                                            >
+                                                                              {dependency.kind}: {dependency.name}
+                                                                              {dependency.version_constraint}
+                                                                            </li>
+                                                                          ),
+                                                                        )}
+                                                                      </ul>
+                                                                    ) : (
+                                                                      <p>No direct dependencies declared.</p>
+                                                                    )}
+                                                                  </div>
+                                                                  <div className="mcp-builder-validation-checks">
+                                                                    {builderPackageInventoryMutation.data.data.checks.map(
+                                                                      (check) => (
+                                                                        <article
+                                                                          key={check.code}
+                                                                          data-state={check.state}
+                                                                        >
+                                                                          {check.state === "passed" ? (
+                                                                            <CheckCircle2 size={16} />
+                                                                          ) : (
+                                                                            <AlertTriangle size={16} />
+                                                                          )}
+                                                                          <div>
+                                                                            <strong>{check.code}</strong>
+                                                                            <p>{check.summary}</p>
+                                                                          </div>
+                                                                          <span>{check.state}</span>
+                                                                        </article>
+                                                                      ),
+                                                                    )}
+                                                                  </div>
+                                                                  <div className="mcp-builder-limitations">
+                                                                    <strong>Inventory boundaries</strong>
+                                                                    <ul>
+                                                                      {builderPackageInventoryMutation.data.data.limitations.map(
+                                                                        (limitation) => (
+                                                                          <li key={limitation}>{limitation}</li>
+                                                                        ),
+                                                                      )}
+                                                                    </ul>
+                                                                  </div>
+                                                                  <div className="mcp-builder-boundary">
+                                                                    <LockKeyhole size={18} />
+                                                                    <p>
+                                                                      Vulnerability, malware, secret, prohibited
+                                                                      content, license, code, contract, runner,
+                                                                      and lab checks remain incomplete. No trust,
+                                                                      installation, execution, or deployment
+                                                                      authority was granted.
                                                                     </p>
                                                                   </div>
                                                                 </section>

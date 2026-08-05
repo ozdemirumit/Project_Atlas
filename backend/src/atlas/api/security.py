@@ -30,6 +30,8 @@ from atlas.modules.authorization.application.bootstrap import (
     BOOTSTRAP_STATE_READ,
     CONNECTOR_PACKAGE_ACQUIRE,
     CONNECTOR_PACKAGE_ACQUISITION_READ,
+    CONNECTOR_PACKAGE_SUPPLY_CHAIN_INVENTORY_CREATE,
+    CONNECTOR_PACKAGE_SUPPLY_CHAIN_INVENTORY_READ,
     CONNECTOR_PACKAGE_VALIDATION_CREATE,
     CONNECTOR_PACKAGE_VALIDATION_READ,
     DEPLOYMENT_CONFIGURATION_PREVIEW,
@@ -90,6 +92,7 @@ from atlas.modules.authorization.application.bootstrap import (
     bootstrap_plan_scope,
     bootstrap_state_scope,
     connector_package_acquisition_scope,
+    connector_package_supply_chain_inventory_scope,
     connector_package_validation_scope,
     current_identity_scope,
     deployment_configuration_scope,
@@ -1950,5 +1953,61 @@ async def authorize_connector_package_validation_read(
         request,
         subject,
         permission_id=CONNECTOR_PACKAGE_VALIDATION_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def _authorize_connector_package_supply_chain_inventory(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    settings = request.app.state.settings
+    service: AuthorizationService = request.app.state.authorization_service
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.connector.package-supply-chain-inventory",
+            scope=connector_package_supply_chain_inventory_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The connector package supply-chain inventory operation is not authorized.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_connector_package_supply_chain_inventory_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_package_supply_chain_inventory(
+        request,
+        subject,
+        permission_id=CONNECTOR_PACKAGE_SUPPLY_CHAIN_INVENTORY_CREATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_connector_package_supply_chain_inventory_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_package_supply_chain_inventory(
+        request,
+        subject,
+        permission_id=CONNECTOR_PACKAGE_SUPPLY_CHAIN_INVENTORY_READ,
         capability_class=CapabilityClass.C1_READ_ONLY,
     )

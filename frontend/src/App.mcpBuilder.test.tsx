@@ -664,7 +664,7 @@ const packageValidation = {
     source_acquired_by: packageAcquisition.data.acquired_by,
     organization_id: candidateHandoff.data.organization_id,
     environment_id: candidateHandoff.data.environment_id,
-    validated_by: identity.data.subject_id,
+    validated_by: "subject.package.validator",
     validation_profile: "atlas.connector-validation-intake.builder-v1",
     validator_version: "atlas.connector-manifest-schema-validator.v1",
     package_digest: packageAcquisition.data.package_digest,
@@ -742,6 +742,101 @@ const packageValidation = {
   },
 };
 
+const packageInventory = {
+  data: {
+    inventory_id: "connector-package-inventory.bbbbbbbbbbbbbbbbbbbbbbbb",
+    schema_version: "atlas.connector-package-supply-chain-inventory.v1",
+    version: 1,
+    lifecycle: "validating",
+    outcome: "passed",
+    source_validation_id: packageValidation.data.validation_id,
+    source_validation_digest: packageValidation.data.canonical_digest,
+    source_acquisition_id: packageValidation.data.source_acquisition_id,
+    source_acquisition_digest: packageValidation.data.source_acquisition_digest,
+    source_handoff_id: packageValidation.data.source_handoff_id,
+    source_project_id: packageValidation.data.source_project_id,
+    source_acquired_by: packageValidation.data.source_acquired_by,
+    source_validated_by: packageValidation.data.validated_by,
+    source_custodied_by: candidateHandoff.data.custodied_by,
+    source_domain_reviewed_by: candidateHandoff.data.domain_reviewed_by,
+    source_security_reviewed_by: candidateHandoff.data.security_reviewed_by,
+    source_lab_operated_by: candidateHandoff.data.lab_operated_by,
+    organization_id: packageValidation.data.organization_id,
+    environment_id: packageValidation.data.environment_id,
+    inventoried_by: identity.data.subject_id,
+    inventory_profile: "atlas.connector-supply-chain-inventory.python312.v1",
+    inspector_version: "atlas.connector-content-dependency-inspector.v1",
+    package_digest: packageValidation.data.package_digest,
+    package_size_bytes: packageValidation.data.package_size_bytes,
+    files: [
+      {
+        relative_path: "pyproject.toml",
+        digest: "1".repeat(64),
+        size_bytes: 512,
+        content_class: "build_metadata",
+      },
+    ],
+    dependencies: [
+      {
+        name: "setuptools",
+        version_constraint: ">=75,<76",
+        kind: "build",
+        source_path: "pyproject.toml",
+      },
+    ],
+    inventory_digest: "2".repeat(64),
+    dependency_set_digest: "3".repeat(64),
+    runtime_dependency_count: 0,
+    build_dependency_count: 1,
+    dependency_lock_present: false,
+    checks: [
+      "inventory.source.accepted",
+      "inventory.archive.contract",
+      "inventory.content.classified",
+      "inventory.project-metadata.contract",
+      "inventory.dependencies.normalized",
+    ].map((code) => ({
+      code,
+      state: "passed",
+      severity: "informational",
+      summary: `Bounded ${code} evidence passed.`,
+      evidence_paths: ["pyproject.toml"],
+      remediation: "Preserve the exact bounded contract.",
+    })),
+    limitations: [
+      "This report proves exact package-content and dependency-declaration inventory only.",
+      "Security and executable validation remain incomplete.",
+    ],
+    canonical_digest: "4".repeat(64),
+    inventoried_at: "2026-08-05T16:00:00Z",
+    content_inventory_completed: true,
+    dependency_inventory_completed: true,
+    vulnerability_scan_completed: false,
+    malware_scan_completed: false,
+    secret_content_scan_completed: false,
+    prohibited_content_scan_completed: false,
+    license_scan_completed: false,
+    static_code_validation_completed: false,
+    contract_validation_completed: false,
+    runner_validation_completed: false,
+    lab_validation_completed: false,
+    package_signed: false,
+    publisher_attested: false,
+    connector_rejected: false,
+    connector_registered: false,
+    connector_approved: false,
+    connector_installed: false,
+    connector_enabled: false,
+    target_configured: false,
+    credentials_resolved: false,
+    runtime_trust_granted: false,
+    execution_authorized: false,
+    deployment_approved: false,
+    infrastructure_mutation_performed: false,
+    reused: false,
+  },
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -762,6 +857,7 @@ describe("MCP Builder workspace", () => {
     const candidateHandoffRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const packageAcquisitionRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const packageValidationRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    const packageInventoryRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -847,6 +943,14 @@ describe("MCP Builder workspace", () => {
           idempotencyKey: headers.get("Idempotency-Key"),
         });
         return Promise.resolve(new Response(JSON.stringify(packageValidation), { status: 201 }));
+      }
+      if (url.endsWith("/api/v1/connectors/package-supply-chain-inventories")) {
+        const headers = new Headers(init?.headers);
+        packageInventoryRequests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(new Response(JSON.stringify(packageInventory), { status: 201 }));
       }
       if (
         url.endsWith(
@@ -1000,6 +1104,18 @@ describe("MCP Builder workspace", () => {
     expect(screen.getAllByText("IMMUTABLE VALIDATION REPORT")).toHaveLength(2);
     expect(screen.getAllByText("validation.manifest.contract")).toHaveLength(2);
     expect(screen.getAllByText("Validation boundaries")).toHaveLength(2);
+    expect(screen.getByText("Inventory content and dependencies")).toBeVisible();
+    fireEvent.click(
+      screen.getByLabelText(/I am the independent supply-chain inventory operator/i),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Create supply-chain inventory" }));
+
+    expect(await screen.findByText(packageInventory.data.inventory_id)).toBeVisible();
+    expect(screen.getByText("IMMUTABLE SUPPLY-CHAIN INVENTORY")).toBeVisible();
+    expect(screen.getByText("inventory.dependencies.normalized")).toBeVisible();
+    expect(screen.getByText("Inventory boundaries")).toBeVisible();
+    expect(screen.getByText("build_metadata")).toBeVisible();
+    expect(screen.getByText("build: setuptools>=75,<76")).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|execute|register|enable/i })).not.toBeInTheDocument();
     expect(requests).toHaveLength(1);
     expect(designRequests).toHaveLength(1);
@@ -1011,6 +1127,7 @@ describe("MCP Builder workspace", () => {
     expect(candidateHandoffRequests).toHaveLength(1);
     expect(packageAcquisitionRequests).toHaveLength(1);
     expect(packageValidationRequests).toHaveLength(1);
+    expect(packageInventoryRequests).toHaveLength(1);
     expect(requests[0]?.idempotencyKey).toBe("mcp-builder.mcp-builder-ui-001");
     const body = JSON.parse(requests[0]?.body ?? "{}") as Record<string, unknown>;
     expect(body.source_document).toBe(source);
@@ -1170,6 +1287,23 @@ describe("MCP Builder workspace", () => {
     expect(packageValidationBody).not.toHaveProperty("register");
     expect(packageValidationBody).not.toHaveProperty("install");
     expect(packageValidationBody).not.toHaveProperty("execute");
+    expect(packageInventoryRequests[0]?.idempotencyKey).toBe(
+      "connector-package-inventory.mcp-builder-ui-001",
+    );
+    const packageInventoryBody = JSON.parse(
+      packageInventoryRequests[0]?.body ?? "{}",
+    ) as Record<string, unknown>;
+    expect(packageInventoryBody.source_validation_id).toBe(
+      packageValidation.data.validation_id,
+    );
+    expect(packageInventoryBody.source_validation_digest).toBe(
+      packageValidation.data.canonical_digest,
+    );
+    expect(packageInventoryBody.package_digest).toBe(packageValidation.data.package_digest);
+    expect(packageInventoryBody.acknowledged_untrusted_package_content).toBe(true);
+    expect(packageInventoryBody).not.toHaveProperty("install");
+    expect(packageInventoryBody).not.toHaveProperty("execute");
+    expect(packageInventoryBody).not.toHaveProperty("trust");
   }, 15_000);
 
   it("verifies the downloaded candidate archive against immutable evidence", async () => {

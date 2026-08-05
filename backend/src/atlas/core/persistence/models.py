@@ -500,6 +500,62 @@ class ConnectorPackageValidationModel(Base):
     validated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class ConnectorPackageSupplyChainInventoryModel(Base):
+    __tablename__ = "connector_package_supply_chain_inventories"
+    __table_args__ = (
+        CheckConstraint(
+            "version = 1", name="ck_connector_package_supply_chain_inventories_version"
+        ),
+        UniqueConstraint(
+            "source_validation_id",
+            name="uq_connector_package_supply_chain_inventories_source_validation",
+        ),
+        UniqueConstraint(
+            "inventoried_by",
+            "idempotency_key",
+            name="uq_connector_package_supply_chain_inventories_actor_idempotency",
+        ),
+    )
+
+    inventory_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    lifecycle: Mapped[str] = mapped_column(String(32), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_validation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_validation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_acquisition_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_acquisition_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_handoff_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_project_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_acquired_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_validated_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_custodied_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_domain_reviewed_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_security_reviewed_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_lab_operated_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    inventoried_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    inventory_profile: Mapped[str] = mapped_column(String(128), nullable=False)
+    inspector_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    package_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    package_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    files: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    dependencies: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    inventory_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    dependency_set_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    runtime_dependency_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    build_dependency_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    dependency_lock_present: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    checks: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    limitations: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    inventoried_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class RuntimeMetadata(Base):
     __tablename__ = "platform_runtime_metadata"
     __table_args__ = (

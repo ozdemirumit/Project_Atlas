@@ -48,6 +48,7 @@ from atlas.api.routes import (
     security_export,
     sessions,
     storage,
+    supply_chain_inventories,
     support_bundles,
     upgrades,
     workload_identities,
@@ -102,6 +103,12 @@ from atlas.modules.connectors.adapters.acquisition_memory import (
 from atlas.modules.connectors.adapters.acquisition_postgres import (
     PostgreSQLPackageAcquisitionRepository,
 )
+from atlas.modules.connectors.adapters.supply_chain_inventory_memory import (
+    InMemoryPackageSupplyChainInventoryRepository,
+)
+from atlas.modules.connectors.adapters.supply_chain_inventory_postgres import (
+    PostgreSQLPackageSupplyChainInventoryRepository,
+)
 from atlas.modules.connectors.adapters.validation_intake_memory import (
     InMemoryPackageValidationRepository,
 )
@@ -109,6 +116,9 @@ from atlas.modules.connectors.adapters.validation_intake_postgres import (
     PostgreSQLPackageValidationRepository,
 )
 from atlas.modules.connectors.application.acquisition import PackageAcquisitionService
+from atlas.modules.connectors.application.supply_chain_inventory import (
+    PackageSupplyChainInventoryService,
+)
 from atlas.modules.connectors.application.validation_intake import PackageValidationService
 from atlas.modules.graph.adapters.synthetic import build_synthetic_graph_snapshot
 from atlas.modules.graph.application.engine import InMemoryGraphImpactAnalyzer
@@ -364,6 +374,7 @@ def create_app(
     mcp_builder_service: McpBuilderService | None = None,
     package_acquisition_service: PackageAcquisitionService | None = None,
     package_validation_service: PackageValidationService | None = None,
+    package_supply_chain_inventory_service: PackageSupplyChainInventoryService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -863,6 +874,22 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if package_supply_chain_inventory_service is not None:
+        resolved_package_supply_chain_inventory_service = package_supply_chain_inventory_service
+    else:
+        package_supply_chain_inventory_repository = (
+            PostgreSQLPackageSupplyChainInventoryRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryPackageSupplyChainInventoryRepository()
+        )
+        resolved_package_supply_chain_inventory_service = PackageSupplyChainInventoryService(
+            repository=package_supply_chain_inventory_repository,
+            validation_source=resolved_package_validation_service.repository,
+            acquisition_source=resolved_package_validation_service.acquisition_source,
+            archive_source=resolved_package_validation_service.archive_source,
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -1034,6 +1061,9 @@ def create_app(
         app.state.mcp_builder_service = resolved_mcp_builder_service
         app.state.package_acquisition_service = resolved_package_acquisition_service
         app.state.package_validation_service = resolved_package_validation_service
+        app.state.package_supply_chain_inventory_service = (
+            resolved_package_supply_chain_inventory_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -1046,6 +1076,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_package_supply_chain_inventory_service.close()
         await resolved_package_validation_service.close()
         await resolved_package_acquisition_service.close()
         await resolved_mcp_builder_service.close()
@@ -1110,6 +1141,7 @@ def create_app(
     app.include_router(mcp_builder.router, prefix="/api/v1")
     app.include_router(connectors.router, prefix="/api/v1")
     app.include_router(connector_validations.router, prefix="/api/v1")
+    app.include_router(supply_chain_inventories.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
