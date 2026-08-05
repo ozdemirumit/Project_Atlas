@@ -69,9 +69,9 @@
   digest `47006411b5f975eead3c197a9cf44508bc6a071730e4aae1ef8b580ea4425675`.
 - The live receipt remained `quarantined`, `unsigned`, and `unattested`; registry validation,
   connector registration, execution authorization, and infrastructure mutation all remained false.
-- Backend quality gates passed: Ruff formatting across 459 files, Ruff lint, mypy across 385 source
-  files, 439 tests passed with three existing Windows symlink skips, and Alembic reported the single
-  head `20260805_0026`.
+- Backend quality gates passed: Ruff formatting across 460 files, Ruff lint, strict mypy across all
+  432 source and test files, 439 tests passed with three existing Windows symlink skips, and Alembic
+  reported the single head `20260805_0026`.
 - Frontend lint, type checking, the focused two-test MCP Builder suite, the isolated full 36-test
   suite, and production build passed. The build retains the existing non-blocking large-chunk
   advisory; an initially resource-contended combined run timed out one existing five-second UI test,

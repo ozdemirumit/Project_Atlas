@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TypedDict
 
 import pytest
 from fastapi.testclient import TestClient
@@ -29,6 +30,7 @@ from atlas.modules.connectors.application.acquisition import (
     PackageAcquisitionService,
 )
 from atlas.modules.connectors.application.acquisition_ports import PackageAcquisitionError
+from atlas.modules.connectors.domain.acquisition import ConnectorPackageAcquisition
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
@@ -53,6 +55,34 @@ from atlas.modules.mcp_builder.domain.candidate_handoff import (
 )
 
 NOW = datetime(2026, 8, 5, 14, 0, tzinfo=UTC)
+
+
+class CandidateLineage(TypedDict):
+    project_id: str
+    project_version: int
+    project_digest: str
+    source_digest: str
+    checkpoint_id: str
+    checkpoint_digest: str
+    generation_id: str
+    generation_digest: str
+    artifact_digest: str
+    validation_id: str
+    validation_digest: str
+    domain_review_id: str
+    domain_review_digest: str
+    domain_reviewed_by: str
+    security_review_id: str
+    security_review_digest: str
+    security_reviewed_by: str
+    lab_validation_id: str
+    lab_validation_digest: str
+    lab_operated_by: str
+    organization_id: str
+    environment_id: str
+    custodied_by: str
+    handoff_profile: str
+    archive_contract_version: str
 
 
 class CollectingAuditSink:
@@ -90,7 +120,7 @@ def actor(
 
 
 def candidate() -> tuple[McpBuilderCandidateHandoff, bytes]:
-    lineage = {
+    lineage: CandidateLineage = {
         "project_id": "mcp-builder-project.test-package",
         "project_version": 1,
         "project_digest": "1" * 64,
@@ -249,7 +279,7 @@ async def acquire(
     *,
     subject: AuthenticatedSubject | None = None,
     key: str = "acquisition-test-001",
-):
+) -> ConnectorPackageAcquisition:
     return await service.create(
         actor=subject or actor(),
         source_handoff_id=handoff.handoff_id,
