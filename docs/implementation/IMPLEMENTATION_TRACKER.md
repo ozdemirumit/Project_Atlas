@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-054 |
 | Title | Governed MCP Builder package acquisition foundation |
-| Status | In Progress |
-| Branch | `agent/mcp-package-acquisition` |
-| Pull Request | Pending |
+| Status | Completed |
+| Branch | `main` |
+| Pull Request | [#66](https://github.com/ozdemirumit/Project_Atlas/pull/66) (Merged) |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009, ADR-010 |
 | Last Updated | 2026-08-05 |
-| Next Action | Implement the exact Builder handoff-to-ATLAS-020 quarantined acquisition boundary |
+| Next Action | Begin ATLAS-IMP-055 package validation intake and manifest/schema validation contract |
 
 ### ATLAS-IMP-054 Scope Rationale
 
@@ -81,7 +81,13 @@
   or incoherent overlap at 1280x720 and 390x844, and no browser console warnings or errors. The final
   acquisition receipt and separation-of-duties states are covered by the end-to-end component flow
   because a single browser identity is intentionally forbidden from completing both custody stages.
-- GitHub pull request, branch CI, merge, and post-merge `main` CI evidence are pending.
+- Pull request [#66](https://github.com/ozdemirumit/Project_Atlas/pull/66) merged as commit
+  `59bd7a769e245b76671add37575b4a43cf5bc77f`. The first PR CI run exposed strict test-suite typing
+  gaps; commit `897789b78a8be0f0dac84691e74d54b8a7774027` added the exact `TypedDict` and return contract.
+  Superseding PR CI run
+  [31004050684](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31004050684) and post-merge
+  `main` CI run [31004201584](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31004201584)
+  both passed backend and frontend jobs.
 
 ### ATLAS-IMP-053 Scope Rationale
 
