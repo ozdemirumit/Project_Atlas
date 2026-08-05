@@ -4,14 +4,62 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-054 |
-| Title | Governed MCP Builder package acquisition foundation |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#66](https://github.com/ozdemirumit/Project_Atlas/pull/66) (Merged) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009, ADR-010 |
+| Task ID | ATLAS-IMP-055 |
+| Title | Governed connector package validation intake foundation |
+| Status | In Progress |
+| Branch | `agent/mcp-package-validation-intake` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009, ADR-010, ADR-011 |
 | Last Updated | 2026-08-05 |
-| Next Action | Begin ATLAS-IMP-055 package validation intake and manifest/schema validation contract |
+| Next Action | Implement exact acquisition-to-validating manifest and schema evidence |
+
+### ATLAS-IMP-055 Scope Rationale
+
+- IMP-054 supplies exact immutable acquired bytes and a quarantined custody receipt. ATLAS-020 next
+  requires independent integrity and allowed-source acceptance before registry validation begins.
+- ADR-011 defines a dedicated MFA validation operator, deterministic manifest and JSON Schema
+  inspection, safe findings, and an immutable report bound to the exact acquisition and package.
+- This slice enters the validation lifecycle and records one bounded stage only. It neither completes
+  supply-chain or runtime validation nor rejects, signs, registers, approves, installs, enables,
+  configures, trusts, executes, deploys, or mutates a connector.
+
+### ATLAS-IMP-055 Acceptance Criteria
+
+- Only a dedicated multi-factor human validation operator in the exact acquisition organization and
+  environment with create/read permissions can create or read a report. The acquisition operator,
+  all Builder roles, AI and service identities, wrong-scope actors, and insufficient assurance fail
+  closed without acquisition, archive, manifest, schema, or finding discovery.
+- Validation accepts only the exact supported acquisition profile and package digest. It verifies the
+  acquisition canonical digest and no-authority flags, rereads the immutable acquired archive, and
+  independently enforces digest, size, ZIP, path, metadata, inventory, and handoff-envelope contracts.
+- One canonical bounded `atlas-connector.yaml` is parsed with duplicate-key and extension-key
+  rejection. Schema version, SDK profile, draft version, quarantined state, capabilities, classes,
+  permissions, products, destinations, and false runtime/execution authority bind exactly to source
+  evidence.
+- Configuration and per-capability input/output schemas use bounded JSON Schema draft 2020-12
+  contracts, safe identifiers, expected object roots and draft markers, exact manifest property
+  binding, and no secret resolution. Raw package, manifest, and schema bodies are never returned.
+- Trusted source failure creates no report. Manifest or schema defects create an immutable failed
+  stage report with safe bounded checks, evidence paths, digests, and remediation while retaining the
+  package lifecycle state `validating` and granting no authority.
+- Reports are one-to-one, deterministic, immutable, idempotent, concurrency-safe, audit-before-persist,
+  and equivalent in memory and PostgreSQL. Audit, source, parse, or persistence failure cannot
+  fabricate success.
+- Strict no-store APIs require browser CSRF for creation, dedicated default-deny RBAC, correlation,
+  bounded schemas, safe errors, exact tenant scope, explicit acknowledgement, and separation of duties.
+- The Connector workspace displays report outcome, exact digest lineage, safe checks, limitations,
+  and all no-registration/no-runtime/no-execution boundaries, with no later-stage action control.
+- Automated backend and frontend coverage, one Alembic head, live authorized and denied HTTP checks,
+  passed and failed fixtures, desktop and 390-pixel mobile inspection, browser-log inspection, and
+  GitHub CI apply.
+- This slice performs no dependency, vulnerability, malware, secret-content, license, static-code,
+  permission-behavior, contract, mock-target, runner, self-test, or lab validation and grants no
+  signing, attestation, registration, approval, installation, enablement, configuration, credential,
+  trust, execution, deployment, or infrastructure mutation authority.
+
+### ATLAS-IMP-055 Validation Evidence
+
+- Pending implementation and validation.
 
 ### ATLAS-IMP-054 Scope Rationale
 
