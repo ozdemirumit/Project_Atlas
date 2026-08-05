@@ -4,14 +4,28 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-066 |
-| Title | Governed connector isolated lab self-test foundation |
-| Status | Review |
-| Branch | `agent/mcp-lab-self-test` |
-| Pull Request | [#78](https://github.com/ozdemirumit/Project_Atlas/pull/78) |
+| Task ID | ATLAS-IMP-067 |
+| Title | Governed connector final validation foundation |
+| Status | Planned |
+| Branch | Not started |
+| Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-022 |
 | Last Updated | 2026-08-06 |
-| Next Action | Complete GitHub CI for PR #78 and merge the pull request |
+| Next Action | Draft and accept ADR-023 for exact-lineage final validation and unresolved-risk reporting |
+
+### ATLAS-IMP-067 Scope Rationale
+
+- IMP-066 proves bounded read-only behavior against one approved non-production lab plan, but a lab
+  pass alone cannot assert that every required acquisition, supply-chain, semantic, security,
+  contract, disconnected-runner, and target-connected gate belongs to the same exact package.
+- The final validation stage must replay all immutable lineage, policy, expiry, completeness,
+  limitation, and no-authority evidence before producing one deterministic eligibility result.
+- Human approval, publisher attestation, signing, registration, installation, enablement, production
+  trust, and infrastructure operations remain later independent stages.
+
+### ATLAS-IMP-067 Validation Evidence
+
+- Pending ADR-023 scope acceptance.
 
 ### ATLAS-IMP-066 Scope Rationale
 
@@ -86,7 +100,9 @@
 - In-app browser inspection at 1440x1000 and 390x844 found no horizontal overflow, incoherent
   overlap, or warning/error logs in the live sign-in boundary. The responsive viewport override was
   reset after validation.
-- GitHub pull-request and post-merge CI evidence is pending publication.
+- [PR #78](https://github.com/ozdemirumit/Project_Atlas/pull/78) passed backend and frontend CI in
+  run `31051698098` at head `77e4b93`, merged as `6eb74489`, and the resulting `main` run
+  `31051915202` passed both jobs.
 
 ### ATLAS-IMP-065 Scope Rationale
 
@@ -4228,6 +4244,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-063 | Governed connector package license analysis | Completed through [PR #75](https://github.com/ozdemirumit/Project_Atlas/pull/75) at merge `41b65f57`; 525 backend tests, 36 frontend tests, live policy-bound license validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-064 | Governed connector contract validation foundation | Completed through [PR #76](https://github.com/ozdemirumit/Project_Atlas/pull/76) at merge `89d419bd`; 529 backend tests, 36 frontend tests, live static contract validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-065 | Governed connector isolated runner validation foundation | Completed through [PR #77](https://github.com/ozdemirumit/Project_Atlas/pull/77) at merge `ddc2688`; 534 backend tests, 36 frontend tests, live isolated Python runner validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-066 | Governed connector isolated lab self-test foundation | Completed through [PR #78](https://github.com/ozdemirumit/Project_Atlas/pull/78) at merge `6eb74489`; 543 backend tests, 36 frontend tests, live plan-bound read-only lab validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
