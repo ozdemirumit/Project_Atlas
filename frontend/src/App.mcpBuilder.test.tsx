@@ -291,7 +291,7 @@ const domainReview = {
     validator_version: validation.data.validator_version,
     organization_id: identity.data.organization_id,
     environment_id: "environment.development",
-    reviewed_by: identity.data.subject_id,
+    reviewed_by: "subject.domain.reviewer",
     review_profile: "atlas.domain-review.connector.v1",
     reviewer_contract_version: "mcp-builder-domain-review.v1",
     capability_decisions: [
@@ -345,6 +345,86 @@ const domainReview = {
   },
 };
 
+const securityControls = [
+  "provenance",
+  "supply_chain",
+  "credentials",
+  "network",
+  "input_output",
+  "injection_execution",
+  "logging_redaction",
+  "runner_privileges",
+  "capability_governance",
+];
+
+const securityReview = {
+  data: {
+    review_id: "mcp-builder-security-review.333333333333333333333333",
+    schema_version: "atlas.mcp-builder-security-review.v1",
+    version: 1,
+    state: "accepted",
+    project_id: project.data.project_id,
+    project_version: 1,
+    project_digest: project.data.canonical_digest,
+    source_digest: project.data.source_digest,
+    checkpoint_id: checkpoint.data.checkpoint_id,
+    checkpoint_digest: checkpoint.data.canonical_digest,
+    generation_id: generation.data.generation_id,
+    generation_digest: generation.data.canonical_digest,
+    artifact_digest: generation.data.artifact_digest,
+    validation_id: validation.data.validation_id,
+    validation_digest: validation.data.canonical_digest,
+    validation_profile: validation.data.validation_profile,
+    validator_version: validation.data.validator_version,
+    domain_review_id: domainReview.data.review_id,
+    domain_review_digest: domainReview.data.canonical_digest,
+    domain_review_profile: domainReview.data.review_profile,
+    domain_reviewer_contract_version: domainReview.data.reviewer_contract_version,
+    domain_reviewed_by: domainReview.data.reviewed_by,
+    organization_id: identity.data.organization_id,
+    environment_id: "environment.development",
+    reviewed_by: identity.data.subject_id,
+    review_profile: "atlas.security-review.connector.v1",
+    reviewer_contract_version: "mcp-builder-security-review.v1",
+    control_assessments: securityControls.map((control) => ({
+      control,
+      decision: "accepted",
+      assessment: `Independent review confirms the bounded ${control} posture.`,
+      evidence_references: [project.data.capability_candidates[0]?.citation],
+      finding_codes: [],
+      required_controls: [`Preserve the declared ${control} boundary.`],
+    })),
+    accepted_count: 9,
+    needs_remediation_count: 0,
+    rejected_count: 0,
+    summary: "Independent security review completed against exact immutable evidence.",
+    limitations: [
+      "Security review covers the exact quarantined scaffold and declared evidence only.",
+      "Dynamic scanning, lab validation, and candidate package approval remain required.",
+    ],
+    canonical_digest: "3".repeat(64),
+    completed_at: "2026-08-05T12:50:00Z",
+    security_review_completed: true,
+    security_review_accepted: true,
+    lab_validation_completed: false,
+    candidate_package_created: false,
+    connector_registered: false,
+    connector_installed: false,
+    connector_enabled: false,
+    network_request_performed: false,
+    model_inference_performed: false,
+    dependency_resolution_performed: false,
+    malware_or_dynamic_scan_performed: false,
+    runtime_self_test_performed: false,
+    subprocess_invoked: false,
+    dynamic_code_execution_performed: false,
+    runtime_trust_granted: false,
+    execution_authorized: false,
+    infrastructure_mutation_performed: false,
+    reused: false,
+  },
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -360,6 +440,7 @@ describe("MCP Builder workspace", () => {
     const generationRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const validationRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const domainReviewRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    const securityReviewRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -405,6 +486,14 @@ describe("MCP Builder workspace", () => {
           idempotencyKey: headers.get("Idempotency-Key"),
         });
         return Promise.resolve(new Response(JSON.stringify(domainReview), { status: 201 }));
+      }
+      if (url.endsWith(`/mcp-builder/projects/${project.data.project_id}/security-reviews`)) {
+        const headers = new Headers(init?.headers);
+        securityReviewRequests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(new Response(JSON.stringify(securityReview), { status: 201 }));
       }
       if (
         url.endsWith(
@@ -500,6 +589,19 @@ describe("MCP Builder workspace", () => {
     expect(await screen.findByText(domainReview.data.review_id)).toBeVisible();
     expect(screen.getByText("IMMUTABLE DOMAIN REVIEW")).toBeVisible();
     expect(screen.getByText("No declared evidence gaps")).toBeVisible();
+    expect(screen.getByText(domainReview.data.reviewed_by)).toBeVisible();
+    expect(screen.getByText("Assess the quarantined scaffold")).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "Security decision provenance" })).toHaveValue(
+      "accepted",
+    );
+    fireEvent.click(
+      screen.getByLabelText(/I am the independent human security reviewer/i),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Record security review" }));
+
+    expect(await screen.findByText(securityReview.data.review_id)).toBeVisible();
+    expect(screen.getByText("IMMUTABLE SECURITY REVIEW")).toBeVisible();
+    expect(screen.getAllByText("No declared security findings")).toHaveLength(9);
     expect(screen.getByText(identity.data.subject_id)).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|execute|register|enable/i })).not.toBeInTheDocument();
     expect(requests).toHaveLength(1);
@@ -507,6 +609,7 @@ describe("MCP Builder workspace", () => {
     expect(generationRequests).toHaveLength(1);
     expect(validationRequests).toHaveLength(1);
     expect(domainReviewRequests).toHaveLength(1);
+    expect(securityReviewRequests).toHaveLength(1);
     expect(requests[0]?.idempotencyKey).toBe("mcp-builder.mcp-builder-ui-001");
     const body = JSON.parse(requests[0]?.body ?? "{}") as Record<string, unknown>;
     expect(body.source_document).toBe(source);
@@ -568,5 +671,31 @@ describe("MCP Builder workspace", () => {
     ]);
     expect(domainReviewBody).not.toHaveProperty("security_review_completed");
     expect(domainReviewBody).not.toHaveProperty("execute");
+    expect(securityReviewRequests[0]?.idempotencyKey).toBe(
+      "mcp-builder-security-review.mcp-builder-ui-001",
+    );
+    const securityReviewBody = JSON.parse(
+      securityReviewRequests[0]?.body ?? "{}",
+    ) as Record<string, unknown>;
+    expect(securityReviewBody.domain_review_digest).toBe(
+      domainReview.data.canonical_digest,
+    );
+    expect(securityReviewBody.review_profile).toBe(
+      "atlas.security-review.connector.v1",
+    );
+    expect(securityReviewBody.acknowledged_independent_security_decision).toBe(true);
+    expect(securityReviewBody.control_assessments).toHaveLength(9);
+    expect(securityReviewBody.control_assessments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          control: "provenance",
+          decision: "accepted",
+          evidence_references: [project.data.capability_candidates[0]?.citation],
+          finding_codes: [],
+        }),
+      ]),
+    );
+    expect(securityReviewBody).not.toHaveProperty("lab_validation_completed");
+    expect(securityReviewBody).not.toHaveProperty("execute");
   });
 });

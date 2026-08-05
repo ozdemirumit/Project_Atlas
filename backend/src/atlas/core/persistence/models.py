@@ -230,6 +230,58 @@ class McpBuilderDomainReviewModel(Base):
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class McpBuilderSecurityReviewModel(Base):
+    __tablename__ = "mcp_builder_security_reviews"
+    __table_args__ = (
+        CheckConstraint("version = 1", name="ck_mcp_builder_security_reviews_version"),
+        UniqueConstraint("project_id", name="uq_mcp_builder_security_reviews_project"),
+        UniqueConstraint("domain_review_id", name="uq_mcp_builder_security_reviews_domain_review"),
+        UniqueConstraint(
+            "reviewed_by",
+            "idempotency_key",
+            name="uq_mcp_builder_security_reviews_reviewer_idempotency",
+        ),
+    )
+
+    review_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    project_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    project_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    project_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    checkpoint_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    checkpoint_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    generation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    generation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    artifact_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    validation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    validation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    validation_profile: Mapped[str] = mapped_column(String(128), nullable=False)
+    validator_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    domain_review_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    domain_review_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    domain_review_profile: Mapped[str] = mapped_column(String(128), nullable=False)
+    domain_reviewer_contract_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    domain_reviewed_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    reviewed_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    review_profile: Mapped[str] = mapped_column(String(128), nullable=False)
+    reviewer_contract_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    control_assessments: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    accepted_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    needs_remediation_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    rejected_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    limitations: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class RuntimeMetadata(Base):
     __tablename__ = "platform_runtime_metadata"
     __table_args__ = (

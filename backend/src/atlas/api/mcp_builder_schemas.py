@@ -25,6 +25,12 @@ from atlas.modules.mcp_builder.domain.generation import (
     McpBuilderGeneration,
 )
 from atlas.modules.mcp_builder.domain.models import McpBuilderProject
+from atlas.modules.mcp_builder.domain.security_review import (
+    BuilderSecurityControl,
+    BuilderSecurityControlAssessment,
+    BuilderSecurityControlDecisionKind,
+    McpBuilderSecurityReview,
+)
 from atlas.modules.mcp_builder.domain.validation import (
     BuilderValidationCheck,
     McpBuilderValidation,
@@ -710,6 +716,168 @@ class McpBuilderDomainReviewResponse(BaseModel):
     meta: ResponseMeta
 
 
+class BuilderSecurityControlAssessmentInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    control: BuilderSecurityControl
+    decision: BuilderSecurityControlDecisionKind
+    assessment: str = Field(min_length=1, max_length=1600)
+    evidence_references: list[str] = Field(min_length=1, max_length=30)
+    finding_codes: list[str] = Field(max_length=30)
+    required_controls: list[str] = Field(min_length=1, max_length=30)
+
+    @model_validator(mode="after")
+    def validate_bounded_lists_and_findings(self) -> Self:
+        if (
+            len(self.evidence_references) != len(set(self.evidence_references))
+            or any(not item.strip() or len(item) > 500 for item in self.evidence_references)
+            or len(self.finding_codes) != len(set(self.finding_codes))
+            or any(re.fullmatch(STABLE_ID, item) is None for item in self.finding_codes)
+            or len(self.required_controls) != len(set(self.required_controls))
+            or any(not item.strip() or len(item) > 500 for item in self.required_controls)
+        ):
+            raise ValueError("Security review lists are invalid")
+        if self.decision is BuilderSecurityControlDecisionKind.ACCEPTED:
+            if self.finding_codes:
+                raise ValueError("Accepted security controls cannot retain findings")
+        elif not self.finding_codes:
+            raise ValueError("Non-accepted security controls require a finding")
+        return self
+
+
+class McpBuilderSecurityReviewInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: str = Field(
+        default="atlas.mcp-builder-security-review-request.v1", pattern=STABLE_ID
+    )
+    project_version: int = Field(ge=1)
+    project_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    source_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    checkpoint_id: str = Field(pattern=STABLE_ID)
+    checkpoint_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    generation_id: str = Field(pattern=STABLE_ID)
+    generation_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    artifact_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    validation_id: str = Field(pattern=STABLE_ID)
+    validation_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    validation_profile: str = Field(pattern=STABLE_ID)
+    validator_version: str = Field(pattern=STABLE_ID)
+    domain_review_id: str = Field(pattern=STABLE_ID)
+    domain_review_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    domain_review_profile: str = Field(pattern=STABLE_ID)
+    domain_reviewer_contract_version: str = Field(pattern=STABLE_ID)
+    review_profile: str = Field(default="atlas.security-review.connector.v1", pattern=STABLE_ID)
+    acknowledged_independent_security_decision: bool
+    control_assessments: list[BuilderSecurityControlAssessmentInput] = Field(
+        min_length=9, max_length=9
+    )
+    summary: str = Field(min_length=1, max_length=1800)
+
+    @model_validator(mode="after")
+    def validate_complete_control_set(self) -> Self:
+        if {item.control for item in self.control_assessments} != set(BuilderSecurityControl):
+            raise ValueError("Security review control set is incomplete")
+        return self
+
+
+class BuilderSecurityControlAssessmentData(BaseModel):
+    control: str
+    decision: str
+    assessment: str
+    evidence_references: list[str]
+    finding_codes: list[str]
+    required_controls: list[str]
+
+    @classmethod
+    def from_domain(
+        cls, item: BuilderSecurityControlAssessment
+    ) -> BuilderSecurityControlAssessmentData:
+        return cls(
+            control=item.control.value,
+            decision=item.decision.value,
+            assessment=item.assessment,
+            evidence_references=list(item.evidence_references),
+            finding_codes=list(item.finding_codes),
+            required_controls=list(item.required_controls),
+        )
+
+
+class McpBuilderSecurityReviewData(BaseModel):
+    review_id: str
+    schema_version: str
+    version: int
+    state: str
+    project_id: str
+    project_version: int
+    project_digest: str
+    source_digest: str
+    checkpoint_id: str
+    checkpoint_digest: str
+    generation_id: str
+    generation_digest: str
+    artifact_digest: str
+    validation_id: str
+    validation_digest: str
+    validation_profile: str
+    validator_version: str
+    domain_review_id: str
+    domain_review_digest: str
+    domain_review_profile: str
+    domain_reviewer_contract_version: str
+    domain_reviewed_by: str
+    organization_id: str
+    environment_id: str
+    reviewed_by: str
+    review_profile: str
+    reviewer_contract_version: str
+    control_assessments: list[BuilderSecurityControlAssessmentData]
+    accepted_count: int
+    needs_remediation_count: int
+    rejected_count: int
+    summary: str
+    limitations: list[str]
+    canonical_digest: str
+    completed_at: datetime
+    security_review_completed: bool
+    security_review_accepted: bool
+    lab_validation_completed: bool
+    candidate_package_created: bool
+    connector_registered: bool
+    connector_installed: bool
+    connector_enabled: bool
+    network_request_performed: bool
+    model_inference_performed: bool
+    dependency_resolution_performed: bool
+    malware_or_dynamic_scan_performed: bool
+    runtime_self_test_performed: bool
+    subprocess_invoked: bool
+    dynamic_code_execution_performed: bool
+    runtime_trust_granted: bool
+    execution_authorized: bool
+    infrastructure_mutation_performed: bool
+    reused: bool
+
+    @classmethod
+    def from_domain(cls, review: McpBuilderSecurityReview) -> McpBuilderSecurityReviewData:
+        return cls(
+            **{
+                field: getattr(review, field)
+                for field in cls.model_fields
+                if field not in {"state", "control_assessments", "limitations"}
+            },
+            state=review.state.value,
+            control_assessments=[
+                BuilderSecurityControlAssessmentData.from_domain(item)
+                for item in review.control_assessments
+            ],
+            limitations=list(review.limitations),
+        )
+
+
+class McpBuilderSecurityReviewResponse(BaseModel):
+    data: McpBuilderSecurityReviewData
+    meta: ResponseMeta
+
+
 def design_entity_mapping(value: BuilderEntityMappingInput) -> BuilderEntityMapping:
     return BuilderEntityMapping(source_entity=value.source_entity, atlas_entity=value.atlas_entity)
 
@@ -744,4 +912,17 @@ def domain_capability_decision(
         evidence_citations=tuple(value.evidence_citations),
         missing_case_codes=tuple(value.missing_case_codes),
         rationale=value.rationale,
+    )
+
+
+def security_control_assessment(
+    value: BuilderSecurityControlAssessmentInput,
+) -> BuilderSecurityControlAssessment:
+    return BuilderSecurityControlAssessment(
+        control=value.control,
+        decision=value.decision,
+        assessment=value.assessment,
+        evidence_references=tuple(value.evidence_references),
+        finding_codes=tuple(value.finding_codes),
+        required_controls=tuple(value.required_controls),
     )

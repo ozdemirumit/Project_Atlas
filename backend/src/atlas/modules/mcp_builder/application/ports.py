@@ -7,6 +7,7 @@ from atlas.modules.mcp_builder.domain.design_review import McpBuilderDesignCheck
 from atlas.modules.mcp_builder.domain.domain_review import McpBuilderDomainReview
 from atlas.modules.mcp_builder.domain.generation import BuilderGeneratedFile, McpBuilderGeneration
 from atlas.modules.mcp_builder.domain.models import McpBuilderProject
+from atlas.modules.mcp_builder.domain.security_review import McpBuilderSecurityReview
 from atlas.modules.mcp_builder.domain.validation import McpBuilderValidation
 
 
@@ -122,5 +123,26 @@ class McpBuilderDomainReviewRepository(Protocol):
     ) -> McpBuilderDomainReview | None: ...
 
     async def add(self, review: McpBuilderDomainReview) -> bool: ...
+
+    async def close(self) -> None: ...
+
+
+class McpBuilderSecurityReviewRepository(Protocol):
+    @property
+    def durable(self) -> bool: ...
+
+    async def get_by_id(self, *, review_id: str) -> McpBuilderSecurityReview | None: ...
+
+    async def get_by_project(self, *, project_id: str) -> McpBuilderSecurityReview | None: ...
+
+    async def get_by_domain_review(
+        self, *, domain_review_id: str
+    ) -> McpBuilderSecurityReview | None: ...
+
+    async def get_by_create_key(
+        self, *, reviewed_by: str, idempotency_key: str
+    ) -> McpBuilderSecurityReview | None: ...
+
+    async def add(self, review: McpBuilderSecurityReview) -> bool: ...
 
     async def close(self) -> None: ...

@@ -117,11 +117,14 @@ import {
   createMcpBuilderDesignCheckpoint,
   createMcpBuilderGeneration,
   createMcpBuilderProject,
+  createMcpBuilderSecurityReview,
   createMcpBuilderValidation,
   getMcpBuilderGeneratedFile,
   type McpBuilderDesignDecision,
   type McpBuilderDomainDecision,
   type McpBuilderProject,
+  type McpBuilderSecurityAssessment,
+  type McpBuilderSecurityControl,
 } from "./api/mcpBuilder";
 import {
   createUpgradeHumanReviewCompletionReceipt,
@@ -294,6 +297,21 @@ function downloadMarkdown(filename: string, content: string): void {
   anchor.click();
   URL.revokeObjectURL(url);
 }
+
+const MCP_BUILDER_SECURITY_CONTROLS: Array<{
+  id: McpBuilderSecurityControl;
+  label: string;
+}> = [
+  { id: "provenance", label: "Provenance" },
+  { id: "supply_chain", label: "Supply chain" },
+  { id: "credentials", label: "Credentials" },
+  { id: "network", label: "Network" },
+  { id: "input_output", label: "Input and output" },
+  { id: "injection_execution", label: "Injection and execution" },
+  { id: "logging_redaction", label: "Logging and redaction" },
+  { id: "runner_privileges", label: "Runner privileges" },
+  { id: "capability_governance", label: "Capability governance" },
+];
 
 export function App() {
   const queryClient = useQueryClient();
@@ -471,6 +489,14 @@ export function App() {
   const [builderDomainDecisions, setBuilderDomainDecisions] = useState<
     Record<string, McpBuilderDomainDecision>
   >({});
+  const [builderSecurityReviewAcknowledged, setBuilderSecurityReviewAcknowledged] =
+    useState(false);
+  const [builderSecurityReviewSummary, setBuilderSecurityReviewSummary] = useState(
+    "Independent security review completed against the exact immutable evidence.",
+  );
+  const [builderSecurityAssessments, setBuilderSecurityAssessments] = useState<
+    Partial<Record<McpBuilderSecurityControl, McpBuilderSecurityAssessment>>
+  >({});
   const [builderSelectedGeneratedFile, setBuilderSelectedGeneratedFile] = useState("");
   const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
     Record<string, McpBuilderDesignDecision>
@@ -490,26 +516,59 @@ export function App() {
   const builderGeneratedFileMutation = useMutation({
     mutationFn: getMcpBuilderGeneratedFile,
   });
+  const builderSecurityReviewMutation = useMutation({
+    mutationFn: createMcpBuilderSecurityReview,
+    onSuccess: () => setBuilderSecurityReviewAcknowledged(false),
+  });
   const builderDomainReviewMutation = useMutation({
     mutationFn: createMcpBuilderDomainReview,
-    onSuccess: () => setBuilderDomainReviewAcknowledged(false),
+    onSuccess: (result) => {
+      builderSecurityReviewMutation.reset();
+      setBuilderDomainReviewAcknowledged(false);
+      setBuilderSecurityReviewAcknowledged(false);
+      const evidenceReference =
+        result.data.capability_decisions[0]?.evidence_citations[0] ?? "";
+      setBuilderSecurityAssessments(
+        MCP_BUILDER_SECURITY_CONTROLS.reduce<
+          Partial<Record<McpBuilderSecurityControl, McpBuilderSecurityAssessment>>
+        >((current, control) => {
+          current[control.id] = {
+              control: control.id,
+              decision: "accepted" as const,
+              assessment: `Independent review confirms the bounded ${control.label.toLowerCase()} posture.`,
+              evidenceReferences: [evidenceReference],
+              findingCodes: [],
+              requiredControls: [
+                `Preserve the declared ${control.label.toLowerCase()} boundary through later lifecycle gates.`,
+              ],
+          };
+          return current;
+        }, {}),
+      );
+    },
   });
   const builderValidationMutation = useMutation({
     mutationFn: createMcpBuilderValidation,
     onSuccess: () => {
+      builderSecurityReviewMutation.reset();
       builderDomainReviewMutation.reset();
       setBuilderValidationAcknowledged(false);
       setBuilderDomainReviewAcknowledged(false);
+      setBuilderSecurityReviewAcknowledged(false);
+      setBuilderSecurityAssessments({});
     },
   });
   const builderGenerationMutation = useMutation({
     mutationFn: createMcpBuilderGeneration,
     onSuccess: (result) => {
       builderValidationMutation.reset();
+      builderSecurityReviewMutation.reset();
       builderDomainReviewMutation.reset();
       setBuilderGenerationAcknowledged(false);
       setBuilderValidationAcknowledged(false);
       setBuilderDomainReviewAcknowledged(false);
+      setBuilderSecurityReviewAcknowledged(false);
+      setBuilderSecurityAssessments({});
       setBuilderDomainDecisions({});
       const firstFile =
         result.data.files.find((item) => item.relative_path === "README.md") ??
@@ -529,10 +588,13 @@ export function App() {
       builderGenerationMutation.reset();
       builderGeneratedFileMutation.reset();
       builderValidationMutation.reset();
+      builderSecurityReviewMutation.reset();
       builderDomainReviewMutation.reset();
       setBuilderGenerationAcknowledged(false);
       setBuilderValidationAcknowledged(false);
       setBuilderDomainReviewAcknowledged(false);
+      setBuilderSecurityReviewAcknowledged(false);
+      setBuilderSecurityAssessments({});
       setBuilderDomainDecisions({});
       setBuilderSelectedGeneratedFile("");
     },
@@ -544,11 +606,14 @@ export function App() {
       builderGenerationMutation.reset();
       builderGeneratedFileMutation.reset();
       builderValidationMutation.reset();
+      builderSecurityReviewMutation.reset();
       builderDomainReviewMutation.reset();
       setBuilderDesignAcknowledged(false);
       setBuilderGenerationAcknowledged(false);
       setBuilderValidationAcknowledged(false);
       setBuilderDomainReviewAcknowledged(false);
+      setBuilderSecurityReviewAcknowledged(false);
+      setBuilderSecurityAssessments({});
       setBuilderDomainDecisions({});
       setBuilderSelectedGeneratedFile("");
       setBuilderDesignDecisions(
@@ -579,6 +644,16 @@ export function App() {
       const existing = current[candidateId];
       if (!existing) return current;
       return { ...current, [candidateId]: { ...existing, ...update } };
+    });
+  };
+  const updateBuilderSecurityAssessment = (
+    control: McpBuilderSecurityControl,
+    update: Partial<McpBuilderSecurityAssessment>,
+  ) => {
+    setBuilderSecurityAssessments((current) => {
+      const existing = current[control];
+      if (!existing) return current;
+      return { ...current, [control]: { ...existing, ...update } };
     });
   };
   const humanReviewInboxQuery = useQuery({
@@ -2131,9 +2206,12 @@ export function App() {
                           builderGenerationMutation.reset();
                           builderGeneratedFileMutation.reset();
                           builderValidationMutation.reset();
+                          builderSecurityReviewMutation.reset();
                           builderDomainReviewMutation.reset();
                           setBuilderValidationAcknowledged(false);
                           setBuilderDomainReviewAcknowledged(false);
+                          setBuilderSecurityReviewAcknowledged(false);
+                          setBuilderSecurityAssessments({});
                           setBuilderDomainDecisions({});
                           setBuilderDesignDecisions({});
                           setBuilderSelectedGeneratedFile("");
@@ -2168,9 +2246,12 @@ export function App() {
                           builderGenerationMutation.reset();
                           builderGeneratedFileMutation.reset();
                           builderValidationMutation.reset();
+                          builderSecurityReviewMutation.reset();
                           builderDomainReviewMutation.reset();
                           setBuilderValidationAcknowledged(false);
                           setBuilderDomainReviewAcknowledged(false);
+                          setBuilderSecurityReviewAcknowledged(false);
+                          setBuilderSecurityAssessments({});
                           setBuilderDomainDecisions({});
                           setBuilderDesignDecisions({});
                           setBuilderSelectedGeneratedFile("");
@@ -3409,6 +3490,442 @@ export function App() {
                                                 and unavailable.
                                               </p>
                                             </div>
+                                            {builderDomainReviewMutation.data.data.state ===
+                                              "accepted" && (
+                                              <section
+                                                className="mcp-builder-security-review"
+                                                aria-label="Independent security review"
+                                              >
+                                                <div className="section-heading">
+                                                  <div>
+                                                    <p className="eyebrow">SECURITY REVIEW</p>
+                                                    <h3>Assess the quarantined scaffold</h3>
+                                                    <p>
+                                                      Record independent security judgment across
+                                                      provenance, supply chain, credentials, network,
+                                                      validation, logging, privileges, and governance.
+                                                    </p>
+                                                  </div>
+                                                  <span className="state-badge pending">
+                                                    <ShieldCheck size={14} /> Independent human
+                                                  </span>
+                                                </div>
+                                                {identity?.subject_id ===
+                                                  builderDomainReviewMutation.data.data.reviewed_by &&
+                                                  !builderSecurityReviewMutation.data && (
+                                                    <div
+                                                      className="workspace-message mcp-builder-security-sod"
+                                                      role="status"
+                                                    >
+                                                      <UserX size={20} />
+                                                      <div>
+                                                        <h3>Independent reviewer required</h3>
+                                                        <p>
+                                                          The domain reviewer cannot approve the
+                                                          security posture. Continue with a different
+                                                          authorized security reviewer session.
+                                                        </p>
+                                                      </div>
+                                                    </div>
+                                                  )}
+                                                {identity?.subject_id !==
+                                                  builderDomainReviewMutation.data.data.reviewed_by &&
+                                                  !builderSecurityReviewMutation.data && (
+                                                    <form
+                                                      className="mcp-builder-security-review-form"
+                                                      onSubmit={(event) => {
+                                                        event.preventDefault();
+                                                        const project = builderMutation.data?.data;
+                                                        const checkpoint =
+                                                          builderDesignMutation.data?.data;
+                                                        const generation =
+                                                          builderGenerationMutation.data?.data;
+                                                        const validation =
+                                                          builderValidationMutation.data?.data;
+                                                        const domainReview =
+                                                          builderDomainReviewMutation.data?.data;
+                                                        const assessments = Object.values(
+                                                          builderSecurityAssessments,
+                                                        );
+                                                        if (
+                                                          !project ||
+                                                          !checkpoint ||
+                                                          !generation ||
+                                                          !validation ||
+                                                          !domainReview ||
+                                                          assessments.length !== 9 ||
+                                                          !builderSecurityReviewAcknowledged ||
+                                                          !builderSecurityReviewSummary.trim() ||
+                                                          builderSecurityReviewMutation.isPending
+                                                        ) {
+                                                          return;
+                                                        }
+                                                        builderSecurityReviewMutation.mutate({
+                                                          project,
+                                                          checkpoint,
+                                                          generation,
+                                                          validation,
+                                                          domainReview,
+                                                          assessments,
+                                                          summary: builderSecurityReviewSummary,
+                                                        });
+                                                      }}
+                                                    >
+                                                      <div className="mcp-builder-domain-contract">
+                                                        <div>
+                                                          <span>Review profile</span>
+                                                          <code>
+                                                            atlas.security-review.connector.v1
+                                                          </code>
+                                                        </div>
+                                                        <div>
+                                                          <span>Reviewer contract</span>
+                                                          <code>
+                                                            mcp-builder-security-review.v1
+                                                          </code>
+                                                        </div>
+                                                        <div>
+                                                          <span>Reviewer separation</span>
+                                                          <strong>Required</strong>
+                                                        </div>
+                                                      </div>
+                                                      <div className="mcp-builder-security-controls">
+                                                        {MCP_BUILDER_SECURITY_CONTROLS.map(
+                                                          (control) => {
+                                                            const assessment =
+                                                              builderSecurityAssessments[control.id];
+                                                            if (!assessment) return null;
+                                                            return (
+                                                              <article key={control.id}>
+                                                                <div className="mcp-builder-domain-decision-heading">
+                                                                  <div>
+                                                                    <strong>{control.label}</strong>
+                                                                    <code>{control.id}</code>
+                                                                  </div>
+                                                                  <ShieldCheck size={18} />
+                                                                </div>
+                                                                <div className="mcp-builder-domain-fields">
+                                                                  <label>
+                                                                    Decision
+                                                                    <select
+                                                                      aria-label={`Security decision ${control.id}`}
+                                                                      value={assessment.decision}
+                                                                      onChange={(event) => {
+                                                                        const decision = event.target
+                                                                          .value as
+                                                                          | "accepted"
+                                                                          | "needs_remediation"
+                                                                          | "rejected";
+                                                                        updateBuilderSecurityAssessment(
+                                                                          control.id,
+                                                                          {
+                                                                            decision,
+                                                                            findingCodes:
+                                                                              decision === "accepted"
+                                                                                ? []
+                                                                                : assessment
+                                                                                      .findingCodes
+                                                                                      .length > 0
+                                                                                  ? assessment.findingCodes
+                                                                                  : [
+                                                                                      `security.${control.id}.finding`,
+                                                                                    ],
+                                                                          },
+                                                                        );
+                                                                      }}
+                                                                    >
+                                                                      <option value="accepted">
+                                                                        Accepted
+                                                                      </option>
+                                                                      <option value="needs_remediation">
+                                                                        Needs remediation
+                                                                      </option>
+                                                                      <option value="rejected">
+                                                                        Rejected
+                                                                      </option>
+                                                                    </select>
+                                                                  </label>
+                                                                  <label>
+                                                                    Evidence reference
+                                                                    <input
+                                                                      aria-label={`Security evidence ${control.id}`}
+                                                                      readOnly
+                                                                      value={assessment.evidenceReferences.join(
+                                                                        ", ",
+                                                                      )}
+                                                                    />
+                                                                  </label>
+                                                                  <label className="wide-field">
+                                                                    Independent assessment
+                                                                    <textarea
+                                                                      aria-label={`Security assessment ${control.id}`}
+                                                                      required
+                                                                      value={assessment.assessment}
+                                                                      onChange={(event) =>
+                                                                        updateBuilderSecurityAssessment(
+                                                                          control.id,
+                                                                          {
+                                                                            assessment:
+                                                                              event.target.value,
+                                                                          },
+                                                                        )
+                                                                      }
+                                                                    />
+                                                                  </label>
+                                                                  {assessment.decision !==
+                                                                    "accepted" && (
+                                                                    <label className="wide-field">
+                                                                      Finding codes
+                                                                      <input
+                                                                        aria-label={`Security findings ${control.id}`}
+                                                                        required
+                                                                        value={assessment.findingCodes.join(
+                                                                          ", ",
+                                                                        )}
+                                                                        onChange={(event) =>
+                                                                          updateBuilderSecurityAssessment(
+                                                                            control.id,
+                                                                            {
+                                                                              findingCodes:
+                                                                                event.target.value
+                                                                                  .split(",")
+                                                                                  .map((value) =>
+                                                                                    value.trim(),
+                                                                                  )
+                                                                                  .filter(Boolean),
+                                                                            },
+                                                                          )
+                                                                        }
+                                                                      />
+                                                                    </label>
+                                                                  )}
+                                                                  <label className="wide-field">
+                                                                    Required controls
+                                                                    <textarea
+                                                                      aria-label={`Required controls ${control.id}`}
+                                                                      required
+                                                                      value={assessment.requiredControls.join(
+                                                                        "\n",
+                                                                      )}
+                                                                      onChange={(event) =>
+                                                                        updateBuilderSecurityAssessment(
+                                                                          control.id,
+                                                                          {
+                                                                            requiredControls:
+                                                                              event.target.value
+                                                                                .split("\n")
+                                                                                .map((value) =>
+                                                                                  value.trim(),
+                                                                                )
+                                                                                .filter(Boolean),
+                                                                          },
+                                                                        )
+                                                                      }
+                                                                    />
+                                                                  </label>
+                                                                </div>
+                                                              </article>
+                                                            );
+                                                          },
+                                                        )}
+                                                      </div>
+                                                      <label className="mcp-builder-domain-summary">
+                                                        Security review summary
+                                                        <textarea
+                                                          required
+                                                          value={builderSecurityReviewSummary}
+                                                          onChange={(event) =>
+                                                            setBuilderSecurityReviewSummary(
+                                                              event.target.value,
+                                                            )
+                                                          }
+                                                        />
+                                                      </label>
+                                                      <label className="mcp-builder-check">
+                                                        <input
+                                                          type="checkbox"
+                                                          checked={
+                                                            builderSecurityReviewAcknowledged
+                                                          }
+                                                          onChange={(event) =>
+                                                            setBuilderSecurityReviewAcknowledged(
+                                                              event.target.checked,
+                                                            )
+                                                          }
+                                                        />
+                                                        <span>
+                                                          I am the independent human security
+                                                          reviewer. This decision grants no lab,
+                                                          package, installation, runtime, target, or
+                                                          execution authority.
+                                                        </span>
+                                                      </label>
+                                                      <button
+                                                        className="run-check-button mcp-builder-submit"
+                                                        type="submit"
+                                                        disabled={
+                                                          !builderSecurityReviewAcknowledged ||
+                                                          builderSecurityReviewMutation.isPending
+                                                        }
+                                                      >
+                                                        {builderSecurityReviewMutation.isPending ? (
+                                                          <RefreshCw className="spin" size={16} />
+                                                        ) : (
+                                                          <ShieldCheck size={16} />
+                                                        )}
+                                                        Record security review
+                                                      </button>
+                                                    </form>
+                                                  )}
+                                                {builderSecurityReviewMutation.isError && (
+                                                  <div
+                                                    className="workspace-message error-state"
+                                                    role="alert"
+                                                  >
+                                                    <AlertTriangle size={20} />
+                                                    <div>
+                                                      <h3>Security review unavailable</h3>
+                                                      <p>
+                                                        Reviewer separation, exact evidence, or the
+                                                        complete control set was rejected.
+                                                      </p>
+                                                    </div>
+                                                  </div>
+                                                )}
+                                                {builderSecurityReviewMutation.data?.data && (
+                                                  <div className="mcp-builder-security-result">
+                                                    <div className="mcp-builder-generation-summary">
+                                                      <div>
+                                                        <p className="eyebrow">
+                                                          IMMUTABLE SECURITY REVIEW
+                                                        </p>
+                                                        <strong>
+                                                          {
+                                                            builderSecurityReviewMutation.data.data
+                                                              .review_id
+                                                          }
+                                                        </strong>
+                                                        <code>
+                                                          {
+                                                            builderSecurityReviewMutation.data.data
+                                                              .canonical_digest
+                                                          }
+                                                        </code>
+                                                      </div>
+                                                      <span
+                                                        className={`state-badge ${
+                                                          builderSecurityReviewMutation.data.data
+                                                            .state === "accepted"
+                                                            ? "analyzed"
+                                                            : "failed"
+                                                        }`}
+                                                      >
+                                                        {builderSecurityReviewMutation.data.data
+                                                          .state === "accepted" ? (
+                                                          <CheckCircle2 size={14} />
+                                                        ) : (
+                                                          <AlertTriangle size={14} />
+                                                        )}
+                                                        {builderSecurityReviewMutation.data.data.state.replace(
+                                                          "_",
+                                                          " ",
+                                                        )}
+                                                      </span>
+                                                    </div>
+                                                    <div className="mcp-builder-facts">
+                                                      <div>
+                                                        <span>Accepted</span>
+                                                        <strong>
+                                                          {
+                                                            builderSecurityReviewMutation.data.data
+                                                              .accepted_count
+                                                          }
+                                                        </strong>
+                                                      </div>
+                                                      <div>
+                                                        <span>Needs remediation</span>
+                                                        <strong>
+                                                          {
+                                                            builderSecurityReviewMutation.data.data
+                                                              .needs_remediation_count
+                                                          }
+                                                        </strong>
+                                                      </div>
+                                                      <div>
+                                                        <span>Rejected</span>
+                                                        <strong>
+                                                          {
+                                                            builderSecurityReviewMutation.data.data
+                                                              .rejected_count
+                                                          }
+                                                        </strong>
+                                                      </div>
+                                                      <div>
+                                                        <span>Reviewed by</span>
+                                                        <code>
+                                                          {
+                                                            builderSecurityReviewMutation.data.data
+                                                              .reviewed_by
+                                                          }
+                                                        </code>
+                                                      </div>
+                                                    </div>
+                                                    <div className="mcp-builder-security-evidence">
+                                                      {builderSecurityReviewMutation.data.data.control_assessments.map(
+                                                        (assessment) => (
+                                                          <article key={assessment.control}>
+                                                            <div>
+                                                              <strong>
+                                                                {assessment.control.replaceAll(
+                                                                  "_",
+                                                                  " ",
+                                                                )}
+                                                              </strong>
+                                                              <code>
+                                                                {assessment.evidence_references.join(
+                                                                  ", ",
+                                                                )}
+                                                              </code>
+                                                            </div>
+                                                            <span>
+                                                              {assessment.decision.replace(
+                                                                "_",
+                                                                " ",
+                                                              )}
+                                                            </span>
+                                                            <p>{assessment.assessment}</p>
+                                                            <small>
+                                                              {assessment.finding_codes.join(
+                                                                ", ",
+                                                              ) || "No declared security findings"}
+                                                            </small>
+                                                          </article>
+                                                        ),
+                                                      )}
+                                                    </div>
+                                                    <div className="mcp-builder-limitations">
+                                                      <strong>Security-review boundaries</strong>
+                                                      <ul>
+                                                        {builderSecurityReviewMutation.data.data.limitations.map(
+                                                          (limitation) => (
+                                                            <li key={limitation}>{limitation}</li>
+                                                          ),
+                                                        )}
+                                                      </ul>
+                                                    </div>
+                                                    <div className="mcp-builder-boundary">
+                                                      <LockKeyhole size={18} />
+                                                      <p>
+                                                        Lab validation, package creation, signing,
+                                                        registration, installation, target access,
+                                                        runtime trust, execution, and infrastructure
+                                                        mutation remain false and unavailable.
+                                                      </p>
+                                                    </div>
+                                                  </div>
+                                                )}
+                                              </section>
+                                            )}
                                           </div>
                                         )}
                                       </section>

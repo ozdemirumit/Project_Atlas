@@ -327,6 +327,89 @@ export type McpBuilderDomainReview = {
   reused: boolean;
 };
 
+export type McpBuilderSecurityControl =
+  | "provenance"
+  | "supply_chain"
+  | "credentials"
+  | "network"
+  | "input_output"
+  | "injection_execution"
+  | "logging_redaction"
+  | "runner_privileges"
+  | "capability_governance";
+
+export type McpBuilderSecurityAssessment = {
+  control: McpBuilderSecurityControl;
+  decision: "accepted" | "needs_remediation" | "rejected";
+  assessment: string;
+  evidenceReferences: string[];
+  findingCodes: string[];
+  requiredControls: string[];
+};
+
+export type McpBuilderSecurityReview = {
+  review_id: string;
+  schema_version: "atlas.mcp-builder-security-review.v1";
+  version: 1;
+  state: "accepted" | "needs_remediation" | "rejected";
+  project_id: string;
+  project_version: 1;
+  project_digest: string;
+  source_digest: string;
+  checkpoint_id: string;
+  checkpoint_digest: string;
+  generation_id: string;
+  generation_digest: string;
+  artifact_digest: string;
+  validation_id: string;
+  validation_digest: string;
+  validation_profile: "atlas.static-validation.python312.v1";
+  validator_version: "mcp-builder-static-validator.v1";
+  domain_review_id: string;
+  domain_review_digest: string;
+  domain_review_profile: "atlas.domain-review.connector.v1";
+  domain_reviewer_contract_version: "mcp-builder-domain-review.v1";
+  domain_reviewed_by: string;
+  organization_id: string;
+  environment_id: string;
+  reviewed_by: string;
+  review_profile: "atlas.security-review.connector.v1";
+  reviewer_contract_version: "mcp-builder-security-review.v1";
+  control_assessments: Array<{
+    control: McpBuilderSecurityControl;
+    decision: "accepted" | "needs_remediation" | "rejected";
+    assessment: string;
+    evidence_references: string[];
+    finding_codes: string[];
+    required_controls: string[];
+  }>;
+  accepted_count: number;
+  needs_remediation_count: number;
+  rejected_count: number;
+  summary: string;
+  limitations: string[];
+  canonical_digest: string;
+  completed_at: string;
+  security_review_completed: true;
+  security_review_accepted: boolean;
+  lab_validation_completed: false;
+  candidate_package_created: false;
+  connector_registered: false;
+  connector_installed: false;
+  connector_enabled: false;
+  network_request_performed: false;
+  model_inference_performed: false;
+  dependency_resolution_performed: false;
+  malware_or_dynamic_scan_performed: false;
+  runtime_self_test_performed: false;
+  subprocess_invoked: false;
+  dynamic_code_execution_performed: false;
+  runtime_trust_granted: false;
+  execution_authorized: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -611,6 +694,96 @@ function isSafeDomainReview(value: unknown): value is { data: McpBuilderDomainRe
   );
 }
 
+function isSafeSecurityAssessment(
+  value: unknown,
+): value is McpBuilderSecurityReview["control_assessments"][number] {
+  return (
+    isRecord(value) &&
+    [
+      "provenance",
+      "supply_chain",
+      "credentials",
+      "network",
+      "input_output",
+      "injection_execution",
+      "logging_redaction",
+      "runner_privileges",
+      "capability_governance",
+    ].includes(String(value.control)) &&
+    ["accepted", "needs_remediation", "rejected"].includes(String(value.decision)) &&
+    typeof value.assessment === "string" &&
+    Array.isArray(value.evidence_references) &&
+    value.evidence_references.length > 0 &&
+    value.evidence_references.every((item) => typeof item === "string") &&
+    Array.isArray(value.finding_codes) &&
+    value.finding_codes.every((item) => typeof item === "string") &&
+    (value.decision === "accepted"
+      ? value.finding_codes.length === 0
+      : value.finding_codes.length > 0) &&
+    Array.isArray(value.required_controls) &&
+    value.required_controls.length > 0 &&
+    value.required_controls.every((item) => typeof item === "string")
+  );
+}
+
+function isSafeSecurityReview(value: unknown): value is { data: McpBuilderSecurityReview } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const review = value.data;
+  const assessments = review.control_assessments;
+  const noAuthority = [
+    review.lab_validation_completed,
+    review.candidate_package_created,
+    review.connector_registered,
+    review.connector_installed,
+    review.connector_enabled,
+    review.network_request_performed,
+    review.model_inference_performed,
+    review.dependency_resolution_performed,
+    review.malware_or_dynamic_scan_performed,
+    review.runtime_self_test_performed,
+    review.subprocess_invoked,
+    review.dynamic_code_execution_performed,
+    review.runtime_trust_granted,
+    review.execution_authorized,
+    review.infrastructure_mutation_performed,
+  ];
+  if (!Array.isArray(assessments) || assessments.length !== 9) return false;
+  if (!assessments.every(isSafeSecurityAssessment)) return false;
+  if (new Set(assessments.map((item) => item.control)).size !== 9) return false;
+  const accepted = assessments.filter((item) => item.decision === "accepted").length;
+  const needsRemediation = assessments.filter(
+    (item) => item.decision === "needs_remediation",
+  ).length;
+  const rejected = assessments.filter((item) => item.decision === "rejected").length;
+  const expectedState = rejected
+    ? "rejected"
+    : needsRemediation
+      ? "needs_remediation"
+      : "accepted";
+  return (
+    review.schema_version === "atlas.mcp-builder-security-review.v1" &&
+    review.version === 1 &&
+    review.state === expectedState &&
+    review.review_profile === "atlas.security-review.connector.v1" &&
+    review.reviewer_contract_version === "mcp-builder-security-review.v1" &&
+    review.domain_review_profile === "atlas.domain-review.connector.v1" &&
+    review.domain_reviewer_contract_version === "mcp-builder-domain-review.v1" &&
+    review.reviewed_by !== review.domain_reviewed_by &&
+    review.security_review_completed === true &&
+    review.security_review_accepted === (review.state === "accepted") &&
+    review.accepted_count === accepted &&
+    review.needs_remediation_count === needsRemediation &&
+    review.rejected_count === rejected &&
+    typeof review.review_id === "string" &&
+    typeof review.domain_review_id === "string" &&
+    typeof review.canonical_digest === "string" &&
+    Array.isArray(review.limitations) &&
+    review.limitations.length > 0 &&
+    review.limitations.every((item) => typeof item === "string") &&
+    noAuthority.every((flag) => flag === false)
+  );
+}
+
 function nonce(): string {
   return typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
 }
@@ -830,6 +1003,64 @@ export async function createMcpBuilderDomainReview(input: {
   const payload: unknown = await response.json();
   if (!isSafeDomainReview(payload)) {
     throw new Error("MCP Builder returned an unsafe domain review");
+  }
+  return payload;
+}
+
+export async function createMcpBuilderSecurityReview(input: {
+  project: McpBuilderProject;
+  checkpoint: McpBuilderDesignCheckpoint;
+  generation: McpBuilderGeneration;
+  validation: McpBuilderValidation;
+  domainReview: McpBuilderDomainReview;
+  assessments: McpBuilderSecurityAssessment[];
+  summary: string;
+}) {
+  const response = await apiFetch(
+    `/api/v1/mcp-builder/projects/${input.project.project_id}/security-reviews`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": `mcp-builder-security-review.${nonce()}`,
+      },
+      body: JSON.stringify({
+        schema_version: "atlas.mcp-builder-security-review-request.v1",
+        project_version: input.project.version,
+        project_digest: input.project.canonical_digest,
+        source_digest: input.project.source_digest,
+        checkpoint_id: input.checkpoint.checkpoint_id,
+        checkpoint_digest: input.checkpoint.canonical_digest,
+        generation_id: input.generation.generation_id,
+        generation_digest: input.generation.canonical_digest,
+        artifact_digest: input.generation.artifact_digest,
+        validation_id: input.validation.validation_id,
+        validation_digest: input.validation.canonical_digest,
+        validation_profile: input.validation.validation_profile,
+        validator_version: input.validation.validator_version,
+        domain_review_id: input.domainReview.review_id,
+        domain_review_digest: input.domainReview.canonical_digest,
+        domain_review_profile: input.domainReview.review_profile,
+        domain_reviewer_contract_version: input.domainReview.reviewer_contract_version,
+        review_profile: "atlas.security-review.connector.v1",
+        acknowledged_independent_security_decision: true,
+        control_assessments: input.assessments.map((assessment) => ({
+          control: assessment.control,
+          decision: assessment.decision,
+          assessment: assessment.assessment,
+          evidence_references: assessment.evidenceReferences,
+          finding_codes: assessment.findingCodes,
+          required_controls: assessment.requiredControls,
+        })),
+        summary: input.summary,
+      }),
+    },
+  );
+  if (!response.ok) throw new Error(`MCP Builder security review failed with ${response.status}`);
+  const payload: unknown = await response.json();
+  if (!isSafeSecurityReview(payload)) {
+    throw new Error("MCP Builder returned an unsafe security review");
   }
   return payload;
 }

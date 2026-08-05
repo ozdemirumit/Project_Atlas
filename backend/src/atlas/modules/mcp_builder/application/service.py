@@ -36,6 +36,7 @@ from atlas.modules.mcp_builder.application.ports import (
     McpBuilderError,
     McpBuilderGenerationRepository,
     McpBuilderProjectRepository,
+    McpBuilderSecurityReviewRepository,
     McpBuilderValidationRepository,
 )
 from atlas.modules.mcp_builder.application.validator import (
@@ -61,6 +62,13 @@ from atlas.modules.mcp_builder.domain.generation import (
     McpBuilderGeneration,
 )
 from atlas.modules.mcp_builder.domain.models import BuilderProjectState, McpBuilderProject
+from atlas.modules.mcp_builder.domain.security_review import (
+    BuilderSecurityControl,
+    BuilderSecurityControlAssessment,
+    BuilderSecurityControlDecisionKind,
+    BuilderSecurityReviewState,
+    McpBuilderSecurityReview,
+)
 from atlas.modules.mcp_builder.domain.validation import (
     BuilderValidationCheckState,
     BuilderValidationState,
@@ -88,6 +96,15 @@ DOMAIN_REVIEW_LIMITATIONS = (
     "Human domain review does not prove vendor runtime behavior.",
     "Security review, lab validation, and candidate package approval remain required.",
 )
+SECURITY_REVIEW_CREATE_PERMISSION = "mcp-builder.security-review.create"
+SECURITY_REVIEW_READ_PERMISSION = "mcp-builder.security-review.read"
+SECURITY_REVIEW_SCHEMA = "atlas.mcp-builder-security-review.v1"
+SECURITY_REVIEW_PROFILE = "atlas.security-review.connector.v1"
+SECURITY_REVIEWER_CONTRACT_VERSION = "mcp-builder-security-review.v1"
+SECURITY_REVIEW_LIMITATIONS = (
+    "Security review covers the exact quarantined scaffold and declared evidence only.",
+    "Dynamic scanning, lab validation, and candidate package approval remain required.",
+)
 
 
 class McpBuilderService:
@@ -99,6 +116,7 @@ class McpBuilderService:
         generation_repository: McpBuilderGenerationRepository,
         validation_repository: McpBuilderValidationRepository,
         domain_review_repository: McpBuilderDomainReviewRepository,
+        security_review_repository: McpBuilderSecurityReviewRepository,
         artifact_publisher: McpBuilderArtifactPublisher,
         audit_sink: AuditSink,
         environment_id: str,
@@ -112,6 +130,7 @@ class McpBuilderService:
         self._generation_repository = generation_repository
         self._validation_repository = validation_repository
         self._domain_review_repository = domain_review_repository
+        self._security_review_repository = security_review_repository
         self._artifact_publisher = artifact_publisher
         self._audit_sink = audit_sink
         self._environment_id = environment_id
@@ -125,6 +144,7 @@ class McpBuilderService:
         return self._repository
 
     async def close(self) -> None:
+        await self._security_review_repository.close()
         await self._domain_review_repository.close()
         await self._validation_repository.close()
         await self._generation_repository.close()
@@ -1048,6 +1068,250 @@ class McpBuilderService:
         )
         return review
 
+    async def create_security_review(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        project_id: str,
+        project_version: int,
+        project_digest: str,
+        source_digest: str,
+        checkpoint_id: str,
+        checkpoint_digest: str,
+        generation_id: str,
+        generation_digest: str,
+        artifact_digest: str,
+        validation_id: str,
+        validation_digest: str,
+        validation_profile: str,
+        validator_version: str,
+        domain_review_id: str,
+        domain_review_digest: str,
+        domain_review_profile: str,
+        domain_reviewer_contract_version: str,
+        review_profile: str,
+        acknowledged_independent_security_decision: bool,
+        control_assessments: tuple[BuilderSecurityControlAssessment, ...],
+        summary: str,
+        idempotency_key: str,
+        correlation_id: str,
+    ) -> McpBuilderSecurityReview:
+        self._require_enterprise_human(actor)
+        if not acknowledged_independent_security_decision:
+            raise McpBuilderError("builder_security_review_human_acknowledgement_required")
+        if not 8 <= len(idempotency_key) <= 128:
+            raise McpBuilderError("builder_security_review_idempotency_key_invalid")
+        if review_profile != SECURITY_REVIEW_PROFILE:
+            raise McpBuilderError("builder_security_review_profile_unsupported")
+
+        project, checkpoint = await self._generation_context(actor=actor, project_id=project_id)
+        generation = await self._generation_for_actor(actor=actor, project_id=project_id)
+        validation = await self._validation_for_actor(actor=actor, project_id=project_id)
+        domain_review = await self._domain_review_for_actor(actor=actor, project_id=project_id)
+        if domain_review.state is not BuilderDomainReviewState.ACCEPTED:
+            raise McpBuilderError("builder_security_review_accepted_domain_review_required")
+        if actor.subject_id == domain_review.reviewed_by:
+            raise McpBuilderError("builder_security_review_separation_of_duties_required")
+        if (
+            project.version != project_version
+            or project.canonical_digest != project_digest
+            or project.source_digest != source_digest
+            or checkpoint.checkpoint_id != checkpoint_id
+            or checkpoint.canonical_digest != checkpoint_digest
+            or generation.generation_id != generation_id
+            or generation.canonical_digest != generation_digest
+            or generation.artifact_digest != artifact_digest
+            or validation.validation_id != validation_id
+            or validation.canonical_digest != validation_digest
+            or validation.validation_profile != validation_profile
+            or validation.validator_version != validator_version
+            or domain_review.review_id != domain_review_id
+            or domain_review.canonical_digest != domain_review_digest
+            or domain_review.review_profile != domain_review_profile
+            or domain_review.reviewer_contract_version != domain_reviewer_contract_version
+        ):
+            raise McpBuilderError("builder_security_review_source_stale")
+
+        assessments = self._validated_security_assessments(
+            control_assessments,
+            project=project,
+            generation=generation,
+            validation=validation,
+            domain_review=domain_review,
+        )
+        accepted_count = sum(
+            item.decision is BuilderSecurityControlDecisionKind.ACCEPTED for item in assessments
+        )
+        needs_remediation_count = sum(
+            item.decision is BuilderSecurityControlDecisionKind.NEEDS_REMEDIATION
+            for item in assessments
+        )
+        rejected_count = sum(
+            item.decision is BuilderSecurityControlDecisionKind.REJECTED for item in assessments
+        )
+        state = (
+            BuilderSecurityReviewState.REJECTED
+            if rejected_count
+            else (
+                BuilderSecurityReviewState.NEEDS_REMEDIATION
+                if needs_remediation_count
+                else BuilderSecurityReviewState.ACCEPTED
+            )
+        )
+        normalized_summary = self._validated_text(summary, "security_review_summary", 1800)
+        assessment_payload = self._security_assessment_payload(assessments)
+        payload = {
+            "project_id": project.project_id,
+            "project_version": project.version,
+            "project_digest": project.canonical_digest,
+            "source_digest": project.source_digest,
+            "checkpoint_id": checkpoint.checkpoint_id,
+            "checkpoint_digest": checkpoint.canonical_digest,
+            "generation_id": generation.generation_id,
+            "generation_digest": generation.canonical_digest,
+            "artifact_digest": generation.artifact_digest,
+            "validation_id": validation.validation_id,
+            "validation_digest": validation.canonical_digest,
+            "validation_profile": validation.validation_profile,
+            "validator_version": validation.validator_version,
+            "domain_review_id": domain_review.review_id,
+            "domain_review_digest": domain_review.canonical_digest,
+            "domain_review_profile": domain_review.review_profile,
+            "domain_reviewer_contract_version": domain_review.reviewer_contract_version,
+            "domain_reviewed_by": domain_review.reviewed_by,
+            "organization_id": actor.organization_id,
+            "environment_id": self._environment_id,
+            "reviewed_by": actor.subject_id,
+            "review_profile": review_profile,
+            "reviewer_contract_version": SECURITY_REVIEWER_CONTRACT_VERSION,
+            "state": state.value,
+            "control_assessments": assessment_payload,
+            "accepted_count": accepted_count,
+            "needs_remediation_count": needs_remediation_count,
+            "rejected_count": rejected_count,
+            "summary": normalized_summary,
+            "limitations": SECURITY_REVIEW_LIMITATIONS,
+        }
+        fingerprint = self._digest(
+            {
+                **payload,
+                "acknowledged_independent_security_decision": (
+                    acknowledged_independent_security_decision
+                ),
+                "idempotency_key": idempotency_key,
+            }
+        )
+        prior = await self._security_review_repository.get_by_create_key(
+            reviewed_by=actor.subject_id,
+            idempotency_key=idempotency_key,
+        )
+        if prior is not None:
+            self._verify_security_review(prior)
+            if prior.request_fingerprint != fingerprint:
+                raise McpBuilderError("builder_security_review_idempotency_conflict")
+            return replace(prior, reused=True)
+        existing = await self._security_review_repository.get_by_domain_review(
+            domain_review_id=domain_review.review_id
+        )
+        if existing is not None:
+            self._verify_security_review(existing)
+            raise McpBuilderError("builder_security_review_exists")
+
+        canonical_digest = self._digest(payload)
+        review = McpBuilderSecurityReview(
+            review_id=f"mcp-builder-security-review.{canonical_digest[:24]}",
+            schema_version=SECURITY_REVIEW_SCHEMA,
+            version=1,
+            state=state,
+            project_id=project.project_id,
+            project_version=project.version,
+            project_digest=project.canonical_digest,
+            source_digest=project.source_digest,
+            checkpoint_id=checkpoint.checkpoint_id,
+            checkpoint_digest=checkpoint.canonical_digest,
+            generation_id=generation.generation_id,
+            generation_digest=generation.canonical_digest,
+            artifact_digest=generation.artifact_digest,
+            validation_id=validation.validation_id,
+            validation_digest=validation.canonical_digest,
+            validation_profile=validation.validation_profile,
+            validator_version=validation.validator_version,
+            domain_review_id=domain_review.review_id,
+            domain_review_digest=domain_review.canonical_digest,
+            domain_review_profile=domain_review.review_profile,
+            domain_reviewer_contract_version=domain_review.reviewer_contract_version,
+            domain_reviewed_by=domain_review.reviewed_by,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+            reviewed_by=actor.subject_id,
+            review_profile=review_profile,
+            reviewer_contract_version=SECURITY_REVIEWER_CONTRACT_VERSION,
+            control_assessments=assessments,
+            accepted_count=accepted_count,
+            needs_remediation_count=needs_remediation_count,
+            rejected_count=rejected_count,
+            summary=normalized_summary,
+            limitations=SECURITY_REVIEW_LIMITATIONS,
+            canonical_digest=canonical_digest,
+            request_fingerprint=fingerprint,
+            idempotency_key=idempotency_key,
+            completed_at=self._clock(),
+            security_review_accepted=state is BuilderSecurityReviewState.ACCEPTED,
+        )
+        await self._audit_security_review(
+            actor=actor,
+            correlation_id=correlation_id,
+            permission_id=SECURITY_REVIEW_CREATE_PERMISSION,
+            result_code=f"mcp_builder_security_review_{review.state.value}",
+            review=review,
+        )
+        if not await self._security_review_repository.add(review):
+            raced = await self._security_review_repository.get_by_create_key(
+                reviewed_by=actor.subject_id,
+                idempotency_key=idempotency_key,
+            )
+            if raced is None or raced.request_fingerprint != fingerprint:
+                raise McpBuilderError("builder_security_review_idempotency_conflict")
+            self._verify_security_review(raced)
+            return replace(raced, reused=True)
+        return review
+
+    async def get_security_review(
+        self, *, actor: AuthenticatedSubject, project_id: str, correlation_id: str
+    ) -> McpBuilderSecurityReview:
+        review = await self._security_review_for_actor(actor=actor, project_id=project_id)
+        await self._audit_security_review(
+            actor=actor,
+            correlation_id=correlation_id,
+            permission_id=SECURITY_REVIEW_READ_PERMISSION,
+            result_code="mcp_builder_security_review_read",
+            review=review,
+        )
+        return review
+
+    async def _security_review_for_actor(
+        self, *, actor: AuthenticatedSubject, project_id: str
+    ) -> McpBuilderSecurityReview:
+        self._require_enterprise_human(actor)
+        review = await self._security_review_repository.get_by_project(project_id=project_id)
+        if (
+            review is None
+            or review.organization_id != actor.organization_id
+            or review.environment_id != self._environment_id
+        ):
+            raise McpBuilderError("builder_security_review_not_found")
+        domain_review = await self._domain_review_for_actor(actor=actor, project_id=project_id)
+        if (
+            review.domain_review_id != domain_review.review_id
+            or review.domain_review_digest != domain_review.canonical_digest
+            or review.domain_review_profile != domain_review.review_profile
+            or review.domain_reviewer_contract_version != domain_review.reviewer_contract_version
+            or review.domain_reviewed_by != domain_review.reviewed_by
+        ):
+            raise McpBuilderError("builder_security_review_source_stale")
+        self._verify_security_review(review)
+        return review
+
     async def _domain_review_for_actor(
         self, *, actor: AuthenticatedSubject, project_id: str
     ) -> McpBuilderDomainReview:
@@ -1321,6 +1585,49 @@ class McpBuilderService:
             for item in decisions
         ]
 
+    @staticmethod
+    def _validated_security_assessments(
+        assessments: tuple[BuilderSecurityControlAssessment, ...],
+        *,
+        project: McpBuilderProject,
+        generation: McpBuilderGeneration,
+        validation: McpBuilderValidation,
+        domain_review: McpBuilderDomainReview,
+    ) -> tuple[BuilderSecurityControlAssessment, ...]:
+        if {item.control for item in assessments} != set(BuilderSecurityControl):
+            raise McpBuilderError("builder_security_review_control_set_mismatch")
+        allowed_evidence = {item.citation for item in project.capability_candidates} | {
+            item.relative_path for item in generation.files
+        }
+        allowed_evidence.update(
+            path for check in validation.checks for path in check.evidence_paths
+        )
+        allowed_evidence.update(
+            citation
+            for decision in domain_review.capability_decisions
+            for citation in decision.evidence_citations
+        )
+        for assessment in assessments:
+            if not set(assessment.evidence_references).issubset(allowed_evidence):
+                raise McpBuilderError("builder_security_review_evidence_lineage_mismatch")
+        return tuple(sorted(assessments, key=lambda item: item.control.value))
+
+    @staticmethod
+    def _security_assessment_payload(
+        assessments: tuple[BuilderSecurityControlAssessment, ...],
+    ) -> list[tuple[object, ...]]:
+        return [
+            (
+                item.control.value,
+                item.decision.value,
+                item.assessment,
+                item.evidence_references,
+                item.finding_codes,
+                item.required_controls,
+            )
+            for item in assessments
+        ]
+
     @classmethod
     def _verify_checkpoint(cls, checkpoint: McpBuilderDesignCheckpoint) -> None:
         payload = {
@@ -1483,6 +1790,51 @@ class McpBuilderService:
             or cls._digest(fingerprint_payload) != review.request_fingerprint
         ):
             raise McpBuilderError("builder_domain_review_integrity_failed")
+
+    @classmethod
+    def _verify_security_review(cls, review: McpBuilderSecurityReview) -> None:
+        payload = {
+            "project_id": review.project_id,
+            "project_version": review.project_version,
+            "project_digest": review.project_digest,
+            "source_digest": review.source_digest,
+            "checkpoint_id": review.checkpoint_id,
+            "checkpoint_digest": review.checkpoint_digest,
+            "generation_id": review.generation_id,
+            "generation_digest": review.generation_digest,
+            "artifact_digest": review.artifact_digest,
+            "validation_id": review.validation_id,
+            "validation_digest": review.validation_digest,
+            "validation_profile": review.validation_profile,
+            "validator_version": review.validator_version,
+            "domain_review_id": review.domain_review_id,
+            "domain_review_digest": review.domain_review_digest,
+            "domain_review_profile": review.domain_review_profile,
+            "domain_reviewer_contract_version": review.domain_reviewer_contract_version,
+            "domain_reviewed_by": review.domain_reviewed_by,
+            "organization_id": review.organization_id,
+            "environment_id": review.environment_id,
+            "reviewed_by": review.reviewed_by,
+            "review_profile": review.review_profile,
+            "reviewer_contract_version": review.reviewer_contract_version,
+            "state": review.state.value,
+            "control_assessments": cls._security_assessment_payload(review.control_assessments),
+            "accepted_count": review.accepted_count,
+            "needs_remediation_count": review.needs_remediation_count,
+            "rejected_count": review.rejected_count,
+            "summary": review.summary,
+            "limitations": review.limitations,
+        }
+        fingerprint_payload = {
+            **payload,
+            "acknowledged_independent_security_decision": True,
+            "idempotency_key": review.idempotency_key,
+        }
+        if (
+            cls._digest(payload) != review.canonical_digest
+            or cls._digest(fingerprint_payload) != review.request_fingerprint
+        ):
+            raise McpBuilderError("builder_security_review_integrity_failed")
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
@@ -1777,6 +2129,49 @@ class McpBuilderService:
                     ("review_id", review.review_id),
                     ("project_id", review.project_id),
                     ("validation_id", review.validation_id),
+                    ("artifact_digest", review.artifact_digest),
+                    ("review_state", review.state.value),
+                    ("reviewed_by", review.reviewed_by),
+                ),
+            )
+        )
+
+    async def _audit_security_review(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+        permission_id: str,
+        result_code: str,
+        review: McpBuilderSecurityReview,
+    ) -> None:
+        await self._audit_sink.record(
+            AuditRecord(
+                event_id=f"evt_{uuid4().hex}",
+                event_type="atlas.mcp-builder.security-review",
+                schema_version="1.0",
+                producer="atlas-api",
+                producer_version=__version__,
+                occurred_at=self._clock(),
+                correlation_id=correlation_id,
+                subject_id=actor.subject_id,
+                actor_type=actor.kind.value,
+                authentication_method=actor.authentication_method.value,
+                assurance_level=actor.assurance_level.value,
+                permission_id=permission_id,
+                resource_type="resource.mcp-builder.security-review",
+                scope_reference=(
+                    f"{actor.organization_id}/{self._environment_id}/site.local/"
+                    "domain.mcp-builder/resource.mcp-builder.projects/C2"
+                ),
+                decision_id=None,
+                outcome="succeeded",
+                result_code=result_code,
+                idempotency_key=review.idempotency_key,
+                target_metadata=(
+                    ("review_id", review.review_id),
+                    ("project_id", review.project_id),
+                    ("domain_review_id", review.domain_review_id),
                     ("artifact_digest", review.artifact_digest),
                     ("review_state", review.state.value),
                     ("reviewed_by", review.reviewed_by),
