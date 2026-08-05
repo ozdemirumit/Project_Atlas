@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-067 |
 | Title | Governed connector final validation foundation |
-| Status | Ready for PR |
+| Status | Completed |
 | Branch | `agent/connector-final-validation` |
 | Pull Request | [PR #79](https://github.com/ozdemirumit/Project_Atlas/pull/79) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-023 |
 | Last Updated | 2026-08-06 |
-| Next Action | Open the implementation PR and complete GitHub CI and merge validation |
+| Next Action | Select and record the next governed connector lifecycle slice |
 
 ### ATLAS-IMP-067 Scope Rationale
 
@@ -76,7 +76,13 @@
 - Live authenticated browser inspection passed at 1280-pixel desktop and 390-pixel mobile targets;
   the Connectors form remained within the viewport with no page-level horizontal overflow and no
   browser errors or warnings.
-- GitHub PR, CI, merge, and post-merge main evidence are pending.
+- [PR #79](https://github.com/ozdemirumit/Project_Atlas/pull/79) passed backend and frontend CI
+  in run [31055235701](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31055235701)
+  and merged as `5a490b6c0177815b3b2563bf209fd389e333d274`.
+- Post-merge `main` run
+  [31055433524](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31055433524)
+  passed both backend and frontend jobs. The frontend CI heap limit is explicitly 6144 MB so the
+  complete ESLint analysis of the current large workspace can finish without reducing lint scope.
 
 ### ATLAS-IMP-066 Scope Rationale
 
@@ -4296,6 +4302,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-064 | Governed connector contract validation foundation | Completed through [PR #76](https://github.com/ozdemirumit/Project_Atlas/pull/76) at merge `89d419bd`; 529 backend tests, 36 frontend tests, live static contract validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-065 | Governed connector isolated runner validation foundation | Completed through [PR #77](https://github.com/ozdemirumit/Project_Atlas/pull/77) at merge `ddc2688`; 534 backend tests, 36 frontend tests, live isolated Python runner validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-066 | Governed connector isolated lab self-test foundation | Completed through [PR #78](https://github.com/ozdemirumit/Project_Atlas/pull/78) at merge `6eb74489`; 543 backend tests, 36 frontend tests, live plan-bound read-only lab validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-067 | Governed connector final validation foundation | Completed through [PR #79](https://github.com/ozdemirumit/Project_Atlas/pull/79) at merge `5a490b6c`; 549 backend tests, 36 frontend tests, live exact-lineage final validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
