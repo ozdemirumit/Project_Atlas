@@ -6,12 +6,86 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-065 |
 | Title | Governed connector isolated runner validation foundation |
-| Status | Planned |
-| Branch | Not started |
-| Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-020 |
+| Status | In Review |
+| Branch | `agent/mcp-runner-validation` |
+| Pull Request | [#77](https://github.com/ozdemirumit/Project_Atlas/pull/77) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-021 |
 | Last Updated | 2026-08-05 |
-| Next Action | Define and accept the isolated runner validation contract before implementation |
+| Next Action | Pass PR CI, merge, and record closure evidence |
+
+### ATLAS-IMP-065 Scope Rationale
+
+- IMP-064 proves static contract consistency but does not prove that the exact package imports or
+  preserves its declared bounded/fail-closed behavior when invoked across a process boundary.
+- ADR-021 requires a platform-owned harness, fixed disconnected synthetic profile, ephemeral
+  workspace, minimal environment, deny-first runtime controls, hard timeout, and bounded output.
+- Package tests remain untrusted and are never executed. Production sandbox, vendor compatibility,
+  lab, signing, approval, registration, installation, enablement, and target access remain later
+  independent stages.
+
+### ATLAS-IMP-065 Acceptance Criteria
+
+- Only a dedicated multi-factor human runner-validation operator in the exact organization and
+  environment can create or read a report. Every prior-stage actor, AI/service identity,
+  wrong-scope actor, and insufficient-assurance identity fails closed without evidence discovery.
+- The request accepts only the exact passed IMP-064 report with promotion unblocked and all
+  through-contract completion flags, verifies every upstream digest and no-authority flag,
+  independently verifies archive bytes, and reconciles exact package and inventory evidence.
+- The caller cannot supply a harness, command, argument, interpreter, timeout, fixture, expected
+  result, capability selection, environment, network rule, secret, target, or profile override.
+- A platform-owned harness copies the exact inventory to a fresh ephemeral workspace and starts a
+  fixed Python 3.12 runtime in isolated mode with a minimal secret-free environment, no inherited
+  Python path, dependency resolution, installation, model, credential, target, or network access.
+- The harness never executes package tests. It imports only the accepted package and invokes every
+  capability once with its exact disconnected synthetic input, requiring exact bounded-literal
+  output or the exact approved fail-closed exception.
+- Network, nested process, shell, native-library, out-of-workspace mutation, timeout, abnormal exit,
+  malformed/excessive output, denied-policy event, incomplete coverage, result mismatch, unexpected
+  exception, or cleanup failure cannot produce a pass.
+- Reports expose only safe lineage, fixed profile/adapter/runtime identities, aggregate capability
+  counts, stable checks, duration, exit status, output digest/size, cleanup state, limitations, and
+  promotion state. Package, fixture, capability, path, environment, stdout/stderr, exception, and
+  harness details never enter API, audit, logs, errors, or model context.
+- Reports are one-to-one, deterministic for stable evidence, immutable, idempotent,
+  concurrency-safe, audit-before-persist, and equivalent in memory and PostgreSQL. Integrity,
+  execution, audit, cleanup, or persistence failure cannot fabricate success.
+- Failed validation sets `promotion_blocked=true`; either outcome preserves all through-contract
+  completion and marks only `runner_validation_completed=true`. No package or infrastructure state
+  changes and no runtime trust or execution authority are granted.
+- Strict no-store APIs require CSRF for creation, dedicated default-deny RBAC, correlation, bounded
+  schemas, safe errors, exact tenant scope, acknowledgement, and full-lineage separation of duties.
+- The Connector workspace displays safe runner profile, runtime, behavior counts, checks,
+  limitations, cleanup, lineage, and promotion summaries without package internals or later-stage
+  controls.
+- Backend/frontend coverage, one Alembic head, live authorized/denied HTTP checks, pass/fail/timeout/
+  malformed/denied-policy fixtures, desktop and 390-pixel mobile inspection, browser logs, and
+  GitHub CI apply.
+- This slice performs no package rewrite, package-test execution, dependency install/resolve,
+  credential/model/target access, production sandbox certification, vendor compatibility, lab,
+  signing, approval, registration, installation, enablement, deployment, or infrastructure mutation.
+
+### ATLAS-IMP-065 Validation Evidence
+
+- Backend Ruff formatting passed across 559 files and lint passed; strict type checking passed across
+  463 source files.
+- The full backend suite passed 534 tests with 3 expected Windows symlink skips and one Alembic head
+  at `20260805_0037`.
+- A real Python 3.12 isolated child imported the exact handoff package, denied network/process/
+  native-library/filesystem-write probes, invoked every capability with disconnected synthetic
+  evidence, returned bounded aggregate output, and removed its ephemeral workspace.
+- Timeout produced immutable failed evidence with promotion blocked and no runtime authority.
+  Separation of duties, tampered source, idempotency, concurrency, audit-before-persist, and
+  memory/PostgreSQL equivalence passed.
+- Live in-process HTTP checks returned the expected missing-CSRF `403`, authorized creation `201`,
+  immutable read `200`, and `no-store` responses with minimized payloads.
+- Frontend lint and type checking passed; 36 tests and the production build passed. Integrated web
+  coverage exercised independent acknowledgement, exact minimized request, safe aggregate runner
+  evidence, cleanup state, and the absence of installation/execution controls. The existing bundle
+  size advisory remains non-blocking.
+- Playwright/Edge inspection at 1440x1000 and 390x844 found no horizontal overflow or page
+  exceptions in the live sign-in boundary. The unauthenticated identity probe returned the expected
+  `401`; the desktop favicon request returned a non-functional `404`.
+- GitHub PR CI, merge, and main-branch CI evidence remain pending until publication.
 
 ### ATLAS-IMP-064 Scope Rationale
 
