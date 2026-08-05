@@ -4,14 +4,14 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-064 |
-| Title | Governed connector contract validation foundation |
-| Status | In Review |
-| Branch | `agent/mcp-contract-validation` |
-| Pull Request | [#76](https://github.com/ozdemirumit/Project_Atlas/pull/76) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-020 |
+| Task ID | ATLAS-IMP-065 |
+| Title | Governed connector isolated runner validation foundation |
+| Status | Planned |
+| Branch | Not started |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-020 |
 | Last Updated | 2026-08-05 |
-| Next Action | Complete browser evidence, publish PR, pass CI, merge, and record closure evidence |
+| Next Action | Define and accept the isolated runner validation contract before implementation |
 
 ### ATLAS-IMP-064 Scope Rationale
 
@@ -79,7 +79,9 @@
   expected `401`; the desktop favicon request returned a non-functional `404`. Integrated web tests
   exercised the complete contract-validation workflow and immutable report at both responsive
   layout semantics.
-- GitHub PR CI, merge, and main-branch CI evidence remain pending until publication.
+- [PR #76](https://github.com/ozdemirumit/Project_Atlas/pull/76) passed backend and frontend
+  CI in run `31045166904`, merged at `89d419bd`, and the resulting `main` run `31045436607`
+  passed both jobs.
 
 ### ATLAS-IMP-063 Scope Rationale
 
@@ -4074,6 +4076,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-061 | Governed connector dependency vulnerability analysis | Completed through [PR #73](https://github.com/ozdemirumit/Project_Atlas/pull/73) at merge `90450394`; 512 backend tests, 36 frontend tests, live advisory-policy validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-062 | Governed connector package malware analysis | Completed through [PR #74](https://github.com/ozdemirumit/Project_Atlas/pull/74) at merge `355ce72c`; 518 backend tests, 36 frontend tests, live definition-policy validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-063 | Governed connector package license analysis | Completed through [PR #75](https://github.com/ozdemirumit/Project_Atlas/pull/75) at merge `41b65f57`; 525 backend tests, 36 frontend tests, live policy-bound license validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-064 | Governed connector contract validation foundation | Completed through [PR #76](https://github.com/ozdemirumit/Project_Atlas/pull/76) at merge `89d419bd`; 529 backend tests, 36 frontend tests, live static contract validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
