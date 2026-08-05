@@ -4,14 +4,70 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-045 |
-| Title | Governed non-executable human-review completion receipt |
-| Status | Completed |
-| Branch | `agent/review-completion-receipt` |
-| Pull Request | [#57](https://github.com/ozdemirumit/Project_Atlas/pull/57) |
-| Governing Documents | ATLAS-003, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-038, ATLAS-044, ATLAS-047, ATLAS-052 |
+| Task ID | ATLAS-IMP-046 |
+| Title | Governed MCP Builder project and OpenAPI source-analysis foundation |
+| Status | In Progress |
+| Branch | `agent/mcp-builder-openapi-analysis` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-002, ATLAS-003, ATLAS-014, ATLAS-015, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056 |
 | Last Updated | 2026-08-05 |
-| Next Action | Select and scope the next approved implementation slice |
+| Next Action | Implement and validate quarantined OpenAPI source analysis without connector generation or runtime trust |
+
+### ATLAS-IMP-046 Scope Rationale
+
+- The connector registry, simulator, read-only vendor connector, governed knowledge, identity,
+  authorization, audit, policy, and human-review foundations are now available. MCP Builder remains a
+  major approved product capability without an implementation module.
+- ATLAS-022 requires generated connector work to begin from registered, versioned, attributable
+  sources and to remain quarantined. This slice establishes the Builder project and deterministic
+  OpenAPI analysis boundary before any code, package, or runtime artifact can exist.
+- OpenAPI 3.0 and 3.1 JSON are the first source formats. The slice extracts review evidence and
+  conservative capability candidates only. It does not invoke a model, resolve external references,
+  generate files, register a connector package, install or enable an instance, or contact a target.
+
+### ATLAS-IMP-046 Acceptance Criteria
+
+- Only an authorized, multi-factor human can create and read Builder projects in the exact
+  organization and environment scope. Service identities, AI identities, wrong roles, and
+  out-of-scope actors fail closed without project or source discovery.
+- Project creation binds immutable owner, vendor, product, intended product versions, target
+  environment, approved SDK profile, source authority, source owner, documentation version and
+  publication date, license and redistribution constraints, source classification, source digest,
+  and explicit synthetic-or-lab-only acknowledgement.
+- The source is a bounded OpenAPI 3.0 or 3.1 JSON document. Canonical JSON and SHA-256 digest checks,
+  strict size, path, operation, parameter, schema, and nesting budgets, duplicate and unsupported
+  construct rejection, and local-reference validation apply before persistence. External references,
+  callbacks, webhooks, arbitrary URLs, embedded secrets, and production credentials fail closed or
+  become explicit blocking findings without network access.
+- Deterministic analysis extracts product metadata, declared servers, authentication schemes,
+  operations, operation IDs, methods, paths, parameters, response evidence, and local citations.
+  Every candidate records source digest and operation location, side-effect evidence, proposed
+  capability class, confidence basis, required clarification, and whether generation is blocked.
+- Only clearly informational or read-only operations may be proposed as C0 or C1. Write methods,
+  ambiguous read-style actions, missing side-effect evidence, refresh or collection triggers,
+  wildcard or batch scope, callbacks, and unresolved references default to blocked C5. AI cannot
+  lower risk, approve classification, or unblock a candidate.
+- The project lifecycle is deterministic: valid fully bounded analysis remains quarantined in
+  `analyzed`; material ambiguity produces `needs_clarification`; invalid source produces no partial
+  project. No state in this slice is a candidate package or runtime trust state.
+- Creation is versioned, idempotent, optimistic, audit-before-persist, and deterministic under replay,
+  conflict, concurrent requests, audit failure, and persistence failure. Memory and PostgreSQL
+  behavior match, and canonical source or analysis drift fails closed.
+- Strict no-store APIs require browser CSRF for creation, default-deny RBAC, correlation, safe errors,
+  and redacted responses. The web view supports bounded JSON file selection and review evidence but
+  exposes no generate, export, register, install, enable, invoke, network, credential, or execution
+  control.
+- Automated backend and frontend coverage, live authorized and denied identity validation, desktop
+  and 390-pixel mobile validation, browser-log inspection, migration single-head verification, and
+  GitHub CI apply.
+- This slice performs no external request, source acquisition, connector call, model inference,
+  dynamic code execution, package generation, dependency installation, secret resolution, ITSM
+  synchronization, notification, workflow execution, deployment, migration execution, service
+  restart, traffic switch, restore, rollback, or infrastructure mutation.
+
+### ATLAS-IMP-046 Validation Evidence
+
+- Pending implementation and validation.
 
 ### ATLAS-IMP-045 Scope Rationale
 
@@ -2584,6 +2640,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-042 | Governed upgrade change-review packet foundation | Completed through [PR #54](https://github.com/ozdemirumit/Project_Atlas/pull/54) from source commit `c6ba48f`; 363 backend tests, 32 frontend tests, live immutable change-review packet and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-043 | Governed upgrade multi-stage human review foundation | Completed through [PR #55](https://github.com/ozdemirumit/Project_Atlas/pull/55) from source commit `102b47a`; 370 backend tests, 32 frontend tests, live four-stage review creation, self-review rejection, desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-044 | Governed upgrade human-review inbox and decision workspace | Completed through [PR #56](https://github.com/ozdemirumit/Project_Atlas/pull/56) from source commit `65aca6d`; 373 backend tests, 33 frontend tests, live four-identity API and desktop/mobile decision validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-045 | Governed non-executable human-review completion receipt | Completed through [PR #57](https://github.com/ozdemirumit/Project_Atlas/pull/57) from source commit `53429db`; 379 backend tests, 34 frontend tests, live four-identity API and desktop/mobile receipt validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
