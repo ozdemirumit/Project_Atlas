@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import asyncio
 
-from atlas.modules.change_review.domain.human_review import UpgradeChangeHumanReview
+from atlas.modules.change_review.domain.human_review import (
+    HumanReviewState,
+    UpgradeChangeHumanReview,
+)
 
 
 class InMemoryHumanReviewRepository:
@@ -23,6 +26,27 @@ class InMemoryHumanReviewRepository:
     ) -> UpgradeChangeHumanReview | None:
         review_id = self._create_keys.get((requester_id, idempotency_key))
         return self._records.get(review_id) if review_id is not None else None
+
+    async def list_scope(
+        self,
+        *,
+        organization_id: str,
+        environment_id: str,
+        site_id: str,
+        limit: int,
+    ) -> tuple[UpgradeChangeHumanReview, ...]:
+        records = sorted(
+            (
+                record
+                for record in self._records.values()
+                if record.organization_id == organization_id
+                and record.environment_id == environment_id
+                and record.site_id == site_id
+                and record.state is HumanReviewState.PENDING
+            ),
+            key=lambda record: (record.expires_at, record.review_id),
+        )
+        return tuple(records[:limit])
 
     async def add(self, record: UpgradeChangeHumanReview) -> bool:
         async with self._lock:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, NoReturn
 
-from fastapi import APIRouter, Depends, Header, Path, Request, Response
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
 
 from atlas.api.change_review_schemas import (
     ChangeReviewCreateInput,
@@ -18,6 +18,8 @@ from atlas.api.human_review_schemas import (
     HumanReviewCreateInput,
     HumanReviewData,
     HumanReviewDecisionInput,
+    HumanReviewInboxData,
+    HumanReviewInboxResponse,
     HumanReviewResponse,
 )
 from atlas.api.schemas import ResponseMeta
@@ -172,6 +174,46 @@ async def get_human_review(
     )
 
 
+@router.get("/human-reviews", response_model=HumanReviewInboxResponse)
+async def list_human_review_inbox(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_upgrade_human_review_read)],
+    role_id: Annotated[
+        str | None,
+        Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$"),
+    ] = None,
+    cursor: Annotated[
+        str | None,
+        Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$"),
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> HumanReviewInboxResponse:
+    service: HumanReviewService = request.app.state.human_review_service
+    try:
+        result = await service.inbox(
+            actor=subject,
+            role_id=role_id,
+            cursor=cursor,
+            limit=limit,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ChangeReviewError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return HumanReviewInboxResponse(
+        data=HumanReviewInboxData(
+            items=[HumanReviewData.from_domain(item) for item in result.items],
+            next_cursor=result.next_cursor,
+            limit=result.limit,
+        ),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
 @router.post("/human-reviews/{review_id}/decisions", response_model=HumanReviewResponse)
 async def decide_human_review(
     review_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
@@ -190,6 +232,7 @@ async def decide_human_review(
             stage_id=payload.stage_id,
             outcome=HumanReviewOutcome(payload.outcome),
             rationale=payload.rationale,
+            acknowledged_no_authority=payload.acknowledged_no_authority,
             expected_version=payload.expected_version,
             idempotency_key=idempotency_key,
             correlation_id=str(request.state.correlation_id),

@@ -33,6 +33,7 @@ class HumanReviewDecisionInput(BaseModel):
     stage_id: str = Field(pattern=STABLE_ID)
     outcome: str = Field(pattern=r"^(approve|reject|needs_evidence|defer)$")
     rationale: str = Field(min_length=5, max_length=1000)
+    acknowledged_no_authority: bool
     expected_version: int = Field(ge=1)
 
 
@@ -57,6 +58,7 @@ class HumanReviewDecisionData(BaseModel):
     reviewer_id: str
     reviewer_role_id: str
     rationale: str
+    acknowledged_no_authority: bool
     decided_at: datetime
 
 
@@ -134,6 +136,7 @@ class HumanReviewData(BaseModel):
                         "reviewer_id": decision.reviewer_id,
                         "reviewer_role_id": decision.reviewer_role_id,
                         "rationale": decision.rationale,
+                        "acknowledged_no_authority": decision.acknowledged_no_authority,
                         "decided_at": decision.decided_at,
                     }
                     for decision in item.decisions
@@ -156,4 +159,15 @@ class HumanReviewData(BaseModel):
 
 class HumanReviewResponse(BaseModel):
     data: HumanReviewData
+    meta: ResponseMeta
+
+
+class HumanReviewInboxData(BaseModel):
+    items: list[HumanReviewData]
+    next_cursor: str | None
+    limit: int
+
+
+class HumanReviewInboxResponse(BaseModel):
+    data: HumanReviewInboxData
     meta: ResponseMeta

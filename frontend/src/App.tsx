@@ -113,6 +113,8 @@ import { getCurrentIdentity } from "./api/identity";
 import {
   createUpgradeHumanReview,
   createUpgradeChangeReviewPacket,
+  decideUpgradeHumanReview,
+  getUpgradeHumanReviewInbox,
   previewUpgradeChangeReview,
   type UpgradeChangeReviewPacket,
   type UpgradeChangeReviewPreview,
@@ -397,6 +399,14 @@ export function App() {
   const [humanReviewPending, setHumanReviewPending] = useState(false);
   const [humanReviewJustification, setHumanReviewJustification] = useState("");
   const [humanReviewAcknowledged, setHumanReviewAcknowledged] = useState(false);
+  const [selectedInboxReviewId, setSelectedInboxReviewId] = useState<string | null>(null);
+  const [reviewDecisionOutcome, setReviewDecisionOutcome] = useState<
+    "approve" | "reject" | "needs_evidence" | "defer"
+  >("approve");
+  const [reviewDecisionRationale, setReviewDecisionRationale] = useState("");
+  const [reviewDecisionAcknowledged, setReviewDecisionAcknowledged] = useState(false);
+  const [reviewDecisionResult, setReviewDecisionResult] =
+    useState<UpgradeHumanReview | null>(null);
   const [bootstrapClaimJustification, setBootstrapClaimJustification] = useState("");
   const [bootstrapClaimPending, setBootstrapClaimPending] = useState(false);
   const [bootstrapClaimResult, setBootstrapClaimResult] =
@@ -417,6 +427,30 @@ export function App() {
     retry: false,
   });
   const identity = identityQuery.data?.data;
+  const humanReviewInboxQuery = useQuery({
+    queryKey: ["upgrade-human-review-inbox", identity?.subject_id],
+    queryFn: () => getUpgradeHumanReviewInbox(),
+    enabled: Boolean(identity),
+    retry: false,
+  });
+  const humanReviewInbox = humanReviewInboxQuery.data?.data;
+  const selectedInboxReview = humanReviewInbox?.items.find(
+    (item) => item.review_id === selectedInboxReviewId,
+  );
+  const selectedInboxStage = selectedInboxReview?.stages.find(
+    (stage) => stage.state === "pending",
+  );
+  const reviewDecisionMutation = useMutation({
+    mutationFn: decideUpgradeHumanReview,
+    onSuccess: async (result) => {
+      setReviewDecisionResult(result.data);
+      setSelectedInboxReviewId(null);
+      setReviewDecisionOutcome("approve");
+      setReviewDecisionRationale("");
+      setReviewDecisionAcknowledged(false);
+      await queryClient.invalidateQueries({ queryKey: ["upgrade-human-review-inbox"] });
+    },
+  });
   const loginMutation = useMutation({
     mutationFn: () => createBrowserSession(username, password),
     onSuccess: async () => {
@@ -436,10 +470,16 @@ export function App() {
       queryClient.removeQueries({ queryKey: ["identity-governance"] });
       queryClient.removeQueries({ queryKey: ["workload-identities"] });
       queryClient.removeQueries({ queryKey: ["audit-export-overview"] });
+      queryClient.removeQueries({ queryKey: ["upgrade-human-review-inbox"] });
       setApprovalRequestId(null);
       setApprovalRationale("");
       setIssuedApiToken(null);
       setPendingDisableSubjectId(null);
+      setSelectedInboxReviewId(null);
+      setReviewDecisionOutcome("approve");
+      setReviewDecisionRationale("");
+      setReviewDecisionAcknowledged(false);
+      setReviewDecisionResult(null);
       setGovernanceReason("");
       setWorkloadReason("");
       setIssuedWorkloadToken(null);
@@ -1797,6 +1837,234 @@ export function App() {
                     <p>No infrastructure state is inferred when authorized evidence cannot be read.</p>
                   </div>
                 </div>
+              )}
+
+              {identity && (
+                <section className="workspace-section review-inbox-section">
+                  <div className="section-heading review-inbox-heading">
+                    <div>
+                      <p className="eyebrow">HUMAN REVIEW INBOX</p>
+                      <h2>Assigned upgrade reviews</h2>
+                      <p>Exact evidence awaiting this identity's current accountable stage.</p>
+                    </div>
+                    <span className="state-badge pending">
+                      <UserCheck size={14} /> {humanReviewInbox?.items.length ?? 0} assigned
+                    </span>
+                  </div>
+
+                  {humanReviewInboxQuery.isLoading && (
+                    <div className="review-inbox-status">
+                      <Clock3 size={17} /> Evaluating role and scope
+                    </div>
+                  )}
+                  {humanReviewInboxQuery.isError && (
+                    <div className="review-inbox-status error-state" role="alert">
+                      <AlertTriangle size={17} /> Assigned reviews are unavailable.
+                    </div>
+                  )}
+                  {humanReviewInbox && humanReviewInbox.items.length === 0 && (
+                    <div className="review-inbox-empty">
+                      <ShieldCheck size={18} />
+                      <div>
+                        <strong>No actionable review is assigned</strong>
+                        <p>Waiting, completed, ineligible, and out-of-scope requests stay hidden.</p>
+                      </div>
+                    </div>
+                  )}
+                  {humanReviewInbox && humanReviewInbox.items.length > 0 && (
+                    <div className="review-inbox-list" aria-label="Assigned human reviews">
+                      {humanReviewInbox.items.map((item) => {
+                        const currentStage = item.stages.find((stage) => stage.state === "pending");
+                        return (
+                          <article key={item.review_id}>
+                            <div className="review-inbox-item-main">
+                              <span className="review-sequence">{currentStage?.sequence ?? "-"}</span>
+                              <div>
+                                <strong>
+                                  {currentStage?.required_role_id
+                                    .replace("role.", "")
+                                    .replaceAll("-", " ") ?? "Review unavailable"}
+                                </strong>
+                                <code>{item.review_id}</code>
+                              </div>
+                            </div>
+                            <div className="review-inbox-item-meta">
+                              <span>{item.risk_class.replace("risk.", "")}</span>
+                              <span>{formatTimestamp(item.expires_at)}</span>
+                            </div>
+                            <button
+                              className="run-check-button"
+                              type="button"
+                              onClick={() => {
+                                setSelectedInboxReviewId(item.review_id);
+                                setReviewDecisionResult(null);
+                              }}
+                            >
+                              <UserCheck size={16} /> Review request
+                            </button>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {selectedInboxReview && selectedInboxStage && (
+                    <form
+                      className="review-decision-workspace"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        if (
+                          reviewDecisionRationale.trim().length >= 5 &&
+                          reviewDecisionAcknowledged &&
+                          !reviewDecisionMutation.isPending
+                        ) {
+                          reviewDecisionMutation.mutate({
+                            review: selectedInboxReview,
+                            stageId: selectedInboxStage.stage_id,
+                            outcome: reviewDecisionOutcome,
+                            rationale: reviewDecisionRationale.trim(),
+                            acknowledgedNoAuthority: reviewDecisionAcknowledged,
+                          });
+                        }
+                      }}
+                    >
+                      <div className="review-workspace-heading">
+                        <div>
+                          <p className="eyebrow">CURRENT DECISION</p>
+                          <h3>
+                            {selectedInboxStage.required_role_id
+                              .replace("role.", "")
+                              .replaceAll("-", " ")}
+                          </h3>
+                          <code>{selectedInboxReview.packet_id}</code>
+                        </div>
+                        <button
+                          className="icon-button"
+                          type="button"
+                          aria-label="Close review workspace"
+                          onClick={() => setSelectedInboxReviewId(null)}
+                        >
+                          <X size={17} />
+                        </button>
+                      </div>
+
+                      <div className="review-fact-grid" aria-label="Human review facts">
+                        <div><span>Requester</span><strong>{selectedInboxReview.requester_id}</strong></div>
+                        <div><span>Window</span><strong>{formatTimestamp(selectedInboxReview.proposed_window_start)}</strong></div>
+                        <div><span>Affected services</span><strong>{selectedInboxReview.impacted_service_ids.length}</strong></div>
+                        <div><span>Evidence digests</span><strong>{selectedInboxReview.evidence_digests.length}</strong></div>
+                      </div>
+
+                      <div className="review-impact-summary">
+                        <strong>{selectedInboxReview.change_class.replace("change.", "")}</strong>
+                        <p>{selectedInboxReview.justification}</p>
+                        <span>{selectedInboxReview.impacted_service_ids.join(" · ")}</span>
+                      </div>
+
+                      <div className="human-review-stages">
+                        {selectedInboxReview.stages.map((stage) => (
+                          <div key={stage.stage_id}>
+                            <span>{stage.sequence}</span>
+                            <div>
+                              <strong>{stage.required_role_id.replace("role.", "").replaceAll("-", " ")}</strong>
+                              <code>{stage.stage_id}</code>
+                            </div>
+                            <small>{stage.state}</small>
+                          </div>
+                        ))}
+                      </div>
+
+                      <fieldset className="review-outcome-control">
+                        <legend>Decision</legend>
+                        {([
+                          ["approve", "Approve", CheckCircle2],
+                          ["reject", "Reject", UserX],
+                          ["needs_evidence", "Needs evidence", Search],
+                          ["defer", "Defer", Clock3],
+                        ] as const).map(([value, label, Icon]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            aria-pressed={reviewDecisionOutcome === value}
+                            className={reviewDecisionOutcome === value ? "selected" : ""}
+                            onClick={() => setReviewDecisionOutcome(value)}
+                          >
+                            <Icon size={15} /> {label}
+                          </button>
+                        ))}
+                      </fieldset>
+
+                      <label className="review-rationale-field">
+                        <span>Decision rationale</span>
+                        <textarea
+                          value={reviewDecisionRationale}
+                          minLength={5}
+                          maxLength={1000}
+                          rows={3}
+                          required
+                          onChange={(event) => setReviewDecisionRationale(event.target.value)}
+                        />
+                      </label>
+                      <label className="review-boundary-check">
+                        <input
+                          type="checkbox"
+                          checked={reviewDecisionAcknowledged}
+                          onChange={(event) => setReviewDecisionAcknowledged(event.target.checked)}
+                        />
+                        <span>
+                          This decision records human review only. It does not approve execution,
+                          dispatch to ITSM, issue a handoff, or change infrastructure.
+                        </span>
+                      </label>
+                      <div className="review-decision-actions">
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          onClick={() => setSelectedInboxReviewId(null)}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          className="run-check-button"
+                          type="submit"
+                          disabled={
+                            reviewDecisionRationale.trim().length < 5 ||
+                            !reviewDecisionAcknowledged ||
+                            reviewDecisionMutation.isPending
+                          }
+                        >
+                          <UserCheck size={16} />
+                          {reviewDecisionMutation.isPending ? "Recording" : "Record decision"}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {reviewDecisionMutation.isError && (
+                    <div className="review-inbox-status error-state" role="alert">
+                      <AlertTriangle size={17} /> The decision was not recorded.
+                    </div>
+                  )}
+                  {reviewDecisionResult && (
+                    <div className="review-decision-result">
+                      <CheckCircle2 size={17} />
+                      <div>
+                        <strong>Decision recorded</strong>
+                        <p>
+                          Review is now {reviewDecisionResult.state.replaceAll("_", " ")}; execution
+                          authorization remains No.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="safety-notice review-inbox-boundary">
+                    <ShieldCheck size={16} />
+                    <span>
+                      Human review is evidence-bound decision support. No review action executes a
+                      workflow or infrastructure change.
+                    </span>
+                  </div>
+                </section>
               )}
 
               {auditExport && auditHealth && (
