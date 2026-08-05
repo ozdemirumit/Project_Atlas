@@ -36,6 +36,7 @@ from atlas.api.routes import (
     identity,
     identity_governance,
     investigations,
+    mcp_builder,
     platform,
     rca,
     recommendations,
@@ -119,6 +120,9 @@ from atlas.modules.investigations.application.service import InvestigationServic
 from atlas.modules.knowledge.adapters.memory import InMemoryKnowledgeRetriever
 from atlas.modules.knowledge.adapters.synthetic import build_synthetic_knowledge_chunks
 from atlas.modules.knowledge.application.service import KnowledgeRetrievalService
+from atlas.modules.mcp_builder.adapters.memory import InMemoryMcpBuilderProjectRepository
+from atlas.modules.mcp_builder.adapters.postgres import PostgreSQLMcpBuilderProjectRepository
+from atlas.modules.mcp_builder.application.service import McpBuilderService
 from atlas.modules.platform.adapters.bootstrap_artifact_filesystem import (
     FileSystemReleaseArtifactPublisher,
     MemoryArtifactContentSource,
@@ -287,6 +291,7 @@ def create_app(
     change_review_service: ChangeReviewService | None = None,
     human_review_service: HumanReviewService | None = None,
     completion_receipt_service: CompletionReceiptService | None = None,
+    mcp_builder_service: McpBuilderService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -690,6 +695,19 @@ def create_app(
             environment_id=f"environment.{resolved_settings.environment}",
             site_id="site.local",
         )
+    if mcp_builder_service is not None:
+        resolved_mcp_builder_service = mcp_builder_service
+    else:
+        mcp_builder_repository = (
+            PostgreSQLMcpBuilderProjectRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryMcpBuilderProjectRepository()
+        )
+        resolved_mcp_builder_service = McpBuilderService(
+            repository=mcp_builder_repository,
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -858,6 +876,7 @@ def create_app(
         app.state.change_review_service = resolved_change_review_service
         app.state.human_review_service = resolved_human_review_service
         app.state.completion_receipt_service = resolved_completion_receipt_service
+        app.state.mcp_builder_service = resolved_mcp_builder_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -870,6 +889,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_mcp_builder_service.close()
         await resolved_completion_receipt_service.close()
         await resolved_human_review_service.close()
         await resolved_change_review_service.close()
@@ -928,6 +948,7 @@ def create_app(
     app.include_router(support_bundles.router, prefix="/api/v1")
     app.include_router(recovery.router, prefix="/api/v1")
     app.include_router(upgrades.router, prefix="/api/v1")
+    app.include_router(mcp_builder.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

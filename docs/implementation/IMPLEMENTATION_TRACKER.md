@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-046 |
 | Title | Governed MCP Builder project and OpenAPI source-analysis foundation |
-| Status | In Progress |
+| Status | Validation Complete |
 | Branch | `agent/mcp-builder-openapi-analysis` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-002, ATLAS-003, ATLAS-014, ATLAS-015, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056 |
 | Last Updated | 2026-08-05 |
-| Next Action | Implement and validate quarantined OpenAPI source analysis without connector generation or runtime trust |
+| Next Action | Open the implementation PR and complete GitHub CI validation |
 
 ### ATLAS-IMP-046 Scope Rationale
 
@@ -67,7 +67,24 @@
 
 ### ATLAS-IMP-046 Validation Evidence
 
-- Pending implementation and validation.
+- Domain, application, API, authorization, audit, memory, PostgreSQL, and migration coverage verifies
+  exact human identity, MFA, role, organization, and environment scope; immutable source attribution;
+  idempotent replay; canonical digests; source integrity; and fail-closed required audit behavior.
+- The bounded OpenAPI 3.0/3.1 JSON analyzer rejects duplicate keys, embedded credentials including
+  URL user information and secret query parameters, excessive structures, unsupported versions, and
+  unresolved references. Document-level blocking findings propagate to every candidate; only explicit,
+  authenticated, non-ambiguous read operations can remain `C1`, while write or uncertain operations are
+  quarantined as blocked `C5` candidates.
+- Full backend verification passes Ruff, strict mypy across 348 source files, one Alembic head at
+  `20260805_0018`, and 389 pytest tests with three existing Windows symbolic-link skips. Full frontend
+  verification passes ESLint, TypeScript, all 35 Vitest tests, and the production build.
+- Live enterprise-style LDAP validation created deterministic project
+  `mcp-builder-project.0e66a6e1f2c1051ee1aa934b` with HTTP 201 and `Cache-Control: no-store`.
+  Its explicit read candidate remained `C1`; network requests, model inference, runtime trust, connector
+  generation, and source disclosure all remained false.
+- The MCP Builder workspace was inspected at desktop and 390-by-844 mobile viewports with no incoherent
+  overlap or browser warning/error logs. The UI exposes source metadata, analysis evidence, findings,
+  and capability classifications without generation, installation, enablement, or execution controls.
 
 ### ATLAS-IMP-045 Scope Rationale
 

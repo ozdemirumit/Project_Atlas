@@ -26,6 +26,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -36,9 +37,358 @@ button {
 
 button:focus-visible,
 input:focus-visible,
+select:focus-visible,
 textarea:focus-visible {
   outline: 2px solid #168477;
   outline-offset: 2px;
+}
+
+.mcp-builder-workspace {
+  min-width: 0;
+  overflow: auto;
+  padding: 18px;
+}
+
+.mcp-builder-section {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.mcp-builder-form {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border-top: 1px solid #dce4e1;
+}
+
+.mcp-builder-fields {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.mcp-builder-fields label,
+.mcp-builder-fields label > span {
+  display: grid;
+}
+
+.mcp-builder-fields label {
+  min-width: 0;
+  gap: 6px;
+}
+
+.mcp-builder-fields label > span {
+  color: #61716d;
+  font-size: 9px;
+  font-weight: 720;
+  text-transform: uppercase;
+}
+
+.mcp-builder-fields input,
+.mcp-builder-fields select {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 10px;
+  color: #24332f;
+  background: #ffffff;
+  border: 1px solid #cbd7d3;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.mcp-builder-source {
+  display: grid;
+  gap: 10px;
+}
+
+.mcp-builder-file {
+  display: flex;
+  min-height: 74px;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  color: #34544d;
+  background: #f6f9f8;
+  border: 1px dashed #aebfba;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.mcp-builder-file > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.mcp-builder-file strong,
+.mcp-builder-file small {
+  overflow-wrap: anywhere;
+}
+
+.mcp-builder-file strong {
+  font-size: 11px;
+}
+
+.mcp-builder-file small {
+  color: #6d7c78;
+  font-size: 9px;
+}
+
+.mcp-builder-file input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.mcp-builder-source > p {
+  margin: 0;
+  color: #934444;
+  font-size: 10px;
+}
+
+.mcp-builder-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #52625e;
+  font-size: 10px;
+}
+
+.mcp-builder-check input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #168477;
+}
+
+.mcp-builder-boundary {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  color: #38534d;
+  background: #eef5f2;
+  border-left: 3px solid #3b8a79;
+}
+
+.mcp-builder-boundary svg {
+  flex: 0 0 auto;
+}
+
+.mcp-builder-boundary p {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.mcp-builder-submit {
+  justify-self: end;
+}
+
+.mcp-builder-results {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-top: 1px solid #dce4e1;
+}
+
+.mcp-builder-result-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.mcp-builder-result-heading h3,
+.mcp-builder-result-heading p {
+  margin: 0;
+}
+
+.mcp-builder-result-heading h3 {
+  margin: 3px 0 5px;
+  font-size: 14px;
+}
+
+.mcp-builder-result-heading code {
+  color: #6d7a76;
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+
+.state-badge.analyzed {
+  color: #246553;
+  background: #e7f3ee;
+  border-color: #bad9cc;
+}
+
+.state-badge.needs_clarification {
+  color: #7a5415;
+  background: #fbf2dc;
+  border-color: #e5cf91;
+}
+
+.mcp-builder-facts {
+  display: grid;
+  gap: 1px;
+  background: #dce4e1;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.mcp-builder-facts > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.mcp-builder-facts span {
+  color: #71807c;
+  font-size: 8px;
+  font-weight: 720;
+  text-transform: uppercase;
+}
+
+.mcp-builder-facts strong {
+  font-size: 13px;
+}
+
+.mcp-builder-candidates,
+.mcp-builder-findings {
+  display: grid;
+  gap: 8px;
+}
+
+.mcp-builder-candidates article {
+  display: grid;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: #ffffff;
+  border: 1px solid #d8e0dd;
+  border-radius: 5px;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+}
+
+.mcp-builder-candidates article > div {
+  min-width: 0;
+}
+
+.mcp-builder-candidates strong,
+.mcp-builder-candidates p,
+.mcp-builder-candidates code {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.mcp-builder-candidates strong {
+  font-size: 11px;
+}
+
+.mcp-builder-candidates p {
+  margin: 3px 0;
+  color: #62716d;
+  font-size: 9px;
+}
+
+.mcp-builder-candidates code,
+.mcp-builder-candidates article > span:last-child {
+  color: #74817e;
+  font-size: 8px;
+}
+
+.capability-class {
+  display: grid;
+  width: 34px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.capability-class.c0,
+.capability-class.c1 {
+  color: #21624f;
+  background: #e9f4ef;
+  border-color: #bddacd;
+}
+
+.capability-class.c5 {
+  color: #8b3f3f;
+  background: #faecea;
+  border-color: #e4c0bc;
+}
+
+.mcp-builder-findings > div {
+  display: grid;
+  min-width: 0;
+  align-items: start;
+  gap: 9px;
+  padding: 10px;
+  color: #704a28;
+  background: #fff9eb;
+  border-left: 3px solid #bc8533;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.mcp-builder-findings span,
+.mcp-builder-findings strong {
+  display: block;
+  font-size: 9px;
+}
+
+.mcp-builder-findings code {
+  max-width: 260px;
+  overflow-wrap: anywhere;
+  color: #806c52;
+  font-size: 8px;
+}
+
+@media (max-width: 900px) {
+  .mcp-builder-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .mcp-builder-workspace,
+  .mcp-builder-form,
+  .mcp-builder-results {
+    padding: 12px;
+  }
+
+  .mcp-builder-fields,
+  .mcp-builder-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .mcp-builder-result-heading,
+  .mcp-builder-candidates article {
+    align-items: flex-start;
+  }
+
+  .mcp-builder-candidates article {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .mcp-builder-candidates article > span:last-child {
+    grid-column: 2;
+  }
+
+  .mcp-builder-findings > div {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .mcp-builder-findings code {
+    max-width: none;
+    grid-column: 2;
+  }
 }
 
 .login-shell {
