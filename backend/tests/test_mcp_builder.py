@@ -24,6 +24,9 @@ from atlas.modules.identity.domain.models import (
 from atlas.modules.mcp_builder.adapters.design_review_memory import (
     InMemoryMcpBuilderDesignCheckpointRepository,
 )
+from atlas.modules.mcp_builder.adapters.domain_review_memory import (
+    InMemoryMcpBuilderDomainReviewRepository,
+)
 from atlas.modules.mcp_builder.adapters.generation_filesystem import (
     FileSystemMcpBuilderArtifactPublisher,
 )
@@ -41,7 +44,11 @@ from atlas.modules.mcp_builder.application.generator import (
     PythonScaffoldGenerator,
 )
 from atlas.modules.mcp_builder.application.ports import McpBuilderArtifactError, McpBuilderError
-from atlas.modules.mcp_builder.application.service import McpBuilderService
+from atlas.modules.mcp_builder.application.service import (
+    DOMAIN_REVIEW_PROFILE,
+    DOMAIN_REVIEWER_CONTRACT_VERSION,
+    McpBuilderService,
+)
 from atlas.modules.mcp_builder.application.validator import (
     VALIDATION_PROFILE,
     VALIDATOR_VERSION,
@@ -51,6 +58,10 @@ from atlas.modules.mcp_builder.domain.design_review import (
     BuilderCapabilityDecision,
     BuilderCapabilityDecisionKind,
     BuilderEntityMapping,
+)
+from atlas.modules.mcp_builder.domain.domain_review import (
+    BuilderDomainCapabilityDecision,
+    BuilderDomainCapabilityDecisionKind,
 )
 from atlas.modules.mcp_builder.domain.models import BuilderProjectState
 
@@ -140,6 +151,7 @@ def service(
             design_repository=design_repository,
             generation_repository=InMemoryMcpBuilderGenerationRepository(),
             validation_repository=InMemoryMcpBuilderValidationRepository(),
+            domain_review_repository=InMemoryMcpBuilderDomainReviewRepository(),
             artifact_publisher=InMemoryMcpBuilderArtifactPublisher(),
             audit_sink=resolved_sink,
             environment_id="environment.test",
@@ -232,6 +244,74 @@ def validation_request(
         "acknowledged_static_only": True,
         "idempotency_key": "mcp-builder-validation-0001",
         "correlation_id": "correlation.mcp-builder-validation",
+    }
+    values.update(overrides)
+    return values
+
+
+def domain_review_request(
+    project: Any,
+    checkpoint: Any,
+    generation: Any,
+    validation: Any,
+    *,
+    decision_kind: BuilderDomainCapabilityDecisionKind = (
+        BuilderDomainCapabilityDecisionKind.ACCEPTED
+    ),
+    **overrides: Any,
+) -> dict[str, Any]:
+    candidate_by_id = {item.candidate_id: item for item in project.capability_candidates}
+    decisions = tuple(
+        BuilderDomainCapabilityDecision(
+            candidate_id=item.candidate_id,
+            confirmed_class=item.confirmed_class,
+            decision=decision_kind,
+            supported_product_versions=project.intended_product_versions,
+            vendor_permission=item.required_permission,
+            authentication_assessment="API key authentication uses an external secret reference.",
+            side_effect_assessment="The operation is read-only and has no documented side effect.",
+            error_behavior_assessment=(
+                "HTTP errors, timeouts, pagination, and rate limits fail closed."
+            ),
+            health_guidance_assessment=(
+                "A successful bounded inventory response is informational health evidence."
+            ),
+            evidence_citations=(candidate_by_id[item.candidate_id].citation,),
+            missing_case_codes=(
+                ()
+                if decision_kind is BuilderDomainCapabilityDecisionKind.ACCEPTED
+                else ("domain.timeout-behavior-missing",)
+            ),
+            rationale=(
+                "Authoritative synthetic API evidence supports the bounded connector behavior."
+                if decision_kind is BuilderDomainCapabilityDecisionKind.ACCEPTED
+                else "The declared gap prevents domain acceptance."
+            ),
+        )
+        for item in checkpoint.capability_decisions
+        if item.generation_eligible
+    )
+    values: dict[str, Any] = {
+        "actor": actor(),
+        "project_id": project.project_id,
+        "project_version": project.version,
+        "project_digest": project.canonical_digest,
+        "source_digest": project.source_digest,
+        "checkpoint_id": checkpoint.checkpoint_id,
+        "checkpoint_digest": checkpoint.canonical_digest,
+        "generation_id": generation.generation_id,
+        "generation_digest": generation.canonical_digest,
+        "artifact_digest": generation.artifact_digest,
+        "validation_id": validation.validation_id,
+        "validation_digest": validation.canonical_digest,
+        "validation_profile": validation.validation_profile,
+        "validator_version": validation.validator_version,
+        "review_profile": DOMAIN_REVIEW_PROFILE,
+        "acknowledged_human_domain_decision": True,
+        "capability_decisions": decisions,
+        "summary": "Human domain review completed against the exact analyzed source lineage.",
+        "idempotency_key": "mcp-builder-domain-review-0001",
+        "correlation_id": "correlation.mcp-builder-domain-review",
     }
     values.update(overrides)
     return values
@@ -512,6 +592,7 @@ async def test_design_audit_failure_prevents_checkpoint_persistence() -> None:
         design_repository=design_repository,
         generation_repository=InMemoryMcpBuilderGenerationRepository(),
         validation_repository=InMemoryMcpBuilderValidationRepository(),
+        domain_review_repository=InMemoryMcpBuilderDomainReviewRepository(),
         artifact_publisher=InMemoryMcpBuilderArtifactPublisher(),
         audit_sink=FailingAuditSink(),
         environment_id="environment.test",
@@ -534,6 +615,7 @@ async def test_generation_is_deterministic_quarantined_and_structurally_valid() 
         design_repository=design_repository,
         generation_repository=generation_repository,
         validation_repository=InMemoryMcpBuilderValidationRepository(),
+        domain_review_repository=InMemoryMcpBuilderDomainReviewRepository(),
         artifact_publisher=publisher,
         audit_sink=sink,
         environment_id="environment.test",
@@ -630,6 +712,7 @@ async def test_generation_audit_failure_prevents_publication_and_metadata() -> N
         design_repository=design_repository,
         generation_repository=generation_repository,
         validation_repository=InMemoryMcpBuilderValidationRepository(),
+        domain_review_repository=InMemoryMcpBuilderDomainReviewRepository(),
         artifact_publisher=publisher,
         audit_sink=CollectingAuditSink(),
         environment_id="environment.test",
@@ -642,6 +725,7 @@ async def test_generation_audit_failure_prevents_publication_and_metadata() -> N
         design_repository=design_repository,
         generation_repository=generation_repository,
         validation_repository=InMemoryMcpBuilderValidationRepository(),
+        domain_review_repository=InMemoryMcpBuilderDomainReviewRepository(),
         artifact_publisher=publisher,
         audit_sink=FailingAuditSink(),
         environment_id="environment.test",
@@ -666,6 +750,7 @@ async def test_static_validation_passes_replays_and_grants_no_downstream_authori
         design_repository=design_repository,
         generation_repository=generation_repository,
         validation_repository=validation_repository,
+        domain_review_repository=InMemoryMcpBuilderDomainReviewRepository(),
         artifact_publisher=publisher,
         audit_sink=sink,
         environment_id="environment.test",
@@ -747,6 +832,7 @@ async def test_static_validation_records_artifact_failure_and_skips_dependents()
         design_repository=InMemoryMcpBuilderDesignCheckpointRepository(),
         generation_repository=InMemoryMcpBuilderGenerationRepository(),
         validation_repository=validation_repository,
+        domain_review_repository=InMemoryMcpBuilderDomainReviewRepository(),
         artifact_publisher=publisher,
         audit_sink=CollectingAuditSink(),
         environment_id="environment.test",
@@ -814,6 +900,7 @@ async def test_static_validation_audit_failure_prevents_persistence() -> None:
         design_repository=design_repository,
         generation_repository=generation_repository,
         validation_repository=validation_repository,
+        domain_review_repository=InMemoryMcpBuilderDomainReviewRepository(),
         artifact_publisher=publisher,
         audit_sink=CollectingAuditSink(),
         environment_id="environment.test",
@@ -827,6 +914,7 @@ async def test_static_validation_audit_failure_prevents_persistence() -> None:
         design_repository=design_repository,
         generation_repository=generation_repository,
         validation_repository=validation_repository,
+        domain_review_repository=InMemoryMcpBuilderDomainReviewRepository(),
         artifact_publisher=publisher,
         audit_sink=FailingAuditSink(),
         environment_id="environment.test",
@@ -838,6 +926,248 @@ async def test_static_validation_audit_failure_prevents_persistence() -> None:
             **validation_request(project, checkpoint, generation)
         )
     assert await validation_repository.get_by_project(project_id=project.project_id) is None
+
+
+@pytest.mark.asyncio
+async def test_domain_review_accepts_replays_and_grants_no_downstream_authority() -> None:
+    project_repository = InMemoryMcpBuilderProjectRepository()
+    design_repository = InMemoryMcpBuilderDesignCheckpointRepository()
+    generation_repository = InMemoryMcpBuilderGenerationRepository()
+    validation_repository = InMemoryMcpBuilderValidationRepository()
+    domain_repository = InMemoryMcpBuilderDomainReviewRepository()
+    publisher = InMemoryMcpBuilderArtifactPublisher()
+    sink = CollectingAuditSink()
+    builder = McpBuilderService(
+        repository=project_repository,
+        design_repository=design_repository,
+        generation_repository=generation_repository,
+        validation_repository=validation_repository,
+        domain_review_repository=domain_repository,
+        artifact_publisher=publisher,
+        audit_sink=sink,
+        environment_id="environment.test",
+        clock=lambda: NOW,
+    )
+    project = await builder.create_project(**create_request())
+    checkpoint = await builder.create_design_checkpoint(**design_request(project))
+    generation = await builder.create_generation(**generation_request(project, checkpoint))
+    validation = await builder.create_validation(
+        **validation_request(project, checkpoint, generation)
+    )
+
+    review = await builder.create_domain_review(
+        **domain_review_request(project, checkpoint, generation, validation)
+    )
+    replay = await builder.create_domain_review(
+        **domain_review_request(project, checkpoint, generation, validation)
+    )
+    loaded = await builder.get_domain_review(
+        actor=actor(),
+        project_id=project.project_id,
+        correlation_id="correlation.mcp-builder-domain-review-read",
+    )
+
+    assert review.state.value == "accepted"
+    assert review.review_profile == DOMAIN_REVIEW_PROFILE
+    assert review.reviewer_contract_version == DOMAIN_REVIEWER_CONTRACT_VERSION
+    assert review.accepted_count == 1
+    assert review.needs_evidence_count == 0
+    assert review.rejected_count == 0
+    assert review.domain_review_completed is True
+    assert review.domain_review_accepted is True
+    assert replay == replace(review, reused=True)
+    assert loaded == review
+    for attribute in (
+        "security_review_completed",
+        "lab_validation_completed",
+        "candidate_package_created",
+        "connector_registered",
+        "connector_installed",
+        "connector_enabled",
+        "network_request_performed",
+        "model_inference_performed",
+        "dependency_resolution_performed",
+        "runtime_self_test_performed",
+        "subprocess_invoked",
+        "dynamic_code_execution_performed",
+        "runtime_trust_granted",
+        "execution_authorized",
+        "infrastructure_mutation_performed",
+    ):
+        assert getattr(review, attribute) is False
+    assert sink.records[-1].result_code == "mcp_builder_domain_review_read"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("decision_kind", "expected_state", "expected_count"),
+    [
+        (BuilderDomainCapabilityDecisionKind.NEEDS_EVIDENCE, "needs_evidence", 1),
+        (BuilderDomainCapabilityDecisionKind.REJECTED, "rejected", 1),
+    ],
+)
+async def test_domain_review_derives_non_accepting_states(
+    decision_kind: BuilderDomainCapabilityDecisionKind,
+    expected_state: str,
+    expected_count: int,
+) -> None:
+    builder, _, _, _ = service()
+    project = await builder.create_project(**create_request())
+    checkpoint = await builder.create_design_checkpoint(**design_request(project))
+    generation = await builder.create_generation(**generation_request(project, checkpoint))
+    validation = await builder.create_validation(
+        **validation_request(project, checkpoint, generation)
+    )
+
+    review = await builder.create_domain_review(
+        **domain_review_request(
+            project,
+            checkpoint,
+            generation,
+            validation,
+            decision_kind=decision_kind,
+        )
+    )
+
+    assert review.state.value == expected_state
+    assert review.domain_review_accepted is False
+    assert getattr(review, f"{expected_state}_count") == expected_count
+
+
+@pytest.mark.asyncio
+async def test_domain_review_rejects_stale_profile_ack_and_semantic_mismatches() -> None:
+    builder, _, _, _ = service()
+    project = await builder.create_project(**create_request())
+    checkpoint = await builder.create_design_checkpoint(**design_request(project))
+    generation = await builder.create_generation(**generation_request(project, checkpoint))
+    validation = await builder.create_validation(
+        **validation_request(project, checkpoint, generation)
+    )
+    request = domain_review_request(project, checkpoint, generation, validation)
+    decision = request["capability_decisions"][0]
+
+    cases = (
+        ({"validation_digest": "0" * 64}, "builder_domain_review_source_stale"),
+        (
+            {"review_profile": "atlas.domain-review.unsupported.v1"},
+            "builder_domain_review_profile_unsupported",
+        ),
+        (
+            {"acknowledged_human_domain_decision": False},
+            "builder_domain_review_human_acknowledgement_required",
+        ),
+        (
+            {"capability_decisions": (replace(decision, vendor_permission="storage.admin"),)},
+            "builder_domain_review_permission_mismatch",
+        ),
+        (
+            {"capability_decisions": (replace(decision, evidence_citations=("source.foreign",)),)},
+            "builder_domain_review_evidence_lineage_mismatch",
+        ),
+        (
+            {"capability_decisions": (replace(decision, supported_product_versions=("9.9",)),)},
+            "builder_domain_review_product_version_mismatch",
+        ),
+    )
+    for overrides, error_code in cases:
+        with pytest.raises(McpBuilderError, match=error_code):
+            await builder.create_domain_review(**{**request, **overrides})
+
+
+@pytest.mark.asyncio
+async def test_domain_review_requires_passed_static_validation() -> None:
+    class FailingReadPublisher(InMemoryMcpBuilderArtifactPublisher):
+        fail_reads = False
+
+        async def read(
+            self,
+            *,
+            generation_id: str,
+            artifact_digest: str,
+            inventory: tuple[Any, ...],
+            relative_path: str,
+        ) -> str:
+            if self.fail_reads:
+                raise McpBuilderArtifactError("builder_generation_artifact_integrity_failed")
+            return await super().read(
+                generation_id=generation_id,
+                artifact_digest=artifact_digest,
+                inventory=inventory,
+                relative_path=relative_path,
+            )
+
+    publisher = FailingReadPublisher()
+    builder = McpBuilderService(
+        repository=InMemoryMcpBuilderProjectRepository(),
+        design_repository=InMemoryMcpBuilderDesignCheckpointRepository(),
+        generation_repository=InMemoryMcpBuilderGenerationRepository(),
+        validation_repository=InMemoryMcpBuilderValidationRepository(),
+        domain_review_repository=InMemoryMcpBuilderDomainReviewRepository(),
+        artifact_publisher=publisher,
+        audit_sink=CollectingAuditSink(),
+        environment_id="environment.test",
+        clock=lambda: NOW,
+    )
+    project = await builder.create_project(**create_request())
+    checkpoint = await builder.create_design_checkpoint(**design_request(project))
+    generation = await builder.create_generation(**generation_request(project, checkpoint))
+    publisher.fail_reads = True
+    validation = await builder.create_validation(
+        **validation_request(project, checkpoint, generation)
+    )
+
+    with pytest.raises(McpBuilderError, match="builder_domain_review_static_validation_required"):
+        await builder.create_domain_review(
+            **domain_review_request(project, checkpoint, generation, validation)
+        )
+
+
+@pytest.mark.asyncio
+async def test_domain_review_audit_failure_prevents_persistence() -> None:
+    class FailingAuditSink(CollectingAuditSink):
+        async def record(self, event: Any) -> None:
+            raise RuntimeError("audit unavailable")
+
+    project_repository = InMemoryMcpBuilderProjectRepository()
+    design_repository = InMemoryMcpBuilderDesignCheckpointRepository()
+    generation_repository = InMemoryMcpBuilderGenerationRepository()
+    validation_repository = InMemoryMcpBuilderValidationRepository()
+    domain_repository = InMemoryMcpBuilderDomainReviewRepository()
+    publisher = InMemoryMcpBuilderArtifactPublisher()
+    builder = McpBuilderService(
+        repository=project_repository,
+        design_repository=design_repository,
+        generation_repository=generation_repository,
+        validation_repository=validation_repository,
+        domain_review_repository=domain_repository,
+        artifact_publisher=publisher,
+        audit_sink=CollectingAuditSink(),
+        environment_id="environment.test",
+        clock=lambda: NOW,
+    )
+    project = await builder.create_project(**create_request())
+    checkpoint = await builder.create_design_checkpoint(**design_request(project))
+    generation = await builder.create_generation(**generation_request(project, checkpoint))
+    validation = await builder.create_validation(
+        **validation_request(project, checkpoint, generation)
+    )
+    failing_builder = McpBuilderService(
+        repository=project_repository,
+        design_repository=design_repository,
+        generation_repository=generation_repository,
+        validation_repository=validation_repository,
+        domain_review_repository=domain_repository,
+        artifact_publisher=publisher,
+        audit_sink=FailingAuditSink(),
+        environment_id="environment.test",
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        await failing_builder.create_domain_review(
+            **domain_review_request(project, checkpoint, generation, validation)
+        )
+    assert await domain_repository.get_by_project(project_id=project.project_id) is None
 
 
 @pytest.mark.asyncio
@@ -1089,6 +1419,84 @@ def test_api_requires_csrf_and_returns_secret_free_no_store_evidence(tmp_path: P
             },
         )
         read_validation = client.get(f"/api/v1/mcp-builder/projects/{project_id}/validation")
+        validation_data = created_validation.json()["data"]
+        domain_review_payload = {
+            "schema_version": "atlas.mcp-builder-domain-review-request.v1",
+            "project_version": project_data["version"],
+            "project_digest": project_data["canonical_digest"],
+            "source_digest": project_data["source_digest"],
+            "checkpoint_id": checkpoint_data["checkpoint_id"],
+            "checkpoint_digest": checkpoint_data["canonical_digest"],
+            "generation_id": generation_data["generation_id"],
+            "generation_digest": generation_data["canonical_digest"],
+            "artifact_digest": generation_data["artifact_digest"],
+            "validation_id": validation_data["validation_id"],
+            "validation_digest": validation_data["canonical_digest"],
+            "validation_profile": validation_data["validation_profile"],
+            "validator_version": validation_data["validator_version"],
+            "review_profile": DOMAIN_REVIEW_PROFILE,
+            "acknowledged_human_domain_decision": True,
+            "capability_decisions": [
+                {
+                    "candidate_id": candidate["candidate_id"],
+                    "confirmed_class": candidate["proposed_capability_class"],
+                    "decision": "accepted",
+                    "supported_product_versions": project_data["intended_product_versions"],
+                    "vendor_permission": "storage.system.read",
+                    "authentication_assessment": (
+                        "API key authentication uses an external secret reference."
+                    ),
+                    "side_effect_assessment": (
+                        "The operation is read-only and has no documented side effect."
+                    ),
+                    "error_behavior_assessment": (
+                        "HTTP errors, timeouts, pagination, and rate limits fail closed."
+                    ),
+                    "health_guidance_assessment": (
+                        "A bounded inventory response is informational health evidence."
+                    ),
+                    "evidence_citations": [candidate["citation"]],
+                    "missing_case_codes": [],
+                    "rationale": (
+                        "Authoritative synthetic API evidence supports the bounded behavior."
+                    ),
+                }
+            ],
+            "summary": "Human domain review completed against exact source lineage.",
+        }
+        denied_domain_review = client.post(
+            f"/api/v1/mcp-builder/projects/{project_id}/domain-reviews",
+            json=domain_review_payload,
+            headers={"Idempotency-Key": "mcp-builder-domain-review-api-0001"},
+        )
+        unsupported_domain_review = client.post(
+            f"/api/v1/mcp-builder/projects/{project_id}/domain-reviews",
+            json={
+                **domain_review_payload,
+                "review_profile": "atlas.domain-review.unsupported.v1",
+            },
+            headers={
+                "Idempotency-Key": "mcp-builder-domain-review-api-unsupported",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+        )
+        stale_domain_review = client.post(
+            f"/api/v1/mcp-builder/projects/{project_id}/domain-reviews",
+            json={**domain_review_payload, "validation_digest": "0" * 64},
+            headers={
+                "Idempotency-Key": "mcp-builder-domain-review-api-stale",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+        )
+        created_domain_review = client.post(
+            f"/api/v1/mcp-builder/projects/{project_id}/domain-reviews",
+            json=domain_review_payload,
+            headers={
+                "Idempotency-Key": "mcp-builder-domain-review-api-0001",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+        )
+        read_domain_review = client.get(f"/api/v1/mcp-builder/projects/{project_id}/domain-review")
 
     assert denied.status_code == 403
     assert created.status_code == 201
@@ -1105,6 +1513,11 @@ def test_api_requires_csrf_and_returns_secret_free_no_store_evidence(tmp_path: P
     assert stale_validation.status_code == 409
     assert created_validation.status_code == 201
     assert read_validation.status_code == 200
+    assert denied_domain_review.status_code == 403
+    assert unsupported_domain_review.status_code == 422
+    assert stale_domain_review.status_code == 409
+    assert created_domain_review.status_code == 201
+    assert read_domain_review.status_code == 200
     assert created.headers["Cache-Control"] == "no-store"
     assert read.headers["Cache-Control"] == "no-store"
     assert created_design.headers["Cache-Control"] == "no-store"
@@ -1114,6 +1527,8 @@ def test_api_requires_csrf_and_returns_secret_free_no_store_evidence(tmp_path: P
     assert read_file.headers["Cache-Control"] == "no-store"
     assert created_validation.headers["Cache-Control"] == "no-store"
     assert read_validation.headers["Cache-Control"] == "no-store"
+    assert created_domain_review.headers["Cache-Control"] == "no-store"
+    assert read_domain_review.headers["Cache-Control"] == "no-store"
     assert created.json()["data"]["state"] == "analyzed"
     assert created.json()["data"]["capability_candidates"][0]["proposed_capability_class"] == "C1"
     for forbidden in ("canonical_source_json", "source_document", "request_fingerprint"):
@@ -1136,7 +1551,6 @@ def test_api_requires_csrf_and_returns_secret_free_no_store_evidence(tmp_path: P
     assert read_file.json()["data"]["content_verified"] is True
     assert read_file.json()["data"]["quarantined"] is True
     assert project_data["source_digest"] in read_file.json()["data"]["content"]
-    validation_data = created_validation.json()["data"]
     assert validation_data["state"] == "passed"
     assert validation_data["validation_completed"] is True
     assert validation_data["static_validation_passed"] is True
@@ -1165,3 +1579,31 @@ def test_api_requires_csrf_and_returns_secret_free_no_store_evidence(tmp_path: P
         "infrastructure_mutation_performed",
     ):
         assert validation_data[field] is False
+    domain_review_data = created_domain_review.json()["data"]
+    assert domain_review_data["state"] == "accepted"
+    assert domain_review_data["review_profile"] == DOMAIN_REVIEW_PROFILE
+    assert domain_review_data["reviewer_contract_version"] == DOMAIN_REVIEWER_CONTRACT_VERSION
+    assert domain_review_data["domain_review_completed"] is True
+    assert domain_review_data["domain_review_accepted"] is True
+    assert domain_review_data["accepted_count"] == 1
+    assert domain_review_data["needs_evidence_count"] == 0
+    assert domain_review_data["rejected_count"] == 0
+    assert domain_review_data["capability_decisions"][0]["decision"] == "accepted"
+    for field in (
+        "security_review_completed",
+        "lab_validation_completed",
+        "candidate_package_created",
+        "connector_registered",
+        "connector_installed",
+        "connector_enabled",
+        "network_request_performed",
+        "model_inference_performed",
+        "dependency_resolution_performed",
+        "runtime_self_test_performed",
+        "subprocess_invoked",
+        "dynamic_code_execution_performed",
+        "runtime_trust_granted",
+        "execution_authorized",
+        "infrastructure_mutation_performed",
+    ):
+        assert domain_review_data[field] is False

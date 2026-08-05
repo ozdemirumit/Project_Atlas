@@ -248,6 +248,85 @@ export type McpBuilderValidation = {
   reused: boolean;
 };
 
+export type McpBuilderDomainDecision = {
+  candidateId: string;
+  confirmedClass: "C0" | "C1" | "C5";
+  decision: "accepted" | "needs_evidence" | "rejected";
+  supportedProductVersions: string[];
+  vendorPermission: string;
+  authenticationAssessment: string;
+  sideEffectAssessment: string;
+  errorBehaviorAssessment: string;
+  healthGuidanceAssessment: string;
+  evidenceCitations: string[];
+  missingCaseCodes: string[];
+  rationale: string;
+};
+
+export type McpBuilderDomainReview = {
+  review_id: string;
+  schema_version: "atlas.mcp-builder-domain-review.v1";
+  version: 1;
+  state: "accepted" | "needs_evidence" | "rejected";
+  project_id: string;
+  project_version: 1;
+  project_digest: string;
+  source_digest: string;
+  checkpoint_id: string;
+  checkpoint_digest: string;
+  generation_id: string;
+  generation_digest: string;
+  artifact_digest: string;
+  validation_id: string;
+  validation_digest: string;
+  validation_profile: "atlas.static-validation.python312.v1";
+  validator_version: "mcp-builder-static-validator.v1";
+  organization_id: string;
+  environment_id: string;
+  reviewed_by: string;
+  review_profile: "atlas.domain-review.connector.v1";
+  reviewer_contract_version: "mcp-builder-domain-review.v1";
+  capability_decisions: Array<{
+    candidate_id: string;
+    confirmed_class: "C0" | "C1" | "C5";
+    decision: "accepted" | "needs_evidence" | "rejected";
+    supported_product_versions: string[];
+    vendor_permission: string;
+    authentication_assessment: string;
+    side_effect_assessment: string;
+    error_behavior_assessment: string;
+    health_guidance_assessment: string;
+    evidence_citations: string[];
+    missing_case_codes: string[];
+    rationale: string;
+  }>;
+  accepted_count: number;
+  needs_evidence_count: number;
+  rejected_count: number;
+  summary: string;
+  limitations: string[];
+  canonical_digest: string;
+  completed_at: string;
+  domain_review_completed: true;
+  domain_review_accepted: boolean;
+  security_review_completed: false;
+  lab_validation_completed: false;
+  candidate_package_created: false;
+  connector_registered: false;
+  connector_installed: false;
+  connector_enabled: false;
+  network_request_performed: false;
+  model_inference_performed: false;
+  dependency_resolution_performed: false;
+  runtime_self_test_performed: false;
+  subprocess_invoked: false;
+  dynamic_code_execution_performed: false;
+  runtime_trust_granted: false;
+  execution_authorized: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -449,6 +528,89 @@ function isSafeValidation(value: unknown): value is { data: McpBuilderValidation
   );
 }
 
+function isSafeDomainDecision(
+  value: unknown,
+): value is McpBuilderDomainReview["capability_decisions"][number] {
+  return (
+    isRecord(value) &&
+    typeof value.candidate_id === "string" &&
+    ["C0", "C1", "C5"].includes(String(value.confirmed_class)) &&
+    ["accepted", "needs_evidence", "rejected"].includes(String(value.decision)) &&
+    Array.isArray(value.supported_product_versions) &&
+    value.supported_product_versions.every((item) => typeof item === "string") &&
+    typeof value.vendor_permission === "string" &&
+    typeof value.authentication_assessment === "string" &&
+    typeof value.side_effect_assessment === "string" &&
+    typeof value.error_behavior_assessment === "string" &&
+    typeof value.health_guidance_assessment === "string" &&
+    Array.isArray(value.evidence_citations) &&
+    value.evidence_citations.every((item) => typeof item === "string") &&
+    Array.isArray(value.missing_case_codes) &&
+    value.missing_case_codes.every((item) => typeof item === "string") &&
+    typeof value.rationale === "string"
+  );
+}
+
+function isSafeDomainReview(value: unknown): value is { data: McpBuilderDomainReview } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const review = value.data;
+  const noAuthority = [
+    review.security_review_completed,
+    review.lab_validation_completed,
+    review.candidate_package_created,
+    review.connector_registered,
+    review.connector_installed,
+    review.connector_enabled,
+    review.network_request_performed,
+    review.model_inference_performed,
+    review.dependency_resolution_performed,
+    review.runtime_self_test_performed,
+    review.subprocess_invoked,
+    review.dynamic_code_execution_performed,
+    review.runtime_trust_granted,
+    review.execution_authorized,
+    review.infrastructure_mutation_performed,
+  ];
+  if (
+    !Array.isArray(review.capability_decisions) ||
+    review.capability_decisions.length === 0 ||
+    !review.capability_decisions.every(isSafeDomainDecision)
+  ) {
+    return false;
+  }
+  const accepted = review.capability_decisions.filter(
+    (item) => item.decision === "accepted",
+  ).length;
+  const needsEvidence = review.capability_decisions.filter(
+    (item) => item.decision === "needs_evidence",
+  ).length;
+  const rejected = review.capability_decisions.filter(
+    (item) => item.decision === "rejected",
+  ).length;
+  const expectedState = rejected ? "rejected" : needsEvidence ? "needs_evidence" : "accepted";
+  return (
+    review.schema_version === "atlas.mcp-builder-domain-review.v1" &&
+    review.version === 1 &&
+    review.state === expectedState &&
+    review.review_profile === "atlas.domain-review.connector.v1" &&
+    review.reviewer_contract_version === "mcp-builder-domain-review.v1" &&
+    review.validation_profile === "atlas.static-validation.python312.v1" &&
+    review.validator_version === "mcp-builder-static-validator.v1" &&
+    review.domain_review_completed === true &&
+    review.domain_review_accepted === (review.state === "accepted") &&
+    review.accepted_count === accepted &&
+    review.needs_evidence_count === needsEvidence &&
+    review.rejected_count === rejected &&
+    typeof review.review_id === "string" &&
+    typeof review.reviewed_by === "string" &&
+    typeof review.canonical_digest === "string" &&
+    Array.isArray(review.limitations) &&
+    review.limitations.length > 0 &&
+    review.limitations.every((item) => typeof item === "string") &&
+    noAuthority.every((flag) => flag === false)
+  );
+}
+
 function nonce(): string {
   return typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
 }
@@ -609,6 +771,65 @@ export async function createMcpBuilderValidation(input: {
   const payload: unknown = await response.json();
   if (!isSafeValidation(payload)) {
     throw new Error("MCP Builder returned unsafe validation data");
+  }
+  return payload;
+}
+
+export async function createMcpBuilderDomainReview(input: {
+  project: McpBuilderProject;
+  checkpoint: McpBuilderDesignCheckpoint;
+  generation: McpBuilderGeneration;
+  validation: McpBuilderValidation;
+  decisions: McpBuilderDomainDecision[];
+  summary: string;
+}) {
+  const response = await apiFetch(
+    `/api/v1/mcp-builder/projects/${input.project.project_id}/domain-reviews`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": `mcp-builder-domain-review.${nonce()}`,
+      },
+      body: JSON.stringify({
+        schema_version: "atlas.mcp-builder-domain-review-request.v1",
+        project_version: input.project.version,
+        project_digest: input.project.canonical_digest,
+        source_digest: input.project.source_digest,
+        checkpoint_id: input.checkpoint.checkpoint_id,
+        checkpoint_digest: input.checkpoint.canonical_digest,
+        generation_id: input.generation.generation_id,
+        generation_digest: input.generation.canonical_digest,
+        artifact_digest: input.generation.artifact_digest,
+        validation_id: input.validation.validation_id,
+        validation_digest: input.validation.canonical_digest,
+        validation_profile: input.validation.validation_profile,
+        validator_version: input.validation.validator_version,
+        review_profile: "atlas.domain-review.connector.v1",
+        acknowledged_human_domain_decision: true,
+        capability_decisions: input.decisions.map((decision) => ({
+          candidate_id: decision.candidateId,
+          confirmed_class: decision.confirmedClass,
+          decision: decision.decision,
+          supported_product_versions: decision.supportedProductVersions,
+          vendor_permission: decision.vendorPermission,
+          authentication_assessment: decision.authenticationAssessment,
+          side_effect_assessment: decision.sideEffectAssessment,
+          error_behavior_assessment: decision.errorBehaviorAssessment,
+          health_guidance_assessment: decision.healthGuidanceAssessment,
+          evidence_citations: decision.evidenceCitations,
+          missing_case_codes: decision.missingCaseCodes,
+          rationale: decision.rationale,
+        })),
+        summary: input.summary,
+      }),
+    },
+  );
+  if (!response.ok) throw new Error(`MCP Builder domain review failed with ${response.status}`);
+  const payload: unknown = await response.json();
+  if (!isSafeDomainReview(payload)) {
+    throw new Error("MCP Builder returned an unsafe domain review");
   }
   return payload;
 }

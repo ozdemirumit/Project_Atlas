@@ -32,6 +32,7 @@ from atlas.modules.mcp_builder.application.ports import (
     McpBuilderArtifactError,
     McpBuilderArtifactPublisher,
     McpBuilderDesignCheckpointRepository,
+    McpBuilderDomainReviewRepository,
     McpBuilderError,
     McpBuilderGenerationRepository,
     McpBuilderProjectRepository,
@@ -47,6 +48,12 @@ from atlas.modules.mcp_builder.domain.design_review import (
     BuilderCapabilityDecisionKind,
     BuilderEntityMapping,
     McpBuilderDesignCheckpoint,
+)
+from atlas.modules.mcp_builder.domain.domain_review import (
+    BuilderDomainCapabilityDecision,
+    BuilderDomainCapabilityDecisionKind,
+    BuilderDomainReviewState,
+    McpBuilderDomainReview,
 )
 from atlas.modules.mcp_builder.domain.generation import (
     BuilderGeneratedFile,
@@ -72,6 +79,15 @@ GENERATION_SCHEMA = "atlas.mcp-builder-generation.v1"
 VALIDATION_CREATE_PERMISSION = "mcp-builder.validation.create"
 VALIDATION_READ_PERMISSION = "mcp-builder.validation.read"
 VALIDATION_SCHEMA = "atlas.mcp-builder-validation.v1"
+DOMAIN_REVIEW_CREATE_PERMISSION = "mcp-builder.domain-review.create"
+DOMAIN_REVIEW_READ_PERMISSION = "mcp-builder.domain-review.read"
+DOMAIN_REVIEW_SCHEMA = "atlas.mcp-builder-domain-review.v1"
+DOMAIN_REVIEW_PROFILE = "atlas.domain-review.connector.v1"
+DOMAIN_REVIEWER_CONTRACT_VERSION = "mcp-builder-domain-review.v1"
+DOMAIN_REVIEW_LIMITATIONS = (
+    "Human domain review does not prove vendor runtime behavior.",
+    "Security review, lab validation, and candidate package approval remain required.",
+)
 
 
 class McpBuilderService:
@@ -82,6 +98,7 @@ class McpBuilderService:
         design_repository: McpBuilderDesignCheckpointRepository,
         generation_repository: McpBuilderGenerationRepository,
         validation_repository: McpBuilderValidationRepository,
+        domain_review_repository: McpBuilderDomainReviewRepository,
         artifact_publisher: McpBuilderArtifactPublisher,
         audit_sink: AuditSink,
         environment_id: str,
@@ -94,6 +111,7 @@ class McpBuilderService:
         self._design_repository = design_repository
         self._generation_repository = generation_repository
         self._validation_repository = validation_repository
+        self._domain_review_repository = domain_review_repository
         self._artifact_publisher = artifact_publisher
         self._audit_sink = audit_sink
         self._environment_id = environment_id
@@ -107,6 +125,7 @@ class McpBuilderService:
         return self._repository
 
     async def close(self) -> None:
+        await self._domain_review_repository.close()
         await self._validation_repository.close()
         await self._generation_repository.close()
         await self._design_repository.close()
@@ -833,6 +852,232 @@ class McpBuilderService:
         )
         return validation
 
+    async def create_domain_review(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        project_id: str,
+        project_version: int,
+        project_digest: str,
+        source_digest: str,
+        checkpoint_id: str,
+        checkpoint_digest: str,
+        generation_id: str,
+        generation_digest: str,
+        artifact_digest: str,
+        validation_id: str,
+        validation_digest: str,
+        validation_profile: str,
+        validator_version: str,
+        review_profile: str,
+        acknowledged_human_domain_decision: bool,
+        capability_decisions: tuple[BuilderDomainCapabilityDecision, ...],
+        summary: str,
+        idempotency_key: str,
+        correlation_id: str,
+    ) -> McpBuilderDomainReview:
+        self._require_enterprise_human(actor)
+        if not acknowledged_human_domain_decision:
+            raise McpBuilderError("builder_domain_review_human_acknowledgement_required")
+        if not 8 <= len(idempotency_key) <= 128:
+            raise McpBuilderError("builder_domain_review_idempotency_key_invalid")
+        if review_profile != DOMAIN_REVIEW_PROFILE:
+            raise McpBuilderError("builder_domain_review_profile_unsupported")
+
+        project, checkpoint = await self._generation_context(actor=actor, project_id=project_id)
+        generation = await self._generation_for_actor(actor=actor, project_id=project_id)
+        validation = await self._validation_for_actor(actor=actor, project_id=project_id)
+        if validation.state is not BuilderValidationState.PASSED:
+            raise McpBuilderError("builder_domain_review_static_validation_required")
+        if (
+            project.version != project_version
+            or project.canonical_digest != project_digest
+            or project.source_digest != source_digest
+            or checkpoint.checkpoint_id != checkpoint_id
+            or checkpoint.canonical_digest != checkpoint_digest
+            or generation.generation_id != generation_id
+            or generation.canonical_digest != generation_digest
+            or generation.artifact_digest != artifact_digest
+            or validation.validation_id != validation_id
+            or validation.canonical_digest != validation_digest
+            or validation.validation_profile != validation_profile
+            or validation.validator_version != validator_version
+        ):
+            raise McpBuilderError("builder_domain_review_source_stale")
+
+        decisions = self._validated_domain_decisions(
+            capability_decisions,
+            project=project,
+            checkpoint=checkpoint,
+        )
+        accepted_count = sum(
+            item.decision is BuilderDomainCapabilityDecisionKind.ACCEPTED for item in decisions
+        )
+        needs_evidence_count = sum(
+            item.decision is BuilderDomainCapabilityDecisionKind.NEEDS_EVIDENCE
+            for item in decisions
+        )
+        rejected_count = sum(
+            item.decision is BuilderDomainCapabilityDecisionKind.REJECTED for item in decisions
+        )
+        state = (
+            BuilderDomainReviewState.REJECTED
+            if rejected_count
+            else (
+                BuilderDomainReviewState.NEEDS_EVIDENCE
+                if needs_evidence_count
+                else BuilderDomainReviewState.ACCEPTED
+            )
+        )
+        normalized_summary = self._validated_text(summary, "domain_review_summary", 1500)
+        decision_payload = self._domain_decision_payload(decisions)
+        payload = {
+            "project_id": project.project_id,
+            "project_version": project.version,
+            "project_digest": project.canonical_digest,
+            "source_digest": project.source_digest,
+            "checkpoint_id": checkpoint.checkpoint_id,
+            "checkpoint_digest": checkpoint.canonical_digest,
+            "generation_id": generation.generation_id,
+            "generation_digest": generation.canonical_digest,
+            "artifact_digest": generation.artifact_digest,
+            "validation_id": validation.validation_id,
+            "validation_digest": validation.canonical_digest,
+            "validation_profile": validation.validation_profile,
+            "validator_version": validation.validator_version,
+            "organization_id": actor.organization_id,
+            "environment_id": self._environment_id,
+            "reviewed_by": actor.subject_id,
+            "review_profile": review_profile,
+            "reviewer_contract_version": DOMAIN_REVIEWER_CONTRACT_VERSION,
+            "state": state.value,
+            "capability_decisions": decision_payload,
+            "accepted_count": accepted_count,
+            "needs_evidence_count": needs_evidence_count,
+            "rejected_count": rejected_count,
+            "summary": normalized_summary,
+            "limitations": DOMAIN_REVIEW_LIMITATIONS,
+        }
+        fingerprint = self._digest(
+            {
+                **payload,
+                "acknowledged_human_domain_decision": acknowledged_human_domain_decision,
+                "idempotency_key": idempotency_key,
+            }
+        )
+        prior = await self._domain_review_repository.get_by_create_key(
+            reviewed_by=actor.subject_id,
+            idempotency_key=idempotency_key,
+        )
+        if prior is not None:
+            self._verify_domain_review(prior)
+            if prior.request_fingerprint != fingerprint:
+                raise McpBuilderError("builder_domain_review_idempotency_conflict")
+            return replace(prior, reused=True)
+        existing = await self._domain_review_repository.get_by_validation(
+            validation_id=validation.validation_id
+        )
+        if existing is not None:
+            self._verify_domain_review(existing)
+            raise McpBuilderError("builder_domain_review_exists")
+
+        canonical_digest = self._digest(payload)
+        review = McpBuilderDomainReview(
+            review_id=f"mcp-builder-domain-review.{canonical_digest[:24]}",
+            schema_version=DOMAIN_REVIEW_SCHEMA,
+            version=1,
+            state=state,
+            project_id=project.project_id,
+            project_version=project.version,
+            project_digest=project.canonical_digest,
+            source_digest=project.source_digest,
+            checkpoint_id=checkpoint.checkpoint_id,
+            checkpoint_digest=checkpoint.canonical_digest,
+            generation_id=generation.generation_id,
+            generation_digest=generation.canonical_digest,
+            artifact_digest=generation.artifact_digest,
+            validation_id=validation.validation_id,
+            validation_digest=validation.canonical_digest,
+            validation_profile=validation.validation_profile,
+            validator_version=validation.validator_version,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+            reviewed_by=actor.subject_id,
+            review_profile=review_profile,
+            reviewer_contract_version=DOMAIN_REVIEWER_CONTRACT_VERSION,
+            capability_decisions=decisions,
+            accepted_count=accepted_count,
+            needs_evidence_count=needs_evidence_count,
+            rejected_count=rejected_count,
+            summary=normalized_summary,
+            limitations=DOMAIN_REVIEW_LIMITATIONS,
+            canonical_digest=canonical_digest,
+            request_fingerprint=fingerprint,
+            idempotency_key=idempotency_key,
+            completed_at=self._clock(),
+            domain_review_accepted=state is BuilderDomainReviewState.ACCEPTED,
+        )
+        await self._audit_domain_review(
+            actor=actor,
+            correlation_id=correlation_id,
+            permission_id=DOMAIN_REVIEW_CREATE_PERMISSION,
+            result_code=f"mcp_builder_domain_review_{review.state.value}",
+            review=review,
+        )
+        if not await self._domain_review_repository.add(review):
+            raced = await self._domain_review_repository.get_by_create_key(
+                reviewed_by=actor.subject_id,
+                idempotency_key=idempotency_key,
+            )
+            if raced is None or raced.request_fingerprint != fingerprint:
+                raise McpBuilderError("builder_domain_review_idempotency_conflict")
+            self._verify_domain_review(raced)
+            return replace(raced, reused=True)
+        return review
+
+    async def get_domain_review(
+        self, *, actor: AuthenticatedSubject, project_id: str, correlation_id: str
+    ) -> McpBuilderDomainReview:
+        review = await self._domain_review_for_actor(actor=actor, project_id=project_id)
+        await self._audit_domain_review(
+            actor=actor,
+            correlation_id=correlation_id,
+            permission_id=DOMAIN_REVIEW_READ_PERMISSION,
+            result_code="mcp_builder_domain_review_read",
+            review=review,
+        )
+        return review
+
+    async def _domain_review_for_actor(
+        self, *, actor: AuthenticatedSubject, project_id: str
+    ) -> McpBuilderDomainReview:
+        self._require_enterprise_human(actor)
+        review = await self._domain_review_repository.get_by_project(project_id=project_id)
+        if (
+            review is None
+            or review.organization_id != actor.organization_id
+            or review.environment_id != self._environment_id
+        ):
+            raise McpBuilderError("builder_domain_review_not_found")
+        validation = await self._validation_for_actor(actor=actor, project_id=project_id)
+        if (
+            review.project_version != validation.project_version
+            or review.project_digest != validation.project_digest
+            or review.source_digest != validation.source_digest
+            or review.checkpoint_id != validation.checkpoint_id
+            or review.checkpoint_digest != validation.checkpoint_digest
+            or review.generation_id != validation.generation_id
+            or review.generation_digest != validation.generation_digest
+            or review.artifact_digest != validation.artifact_digest
+            or review.validation_id != validation.validation_id
+            or review.validation_digest != validation.canonical_digest
+            or review.validation_profile != validation.validation_profile
+            or review.validator_version != validation.validator_version
+        ):
+            raise McpBuilderError("builder_domain_review_source_stale")
+        self._verify_domain_review(review)
+        return review
+
     async def _validation_for_actor(
         self, *, actor: AuthenticatedSubject, project_id: str
     ) -> McpBuilderValidation:
@@ -1023,6 +1268,59 @@ class McpBuilderService:
             raise McpBuilderError("builder_design_eligible_candidate_required")
         return decisions
 
+    @staticmethod
+    def _validated_domain_decisions(
+        decisions: tuple[BuilderDomainCapabilityDecision, ...],
+        *,
+        project: McpBuilderProject,
+        checkpoint: McpBuilderDesignCheckpoint,
+    ) -> tuple[BuilderDomainCapabilityDecision, ...]:
+        eligible = {
+            item.candidate_id: item
+            for item in checkpoint.capability_decisions
+            if item.generation_eligible
+        }
+        if {item.candidate_id for item in decisions} != set(eligible):
+            raise McpBuilderError("builder_domain_review_candidate_set_mismatch")
+        candidates = {item.candidate_id: item for item in project.capability_candidates}
+        intended_versions = set(project.intended_product_versions)
+        for decision in decisions:
+            checkpoint_decision = eligible[decision.candidate_id]
+            candidate = candidates.get(decision.candidate_id)
+            if candidate is None:
+                raise McpBuilderError("builder_domain_review_candidate_set_mismatch")
+            if decision.confirmed_class is not checkpoint_decision.confirmed_class:
+                raise McpBuilderError("builder_domain_review_risk_class_mismatch")
+            if decision.vendor_permission != checkpoint_decision.required_permission:
+                raise McpBuilderError("builder_domain_review_permission_mismatch")
+            if not set(decision.supported_product_versions).issubset(intended_versions):
+                raise McpBuilderError("builder_domain_review_product_version_mismatch")
+            if decision.evidence_citations != (candidate.citation,):
+                raise McpBuilderError("builder_domain_review_evidence_lineage_mismatch")
+        return tuple(sorted(decisions, key=lambda item: item.candidate_id))
+
+    @staticmethod
+    def _domain_decision_payload(
+        decisions: tuple[BuilderDomainCapabilityDecision, ...],
+    ) -> list[tuple[object, ...]]:
+        return [
+            (
+                item.candidate_id,
+                item.confirmed_class.value,
+                item.decision.value,
+                item.supported_product_versions,
+                item.vendor_permission,
+                item.authentication_assessment,
+                item.side_effect_assessment,
+                item.error_behavior_assessment,
+                item.health_guidance_assessment,
+                item.evidence_citations,
+                item.missing_case_codes,
+                item.rationale,
+            )
+            for item in decisions
+        ]
+
     @classmethod
     def _verify_checkpoint(cls, checkpoint: McpBuilderDesignCheckpoint) -> None:
         payload = {
@@ -1145,6 +1443,46 @@ class McpBuilderService:
             or cls._digest(fingerprint_payload) != validation.request_fingerprint
         ):
             raise McpBuilderError("builder_validation_integrity_failed")
+
+    @classmethod
+    def _verify_domain_review(cls, review: McpBuilderDomainReview) -> None:
+        payload = {
+            "project_id": review.project_id,
+            "project_version": review.project_version,
+            "project_digest": review.project_digest,
+            "source_digest": review.source_digest,
+            "checkpoint_id": review.checkpoint_id,
+            "checkpoint_digest": review.checkpoint_digest,
+            "generation_id": review.generation_id,
+            "generation_digest": review.generation_digest,
+            "artifact_digest": review.artifact_digest,
+            "validation_id": review.validation_id,
+            "validation_digest": review.validation_digest,
+            "validation_profile": review.validation_profile,
+            "validator_version": review.validator_version,
+            "organization_id": review.organization_id,
+            "environment_id": review.environment_id,
+            "reviewed_by": review.reviewed_by,
+            "review_profile": review.review_profile,
+            "reviewer_contract_version": review.reviewer_contract_version,
+            "state": review.state.value,
+            "capability_decisions": cls._domain_decision_payload(review.capability_decisions),
+            "accepted_count": review.accepted_count,
+            "needs_evidence_count": review.needs_evidence_count,
+            "rejected_count": review.rejected_count,
+            "summary": review.summary,
+            "limitations": review.limitations,
+        }
+        fingerprint_payload = {
+            **payload,
+            "acknowledged_human_domain_decision": True,
+            "idempotency_key": review.idempotency_key,
+        }
+        if (
+            cls._digest(payload) != review.canonical_digest
+            or cls._digest(fingerprint_payload) != review.request_fingerprint
+        ):
+            raise McpBuilderError("builder_domain_review_integrity_failed")
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
@@ -1399,6 +1737,49 @@ class McpBuilderService:
                     ("generation_id", validation.generation_id),
                     ("artifact_digest", validation.artifact_digest),
                     ("validation_state", validation.state.value),
+                ),
+            )
+        )
+
+    async def _audit_domain_review(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+        permission_id: str,
+        result_code: str,
+        review: McpBuilderDomainReview,
+    ) -> None:
+        await self._audit_sink.record(
+            AuditRecord(
+                event_id=f"evt_{uuid4().hex}",
+                event_type="atlas.mcp-builder.domain-review",
+                schema_version="1.0",
+                producer="atlas-api",
+                producer_version=__version__,
+                occurred_at=self._clock(),
+                correlation_id=correlation_id,
+                subject_id=actor.subject_id,
+                actor_type=actor.kind.value,
+                authentication_method=actor.authentication_method.value,
+                assurance_level=actor.assurance_level.value,
+                permission_id=permission_id,
+                resource_type="resource.mcp-builder.domain-review",
+                scope_reference=(
+                    f"{actor.organization_id}/{self._environment_id}/site.local/"
+                    "domain.mcp-builder/resource.mcp-builder.projects/C2"
+                ),
+                decision_id=None,
+                outcome="succeeded",
+                result_code=result_code,
+                idempotency_key=review.idempotency_key,
+                target_metadata=(
+                    ("review_id", review.review_id),
+                    ("project_id", review.project_id),
+                    ("validation_id", review.validation_id),
+                    ("artifact_digest", review.artifact_digest),
+                    ("review_state", review.state.value),
+                    ("reviewed_by", review.reviewed_by),
                 ),
             )
         )

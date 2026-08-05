@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-004, ADR-005, ADR-006 |
 | Last Updated | 2026-08-05 |
-| Next Action | Implement immutable capability-level domain review records, APIs, and the web workspace |
+| Next Action | Publish the completed implementation for GitHub review and merge after CI passes |
 
 ### ATLAS-IMP-050 Scope Rationale
 
@@ -59,7 +59,32 @@
 
 ### ATLAS-IMP-050 Validation Evidence
 
-- Pending implementation and validation.
+- Immutable domain, application, API, authorization, audit, memory, PostgreSQL, and migration
+  coverage verifies exact project/checkpoint/generation/artifact/static-validation binding;
+  capability completeness and source lineage; accepted, needs-evidence, and rejected outcomes;
+  deterministic replay; audit-before-persist; stale/profile/acknowledgement rejection; and all
+  downstream authority flags.
+- The domain review accepts only a passed `atlas.static-validation.python312.v1` report and records
+  the exact immutable candidate class, version applicability, vendor permission, authentication,
+  side-effect, operational-impact, error, timeout, asynchronous, pagination, rate-limit, rationale,
+  citation, evidence-gap, reviewer, and contract-version evidence for every eligible capability.
+- Strict POST and GET APIs require dedicated permissions, multi-factor human identity, exact tenant
+  scope, browser CSRF for creation, explicit human acknowledgement, supported review profile, and
+  no-store responses. Live validation returned 403 without CSRF, 422 for an unsupported profile,
+  and 409 for stale evidence or missing acknowledgement without disclosing or creating a review.
+- Local quality gates passed with Ruff, mypy over 408 source files, 408 backend tests, 35 frontend
+  tests, ESLint, TypeScript checking, production build, and a single Alembic head. The three backend
+  skips are the existing Windows symbolic-link cases; the production build retains the existing
+  non-blocking bundle-size advisory.
+- Live accepted review `mcp-builder-domain-review.734f6d8c99807b04d077a517`, needs-evidence review
+  `mcp-builder-domain-review.f2664bb505fc273b7348333f`, and rejected review
+  `mcp-builder-domain-review.c982fe832885196ca931617f` were created and read against the current
+  backend with correct counts, immutable digests, no-store headers, and every security, lab,
+  packaging, installation, runtime, execution, and infrastructure authority remaining false.
+- The browser workspace created accepted review `mcp-builder-domain-review.ff85eadd0eb932255da94495`
+  through the complete project, design, generation, and static-validation flow. Desktop and
+  390-pixel mobile layouts were visually inspected with no visible horizontal overflow, incoherent
+  overlap, or current-page console error; the temporary viewport override was reset afterward.
 
 ### ATLAS-IMP-049 Scope Rationale
 
