@@ -19,3 +19,4 @@ ADR numbers are permanent and never reused. Material changes require a new ADR r
 | [ADR-002](ADR-002_Development_and_Delivery_Toolchain.md) | Development and delivery toolchain | Accepted |
 | [ADR-003](ADR-003_Development_Identity.md) | Development identity boundary | Accepted |
 | [ADR-004](ADR-004_MCP_Builder_Python_Generation_Profile.md) | MCP Builder Python generation profile | Accepted |
+| [ADR-005](ADR-005_MCP_Builder_Static_Validation_Profile.md) | MCP Builder static validation profile | Accepted |

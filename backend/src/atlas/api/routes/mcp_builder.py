@@ -19,6 +19,9 @@ from atlas.api.mcp_builder_schemas import (
     McpBuilderProjectData,
     McpBuilderProjectInput,
     McpBuilderProjectResponse,
+    McpBuilderValidationData,
+    McpBuilderValidationInput,
+    McpBuilderValidationResponse,
     design_capability_decision,
     design_entity_mapping,
 )
@@ -30,6 +33,8 @@ from atlas.api.security import (
     authorize_mcp_builder_generation_create,
     authorize_mcp_builder_generation_read,
     authorize_mcp_builder_read,
+    authorize_mcp_builder_validation_create,
+    authorize_mcp_builder_validation_read,
     browser_session_subject,
 )
 from atlas.modules.authorization.domain.models import AuthorizationDecision
@@ -39,6 +44,7 @@ from atlas.modules.mcp_builder.application.service import McpBuilderService
 from atlas.modules.mcp_builder.domain.design_review import McpBuilderDesignCheckpoint
 from atlas.modules.mcp_builder.domain.generation import McpBuilderGeneration
 from atlas.modules.mcp_builder.domain.models import McpBuilderProject
+from atlas.modules.mcp_builder.domain.validation import McpBuilderValidation
 
 router = APIRouter(prefix="/mcp-builder/projects", tags=["mcp-builder"])
 IDEMPOTENCY = Header(
@@ -96,6 +102,18 @@ def _generation_response(
     response.headers["Cache-Control"] = "no-store"
     return McpBuilderGenerationResponse(
         data=McpBuilderGenerationData.from_domain(generation),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+def _validation_response(
+    validation: McpBuilderValidation, request: Request, response: Response
+) -> McpBuilderValidationResponse:
+    response.headers["Cache-Control"] = "no-store"
+    return McpBuilderValidationResponse(
+        data=McpBuilderValidationData.from_domain(validation),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),
@@ -292,3 +310,49 @@ async def get_mcp_builder_generated_file(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),
     )
+
+
+@router.post(
+    "/{project_id}/validations", response_model=McpBuilderValidationResponse, status_code=201
+)
+async def create_mcp_builder_validation(
+    project_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    payload: McpBuilderValidationInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_mcp_builder_validation_create)],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> McpBuilderValidationResponse:
+    service: McpBuilderService = request.app.state.mcp_builder_service
+    try:
+        validation = await service.create_validation(
+            actor=subject,
+            project_id=project_id,
+            idempotency_key=idempotency_key,
+            correlation_id=str(request.state.correlation_id),
+            **payload.model_dump(exclude={"schema_version"}),
+        )
+    except McpBuilderError as error:
+        _raise(error)
+    return _validation_response(validation, request, response)
+
+
+@router.get("/{project_id}/validation", response_model=McpBuilderValidationResponse)
+async def get_mcp_builder_validation(
+    project_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_mcp_builder_validation_read)],
+) -> McpBuilderValidationResponse:
+    service: McpBuilderService = request.app.state.mcp_builder_service
+    try:
+        validation = await service.get_validation(
+            actor=subject,
+            project_id=project_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except McpBuilderError as error:
+        _raise(error)
+    return _validation_response(validation, request, response)

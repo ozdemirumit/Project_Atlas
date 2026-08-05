@@ -191,6 +191,85 @@ const generatedFile = {
   },
 };
 
+const validationCodes = [
+  "validation.artifact.integrity",
+  "validation.artifact.reproducible",
+  "validation.artifact.file-set",
+  "validation.manifest.contract",
+  "validation.python.project",
+  "validation.python.ast-safety",
+  "validation.schemas.contract",
+  "validation.tests.fail-closed",
+  "validation.permissions.complete",
+  "validation.network.boundary",
+  "validation.traceability.complete",
+  "validation.entities.complete",
+  "validation.security.secret-scan",
+  "validation.documentation.complete",
+  "validation.isolation.authority",
+];
+
+const validation = {
+  data: {
+    validation_id: "mcp-builder-validation.111111111111111111111111",
+    schema_version: "atlas.mcp-builder-validation.v1",
+    version: 1,
+    state: "passed",
+    project_id: project.data.project_id,
+    project_version: 1,
+    project_digest: project.data.canonical_digest,
+    source_digest: project.data.source_digest,
+    checkpoint_id: checkpoint.data.checkpoint_id,
+    checkpoint_digest: checkpoint.data.canonical_digest,
+    generation_id: generation.data.generation_id,
+    generation_digest: generation.data.canonical_digest,
+    artifact_digest: generation.data.artifact_digest,
+    organization_id: identity.data.organization_id,
+    environment_id: "environment.development",
+    validated_by: identity.data.subject_id,
+    language_profile: "atlas.python312.v1",
+    template_version: generation.data.template_version,
+    validation_profile: "atlas.static-validation.python312.v1",
+    validator_version: "mcp-builder-static-validator.v1",
+    checks: validationCodes.map((code) => ({
+      code,
+      state: "passed",
+      severity: "informational",
+      summary: `${code} passed without executing generated code.`,
+      evidence_paths: ["README.md"],
+      remediation: null,
+    })),
+    passed_count: 15,
+    failed_count: 0,
+    skipped_count: 0,
+    limitations: [
+      "Generated code was parsed but was not imported, compiled, executed, or tested.",
+      "A passing static report does not authorize packaging, registration, installation, or execution.",
+    ],
+    canonical_digest: "1".repeat(64),
+    completed_at: "2026-08-05T12:30:00Z",
+    validation_completed: true,
+    static_validation_passed: true,
+    runtime_self_test_performed: false,
+    dependency_resolution_performed: false,
+    domain_review_completed: false,
+    security_review_completed: false,
+    lab_validation_completed: false,
+    candidate_package_created: false,
+    connector_registered: false,
+    connector_installed: false,
+    connector_enabled: false,
+    network_request_performed: false,
+    model_inference_performed: false,
+    subprocess_invoked: false,
+    dynamic_code_execution_performed: false,
+    runtime_trust_granted: false,
+    execution_authorized: false,
+    infrastructure_mutation_performed: false,
+    reused: false,
+  },
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -198,12 +277,13 @@ afterEach(() => {
 });
 
 describe("MCP Builder workspace", () => {
-  it("records design evidence and creates a quarantined scaffold with verified preview", async () => {
+  it("creates a quarantined scaffold and records static validation without authority", async () => {
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
     vi.stubGlobal("crypto", { randomUUID: () => "mcp-builder-ui-001" });
     const requests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const designRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const generationRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    const validationRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -233,6 +313,14 @@ describe("MCP Builder workspace", () => {
           idempotencyKey: headers.get("Idempotency-Key"),
         });
         return Promise.resolve(new Response(JSON.stringify(generation), { status: 201 }));
+      }
+      if (url.endsWith(`/mcp-builder/projects/${project.data.project_id}/validations`)) {
+        const headers = new Headers(init?.headers);
+        validationRequests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(new Response(JSON.stringify(validation), { status: 201 }));
       }
       if (
         url.endsWith(
@@ -275,16 +363,13 @@ describe("MCP Builder workspace", () => {
       target: { value: "license.internal-review" },
     });
     const source = JSON.stringify({ openapi: "3.1.0", info: {}, paths: {} });
-    const file = new File([source], "storage-openapi.json", {
-      type: "application/json",
-    });
-    Object.defineProperty(file, "text", { value: () => Promise.resolve(source) });
-    fireEvent.change(screen.getByLabelText(/Select OpenAPI JSON/), {
-      target: { files: [file] },
+    fireEvent.change(screen.getByLabelText("OpenAPI JSON"), {
+      target: { value: source },
     });
 
     const analyze = screen.getByRole("button", { name: "Analyze source" });
     await waitFor(() => expect(analyze).toBeEnabled());
+    expect(screen.getByText("Pasted OpenAPI JSON")).toBeVisible();
     fireEvent.click(analyze);
 
     expect(await screen.findByText("Synthetic Storage API")).toBeVisible();
@@ -307,10 +392,21 @@ describe("MCP Builder workspace", () => {
     expect(await screen.findByText(generation.data.generation_id)).toBeVisible();
     expect(screen.getByText("No runtime trust.", { exact: false })).toBeVisible();
     expect(screen.getByText("Not run")).toBeVisible();
+    expect(screen.getByText("Inspect the quarantined scaffold")).toBeVisible();
+    fireEvent.click(
+      screen.getByLabelText(/I understand this produces static evidence only/i),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Run static validation" }));
+
+    expect(await screen.findByText(validation.data.validation_id)).toBeVisible();
+    expect(screen.getByText("Static validation passed")).toBeVisible();
+    expect(screen.getByText("validation.python.ast-safety")).toBeVisible();
+    expect(screen.getByText("Validation boundaries")).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|execute|register|enable/i })).not.toBeInTheDocument();
     expect(requests).toHaveLength(1);
     expect(designRequests).toHaveLength(1);
     expect(generationRequests).toHaveLength(1);
+    expect(validationRequests).toHaveLength(1);
     expect(requests[0]?.idempotencyKey).toBe("mcp-builder.mcp-builder-ui-001");
     const body = JSON.parse(requests[0]?.body ?? "{}") as Record<string, unknown>;
     expect(body.source_document).toBe(source);
@@ -336,5 +432,21 @@ describe("MCP Builder workspace", () => {
     expect(generationBody.acknowledged_quarantine).toBe(true);
     expect(generationBody).not.toHaveProperty("runtime_trust_granted");
     expect(generationBody).not.toHaveProperty("execute");
+    expect(validationRequests[0]?.idempotencyKey).toBe(
+      "mcp-builder-validation.mcp-builder-ui-001",
+    );
+    const validationBody = JSON.parse(
+      validationRequests[0]?.body ?? "{}",
+    ) as Record<string, unknown>;
+    expect(validationBody.project_digest).toBe(project.data.canonical_digest);
+    expect(validationBody.checkpoint_digest).toBe(checkpoint.data.canonical_digest);
+    expect(validationBody.generation_digest).toBe(generation.data.canonical_digest);
+    expect(validationBody.artifact_digest).toBe(generation.data.artifact_digest);
+    expect(validationBody.validation_profile).toBe(
+      "atlas.static-validation.python312.v1",
+    );
+    expect(validationBody.acknowledged_static_only).toBe(true);
+    expect(validationBody).not.toHaveProperty("runtime_trust_granted");
+    expect(validationBody).not.toHaveProperty("execute");
   });
 });

@@ -6,6 +6,7 @@ from atlas.modules.mcp_builder.application.generator import BuilderGeneratedCont
 from atlas.modules.mcp_builder.domain.design_review import McpBuilderDesignCheckpoint
 from atlas.modules.mcp_builder.domain.generation import BuilderGeneratedFile, McpBuilderGeneration
 from atlas.modules.mcp_builder.domain.models import McpBuilderProject
+from atlas.modules.mcp_builder.domain.validation import McpBuilderValidation
 
 
 class McpBuilderError(Exception):
@@ -86,3 +87,20 @@ class McpBuilderArtifactPublisher(Protocol):
         inventory: tuple[BuilderGeneratedFile, ...],
         relative_path: str,
     ) -> str: ...
+
+
+class McpBuilderValidationRepository(Protocol):
+    @property
+    def durable(self) -> bool: ...
+
+    async def get_by_id(self, *, validation_id: str) -> McpBuilderValidation | None: ...
+
+    async def get_by_project(self, *, project_id: str) -> McpBuilderValidation | None: ...
+
+    async def get_by_create_key(
+        self, *, validated_by: str, idempotency_key: str
+    ) -> McpBuilderValidation | None: ...
+
+    async def add(self, validation: McpBuilderValidation) -> bool: ...
+
+    async def close(self) -> None: ...

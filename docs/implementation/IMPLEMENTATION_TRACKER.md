@@ -4,14 +4,93 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-048 |
-| Title | Governed MCP Builder isolated Python scaffold generation |
-| Status | Completed |
-| Branch | `agent/mcp-builder-isolated-scaffold-generation` |
-| Pull Request | [#60](https://github.com/ozdemirumit/Project_Atlas/pull/60) |
-| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-004 |
+| Task ID | ATLAS-IMP-049 |
+| Title | Governed MCP Builder static scaffold validation |
+| Status | Review |
+| Branch | `agent/mcp-builder-static-validation` |
+| Pull Request | [PR #61](https://github.com/ozdemirumit/Project_Atlas/pull/61) |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-004, ADR-005 |
 | Last Updated | 2026-08-05 |
-| Next Action | Scope ATLAS-IMP-049 isolated generated-scaffold validation |
+| Next Action | Complete GitHub quality gates and merge PR #61 |
+
+### ATLAS-IMP-049 Scope Rationale
+
+- IMP-048 supplies an immutable generated artifact in Atlas-owned quarantine. ATLAS-021 and ATLAS-022
+  next require independent validation evidence before domain review, security review, lab execution,
+  or candidate packaging.
+- ADR-005 defines the first restricted-network-safe validator profile. It verifies the exact generated
+  content without importing, compiling, testing, or executing untrusted code.
+- A passing report proves only the bounded static contract. It cannot create a package, approve vendor
+  behavior, grant runtime trust, or advance the connector lifecycle.
+
+### ATLAS-IMP-049 Acceptance Criteria
+
+- Only an authorized multi-factor human in the exact project organization and environment can create
+  or inspect validation reports. Service and AI identities, wrong roles, insufficient assurance, and
+  out-of-scope actors fail closed without report or artifact discovery.
+- Validation binds the exact project version and digest, source digest, checkpoint ID and digest,
+  generation ID and canonical digest, artifact digest, language profile, template version,
+  `atlas.static-validation.python312.v1` profile, and immutable validator version. Stale, tampered,
+  unsupported, incomplete, or changed replay input is rejected or recorded as failed evidence.
+- Every artifact file is read through the quarantine publisher and reverified against its immutable
+  path, media type, byte size, and SHA-256 inventory before semantic checks. An unreadable or altered
+  artifact produces a failed integrity check and skips dependent checks without trusting content.
+- Deterministic checks cover regeneration equality, required and prohibited files, manifest and
+  authority flags, Python AST syntax and prohibited constructs, Python project metadata and empty
+  runtime dependencies, JSON Schema and fixture structure, fail-closed test declarations,
+  documentation, capability/class/permission completeness, network and configuration boundaries,
+  entity mappings, source traceability, and bounded secret or credential patterns.
+- The immutable report contains stable passed, failed, and skipped checks with severity, summary,
+  evidence paths, remediation, totals, limitations, report digest, request fingerprint, actor,
+  timestamps, and all downstream authority flags. A failed check prevents an overall passing state;
+  a passing state never implies production approval.
+- Creation is deterministic, idempotent, audit-before-persist, concurrency-safe, and behaviorally
+  equivalent for memory and PostgreSQL repositories. Required audit or persistence failure cannot
+  disclose or fabricate a successful report.
+- Strict no-store APIs require browser CSRF for creation, default-deny RBAC, correlation, bounded
+  schemas, safe errors, and exact-scope reads. The web workspace shows check totals, stable findings,
+  evidence paths, limitations, and explicit non-execution and no-approval boundaries.
+- Automated backend and frontend coverage, Alembic single-head verification, live authorized and
+  denied API validation, passed and failed validator fixtures, desktop and 390-pixel mobile
+  inspection, browser-log inspection, and GitHub CI apply.
+- This slice performs no generated-code import, compile, execution or test run; network request, model
+  inference, subprocess or shell invocation, dependency resolution, secret resolution, package
+  creation, signing, connector registration, installation, enablement, target connection, workflow
+  execution, runtime trust grant, approval, deployment, or infrastructure mutation.
+
+### ATLAS-IMP-049 Validation Evidence
+
+- Domain, application, API, authorization, audit, memory, PostgreSQL, and migration coverage verifies
+  exact project, checkpoint, generation, artifact, profile, and actor binding; deterministic reports;
+  idempotent replay; artifact-read integrity failure; unsafe Python and embedded-secret findings;
+  audit-before-persist; stale/profile/acknowledgement rejection; and all downstream authority flags.
+- The `atlas.static-validation.python312.v1` profile produces 15 stable integrity,
+  reproducibility, file-set, manifest, Python, schema, fail-closed test, permission, network,
+  traceability, entity, secret-scan, documentation, and isolation checks. A verified fixture passed
+  15/15; an unreadable artifact recorded one failed integrity check and 14 skipped dependent checks.
+- Full backend verification passes Ruff formatting and lint, strict mypy across 405 source and test
+  files, one Alembic head at `20260805_0021`, and 402 pytest tests with three existing Windows
+  symbolic-link skips. Full frontend verification passes ESLint, TypeScript, all 35 Vitest tests,
+  and the production build.
+- Live LDAP API validation created report
+  `mcp-builder-validation.a5aee03f3bad2b7579fbf3f1` with digest
+  `a5aee03f3bad2b7579fbf3f1873103417d6cf52816327749b3d2257bc9eaa836`. Missing CSRF failed
+  with HTTP 403, an unsupported profile failed with HTTP 422, stale generation evidence and missing
+  static-only acknowledgement failed with HTTP 409, and exact create/read returned HTTP 201/200
+  with `Cache-Control: no-store`.
+- The live browser completed pasted OpenAPI intake, source analysis, human design confirmation,
+  quarantined 16-file scaffold generation, verified preview, explicit static-only acknowledgement,
+  and report creation. Report `mcp-builder-validation.d2cdbf08a97eb1d12c6efb4f` passed all 15
+  checks while domain review, security review, dependency resolution, runtime self-test, lab
+  validation, packaging, registration, installation, execution, runtime trust, and infrastructure
+  mutation remained false and unavailable.
+- At 1280 pixels the report used 947 pixels without horizontal overflow, article overflow, or row
+  overlap. At 390-by-844 the report used 325 pixels, stacked headings and status badges, and retained
+  all 15 checks without horizontal overflow or overlap. No install, execute, register, enable, or
+  package action was rendered; browser warning and error logs were empty.
+- Source commit `7d96228` contains the implementation and passed all available local quality gates.
+  [PR #61](https://github.com/ozdemirumit/Project_Atlas/pull/61) is open for review; GitHub CI
+  evidence remains pending.
 
 ### ATLAS-IMP-048 Scope Rationale
 

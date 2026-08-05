@@ -32,10 +32,21 @@ from atlas.modules.mcp_builder.adapters.generation_memory import (
     InMemoryMcpBuilderGenerationRepository,
 )
 from atlas.modules.mcp_builder.adapters.memory import InMemoryMcpBuilderProjectRepository
+from atlas.modules.mcp_builder.adapters.validation_memory import (
+    InMemoryMcpBuilderValidationRepository,
+)
 from atlas.modules.mcp_builder.application.analyzer import BuilderSourceError, OpenApiSourceAnalyzer
-from atlas.modules.mcp_builder.application.generator import BuilderGeneratedContent
+from atlas.modules.mcp_builder.application.generator import (
+    BuilderGeneratedContent,
+    PythonScaffoldGenerator,
+)
 from atlas.modules.mcp_builder.application.ports import McpBuilderArtifactError, McpBuilderError
 from atlas.modules.mcp_builder.application.service import McpBuilderService
+from atlas.modules.mcp_builder.application.validator import (
+    VALIDATION_PROFILE,
+    VALIDATOR_VERSION,
+    PythonScaffoldStaticValidator,
+)
 from atlas.modules.mcp_builder.domain.design_review import (
     BuilderCapabilityDecision,
     BuilderCapabilityDecisionKind,
@@ -128,6 +139,7 @@ def service(
             repository=repository,
             design_repository=design_repository,
             generation_repository=InMemoryMcpBuilderGenerationRepository(),
+            validation_repository=InMemoryMcpBuilderValidationRepository(),
             artifact_publisher=InMemoryMcpBuilderArtifactPublisher(),
             audit_sink=resolved_sink,
             environment_id="environment.test",
@@ -197,6 +209,29 @@ def generation_request(project: Any, checkpoint: Any, **overrides: Any) -> dict[
         "acknowledged_quarantine": True,
         "idempotency_key": "mcp-builder-generation-0001",
         "correlation_id": "correlation.mcp-builder-generation",
+    }
+    values.update(overrides)
+    return values
+
+
+def validation_request(
+    project: Any, checkpoint: Any, generation: Any, **overrides: Any
+) -> dict[str, Any]:
+    values: dict[str, Any] = {
+        "actor": actor(),
+        "project_id": project.project_id,
+        "project_version": project.version,
+        "project_digest": project.canonical_digest,
+        "source_digest": project.source_digest,
+        "checkpoint_id": checkpoint.checkpoint_id,
+        "checkpoint_digest": checkpoint.canonical_digest,
+        "generation_id": generation.generation_id,
+        "generation_digest": generation.canonical_digest,
+        "artifact_digest": generation.artifact_digest,
+        "validation_profile": VALIDATION_PROFILE,
+        "acknowledged_static_only": True,
+        "idempotency_key": "mcp-builder-validation-0001",
+        "correlation_id": "correlation.mcp-builder-validation",
     }
     values.update(overrides)
     return values
@@ -476,6 +511,7 @@ async def test_design_audit_failure_prevents_checkpoint_persistence() -> None:
         repository=repository,
         design_repository=design_repository,
         generation_repository=InMemoryMcpBuilderGenerationRepository(),
+        validation_repository=InMemoryMcpBuilderValidationRepository(),
         artifact_publisher=InMemoryMcpBuilderArtifactPublisher(),
         audit_sink=FailingAuditSink(),
         environment_id="environment.test",
@@ -497,6 +533,7 @@ async def test_generation_is_deterministic_quarantined_and_structurally_valid() 
         repository=project_repository,
         design_repository=design_repository,
         generation_repository=generation_repository,
+        validation_repository=InMemoryMcpBuilderValidationRepository(),
         artifact_publisher=publisher,
         audit_sink=sink,
         environment_id="environment.test",
@@ -592,6 +629,7 @@ async def test_generation_audit_failure_prevents_publication_and_metadata() -> N
         repository=project_repository,
         design_repository=design_repository,
         generation_repository=generation_repository,
+        validation_repository=InMemoryMcpBuilderValidationRepository(),
         artifact_publisher=publisher,
         audit_sink=CollectingAuditSink(),
         environment_id="environment.test",
@@ -603,6 +641,7 @@ async def test_generation_audit_failure_prevents_publication_and_metadata() -> N
         repository=project_repository,
         design_repository=design_repository,
         generation_repository=generation_repository,
+        validation_repository=InMemoryMcpBuilderValidationRepository(),
         artifact_publisher=publisher,
         audit_sink=FailingAuditSink(),
         environment_id="environment.test",
@@ -612,6 +651,221 @@ async def test_generation_audit_failure_prevents_publication_and_metadata() -> N
     with pytest.raises(RuntimeError, match="audit unavailable"):
         await failing_builder.create_generation(**generation_request(project, checkpoint))
     assert await generation_repository.get_by_project(project_id=project.project_id) is None
+
+
+@pytest.mark.asyncio
+async def test_static_validation_passes_replays_and_grants_no_downstream_authority() -> None:
+    project_repository = InMemoryMcpBuilderProjectRepository()
+    design_repository = InMemoryMcpBuilderDesignCheckpointRepository()
+    generation_repository = InMemoryMcpBuilderGenerationRepository()
+    validation_repository = InMemoryMcpBuilderValidationRepository()
+    publisher = InMemoryMcpBuilderArtifactPublisher()
+    sink = CollectingAuditSink()
+    builder = McpBuilderService(
+        repository=project_repository,
+        design_repository=design_repository,
+        generation_repository=generation_repository,
+        validation_repository=validation_repository,
+        artifact_publisher=publisher,
+        audit_sink=sink,
+        environment_id="environment.test",
+        clock=lambda: NOW,
+    )
+    project = await builder.create_project(**create_request())
+    checkpoint = await builder.create_design_checkpoint(**design_request(project))
+    generation = await builder.create_generation(**generation_request(project, checkpoint))
+
+    validation = await builder.create_validation(
+        **validation_request(project, checkpoint, generation)
+    )
+    replay = await builder.create_validation(**validation_request(project, checkpoint, generation))
+    loaded = await builder.get_validation(
+        actor=actor(),
+        project_id=project.project_id,
+        correlation_id="correlation.mcp-builder-validation-read",
+    )
+
+    assert validation.state.value == "passed"
+    assert validation.validation_profile == VALIDATION_PROFILE
+    assert validation.validator_version == VALIDATOR_VERSION
+    assert validation.validation_completed is True
+    assert validation.static_validation_passed is True
+    assert validation.passed_count == 15
+    assert validation.failed_count == 0
+    assert validation.skipped_count == 0
+    assert len({item.code for item in validation.checks}) == 15
+    assert replay == replace(validation, reused=True)
+    assert loaded == validation
+    for attribute in (
+        "runtime_self_test_performed",
+        "dependency_resolution_performed",
+        "domain_review_completed",
+        "security_review_completed",
+        "lab_validation_completed",
+        "candidate_package_created",
+        "connector_registered",
+        "connector_installed",
+        "connector_enabled",
+        "network_request_performed",
+        "model_inference_performed",
+        "subprocess_invoked",
+        "dynamic_code_execution_performed",
+        "runtime_trust_granted",
+        "execution_authorized",
+        "infrastructure_mutation_performed",
+    ):
+        assert getattr(validation, attribute) is False
+    assert sink.records[-1].result_code == "mcp_builder_static_validation_read"
+
+
+@pytest.mark.asyncio
+async def test_static_validation_records_artifact_failure_and_skips_dependents() -> None:
+    class FailingReadPublisher(InMemoryMcpBuilderArtifactPublisher):
+        fail_reads = False
+
+        async def read(
+            self,
+            *,
+            generation_id: str,
+            artifact_digest: str,
+            inventory: tuple[Any, ...],
+            relative_path: str,
+        ) -> str:
+            if self.fail_reads:
+                raise McpBuilderArtifactError("builder_generation_artifact_integrity_failed")
+            return await super().read(
+                generation_id=generation_id,
+                artifact_digest=artifact_digest,
+                inventory=inventory,
+                relative_path=relative_path,
+            )
+
+    validation_repository = InMemoryMcpBuilderValidationRepository()
+    publisher = FailingReadPublisher()
+    builder = McpBuilderService(
+        repository=InMemoryMcpBuilderProjectRepository(),
+        design_repository=InMemoryMcpBuilderDesignCheckpointRepository(),
+        generation_repository=InMemoryMcpBuilderGenerationRepository(),
+        validation_repository=validation_repository,
+        artifact_publisher=publisher,
+        audit_sink=CollectingAuditSink(),
+        environment_id="environment.test",
+        clock=lambda: NOW,
+    )
+    project = await builder.create_project(**create_request())
+    checkpoint = await builder.create_design_checkpoint(**design_request(project))
+    generation = await builder.create_generation(**generation_request(project, checkpoint))
+    publisher.fail_reads = True
+
+    validation = await builder.create_validation(
+        **validation_request(project, checkpoint, generation)
+    )
+
+    assert validation.state.value == "failed"
+    assert validation.static_validation_passed is False
+    assert validation.passed_count == 0
+    assert validation.failed_count == 1
+    assert validation.skipped_count == 14
+    assert validation.checks[0].code == "validation.artifact.integrity"
+    assert validation.checks[0].state.value == "failed"
+    assert all(item.state.value == "skipped" for item in validation.checks[1:])
+    assert await validation_repository.get_by_project(project_id=project.project_id) == validation
+
+
+@pytest.mark.asyncio
+async def test_static_validation_rejects_stale_unsupported_and_unacknowledged_requests() -> None:
+    builder, _, _, _ = service()
+    project = await builder.create_project(**create_request())
+    checkpoint = await builder.create_design_checkpoint(**design_request(project))
+    generation = await builder.create_generation(**generation_request(project, checkpoint))
+
+    with pytest.raises(McpBuilderError, match="builder_validation_source_stale"):
+        await builder.create_validation(
+            **validation_request(project, checkpoint, generation, generation_digest="0" * 64)
+        )
+    with pytest.raises(McpBuilderError, match="builder_validation_profile_unsupported"):
+        await builder.create_validation(
+            **validation_request(
+                project,
+                checkpoint,
+                generation,
+                validation_profile="atlas.static-validation.rust.v1",
+            )
+        )
+    with pytest.raises(McpBuilderError, match="builder_validation_static_acknowledgement_required"):
+        await builder.create_validation(
+            **validation_request(project, checkpoint, generation, acknowledged_static_only=False)
+        )
+
+
+@pytest.mark.asyncio
+async def test_static_validation_audit_failure_prevents_persistence() -> None:
+    class FailingAuditSink(CollectingAuditSink):
+        async def record(self, event: Any) -> None:
+            raise RuntimeError("audit unavailable")
+
+    project_repository = InMemoryMcpBuilderProjectRepository()
+    design_repository = InMemoryMcpBuilderDesignCheckpointRepository()
+    generation_repository = InMemoryMcpBuilderGenerationRepository()
+    validation_repository = InMemoryMcpBuilderValidationRepository()
+    publisher = InMemoryMcpBuilderArtifactPublisher()
+    builder = McpBuilderService(
+        repository=project_repository,
+        design_repository=design_repository,
+        generation_repository=generation_repository,
+        validation_repository=validation_repository,
+        artifact_publisher=publisher,
+        audit_sink=CollectingAuditSink(),
+        environment_id="environment.test",
+        clock=lambda: NOW,
+    )
+    project = await builder.create_project(**create_request())
+    checkpoint = await builder.create_design_checkpoint(**design_request(project))
+    generation = await builder.create_generation(**generation_request(project, checkpoint))
+    failing_builder = McpBuilderService(
+        repository=project_repository,
+        design_repository=design_repository,
+        generation_repository=generation_repository,
+        validation_repository=validation_repository,
+        artifact_publisher=publisher,
+        audit_sink=FailingAuditSink(),
+        environment_id="environment.test",
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        await failing_builder.create_validation(
+            **validation_request(project, checkpoint, generation)
+        )
+    assert await validation_repository.get_by_project(project_id=project.project_id) is None
+
+
+@pytest.mark.asyncio
+async def test_static_validator_fails_unsafe_python_and_embedded_secret() -> None:
+    builder, _, _, _ = service()
+    project = await builder.create_project(**create_request())
+    checkpoint = await builder.create_design_checkpoint(**design_request(project))
+    generation = await builder.create_generation(**generation_request(project, checkpoint))
+    draft = PythonScaffoldGenerator().generate(project=project, checkpoint=checkpoint)
+    contents = {item.relative_path: item.content for item in draft.files}
+    capability_path = next(
+        path
+        for path in contents
+        if path.startswith("src/atlas_generated_connector/capabilities/capability_")
+    )
+    contents[capability_path] += '\nimport subprocess\napi_key = "unsafe-secret-value"\n'
+
+    result = PythonScaffoldStaticValidator().validate(
+        project=project,
+        checkpoint=checkpoint,
+        generation=generation,
+        contents=contents,
+    )
+    failed_codes = {item.code for item in result.checks if item.state.value == "failed"}
+
+    assert result.state.value == "failed"
+    assert "validation.python.ast-safety" in failed_codes
+    assert "validation.security.secret-scan" in failed_codes
 
 
 @pytest.mark.asyncio
@@ -788,6 +1042,53 @@ def test_api_requires_csrf_and_returns_secret_free_no_store_evidence(tmp_path: P
             f"/api/v1/mcp-builder/projects/{project_id}/generation/files/"
             "docs/source-traceability.json"
         )
+        generation_data = created_generation.json()["data"]
+        validation_payload = {
+            "schema_version": "atlas.mcp-builder-validation-request.v1",
+            "project_version": project_data["version"],
+            "project_digest": project_data["canonical_digest"],
+            "source_digest": project_data["source_digest"],
+            "checkpoint_id": checkpoint_data["checkpoint_id"],
+            "checkpoint_digest": checkpoint_data["canonical_digest"],
+            "generation_id": generation_data["generation_id"],
+            "generation_digest": generation_data["canonical_digest"],
+            "artifact_digest": generation_data["artifact_digest"],
+            "validation_profile": VALIDATION_PROFILE,
+            "acknowledged_static_only": True,
+        }
+        denied_validation = client.post(
+            f"/api/v1/mcp-builder/projects/{project_id}/validations",
+            json=validation_payload,
+            headers={"Idempotency-Key": "mcp-builder-validation-api-0001"},
+        )
+        unsupported_validation = client.post(
+            f"/api/v1/mcp-builder/projects/{project_id}/validations",
+            json={
+                **validation_payload,
+                "validation_profile": "atlas.static-validation.rust.v1",
+            },
+            headers={
+                "Idempotency-Key": "mcp-builder-validation-api-unsupported",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+        )
+        stale_validation = client.post(
+            f"/api/v1/mcp-builder/projects/{project_id}/validations",
+            json={**validation_payload, "generation_digest": "0" * 64},
+            headers={
+                "Idempotency-Key": "mcp-builder-validation-api-stale",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+        )
+        created_validation = client.post(
+            f"/api/v1/mcp-builder/projects/{project_id}/validations",
+            json=validation_payload,
+            headers={
+                "Idempotency-Key": "mcp-builder-validation-api-0001",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+        )
+        read_validation = client.get(f"/api/v1/mcp-builder/projects/{project_id}/validation")
 
     assert denied.status_code == 403
     assert created.status_code == 201
@@ -799,6 +1100,11 @@ def test_api_requires_csrf_and_returns_secret_free_no_store_evidence(tmp_path: P
     assert created_generation.status_code == 201
     assert read_generation.status_code == 200
     assert read_file.status_code == 200
+    assert denied_validation.status_code == 403
+    assert unsupported_validation.status_code == 422
+    assert stale_validation.status_code == 409
+    assert created_validation.status_code == 201
+    assert read_validation.status_code == 200
     assert created.headers["Cache-Control"] == "no-store"
     assert read.headers["Cache-Control"] == "no-store"
     assert created_design.headers["Cache-Control"] == "no-store"
@@ -806,6 +1112,8 @@ def test_api_requires_csrf_and_returns_secret_free_no_store_evidence(tmp_path: P
     assert created_generation.headers["Cache-Control"] == "no-store"
     assert read_generation.headers["Cache-Control"] == "no-store"
     assert read_file.headers["Cache-Control"] == "no-store"
+    assert created_validation.headers["Cache-Control"] == "no-store"
+    assert read_validation.headers["Cache-Control"] == "no-store"
     assert created.json()["data"]["state"] == "analyzed"
     assert created.json()["data"]["capability_candidates"][0]["proposed_capability_class"] == "C1"
     for forbidden in ("canonical_source_json", "source_document", "request_fingerprint"):
@@ -815,7 +1123,6 @@ def test_api_requires_csrf_and_returns_secret_free_no_store_evidence(tmp_path: P
     assert created_design.json()["data"]["ready_for_generation_design"] is True
     assert created_design.json()["data"]["generated_artifact_created"] is False
     assert created_design.json()["data"]["execution_authorized"] is False
-    generation_data = created_generation.json()["data"]
     assert generation_data["state"] == "quarantined"
     assert generation_data["generated_artifact_created"] is True
     assert generation_data["validation_completed"] is False
@@ -829,3 +1136,32 @@ def test_api_requires_csrf_and_returns_secret_free_no_store_evidence(tmp_path: P
     assert read_file.json()["data"]["content_verified"] is True
     assert read_file.json()["data"]["quarantined"] is True
     assert project_data["source_digest"] in read_file.json()["data"]["content"]
+    validation_data = created_validation.json()["data"]
+    assert validation_data["state"] == "passed"
+    assert validation_data["validation_completed"] is True
+    assert validation_data["static_validation_passed"] is True
+    assert validation_data["validation_profile"] == VALIDATION_PROFILE
+    assert validation_data["validator_version"] == VALIDATOR_VERSION
+    assert validation_data["passed_count"] == 15
+    assert validation_data["failed_count"] == 0
+    assert validation_data["skipped_count"] == 0
+    assert len(validation_data["checks"]) == 15
+    for field in (
+        "runtime_self_test_performed",
+        "dependency_resolution_performed",
+        "domain_review_completed",
+        "security_review_completed",
+        "lab_validation_completed",
+        "candidate_package_created",
+        "connector_registered",
+        "connector_installed",
+        "connector_enabled",
+        "network_request_performed",
+        "model_inference_performed",
+        "subprocess_invoked",
+        "dynamic_code_execution_performed",
+        "runtime_trust_granted",
+        "execution_authorized",
+        "infrastructure_mutation_performed",
+    ):
+        assert validation_data[field] is False

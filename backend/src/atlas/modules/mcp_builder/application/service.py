@@ -35,6 +35,12 @@ from atlas.modules.mcp_builder.application.ports import (
     McpBuilderError,
     McpBuilderGenerationRepository,
     McpBuilderProjectRepository,
+    McpBuilderValidationRepository,
+)
+from atlas.modules.mcp_builder.application.validator import (
+    VALIDATION_PROFILE,
+    VALIDATOR_VERSION,
+    PythonScaffoldStaticValidator,
 )
 from atlas.modules.mcp_builder.domain.design_review import (
     BuilderCapabilityDecision,
@@ -48,6 +54,11 @@ from atlas.modules.mcp_builder.domain.generation import (
     McpBuilderGeneration,
 )
 from atlas.modules.mcp_builder.domain.models import BuilderProjectState, McpBuilderProject
+from atlas.modules.mcp_builder.domain.validation import (
+    BuilderValidationCheckState,
+    BuilderValidationState,
+    McpBuilderValidation,
+)
 
 PROJECT_SCHEMA = "atlas.mcp-builder-project.v1"
 CREATE_PERMISSION = "mcp-builder.project.create"
@@ -58,6 +69,9 @@ DESIGN_SCHEMA = "atlas.mcp-builder-design-checkpoint.v1"
 GENERATION_CREATE_PERMISSION = "mcp-builder.generation.create"
 GENERATION_READ_PERMISSION = "mcp-builder.generation.read"
 GENERATION_SCHEMA = "atlas.mcp-builder-generation.v1"
+VALIDATION_CREATE_PERMISSION = "mcp-builder.validation.create"
+VALIDATION_READ_PERMISSION = "mcp-builder.validation.read"
+VALIDATION_SCHEMA = "atlas.mcp-builder-validation.v1"
 
 
 class McpBuilderService:
@@ -67,21 +81,25 @@ class McpBuilderService:
         repository: McpBuilderProjectRepository,
         design_repository: McpBuilderDesignCheckpointRepository,
         generation_repository: McpBuilderGenerationRepository,
+        validation_repository: McpBuilderValidationRepository,
         artifact_publisher: McpBuilderArtifactPublisher,
         audit_sink: AuditSink,
         environment_id: str,
         analyzer: OpenApiSourceAnalyzer | None = None,
         generator: PythonScaffoldGenerator | None = None,
+        validator: PythonScaffoldStaticValidator | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
         self._design_repository = design_repository
         self._generation_repository = generation_repository
+        self._validation_repository = validation_repository
         self._artifact_publisher = artifact_publisher
         self._audit_sink = audit_sink
         self._environment_id = environment_id
         self._analyzer = analyzer or OpenApiSourceAnalyzer()
         self._generator = generator or PythonScaffoldGenerator()
+        self._validator = validator or PythonScaffoldStaticValidator(self._generator)
         self._clock = clock or (lambda: datetime.now(UTC))
 
     @property
@@ -89,6 +107,7 @@ class McpBuilderService:
         return self._repository
 
     async def close(self) -> None:
+        await self._validation_repository.close()
         await self._generation_repository.close()
         await self._design_repository.close()
         await self._repository.close()
@@ -628,6 +647,218 @@ class McpBuilderService:
         )
         return generation, metadata, content
 
+    async def create_validation(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        project_id: str,
+        project_version: int,
+        project_digest: str,
+        source_digest: str,
+        checkpoint_id: str,
+        checkpoint_digest: str,
+        generation_id: str,
+        generation_digest: str,
+        artifact_digest: str,
+        validation_profile: str,
+        acknowledged_static_only: bool,
+        idempotency_key: str,
+        correlation_id: str,
+    ) -> McpBuilderValidation:
+        self._require_enterprise_human(actor)
+        if not acknowledged_static_only:
+            raise McpBuilderError("builder_validation_static_acknowledgement_required")
+        if not 8 <= len(idempotency_key) <= 128:
+            raise McpBuilderError("builder_validation_idempotency_key_invalid")
+        if validation_profile != VALIDATION_PROFILE:
+            raise McpBuilderError("builder_validation_profile_unsupported")
+        project, checkpoint = await self._generation_context(actor=actor, project_id=project_id)
+        generation = await self._generation_for_actor(actor=actor, project_id=project_id)
+        if (
+            project.version != project_version
+            or project.canonical_digest != project_digest
+            or project.source_digest != source_digest
+            or checkpoint.checkpoint_id != checkpoint_id
+            or checkpoint.canonical_digest != checkpoint_digest
+            or generation.generation_id != generation_id
+            or generation.canonical_digest != generation_digest
+            or generation.artifact_digest != artifact_digest
+        ):
+            raise McpBuilderError("builder_validation_source_stale")
+
+        verified_contents: dict[str, str] = {}
+        contents: dict[str, str] | None
+        artifact_error_code: str | None = None
+        for metadata in generation.files:
+            try:
+                verified_contents[metadata.relative_path] = await self._artifact_publisher.read(
+                    generation_id=generation.generation_id,
+                    artifact_digest=generation.artifact_digest,
+                    inventory=generation.files,
+                    relative_path=metadata.relative_path,
+                )
+            except (McpBuilderArtifactError, ValueError) as error:
+                artifact_error_code = getattr(
+                    error, "code", "builder_generation_artifact_integrity_failed"
+                )
+                contents = None
+                break
+        else:
+            contents = verified_contents
+        result = self._validator.validate(
+            project=project,
+            checkpoint=checkpoint,
+            generation=generation,
+            contents=contents,
+            artifact_error_code=artifact_error_code,
+        )
+        checks_payload = [
+            (
+                item.code,
+                item.state.value,
+                item.severity.value,
+                item.summary,
+                item.evidence_paths,
+                item.remediation,
+            )
+            for item in result.checks
+        ]
+        payload = {
+            "project_id": project.project_id,
+            "project_version": project.version,
+            "project_digest": project.canonical_digest,
+            "source_digest": project.source_digest,
+            "checkpoint_id": checkpoint.checkpoint_id,
+            "checkpoint_digest": checkpoint.canonical_digest,
+            "generation_id": generation.generation_id,
+            "generation_digest": generation.canonical_digest,
+            "artifact_digest": generation.artifact_digest,
+            "organization_id": actor.organization_id,
+            "environment_id": self._environment_id,
+            "validated_by": actor.subject_id,
+            "language_profile": generation.language_profile,
+            "template_version": generation.template_version,
+            "validation_profile": validation_profile,
+            "validator_version": VALIDATOR_VERSION,
+            "state": result.state.value,
+            "checks": checks_payload,
+            "limitations": result.limitations,
+        }
+        fingerprint = self._digest(
+            {
+                **payload,
+                "acknowledged_static_only": acknowledged_static_only,
+                "idempotency_key": idempotency_key,
+            }
+        )
+        prior = await self._validation_repository.get_by_create_key(
+            validated_by=actor.subject_id, idempotency_key=idempotency_key
+        )
+        if prior is not None:
+            self._verify_validation(prior)
+            if prior.request_fingerprint != fingerprint:
+                raise McpBuilderError("builder_validation_idempotency_conflict")
+            return replace(prior, reused=True)
+        existing = await self._validation_repository.get_by_project(project_id=project.project_id)
+        if existing is not None:
+            self._verify_validation(existing)
+            raise McpBuilderError("builder_validation_exists")
+
+        canonical_digest = self._digest(payload)
+        validation = McpBuilderValidation(
+            validation_id=f"mcp-builder-validation.{canonical_digest[:24]}",
+            schema_version=VALIDATION_SCHEMA,
+            version=1,
+            state=result.state,
+            project_id=project.project_id,
+            project_version=project.version,
+            project_digest=project.canonical_digest,
+            source_digest=project.source_digest,
+            checkpoint_id=checkpoint.checkpoint_id,
+            checkpoint_digest=checkpoint.canonical_digest,
+            generation_id=generation.generation_id,
+            generation_digest=generation.canonical_digest,
+            artifact_digest=generation.artifact_digest,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+            validated_by=actor.subject_id,
+            language_profile=generation.language_profile,
+            template_version=generation.template_version,
+            validation_profile=validation_profile,
+            validator_version=VALIDATOR_VERSION,
+            checks=result.checks,
+            passed_count=sum(
+                item.state is BuilderValidationCheckState.PASSED for item in result.checks
+            ),
+            failed_count=sum(
+                item.state is BuilderValidationCheckState.FAILED for item in result.checks
+            ),
+            skipped_count=sum(
+                item.state is BuilderValidationCheckState.SKIPPED for item in result.checks
+            ),
+            limitations=result.limitations,
+            canonical_digest=canonical_digest,
+            request_fingerprint=fingerprint,
+            idempotency_key=idempotency_key,
+            completed_at=self._clock(),
+            static_validation_passed=result.state is BuilderValidationState.PASSED,
+        )
+        await self._audit_validation(
+            actor=actor,
+            correlation_id=correlation_id,
+            permission_id=VALIDATION_CREATE_PERMISSION,
+            result_code=f"mcp_builder_static_validation_{validation.state.value}",
+            validation=validation,
+        )
+        if not await self._validation_repository.add(validation):
+            raced = await self._validation_repository.get_by_create_key(
+                validated_by=actor.subject_id, idempotency_key=idempotency_key
+            )
+            if raced is None or raced.request_fingerprint != fingerprint:
+                raise McpBuilderError("builder_validation_idempotency_conflict")
+            self._verify_validation(raced)
+            return replace(raced, reused=True)
+        return validation
+
+    async def get_validation(
+        self, *, actor: AuthenticatedSubject, project_id: str, correlation_id: str
+    ) -> McpBuilderValidation:
+        validation = await self._validation_for_actor(actor=actor, project_id=project_id)
+        await self._audit_validation(
+            actor=actor,
+            correlation_id=correlation_id,
+            permission_id=VALIDATION_READ_PERMISSION,
+            result_code="mcp_builder_static_validation_read",
+            validation=validation,
+        )
+        return validation
+
+    async def _validation_for_actor(
+        self, *, actor: AuthenticatedSubject, project_id: str
+    ) -> McpBuilderValidation:
+        self._require_enterprise_human(actor)
+        validation = await self._validation_repository.get_by_project(project_id=project_id)
+        if (
+            validation is None
+            or validation.organization_id != actor.organization_id
+            or validation.environment_id != self._environment_id
+        ):
+            raise McpBuilderError("builder_validation_not_found")
+        generation = await self._generation_for_actor(actor=actor, project_id=project_id)
+        if (
+            validation.project_version != generation.project_version
+            or validation.project_digest != generation.project_digest
+            or validation.source_digest != generation.source_digest
+            or validation.checkpoint_id != generation.checkpoint_id
+            or validation.checkpoint_digest != generation.checkpoint_digest
+            or validation.generation_id != generation.generation_id
+            or validation.generation_digest != generation.canonical_digest
+            or validation.artifact_digest != generation.artifact_digest
+        ):
+            raise McpBuilderError("builder_validation_source_stale")
+        self._verify_validation(validation)
+        return validation
+
     async def _generation_for_actor(
         self, *, actor: AuthenticatedSubject, project_id: str
     ) -> McpBuilderGeneration:
@@ -870,6 +1101,51 @@ class McpBuilderService:
         ):
             raise McpBuilderError("builder_generation_integrity_failed")
 
+    @classmethod
+    def _verify_validation(cls, validation: McpBuilderValidation) -> None:
+        checks_payload = [
+            (
+                item.code,
+                item.state.value,
+                item.severity.value,
+                item.summary,
+                item.evidence_paths,
+                item.remediation,
+            )
+            for item in validation.checks
+        ]
+        payload = {
+            "project_id": validation.project_id,
+            "project_version": validation.project_version,
+            "project_digest": validation.project_digest,
+            "source_digest": validation.source_digest,
+            "checkpoint_id": validation.checkpoint_id,
+            "checkpoint_digest": validation.checkpoint_digest,
+            "generation_id": validation.generation_id,
+            "generation_digest": validation.generation_digest,
+            "artifact_digest": validation.artifact_digest,
+            "organization_id": validation.organization_id,
+            "environment_id": validation.environment_id,
+            "validated_by": validation.validated_by,
+            "language_profile": validation.language_profile,
+            "template_version": validation.template_version,
+            "validation_profile": validation.validation_profile,
+            "validator_version": validation.validator_version,
+            "state": validation.state.value,
+            "checks": checks_payload,
+            "limitations": validation.limitations,
+        }
+        fingerprint_payload = {
+            **payload,
+            "acknowledged_static_only": True,
+            "idempotency_key": validation.idempotency_key,
+        }
+        if (
+            cls._digest(payload) != validation.canonical_digest
+            or cls._digest(fingerprint_payload) != validation.request_fingerprint
+        ):
+            raise McpBuilderError("builder_validation_integrity_failed")
+
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
         if (
@@ -1082,5 +1358,47 @@ class McpBuilderService:
                 result_code=result_code,
                 idempotency_key=generation.idempotency_key,
                 target_metadata=tuple(metadata),
+            )
+        )
+
+    async def _audit_validation(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+        permission_id: str,
+        result_code: str,
+        validation: McpBuilderValidation,
+    ) -> None:
+        await self._audit_sink.record(
+            AuditRecord(
+                event_id=f"evt_{uuid4().hex}",
+                event_type="atlas.mcp-builder.validation",
+                schema_version="1.0",
+                producer="atlas-api",
+                producer_version=__version__,
+                occurred_at=self._clock(),
+                correlation_id=correlation_id,
+                subject_id=actor.subject_id,
+                actor_type=actor.kind.value,
+                authentication_method=actor.authentication_method.value,
+                assurance_level=actor.assurance_level.value,
+                permission_id=permission_id,
+                resource_type="resource.mcp-builder.validation",
+                scope_reference=(
+                    f"{actor.organization_id}/{self._environment_id}/site.local/"
+                    "domain.mcp-builder/resource.mcp-builder.projects/C2"
+                ),
+                decision_id=None,
+                outcome="succeeded",
+                result_code=result_code,
+                idempotency_key=validation.idempotency_key,
+                target_metadata=(
+                    ("validation_id", validation.validation_id),
+                    ("project_id", validation.project_id),
+                    ("generation_id", validation.generation_id),
+                    ("artifact_digest", validation.artifact_digest),
+                    ("validation_state", validation.state.value),
+                ),
             )
         )
