@@ -4,14 +4,86 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-046 |
-| Title | Governed MCP Builder project and OpenAPI source-analysis foundation |
+| Task ID | ATLAS-IMP-047 |
+| Title | Governed MCP Builder human design checkpoint |
 | Status | Completed |
-| Branch | `agent/mcp-builder-openapi-analysis` |
-| Pull Request | [#58](https://github.com/ozdemirumit/Project_Atlas/pull/58) |
-| Governing Documents | ATLAS-002, ATLAS-003, ATLAS-014, ATLAS-015, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056 |
+| Branch | `agent/mcp-builder-human-design-checkpoint` |
+| Pull Request | [#59](https://github.com/ozdemirumit/Project_Atlas/pull/59) |
+| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056 |
 | Last Updated | 2026-08-05 |
-| Next Action | Select and scope the next approved implementation slice |
+| Next Action | Select the next approved implementation slice |
+
+### ATLAS-IMP-047 Scope Rationale
+
+- IMP-046 provides attributable, deterministic OpenAPI analysis and conservative capability candidates,
+  but no human-confirmed connector boundary exists. ATLAS-022 requires a domain checkpoint before code
+  generation can begin.
+- This slice records an immutable human design decision against the exact project version, project
+  digest, source digest, candidate set, and analysis findings. It does not change the source analysis,
+  generate artifacts, or advance a connector into a package or runtime lifecycle.
+- Every candidate receives an explicit include or exclude decision. Only unblocked `C0` or `C1`
+  candidates can be included. Blocked, ambiguous, write, and `C5` candidates require exclusion and a
+  bounded human rationale; risk cannot be lowered by the reviewer or AI.
+
+### ATLAS-IMP-047 Acceptance Criteria
+
+- Only an authorized, multi-factor human in the exact project organization and environment can create
+  or read design checkpoints. Service and AI identities, insufficient assurance, wrong roles, and
+  out-of-scope actors fail closed without project, candidate, or checkpoint discovery.
+- A checkpoint binds the exact project ID, project version, project canonical digest, source digest,
+  reviewer, connector boundary, target products, declared network destinations, configuration keys,
+  secret-reference identifiers, normalized entity mappings, and one decision for every analyzed
+  capability candidate.
+- Included candidates must be unblocked and retain their analyzed `C0` or `C1` class. Excluded
+  candidates require rationale. Unknown, duplicate, missing, stale, tampered, class-lowered, or blocked
+  include decisions fail closed. At least one candidate must remain eligible before the checkpoint can
+  be ready for a later generation slice.
+- Network destinations are an exact normalized subset of analyzed OpenAPI server evidence. Secret
+  values, arbitrary endpoints, embedded credentials, wildcard configuration, broad administrator
+  permissions, and unresolved entity mappings are rejected. Only stable secret references may be
+  recorded; Atlas never resolves them in this slice.
+- Creation is immutable, versioned, deterministic, idempotent, audit-before-persist, and safe under
+  replay, changed replay, concurrent creation, audit failure, persistence failure, and source or
+  analysis drift. Memory and PostgreSQL behavior match.
+- Strict no-store APIs require browser CSRF for creation, default-deny RBAC, correlation, bounded
+  schemas, safe errors, and redacted responses. The web workspace supports complete candidate review
+  and checkpoint evidence but exposes no generation, export, package, registration, installation,
+  enablement, invocation, credential resolution, network, model, shell, or execution control.
+- Automated backend and frontend coverage, migration single-head verification, live authorized and
+  denied identity validation, desktop and 390-pixel mobile inspection, browser-log inspection, and
+  GitHub CI apply.
+- This slice performs no external request, model inference, dynamic code execution, artifact or package
+  generation, connector registration, secret resolution, workflow execution, deployment, service
+  restart, traffic switch, restore, rollback, or infrastructure mutation.
+
+### ATLAS-IMP-047 Validation Evidence
+
+- Domain, application, API, authorization, audit, memory, PostgreSQL, and migration coverage verifies
+  exact project version and digest binding, complete candidate decisions, immutable idempotent replay,
+  stale and tampered source-analysis rejection, exact organization and environment scope, enterprise
+  human MFA, and fail-closed required audit behavior.
+- Included candidates must retain their analyzed `C0` or `C1` class and cannot be blocked. Missing,
+  duplicate, unknown, class-lowered, or blocked include decisions fail closed. Broad administrator
+  permission requests, arbitrary network destinations, malformed stable references, and incomplete
+  entity mappings are rejected; excluded candidates retain explicit human rationale.
+- Full backend verification passes Ruff formatting and lint, strict mypy across 396 source and test
+  files, one Alembic head at
+  `20260805_0019`, and 393 pytest tests with three existing Windows symbolic-link skips. Full frontend
+  verification passes ESLint, TypeScript, all 35 Vitest tests, and the production build.
+- Live LDAP validation created project `mcp-builder-project.0e66a6e1f2c1051ee1aa934b` and checkpoint
+  `mcp-builder-design.03489e3e1b3ec23a3bf43666`. Missing CSRF failed with HTTP 403, an undeclared
+  network destination failed closed, and exact checkpoint create/read returned HTTP 201/200 with
+  `Cache-Control: no-store` and one design-eligible `C1` capability.
+- Live and automated output retained generated artifact, package, connector registration, installation,
+  enablement, network request, model inference, dynamic execution, runtime trust, execution authority,
+  and infrastructure mutation as false. Canonical source content and request fingerprints were absent
+  from API responses.
+- The MCP Builder workspace was inspected at desktop and a fixed 390-by-844 mobile viewport. Page and
+  body client/scroll widths matched, all bounded fields remained inside the viewport, and browser
+  warning/error logs were empty. The automated web flow completed analysis and the full human design
+  checkpoint without exposing generation, installation, or execution controls.
+- Source commit `318d023` passed both backend and frontend gates in [GitHub Actions run
+  30978221239](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30978221239).
 
 ### ATLAS-IMP-046 Scope Rationale
 
@@ -2662,6 +2734,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-044 | Governed upgrade human-review inbox and decision workspace | Completed through [PR #56](https://github.com/ozdemirumit/Project_Atlas/pull/56) from source commit `65aca6d`; 373 backend tests, 33 frontend tests, live four-identity API and desktop/mobile decision validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-045 | Governed non-executable human-review completion receipt | Completed through [PR #57](https://github.com/ozdemirumit/Project_Atlas/pull/57) from source commit `53429db`; 379 backend tests, 34 frontend tests, live four-identity API and desktop/mobile receipt validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-046 | Governed MCP Builder project and OpenAPI source-analysis foundation | Completed through [PR #58](https://github.com/ozdemirumit/Project_Atlas/pull/58) from source commit `0e0bccc`; 389 backend tests, 35 frontend tests, live secret-free source-analysis API and desktop/mobile Builder validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-047 | Governed MCP Builder human design checkpoint | Completed through [PR #59](https://github.com/ozdemirumit/Project_Atlas/pull/59) from source commit `318d023`; 393 backend tests, 35 frontend tests, live immutable design-checkpoint API and desktop/mobile Builder validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 

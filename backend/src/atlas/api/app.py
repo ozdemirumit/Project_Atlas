@@ -120,6 +120,12 @@ from atlas.modules.investigations.application.service import InvestigationServic
 from atlas.modules.knowledge.adapters.memory import InMemoryKnowledgeRetriever
 from atlas.modules.knowledge.adapters.synthetic import build_synthetic_knowledge_chunks
 from atlas.modules.knowledge.application.service import KnowledgeRetrievalService
+from atlas.modules.mcp_builder.adapters.design_review_memory import (
+    InMemoryMcpBuilderDesignCheckpointRepository,
+)
+from atlas.modules.mcp_builder.adapters.design_review_postgres import (
+    PostgreSQLMcpBuilderDesignCheckpointRepository,
+)
 from atlas.modules.mcp_builder.adapters.memory import InMemoryMcpBuilderProjectRepository
 from atlas.modules.mcp_builder.adapters.postgres import PostgreSQLMcpBuilderProjectRepository
 from atlas.modules.mcp_builder.application.service import McpBuilderService
@@ -703,8 +709,14 @@ def create_app(
             if resolved_settings.database_url
             else InMemoryMcpBuilderProjectRepository()
         )
+        mcp_builder_design_repository = (
+            PostgreSQLMcpBuilderDesignCheckpointRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryMcpBuilderDesignCheckpointRepository()
+        )
         resolved_mcp_builder_service = McpBuilderService(
             repository=mcp_builder_repository,
+            design_repository=mcp_builder_design_repository,
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )

@@ -66,6 +66,8 @@ UPGRADE_COMPLETION_RECEIPT_CREATE = "platform.upgrade-human-review-receipt.creat
 UPGRADE_COMPLETION_RECEIPT_READ = "platform.upgrade-human-review-receipt.read"
 MCP_BUILDER_PROJECT_CREATE = "mcp-builder.project.create"
 MCP_BUILDER_PROJECT_READ = "mcp-builder.project.read"
+MCP_BUILDER_DESIGN_CREATE = "mcp-builder.design.create"
+MCP_BUILDER_DESIGN_READ = "mcp-builder.design.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -708,6 +710,14 @@ def build_development_authorization_service(
             permission_id=MCP_BUILDER_PROJECT_READ,
             description="Read one owned secret-free MCP Builder source-analysis project.",
         ),
+        PermissionDefinition(
+            permission_id=MCP_BUILDER_DESIGN_CREATE,
+            description="Confirm one exact-source MCP Builder design without generation authority.",
+        ),
+        PermissionDefinition(
+            permission_id=MCP_BUILDER_DESIGN_READ,
+            description="Read one exact-scope secret-free MCP Builder design checkpoint.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -756,6 +766,8 @@ def build_development_authorization_service(
                 UPGRADE_COMPLETION_RECEIPT_READ,
                 MCP_BUILDER_PROJECT_CREATE,
                 MCP_BUILDER_PROJECT_READ,
+                MCP_BUILDER_DESIGN_CREATE,
+                MCP_BUILDER_DESIGN_READ,
             }
         ),
     )
@@ -1080,6 +1092,30 @@ def build_development_authorization_service(
             ),
             RoleAssignment(
                 assignment_id="assignment.development.mcp-builder-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=mcp_builder_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.mcp-builder-design-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=mcp_builder_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.mcp-builder-design-read",
                 version=1,
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,

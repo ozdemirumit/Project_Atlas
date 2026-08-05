@@ -84,6 +84,53 @@ const project = {
   },
 };
 
+const checkpoint = {
+  data: {
+    checkpoint_id: "mcp-builder-design.dddddddddddddddddddddddd",
+    schema_version: "atlas.mcp-builder-design-checkpoint.v1",
+    version: 1,
+    project_id: project.data.project_id,
+    project_version: 1,
+    project_digest: project.data.canonical_digest,
+    source_digest: project.data.source_digest,
+    reviewer_id: identity.data.subject_id,
+    connector_boundary: "Read-only inventory and health evidence.",
+    target_products: [project.data.product],
+    network_destinations: project.data.declared_servers,
+    configuration_keys: ["config.vendor-endpoint"],
+    secret_reference_ids: ["secret.vendor-api-key"],
+    entity_mappings: [
+      { source_entity: "vendor.storage-system", atlas_entity: "atlas.storage-system" },
+    ],
+    capability_decisions: [
+      {
+        candidate_id: project.data.capability_candidates[0]?.candidate_id,
+        decision: "include",
+        analyzed_class: "C1",
+        confirmed_class: "C1",
+        required_permission: "storage.system.read",
+        rationale: "Confirmed as an authenticated bounded read.",
+        generation_eligible: true,
+      },
+    ],
+    canonical_digest: "d".repeat(64),
+    created_at: "2026-08-05T12:10:00Z",
+    ready_for_generation_design: true,
+    generated_artifact_created: false,
+    candidate_package_created: false,
+    connector_registered: false,
+    connector_installed: false,
+    connector_enabled: false,
+    network_request_performed: false,
+    model_inference_performed: false,
+    dynamic_code_execution_performed: false,
+    runtime_trust_granted: false,
+    execution_authorized: false,
+    infrastructure_mutation_performed: false,
+    reused: false,
+  },
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -91,10 +138,11 @@ afterEach(() => {
 });
 
 describe("MCP Builder workspace", () => {
-  it("submits bounded OpenAPI evidence and shows only analysis results", async () => {
+  it("submits bounded OpenAPI evidence and records a non-generating design checkpoint", async () => {
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
     vi.stubGlobal("crypto", { randomUUID: () => "mcp-builder-ui-001" });
     const requests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    const designRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -108,6 +156,14 @@ describe("MCP Builder workspace", () => {
           idempotencyKey: headers.get("Idempotency-Key"),
         });
         return Promise.resolve(new Response(JSON.stringify(project), { status: 201 }));
+      }
+      if (url.endsWith(`/mcp-builder/projects/${project.data.project_id}/design-checkpoints`)) {
+        const headers = new Headers(init?.headers);
+        designRequests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(new Response(JSON.stringify(checkpoint), { status: 201 }));
       }
       return Promise.resolve(
         new Response(JSON.stringify({ code: "authorization_denied" }), { status: 403 }),
@@ -156,14 +212,31 @@ describe("MCP Builder workspace", () => {
     fireEvent.click(analyze);
 
     expect(await screen.findByText("Synthetic Storage API")).toBeVisible();
-    expect(screen.getByText("getSystems")).toBeVisible();
+    expect(screen.getAllByText("getSystems")).toHaveLength(2);
     expect(screen.getByText("Read-only candidate")).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "Decision" })).toHaveValue("include");
+    fireEvent.click(
+      screen.getByLabelText(/I confirm this checkpoint records design evidence only/i),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Confirm design checkpoint" }));
+
+    expect(await screen.findByText("Design checkpoint recorded")).toBeVisible();
+    expect(screen.getByText(checkpoint.data.checkpoint_id)).toBeVisible();
     expect(screen.queryByRole("button", { name: /generate|install|execute/i })).not.toBeInTheDocument();
     expect(requests).toHaveLength(1);
+    expect(designRequests).toHaveLength(1);
     expect(requests[0]?.idempotencyKey).toBe("mcp-builder.mcp-builder-ui-001");
     const body = JSON.parse(requests[0]?.body ?? "{}") as Record<string, unknown>;
     expect(body.source_document).toBe(source);
     expect(body.confirmed_synthetic_or_lab_only).toBe(true);
     expect(body).not.toHaveProperty("connector_enabled");
+    expect(designRequests[0]?.idempotencyKey).toBe(
+      "mcp-builder-design.mcp-builder-ui-001",
+    );
+    const designBody = JSON.parse(designRequests[0]?.body ?? "{}") as Record<string, unknown>;
+    expect(designBody.project_digest).toBe(project.data.canonical_digest);
+    expect(designBody.network_destinations).toEqual(project.data.declared_servers);
+    expect(designBody).not.toHaveProperty("runtime_trust_granted");
+    expect(designBody).not.toHaveProperty("generated_artifact_created");
   });
 });
