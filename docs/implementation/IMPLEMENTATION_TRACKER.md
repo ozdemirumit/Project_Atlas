@@ -6,12 +6,63 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-066 |
 | Title | Governed connector isolated lab self-test foundation |
-| Status | Planned |
-| Branch | Not started |
+| Status | In Progress |
+| Branch | `agent/mcp-lab-self-test` |
 | Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-021 |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-022 |
 | Last Updated | 2026-08-05 |
-| Next Action | Define and accept the isolated lab self-test contract before implementation |
+| Next Action | Implement the accepted isolated lab self-test contract and complete local validation |
+
+### ATLAS-IMP-066 Scope Rationale
+
+- IMP-065 proves bounded disconnected synthetic behavior but cannot establish TLS,
+  authentication, product identity, version compatibility, or real response handling against an
+  approved laboratory target.
+- ADR-022 introduces a production-excluded, read-only, plan-bound lab evidence gate with isolated
+  execution, one-target egress, secret-broker delivery, strict budgets, revocation, and cleanup.
+- Final validation, signing, approval, registration, installation, enablement, production trust,
+  and infrastructure operations remain later independent stages.
+
+### ATLAS-IMP-066 Acceptance Criteria
+
+- Only a dedicated multi-factor human lab operator in the exact tenant can create or read a report;
+  every prior-stage actor, plan approver, credential custodian, AI/service identity, wrong-scope
+  actor, and insufficient-assurance identity fails closed without discovery.
+- The request accepts only the exact passed IMP-065 report and one immutable approved, unexpired
+  lab-plan ID and digest. Callers cannot supply or override target, route, proxy, trust, credential,
+  secret, command, method, payload, capability, timeout, runner, or environment values.
+- The plan binds one non-production target alias, product/version range, allowlisted destinations,
+  trust and secret references, read-only C0/C1 capabilities, request/output budgets, expiry, and
+  independent approval. All inputs are independently reverified before execution.
+- A policy-issued one-time lease and secret broker provide only short-lived least-privilege access
+  inside an isolated runner. Raw secret values and target coordinates never enter API, persistence,
+  audit, logs, reports, errors, browser state, command line, inherited environment, or model context.
+- Egress is limited to exact approved destinations; TLS, redirects, target identity, version,
+  authentication, request count/bytes, deadline, process/shell/filesystem restrictions, response
+  bounds, session closure, lease release, credential revocation, and workspace cleanup fail closed.
+- The platform harness runs only exact plan-bound read-only self-test and C0/C1 capabilities.
+  Mutation attempts, undeclared methods/destinations, incomplete coverage, target-side state
+  change, malformed evidence, timeout, or cleanup/revocation failure cannot pass.
+- Reports are one-to-one with exact runner evidence and plan, immutable, idempotent,
+  concurrency-safe, audit-before-persist, minimized, deterministic for stable evidence, and
+  equivalent in memory and PostgreSQL.
+- Failed evidence blocks promotion. Either outcome marks only `lab_self_test_completed=true` and
+  grants no signing, approval, registration, installation, enablement, deployment, runtime trust,
+  execution authority, or infrastructure mutation.
+- Strict no-store APIs require dedicated RBAC, CSRF, acknowledgement, exact scope, correlation,
+  bounded schemas, safe errors, and complete separation of duties. The web workspace exposes only
+  safe aggregate plan, product/version, coverage, check, lease/revocation/cleanup, limitation, and
+  promotion evidence with no later-stage controls.
+- Backend/frontend tests, one Alembic head, local mock-target fail-closed validation, approved
+  adapter contract coverage, live authorized/denied HTTP checks, desktop and 390-pixel mobile
+  inspection, browser logs, and GitHub CI apply.
+- This slice performs no production access, arbitrary target connection, write operation, package
+  rewrite, signing, approval, registration, installation, enablement, deployment, or infrastructure
+  mutation and makes no universal vendor-compatibility claim.
+
+### ATLAS-IMP-066 Validation Evidence
+
+- Pending implementation.
 
 ### ATLAS-IMP-065 Scope Rationale
 
