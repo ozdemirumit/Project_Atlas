@@ -20,3 +20,4 @@ ADR numbers are permanent and never reused. Material changes require a new ADR r
 | [ADR-003](ADR-003_Development_Identity.md) | Development identity boundary | Accepted |
 | [ADR-004](ADR-004_MCP_Builder_Python_Generation_Profile.md) | MCP Builder Python generation profile | Accepted |
 | [ADR-005](ADR-005_MCP_Builder_Static_Validation_Profile.md) | MCP Builder static validation profile | Accepted |
+| [ADR-006](ADR-006_MCP_Builder_Domain_Review_Contract.md) | MCP Builder domain review contract | Accepted |
