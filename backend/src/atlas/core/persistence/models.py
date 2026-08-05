@@ -103,6 +103,42 @@ class McpBuilderDesignCheckpointModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class McpBuilderGenerationModel(Base):
+    __tablename__ = "mcp_builder_generations"
+    __table_args__ = (
+        CheckConstraint("version = 1", name="ck_mcp_builder_generations_version"),
+        UniqueConstraint("project_id", name="uq_mcp_builder_generations_project"),
+        UniqueConstraint(
+            "requested_by",
+            "idempotency_key",
+            name="uq_mcp_builder_generations_requester_idempotency",
+        ),
+    )
+
+    generation_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    project_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    project_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    project_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    checkpoint_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    checkpoint_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    requested_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    language_profile: Mapped[str] = mapped_column(String(128), nullable=False)
+    template_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    artifact_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    artifact_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    files: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class RuntimeMetadata(Base):
     __tablename__ = "platform_runtime_metadata"
     __table_args__ = (

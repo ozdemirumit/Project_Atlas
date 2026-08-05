@@ -68,6 +68,8 @@ MCP_BUILDER_PROJECT_CREATE = "mcp-builder.project.create"
 MCP_BUILDER_PROJECT_READ = "mcp-builder.project.read"
 MCP_BUILDER_DESIGN_CREATE = "mcp-builder.design.create"
 MCP_BUILDER_DESIGN_READ = "mcp-builder.design.read"
+MCP_BUILDER_GENERATION_CREATE = "mcp-builder.generation.create"
+MCP_BUILDER_GENERATION_READ = "mcp-builder.generation.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -718,6 +720,14 @@ def build_development_authorization_service(
             permission_id=MCP_BUILDER_DESIGN_READ,
             description="Read one exact-scope secret-free MCP Builder design checkpoint.",
         ),
+        PermissionDefinition(
+            permission_id=MCP_BUILDER_GENERATION_CREATE,
+            description="Create one exact-design quarantined MCP Builder scaffold.",
+        ),
+        PermissionDefinition(
+            permission_id=MCP_BUILDER_GENERATION_READ,
+            description="Inspect one exact-scope quarantined MCP Builder scaffold.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -768,6 +778,8 @@ def build_development_authorization_service(
                 MCP_BUILDER_PROJECT_READ,
                 MCP_BUILDER_DESIGN_CREATE,
                 MCP_BUILDER_DESIGN_READ,
+                MCP_BUILDER_GENERATION_CREATE,
+                MCP_BUILDER_GENERATION_READ,
             }
         ),
     )

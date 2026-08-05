@@ -38,6 +38,8 @@ from atlas.modules.authorization.application.bootstrap import (
     INVESTIGATION_CREATE,
     MCP_BUILDER_DESIGN_CREATE,
     MCP_BUILDER_DESIGN_READ,
+    MCP_BUILDER_GENERATION_CREATE,
+    MCP_BUILDER_GENERATION_READ,
     MCP_BUILDER_PROJECT_CREATE,
     MCP_BUILDER_PROJECT_READ,
     RCA_CREATE,
@@ -1663,5 +1665,29 @@ async def authorize_mcp_builder_design_read(
         request,
         subject,
         permission_id=MCP_BUILDER_DESIGN_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def authorize_mcp_builder_generation_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_mcp_builder(
+        request,
+        subject,
+        permission_id=MCP_BUILDER_GENERATION_CREATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_mcp_builder_generation_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_mcp_builder(
+        request,
+        subject,
+        permission_id=MCP_BUILDER_GENERATION_READ,
         capability_class=CapabilityClass.C1_READ_ONLY,
     )

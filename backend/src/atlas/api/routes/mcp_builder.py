@@ -7,9 +7,15 @@ from fastapi import APIRouter, Depends, Header, Path, Request, Response
 
 from atlas.api.errors import AtlasError
 from atlas.api.mcp_builder_schemas import (
+    BuilderGeneratedFileData,
     McpBuilderDesignCheckpointData,
     McpBuilderDesignCheckpointInput,
     McpBuilderDesignCheckpointResponse,
+    McpBuilderGeneratedFileData,
+    McpBuilderGeneratedFileResponse,
+    McpBuilderGenerationData,
+    McpBuilderGenerationInput,
+    McpBuilderGenerationResponse,
     McpBuilderProjectData,
     McpBuilderProjectInput,
     McpBuilderProjectResponse,
@@ -21,6 +27,8 @@ from atlas.api.security import (
     authorize_mcp_builder_create,
     authorize_mcp_builder_design_create,
     authorize_mcp_builder_design_read,
+    authorize_mcp_builder_generation_create,
+    authorize_mcp_builder_generation_read,
     authorize_mcp_builder_read,
     browser_session_subject,
 )
@@ -29,6 +37,7 @@ from atlas.modules.identity.domain.models import AuthenticatedSubject
 from atlas.modules.mcp_builder.application.ports import McpBuilderError
 from atlas.modules.mcp_builder.application.service import McpBuilderService
 from atlas.modules.mcp_builder.domain.design_review import McpBuilderDesignCheckpoint
+from atlas.modules.mcp_builder.domain.generation import McpBuilderGeneration
 from atlas.modules.mcp_builder.domain.models import McpBuilderProject
 
 router = APIRouter(prefix="/mcp-builder/projects", tags=["mcp-builder"])
@@ -52,8 +61,8 @@ def _raise(error: McpBuilderError) -> NoReturn:
     raise AtlasError(
         status=status,
         code=error.code,
-        title="MCP Builder analysis unavailable",
-        detail="The governed source analysis could not proceed within its safety boundary.",
+        title="MCP Builder operation unavailable",
+        detail="The governed Builder operation could not proceed within its safety boundary.",
     ) from error
 
 
@@ -75,6 +84,18 @@ def _design_response(
     response.headers["Cache-Control"] = "no-store"
     return McpBuilderDesignCheckpointResponse(
         data=McpBuilderDesignCheckpointData.from_domain(checkpoint),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+def _generation_response(
+    generation: McpBuilderGeneration, request: Request, response: Response
+) -> McpBuilderGenerationResponse:
+    response.headers["Cache-Control"] = "no-store"
+    return McpBuilderGenerationResponse(
+        data=McpBuilderGenerationData.from_domain(generation),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),
@@ -188,3 +209,86 @@ async def get_mcp_builder_design_checkpoint(
     except McpBuilderError as error:
         _raise(error)
     return _design_response(checkpoint, request, response)
+
+
+@router.post(
+    "/{project_id}/generations", response_model=McpBuilderGenerationResponse, status_code=201
+)
+async def create_mcp_builder_generation(
+    project_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    payload: McpBuilderGenerationInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_mcp_builder_generation_create)],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> McpBuilderGenerationResponse:
+    service: McpBuilderService = request.app.state.mcp_builder_service
+    try:
+        generation = await service.create_generation(
+            actor=subject,
+            project_id=project_id,
+            idempotency_key=idempotency_key,
+            correlation_id=str(request.state.correlation_id),
+            **payload.model_dump(exclude={"schema_version"}),
+        )
+    except McpBuilderError as error:
+        _raise(error)
+    return _generation_response(generation, request, response)
+
+
+@router.get("/{project_id}/generation", response_model=McpBuilderGenerationResponse)
+async def get_mcp_builder_generation(
+    project_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_mcp_builder_generation_read)],
+) -> McpBuilderGenerationResponse:
+    service: McpBuilderService = request.app.state.mcp_builder_service
+    try:
+        generation = await service.get_generation(
+            actor=subject,
+            project_id=project_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except McpBuilderError as error:
+        _raise(error)
+    return _generation_response(generation, request, response)
+
+
+@router.get(
+    "/{project_id}/generation/files/{relative_path:path}",
+    response_model=McpBuilderGeneratedFileResponse,
+)
+async def get_mcp_builder_generated_file(
+    project_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    relative_path: Annotated[str, Path(min_length=1, max_length=240)],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_mcp_builder_generation_read)],
+) -> McpBuilderGeneratedFileResponse:
+    service: McpBuilderService = request.app.state.mcp_builder_service
+    try:
+        generation, metadata, content = await service.get_generated_file(
+            actor=subject,
+            project_id=project_id,
+            relative_path=relative_path,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except McpBuilderError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return McpBuilderGeneratedFileResponse(
+        data=McpBuilderGeneratedFileData(
+            generation_id=generation.generation_id,
+            state=generation.state.value,
+            artifact_digest=generation.artifact_digest,
+            file=BuilderGeneratedFileData.from_domain(metadata),
+            content=content,
+        ),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )

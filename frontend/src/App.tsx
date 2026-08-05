@@ -17,6 +17,7 @@ import {
   Download,
   FileChartColumn,
   FileCheck2,
+  FileCode2,
   FileText,
   FlaskConical,
   GitBranch,
@@ -113,7 +114,9 @@ import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
 import {
   createMcpBuilderDesignCheckpoint,
+  createMcpBuilderGeneration,
   createMcpBuilderProject,
+  getMcpBuilderGeneratedFile,
   type McpBuilderDesignDecision,
   type McpBuilderProject,
 } from "./api/mcpBuilder";
@@ -456,6 +459,8 @@ export function App() {
   const [builderSourceEntity, setBuilderSourceEntity] = useState("vendor.storage-system");
   const [builderAtlasEntity, setBuilderAtlasEntity] = useState("atlas.storage-system");
   const [builderDesignAcknowledged, setBuilderDesignAcknowledged] = useState(false);
+  const [builderGenerationAcknowledged, setBuilderGenerationAcknowledged] = useState(false);
+  const [builderSelectedGeneratedFile, setBuilderSelectedGeneratedFile] = useState("");
   const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
     Record<string, McpBuilderDesignDecision>
   >({});
@@ -471,14 +476,43 @@ export function App() {
     retry: false,
   });
   const identity = identityQuery.data?.data;
+  const builderGeneratedFileMutation = useMutation({
+    mutationFn: getMcpBuilderGeneratedFile,
+  });
+  const builderGenerationMutation = useMutation({
+    mutationFn: createMcpBuilderGeneration,
+    onSuccess: (result) => {
+      setBuilderGenerationAcknowledged(false);
+      const firstFile =
+        result.data.files.find((item) => item.relative_path === "README.md") ??
+        result.data.files[0];
+      if (firstFile) {
+        setBuilderSelectedGeneratedFile(firstFile.relative_path);
+        builderGeneratedFileMutation.mutate({
+          projectId: result.data.project_id,
+          relativePath: firstFile.relative_path,
+        });
+      }
+    },
+  });
   const builderDesignMutation = useMutation({
     mutationFn: createMcpBuilderDesignCheckpoint,
+    onSuccess: () => {
+      builderGenerationMutation.reset();
+      builderGeneratedFileMutation.reset();
+      setBuilderGenerationAcknowledged(false);
+      setBuilderSelectedGeneratedFile("");
+    },
   });
   const builderMutation = useMutation({
     mutationFn: createMcpBuilderProject,
     onSuccess: (result) => {
       builderDesignMutation.reset();
+      builderGenerationMutation.reset();
+      builderGeneratedFileMutation.reset();
       setBuilderDesignAcknowledged(false);
+      setBuilderGenerationAcknowledged(false);
+      setBuilderSelectedGeneratedFile("");
       setBuilderDesignDecisions(
         Object.fromEntries(
           result.data.capability_candidates.map((candidate) => [
@@ -2046,7 +2080,10 @@ export function App() {
                           setBuilderFileError("");
                           builderMutation.reset();
                           builderDesignMutation.reset();
+                          builderGenerationMutation.reset();
+                          builderGeneratedFileMutation.reset();
                           setBuilderDesignDecisions({});
+                          setBuilderSelectedGeneratedFile("");
                           if (!file) {
                             setBuilderSourceName("");
                             setBuilderSourceDocument("");
@@ -2400,6 +2437,199 @@ export function App() {
                             </p>
                           </div>
                         </div>
+                      )}
+                      {builderDesignMutation.data?.data && (
+                        <section
+                          className="mcp-builder-generation"
+                          aria-label="Quarantined scaffold generation"
+                        >
+                          <div className="section-heading">
+                            <div>
+                              <p className="eyebrow">ISOLATED GENERATION</p>
+                              <h3>Create a Python review scaffold</h3>
+                              <p>
+                                Produce deterministic source, schemas, tests, and traceability inside
+                                the Atlas quarantine.
+                              </p>
+                            </div>
+                            <span className="state-badge pending">
+                              <LockKeyhole size={14} /> No runtime trust
+                            </span>
+                          </div>
+                          {!builderGenerationMutation.data && (
+                            <form
+                              className="mcp-builder-generation-form"
+                              onSubmit={(event) => {
+                                event.preventDefault();
+                                const project = builderMutation.data?.data;
+                                const checkpoint = builderDesignMutation.data?.data;
+                                if (
+                                  !project ||
+                                  !checkpoint ||
+                                  !builderGenerationAcknowledged ||
+                                  builderGenerationMutation.isPending
+                                ) {
+                                  return;
+                                }
+                                builderGenerationMutation.mutate({ project, checkpoint });
+                              }}
+                            >
+                              <div className="mcp-builder-generation-contract">
+                                <div>
+                                  <span>Language profile</span>
+                                  <code>atlas.python312.v1</code>
+                                </div>
+                                <div>
+                                  <span>Template</span>
+                                  <code>mcp-builder-python.v1</code>
+                                </div>
+                                <div>
+                                  <span>Eligible capabilities</span>
+                                  <strong>
+                                    {
+                                      builderDesignMutation.data.data.capability_decisions.filter(
+                                        (decision) => decision.generation_eligible,
+                                      ).length
+                                    }
+                                  </strong>
+                                </div>
+                              </div>
+                              <div className="mcp-builder-boundary">
+                                <ShieldCheck size={18} />
+                                <p>
+                                  Generation writes review files only. It does not call a model or
+                                  network, run tests or code, create a package, or register, install,
+                                  enable, or invoke a connector.
+                                </p>
+                              </div>
+                              <label className="mcp-builder-check">
+                                <input
+                                  type="checkbox"
+                                  checked={builderGenerationAcknowledged}
+                                  onChange={(event) =>
+                                    setBuilderGenerationAcknowledged(event.target.checked)
+                                  }
+                                />
+                                <span>
+                                  I authorize deterministic file creation inside quarantine and
+                                  acknowledge that the output is untrusted and non-executable.
+                                </span>
+                              </label>
+                              <button
+                                className="run-check-button mcp-builder-submit"
+                                type="submit"
+                                disabled={
+                                  !builderGenerationAcknowledged ||
+                                  builderGenerationMutation.isPending
+                                }
+                              >
+                                {builderGenerationMutation.isPending ? (
+                                  <RefreshCw className="spin" size={16} />
+                                ) : (
+                                  <FileCode2 size={16} />
+                                )}
+                                Create quarantined scaffold
+                              </button>
+                            </form>
+                          )}
+                          {builderGenerationMutation.isError && (
+                            <div className="workspace-message error-state" role="alert">
+                              <AlertTriangle size={20} />
+                              <div>
+                                <h3>Scaffold generation unavailable</h3>
+                                <p>The exact design or quarantine boundary could not be verified.</p>
+                              </div>
+                            </div>
+                          )}
+                          {builderGenerationMutation.data?.data && (
+                            <div className="mcp-builder-generation-result">
+                              <div className="mcp-builder-generation-summary">
+                                <div>
+                                  <p className="eyebrow">QUARANTINED ARTIFACT</p>
+                                  <strong>{builderGenerationMutation.data.data.generation_id}</strong>
+                                  <code>{builderGenerationMutation.data.data.artifact_digest}</code>
+                                </div>
+                                <span className="state-badge analyzed">
+                                  <LockKeyhole size={14} /> quarantined
+                                </span>
+                              </div>
+                              <div className="mcp-builder-facts">
+                                <div>
+                                  <span>Files</span>
+                                  <strong>{builderGenerationMutation.data.data.files.length}</strong>
+                                </div>
+                                <div>
+                                  <span>Bytes</span>
+                                  <strong>
+                                    {builderGenerationMutation.data.data.artifact_size_bytes.toLocaleString()}
+                                  </strong>
+                                </div>
+                                <div>
+                                  <span>Validation</span>
+                                  <strong>Not run</strong>
+                                </div>
+                                <div>
+                                  <span>Runtime trust</span>
+                                  <strong>None</strong>
+                                </div>
+                              </div>
+                              <div className="mcp-builder-file-browser">
+                                <div className="mcp-builder-file-list" aria-label="Generated files">
+                                  {builderGenerationMutation.data.data.files.map((file) => (
+                                    <button
+                                      key={file.relative_path}
+                                      type="button"
+                                      className={
+                                        file.relative_path === builderSelectedGeneratedFile
+                                          ? "selected"
+                                          : ""
+                                      }
+                                      onClick={() => {
+                                        setBuilderSelectedGeneratedFile(file.relative_path);
+                                        builderGeneratedFileMutation.mutate({
+                                          projectId: builderGenerationMutation.data.data.project_id,
+                                          relativePath: file.relative_path,
+                                        });
+                                      }}
+                                      aria-label={`Preview ${file.relative_path}`}
+                                    >
+                                      <FileText size={14} />
+                                      <span>{file.relative_path}</span>
+                                      <small>{file.size_bytes} B</small>
+                                    </button>
+                                  ))}
+                                </div>
+                                <div className="mcp-builder-file-preview">
+                                  <div>
+                                    <span>Verified file preview</span>
+                                    <code>{builderSelectedGeneratedFile || "Select a file"}</code>
+                                  </div>
+                                  {builderGeneratedFileMutation.isPending && (
+                                    <div className="mcp-builder-preview-state">
+                                      <RefreshCw className="spin" size={16} /> Verifying content
+                                    </div>
+                                  )}
+                                  {builderGeneratedFileMutation.isError && (
+                                    <div className="mcp-builder-preview-state error-state">
+                                      <AlertTriangle size={16} /> Preview unavailable
+                                    </div>
+                                  )}
+                                  {builderGeneratedFileMutation.data?.data && (
+                                    <pre>{builderGeneratedFileMutation.data.data.content}</pre>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="mcp-builder-boundary">
+                                <LockKeyhole size={18} />
+                                <p>
+                                  Artifact integrity is verified on every read. Validation, packaging,
+                                  registration, installation, execution, and infrastructure mutation
+                                  remain unavailable.
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                        </section>
                       )}
                     </section>
                   </div>

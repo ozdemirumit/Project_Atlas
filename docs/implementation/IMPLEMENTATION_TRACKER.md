@@ -4,14 +4,92 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-047 |
-| Title | Governed MCP Builder human design checkpoint |
+| Task ID | ATLAS-IMP-048 |
+| Title | Governed MCP Builder isolated Python scaffold generation |
 | Status | Completed |
-| Branch | `agent/mcp-builder-human-design-checkpoint` |
-| Pull Request | [#59](https://github.com/ozdemirumit/Project_Atlas/pull/59) |
-| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056 |
+| Branch | `agent/mcp-builder-isolated-scaffold-generation` |
+| Pull Request | [#60](https://github.com/ozdemirumit/Project_Atlas/pull/60) |
+| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-004 |
 | Last Updated | 2026-08-05 |
-| Next Action | Select the next approved implementation slice |
+| Next Action | Scope ATLAS-IMP-049 isolated generated-scaffold validation |
+
+### ATLAS-IMP-048 Scope Rationale
+
+- IMP-047 supplies the mandatory immutable human design checkpoint. ATLAS-022 next requires isolated
+  code and test generation before automated validation, domain review, security review, lab testing,
+  or candidate packaging can begin.
+- ADR-004 selects the first approved language profile, `atlas.python312.v1`, using deterministic,
+  restricted-network-safe templates. This slice creates real reviewable scaffold files while leaving
+  every generated handler and target client non-executable.
+- Generation output is an untrusted artifact under Atlas-owned quarantine. It cannot become a package,
+  connector registration, installed instance, runtime dependency, or execution authority in this
+  slice.
+
+### ATLAS-IMP-048 Acceptance Criteria
+
+- Only an authorized multi-factor human in the exact project organization and environment can create
+  or inspect a generation. Service and AI identities, wrong roles, insufficient assurance, and
+  out-of-scope actors fail closed without generation or file discovery.
+- Generation binds the exact project version and digest, source digest, design-checkpoint ID and
+  digest, complete confirmed capability set, `atlas.python312.v1` profile, and immutable template
+  version. Stale, tampered, incomplete, unsupported, or changed replay input is rejected.
+- The deterministic scaffold contains a connector manifest, Python project metadata, typed
+  non-executable capability drafts, configuration and capability schemas, synthetic tests and
+  fixtures, permission and network documentation, and source-to-artifact traceability. No original
+  source document, secret value, credential-like text, or mutable external content is copied.
+- Every file has a normalized safe relative path, bounded UTF-8 content, byte size, digest, media type,
+  and source-candidate lineage. Duplicate, absolute, traversal, reserved, control-character, symlink,
+  case-colliding, oversized, or unexpected files fail closed.
+- Files publish atomically into a generation-digest directory under a configured quarantine root.
+  Exact existing output is reused; partial, changed, interrupted, or unsafe existing output is
+  rejected without overwriting it. Metadata persists only after required audit and successful
+  publication, with memory and PostgreSQL behavior matching.
+- Strict no-store APIs require browser CSRF for creation, default-deny RBAC, correlation, bounded
+  schemas, safe errors, and content-safe generated-file reads. The web workspace shows provenance,
+  inventory, per-file digests, safe text previews, and explicit quarantine boundaries.
+- Generated Python files parse as Python 3.12 source, schemas and manifests parse structurally, and the
+  generated tests describe the fail-closed draft contract. Generation itself never imports, compiles,
+  executes, tests, packages, signs, registers, installs, enables, or invokes generated code.
+- Automated backend and frontend coverage, Alembic single-head verification, live authorized and
+  denied API validation, filesystem integrity inspection, desktop and 390-pixel mobile inspection,
+  browser-log inspection, and GitHub CI apply.
+- This slice performs no network request, model inference, subprocess or shell invocation, dynamic
+  code execution, secret resolution, package creation, connector registration, runtime trust grant,
+  workflow execution, deployment, or infrastructure mutation.
+
+### ATLAS-IMP-048 Validation Evidence
+
+- Domain, application, API, authorization, audit, memory, PostgreSQL, migration, and filesystem
+  coverage verifies exact project, source, and design-checkpoint binding; deterministic generation;
+  immutable replay; safe path, media, size, and digest contracts; audit-before-publication; atomic
+  quarantine publication; exact reuse; tamper detection; and fail-closed stale or unsupported input.
+- The generated `atlas.python312.v1` review scaffold contains 16 bounded files: a connector manifest,
+  Python project metadata, fail-closed capability handlers, configuration and capability schemas,
+  synthetic contract tests and fixtures, and permission, network, entity-mapping, and source
+  traceability documents. Python, JSON/YAML, and TOML outputs parse structurally; source content and
+  secrets are not copied into the artifact.
+- Full backend verification passes Ruff formatting and lint, strict mypy across 401 source and test
+  files, one Alembic head at `20260805_0020`, and 397 pytest tests with three existing Windows
+  symbolic-link skips. Full frontend verification passes ESLint, TypeScript, all 35 Vitest tests, and
+  the production build.
+- Live LDAP validation created generation
+  `mcp-builder-generation.ca9fd5cbcb597de46e5ecb37` with artifact digest
+  `084eeb54507d89ea593f0ec72e431393d108c59ad72ba5b6e1c2bfebc8e37adf`. Missing CSRF failed with
+  HTTP 403, an unsupported language profile failed with HTTP 422, a stale checkpoint failed with HTTP
+  409, and exact generation create/read/file preview returned HTTP 201/200/200 with
+  `Cache-Control: no-store`.
+- Filesystem inspection matched all 16 inventory paths, byte sizes, and SHA-256 digests. Artifact reads
+  reverified content integrity, the original source document was absent, and the generated package
+  remained quarantined with validation, packaging, registration, installation, enablement, network,
+  model, subprocess, dynamic execution, runtime trust, execution authority, and infrastructure
+  mutation all false.
+- The MCP Builder workspace completed source upload, analysis, human design confirmation, explicit
+  quarantine acknowledgement, deterministic scaffold creation, and verified file switching in the
+  live browser. At 1280 pixels the file list and preview remained side by side without overlap or
+  horizontal overflow; at 390-by-844 they stacked in order within the viewport. Browser warning and
+  error logs were empty.
+- Source commit `398598d` passed both backend and frontend gates in [GitHub Actions run
+  30981084337](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30981084337).
 
 ### ATLAS-IMP-047 Scope Rationale
 
@@ -2735,6 +2813,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-045 | Governed non-executable human-review completion receipt | Completed through [PR #57](https://github.com/ozdemirumit/Project_Atlas/pull/57) from source commit `53429db`; 379 backend tests, 34 frontend tests, live four-identity API and desktop/mobile receipt validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-046 | Governed MCP Builder project and OpenAPI source-analysis foundation | Completed through [PR #58](https://github.com/ozdemirumit/Project_Atlas/pull/58) from source commit `0e0bccc`; 389 backend tests, 35 frontend tests, live secret-free source-analysis API and desktop/mobile Builder validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-047 | Governed MCP Builder human design checkpoint | Completed through [PR #59](https://github.com/ozdemirumit/Project_Atlas/pull/59) from source commit `318d023`; 393 backend tests, 35 frontend tests, live immutable design-checkpoint API and desktop/mobile Builder validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-048 | Governed MCP Builder isolated Python scaffold generation | Completed through [PR #60](https://github.com/ozdemirumit/Project_Atlas/pull/60) from source commit `398598d`; 397 backend tests, 35 frontend tests, live deterministic quarantine generation, filesystem integrity, and desktop/mobile Builder validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 

@@ -499,6 +499,192 @@ textarea:focus-visible {
   font-size: 10px;
 }
 
+.mcp-builder-generation {
+  display: grid;
+  gap: 16px;
+  padding-top: 18px;
+  border-top: 1px solid #cfdad6;
+}
+
+.mcp-builder-generation-form,
+.mcp-builder-generation-result {
+  display: grid;
+  gap: 14px;
+}
+
+.mcp-builder-generation-contract {
+  display: grid;
+  gap: 1px;
+  background: #d7e0dd;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.mcp-builder-generation-contract > div {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  padding: 12px;
+  background: #f8faf9;
+}
+
+.mcp-builder-generation-contract span {
+  color: #6a7975;
+  font-size: 8px;
+  font-weight: 720;
+  text-transform: uppercase;
+}
+
+.mcp-builder-generation-contract code,
+.mcp-builder-generation-contract strong {
+  overflow-wrap: anywhere;
+  color: #2d4640;
+  font-size: 10px;
+}
+
+.mcp-builder-generation-summary {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.mcp-builder-generation-summary > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.mcp-builder-generation-summary strong,
+.mcp-builder-generation-summary code {
+  overflow-wrap: anywhere;
+}
+
+.mcp-builder-generation-summary strong {
+  font-size: 11px;
+}
+
+.mcp-builder-generation-summary code {
+  color: #687773;
+  font-size: 8px;
+}
+
+.mcp-builder-file-browser {
+  display: grid;
+  min-width: 0;
+  min-height: 360px;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #cfd9d6;
+  grid-template-columns: minmax(220px, 0.36fr) minmax(0, 0.64fr);
+}
+
+.mcp-builder-file-list {
+  max-height: 480px;
+  overflow: auto;
+  border-right: 1px solid #d8e0dd;
+}
+
+.mcp-builder-file-list button {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  color: #3d4d49;
+  background: #ffffff;
+  border: 0;
+  border-bottom: 1px solid #e4e9e7;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mcp-builder-file-list button:hover,
+.mcp-builder-file-list button.selected {
+  color: #1f5c50;
+  background: #edf5f2;
+}
+
+.mcp-builder-file-list button.selected {
+  box-shadow: inset 3px 0 #237765;
+}
+
+.mcp-builder-file-list button span {
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 9px;
+}
+
+.mcp-builder-file-list button small {
+  color: #74817d;
+  font-size: 8px;
+}
+
+.mcp-builder-file-preview {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  background: #18211f;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.mcp-builder-file-preview > div:first-child {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  color: #d7e3df;
+  background: #25312e;
+  border-bottom: 1px solid #374640;
+}
+
+.mcp-builder-file-preview > div:first-child span {
+  flex: 0 0 auto;
+  font-size: 8px;
+  font-weight: 720;
+  text-transform: uppercase;
+}
+
+.mcp-builder-file-preview > div:first-child code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #9fc9bd;
+  font-size: 8px;
+  text-align: right;
+}
+
+.mcp-builder-file-preview pre {
+  min-width: 0;
+  max-height: 440px;
+  margin: 0;
+  overflow: auto;
+  padding: 14px;
+  color: #dce8e4;
+  font-size: 9px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mcp-builder-preview-state {
+  display: flex;
+  min-height: 180px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #b9cac5;
+  font-size: 10px;
+}
+
+.mcp-builder-preview-state.error-state {
+  color: #efb3ad;
+}
+
 @media (max-width: 900px) {
   .mcp-builder-fields,
   .mcp-builder-decision-list fieldset {
@@ -516,7 +702,9 @@ textarea:focus-visible {
   .mcp-builder-fields,
   .mcp-builder-facts,
   .mcp-builder-design-fields,
-  .mcp-builder-decision-list fieldset {
+  .mcp-builder-decision-list fieldset,
+  .mcp-builder-generation-contract,
+  .mcp-builder-file-browser {
     grid-template-columns: 1fr;
   }
 
@@ -545,6 +733,20 @@ textarea:focus-visible {
   .mcp-builder-findings code {
     max-width: none;
     grid-column: 2;
+  }
+
+  .mcp-builder-file-browser {
+    min-height: 520px;
+  }
+
+  .mcp-builder-file-list {
+    max-height: 210px;
+    border-right: 0;
+    border-bottom: 1px solid #d8e0dd;
+  }
+
+  .mcp-builder-file-preview {
+    min-height: 300px;
   }
 }
 
