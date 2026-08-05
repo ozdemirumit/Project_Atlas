@@ -4,14 +4,59 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-057 |
-| Title | Governed connector package secret and prohibited-content scan foundation |
-| Status | Done |
-| Branch | `agent/mcp-package-content-policy-scan` |
-| Pull Request | [#69](https://github.com/ozdemirumit/Project_Atlas/pull/69) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009, ADR-010, ADR-011, ADR-012, ADR-013 |
+| Task ID | ATLAS-IMP-058 |
+| Title | Governed connector configuration and capability schema semantics foundation |
+| Status | In Progress |
+| Branch | `agent/mcp-schema-semantics-validation` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-014 |
 | Last Updated | 2026-08-05 |
-| Next Action | Select and scope ATLAS-IMP-058 from connector validation pipeline step 5 |
+| Next Action | Implement ATLAS-IMP-058 backend, API, persistence, web, tests, and validation evidence |
+
+### ATLAS-IMP-058 Scope Rationale
+
+- IMP-055 proves schema syntax, version, identity, and package binding; IMP-057 proves the exact
+  inventoried package passed bounded secret and prohibited-content scanning. ATLAS-020 validation
+  pipeline step 5 next requires configuration and capability schema semantic validation.
+- ADR-014 separates quarantine-valid generated drafts from registration-ready contracts. Empty
+  placeholders, unresolved review markers, open outputs, unsafe secret handling, and unbounded or
+  contradictory fields fail the report without rewriting the package.
+- This slice validates declarations only. Implementation behavior, risk/permission comparison,
+  static analysis, contract tests, runner execution, and registration remain later stages.
+
+### ATLAS-IMP-058 Acceptance Criteria
+
+- Only a dedicated multi-factor human schema-validation operator in the exact organization and
+  environment can create or read a report. Every prior-stage actor, AI/service identity,
+  wrong-scope actor, and insufficient-assurance identity fails closed without evidence discovery.
+- The request accepts only the exact passed IMP-057 report with promotion unblocked, verifies all
+  upstream canonical lineage and no-authority flags, independently verifies archive bytes, and
+  reconciles every schema path, digest, size, and class to the passed inventory.
+- A bounded deterministic offline JSON Schema 2020-12 subset validates closed configuration objects,
+  exact manifest keys, supported types, coherent required/default rules, explicit bounds, and opaque
+  secret references without resolving secrets or remote references.
+- Every manifest capability has exact input and output schemas with matching identity and direction,
+  closed bounded properties, coherent required fields, and no unresolved draft marker, empty
+  placeholder, permissive output, ambiguous composition, recursion, or unsupported keyword.
+- Findings expose only rule, severity, schema path, bounded JSON Pointer, summary, and remediation.
+  Raw bodies, fragments, defaults, patterns, enum values, examples, and secret-like content never
+  enter domain state, persistence, APIs, audit, logs, errors, or model context.
+- Reports are one-to-one, deterministic, immutable, idempotent, concurrency-safe,
+  audit-before-persist, and equivalent in memory and PostgreSQL. Trust, audit, parse, or persistence
+  failure cannot fabricate success.
+- Failed semantics set `promotion_blocked=true`; passed semantics set it false. Neither outcome sets
+  connector rejection or changes registration, approval, trust, deployment, execution, or
+  infrastructure state.
+- Strict no-store APIs require browser CSRF for creation, dedicated default-deny RBAC, correlation,
+  bounded schemas, safe errors, exact tenant scope, explicit acknowledgement, and separation of duties.
+- The Connector workspace displays outcome, schema summaries, safe findings, checks, limitations,
+  lineage, and promotion state without raw schema content or later-stage action controls.
+- Automated backend and frontend coverage, one Alembic head, live authorized and denied HTTP checks,
+  passed and failed semantic fixtures, desktop and 390-pixel mobile inspection, browser-log
+  inspection, and GitHub CI apply.
+- This slice performs no package rewrite, remote reference resolution, secret resolution, code
+  import/execution, behavior comparison, vulnerability, malware, license, static-code, contract,
+  mock-target, runner, self-test, or lab validation and grants no lifecycle or runtime authority.
 
 ### ATLAS-IMP-057 Scope Rationale
 
