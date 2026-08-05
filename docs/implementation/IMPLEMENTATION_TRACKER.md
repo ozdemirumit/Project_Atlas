@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009, ADR-010, ADR-011, ADR-012, ADR-013 |
 | Last Updated | 2026-08-05 |
-| Next Action | Implement the accepted ADR-013 backend, persistence, API, web, and validation scope |
+| Next Action | Commit ATLAS-IMP-057, open its pull request, pass CI, merge, and close on `main` |
 
 ### ATLAS-IMP-057 Scope Rationale
 
@@ -58,6 +58,35 @@
   permission-behavior, contract, mock-target, runner, self-test, or lab validation and grants no
   signing, attestation, rejection, registration, approval, installation, enablement, configuration,
   credential, trust, execution, deployment, or infrastructure mutation.
+
+### ATLAS-IMP-057 Validation Evidence
+
+- Domain, application, API, authorization, audit, memory, PostgreSQL, migration, and web coverage
+  verifies exact passed-inventory and archive lineage, independent MFA operation, complete
+  inventory-to-byte reconciliation, deterministic safe findings, promotion blocking, one-to-one
+  idempotency and concurrency, audit-before-persist, and every no-authority flag.
+- Bounded offline detectors cover private-key headers, known token forms, literal authorization,
+  credential-bearing URLs, sensitive assignments, opaque secret references, placeholders, binary
+  signatures, nested archives, strict UTF-8, and prohibited control bytes. Tests prove matched values
+  are absent from domain representation, persisted evidence, audit metadata, and failed API responses.
+- A fresh live HTTP run returned login 201, denied creation without CSRF with 403, created scan
+  `connector-content-policy-scan.2effc0cfd367529aa41150cd` with 201, and reread its matching canonical
+  digest with 200. Create and read responses used `Cache-Control: no-store` and exposed no raw-secret,
+  matched-text, snippet, or body field.
+- The live scan was `passed` for 13 exact files with zero findings and five checks; promotion remained
+  unblocked while connector rejection, registration, trust, execution, deployment, and infrastructure
+  mutation remained false. A separate automated failed fixture proves detection blocks promotion.
+- Backend quality gates passed across the full source and test tree with strict mypy, Ruff formatting
+  and lint, the single Alembic head `20260805_0029`, and 489 passing tests. Three existing Windows
+  symlink scenarios remain host-skipped.
+- Frontend ESLint, TypeScript checking, all 36 tests, and the production build passed. The integrated
+  Testing Library wait budget is three seconds so established end-to-end UI workflows remain
+  deterministic as the governed application surface grows; assertions and test coverage are unchanged.
+  The build retains the existing non-blocking large-chunk advisory.
+- Browser validation against `http://127.0.0.1:5206/` confirmed the Connector workspace at
+  1280-by-720 and a same-origin 390-by-844 mobile frame. Both remained within their viewport widths,
+  controls and text stayed bounded, and browser logs contained no warnings or errors. The temporary
+  mobile harness was removed and the live Connector page was left available for review.
 
 ### ATLAS-IMP-056 Scope Rationale
 

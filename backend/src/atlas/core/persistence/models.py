@@ -556,6 +556,63 @@ class ConnectorPackageSupplyChainInventoryModel(Base):
     inventoried_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class ConnectorPackageContentPolicyScanModel(Base):
+    __tablename__ = "connector_package_content_policy_scans"
+    __table_args__ = (
+        CheckConstraint("version = 1", name="ck_connector_package_content_policy_scans_version"),
+        UniqueConstraint(
+            "source_inventory_id",
+            name="uq_connector_package_content_policy_scans_source_inventory",
+        ),
+        UniqueConstraint(
+            "scanned_by",
+            "idempotency_key",
+            name="uq_connector_package_content_policy_scans_actor_idempotency",
+        ),
+    )
+
+    scan_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    lifecycle: Mapped[str] = mapped_column(String(32), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_inventory_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_inventory_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_validation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_validation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_acquisition_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_acquisition_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_handoff_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_project_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_acquired_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_validated_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_inventoried_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_custodied_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_domain_reviewed_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_security_reviewed_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_lab_operated_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    scanned_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    scan_profile: Mapped[str] = mapped_column(String(128), nullable=False)
+    scanner_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    package_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    package_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    inventory_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    dependency_set_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    scanned_file_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    findings: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    finding_set_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    content_scan_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    checks: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    limitations: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    promotion_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class RuntimeMetadata(Base):
     __tablename__ = "platform_runtime_metadata"
     __table_args__ = (

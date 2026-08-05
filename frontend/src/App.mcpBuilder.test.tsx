@@ -763,7 +763,7 @@ const packageInventory = {
     source_lab_operated_by: candidateHandoff.data.lab_operated_by,
     organization_id: packageValidation.data.organization_id,
     environment_id: packageValidation.data.environment_id,
-    inventoried_by: identity.data.subject_id,
+    inventoried_by: "subject.supply-chain.inventory",
     inventory_profile: "atlas.connector-supply-chain-inventory.python312.v1",
     inspector_version: "atlas.connector-content-dependency-inspector.v1",
     package_digest: packageValidation.data.package_digest,
@@ -837,6 +837,90 @@ const packageInventory = {
   },
 };
 
+const packageContentPolicyScan = {
+  data: {
+    scan_id: "connector-content-policy-scan.cccccccccccccccccccccccc",
+    schema_version: "atlas.connector-package-content-policy-scan.v1",
+    version: 1,
+    lifecycle: "validating",
+    outcome: "passed",
+    source_inventory_id: packageInventory.data.inventory_id,
+    source_inventory_digest: packageInventory.data.canonical_digest,
+    source_validation_id: packageInventory.data.source_validation_id,
+    source_validation_digest: packageInventory.data.source_validation_digest,
+    source_acquisition_id: packageInventory.data.source_acquisition_id,
+    source_acquisition_digest: packageInventory.data.source_acquisition_digest,
+    source_handoff_id: packageInventory.data.source_handoff_id,
+    source_project_id: packageInventory.data.source_project_id,
+    source_acquired_by: packageInventory.data.source_acquired_by,
+    source_validated_by: packageInventory.data.source_validated_by,
+    source_inventoried_by: packageInventory.data.inventoried_by,
+    source_custodied_by: packageInventory.data.source_custodied_by,
+    source_domain_reviewed_by: packageInventory.data.source_domain_reviewed_by,
+    source_security_reviewed_by: packageInventory.data.source_security_reviewed_by,
+    source_lab_operated_by: packageInventory.data.source_lab_operated_by,
+    organization_id: packageInventory.data.organization_id,
+    environment_id: packageInventory.data.environment_id,
+    scanned_by: identity.data.subject_id,
+    scan_profile: "atlas.connector-content-policy-scan.python312.v1",
+    scanner_version: "atlas.connector-secret-prohibited-content-scanner.v1",
+    package_digest: packageInventory.data.package_digest,
+    package_size_bytes: packageInventory.data.package_size_bytes,
+    inventory_digest: packageInventory.data.inventory_digest,
+    dependency_set_digest: packageInventory.data.dependency_set_digest,
+    scanned_file_count: packageInventory.data.files.length,
+    findings: [],
+    finding_set_digest: "5".repeat(64),
+    content_scan_digest: "6".repeat(64),
+    checks: [
+      "content-policy.source.accepted",
+      "content-policy.archive.contract",
+      "content-policy.inventory.contract",
+      "content-policy.secret-content",
+      "content-policy.prohibited-content",
+    ].map((code) => ({
+      code,
+      state: "passed",
+      severity: "informational",
+      summary: `Bounded ${code} evidence passed.`,
+      evidence_paths: [],
+      remediation: "Preserve the exact bounded contract.",
+    })),
+    limitations: [
+      "This report proves only the bounded embedded-secret and prohibited-content scan.",
+      "No raw matched content is retained.",
+    ],
+    promotion_blocked: false,
+    canonical_digest: "7".repeat(64),
+    scanned_at: "2026-08-05T16:05:00Z",
+    secret_content_scan_completed: true,
+    prohibited_content_scan_completed: true,
+    vulnerability_scan_completed: false,
+    malware_scan_completed: false,
+    license_scan_completed: false,
+    static_code_validation_completed: false,
+    schema_semantic_validation_completed: false,
+    permission_behavior_validation_completed: false,
+    contract_validation_completed: false,
+    runner_validation_completed: false,
+    lab_validation_completed: false,
+    package_signed: false,
+    publisher_attested: false,
+    connector_rejected: false,
+    connector_registered: false,
+    connector_approved: false,
+    connector_installed: false,
+    connector_enabled: false,
+    target_configured: false,
+    credentials_resolved: false,
+    runtime_trust_granted: false,
+    execution_authorized: false,
+    deployment_approved: false,
+    infrastructure_mutation_performed: false,
+    reused: false,
+  },
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -858,6 +942,10 @@ describe("MCP Builder workspace", () => {
     const packageAcquisitionRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const packageValidationRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const packageInventoryRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    const packageContentPolicyRequests: Array<{
+      body: string;
+      idempotencyKey: string | null;
+    }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -951,6 +1039,16 @@ describe("MCP Builder workspace", () => {
           idempotencyKey: headers.get("Idempotency-Key"),
         });
         return Promise.resolve(new Response(JSON.stringify(packageInventory), { status: 201 }));
+      }
+      if (url.endsWith("/api/v1/connectors/package-content-policy-scans")) {
+        const headers = new Headers(init?.headers);
+        packageContentPolicyRequests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(
+          new Response(JSON.stringify(packageContentPolicyScan), { status: 201 }),
+        );
       }
       if (
         url.endsWith(
@@ -1116,6 +1214,17 @@ describe("MCP Builder workspace", () => {
     expect(screen.getByText("Inventory boundaries")).toBeVisible();
     expect(screen.getByText("build_metadata")).toBeVisible();
     expect(screen.getByText("build: setuptools>=75,<76")).toBeVisible();
+    expect(screen.getByText("Scan secrets and prohibited content")).toBeVisible();
+    fireEvent.click(
+      screen.getByLabelText(/I am the independent content-policy operator/i),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Run content-policy scan" }));
+
+    expect(await screen.findByText(packageContentPolicyScan.data.scan_id)).toBeVisible();
+    expect(screen.getByText("IMMUTABLE CONTENT-POLICY REPORT")).toBeVisible();
+    expect(screen.getByText("content-policy.secret-content")).toBeVisible();
+    expect(screen.getByText("Content-policy boundaries")).toBeVisible();
+    expect(screen.getByText("Not blocked")).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|execute|register|enable/i })).not.toBeInTheDocument();
     expect(requests).toHaveLength(1);
     expect(designRequests).toHaveLength(1);
@@ -1128,6 +1237,7 @@ describe("MCP Builder workspace", () => {
     expect(packageAcquisitionRequests).toHaveLength(1);
     expect(packageValidationRequests).toHaveLength(1);
     expect(packageInventoryRequests).toHaveLength(1);
+    expect(packageContentPolicyRequests).toHaveLength(1);
     expect(requests[0]?.idempotencyKey).toBe("mcp-builder.mcp-builder-ui-001");
     const body = JSON.parse(requests[0]?.body ?? "{}") as Record<string, unknown>;
     expect(body.source_document).toBe(source);
@@ -1304,6 +1414,23 @@ describe("MCP Builder workspace", () => {
     expect(packageInventoryBody).not.toHaveProperty("install");
     expect(packageInventoryBody).not.toHaveProperty("execute");
     expect(packageInventoryBody).not.toHaveProperty("trust");
+    expect(packageContentPolicyRequests[0]?.idempotencyKey).toBe(
+      "connector-content-policy-scan.mcp-builder-ui-001",
+    );
+    const packageContentPolicyBody = JSON.parse(
+      packageContentPolicyRequests[0]?.body ?? "{}",
+    ) as Record<string, unknown>;
+    expect(packageContentPolicyBody.source_inventory_id).toBe(
+      packageInventory.data.inventory_id,
+    );
+    expect(packageContentPolicyBody.source_inventory_digest).toBe(
+      packageInventory.data.canonical_digest,
+    );
+    expect(packageContentPolicyBody.package_digest).toBe(packageInventory.data.package_digest);
+    expect(packageContentPolicyBody.acknowledged_untrusted_package_content).toBe(true);
+    expect(packageContentPolicyBody).not.toHaveProperty("secret");
+    expect(packageContentPolicyBody).not.toHaveProperty("reject");
+    expect(packageContentPolicyBody).not.toHaveProperty("execute");
   }, 15_000);
 
   it("verifies the downloaded candidate archive against immutable evidence", async () => {
