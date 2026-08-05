@@ -4,14 +4,59 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-043 |
-| Title | Governed upgrade multi-stage human review foundation |
-| Status | Validation Complete; Merge Pending |
-| Branch | `agent/upgrade-change-human-review` |
-| Pull Request | [#55](https://github.com/ozdemirumit/Project_Atlas/pull/55) |
-| Governing Documents | ATLAS-003, ATLAS-023, ATLAS-025, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-038, ATLAS-044, ATLAS-057, ATLAS-059 |
+| Task ID | ATLAS-IMP-044 |
+| Title | Governed upgrade human-review inbox and decision workspace |
+| Status | In Progress |
+| Branch | `agent/upgrade-review-inbox` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-038, ATLAS-044, ATLAS-047, ATLAS-052 |
 | Last Updated | 2026-08-05 |
-| Next Action | Pass final evidence-only CI, merge PR #55, and synchronize local `main` |
+| Next Action | Implement and validate the role-filtered reviewer inbox and decision workspace |
+
+### ATLAS-IMP-044 Scope Rationale
+
+- IMP-043 supplies immutable packet-bound requests, four ordered stages, reviewer eligibility,
+  separation, append-only decisions, and exact decision endpoints. Eligible humans still need a
+  bounded way to discover only the current stages assigned to their role and scope and to review the
+  complete evidence before recording a decision.
+- ATLAS-037 includes a read-only approval inbox in MVP and requires reject, needs-evidence, and defer
+  to be as accessible as approve. This slice adds that discovery and decision workspace without
+  creating an external notification, ITSM synchronization, approval receipt, handoff token, workflow,
+  deployment action, or infrastructure execution path.
+
+### ATLAS-IMP-044 Acceptance Criteria
+
+- An authenticated human can list only non-terminal review requests whose current actionable stage
+  matches the actor's current role, organization, environment, site, target scope, assurance, and
+  separation requirements. The requester, prior reviewers, service identities, AI identities,
+  disabled actors, wrong-role actors, and out-of-scope actors cannot discover a request.
+- Inbox filtering and ordering are deterministic and bounded by state, required role, expiry, and a
+  stable cursor. Authorization is applied before counts and pagination so hidden requests cannot leak
+  through totals, ordering gaps, identifiers, timing, or safe errors.
+- Each inbox item binds the exact review ID and version, packet ID and digest, current stage and role,
+  requester, risk and change class, maintenance window, affected services, evidence count, expiry,
+  prior decision summary, and an explicit statement that review does not authorize execution.
+- The reviewer workspace revalidates packet identity, digest, scope, freshness, stage, role,
+  assurance, and separation before disclosure and again before mutation. Stale, expired, changed,
+  completed, paused, or otherwise ineligible requests fail closed without partial state.
+- Approve, reject, needs-evidence, and defer are equally visible. A decision requires a rationale,
+  explicit boundary acknowledgement, exact expected request version, browser CSRF, and idempotency;
+  the result refreshes the inbox and immutable decision history without optimistic UI claims.
+- Completing all four stages records human review completion only. Approval granted, ITSM dispatch,
+  notification delivery, handoff issuance, workflow execution, execution authorization, and
+  infrastructure mutation remain false.
+- Required read and mutation audit failures block disclosure or change. Responses remain no-store,
+  schemas are strict, PostgreSQL and memory behavior match, and concurrent or replayed decisions are
+  deterministic.
+- Automated backend and frontend coverage, live enterprise multi-identity execution, desktop and
+  390-pixel mobile validation, browser-log inspection, and GitHub CI apply.
+- This slice performs no external request, ITSM synchronization, notification delivery, artifact
+  acquisition, secret resolution, connector call, model inference, workflow execution, deployment,
+  migration, service restart, traffic switch, restore, rollback, or infrastructure mutation.
+
+### ATLAS-IMP-044 Validation Evidence
+
+- Pending implementation and validation.
 
 ### ATLAS-IMP-043 Scope Rationale
 
@@ -82,6 +127,8 @@
 - Source implementation is committed at `102b47a` (`feat: add governed upgrade human reviews`).
   PR #55 CI run `30962560468` passed backend and frontend validation before this final evidence-only
   tracker update.
+- Final PR #55 CI run `30963547853` passed backend and frontend validation. PR #55 merged as
+  `b3dcb9ea411e7bd07201fdc17b86d1f6e0658db5`, and local `main` matched `origin/main` afterward.
 
 ### ATLAS-IMP-042 Scope Rationale
 
@@ -2429,6 +2476,9 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-038 | Governed bootstrap operational handoff | Completed through [PR #50](https://github.com/ozdemirumit/Project_Atlas/pull/50) from source commit `8673edd`; 342 backend tests, 31 frontend tests, live nine-phase handoff and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-039 | Governed support bundle preview and local export foundation | Completed through [PR #51](https://github.com/ozdemirumit/Project_Atlas/pull/51) from source commit `3fb49cc`; 348 backend tests, 32 frontend tests, live deterministic local ZIP export and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-040 | Governed backup capture and isolated restore-validation foundation | Completed through [PR #52](https://github.com/ozdemirumit/Project_Atlas/pull/52) from source commit `1d7d6aa`; 352 backend tests, 32 frontend tests, live deterministic logical backup and isolated restore validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-041 | Governed upgrade and rollback simulation foundation | Completed through [PR #53](https://github.com/ozdemirumit/Project_Atlas/pull/53) from source commit `a93ef6b`; 357 backend tests, 32 frontend tests, live isolated upgrade-abort-rollback simulation and desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-042 | Governed upgrade change-review packet foundation | Completed through [PR #54](https://github.com/ozdemirumit/Project_Atlas/pull/54) from source commit `c6ba48f`; 363 backend tests, 32 frontend tests, live immutable change-review packet and desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-043 | Governed upgrade multi-stage human review foundation | Completed through [PR #55](https://github.com/ozdemirumit/Project_Atlas/pull/55) from source commit `102b47a`; 370 backend tests, 32 frontend tests, live four-stage review creation, self-review rejection, desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
