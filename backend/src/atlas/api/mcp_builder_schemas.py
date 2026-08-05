@@ -275,9 +275,7 @@ class McpBuilderDesignCheckpointData(BaseModel):
     reused: bool
 
     @classmethod
-    def from_domain(
-        cls, checkpoint: McpBuilderDesignCheckpoint
-    ) -> McpBuilderDesignCheckpointData:
+    def from_domain(cls, checkpoint: McpBuilderDesignCheckpoint) -> McpBuilderDesignCheckpointData:
         return cls(
             **{
                 field: getattr(checkpoint, field)

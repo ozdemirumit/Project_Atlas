@@ -42,9 +42,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("version = 1", name="ck_mcp_builder_design_checkpoints_version"),
         sa.PrimaryKeyConstraint("checkpoint_id"),
-        sa.UniqueConstraint(
-            "project_id", name="uq_mcp_builder_design_checkpoints_project"
-        ),
+        sa.UniqueConstraint("project_id", name="uq_mcp_builder_design_checkpoints_project"),
         sa.UniqueConstraint(
             "reviewer_id",
             "idempotency_key",

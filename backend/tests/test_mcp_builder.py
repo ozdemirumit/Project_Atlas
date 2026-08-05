@@ -361,9 +361,7 @@ async def test_design_checkpoint_rejects_stale_scope_risk_and_candidate_drift() 
     decision = design_request(project)["capability_decisions"][0]
 
     with pytest.raises(McpBuilderError, match="builder_design_project_stale"):
-        await builder.create_design_checkpoint(
-            **design_request(project, project_digest="0" * 64)
-        )
+        await builder.create_design_checkpoint(**design_request(project, project_digest="0" * 64))
     with pytest.raises(McpBuilderError, match="builder_design_network_destination_unapproved"):
         await builder.create_design_checkpoint(
             **design_request(project, network_destinations=("https://other.example.invalid",))
@@ -378,9 +376,7 @@ async def test_design_checkpoint_rejects_stale_scope_risk_and_candidate_drift() 
             )
         )
     with pytest.raises(McpBuilderError, match="builder_design_candidate_set_mismatch"):
-        await builder.create_design_checkpoint(
-            **design_request(project, capability_decisions=())
-        )
+        await builder.create_design_checkpoint(**design_request(project, capability_decisions=()))
     with pytest.raises(McpBuilderError, match="builder_design_broad_permission_rejected"):
         await builder.create_design_checkpoint(
             **design_request(
@@ -418,9 +414,7 @@ async def test_design_checkpoint_requires_blocked_candidate_exclusion() -> None:
         **create_request(source_document=json.dumps(document), idempotency_key="mixed-source-0001")
     )
     request = design_request(project)
-    blocked = next(
-        item for item in request["capability_decisions"] if not item.generation_eligible
-    )
+    blocked = next(item for item in request["capability_decisions"] if not item.generation_eligible)
     unsafe = replace(
         blocked,
         decision=BuilderCapabilityDecisionKind.INCLUDE,
@@ -541,9 +535,7 @@ def test_api_requires_csrf_and_returns_secret_free_no_store_evidence() -> None:
                 "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
             },
         )
-        read_design = client.get(
-            f"/api/v1/mcp-builder/projects/{project_id}/design-checkpoint"
-        )
+        read_design = client.get(f"/api/v1/mcp-builder/projects/{project_id}/design-checkpoint")
 
     assert denied.status_code == 403
     assert created.status_code == 201

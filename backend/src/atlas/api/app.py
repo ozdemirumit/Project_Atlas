@@ -710,9 +710,7 @@ def create_app(
             else InMemoryMcpBuilderProjectRepository()
         )
         mcp_builder_design_repository = (
-            PostgreSQLMcpBuilderDesignCheckpointRepository.from_url(
-                resolved_settings.database_url
-            )
+            PostgreSQLMcpBuilderDesignCheckpointRepository.from_url(resolved_settings.database_url)
             if resolved_settings.database_url
             else InMemoryMcpBuilderDesignCheckpointRepository()
         )

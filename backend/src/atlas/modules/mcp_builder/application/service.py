@@ -309,9 +309,7 @@ class McpBuilderService:
             "network_destinations": destinations,
             "configuration_keys": config_keys,
             "secret_reference_ids": secret_refs,
-            "entity_mappings": [
-                (item.source_entity, item.atlas_entity) for item in mappings
-            ],
+            "entity_mappings": [(item.source_entity, item.atlas_entity) for item in mappings],
             "capability_decisions": [
                 (
                     item.candidate_id,

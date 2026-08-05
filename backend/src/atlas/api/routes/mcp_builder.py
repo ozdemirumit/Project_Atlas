@@ -170,9 +170,7 @@ async def create_mcp_builder_design_checkpoint(
     return _design_response(checkpoint, request, response)
 
 
-@router.get(
-    "/{project_id}/design-checkpoint", response_model=McpBuilderDesignCheckpointResponse
-)
+@router.get("/{project_id}/design-checkpoint", response_model=McpBuilderDesignCheckpointResponse)
 async def get_mcp_builder_design_checkpoint(
     project_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
     request: Request,
