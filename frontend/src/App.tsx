@@ -115,6 +115,7 @@ import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
 import {
   acquireConnectorPackage,
+  analyzeConnectorPackageMalware,
   analyzeConnectorPackageStaticDependencies,
   analyzeConnectorPackageVulnerabilities,
   inventoryConnectorPackage,
@@ -530,6 +531,7 @@ export function App() {
   const [builderStaticDependencyAcknowledged, setBuilderStaticDependencyAcknowledged] =
     useState(false);
   const [builderVulnerabilityAcknowledged, setBuilderVulnerabilityAcknowledged] = useState(false);
+  const [builderMalwareAcknowledged, setBuilderMalwareAcknowledged] = useState(false);
   const [builderSelectedGeneratedFile, setBuilderSelectedGeneratedFile] = useState("");
   const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
     Record<string, McpBuilderDesignDecision>
@@ -585,6 +587,10 @@ export function App() {
     mutationFn: analyzeConnectorPackageVulnerabilities,
     onSuccess: () => setBuilderVulnerabilityAcknowledged(false),
   });
+  const builderMalwareMutation = useMutation({
+    mutationFn: analyzeConnectorPackageMalware,
+    onSuccess: () => setBuilderMalwareAcknowledged(false),
+  });
   const builderCandidateArchiveMutation = useMutation({
     mutationFn: downloadMcpBuilderCandidateArchive,
     onSuccess: ({ blob, filename }) => {
@@ -609,6 +615,7 @@ export function App() {
     builderAuthorityBehaviorMutation.reset();
     builderStaticDependencyMutation.reset();
     builderVulnerabilityMutation.reset();
+    builderMalwareMutation.reset();
     setBuilderCandidateHandoffAcknowledged(false);
     setBuilderPackageAcquisitionAcknowledged(false);
     setBuilderPackageValidationAcknowledged(false);
@@ -618,6 +625,7 @@ export function App() {
     setBuilderAuthorityBehaviorAcknowledged(false);
     setBuilderStaticDependencyAcknowledged(false);
     setBuilderVulnerabilityAcknowledged(false);
+    setBuilderMalwareAcknowledged(false);
   };
   const builderPackageValidationSeparated = Boolean(
     identity &&
@@ -716,6 +724,24 @@ export function App() {
         builderStaticDependencyMutation.data.data.source_domain_reviewed_by,
         builderStaticDependencyMutation.data.data.source_security_reviewed_by,
         builderStaticDependencyMutation.data.data.source_lab_operated_by,
+      ].includes(identity.subject_id),
+  );
+  const builderMalwareSeparated = Boolean(
+    identity &&
+      builderVulnerabilityMutation.data?.data &&
+      ![
+        builderVulnerabilityMutation.data.data.analyzed_by,
+        builderVulnerabilityMutation.data.data.source_static_analyzed_by,
+        builderVulnerabilityMutation.data.data.source_authority_validated_by,
+        builderVulnerabilityMutation.data.data.source_schema_validated_by,
+        builderVulnerabilityMutation.data.data.source_content_scanned_by,
+        builderVulnerabilityMutation.data.data.source_inventoried_by,
+        builderVulnerabilityMutation.data.data.source_manifest_validated_by,
+        builderVulnerabilityMutation.data.data.source_acquired_by,
+        builderVulnerabilityMutation.data.data.source_custodied_by,
+        builderVulnerabilityMutation.data.data.source_domain_reviewed_by,
+        builderVulnerabilityMutation.data.data.source_security_reviewed_by,
+        builderVulnerabilityMutation.data.data.source_lab_operated_by,
       ].includes(identity.subject_id),
   );
   const builderLabValidationMutation = useMutation({
@@ -6445,6 +6471,277 @@ export function App() {
                                                                         <strong>Advisory boundaries</strong>
                                                                         <ul>
                                                                           {builderVulnerabilityMutation.data.data.limitations.map(
+                                                                            (limitation) => (
+                                                                              <li key={limitation}>
+                                                                                {limitation}
+                                                                              </li>
+                                                                            ),
+                                                                          )}
+                                                                        </ul>
+                                                                      </div>
+                                                                    </div>
+                                                                  )}
+                                                                  {builderVulnerabilityMutation.data?.data
+                                                                    .outcome === "passed" &&
+                                                                    !builderVulnerabilityMutation.data.data
+                                                                      .promotion_blocked &&
+                                                                    !builderMalwareSeparated &&
+                                                                    !builderMalwareMutation.data && (
+                                                                      <div
+                                                                        className="workspace-message warning-state"
+                                                                        role="status"
+                                                                      >
+                                                                        <UserX size={20} />
+                                                                        <div>
+                                                                          <h3>
+                                                                            Independent malware analyst required
+                                                                          </h3>
+                                                                          <p>
+                                                                            Every prior package-analysis actor is
+                                                                            excluded. Continue with a different
+                                                                            authorized MFA session.
+                                                                          </p>
+                                                                        </div>
+                                                                      </div>
+                                                                    )}
+                                                                  {builderVulnerabilityMutation.data?.data
+                                                                    .outcome === "passed" &&
+                                                                    !builderVulnerabilityMutation.data.data
+                                                                      .promotion_blocked &&
+                                                                    builderMalwareSeparated &&
+                                                                    !builderMalwareMutation.data && (
+                                                                      <section className="mcp-builder-review-panel">
+                                                                        <div className="section-heading">
+                                                                          <div>
+                                                                            <p className="eyebrow">
+                                                                              KNOWN MALWARE ANALYSIS
+                                                                            </p>
+                                                                            <h3>
+                                                                              Scan the exact package and inventory
+                                                                            </h3>
+                                                                            <p>
+                                                                              Offline evidence against an immutable,
+                                                                              signed, platform-selected definition
+                                                                              snapshot.
+                                                                            </p>
+                                                                          </div>
+                                                                          <span className="state-badge neutral">
+                                                                            <ShieldCheck size={14} /> No network
+                                                                          </span>
+                                                                        </div>
+                                                                        <label className="mcp-builder-confirmation">
+                                                                          <input
+                                                                            type="checkbox"
+                                                                            checked={builderMalwareAcknowledged}
+                                                                            onChange={(event) =>
+                                                                              setBuilderMalwareAcknowledged(
+                                                                                event.target.checked,
+                                                                              )
+                                                                            }
+                                                                          />
+                                                                          I am the independent malware analyst. I
+                                                                          understand this is a limited known-indicator
+                                                                          gate, not a guarantee that the package is
+                                                                          benign.
+                                                                        </label>
+                                                                        <button
+                                                                          className="run-check-button mcp-builder-submit"
+                                                                          type="button"
+                                                                          disabled={
+                                                                            !builderMalwareAcknowledged ||
+                                                                            builderMalwareMutation.isPending
+                                                                          }
+                                                                          onClick={() => {
+                                                                            const report =
+                                                                              builderVulnerabilityMutation.data
+                                                                                ?.data;
+                                                                            if (report) {
+                                                                              builderMalwareMutation.mutate(report);
+                                                                            }
+                                                                          }}
+                                                                        >
+                                                                          {builderMalwareMutation.isPending ? (
+                                                                            <RefreshCw
+                                                                              className="spin"
+                                                                              size={16}
+                                                                            />
+                                                                          ) : (
+                                                                            <ShieldCheck size={16} />
+                                                                          )}
+                                                                          Scan known malware indicators
+                                                                        </button>
+                                                                      </section>
+                                                                    )}
+                                                                  {builderMalwareMutation.isError && (
+                                                                    <div
+                                                                      className="workspace-message error-state"
+                                                                      role="alert"
+                                                                    >
+                                                                      <AlertTriangle size={20} />
+                                                                      <div>
+                                                                        <h3>Malware analysis unavailable</h3>
+                                                                        <p>
+                                                                          Exact lineage, definition trust, freshness,
+                                                                          coverage, or archive reconciliation did not
+                                                                          pass.
+                                                                        </p>
+                                                                      </div>
+                                                                    </div>
+                                                                  )}
+                                                                  {builderMalwareMutation.data?.data && (
+                                                                    <div className="mcp-builder-validation">
+                                                                      <div className="section-heading">
+                                                                        <div>
+                                                                          <p className="eyebrow">
+                                                                            IMMUTABLE MALWARE REPORT
+                                                                          </p>
+                                                                          <strong>
+                                                                            {
+                                                                              builderMalwareMutation.data.data
+                                                                                .analysis_id
+                                                                            }
+                                                                          </strong>
+                                                                          <code>
+                                                                            {
+                                                                              builderMalwareMutation.data.data
+                                                                                .canonical_digest
+                                                                            }
+                                                                          </code>
+                                                                        </div>
+                                                                        <span
+                                                                          className={`state-badge ${
+                                                                            builderMalwareMutation.data.data
+                                                                              .outcome === "passed"
+                                                                              ? "healthy"
+                                                                              : "critical"
+                                                                          }`}
+                                                                        >
+                                                                          {builderMalwareMutation.data.data.outcome ===
+                                                                          "passed" ? (
+                                                                            <CheckCircle2 size={14} />
+                                                                          ) : (
+                                                                            <AlertTriangle size={14} />
+                                                                          )}
+                                                                          {
+                                                                            builderMalwareMutation.data.data.outcome
+                                                                          }
+                                                                        </span>
+                                                                      </div>
+                                                                      <div className="mcp-builder-facts">
+                                                                        <div>
+                                                                          <span>Definition snapshot</span>
+                                                                          <strong>
+                                                                            {
+                                                                              builderMalwareMutation.data.data
+                                                                                .definition_snapshot.snapshot_version
+                                                                            }
+                                                                          </strong>
+                                                                        </div>
+                                                                        <div>
+                                                                          <span>Coverage</span>
+                                                                          <strong>
+                                                                            {builderMalwareMutation.data.data
+                                                                              .definition_snapshot.fresh &&
+                                                                            builderMalwareMutation.data.data
+                                                                              .definition_snapshot
+                                                                              .package_coverage_complete &&
+                                                                            builderMalwareMutation.data.data
+                                                                              .definition_snapshot
+                                                                              .file_coverage_complete &&
+                                                                            builderMalwareMutation.data.data
+                                                                              .definition_snapshot
+                                                                              .stream_coverage_complete
+                                                                              ? "Current and complete"
+                                                                              : "Blocking gap"}
+                                                                          </strong>
+                                                                        </div>
+                                                                        <div>
+                                                                          <span>Scanned subjects</span>
+                                                                          <strong>
+                                                                            {
+                                                                              builderMalwareMutation.data.data
+                                                                                .subject_summary.scanned_subject_count
+                                                                            }
+                                                                          </strong>
+                                                                        </div>
+                                                                        <div>
+                                                                          <span>Scanned bytes</span>
+                                                                          <strong>
+                                                                            {builderMalwareMutation.data.data.subject_summary.scanned_bytes.toLocaleString()}
+                                                                          </strong>
+                                                                        </div>
+                                                                        <div>
+                                                                          <span>Known matches</span>
+                                                                          <strong>
+                                                                            {
+                                                                              builderMalwareMutation.data.data
+                                                                                .subject_summary
+                                                                                .definition_match_count
+                                                                            }
+                                                                          </strong>
+                                                                        </div>
+                                                                        <div>
+                                                                          <span>Promotion</span>
+                                                                          <strong>
+                                                                            {builderMalwareMutation.data.data
+                                                                              .promotion_blocked
+                                                                              ? "Blocked"
+                                                                              : "Not blocked"}
+                                                                          </strong>
+                                                                        </div>
+                                                                      </div>
+                                                                      <div className="mcp-builder-validation-checks">
+                                                                        {builderMalwareMutation.data.data.checks.map(
+                                                                          (check) => (
+                                                                            <article
+                                                                              key={check.code}
+                                                                              data-state={check.state}
+                                                                            >
+                                                                              {check.state === "passed" ? (
+                                                                                <CheckCircle2 size={16} />
+                                                                              ) : (
+                                                                                <AlertTriangle size={16} />
+                                                                              )}
+                                                                              <div>
+                                                                                <strong>{check.code}</strong>
+                                                                                <p>{check.summary}</p>
+                                                                              </div>
+                                                                              <span>{check.state}</span>
+                                                                            </article>
+                                                                          ),
+                                                                        )}
+                                                                      </div>
+                                                                      {builderMalwareMutation.data.data.findings
+                                                                        .length > 0 && (
+                                                                        <div className="mcp-builder-validation-checks">
+                                                                          {builderMalwareMutation.data.data.findings.map(
+                                                                            (finding) => (
+                                                                              <article
+                                                                                key={`${finding.rule_id}:${finding.subject_fingerprint}`}
+                                                                                data-state="failed"
+                                                                              >
+                                                                                <AlertTriangle size={16} />
+                                                                                <div>
+                                                                                  <strong>
+                                                                                    {finding.rule_id}
+                                                                                  </strong>
+                                                                                  <p>{finding.summary}</p>
+                                                                                  <small>
+                                                                                    {finding.subject_scope}
+                                                                                  </small>
+                                                                                </div>
+                                                                                <span>
+                                                                                  {finding.severity}
+                                                                                </span>
+                                                                              </article>
+                                                                            ),
+                                                                          )}
+                                                                        </div>
+                                                                      )}
+                                                                      <div className="mcp-builder-limitations">
+                                                                        <strong>Malware scan boundaries</strong>
+                                                                        <ul>
+                                                                          {builderMalwareMutation.data.data.limitations.map(
                                                                             (limitation) => (
                                                                               <li key={limitation}>
                                                                                 {limitation}
