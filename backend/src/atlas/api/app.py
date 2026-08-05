@@ -29,6 +29,7 @@ from atlas.api.routes import (
     bootstrap_trust,
     bootstrap_verification,
     change_reviews,
+    connectors,
     deployment_configuration,
     graph,
     health,
@@ -91,6 +92,16 @@ from atlas.modules.change_review.application.completion_receipt_service import (
 )
 from atlas.modules.change_review.application.human_review_service import HumanReviewService
 from atlas.modules.change_review.application.service import ChangeReviewService
+from atlas.modules.connectors.adapters.acquisition_archive_filesystem import (
+    FileSystemAcquiredPackagePublisher,
+)
+from atlas.modules.connectors.adapters.acquisition_memory import (
+    InMemoryPackageAcquisitionRepository,
+)
+from atlas.modules.connectors.adapters.acquisition_postgres import (
+    PostgreSQLPackageAcquisitionRepository,
+)
+from atlas.modules.connectors.application.acquisition import PackageAcquisitionService
 from atlas.modules.graph.adapters.synthetic import build_synthetic_graph_snapshot
 from atlas.modules.graph.application.engine import InMemoryGraphImpactAnalyzer
 from atlas.modules.graph.application.service import GraphImpactService
@@ -343,6 +354,7 @@ def create_app(
     human_review_service: HumanReviewService | None = None,
     completion_receipt_service: CompletionReceiptService | None = None,
     mcp_builder_service: McpBuilderService | None = None,
+    package_acquisition_service: PackageAcquisitionService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -746,6 +758,14 @@ def create_app(
             environment_id=f"environment.{resolved_settings.environment}",
             site_id="site.local",
         )
+    mcp_builder_candidate_handoff_repository = (
+        PostgreSQLMcpBuilderCandidateHandoffRepository.from_url(resolved_settings.database_url)
+        if resolved_settings.database_url
+        else InMemoryMcpBuilderCandidateHandoffRepository()
+    )
+    mcp_builder_candidate_archive_publisher = FileSystemMcpBuilderCandidateArchivePublisher(
+        root=resolved_settings.mcp_builder_generation_root / "candidate-packages"
+    )
     if mcp_builder_service is not None:
         resolved_mcp_builder_service = mcp_builder_service
     else:
@@ -784,11 +804,6 @@ def create_app(
             if resolved_settings.database_url
             else InMemoryMcpBuilderLabValidationRepository()
         )
-        mcp_builder_candidate_handoff_repository = (
-            PostgreSQLMcpBuilderCandidateHandoffRepository.from_url(resolved_settings.database_url)
-            if resolved_settings.database_url
-            else InMemoryMcpBuilderCandidateHandoffRepository()
-        )
         resolved_mcp_builder_service = McpBuilderService(
             repository=mcp_builder_repository,
             design_repository=mcp_builder_design_repository,
@@ -799,11 +814,27 @@ def create_app(
             lab_validation_repository=mcp_builder_lab_validation_repository,
             lab_runner=SubprocessMcpBuilderLabRunner(),
             candidate_handoff_repository=mcp_builder_candidate_handoff_repository,
-            candidate_archive_publisher=FileSystemMcpBuilderCandidateArchivePublisher(
-                root=resolved_settings.mcp_builder_generation_root / "candidate-packages"
-            ),
+            candidate_archive_publisher=mcp_builder_candidate_archive_publisher,
             artifact_publisher=FileSystemMcpBuilderArtifactPublisher(
                 root=resolved_settings.mcp_builder_generation_root
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
+    if package_acquisition_service is not None:
+        resolved_package_acquisition_service = package_acquisition_service
+    else:
+        package_acquisition_repository = (
+            PostgreSQLPackageAcquisitionRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryPackageAcquisitionRepository()
+        )
+        resolved_package_acquisition_service = PackageAcquisitionService(
+            repository=package_acquisition_repository,
+            handoff_source=mcp_builder_candidate_handoff_repository,
+            archive_source=mcp_builder_candidate_archive_publisher,
+            publisher=FileSystemAcquiredPackagePublisher(
+                root=resolved_settings.mcp_builder_generation_root / "connector-quarantine"
             ),
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
@@ -977,6 +1008,7 @@ def create_app(
         app.state.human_review_service = resolved_human_review_service
         app.state.completion_receipt_service = resolved_completion_receipt_service
         app.state.mcp_builder_service = resolved_mcp_builder_service
+        app.state.package_acquisition_service = resolved_package_acquisition_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -989,6 +1021,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_package_acquisition_service.close()
         await resolved_mcp_builder_service.close()
         await resolved_completion_receipt_service.close()
         await resolved_human_review_service.close()
@@ -1049,6 +1082,7 @@ def create_app(
     app.include_router(recovery.router, prefix="/api/v1")
     app.include_router(upgrades.router, prefix="/api/v1")
     app.include_router(mcp_builder.router, prefix="/api/v1")
+    app.include_router(connectors.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

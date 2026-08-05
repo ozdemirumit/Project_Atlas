@@ -548,7 +548,7 @@ const candidateHandoff = {
     lab_operated_by: labValidation.data.operated_by,
     organization_id: identity.data.organization_id,
     environment_id: "environment.development",
-    custodied_by: identity.data.subject_id,
+    custodied_by: "subject.package.custodian",
     handoff_profile: "atlas.candidate-handoff.python312.v1",
     archive_contract_version: "mcp-builder-candidate-zip.v1",
     package_filename: "atlas-synthetic-storage-lab-eeeeeeeeeeee.zip",
@@ -596,6 +596,59 @@ const candidateHandoff = {
   },
 };
 
+const packageAcquisition = {
+  data: {
+    acquisition_id: "connector-package-acquisition.999999999999999999999999",
+    schema_version: "atlas.connector-package-acquisition.v1",
+    version: 1,
+    state: "quarantined",
+    source_type: "mcp_builder_handoff",
+    source_handoff_id: candidateHandoff.data.handoff_id,
+    source_handoff_digest: candidateHandoff.data.canonical_digest,
+    source_project_id: candidateHandoff.data.project_id,
+    source_custodied_by: candidateHandoff.data.custodied_by,
+    organization_id: candidateHandoff.data.organization_id,
+    environment_id: candidateHandoff.data.environment_id,
+    acquired_by: identity.data.subject_id,
+    acquisition_profile: "atlas.connector-acquisition.builder-handoff.v1",
+    archive_contract_version: "mcp-builder-candidate-zip.v1",
+    package_filename: candidateHandoff.data.package_filename,
+    package_digest: candidateHandoff.data.package_digest,
+    package_size_bytes: candidateHandoff.data.package_size_bytes,
+    publisher_identity: "unattested.generated",
+    signature_state: "unsigned",
+    attestation_state: "unattested",
+    capabilities: candidateHandoff.data.capabilities.map((item) => ({
+      capability_id: item.candidate_id,
+      capability_class: item.capability_class,
+      required_permission: item.required_permission,
+      supported_product_versions: item.supported_product_versions,
+    })),
+    limitations: [
+      "Acquisition preserves exact Builder package bytes in connector quarantine only.",
+      "Signing, publisher attestation, registry validation, approval, installation, enablement, and runtime trust remain required.",
+    ],
+    canonical_digest: "9".repeat(64),
+    acquired_at: "2026-08-05T14:00:00Z",
+    package_acquired: true,
+    integrity_verified: true,
+    package_signed: false,
+    publisher_attested: false,
+    registry_validation_completed: false,
+    connector_registered: false,
+    connector_approved: false,
+    connector_installed: false,
+    connector_enabled: false,
+    target_configured: false,
+    credentials_resolved: false,
+    runtime_trust_granted: false,
+    execution_authorized: false,
+    deployment_approved: false,
+    infrastructure_mutation_performed: false,
+    reused: false,
+  },
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -614,6 +667,7 @@ describe("MCP Builder workspace", () => {
     const securityReviewRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const labValidationRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const candidateHandoffRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    const packageAcquisitionRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -683,6 +737,14 @@ describe("MCP Builder workspace", () => {
           idempotencyKey: headers.get("Idempotency-Key"),
         });
         return Promise.resolve(new Response(JSON.stringify(candidateHandoff), { status: 201 }));
+      }
+      if (url.endsWith("/api/v1/connectors/package-acquisitions")) {
+        const headers = new Headers(init?.headers);
+        packageAcquisitionRequests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(new Response(JSON.stringify(packageAcquisition), { status: 201 }));
       }
       if (
         url.endsWith(
@@ -813,6 +875,19 @@ describe("MCP Builder workspace", () => {
     expect(screen.getByText("candidate quarantined")).toBeVisible();
     expect(screen.getByText("Unsigned")).toBeVisible();
     expect(screen.getByRole("button", { name: "Download verified archive" })).toBeVisible();
+    expect(screen.getByText("Transfer package custody")).toBeVisible();
+    fireEvent.click(
+      screen.getByLabelText(/I am the independent registry intake operator/i),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Acquire into connector quarantine" }),
+    );
+
+    expect(await screen.findByText(packageAcquisition.data.acquisition_id)).toBeVisible();
+    expect(screen.getByText("IMMUTABLE ACQUISITION RECEIPT")).toBeVisible();
+    expect(screen.getByText("Verified")).toBeVisible();
+    expect(screen.getByText("Unattested")).toBeVisible();
+    expect(screen.getAllByText("Not run")).toHaveLength(2);
     expect(screen.queryByRole("button", { name: /install|execute|register|enable/i })).not.toBeInTheDocument();
     expect(requests).toHaveLength(1);
     expect(designRequests).toHaveLength(1);
@@ -822,6 +897,7 @@ describe("MCP Builder workspace", () => {
     expect(securityReviewRequests).toHaveLength(1);
     expect(labValidationRequests).toHaveLength(1);
     expect(candidateHandoffRequests).toHaveLength(1);
+    expect(packageAcquisitionRequests).toHaveLength(1);
     expect(requests[0]?.idempotencyKey).toBe("mcp-builder.mcp-builder-ui-001");
     const body = JSON.parse(requests[0]?.body ?? "{}") as Record<string, unknown>;
     expect(body.source_document).toBe(source);
@@ -947,6 +1023,23 @@ describe("MCP Builder workspace", () => {
     expect(candidateHandoffBody).not.toHaveProperty("sign");
     expect(candidateHandoffBody).not.toHaveProperty("install");
     expect(candidateHandoffBody).not.toHaveProperty("execute");
+    expect(packageAcquisitionRequests[0]?.idempotencyKey).toBe(
+      "connector-package-acquisition.mcp-builder-ui-001",
+    );
+    const packageAcquisitionBody = JSON.parse(
+      packageAcquisitionRequests[0]?.body ?? "{}",
+    ) as Record<string, unknown>;
+    expect(packageAcquisitionBody.source_handoff_id).toBe(candidateHandoff.data.handoff_id);
+    expect(packageAcquisitionBody.source_handoff_digest).toBe(
+      candidateHandoff.data.canonical_digest,
+    );
+    expect(packageAcquisitionBody.package_digest).toBe(candidateHandoff.data.package_digest);
+    expect(packageAcquisitionBody.acknowledged_unsigned_unattested_quarantine).toBe(true);
+    expect(packageAcquisitionBody).not.toHaveProperty("sign");
+    expect(packageAcquisitionBody).not.toHaveProperty("validate");
+    expect(packageAcquisitionBody).not.toHaveProperty("register");
+    expect(packageAcquisitionBody).not.toHaveProperty("install");
+    expect(packageAcquisitionBody).not.toHaveProperty("execute");
   }, 15_000);
 
   it("verifies the downloaded candidate archive against immutable evidence", async () => {

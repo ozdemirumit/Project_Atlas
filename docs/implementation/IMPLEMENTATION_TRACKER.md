@@ -4,14 +4,84 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-053 |
-| Title | Governed MCP Builder candidate package handoff foundation |
-| Status | Completed |
-| Branch | `agent/mcp-builder-candidate-handoff` |
-| Pull Request | [PR #65](https://github.com/ozdemirumit/Project_Atlas/pull/65) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008, ADR-009 |
+| Task ID | ATLAS-IMP-054 |
+| Title | Governed MCP Builder package acquisition foundation |
+| Status | In Progress |
+| Branch | `agent/mcp-package-acquisition` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009, ADR-010 |
 | Last Updated | 2026-08-05 |
-| Next Action | Define and start ATLAS-IMP-054 from the next approved MCP Builder lifecycle boundary |
+| Next Action | Implement the exact Builder handoff-to-ATLAS-020 quarantined acquisition boundary |
+
+### ATLAS-IMP-054 Scope Rationale
+
+- IMP-053 supplies an exact unsigned candidate archive and custody envelope. ATLAS-020 next requires
+  controlled acquisition before package registration validation can begin.
+- ADR-010 defines a separate human registry intake role, immutable byte-for-byte transfer into the
+  connector quarantine, and an attributable acquisition receipt bound to the exact source digest.
+- This slice records controlled package custody only. It neither signs nor validates, registers,
+  approves, installs, enables, configures, trusts, executes, deploys, or mutates a connector.
+
+### ATLAS-IMP-054 Acceptance Criteria
+
+- Only a dedicated multi-factor human registry intake operator in the exact handoff organization and
+  environment with acquisition create/read permissions can acquire or read a receipt. The Builder
+  custodian, all prior reviewers/operators, AI and service identities, wrong-scope actors, and
+  insufficient assurance fail closed without source or archive discovery.
+- Acquisition accepts only the exact supported Builder handoff profile and archive contract. It binds
+  the complete immutable handoff identity, package digest, size, filename, capabilities, source
+  custodian, publisher claim, signature state, organization, environment, and intake operator.
+- Source bytes are reread and integrity checked, then copied unchanged into a separate immutable,
+  content-addressed, path-confined connector quarantine. Missing, changed, corrupt, stale, oversized,
+  unsupported, or mismatched source evidence is rejected without partial success.
+- The one-to-one acquisition receipt is deterministic, immutable, idempotent, concurrency-safe,
+  audit-before-persist, and behaviorally equivalent in memory and PostgreSQL. Audit, archive, or
+  persistence failure cannot fabricate success.
+- Strict no-store APIs require browser CSRF for creation, dedicated default-deny RBAC, correlation,
+  bounded schemas, safe errors, exact tenant scope, explicit quarantine acknowledgement, and
+  separation of duties.
+- The web Connector workspace displays acquired custody, source integrity, unsigned and unattested
+  state, quarantine limitations, and every no-registration/no-runtime/no-execution boundary. It offers
+  no signing, validation, registration, installation, enablement, or execution control.
+- Automated backend and frontend coverage, one Alembic head, live authorized and denied API
+  validation, acquired-byte verification, desktop and 390-pixel mobile inspection, browser-log
+  inspection, and GitHub CI apply.
+- This slice performs no model inference, dependency resolution, vulnerability, malware, secret, or
+  license scan, publisher attestation, package signing, registry validation, registration, approval,
+  installation, enablement, target configuration, credential resolution, runtime trust, execution,
+  deployment, or infrastructure mutation.
+
+### ATLAS-IMP-054 Validation Evidence
+
+- Domain, archive, application, API, authorization, audit, memory, PostgreSQL, migration, and web
+  coverage verifies exact source-handoff lineage, separate MFA registry intake custody, deterministic
+  one-to-one acquisition, idempotency and concurrency safety, immutable content-addressed transfer,
+  corruption and stale-evidence rejection, audit-before-persist, tenant confinement, separation of
+  duties, and every no-authority flag.
+- Source archives are independently reread and checked for exact SHA-256 and size, ordinal entry
+  ordering, fixed timestamps, stored regular-file entries, safe normalized unique paths, bounded
+  content, and an exact handoff envelope before and after transfer into connector quarantine.
+- Strict create and read APIs require dedicated permissions, exact organization and environment,
+  multi-factor human assurance, explicit quarantine acknowledgement, safe bounded schemas, and
+  browser CSRF for creation. A fresh synthetic HTTP validation returned login 201, denied creation
+  without CSRF with 403, created and reread acquisition
+  `connector-package-acquisition.d94630faa690d6d490903553`, and preserved the exact 2,676-byte source
+  digest `47006411b5f975eead3c197a9cf44508bc6a071730e4aae1ef8b580ea4425675`.
+- The live receipt remained `quarantined`, `unsigned`, and `unattested`; registry validation,
+  connector registration, execution authorization, and infrastructure mutation all remained false.
+- Backend quality gates passed: Ruff formatting across 460 files, Ruff lint, strict mypy across all
+  432 source and test files, 439 tests passed with three existing Windows symlink skips, and Alembic
+  reported the single head `20260805_0026`.
+- Frontend lint, type checking, the focused two-test MCP Builder suite, the isolated full 36-test
+  suite, and production build passed. The build retains the existing non-blocking large-chunk
+  advisory; an initially resource-contended combined run timed out one existing five-second UI test,
+  while the immediate isolated full-suite rerun passed all 36 tests.
+- Browser validation against the live application at `http://localhost:5202/` confirmed a healthy
+  API, the Local Operator identity, accessible Connector workspace controls, no horizontal overflow
+  or incoherent overlap at 1280x720 and 390x844, and no browser console warnings or errors. The final
+  acquisition receipt and separation-of-duties states are covered by the end-to-end component flow
+  because a single browser identity is intentionally forbidden from completing both custody stages.
+- GitHub pull request, branch CI, merge, and post-merge `main` CI evidence are pending.
 
 ### ATLAS-IMP-053 Scope Rationale
 

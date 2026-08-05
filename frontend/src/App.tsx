@@ -112,6 +112,7 @@ import {
 } from "./api/approvals";
 import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
+import { acquireConnectorPackage } from "./api/connectors";
 import {
   createMcpBuilderDomainReview,
   createMcpBuilderCandidateHandoff,
@@ -504,6 +505,8 @@ export function App() {
     useState(false);
   const [builderCandidateHandoffAcknowledged, setBuilderCandidateHandoffAcknowledged] =
     useState(false);
+  const [builderPackageAcquisitionAcknowledged, setBuilderPackageAcquisitionAcknowledged] =
+    useState(false);
   const [builderSelectedGeneratedFile, setBuilderSelectedGeneratedFile] = useState("");
   const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
     Record<string, McpBuilderDesignDecision>
@@ -527,6 +530,10 @@ export function App() {
     mutationFn: createMcpBuilderCandidateHandoff,
     onSuccess: () => setBuilderCandidateHandoffAcknowledged(false),
   });
+  const builderPackageAcquisitionMutation = useMutation({
+    mutationFn: acquireConnectorPackage,
+    onSuccess: () => setBuilderPackageAcquisitionAcknowledged(false),
+  });
   const builderCandidateArchiveMutation = useMutation({
     mutationFn: downloadMcpBuilderCandidateArchive,
     onSuccess: ({ blob, filename }) => {
@@ -543,7 +550,9 @@ export function App() {
   const resetBuilderCandidateHandoff = () => {
     builderCandidateHandoffMutation.reset();
     builderCandidateArchiveMutation.reset();
+    builderPackageAcquisitionMutation.reset();
     setBuilderCandidateHandoffAcknowledged(false);
+    setBuilderPackageAcquisitionAcknowledged(false);
   };
   const builderLabValidationMutation = useMutation({
     mutationFn: createMcpBuilderLabValidation,
@@ -4539,6 +4548,185 @@ export function App() {
                                                                   <p>
                                                                     The archive was not downloaded because
                                                                     its evidence did not match.
+                                                                  </p>
+                                                                </div>
+                                                              </div>
+                                                            )}
+                                                            {(identity?.subject_id ===
+                                                              builderCandidateHandoffMutation.data
+                                                                .data.custodied_by ||
+                                                              identity?.subject_id ===
+                                                                builderCandidateHandoffMutation.data
+                                                                  .data.domain_reviewed_by ||
+                                                              identity?.subject_id ===
+                                                                builderCandidateHandoffMutation.data
+                                                                  .data.security_reviewed_by ||
+                                                              identity?.subject_id ===
+                                                                builderCandidateHandoffMutation.data
+                                                                  .data.lab_operated_by) &&
+                                                              !builderPackageAcquisitionMutation.data && (
+                                                                <div
+                                                                  className="workspace-message mcp-builder-security-sod"
+                                                                  role="status"
+                                                                >
+                                                                  <UserX size={20} />
+                                                                  <div>
+                                                                    <h3>
+                                                                      Independent registry intake required
+                                                                    </h3>
+                                                                    <p>
+                                                                      Builder custodians, reviewers, and the
+                                                                      lab operator cannot acquire this package.
+                                                                      Continue with a different authorized
+                                                                      intake session.
+                                                                    </p>
+                                                                  </div>
+                                                                </div>
+                                                              )}
+                                                            {identity?.subject_id !==
+                                                              builderCandidateHandoffMutation.data.data
+                                                                .custodied_by &&
+                                                              identity?.subject_id !==
+                                                                builderCandidateHandoffMutation.data.data
+                                                                  .domain_reviewed_by &&
+                                                              identity?.subject_id !==
+                                                                builderCandidateHandoffMutation.data.data
+                                                                  .security_reviewed_by &&
+                                                              identity?.subject_id !==
+                                                                builderCandidateHandoffMutation.data.data
+                                                                  .lab_operated_by &&
+                                                              !builderPackageAcquisitionMutation.data && (
+                                                              <div className="mcp-builder-candidate-handoff">
+                                                                <div className="mcp-builder-generation-summary">
+                                                                  <div>
+                                                                    <p className="eyebrow">
+                                                                      CONNECTOR QUARANTINE INTAKE
+                                                                    </p>
+                                                                    <h3>Transfer package custody</h3>
+                                                                    <p>
+                                                                      Preserve the exact archive in the
+                                                                      separate connector quarantine. This is
+                                                                      acquisition evidence, not registry
+                                                                      validation or approval.
+                                                                    </p>
+                                                                  </div>
+                                                                  <span className="state-badge pending">
+                                                                    <Archive size={14} /> awaiting intake
+                                                                  </span>
+                                                                </div>
+                                                                <label className="mcp-builder-check">
+                                                                  <input
+                                                                    type="checkbox"
+                                                                    checked={
+                                                                      builderPackageAcquisitionAcknowledged
+                                                                    }
+                                                                    onChange={(event) =>
+                                                                      setBuilderPackageAcquisitionAcknowledged(
+                                                                        event.target.checked,
+                                                                      )
+                                                                    }
+                                                                  />
+                                                                  I am the independent registry intake
+                                                                  operator. I understand the package remains
+                                                                  unsigned, unattested, and quarantined.
+                                                                </label>
+                                                                <button
+                                                                  className="run-check-button mcp-builder-submit"
+                                                                  type="button"
+                                                                  disabled={
+                                                                    !builderPackageAcquisitionAcknowledged ||
+                                                                    builderPackageAcquisitionMutation.isPending
+                                                                  }
+                                                                  onClick={() =>
+                                                                    builderPackageAcquisitionMutation.mutate(
+                                                                      builderCandidateHandoffMutation.data.data,
+                                                                    )
+                                                                  }
+                                                                >
+                                                                  {builderPackageAcquisitionMutation.isPending ? (
+                                                                    <RefreshCw className="spin" size={16} />
+                                                                  ) : (
+                                                                    <Archive size={16} />
+                                                                  )}
+                                                                  Acquire into connector quarantine
+                                                                </button>
+                                                              </div>
+                                                              )}
+                                                            {builderPackageAcquisitionMutation.isError && (
+                                                              <div
+                                                                className="workspace-message error-state"
+                                                                role="alert"
+                                                              >
+                                                                <AlertTriangle size={20} />
+                                                                <div>
+                                                                  <h3>Package acquisition rejected</h3>
+                                                                  <p>
+                                                                    Custody separation, source integrity, or
+                                                                    connector quarantine policy did not pass.
+                                                                  </p>
+                                                                </div>
+                                                              </div>
+                                                            )}
+                                                            {builderPackageAcquisitionMutation.data?.data && (
+                                                              <div className="mcp-builder-acquisition-result">
+                                                                <div className="mcp-builder-generation-summary">
+                                                                  <div>
+                                                                    <p className="eyebrow">
+                                                                      IMMUTABLE ACQUISITION RECEIPT
+                                                                    </p>
+                                                                    <strong>
+                                                                      {
+                                                                        builderPackageAcquisitionMutation.data
+                                                                          .data.acquisition_id
+                                                                      }
+                                                                    </strong>
+                                                                    <code>
+                                                                      {
+                                                                        builderPackageAcquisitionMutation.data
+                                                                          .data.package_digest
+                                                                      }
+                                                                    </code>
+                                                                  </div>
+                                                                  <span className="state-badge pending">
+                                                                    <LockKeyhole size={14} /> quarantined
+                                                                  </span>
+                                                                </div>
+                                                                <div className="mcp-builder-facts">
+                                                                  <div>
+                                                                    <span>Integrity</span>
+                                                                    <strong>Verified</strong>
+                                                                  </div>
+                                                                  <div>
+                                                                    <span>Signature</span>
+                                                                    <strong>Unsigned</strong>
+                                                                  </div>
+                                                                  <div>
+                                                                    <span>Publisher</span>
+                                                                    <strong>Unattested</strong>
+                                                                  </div>
+                                                                  <div>
+                                                                    <span>Registry validation</span>
+                                                                    <strong>Not run</strong>
+                                                                  </div>
+                                                                </div>
+                                                                <div className="mcp-builder-limitations">
+                                                                  <strong>Acquisition boundaries</strong>
+                                                                  <ul>
+                                                                    {builderPackageAcquisitionMutation.data.data.limitations.map(
+                                                                      (limitation) => (
+                                                                        <li key={limitation}>{limitation}</li>
+                                                                      ),
+                                                                    )}
+                                                                  </ul>
+                                                                </div>
+                                                                <div className="mcp-builder-boundary">
+                                                                  <LockKeyhole size={18} />
+                                                                  <p>
+                                                                    No signing, attestation, validation,
+                                                                    registration, approval, installation,
+                                                                    enablement, runtime trust, execution, or
+                                                                    infrastructure mutation authority was
+                                                                    granted.
                                                                   </p>
                                                                 </div>
                                                               </div>
