@@ -113,12 +113,14 @@ import {
 import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
 import {
+  createMcpBuilderDomainReview,
   createMcpBuilderDesignCheckpoint,
   createMcpBuilderGeneration,
   createMcpBuilderProject,
   createMcpBuilderValidation,
   getMcpBuilderGeneratedFile,
   type McpBuilderDesignDecision,
+  type McpBuilderDomainDecision,
   type McpBuilderProject,
 } from "./api/mcpBuilder";
 import {
@@ -462,6 +464,13 @@ export function App() {
   const [builderDesignAcknowledged, setBuilderDesignAcknowledged] = useState(false);
   const [builderGenerationAcknowledged, setBuilderGenerationAcknowledged] = useState(false);
   const [builderValidationAcknowledged, setBuilderValidationAcknowledged] = useState(false);
+  const [builderDomainReviewAcknowledged, setBuilderDomainReviewAcknowledged] = useState(false);
+  const [builderDomainReviewSummary, setBuilderDomainReviewSummary] = useState(
+    "Human domain review completed against the exact analyzed source lineage.",
+  );
+  const [builderDomainDecisions, setBuilderDomainDecisions] = useState<
+    Record<string, McpBuilderDomainDecision>
+  >({});
   const [builderSelectedGeneratedFile, setBuilderSelectedGeneratedFile] = useState("");
   const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
     Record<string, McpBuilderDesignDecision>
@@ -481,16 +490,27 @@ export function App() {
   const builderGeneratedFileMutation = useMutation({
     mutationFn: getMcpBuilderGeneratedFile,
   });
+  const builderDomainReviewMutation = useMutation({
+    mutationFn: createMcpBuilderDomainReview,
+    onSuccess: () => setBuilderDomainReviewAcknowledged(false),
+  });
   const builderValidationMutation = useMutation({
     mutationFn: createMcpBuilderValidation,
-    onSuccess: () => setBuilderValidationAcknowledged(false),
+    onSuccess: () => {
+      builderDomainReviewMutation.reset();
+      setBuilderValidationAcknowledged(false);
+      setBuilderDomainReviewAcknowledged(false);
+    },
   });
   const builderGenerationMutation = useMutation({
     mutationFn: createMcpBuilderGeneration,
     onSuccess: (result) => {
       builderValidationMutation.reset();
+      builderDomainReviewMutation.reset();
       setBuilderGenerationAcknowledged(false);
       setBuilderValidationAcknowledged(false);
+      setBuilderDomainReviewAcknowledged(false);
+      setBuilderDomainDecisions({});
       const firstFile =
         result.data.files.find((item) => item.relative_path === "README.md") ??
         result.data.files[0];
@@ -509,8 +529,11 @@ export function App() {
       builderGenerationMutation.reset();
       builderGeneratedFileMutation.reset();
       builderValidationMutation.reset();
+      builderDomainReviewMutation.reset();
       setBuilderGenerationAcknowledged(false);
       setBuilderValidationAcknowledged(false);
+      setBuilderDomainReviewAcknowledged(false);
+      setBuilderDomainDecisions({});
       setBuilderSelectedGeneratedFile("");
     },
   });
@@ -521,9 +544,12 @@ export function App() {
       builderGenerationMutation.reset();
       builderGeneratedFileMutation.reset();
       builderValidationMutation.reset();
+      builderDomainReviewMutation.reset();
       setBuilderDesignAcknowledged(false);
       setBuilderGenerationAcknowledged(false);
       setBuilderValidationAcknowledged(false);
+      setBuilderDomainReviewAcknowledged(false);
+      setBuilderDomainDecisions({});
       setBuilderSelectedGeneratedFile("");
       setBuilderDesignDecisions(
         Object.fromEntries(
@@ -545,6 +571,16 @@ export function App() {
       );
     },
   });
+  const updateBuilderDomainDecision = (
+    candidateId: string,
+    update: Partial<McpBuilderDomainDecision>,
+  ) => {
+    setBuilderDomainDecisions((current) => {
+      const existing = current[candidateId];
+      if (!existing) return current;
+      return { ...current, [candidateId]: { ...existing, ...update } };
+    });
+  };
   const humanReviewInboxQuery = useQuery({
     queryKey: ["upgrade-human-review-inbox", identity?.subject_id],
     queryFn: () => getUpgradeHumanReviewInbox(),
@@ -2095,7 +2131,10 @@ export function App() {
                           builderGenerationMutation.reset();
                           builderGeneratedFileMutation.reset();
                           builderValidationMutation.reset();
+                          builderDomainReviewMutation.reset();
                           setBuilderValidationAcknowledged(false);
+                          setBuilderDomainReviewAcknowledged(false);
+                          setBuilderDomainDecisions({});
                           setBuilderDesignDecisions({});
                           setBuilderSelectedGeneratedFile("");
                           if (!file) {
@@ -2129,7 +2168,10 @@ export function App() {
                           builderGenerationMutation.reset();
                           builderGeneratedFileMutation.reset();
                           builderValidationMutation.reset();
+                          builderDomainReviewMutation.reset();
                           setBuilderValidationAcknowledged(false);
+                          setBuilderDomainReviewAcknowledged(false);
+                          setBuilderDomainDecisions({});
                           setBuilderDesignDecisions({});
                           setBuilderSelectedGeneratedFile("");
                         }}
@@ -2699,6 +2741,44 @@ export function App() {
                                       ) {
                                         return;
                                       }
+                                      const candidates = new Map(
+                                        project.capability_candidates.map((candidate) => [
+                                          candidate.candidate_id,
+                                          candidate,
+                                        ]),
+                                      );
+                                      setBuilderDomainDecisions(
+                                        Object.fromEntries(
+                                          checkpoint.capability_decisions
+                                            .filter((decision) => decision.generation_eligible)
+                                            .map((decision) => [
+                                              decision.candidate_id,
+                                              {
+                                                candidateId: decision.candidate_id,
+                                                confirmedClass: decision.confirmed_class,
+                                                decision: "accepted" as const,
+                                                supportedProductVersions:
+                                                  project.intended_product_versions,
+                                                vendorPermission: decision.required_permission,
+                                                authenticationAssessment:
+                                                  "Authentication uses an external governed secret reference.",
+                                                sideEffectAssessment:
+                                                  "The operation is read-only with no documented side effect.",
+                                                errorBehaviorAssessment:
+                                                  "Errors, timeouts, pagination, and rate limits fail closed.",
+                                                healthGuidanceAssessment:
+                                                  "A bounded response is informational health evidence.",
+                                                evidenceCitations: [
+                                                  candidates.get(decision.candidate_id)?.citation ??
+                                                    "",
+                                                ],
+                                                missingCaseCodes: [],
+                                                rationale:
+                                                  "Authoritative source evidence supports the bounded behavior.",
+                                              },
+                                            ]),
+                                        ),
+                                      );
                                       builderValidationMutation.mutate({
                                         project,
                                         checkpoint,
@@ -2880,6 +2960,459 @@ export function App() {
                                         and unavailable.
                                       </p>
                                     </div>
+                                    {builderValidationMutation.data.data.state === "passed" && (
+                                      <section
+                                        className="mcp-builder-domain-review"
+                                        aria-label="Human domain review"
+                                      >
+                                        <div className="section-heading">
+                                          <div>
+                                            <p className="eyebrow">HUMAN DOMAIN REVIEW</p>
+                                            <h3>Confirm vendor semantics by capability</h3>
+                                            <p>
+                                              Record product applicability, permissions, behavior,
+                                              operational impact, and exact source lineage.
+                                            </p>
+                                          </div>
+                                          <span className="state-badge pending">
+                                            <UserCheck size={14} /> Human decision
+                                          </span>
+                                        </div>
+                                        {!builderDomainReviewMutation.data && (
+                                          <form
+                                            className="mcp-builder-domain-review-form"
+                                            onSubmit={(event) => {
+                                              event.preventDefault();
+                                              const project = builderMutation.data?.data;
+                                              const checkpoint = builderDesignMutation.data?.data;
+                                              const generation =
+                                                builderGenerationMutation.data?.data;
+                                              const validation =
+                                                builderValidationMutation.data?.data;
+                                              const decisions =
+                                                Object.values(builderDomainDecisions);
+                                              if (
+                                                !project ||
+                                                !checkpoint ||
+                                                !generation ||
+                                                !validation ||
+                                                !builderDomainReviewAcknowledged ||
+                                                !builderDomainReviewSummary.trim() ||
+                                                decisions.length === 0 ||
+                                                builderDomainReviewMutation.isPending
+                                              ) {
+                                                return;
+                                              }
+                                              builderDomainReviewMutation.mutate({
+                                                project,
+                                                checkpoint,
+                                                generation,
+                                                validation,
+                                                decisions,
+                                                summary: builderDomainReviewSummary,
+                                              });
+                                            }}
+                                          >
+                                            <div className="mcp-builder-domain-contract">
+                                              <div>
+                                                <span>Review profile</span>
+                                                <code>atlas.domain-review.connector.v1</code>
+                                              </div>
+                                              <div>
+                                                <span>Reviewer contract</span>
+                                                <code>mcp-builder-domain-review.v1</code>
+                                              </div>
+                                              <div>
+                                                <span>Downstream authority</span>
+                                                <strong>None</strong>
+                                              </div>
+                                            </div>
+                                            <div className="mcp-builder-domain-decisions">
+                                              {Object.values(builderDomainDecisions).map(
+                                                (decision) => {
+                                                  const candidate =
+                                                    builderMutation.data?.data.capability_candidates.find(
+                                                      (item) =>
+                                                        item.candidate_id === decision.candidateId,
+                                                    );
+                                                  return (
+                                                    <article key={decision.candidateId}>
+                                                      <div className="mcp-builder-domain-decision-heading">
+                                                        <div>
+                                                          <strong>
+                                                            {candidate?.summary ??
+                                                              decision.candidateId}
+                                                          </strong>
+                                                          <code>{decision.candidateId}</code>
+                                                        </div>
+                                                        <span className="state-badge analyzed">
+                                                          {decision.confirmedClass}
+                                                        </span>
+                                                      </div>
+                                                      <div className="mcp-builder-domain-fields">
+                                                        <label>
+                                                          Decision
+                                                          <select
+                                                            aria-label={`Domain decision ${decision.candidateId}`}
+                                                            value={decision.decision}
+                                                            onChange={(event) => {
+                                                              const value = event.target.value as
+                                                                | "accepted"
+                                                                | "needs_evidence"
+                                                                | "rejected";
+                                                              updateBuilderDomainDecision(
+                                                                decision.candidateId,
+                                                                {
+                                                                  decision: value,
+                                                                  missingCaseCodes:
+                                                                    value === "accepted"
+                                                                      ? []
+                                                                      : decision.missingCaseCodes
+                                                                            .length > 0
+                                                                        ? decision.missingCaseCodes
+                                                                        : [
+                                                                            "domain.evidence-gap",
+                                                                          ],
+                                                                },
+                                                              );
+                                                            }}
+                                                          >
+                                                            <option value="accepted">Accepted</option>
+                                                            <option value="needs_evidence">
+                                                              Needs evidence
+                                                            </option>
+                                                            <option value="rejected">Rejected</option>
+                                                          </select>
+                                                        </label>
+                                                        <label>
+                                                          Supported product versions
+                                                          <input
+                                                            aria-label={`Supported versions ${decision.candidateId}`}
+                                                            required
+                                                            value={decision.supportedProductVersions.join(
+                                                              ", ",
+                                                            )}
+                                                            onChange={(event) =>
+                                                              updateBuilderDomainDecision(
+                                                                decision.candidateId,
+                                                                {
+                                                                  supportedProductVersions:
+                                                                    event.target.value
+                                                                      .split(",")
+                                                                      .map((value) => value.trim())
+                                                                      .filter(Boolean),
+                                                                },
+                                                              )
+                                                            }
+                                                          />
+                                                        </label>
+                                                        <label>
+                                                          Vendor permission
+                                                          <input
+                                                            aria-label={`Vendor permission ${decision.candidateId}`}
+                                                            readOnly
+                                                            value={decision.vendorPermission}
+                                                          />
+                                                        </label>
+                                                        <label>
+                                                          Source citation
+                                                          <input
+                                                            aria-label={`Evidence citation ${decision.candidateId}`}
+                                                            readOnly
+                                                            value={decision.evidenceCitations.join(
+                                                              ", ",
+                                                            )}
+                                                          />
+                                                        </label>
+                                                        <label className="wide-field">
+                                                          Authentication assessment
+                                                          <textarea
+                                                            aria-label={`Authentication assessment ${decision.candidateId}`}
+                                                            required
+                                                            value={
+                                                              decision.authenticationAssessment
+                                                            }
+                                                            onChange={(event) =>
+                                                              updateBuilderDomainDecision(
+                                                                decision.candidateId,
+                                                                {
+                                                                  authenticationAssessment:
+                                                                    event.target.value,
+                                                                },
+                                                              )
+                                                            }
+                                                          />
+                                                        </label>
+                                                        <label className="wide-field">
+                                                          Side effects and operational impact
+                                                          <textarea
+                                                            aria-label={`Side effect assessment ${decision.candidateId}`}
+                                                            required
+                                                            value={decision.sideEffectAssessment}
+                                                            onChange={(event) =>
+                                                              updateBuilderDomainDecision(
+                                                                decision.candidateId,
+                                                                {
+                                                                  sideEffectAssessment:
+                                                                    event.target.value,
+                                                                },
+                                                              )
+                                                            }
+                                                          />
+                                                        </label>
+                                                        <label className="wide-field">
+                                                          Error, timeout, pagination, and rate behavior
+                                                          <textarea
+                                                            aria-label={`Error behavior assessment ${decision.candidateId}`}
+                                                            required
+                                                            value={decision.errorBehaviorAssessment}
+                                                            onChange={(event) =>
+                                                              updateBuilderDomainDecision(
+                                                                decision.candidateId,
+                                                                {
+                                                                  errorBehaviorAssessment:
+                                                                    event.target.value,
+                                                                },
+                                                              )
+                                                            }
+                                                          />
+                                                        </label>
+                                                        <label className="wide-field">
+                                                          Health guidance
+                                                          <textarea
+                                                            aria-label={`Health guidance assessment ${decision.candidateId}`}
+                                                            required
+                                                            value={decision.healthGuidanceAssessment}
+                                                            onChange={(event) =>
+                                                              updateBuilderDomainDecision(
+                                                                decision.candidateId,
+                                                                {
+                                                                  healthGuidanceAssessment:
+                                                                    event.target.value,
+                                                                },
+                                                              )
+                                                            }
+                                                          />
+                                                        </label>
+                                                        {decision.decision !== "accepted" && (
+                                                          <label className="wide-field">
+                                                            Missing-case codes
+                                                            <input
+                                                              aria-label={`Missing case codes ${decision.candidateId}`}
+                                                              required
+                                                              value={decision.missingCaseCodes.join(
+                                                                ", ",
+                                                              )}
+                                                              onChange={(event) =>
+                                                                updateBuilderDomainDecision(
+                                                                  decision.candidateId,
+                                                                  {
+                                                                    missingCaseCodes:
+                                                                      event.target.value
+                                                                        .split(",")
+                                                                        .map((value) => value.trim())
+                                                                        .filter(Boolean),
+                                                                  },
+                                                                )
+                                                              }
+                                                            />
+                                                          </label>
+                                                        )}
+                                                        <label className="wide-field">
+                                                          Human rationale
+                                                          <textarea
+                                                            aria-label={`Domain rationale ${decision.candidateId}`}
+                                                            required
+                                                            value={decision.rationale}
+                                                            onChange={(event) =>
+                                                              updateBuilderDomainDecision(
+                                                                decision.candidateId,
+                                                                { rationale: event.target.value },
+                                                              )
+                                                            }
+                                                          />
+                                                        </label>
+                                                      </div>
+                                                    </article>
+                                                  );
+                                                },
+                                              )}
+                                            </div>
+                                            <label className="mcp-builder-domain-summary">
+                                              Review summary
+                                              <textarea
+                                                required
+                                                value={builderDomainReviewSummary}
+                                                onChange={(event) =>
+                                                  setBuilderDomainReviewSummary(event.target.value)
+                                                }
+                                              />
+                                            </label>
+                                            <label className="mcp-builder-check">
+                                              <input
+                                                type="checkbox"
+                                                checked={builderDomainReviewAcknowledged}
+                                                onChange={(event) =>
+                                                  setBuilderDomainReviewAcknowledged(
+                                                    event.target.checked,
+                                                  )
+                                                }
+                                              />
+                                              <span>
+                                                I am the accountable human domain reviewer. This
+                                                decision records semantic evidence only and grants no
+                                                security, lab, package, runtime, or execution approval.
+                                              </span>
+                                            </label>
+                                            <button
+                                              className="run-check-button mcp-builder-submit"
+                                              type="submit"
+                                              disabled={
+                                                !builderDomainReviewAcknowledged ||
+                                                builderDomainReviewMutation.isPending
+                                              }
+                                            >
+                                              {builderDomainReviewMutation.isPending ? (
+                                                <RefreshCw className="spin" size={16} />
+                                              ) : (
+                                                <UserCheck size={16} />
+                                              )}
+                                              Record domain review
+                                            </button>
+                                          </form>
+                                        )}
+                                        {builderDomainReviewMutation.isError && (
+                                          <div className="workspace-message error-state" role="alert">
+                                            <AlertTriangle size={20} />
+                                            <div>
+                                              <h3>Domain review unavailable</h3>
+                                              <p>
+                                                The exact evidence binding or capability assessment
+                                                was rejected.
+                                              </p>
+                                            </div>
+                                          </div>
+                                        )}
+                                        {builderDomainReviewMutation.data?.data && (
+                                          <div className="mcp-builder-domain-result">
+                                            <div className="mcp-builder-generation-summary">
+                                              <div>
+                                                <p className="eyebrow">IMMUTABLE DOMAIN REVIEW</p>
+                                                <strong>
+                                                  {
+                                                    builderDomainReviewMutation.data.data
+                                                      .review_id
+                                                  }
+                                                </strong>
+                                                <code>
+                                                  {
+                                                    builderDomainReviewMutation.data.data
+                                                      .canonical_digest
+                                                  }
+                                                </code>
+                                              </div>
+                                              <span
+                                                className={`state-badge ${
+                                                  builderDomainReviewMutation.data.data.state ===
+                                                  "accepted"
+                                                    ? "analyzed"
+                                                    : "failed"
+                                                }`}
+                                              >
+                                                {builderDomainReviewMutation.data.data.state ===
+                                                "accepted" ? (
+                                                  <CheckCircle2 size={14} />
+                                                ) : (
+                                                  <AlertTriangle size={14} />
+                                                )}
+                                                {builderDomainReviewMutation.data.data.state.replace(
+                                                  "_",
+                                                  " ",
+                                                )}
+                                              </span>
+                                            </div>
+                                            <div className="mcp-builder-facts">
+                                              <div>
+                                                <span>Accepted</span>
+                                                <strong>
+                                                  {
+                                                    builderDomainReviewMutation.data.data
+                                                      .accepted_count
+                                                  }
+                                                </strong>
+                                              </div>
+                                              <div>
+                                                <span>Needs evidence</span>
+                                                <strong>
+                                                  {
+                                                    builderDomainReviewMutation.data.data
+                                                      .needs_evidence_count
+                                                  }
+                                                </strong>
+                                              </div>
+                                              <div>
+                                                <span>Rejected</span>
+                                                <strong>
+                                                  {
+                                                    builderDomainReviewMutation.data.data
+                                                      .rejected_count
+                                                  }
+                                                </strong>
+                                              </div>
+                                              <div>
+                                                <span>Reviewed by</span>
+                                                <code>
+                                                  {
+                                                    builderDomainReviewMutation.data.data
+                                                      .reviewed_by
+                                                  }
+                                                </code>
+                                              </div>
+                                            </div>
+                                            <div className="mcp-builder-domain-evidence">
+                                              {builderDomainReviewMutation.data.data.capability_decisions.map(
+                                                (decision) => (
+                                                  <article key={decision.candidate_id}>
+                                                    <div>
+                                                      <strong>{decision.candidate_id}</strong>
+                                                      <code>
+                                                        {decision.evidence_citations.join(", ")}
+                                                      </code>
+                                                    </div>
+                                                    <span>{decision.decision.replace("_", " ")}</span>
+                                                    <p>{decision.rationale}</p>
+                                                    <small>
+                                                      {decision.missing_case_codes.join(", ") ||
+                                                        "No declared evidence gaps"}
+                                                    </small>
+                                                  </article>
+                                                ),
+                                              )}
+                                            </div>
+                                            <div className="mcp-builder-limitations">
+                                              <strong>Domain-review boundaries</strong>
+                                              <ul>
+                                                {builderDomainReviewMutation.data.data.limitations.map(
+                                                  (limitation) => (
+                                                    <li key={limitation}>{limitation}</li>
+                                                  ),
+                                                )}
+                                              </ul>
+                                            </div>
+                                            <div className="mcp-builder-boundary">
+                                              <LockKeyhole size={18} />
+                                              <p>
+                                                Security review, dependency resolution, runtime
+                                                self-test, lab validation, package approval,
+                                                registration, installation, enablement, target access,
+                                                execution, and infrastructure mutation remain false
+                                                and unavailable.
+                                              </p>
+                                            </div>
+                                          </div>
+                                        )}
+                                      </section>
+                                    )}
                                   </div>
                                 )}
                               </section>

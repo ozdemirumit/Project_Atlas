@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
+from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from atlas.api.schemas import ResponseMeta
 from atlas.core.capabilities import CapabilityClass
@@ -12,6 +14,11 @@ from atlas.modules.mcp_builder.domain.design_review import (
     BuilderCapabilityDecisionKind,
     BuilderEntityMapping,
     McpBuilderDesignCheckpoint,
+)
+from atlas.modules.mcp_builder.domain.domain_review import (
+    BuilderDomainCapabilityDecision,
+    BuilderDomainCapabilityDecisionKind,
+    McpBuilderDomainReview,
 )
 from atlas.modules.mcp_builder.domain.generation import (
     BuilderGeneratedFile,
@@ -538,6 +545,171 @@ class McpBuilderValidationResponse(BaseModel):
     meta: ResponseMeta
 
 
+class BuilderDomainCapabilityDecisionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    candidate_id: str = Field(pattern=STABLE_ID)
+    confirmed_class: CapabilityClass
+    decision: BuilderDomainCapabilityDecisionKind
+    supported_product_versions: list[str] = Field(min_length=1, max_length=20)
+    vendor_permission: str = Field(min_length=1, max_length=160)
+    authentication_assessment: str = Field(min_length=1, max_length=1200)
+    side_effect_assessment: str = Field(min_length=1, max_length=1200)
+    error_behavior_assessment: str = Field(min_length=1, max_length=1200)
+    health_guidance_assessment: str = Field(min_length=1, max_length=1200)
+    evidence_citations: list[str] = Field(min_length=1, max_length=20)
+    missing_case_codes: list[str] = Field(max_length=20)
+    rationale: str = Field(min_length=1, max_length=1200)
+
+    @model_validator(mode="after")
+    def validate_bounded_lists_and_gap_semantics(self) -> Self:
+        if (
+            len(self.supported_product_versions) != len(set(self.supported_product_versions))
+            or any(not item.strip() or len(item) > 100 for item in self.supported_product_versions)
+            or len(self.evidence_citations) != len(set(self.evidence_citations))
+            or any(not item.strip() or len(item) > 500 for item in self.evidence_citations)
+            or len(self.missing_case_codes) != len(set(self.missing_case_codes))
+            or any(re.fullmatch(STABLE_ID, item) is None for item in self.missing_case_codes)
+        ):
+            raise ValueError("Domain review lists are invalid")
+        if self.decision is BuilderDomainCapabilityDecisionKind.ACCEPTED:
+            if self.missing_case_codes:
+                raise ValueError("Accepted domain decisions cannot retain evidence gaps")
+        elif not self.missing_case_codes:
+            raise ValueError("Non-accepted domain decisions require an evidence gap")
+        return self
+
+
+class McpBuilderDomainReviewInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: str = Field(
+        default="atlas.mcp-builder-domain-review-request.v1", pattern=STABLE_ID
+    )
+    project_version: int = Field(ge=1)
+    project_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    source_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    checkpoint_id: str = Field(pattern=STABLE_ID)
+    checkpoint_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    generation_id: str = Field(pattern=STABLE_ID)
+    generation_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    artifact_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    validation_id: str = Field(pattern=STABLE_ID)
+    validation_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    validation_profile: str = Field(pattern=STABLE_ID)
+    validator_version: str = Field(pattern=STABLE_ID)
+    review_profile: str = Field(default="atlas.domain-review.connector.v1", pattern=STABLE_ID)
+    acknowledged_human_domain_decision: bool
+    capability_decisions: list[BuilderDomainCapabilityDecisionInput] = Field(
+        min_length=1, max_length=100
+    )
+    summary: str = Field(min_length=1, max_length=1500)
+
+
+class BuilderDomainCapabilityDecisionData(BaseModel):
+    candidate_id: str
+    confirmed_class: str
+    decision: str
+    supported_product_versions: list[str]
+    vendor_permission: str
+    authentication_assessment: str
+    side_effect_assessment: str
+    error_behavior_assessment: str
+    health_guidance_assessment: str
+    evidence_citations: list[str]
+    missing_case_codes: list[str]
+    rationale: str
+
+    @classmethod
+    def from_domain(
+        cls, item: BuilderDomainCapabilityDecision
+    ) -> BuilderDomainCapabilityDecisionData:
+        return cls(
+            candidate_id=item.candidate_id,
+            confirmed_class=item.confirmed_class.value,
+            decision=item.decision.value,
+            supported_product_versions=list(item.supported_product_versions),
+            vendor_permission=item.vendor_permission,
+            authentication_assessment=item.authentication_assessment,
+            side_effect_assessment=item.side_effect_assessment,
+            error_behavior_assessment=item.error_behavior_assessment,
+            health_guidance_assessment=item.health_guidance_assessment,
+            evidence_citations=list(item.evidence_citations),
+            missing_case_codes=list(item.missing_case_codes),
+            rationale=item.rationale,
+        )
+
+
+class McpBuilderDomainReviewData(BaseModel):
+    review_id: str
+    schema_version: str
+    version: int
+    state: str
+    project_id: str
+    project_version: int
+    project_digest: str
+    source_digest: str
+    checkpoint_id: str
+    checkpoint_digest: str
+    generation_id: str
+    generation_digest: str
+    artifact_digest: str
+    validation_id: str
+    validation_digest: str
+    validation_profile: str
+    validator_version: str
+    organization_id: str
+    environment_id: str
+    reviewed_by: str
+    review_profile: str
+    reviewer_contract_version: str
+    capability_decisions: list[BuilderDomainCapabilityDecisionData]
+    accepted_count: int
+    needs_evidence_count: int
+    rejected_count: int
+    summary: str
+    limitations: list[str]
+    canonical_digest: str
+    completed_at: datetime
+    domain_review_completed: bool
+    domain_review_accepted: bool
+    security_review_completed: bool
+    lab_validation_completed: bool
+    candidate_package_created: bool
+    connector_registered: bool
+    connector_installed: bool
+    connector_enabled: bool
+    network_request_performed: bool
+    model_inference_performed: bool
+    dependency_resolution_performed: bool
+    runtime_self_test_performed: bool
+    subprocess_invoked: bool
+    dynamic_code_execution_performed: bool
+    runtime_trust_granted: bool
+    execution_authorized: bool
+    infrastructure_mutation_performed: bool
+    reused: bool
+
+    @classmethod
+    def from_domain(cls, review: McpBuilderDomainReview) -> McpBuilderDomainReviewData:
+        return cls(
+            **{
+                field: getattr(review, field)
+                for field in cls.model_fields
+                if field not in {"state", "capability_decisions", "limitations"}
+            },
+            state=review.state.value,
+            capability_decisions=[
+                BuilderDomainCapabilityDecisionData.from_domain(item)
+                for item in review.capability_decisions
+            ],
+            limitations=list(review.limitations),
+        )
+
+
+class McpBuilderDomainReviewResponse(BaseModel):
+    data: McpBuilderDomainReviewData
+    meta: ResponseMeta
+
+
 def design_entity_mapping(value: BuilderEntityMappingInput) -> BuilderEntityMapping:
     return BuilderEntityMapping(source_entity=value.source_entity, atlas_entity=value.atlas_entity)
 
@@ -553,4 +725,23 @@ def design_capability_decision(
         required_permission=value.required_permission,
         rationale=value.rationale,
         generation_eligible=value.decision is BuilderCapabilityDecisionKind.INCLUDE,
+    )
+
+
+def domain_capability_decision(
+    value: BuilderDomainCapabilityDecisionInput,
+) -> BuilderDomainCapabilityDecision:
+    return BuilderDomainCapabilityDecision(
+        candidate_id=value.candidate_id,
+        confirmed_class=value.confirmed_class,
+        decision=value.decision,
+        supported_product_versions=tuple(value.supported_product_versions),
+        vendor_permission=value.vendor_permission,
+        authentication_assessment=value.authentication_assessment,
+        side_effect_assessment=value.side_effect_assessment,
+        error_behavior_assessment=value.error_behavior_assessment,
+        health_guidance_assessment=value.health_guidance_assessment,
+        evidence_citations=tuple(value.evidence_citations),
+        missing_case_codes=tuple(value.missing_case_codes),
+        rationale=value.rationale,
     )

@@ -270,6 +270,81 @@ const validation = {
   },
 };
 
+const domainReview = {
+  data: {
+    review_id: "mcp-builder-domain-review.222222222222222222222222",
+    schema_version: "atlas.mcp-builder-domain-review.v1",
+    version: 1,
+    state: "accepted",
+    project_id: project.data.project_id,
+    project_version: 1,
+    project_digest: project.data.canonical_digest,
+    source_digest: project.data.source_digest,
+    checkpoint_id: checkpoint.data.checkpoint_id,
+    checkpoint_digest: checkpoint.data.canonical_digest,
+    generation_id: generation.data.generation_id,
+    generation_digest: generation.data.canonical_digest,
+    artifact_digest: generation.data.artifact_digest,
+    validation_id: validation.data.validation_id,
+    validation_digest: validation.data.canonical_digest,
+    validation_profile: validation.data.validation_profile,
+    validator_version: validation.data.validator_version,
+    organization_id: identity.data.organization_id,
+    environment_id: "environment.development",
+    reviewed_by: identity.data.subject_id,
+    review_profile: "atlas.domain-review.connector.v1",
+    reviewer_contract_version: "mcp-builder-domain-review.v1",
+    capability_decisions: [
+      {
+        candidate_id: project.data.capability_candidates[0]?.candidate_id,
+        confirmed_class: "C1",
+        decision: "accepted",
+        supported_product_versions: project.data.intended_product_versions,
+        vendor_permission: "storage.system.read",
+        authentication_assessment:
+          "Authentication uses an external governed secret reference.",
+        side_effect_assessment:
+          "The operation is read-only with no documented side effect.",
+        error_behavior_assessment:
+          "Errors, timeouts, pagination, and rate limits fail closed.",
+        health_guidance_assessment:
+          "A bounded response is informational health evidence.",
+        evidence_citations: [project.data.capability_candidates[0]?.citation],
+        missing_case_codes: [],
+        rationale: "Authoritative source evidence supports the bounded behavior.",
+      },
+    ],
+    accepted_count: 1,
+    needs_evidence_count: 0,
+    rejected_count: 0,
+    summary: "Human domain review completed against the exact analyzed source lineage.",
+    limitations: [
+      "Human domain review does not prove vendor runtime behavior.",
+      "Security review, lab validation, and candidate package approval remain required.",
+    ],
+    canonical_digest: "2".repeat(64),
+    completed_at: "2026-08-05T12:40:00Z",
+    domain_review_completed: true,
+    domain_review_accepted: true,
+    security_review_completed: false,
+    lab_validation_completed: false,
+    candidate_package_created: false,
+    connector_registered: false,
+    connector_installed: false,
+    connector_enabled: false,
+    network_request_performed: false,
+    model_inference_performed: false,
+    dependency_resolution_performed: false,
+    runtime_self_test_performed: false,
+    subprocess_invoked: false,
+    dynamic_code_execution_performed: false,
+    runtime_trust_granted: false,
+    execution_authorized: false,
+    infrastructure_mutation_performed: false,
+    reused: false,
+  },
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -284,6 +359,7 @@ describe("MCP Builder workspace", () => {
     const designRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const generationRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const validationRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    const domainReviewRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -321,6 +397,14 @@ describe("MCP Builder workspace", () => {
           idempotencyKey: headers.get("Idempotency-Key"),
         });
         return Promise.resolve(new Response(JSON.stringify(validation), { status: 201 }));
+      }
+      if (url.endsWith(`/mcp-builder/projects/${project.data.project_id}/domain-reviews`)) {
+        const headers = new Headers(init?.headers);
+        domainReviewRequests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(new Response(JSON.stringify(domainReview), { status: 201 }));
       }
       if (
         url.endsWith(
@@ -402,11 +486,27 @@ describe("MCP Builder workspace", () => {
     expect(screen.getByText("Static validation passed")).toBeVisible();
     expect(screen.getByText("validation.python.ast-safety")).toBeVisible();
     expect(screen.getByText("Validation boundaries")).toBeVisible();
+    expect(screen.getByText("Confirm vendor semantics by capability")).toBeVisible();
+    expect(
+      screen.getByRole("combobox", {
+        name: `Domain decision ${project.data.capability_candidates[0]?.candidate_id}`,
+      }),
+    ).toHaveValue("accepted");
+    fireEvent.click(
+      screen.getByLabelText(/I am the accountable human domain reviewer/i),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Record domain review" }));
+
+    expect(await screen.findByText(domainReview.data.review_id)).toBeVisible();
+    expect(screen.getByText("IMMUTABLE DOMAIN REVIEW")).toBeVisible();
+    expect(screen.getByText("No declared evidence gaps")).toBeVisible();
+    expect(screen.getByText(identity.data.subject_id)).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|execute|register|enable/i })).not.toBeInTheDocument();
     expect(requests).toHaveLength(1);
     expect(designRequests).toHaveLength(1);
     expect(generationRequests).toHaveLength(1);
     expect(validationRequests).toHaveLength(1);
+    expect(domainReviewRequests).toHaveLength(1);
     expect(requests[0]?.idempotencyKey).toBe("mcp-builder.mcp-builder-ui-001");
     const body = JSON.parse(requests[0]?.body ?? "{}") as Record<string, unknown>;
     expect(body.source_document).toBe(source);
@@ -448,5 +548,25 @@ describe("MCP Builder workspace", () => {
     expect(validationBody.acknowledged_static_only).toBe(true);
     expect(validationBody).not.toHaveProperty("runtime_trust_granted");
     expect(validationBody).not.toHaveProperty("execute");
+    expect(domainReviewRequests[0]?.idempotencyKey).toBe(
+      "mcp-builder-domain-review.mcp-builder-ui-001",
+    );
+    const domainReviewBody = JSON.parse(
+      domainReviewRequests[0]?.body ?? "{}",
+    ) as Record<string, unknown>;
+    expect(domainReviewBody.validation_digest).toBe(validation.data.canonical_digest);
+    expect(domainReviewBody.review_profile).toBe("atlas.domain-review.connector.v1");
+    expect(domainReviewBody.acknowledged_human_domain_decision).toBe(true);
+    expect(domainReviewBody.capability_decisions).toEqual([
+      expect.objectContaining({
+        candidate_id: project.data.capability_candidates[0]?.candidate_id,
+        decision: "accepted",
+        vendor_permission: "storage.system.read",
+        evidence_citations: [project.data.capability_candidates[0]?.citation],
+        missing_case_codes: [],
+      }),
+    ]);
+    expect(domainReviewBody).not.toHaveProperty("security_review_completed");
+    expect(domainReviewBody).not.toHaveProperty("execute");
   });
 });

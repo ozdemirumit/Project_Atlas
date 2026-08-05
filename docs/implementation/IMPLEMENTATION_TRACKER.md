@@ -4,14 +4,87 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-049 |
-| Title | Governed MCP Builder static scaffold validation |
-| Status | Done |
-| Branch | `agent/mcp-builder-static-validation` |
-| Pull Request | [PR #61](https://github.com/ozdemirumit/Project_Atlas/pull/61) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-004, ADR-005 |
+| Task ID | ATLAS-IMP-050 |
+| Title | Governed MCP Builder human domain review foundation |
+| Status | Review |
+| Branch | `agent/mcp-builder-domain-review` |
+| Pull Request | [#62](https://github.com/ozdemirumit/Project_Atlas/pull/62) |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-004, ADR-005, ADR-006 |
 | Last Updated | 2026-08-05 |
-| Next Action | Start the governed MCP Builder domain review foundation |
+| Next Action | Merge PR #62 after all required GitHub checks pass |
+
+### ATLAS-IMP-050 Scope Rationale
+
+- IMP-049 supplies immutable static evidence for the exact quarantined scaffold. ATLAS-022 next
+  requires an accountable domain reviewer to assess vendor semantics and product behavior before
+  security review or lab validation.
+- ADR-006 defines a capability-level human review contract with accepted, needs-evidence, and rejected
+  outcomes. Static validation remains mandatory and cannot be replaced by reviewer assertion.
+- This slice records domain evidence only. It neither changes the artifact nor grants security, lab,
+  packaging, runtime, execution, or infrastructure authority.
+
+### ATLAS-IMP-050 Acceptance Criteria
+
+- Only an authorized multi-factor human in the exact project organization and environment with the
+  dedicated domain-review permission can create or inspect a review. AI and service identities,
+  wrong roles, insufficient assurance, and out-of-scope actors fail closed without project, report,
+  capability, or review discovery.
+- Review requires a passed `atlas.static-validation.python312.v1` report and binds the exact project
+  version/digest, source digest, checkpoint ID/digest, generation ID/digest, artifact digest,
+  validation ID/digest/profile/validator version, complete generation-eligible capability set,
+  `atlas.domain-review.connector.v1` profile, and immutable reviewer contract version. Failed,
+  missing, stale, changed, unsupported, or tampered evidence is rejected.
+- Every eligible capability records its exact candidate ID, confirmed class, supported product
+  versions, vendor permission, authentication, side-effect and impact, error/timeout/asynchronous/
+  pagination/rate behavior, source-lineage citations, stable missing-case codes, bounded rationale,
+  and accepted, needs-evidence, or rejected decision. Duplicate, omitted, foreign, blocked, broad,
+  changed, or uncited decisions fail closed.
+- Overall state is deterministic: all accepted yields accepted; any rejected yields rejected;
+  otherwise any needs-evidence yields needs-evidence. Only accepted sets domain-review acceptance;
+  all outcomes remain immutable evidence and no outcome silently advances another lifecycle gate.
+- Creation is deterministic, idempotent, one-to-one with the exact validation report,
+  audit-before-persist, concurrency-safe, and behaviorally equivalent for memory and PostgreSQL.
+  Required audit or persistence failure cannot disclose or fabricate a successful review.
+- Strict no-store APIs require browser CSRF for creation, default-deny RBAC, correlation, bounded
+  schemas, safe errors, and exact-scope reads. The web workspace shows reviewer accountability,
+  capability decisions, semantic assessments, citations, gaps, overall state, and explicit
+  non-execution and no-downstream-approval boundaries.
+- Automated backend and frontend coverage, one Alembic head, live authorized and denied API
+  validation, accepted/needs-evidence/rejected fixtures, desktop and 390-pixel mobile inspection,
+  browser-log inspection, and GitHub CI apply.
+- This slice performs no generated-file write, model inference, network or target request, secret or
+  dependency resolution, subprocess, generated-code import/compile/test/execution, package creation
+  or signing, security review, lab validation, connector registration/installation/enablement,
+  runtime trust grant, workflow execution, deployment, or infrastructure mutation.
+
+### ATLAS-IMP-050 Validation Evidence
+
+- Immutable domain, application, API, authorization, audit, memory, PostgreSQL, and migration
+  coverage verifies exact project/checkpoint/generation/artifact/static-validation binding;
+  capability completeness and source lineage; accepted, needs-evidence, and rejected outcomes;
+  deterministic replay; audit-before-persist; stale/profile/acknowledgement rejection; and all
+  downstream authority flags.
+- The domain review accepts only a passed `atlas.static-validation.python312.v1` report and records
+  the exact immutable candidate class, version applicability, vendor permission, authentication,
+  side-effect, operational-impact, error, timeout, asynchronous, pagination, rate-limit, rationale,
+  citation, evidence-gap, reviewer, and contract-version evidence for every eligible capability.
+- Strict POST and GET APIs require dedicated permissions, multi-factor human identity, exact tenant
+  scope, browser CSRF for creation, explicit human acknowledgement, supported review profile, and
+  no-store responses. Live validation returned 403 without CSRF, 422 for an unsupported profile,
+  and 409 for stale evidence or missing acknowledgement without disclosing or creating a review.
+- Local quality gates passed with Ruff, mypy over 408 source files, 408 backend tests, 35 frontend
+  tests, ESLint, TypeScript checking, production build, and a single Alembic head. The three backend
+  skips are the existing Windows symbolic-link cases; the production build retains the existing
+  non-blocking bundle-size advisory.
+- Live accepted review `mcp-builder-domain-review.734f6d8c99807b04d077a517`, needs-evidence review
+  `mcp-builder-domain-review.f2664bb505fc273b7348333f`, and rejected review
+  `mcp-builder-domain-review.c982fe832885196ca931617f` were created and read against the current
+  backend with correct counts, immutable digests, no-store headers, and every security, lab,
+  packaging, installation, runtime, execution, and infrastructure authority remaining false.
+- The browser workspace created accepted review `mcp-builder-domain-review.ff85eadd0eb932255da94495`
+  through the complete project, design, generation, and static-validation flow. Desktop and
+  390-pixel mobile layouts were visually inspected with no visible horizontal overflow, incoherent
+  overlap, or current-page console error; the temporary viewport override was reset afterward.
 
 ### ATLAS-IMP-049 Scope Rationale
 

@@ -126,6 +126,12 @@ from atlas.modules.mcp_builder.adapters.design_review_memory import (
 from atlas.modules.mcp_builder.adapters.design_review_postgres import (
     PostgreSQLMcpBuilderDesignCheckpointRepository,
 )
+from atlas.modules.mcp_builder.adapters.domain_review_memory import (
+    InMemoryMcpBuilderDomainReviewRepository,
+)
+from atlas.modules.mcp_builder.adapters.domain_review_postgres import (
+    PostgreSQLMcpBuilderDomainReviewRepository,
+)
 from atlas.modules.mcp_builder.adapters.generation_filesystem import (
     FileSystemMcpBuilderArtifactPublisher,
 )
@@ -739,11 +745,17 @@ def create_app(
             if resolved_settings.database_url
             else InMemoryMcpBuilderValidationRepository()
         )
+        mcp_builder_domain_review_repository = (
+            PostgreSQLMcpBuilderDomainReviewRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryMcpBuilderDomainReviewRepository()
+        )
         resolved_mcp_builder_service = McpBuilderService(
             repository=mcp_builder_repository,
             design_repository=mcp_builder_design_repository,
             generation_repository=mcp_builder_generation_repository,
             validation_repository=mcp_builder_validation_repository,
+            domain_review_repository=mcp_builder_domain_review_repository,
             artifact_publisher=FileSystemMcpBuilderArtifactPublisher(
                 root=resolved_settings.mcp_builder_generation_root
             ),

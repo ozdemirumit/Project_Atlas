@@ -11,6 +11,9 @@ from atlas.api.mcp_builder_schemas import (
     McpBuilderDesignCheckpointData,
     McpBuilderDesignCheckpointInput,
     McpBuilderDesignCheckpointResponse,
+    McpBuilderDomainReviewData,
+    McpBuilderDomainReviewInput,
+    McpBuilderDomainReviewResponse,
     McpBuilderGeneratedFileData,
     McpBuilderGeneratedFileResponse,
     McpBuilderGenerationData,
@@ -24,12 +27,15 @@ from atlas.api.mcp_builder_schemas import (
     McpBuilderValidationResponse,
     design_capability_decision,
     design_entity_mapping,
+    domain_capability_decision,
 )
 from atlas.api.schemas import ResponseMeta
 from atlas.api.security import (
     authorize_mcp_builder_create,
     authorize_mcp_builder_design_create,
     authorize_mcp_builder_design_read,
+    authorize_mcp_builder_domain_review_create,
+    authorize_mcp_builder_domain_review_read,
     authorize_mcp_builder_generation_create,
     authorize_mcp_builder_generation_read,
     authorize_mcp_builder_read,
@@ -42,6 +48,7 @@ from atlas.modules.identity.domain.models import AuthenticatedSubject
 from atlas.modules.mcp_builder.application.ports import McpBuilderError
 from atlas.modules.mcp_builder.application.service import McpBuilderService
 from atlas.modules.mcp_builder.domain.design_review import McpBuilderDesignCheckpoint
+from atlas.modules.mcp_builder.domain.domain_review import McpBuilderDomainReview
 from atlas.modules.mcp_builder.domain.generation import McpBuilderGeneration
 from atlas.modules.mcp_builder.domain.models import McpBuilderProject
 from atlas.modules.mcp_builder.domain.validation import McpBuilderValidation
@@ -114,6 +121,18 @@ def _validation_response(
     response.headers["Cache-Control"] = "no-store"
     return McpBuilderValidationResponse(
         data=McpBuilderValidationData.from_domain(validation),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+def _domain_review_response(
+    review: McpBuilderDomainReview, request: Request, response: Response
+) -> McpBuilderDomainReviewResponse:
+    response.headers["Cache-Control"] = "no-store"
+    return McpBuilderDomainReviewResponse(
+        data=McpBuilderDomainReviewData.from_domain(review),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),
@@ -356,3 +375,56 @@ async def get_mcp_builder_validation(
     except McpBuilderError as error:
         _raise(error)
     return _validation_response(validation, request, response)
+
+
+@router.post(
+    "/{project_id}/domain-reviews",
+    response_model=McpBuilderDomainReviewResponse,
+    status_code=201,
+)
+async def create_mcp_builder_domain_review(
+    project_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    payload: McpBuilderDomainReviewInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_mcp_builder_domain_review_create)
+    ],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> McpBuilderDomainReviewResponse:
+    service: McpBuilderService = request.app.state.mcp_builder_service
+    try:
+        review = await service.create_domain_review(
+            actor=subject,
+            project_id=project_id,
+            idempotency_key=idempotency_key,
+            correlation_id=str(request.state.correlation_id),
+            capability_decisions=tuple(
+                domain_capability_decision(item) for item in payload.capability_decisions
+            ),
+            **payload.model_dump(exclude={"schema_version", "capability_decisions"}),
+        )
+    except McpBuilderError as error:
+        _raise(error)
+    return _domain_review_response(review, request, response)
+
+
+@router.get("/{project_id}/domain-review", response_model=McpBuilderDomainReviewResponse)
+async def get_mcp_builder_domain_review(
+    project_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_mcp_builder_domain_review_read)],
+) -> McpBuilderDomainReviewResponse:
+    service: McpBuilderService = request.app.state.mcp_builder_service
+    try:
+        review = await service.get_domain_review(
+            actor=subject,
+            project_id=project_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except McpBuilderError as error:
+        _raise(error)
+    return _domain_review_response(review, request, response)
