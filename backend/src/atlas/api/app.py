@@ -35,6 +35,7 @@ from atlas.api.routes import (
     content_policy_scans,
     contract_validations,
     deployment_configuration,
+    final_validations,
     graph,
     health,
     health_checks,
@@ -131,6 +132,13 @@ from atlas.modules.connectors.adapters.contract_validation_memory import (
 from atlas.modules.connectors.adapters.contract_validation_postgres import (
     PostgreSQLPackageContractValidationRepository,
 )
+from atlas.modules.connectors.adapters.final_validation_memory import (
+    InMemoryFinalValidationPolicySource,
+    InMemoryPackageFinalValidationRepository,
+)
+from atlas.modules.connectors.adapters.final_validation_postgres import (
+    PostgreSQLPackageFinalValidationRepository,
+)
 from atlas.modules.connectors.adapters.lab_mock_target import MockTargetConnectorLabRunner
 from atlas.modules.connectors.adapters.lab_self_test_memory import (
     InMemoryConnectorLabPlanSource,
@@ -199,6 +207,10 @@ from atlas.modules.connectors.application.authority_behavior_validation import (
 from atlas.modules.connectors.application.content_policy_scan import PackageContentPolicyScanService
 from atlas.modules.connectors.application.contract_validation import (
     PackageContractValidationService,
+)
+from atlas.modules.connectors.application.final_validation import (
+    PackageFinalValidationService,
+    build_development_final_validation_policy,
 )
 from atlas.modules.connectors.application.lab_self_test import (
     PackageLabSelfTestService,
@@ -495,6 +507,7 @@ def create_app(
     package_contract_validation_service: PackageContractValidationService | None = None,
     package_runner_validation_service: PackageRunnerValidationService | None = None,
     package_lab_self_test_service: PackageLabSelfTestService | None = None,
+    package_final_validation_service: PackageFinalValidationService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -1276,6 +1289,52 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if package_final_validation_service is not None:
+        resolved_package_final_validation_service = package_final_validation_service
+    else:
+        package_final_validation_repository = (
+            PostgreSQLPackageFinalValidationRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryPackageFinalValidationRepository()
+        )
+        development_final_validation_policies = (
+            ()
+            if resolved_settings.environment == "production"
+            else (
+                build_development_final_validation_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_package_final_validation_service = PackageFinalValidationService(
+            repository=package_final_validation_repository,
+            handoff_source=mcp_builder_candidate_handoff_repository,
+            acquisition_source=resolved_package_acquisition_service.repository,
+            validation_source=resolved_package_validation_service.repository,
+            inventory_source=resolved_package_supply_chain_inventory_service.repository,
+            content_policy_source=resolved_package_content_policy_scan_service.repository,
+            schema_semantics_source=resolved_package_schema_semantics_validation_service.repository,
+            authority_behavior_source=(
+                resolved_package_authority_behavior_validation_service.repository
+            ),
+            static_dependency_source=(
+                resolved_package_static_dependency_analysis_service.repository
+            ),
+            vulnerability_source=resolved_package_vulnerability_analysis_service.repository,
+            malware_source=resolved_package_malware_analysis_service.repository,
+            license_source=resolved_package_license_analysis_service.repository,
+            contract_source=resolved_package_contract_validation_service.repository,
+            runner_source=resolved_package_runner_validation_service.repository,
+            lab_source=resolved_package_lab_self_test_service.repository,
+            policy_source=InMemoryFinalValidationPolicySource(
+                development_final_validation_policies
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -1468,6 +1527,7 @@ def create_app(
         app.state.package_contract_validation_service = resolved_package_contract_validation_service
         app.state.package_runner_validation_service = resolved_package_runner_validation_service
         app.state.package_lab_self_test_service = resolved_package_lab_self_test_service
+        app.state.package_final_validation_service = resolved_package_final_validation_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -1480,6 +1540,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_package_final_validation_service.close()
         await resolved_package_lab_self_test_service.close()
         await resolved_package_runner_validation_service.close()
         await resolved_package_contract_validation_service.close()
@@ -1566,6 +1627,7 @@ def create_app(
     app.include_router(contract_validations.router, prefix="/api/v1")
     app.include_router(runner_validations.router, prefix="/api/v1")
     app.include_router(lab_self_tests.router, prefix="/api/v1")
+    app.include_router(final_validations.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

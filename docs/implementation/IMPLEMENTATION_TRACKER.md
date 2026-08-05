@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-067 |
 | Title | Governed connector final validation foundation |
-| Status | In Progress |
+| Status | Ready for PR |
 | Branch | `agent/connector-final-validation` |
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-023 |
 | Last Updated | 2026-08-06 |
-| Next Action | Implement the accepted final-validation contract and complete local validation |
+| Next Action | Open the implementation PR and complete GitHub CI and merge validation |
 
 ### ATLAS-IMP-067 Scope Rationale
 
@@ -59,7 +59,24 @@
 
 ### ATLAS-IMP-067 Validation Evidence
 
-- ADR-023 accepted; implementation is pending.
+- ADR-023 is accepted. Domain, application, API, default-deny authorization, audit,
+  memory/PostgreSQL persistence, migration, and web coverage now bind the exact passed IMP-066
+  report to one immutable signed final-validation policy and independently replay all 13
+  acquisition-through-lab evidence stages.
+- Six focused backend tests cover eligible exact lineage, separation of duties, tamper rejection,
+  policy blocking, explicit stale-evidence risks, audit-before-persist, idempotency, concurrency,
+  PostgreSQL round-trip, CSRF, minimized no-store responses, and immutable no-authority evidence.
+- Backend formatting and Ruff checks passed across 578 files; strict mypy passed across 538 source
+  and test files; the full suite passed with 549 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0039` head for immutable connector package final validations.
+- Frontend ESLint and TypeScript checks passed; all 36 Vitest tests passed and the production Vite
+  bundle built successfully. The governed workspace exposes final policy, exact 13-stage evidence,
+  coverage, risks, limitations, and eligibility without approval, signing, installation,
+  enablement, execution, target, or secret controls.
+- Live authenticated browser inspection passed at 1280-pixel desktop and 390-pixel mobile targets;
+  the Connectors form remained within the viewport with no page-level horizontal overflow and no
+  browser errors or warnings.
+- GitHub PR, CI, merge, and post-merge main evidence are pending.
 
 ### ATLAS-IMP-066 Scope Rationale
 
