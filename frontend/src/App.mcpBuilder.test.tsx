@@ -1008,7 +1008,7 @@ const packageLabSelfTest = () => {
       credential_custodied_by: "subject.lab.credential-custodian",
       organization_id: runner.organization_id,
       environment_id: runner.environment_id,
-      validated_by: identity.data.subject_id,
+      validated_by: "subject.lab.operator",
       target_alias: "target.lab.synthetic-storage",
       product_family: "product.synthetic-storage",
       observed_product_version: "1.0",
@@ -1070,6 +1070,111 @@ const packageLabSelfTest = () => {
       contract_validation_completed: true,
       runner_validation_completed: true,
       lab_validation_completed: true,
+      package_signed: false,
+      publisher_attested: false,
+      connector_rejected: false,
+      connector_registered: false,
+      connector_approved: false,
+      connector_installed: false,
+      connector_enabled: false,
+      target_configured: false,
+      credentials_resolved: false,
+      runtime_trust_granted: false,
+      execution_authorized: false,
+      deployment_approved: false,
+      infrastructure_mutation_performed: false,
+      reused: false,
+    },
+  };
+};
+
+const packageFinalValidation = () => {
+  const lab = packageLabSelfTest().data;
+  const stageCodes = [
+    "acquisition",
+    "validation-intake",
+    "supply-chain-inventory",
+    "content-policy",
+    "schema-semantics",
+    "authority-behavior",
+    "static-dependency",
+    "vulnerability",
+    "malware",
+    "license",
+    "contract",
+    "runner",
+    "lab",
+  ];
+  return {
+    data: {
+      validation_id: "connector-final-validation.333333333333333333333333",
+      schema_version: "atlas.connector-package-final-validation.v1",
+      version: 1,
+      outcome: "eligible_for_human_approval",
+      source_lab_self_test_id: lab.self_test_id,
+      source_lab_self_test_digest: lab.canonical_digest,
+      source_handoff_id: candidateHandoff.data.handoff_id,
+      source_handoff_digest: candidateHandoff.data.canonical_digest,
+      source_project_id: lab.source_project_id,
+      source_actor_set_digest: lab.source_actor_set_digest,
+      organization_id: lab.organization_id,
+      environment_id: lab.environment_id,
+      validated_by: identity.data.subject_id,
+      policy_id: "connector-final-policy.development",
+      policy_digest: "bed76a50dd603345e42fb5206b44bead8da5f5ff6a27033913d899dcf7989149",
+      policy_version: "version.1.0",
+      package_digest: lab.package_digest,
+      inventory_digest: lab.inventory_digest,
+      product_family: lab.product_family,
+      observed_product_version: lab.observed_product_version,
+      capability_count: lab.capability_count,
+      tested_capability_count: lab.tested_capability_count,
+      stage_evidence: stageCodes.map((stageCode, index) => ({
+        stage_code: stageCode,
+        evidence_id: `connector-evidence.${stageCode}`,
+        evidence_digest: (index % 10).toString().repeat(64),
+        observed_at: "2026-08-06T00:10:00Z",
+        outcome: stageCode === "acquisition" ? "quarantined" : "passed",
+        promotion_blocked: false,
+        finding_count: 0,
+        limitation_count: 0,
+      })),
+      stage_count: 13,
+      passed_stage_count: 13,
+      finding_count: 0,
+      limitation_count: 3,
+      blocking_risk_count: 0,
+      risks: [],
+      checks: [
+        {
+          code: "final.authority.absent",
+          state: "passed",
+          severity: "informational",
+          summary: "Final validation grants no lifecycle or execution authority.",
+          remediation: "Keep approval and execution in independent downstream boundaries.",
+        },
+      ],
+      limitations: [
+        "Eligibility permits only independent human approval review.",
+        "No package signing, registration, installation, enablement, or execution occurs.",
+      ],
+      eligible_for_human_approval: true,
+      promotion_blocked: false,
+      evidence_digest: "4".repeat(64),
+      canonical_digest: "5".repeat(64),
+      validated_at: "2026-08-06T00:15:00Z",
+      secret_content_scan_completed: true,
+      prohibited_content_scan_completed: true,
+      schema_semantic_validation_completed: true,
+      permission_behavior_validation_completed: true,
+      static_code_validation_completed: true,
+      vulnerability_scan_completed: true,
+      malware_scan_completed: true,
+      license_scan_completed: true,
+      contract_validation_completed: true,
+      runner_validation_completed: true,
+      lab_validation_completed: true,
+      final_validation_completed: true,
       package_signed: false,
       publisher_attested: false,
       connector_rejected: false,
@@ -2022,6 +2127,10 @@ describe("MCP Builder workspace", () => {
       body: string;
       idempotencyKey: string | null;
     }> = [];
+    const packageFinalValidationRequests: Array<{
+      body: string;
+      idempotencyKey: string | null;
+    }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -2214,6 +2323,16 @@ describe("MCP Builder workspace", () => {
         });
         return Promise.resolve(
           new Response(JSON.stringify(packageLabSelfTest()), { status: 201 }),
+        );
+      }
+      if (url.endsWith("/api/v1/connectors/package-final-validations")) {
+        const headers = new Headers(init?.headers);
+        packageFinalValidationRequests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(
+          new Response(JSON.stringify(packageFinalValidation()), { status: 201 }),
         );
       }
       if (
@@ -2476,6 +2595,16 @@ describe("MCP Builder workspace", () => {
     expect(screen.getByText("lab.mutation.absent")).toBeVisible();
     expect(screen.getByText("Lab boundaries")).toBeVisible();
     expect(screen.getByText("Revoked")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Run final validation" })).toBeVisible();
+    fireEvent.click(screen.getByLabelText(/I am the independent final validator/i));
+    fireEvent.click(screen.getByRole("button", { name: "Run final validation" }));
+
+    expect(
+      await screen.findByText(packageFinalValidation().data.validation_id),
+    ).toBeVisible();
+    expect(screen.getByText("IMMUTABLE FINAL REPORT")).toBeVisible();
+    expect(screen.getByText("13/13")).toBeVisible();
+    expect(screen.getByText("Final-validation boundaries")).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|execute|register|enable/i })).not.toBeInTheDocument();
     expect(requests).toHaveLength(1);
     expect(designRequests).toHaveLength(1);
@@ -2498,6 +2627,7 @@ describe("MCP Builder workspace", () => {
     expect(packageContractRequests).toHaveLength(1);
     expect(packageRunnerRequests).toHaveLength(1);
     expect(packageLabSelfTestRequests).toHaveLength(1);
+    expect(packageFinalValidationRequests).toHaveLength(1);
     expect(requests[0]?.idempotencyKey).toBe("mcp-builder.mcp-builder-ui-001");
     const body = JSON.parse(requests[0]?.body ?? "{}") as Record<string, unknown>;
     expect(body.source_document).toBe(source);
@@ -2850,6 +2980,27 @@ describe("MCP Builder workspace", () => {
     expect(packageLabSelfTestBody).not.toHaveProperty("capabilities");
     expect(packageLabSelfTestBody).not.toHaveProperty("command");
     expect(packageLabSelfTestBody).not.toHaveProperty("environment");
+    expect(packageFinalValidationRequests[0]?.idempotencyKey).toBe(
+      "connector-final.mcp-builder-ui-001",
+    );
+    const packageFinalValidationBody = JSON.parse(
+      packageFinalValidationRequests[0]?.body ?? "{}",
+    ) as Record<string, unknown>;
+    expect(packageFinalValidationBody.source_lab_self_test_id).toBe(
+      packageLabSelfTest().data.self_test_id,
+    );
+    expect(packageFinalValidationBody.source_lab_self_test_digest).toBe(
+      packageLabSelfTest().data.canonical_digest,
+    );
+    expect(packageFinalValidationBody.policy_id).toBe("connector-final-policy.development");
+    expect(packageFinalValidationBody.acknowledged_evidence_only_no_approval).toBe(true);
+    expect(packageFinalValidationBody).not.toHaveProperty("endpoint");
+    expect(packageFinalValidationBody).not.toHaveProperty("target");
+    expect(packageFinalValidationBody).not.toHaveProperty("secret_reference_ids");
+    expect(packageFinalValidationBody).not.toHaveProperty("credential_handle");
+    expect(packageFinalValidationBody).not.toHaveProperty("capabilities");
+    expect(packageFinalValidationBody).not.toHaveProperty("command");
+    expect(packageFinalValidationBody).not.toHaveProperty("environment");
   }, 30_000);
 
   it("verifies the downloaded candidate archive against immutable evidence", async () => {

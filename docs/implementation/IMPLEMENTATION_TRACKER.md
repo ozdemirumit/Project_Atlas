@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-067 |
 | Title | Governed connector final validation foundation |
-| Status | Planned |
-| Branch | Not started |
-| Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-022 |
+| Status | Ready for PR |
+| Branch | `agent/connector-final-validation` |
+| Pull Request | [PR #79](https://github.com/ozdemirumit/Project_Atlas/pull/79) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-023 |
 | Last Updated | 2026-08-06 |
-| Next Action | Draft and accept ADR-023 for exact-lineage final validation and unresolved-risk reporting |
+| Next Action | Open the implementation PR and complete GitHub CI and merge validation |
 
 ### ATLAS-IMP-067 Scope Rationale
 
@@ -23,9 +23,60 @@
 - Human approval, publisher attestation, signing, registration, installation, enablement, production
   trust, and infrastructure operations remain later independent stages.
 
+### ATLAS-IMP-067 Acceptance Criteria
+
+- Only a dedicated multi-factor human final-validation operator in the exact tenant can create or
+  read a report. Every upstream actor, lab-plan approver, credential custodian, AI/service identity,
+  wrong-scope actor, and insufficient-assurance identity fails closed without discovery.
+- The request accepts only the exact passed IMP-066 report, package digest, immutable final-policy
+  ID/digest, evidence-only acknowledgement, idempotency, and correlation. It accepts no source
+  selection, finding, severity, limitation, waiver, target, secret, runner, approval, or action
+  override.
+- All 13 acquisition-through-lab stages are independently reloaded and verified for canonical
+  integrity, one-to-one lineage, package/inventory/handoff/tenant/environment/actor-set consistency,
+  required completion, outcome, promotion, coverage, freshness, and no-authority state.
+- Platform policy selects one immutable, signed, verified, fresh, tenant-scoped snapshot that fixes
+  required stages/versions, source ages, coverage, blocking outcomes, limitation categories,
+  product/version support, disclosure, deterministic check order, and report schema.
+- Missing, stale, tampered, duplicated, cross-tenant, unsupported, uncertain, malformed, failed, or
+  policy-incompatible evidence blocks eligibility. Validation cannot waive or accept risk.
+- Findings and limitations are deterministically aggregated without double counting or severity
+  reduction. Safe reports expose stable source references, classifications, counts, blocking state,
+  next governance step, and explicit limitations without raw or sensitive evidence.
+- Final validation performs no network/model/secret/target access, dependency resolution, import,
+  compilation, package execution, signing, approval, registration, installation, enablement,
+  deployment, or infrastructure mutation.
+- Reports are one-to-one with exact lab evidence and final policy, immutable, idempotent,
+  concurrency-safe, audit-before-persist, deterministic, and equivalent in memory and PostgreSQL.
+- A blocked or eligible result marks only `final_validation_completed=true`; eligibility means only
+  readiness for a later independent human approval workflow and grants no lifecycle/runtime
+  authority.
+- Strict no-store APIs require dedicated RBAC, CSRF, exact scope, acknowledgement, correlation,
+  bounded schemas, safe errors, and complete separation. The web workspace exposes safe aggregate
+  lineage, policy, checks, risk, limitation, and eligibility evidence with no later-stage controls.
+- Backend/frontend tests, one Alembic head, live authorized/denied HTTP checks, desktop and
+  390-pixel mobile inspection, browser logs, and GitHub CI apply.
+
 ### ATLAS-IMP-067 Validation Evidence
 
-- Pending ADR-023 scope acceptance.
+- ADR-023 is accepted. Domain, application, API, default-deny authorization, audit,
+  memory/PostgreSQL persistence, migration, and web coverage now bind the exact passed IMP-066
+  report to one immutable signed final-validation policy and independently replay all 13
+  acquisition-through-lab evidence stages.
+- Six focused backend tests cover eligible exact lineage, separation of duties, tamper rejection,
+  policy blocking, explicit stale-evidence risks, audit-before-persist, idempotency, concurrency,
+  PostgreSQL round-trip, CSRF, minimized no-store responses, and immutable no-authority evidence.
+- Backend formatting and Ruff checks passed across 578 files; strict mypy passed across 538 source
+  and test files; the full suite passed with 549 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0039` head for immutable connector package final validations.
+- Frontend ESLint and TypeScript checks passed; all 36 Vitest tests passed and the production Vite
+  bundle built successfully. The governed workspace exposes final policy, exact 13-stage evidence,
+  coverage, risks, limitations, and eligibility without approval, signing, installation,
+  enablement, execution, target, or secret controls.
+- Live authenticated browser inspection passed at 1280-pixel desktop and 390-pixel mobile targets;
+  the Connectors form remained within the viewport with no page-level horizontal overflow and no
+  browser errors or warnings.
+- GitHub PR, CI, merge, and post-merge main evidence are pending.
 
 ### ATLAS-IMP-066 Scope Rationale
 

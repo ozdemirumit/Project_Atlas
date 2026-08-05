@@ -1163,6 +1163,96 @@ export type ConnectorPackageLabSelfTest = {
   reused: boolean;
 };
 
+export type ConnectorPackageFinalValidation = {
+  validation_id: string;
+  schema_version: "atlas.connector-package-final-validation.v1";
+  version: 1;
+  outcome: "eligible_for_human_approval" | "blocked";
+  source_lab_self_test_id: string;
+  source_lab_self_test_digest: string;
+  source_handoff_id: string;
+  source_handoff_digest: string;
+  source_project_id: string;
+  source_actor_set_digest: string;
+  organization_id: string;
+  environment_id: string;
+  validated_by: string;
+  policy_id: string;
+  policy_digest: string;
+  policy_version: string;
+  package_digest: string;
+  inventory_digest: string;
+  product_family: string;
+  observed_product_version: string;
+  capability_count: number;
+  tested_capability_count: number;
+  stage_evidence: Array<{
+    stage_code: string;
+    evidence_id: string;
+    evidence_digest: string;
+    observed_at: string;
+    outcome: string;
+    promotion_blocked: boolean;
+    finding_count: number;
+    limitation_count: number;
+  }>;
+  stage_count: number;
+  passed_stage_count: number;
+  finding_count: number;
+  limitation_count: number;
+  blocking_risk_count: number;
+  risks: Array<{
+    code: string;
+    source_stage: string;
+    source_evidence_id: string;
+    source_evidence_digest: string;
+    classification: "disclosed_limitation" | "blocking_policy";
+    severity: "informational" | "warning" | "error";
+    blocking: boolean;
+    occurrence_count: number;
+    next_step: string;
+  }>;
+  checks: Array<{
+    code: string;
+    state: "passed" | "failed";
+    severity: "informational" | "warning" | "error";
+    summary: string;
+    remediation: string;
+  }>;
+  limitations: string[];
+  eligible_for_human_approval: boolean;
+  promotion_blocked: boolean;
+  evidence_digest: string;
+  canonical_digest: string;
+  validated_at: string;
+  secret_content_scan_completed: true;
+  prohibited_content_scan_completed: true;
+  schema_semantic_validation_completed: true;
+  permission_behavior_validation_completed: true;
+  static_code_validation_completed: true;
+  vulnerability_scan_completed: true;
+  malware_scan_completed: true;
+  license_scan_completed: true;
+  contract_validation_completed: true;
+  runner_validation_completed: true;
+  lab_validation_completed: true;
+  final_validation_completed: true;
+  package_signed: false;
+  publisher_attested: false;
+  connector_rejected: false;
+  connector_registered: false;
+  connector_approved: false;
+  connector_installed: false;
+  connector_enabled: false;
+  target_configured: false;
+  credentials_resolved: false;
+  runtime_trust_granted: false;
+  execution_authorized: false;
+  deployment_approved: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -2509,6 +2599,153 @@ function isSafeLabSelfTest(value: unknown): value is { data: ConnectorPackageLab
   );
 }
 
+function isSafeFinalValidation(
+  value: unknown,
+): value is { data: ConnectorPackageFinalValidation } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const report = value.data;
+  const stages: unknown[] = Array.isArray(report.stage_evidence) ? report.stage_evidence : [];
+  const risks: unknown[] = Array.isArray(report.risks) ? report.risks : [];
+  const checks: unknown[] = Array.isArray(report.checks) ? report.checks : [];
+  const expectedStages = [
+    "acquisition",
+    "validation-intake",
+    "supply-chain-inventory",
+    "content-policy",
+    "schema-semantics",
+    "authority-behavior",
+    "static-dependency",
+    "vulnerability",
+    "malware",
+    "license",
+    "contract",
+    "runner",
+    "lab",
+  ];
+  const digests = [
+    report.source_lab_self_test_digest,
+    report.source_handoff_digest,
+    report.source_actor_set_digest,
+    report.policy_digest,
+    report.package_digest,
+    report.inventory_digest,
+    report.evidence_digest,
+    report.canonical_digest,
+  ];
+  const identifiers = [
+    report.validation_id,
+    report.source_lab_self_test_id,
+    report.source_handoff_id,
+    report.source_project_id,
+    report.organization_id,
+    report.environment_id,
+    report.validated_by,
+    report.policy_id,
+    report.policy_version,
+    report.product_family,
+    report.observed_product_version,
+  ];
+  const completion = [
+    report.secret_content_scan_completed,
+    report.prohibited_content_scan_completed,
+    report.schema_semantic_validation_completed,
+    report.permission_behavior_validation_completed,
+    report.static_code_validation_completed,
+    report.vulnerability_scan_completed,
+    report.malware_scan_completed,
+    report.license_scan_completed,
+    report.contract_validation_completed,
+    report.runner_validation_completed,
+    report.lab_validation_completed,
+    report.final_validation_completed,
+  ];
+  const noAuthority = [
+    report.package_signed,
+    report.publisher_attested,
+    report.connector_rejected,
+    report.connector_registered,
+    report.connector_approved,
+    report.connector_installed,
+    report.connector_enabled,
+    report.target_configured,
+    report.credentials_resolved,
+    report.runtime_trust_granted,
+    report.execution_authorized,
+    report.deployment_approved,
+    report.infrastructure_mutation_performed,
+  ];
+  const forbidden = [
+    "destination_references",
+    "tls_trust_reference",
+    "secret_reference_ids",
+    "credential_handle",
+    "endpoint",
+    "request_payload",
+    "response_payload",
+    "stdout",
+    "stderr",
+    "exception",
+    "target_alias",
+  ];
+  return (
+    report.schema_version === "atlas.connector-package-final-validation.v1" &&
+    report.version === 1 &&
+    (report.outcome === "eligible_for_human_approval" || report.outcome === "blocked") &&
+    report.eligible_for_human_approval ===
+      (report.outcome === "eligible_for_human_approval") &&
+    report.promotion_blocked === (report.outcome === "blocked") &&
+    stages.length === 13 &&
+    stages.every(
+      (stage, index) =>
+        isRecord(stage) &&
+        stage.stage_code === expectedStages[index] &&
+        typeof stage.evidence_id === "string" &&
+        typeof stage.evidence_digest === "string" &&
+        stage.evidence_digest.length === 64 &&
+        typeof stage.observed_at === "string" &&
+        typeof stage.outcome === "string" &&
+        typeof stage.promotion_blocked === "boolean" &&
+        typeof stage.finding_count === "number" &&
+        typeof stage.limitation_count === "number",
+    ) &&
+    risks.every(
+      (risk) =>
+        isRecord(risk) &&
+        typeof risk.code === "string" &&
+        expectedStages.includes(String(risk.source_stage)) &&
+        typeof risk.source_evidence_id === "string" &&
+        typeof risk.source_evidence_digest === "string" &&
+        risk.source_evidence_digest.length === 64 &&
+        ["disclosed_limitation", "blocking_policy"].includes(String(risk.classification)) &&
+        ["informational", "warning", "error"].includes(String(risk.severity)) &&
+        typeof risk.blocking === "boolean" &&
+        typeof risk.occurrence_count === "number" &&
+        typeof risk.next_step === "string",
+    ) &&
+    checks.every(
+      (check) =>
+        isRecord(check) &&
+        typeof check.code === "string" &&
+        (check.state === "passed" || check.state === "failed") &&
+        ["informational", "warning", "error"].includes(String(check.severity)) &&
+        typeof check.summary === "string" &&
+        typeof check.remediation === "string",
+    ) &&
+    Number(report.stage_count) === 13 &&
+    Number(report.passed_stage_count) <= 13 &&
+    Number(report.tested_capability_count) <= Number(report.capability_count) &&
+    Number(report.blocking_risk_count) ===
+      risks.filter((risk) => isRecord(risk) && risk.blocking === true).length &&
+    identifiers.every((item) => typeof item === "string" && item.length > 0) &&
+    digests.every((item) => typeof item === "string" && item.length === 64) &&
+    isStringArray(report.limitations) &&
+    report.limitations.length > 0 &&
+    completion.every((item) => item === true) &&
+    noAuthority.every((item) => item === false) &&
+    forbidden.every((field) => !(field in report))
+  );
+}
+
 function isSafeSchemaSemanticsValidation(
   value: unknown,
 ): value is { data: ConnectorPackageSchemaSemanticsValidation } {
@@ -3387,6 +3624,68 @@ export async function validateConnectorPackageLabSelfTest(input: {
     report.capability_count !== source.capability_count
   ) {
     throw new Error("Lab self-test report does not match the exact runner report and plan");
+  }
+  return payload;
+}
+
+export async function validateConnectorPackageFinal(input: {
+  source: ConnectorPackageLabSelfTest;
+  policyId: string;
+  policyDigest: string;
+}) {
+  const { source, policyId, policyDigest } = input;
+  if (
+    source.outcome !== "passed" ||
+    source.promotion_blocked ||
+    !source.lab_validation_completed
+  ) {
+    throw new Error("Only a passed lab self-test can receive final validation");
+  }
+  if (!/^[a-z][a-z0-9_.:-]{2,127}$/.test(policyId) || !/^[a-f0-9]{64}$/.test(policyDigest)) {
+    throw new Error("A signed final-validation policy ID and digest are required");
+  }
+  const response = await apiFetch("/api/v1/connectors/package-final-validations", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "Idempotency-Key": `connector-final.${crypto.randomUUID()}`,
+    },
+    body: JSON.stringify({
+      schema_version: "atlas.connector-package-final-validation-request.v1",
+      source_lab_self_test_id: source.self_test_id,
+      source_lab_self_test_digest: source.canonical_digest,
+      package_digest: source.package_digest,
+      policy_id: policyId,
+      policy_digest: policyDigest,
+      acknowledged_evidence_only_no_approval: true,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Connector package final validation failed with ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  if (!isSafeFinalValidation(payload)) {
+    throw new Error("Connector registry returned unsafe final-validation evidence");
+  }
+  const report = payload.data;
+  if (
+    report.source_lab_self_test_id !== source.self_test_id ||
+    report.source_lab_self_test_digest !== source.canonical_digest ||
+    report.source_project_id !== source.source_project_id ||
+    report.source_actor_set_digest !== source.source_actor_set_digest ||
+    report.organization_id !== source.organization_id ||
+    report.environment_id !== source.environment_id ||
+    report.package_digest !== source.package_digest ||
+    report.inventory_digest !== source.inventory_digest ||
+    report.product_family !== source.product_family ||
+    report.observed_product_version !== source.observed_product_version ||
+    report.capability_count !== source.capability_count ||
+    report.tested_capability_count !== source.tested_capability_count ||
+    report.policy_id !== policyId ||
+    report.policy_digest !== policyDigest
+  ) {
+    throw new Error("Final-validation report does not match the exact lab evidence and policy");
   }
   return payload;
 }
