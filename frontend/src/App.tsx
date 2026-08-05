@@ -116,6 +116,7 @@ import {
   createMcpBuilderDesignCheckpoint,
   createMcpBuilderGeneration,
   createMcpBuilderProject,
+  createMcpBuilderValidation,
   getMcpBuilderGeneratedFile,
   type McpBuilderDesignDecision,
   type McpBuilderProject,
@@ -460,6 +461,7 @@ export function App() {
   const [builderAtlasEntity, setBuilderAtlasEntity] = useState("atlas.storage-system");
   const [builderDesignAcknowledged, setBuilderDesignAcknowledged] = useState(false);
   const [builderGenerationAcknowledged, setBuilderGenerationAcknowledged] = useState(false);
+  const [builderValidationAcknowledged, setBuilderValidationAcknowledged] = useState(false);
   const [builderSelectedGeneratedFile, setBuilderSelectedGeneratedFile] = useState("");
   const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
     Record<string, McpBuilderDesignDecision>
@@ -479,10 +481,16 @@ export function App() {
   const builderGeneratedFileMutation = useMutation({
     mutationFn: getMcpBuilderGeneratedFile,
   });
+  const builderValidationMutation = useMutation({
+    mutationFn: createMcpBuilderValidation,
+    onSuccess: () => setBuilderValidationAcknowledged(false),
+  });
   const builderGenerationMutation = useMutation({
     mutationFn: createMcpBuilderGeneration,
     onSuccess: (result) => {
+      builderValidationMutation.reset();
       setBuilderGenerationAcknowledged(false);
+      setBuilderValidationAcknowledged(false);
       const firstFile =
         result.data.files.find((item) => item.relative_path === "README.md") ??
         result.data.files[0];
@@ -500,7 +508,9 @@ export function App() {
     onSuccess: () => {
       builderGenerationMutation.reset();
       builderGeneratedFileMutation.reset();
+      builderValidationMutation.reset();
       setBuilderGenerationAcknowledged(false);
+      setBuilderValidationAcknowledged(false);
       setBuilderSelectedGeneratedFile("");
     },
   });
@@ -510,8 +520,10 @@ export function App() {
       builderDesignMutation.reset();
       builderGenerationMutation.reset();
       builderGeneratedFileMutation.reset();
+      builderValidationMutation.reset();
       setBuilderDesignAcknowledged(false);
       setBuilderGenerationAcknowledged(false);
+      setBuilderValidationAcknowledged(false);
       setBuilderSelectedGeneratedFile("");
       setBuilderDesignDecisions(
         Object.fromEntries(
@@ -2082,6 +2094,8 @@ export function App() {
                           builderDesignMutation.reset();
                           builderGenerationMutation.reset();
                           builderGeneratedFileMutation.reset();
+                          builderValidationMutation.reset();
+                          setBuilderValidationAcknowledged(false);
                           setBuilderDesignDecisions({});
                           setBuilderSelectedGeneratedFile("");
                           if (!file) {
@@ -2098,6 +2112,30 @@ export function App() {
                           setBuilderSourceName(file.name);
                           void file.text().then(setBuilderSourceDocument);
                         }}
+                      />
+                    </label>
+                    <label className="mcp-builder-paste">
+                      <span>OpenAPI JSON</span>
+                      <textarea
+                        aria-label="OpenAPI JSON"
+                        value={builderSourceDocument}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setBuilderFileError("");
+                          setBuilderSourceDocument(value);
+                          setBuilderSourceName(value ? "Pasted OpenAPI JSON" : "");
+                          builderMutation.reset();
+                          builderDesignMutation.reset();
+                          builderGenerationMutation.reset();
+                          builderGeneratedFileMutation.reset();
+                          builderValidationMutation.reset();
+                          setBuilderValidationAcknowledged(false);
+                          setBuilderDesignDecisions({});
+                          setBuilderSelectedGeneratedFile("");
+                        }}
+                        maxLength={524_288}
+                        rows={7}
+                        placeholder='{"openapi":"3.1.0","info":{},"paths":{}}'
                       />
                     </label>
                     {builderFileError && <p role="alert">{builderFileError}</p>}
@@ -2627,6 +2665,224 @@ export function App() {
                                   remain unavailable.
                                 </p>
                               </div>
+                              <section
+                                className="mcp-builder-validation"
+                                aria-label="Static scaffold validation"
+                              >
+                                <div className="section-heading">
+                                  <div>
+                                    <p className="eyebrow">STATIC VALIDATION</p>
+                                    <h3>Inspect the quarantined scaffold</h3>
+                                    <p>
+                                      Verify integrity, deterministic structure, permissions,
+                                      traceability, and fail-closed authority without running code.
+                                    </p>
+                                  </div>
+                                  <span className="state-badge pending">
+                                    <ShieldCheck size={14} /> Static evidence only
+                                  </span>
+                                </div>
+                                {!builderValidationMutation.data && (
+                                  <form
+                                    className="mcp-builder-validation-form"
+                                    onSubmit={(event) => {
+                                      event.preventDefault();
+                                      const project = builderMutation.data?.data;
+                                      const checkpoint = builderDesignMutation.data?.data;
+                                      const generation = builderGenerationMutation.data?.data;
+                                      if (
+                                        !project ||
+                                        !checkpoint ||
+                                        !generation ||
+                                        !builderValidationAcknowledged ||
+                                        builderValidationMutation.isPending
+                                      ) {
+                                        return;
+                                      }
+                                      builderValidationMutation.mutate({
+                                        project,
+                                        checkpoint,
+                                        generation,
+                                      });
+                                    }}
+                                  >
+                                    <div className="mcp-builder-generation-contract">
+                                      <div>
+                                        <span>Validation profile</span>
+                                        <code>atlas.static-validation.python312.v1</code>
+                                      </div>
+                                      <div>
+                                        <span>Deterministic checks</span>
+                                        <strong>15</strong>
+                                      </div>
+                                      <div>
+                                        <span>Execution authority</span>
+                                        <strong>None</strong>
+                                      </div>
+                                    </div>
+                                    <div className="mcp-builder-boundary">
+                                      <ShieldCheck size={18} />
+                                      <p>
+                                        This inspection reads quarantined files and parses static
+                                        structure only. It does not import, compile, test, execute,
+                                        package, install, connect to a target, or grant runtime trust.
+                                      </p>
+                                    </div>
+                                    <label className="mcp-builder-check">
+                                      <input
+                                        type="checkbox"
+                                        checked={builderValidationAcknowledged}
+                                        onChange={(event) =>
+                                          setBuilderValidationAcknowledged(event.target.checked)
+                                        }
+                                      />
+                                      <span>
+                                        I understand this produces static evidence only and does not
+                                        approve the connector for packaging, installation, or use.
+                                      </span>
+                                    </label>
+                                    <button
+                                      className="run-check-button mcp-builder-submit"
+                                      type="submit"
+                                      disabled={
+                                        !builderValidationAcknowledged ||
+                                        builderValidationMutation.isPending
+                                      }
+                                    >
+                                      {builderValidationMutation.isPending ? (
+                                        <RefreshCw className="spin" size={16} />
+                                      ) : (
+                                        <ShieldCheck size={16} />
+                                      )}
+                                      Run static validation
+                                    </button>
+                                  </form>
+                                )}
+                                {builderValidationMutation.isError && (
+                                  <div className="workspace-message error-state" role="alert">
+                                    <AlertTriangle size={20} />
+                                    <div>
+                                      <h3>Static validation unavailable</h3>
+                                      <p>
+                                        The bound artifact could not be verified or the report was
+                                        rejected.
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
+                                {builderValidationMutation.data?.data && (
+                                  <div className="mcp-builder-validation-result">
+                                    <div className="mcp-builder-generation-summary">
+                                      <div>
+                                        <p className="eyebrow">IMMUTABLE VALIDATION REPORT</p>
+                                        <strong>
+                                          {builderValidationMutation.data.data.validation_id}
+                                        </strong>
+                                        <code>
+                                          {builderValidationMutation.data.data.canonical_digest}
+                                        </code>
+                                      </div>
+                                      <span
+                                        className={`state-badge ${
+                                          builderValidationMutation.data.data.state === "passed"
+                                            ? "analyzed"
+                                            : "failed"
+                                        }`}
+                                      >
+                                        {builderValidationMutation.data.data.state === "passed" ? (
+                                          <CheckCircle2 size={14} />
+                                        ) : (
+                                          <AlertTriangle size={14} />
+                                        )}
+                                        Static validation {builderValidationMutation.data.data.state}
+                                      </span>
+                                    </div>
+                                    <div className="mcp-builder-facts">
+                                      <div>
+                                        <span>Passed</span>
+                                        <strong>
+                                          {builderValidationMutation.data.data.passed_count}
+                                        </strong>
+                                      </div>
+                                      <div>
+                                        <span>Failed</span>
+                                        <strong>
+                                          {builderValidationMutation.data.data.failed_count}
+                                        </strong>
+                                      </div>
+                                      <div>
+                                        <span>Skipped</span>
+                                        <strong>
+                                          {builderValidationMutation.data.data.skipped_count}
+                                        </strong>
+                                      </div>
+                                      <div>
+                                        <span>Runtime trust</span>
+                                        <strong>None</strong>
+                                      </div>
+                                    </div>
+                                    <div className="mcp-builder-validation-meta">
+                                      <span>
+                                        Profile
+                                        <code>
+                                          {
+                                            builderValidationMutation.data.data
+                                              .validation_profile
+                                          }
+                                        </code>
+                                      </span>
+                                      <span>
+                                        Validator
+                                        <code>
+                                          {builderValidationMutation.data.data.validator_version}
+                                        </code>
+                                      </span>
+                                    </div>
+                                    <div
+                                      className="mcp-builder-validation-checks"
+                                      aria-label="Static validation checks"
+                                    >
+                                      {builderValidationMutation.data.data.checks.map((check) => (
+                                        <article key={check.code} data-state={check.state}>
+                                          {check.state === "passed" ? (
+                                            <CheckCircle2 size={16} />
+                                          ) : (
+                                            <AlertTriangle size={16} />
+                                          )}
+                                          <div>
+                                            <strong>{check.code}</strong>
+                                            <p>{check.summary}</p>
+                                            {check.evidence_paths.length > 0 && (
+                                              <code>{check.evidence_paths.join(" · ")}</code>
+                                            )}
+                                            {check.remediation && <small>{check.remediation}</small>}
+                                          </div>
+                                          <span>{check.state}</span>
+                                        </article>
+                                      ))}
+                                    </div>
+                                    <div className="mcp-builder-limitations">
+                                      <strong>Validation boundaries</strong>
+                                      <ul>
+                                        {builderValidationMutation.data.data.limitations.map(
+                                          (limitation) => (
+                                            <li key={limitation}>{limitation}</li>
+                                          ),
+                                        )}
+                                      </ul>
+                                    </div>
+                                    <div className="mcp-builder-boundary">
+                                      <LockKeyhole size={18} />
+                                      <p>
+                                        Domain review, security review, dependency resolution,
+                                        runtime self-test, lab validation, package approval,
+                                        registration, installation, and execution remain incomplete
+                                        and unavailable.
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
+                              </section>
                             </div>
                           )}
                         </section>

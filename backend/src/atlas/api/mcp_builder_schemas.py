@@ -18,6 +18,10 @@ from atlas.modules.mcp_builder.domain.generation import (
     McpBuilderGeneration,
 )
 from atlas.modules.mcp_builder.domain.models import McpBuilderProject
+from atlas.modules.mcp_builder.domain.validation import (
+    BuilderValidationCheck,
+    McpBuilderValidation,
+)
 
 STABLE_ID = r"^[a-z][a-z0-9_.:-]{2,127}$"
 
@@ -425,6 +429,112 @@ class McpBuilderGeneratedFileData(BaseModel):
 
 class McpBuilderGeneratedFileResponse(BaseModel):
     data: McpBuilderGeneratedFileData
+    meta: ResponseMeta
+
+
+class McpBuilderValidationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: str = Field(
+        default="atlas.mcp-builder-validation-request.v1", pattern=STABLE_ID
+    )
+    project_version: int = Field(ge=1)
+    project_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    source_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    checkpoint_id: str = Field(pattern=STABLE_ID)
+    checkpoint_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    generation_id: str = Field(pattern=STABLE_ID)
+    generation_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    artifact_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    validation_profile: str = Field(
+        default="atlas.static-validation.python312.v1", pattern=STABLE_ID
+    )
+    acknowledged_static_only: bool
+
+
+class BuilderValidationCheckData(BaseModel):
+    code: str
+    state: str
+    severity: str
+    summary: str
+    evidence_paths: list[str]
+    remediation: str | None
+
+    @classmethod
+    def from_domain(cls, item: BuilderValidationCheck) -> BuilderValidationCheckData:
+        return cls(
+            code=item.code,
+            state=item.state.value,
+            severity=item.severity.value,
+            summary=item.summary,
+            evidence_paths=list(item.evidence_paths),
+            remediation=item.remediation,
+        )
+
+
+class McpBuilderValidationData(BaseModel):
+    validation_id: str
+    schema_version: str
+    version: int
+    state: str
+    project_id: str
+    project_version: int
+    project_digest: str
+    source_digest: str
+    checkpoint_id: str
+    checkpoint_digest: str
+    generation_id: str
+    generation_digest: str
+    artifact_digest: str
+    organization_id: str
+    environment_id: str
+    validated_by: str
+    language_profile: str
+    template_version: str
+    validation_profile: str
+    validator_version: str
+    checks: list[BuilderValidationCheckData]
+    passed_count: int
+    failed_count: int
+    skipped_count: int
+    limitations: list[str]
+    canonical_digest: str
+    completed_at: datetime
+    validation_completed: bool
+    static_validation_passed: bool
+    runtime_self_test_performed: bool
+    dependency_resolution_performed: bool
+    domain_review_completed: bool
+    security_review_completed: bool
+    lab_validation_completed: bool
+    candidate_package_created: bool
+    connector_registered: bool
+    connector_installed: bool
+    connector_enabled: bool
+    network_request_performed: bool
+    model_inference_performed: bool
+    subprocess_invoked: bool
+    dynamic_code_execution_performed: bool
+    runtime_trust_granted: bool
+    execution_authorized: bool
+    infrastructure_mutation_performed: bool
+    reused: bool
+
+    @classmethod
+    def from_domain(cls, validation: McpBuilderValidation) -> McpBuilderValidationData:
+        return cls(
+            **{
+                field: getattr(validation, field)
+                for field in cls.model_fields
+                if field not in {"state", "checks", "limitations"}
+            },
+            state=validation.state.value,
+            checks=[BuilderValidationCheckData.from_domain(item) for item in validation.checks],
+            limitations=list(validation.limitations),
+        )
+
+
+class McpBuilderValidationResponse(BaseModel):
+    data: McpBuilderValidationData
     meta: ResponseMeta
 
 

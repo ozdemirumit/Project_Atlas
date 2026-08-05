@@ -190,6 +190,64 @@ export type McpBuilderGeneratedFileView = {
   execution_authorized: false;
 };
 
+export type McpBuilderValidationCheck = {
+  code: string;
+  state: "passed" | "failed" | "skipped";
+  severity: "informational" | "warning" | "error";
+  summary: string;
+  evidence_paths: string[];
+  remediation: string | null;
+};
+
+export type McpBuilderValidation = {
+  validation_id: string;
+  schema_version: "atlas.mcp-builder-validation.v1";
+  version: 1;
+  state: "passed" | "failed";
+  project_id: string;
+  project_version: 1;
+  project_digest: string;
+  source_digest: string;
+  checkpoint_id: string;
+  checkpoint_digest: string;
+  generation_id: string;
+  generation_digest: string;
+  artifact_digest: string;
+  organization_id: string;
+  environment_id: string;
+  validated_by: string;
+  language_profile: "atlas.python312.v1";
+  template_version: string;
+  validation_profile: "atlas.static-validation.python312.v1";
+  validator_version: "mcp-builder-static-validator.v1";
+  checks: McpBuilderValidationCheck[];
+  passed_count: number;
+  failed_count: number;
+  skipped_count: number;
+  limitations: string[];
+  canonical_digest: string;
+  completed_at: string;
+  validation_completed: true;
+  static_validation_passed: boolean;
+  runtime_self_test_performed: false;
+  dependency_resolution_performed: false;
+  domain_review_completed: false;
+  security_review_completed: false;
+  lab_validation_completed: false;
+  candidate_package_created: false;
+  connector_registered: false;
+  connector_installed: false;
+  connector_enabled: false;
+  network_request_performed: false;
+  model_inference_performed: false;
+  subprocess_invoked: false;
+  dynamic_code_execution_performed: false;
+  runtime_trust_granted: false;
+  execution_authorized: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -329,6 +387,68 @@ function isSafeGeneratedFileView(
   );
 }
 
+function isSafeValidationCheck(value: unknown): value is McpBuilderValidationCheck {
+  return (
+    isRecord(value) &&
+    typeof value.code === "string" &&
+    ["passed", "failed", "skipped"].includes(String(value.state)) &&
+    ["informational", "warning", "error"].includes(String(value.severity)) &&
+    typeof value.summary === "string" &&
+    Array.isArray(value.evidence_paths) &&
+    value.evidence_paths.every((item) => typeof item === "string") &&
+    (value.remediation === null || typeof value.remediation === "string")
+  );
+}
+
+function isSafeValidation(value: unknown): value is { data: McpBuilderValidation } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const validation = value.data;
+  const noAuthority = [
+    validation.runtime_self_test_performed,
+    validation.dependency_resolution_performed,
+    validation.domain_review_completed,
+    validation.security_review_completed,
+    validation.lab_validation_completed,
+    validation.candidate_package_created,
+    validation.connector_registered,
+    validation.connector_installed,
+    validation.connector_enabled,
+    validation.network_request_performed,
+    validation.model_inference_performed,
+    validation.subprocess_invoked,
+    validation.dynamic_code_execution_performed,
+    validation.runtime_trust_granted,
+    validation.execution_authorized,
+    validation.infrastructure_mutation_performed,
+  ];
+  const checks = validation.checks;
+  if (!Array.isArray(checks) || checks.length !== 15 || !checks.every(isSafeValidationCheck)) {
+    return false;
+  }
+  const passed = checks.filter((item) => item.state === "passed").length;
+  const failed = checks.filter((item) => item.state === "failed").length;
+  const skipped = checks.filter((item) => item.state === "skipped").length;
+  return (
+    validation.schema_version === "atlas.mcp-builder-validation.v1" &&
+    validation.version === 1 &&
+    (validation.state === "passed" || validation.state === "failed") &&
+    validation.language_profile === "atlas.python312.v1" &&
+    validation.validation_profile === "atlas.static-validation.python312.v1" &&
+    validation.validator_version === "mcp-builder-static-validator.v1" &&
+    validation.validation_completed === true &&
+    validation.static_validation_passed === (validation.state === "passed") &&
+    validation.passed_count === passed &&
+    validation.failed_count === failed &&
+    validation.skipped_count === skipped &&
+    typeof validation.validation_id === "string" &&
+    typeof validation.canonical_digest === "string" &&
+    Array.isArray(validation.limitations) &&
+    validation.limitations.length > 0 &&
+    validation.limitations.every((item) => typeof item === "string") &&
+    noAuthority.every((flag) => flag === false)
+  );
+}
+
 function nonce(): string {
   return typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
 }
@@ -452,6 +572,43 @@ export async function getMcpBuilderGeneratedFile(input: {
   const payload: unknown = await response.json();
   if (!isSafeGeneratedFileView(payload)) {
     throw new Error("MCP Builder returned an unsafe generated file preview");
+  }
+  return payload;
+}
+
+export async function createMcpBuilderValidation(input: {
+  project: McpBuilderProject;
+  checkpoint: McpBuilderDesignCheckpoint;
+  generation: McpBuilderGeneration;
+}) {
+  const response = await apiFetch(
+    `/api/v1/mcp-builder/projects/${input.project.project_id}/validations`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": `mcp-builder-validation.${nonce()}`,
+      },
+      body: JSON.stringify({
+        schema_version: "atlas.mcp-builder-validation-request.v1",
+        project_version: input.project.version,
+        project_digest: input.project.canonical_digest,
+        source_digest: input.project.source_digest,
+        checkpoint_id: input.checkpoint.checkpoint_id,
+        checkpoint_digest: input.checkpoint.canonical_digest,
+        generation_id: input.generation.generation_id,
+        generation_digest: input.generation.canonical_digest,
+        artifact_digest: input.generation.artifact_digest,
+        validation_profile: "atlas.static-validation.python312.v1",
+        acknowledged_static_only: true,
+      }),
+    },
+  );
+  if (!response.ok) throw new Error(`MCP Builder validation failed with ${response.status}`);
+  const payload: unknown = await response.json();
+  if (!isSafeValidation(payload)) {
+    throw new Error("MCP Builder returned unsafe validation data");
   }
   return payload;
 }
