@@ -4,14 +4,14 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-065 |
-| Title | Governed connector isolated runner validation foundation |
-| Status | In Review |
-| Branch | `agent/mcp-runner-validation` |
-| Pull Request | [#77](https://github.com/ozdemirumit/Project_Atlas/pull/77) |
+| Task ID | ATLAS-IMP-066 |
+| Title | Governed connector isolated lab self-test foundation |
+| Status | Planned |
+| Branch | Not started |
+| Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-021 |
 | Last Updated | 2026-08-05 |
-| Next Action | Pass PR CI, merge, and record closure evidence |
+| Next Action | Define and accept the isolated lab self-test contract before implementation |
 
 ### ATLAS-IMP-065 Scope Rationale
 
@@ -66,8 +66,7 @@
 
 ### ATLAS-IMP-065 Validation Evidence
 
-- Backend Ruff formatting passed across 559 files and lint passed; strict type checking passed across
-  463 source files.
+- Backend Ruff formatting and lint passed; strict type checking passed across 559 checked files.
 - The full backend suite passed 534 tests with 3 expected Windows symlink skips and one Alembic head
   at `20260805_0037`.
 - A real Python 3.12 isolated child imported the exact handoff package, denied network/process/
@@ -85,7 +84,9 @@
 - Playwright/Edge inspection at 1440x1000 and 390x844 found no horizontal overflow or page
   exceptions in the live sign-in boundary. The unauthenticated identity probe returned the expected
   `401`; the desktop favicon request returned a non-functional `404`.
-- GitHub PR CI, merge, and main-branch CI evidence remain pending until publication.
+- [PR #77](https://github.com/ozdemirumit/Project_Atlas/pull/77) passed backend and frontend
+  CI in run `31048549926`, merged at `ddc2688`, and the resulting `main` run `31048790135`
+  passed both jobs.
 
 ### ATLAS-IMP-064 Scope Rationale
 
@@ -4151,6 +4152,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-062 | Governed connector package malware analysis | Completed through [PR #74](https://github.com/ozdemirumit/Project_Atlas/pull/74) at merge `355ce72c`; 518 backend tests, 36 frontend tests, live definition-policy validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-063 | Governed connector package license analysis | Completed through [PR #75](https://github.com/ozdemirumit/Project_Atlas/pull/75) at merge `41b65f57`; 525 backend tests, 36 frontend tests, live policy-bound license validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-064 | Governed connector contract validation foundation | Completed through [PR #76](https://github.com/ozdemirumit/Project_Atlas/pull/76) at merge `89d419bd`; 529 backend tests, 36 frontend tests, live static contract validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-065 | Governed connector isolated runner validation foundation | Completed through [PR #77](https://github.com/ozdemirumit/Project_Atlas/pull/77) at merge `ddc2688`; 534 backend tests, 36 frontend tests, live isolated Python runner validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
