@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-058 |
 | Title | Governed connector configuration and capability schema semantics foundation |
-| Status | In Progress |
-| Branch | `agent/mcp-schema-semantics-validation` |
+| Status | Done |
+| Branch | `main` |
 | Pull Request | [#70](https://github.com/ozdemirumit/Project_Atlas/pull/70) |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-014 |
 | Last Updated | 2026-08-05 |
-| Next Action | Pass PR #70 CI, merge, and close ATLAS-IMP-058 on `main` |
+| Next Action | Select and scope ATLAS-IMP-059 from connector validation pipeline step 6 |
 
 ### ATLAS-IMP-058 Scope Rationale
 
@@ -87,6 +87,9 @@
   1280-by-720 with no horizontal overflow and visually bounded controls. A same-origin mobile frame
   measured a 375-pixel content/client width with no horizontal overflow. The temporary mobile QA
   file was removed after inspection.
+- [PR #70](https://github.com/ozdemirumit/Project_Atlas/pull/70) passed GitHub CI in run
+  `31019961270` and merged to `main` as `8a4f0ae2`. Post-merge `main` run `31020206411` passed both
+  backend and frontend jobs.
 
 ### ATLAS-IMP-057 Scope Rationale
 
@@ -3611,6 +3614,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-055 | Governed connector package validation intake | Completed through [PR #67](https://github.com/ozdemirumit/Project_Atlas/pull/67); 453 backend tests, 36 frontend tests, live manifest/schema validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-056 | Governed connector package content and dependency inventory | Completed through [PR #68](https://github.com/ozdemirumit/Project_Atlas/pull/68) at merge `b64ca126`; 469 backend tests, 36 frontend tests, live supply-chain inventory and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-057 | Governed connector package secret and prohibited-content scan | Completed through [PR #69](https://github.com/ozdemirumit/Project_Atlas/pull/69) at merge `10916c20`; 489 backend tests, 36 frontend tests, live content-policy scan and desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-058 | Governed connector configuration and capability schema semantics | Completed through [PR #70](https://github.com/ozdemirumit/Project_Atlas/pull/70) at merge `8a4f0ae2`; 496 backend tests, 36 frontend tests, live schema-semantics validation and desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
