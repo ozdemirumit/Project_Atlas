@@ -4,14 +4,57 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-067 |
-| Title | Governed connector final validation foundation |
-| Status | Completed |
-| Branch | `agent/connector-final-validation` |
-| Pull Request | [PR #79](https://github.com/ozdemirumit/Project_Atlas/pull/79) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-023 |
+| Task ID | ATLAS-IMP-068 |
+| Title | Governed connector package human approval foundation |
+| Status | In Progress |
+| Branch | `agent/connector-package-approval` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-024 |
 | Last Updated | 2026-08-06 |
-| Next Action | Select and record the next governed connector lifecycle slice |
+| Next Action | Implement the accepted package-approval contract and complete local validation |
+
+### ATLAS-IMP-068 Scope Rationale
+
+- IMP-067 proves that one exact package and its complete evidence chain are eligible to enter human
+  review, but it cannot accept risk or make an accountable approval decision.
+- ATLAS-037 requires an immutable packet, exact digest binding, human identity, neutral outcomes,
+  separation, expiry, optimistic concurrency, and durable audit before a decision can be trusted.
+- Publisher attestation, signing, registry publication, installation, instance configuration,
+  enablement, runtime trust, and infrastructure operations remain later independent stages.
+
+### ATLAS-IMP-068 Acceptance Criteria
+
+- A dedicated exact-tenant MFA human may create one immutable pending request from only the exact
+  eligible IMP-067 report, package digest, signed approval-policy ID/digest, bounded purpose,
+  acknowledgement, idempotency, and correlation. No approval or lifecycle override is accepted.
+- The immutable packet binds the complete final evidence, package/handoff/project/inventory/product
+  identity, policy, actor set, safe risk/check/limitation summaries, requester, expiry, stage,
+  quorum, no-authority declarations, and deterministic canonical digest.
+- Platform policy is immutable, signed, verified, unexpired, tenant-scoped, and fixes evidence age,
+  request lifetime, assurance, stage, quorum, outcomes, rationale bounds, separation, and schemas.
+- A separate MFA human approver, distinct from requester, final validator, every upstream actor, and
+  policy signer, may record exactly one approve, reject, needs-evidence, or defer decision against
+  the exact packet digest and expected version. AI/service/wrong-scope identities fail closed.
+- Missing, blocked, stale, tampered, expired, changed, cross-tenant, replayed, or conflicting evidence
+  cannot be requested or decided. Optimistic concurrency preserves the first valid decision.
+- Requests and decisions are immutable, idempotent, audit-before-persist, concurrency-safe,
+  deterministic, and equivalent in memory and PostgreSQL. Historical evidence is never rewritten.
+- Approval sets only package approval and publisher-governance eligibility. Every state grants no
+  signing, attestation, registration, installation, configuration, enablement, target/secret access,
+  runtime trust, execution, deployment, or infrastructure mutation authority.
+- Strict no-store create/read/decide APIs require dedicated RBAC, CSRF on mutations, exact scope,
+  MFA, acknowledgements, bounded schemas, safe errors, and non-disclosing lookup behavior.
+- The web view shows the exact packet, evidence, policy, requester, expiry, risk, limitations, and
+  no-authority scope before neutral approve/reject/needs-evidence/defer controls. No outcome is
+  preselected and no later lifecycle controls exist.
+- Backend/frontend tests, one Alembic head, live authorized/denied HTTP checks, desktop and
+  390-pixel mobile inspection, browser logs, and GitHub CI apply.
+
+### ATLAS-IMP-068 Validation Evidence
+
+- ADR-024 accepted; implementation is pending.
+
+### ATLAS-IMP-067 Scope Rationale
 
 ### ATLAS-IMP-067 Scope Rationale
 
