@@ -263,6 +263,94 @@ export type ConnectorPackageContentPolicyScan = {
   reused: boolean;
 };
 
+export type ConnectorPackageSchemaSemanticsValidation = {
+  validation_id: string;
+  schema_version: "atlas.connector-package-schema-semantics-validation.v1";
+  version: 1;
+  lifecycle: "validating";
+  outcome: "passed" | "failed";
+  source_content_policy_scan_id: string;
+  source_content_policy_scan_digest: string;
+  source_inventory_id: string;
+  source_inventory_digest: string;
+  source_validation_id: string;
+  source_validation_digest: string;
+  source_acquisition_id: string;
+  source_acquisition_digest: string;
+  source_handoff_id: string;
+  source_project_id: string;
+  source_acquired_by: string;
+  source_manifest_validated_by: string;
+  source_inventoried_by: string;
+  source_content_scanned_by: string;
+  source_custodied_by: string;
+  source_domain_reviewed_by: string;
+  source_security_reviewed_by: string;
+  source_lab_operated_by: string;
+  organization_id: string;
+  environment_id: string;
+  validated_by: string;
+  validation_profile: "atlas.connector-schema-semantics.python312.v1";
+  validator_version: "atlas.connector-configuration-capability-schema-validator.v1";
+  package_digest: string;
+  package_size_bytes: number;
+  inventory_digest: string;
+  content_scan_digest: string;
+  schemas: Array<{
+    relative_path: string;
+    digest: string;
+    purpose: "configuration" | "capability_input" | "capability_output";
+    capability_id: string | null;
+    property_count: number;
+    required_count: number;
+    closed_object: boolean;
+    semantically_complete: boolean;
+  }>;
+  schema_set_digest: string;
+  findings: Array<{
+    rule_code: string;
+    kind: "configuration" | "capability_input" | "capability_output";
+    severity: "error";
+    relative_path: string;
+    json_pointer: string;
+    evidence_fingerprint: string;
+    summary: string;
+    remediation: string;
+  }>;
+  finding_set_digest: string;
+  semantic_validation_digest: string;
+  checks: ConnectorPackageValidation["checks"];
+  limitations: string[];
+  promotion_blocked: boolean;
+  canonical_digest: string;
+  validated_at: string;
+  secret_content_scan_completed: true;
+  prohibited_content_scan_completed: true;
+  schema_semantic_validation_completed: true;
+  vulnerability_scan_completed: false;
+  malware_scan_completed: false;
+  license_scan_completed: false;
+  static_code_validation_completed: false;
+  permission_behavior_validation_completed: false;
+  contract_validation_completed: false;
+  runner_validation_completed: false;
+  lab_validation_completed: false;
+  package_signed: false;
+  publisher_attested: false;
+  connector_rejected: false;
+  connector_registered: false;
+  connector_approved: false;
+  connector_installed: false;
+  connector_enabled: false;
+  target_configured: false;
+  credentials_resolved: false;
+  runtime_trust_granted: false;
+  execution_authorized: false;
+  deployment_approved: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -552,6 +640,122 @@ function isSafeContentPolicyScan(
   );
 }
 
+function isSchemaSemanticsSummary(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.relative_path === "string" &&
+    typeof value.digest === "string" &&
+    value.digest.length === 64 &&
+    ["configuration", "capability_input", "capability_output"].includes(
+      String(value.purpose),
+    ) &&
+    (value.capability_id === null || typeof value.capability_id === "string") &&
+    typeof value.property_count === "number" &&
+    typeof value.required_count === "number" &&
+    typeof value.closed_object === "boolean" &&
+    typeof value.semantically_complete === "boolean"
+  );
+}
+
+function isSchemaSemanticsFinding(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.rule_code === "string" &&
+    ["configuration", "capability_input", "capability_output"].includes(
+      String(value.kind),
+    ) &&
+    value.severity === "error" &&
+    typeof value.relative_path === "string" &&
+    typeof value.json_pointer === "string" &&
+    typeof value.evidence_fingerprint === "string" &&
+    value.evidence_fingerprint.length === 64 &&
+    typeof value.summary === "string" &&
+    typeof value.remediation === "string"
+  );
+}
+
+function isSafeSchemaSemanticsValidation(
+  value: unknown,
+): value is { data: ConnectorPackageSchemaSemanticsValidation } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const report = value.data;
+  const schemas: unknown[] = Array.isArray(report.schemas) ? report.schemas : [];
+  const findings: unknown[] = Array.isArray(report.findings) ? report.findings : [];
+  const checks: unknown[] = Array.isArray(report.checks) ? report.checks : [];
+  const sourceActors = [
+    report.source_acquired_by,
+    report.source_manifest_validated_by,
+    report.source_inventoried_by,
+    report.source_content_scanned_by,
+    report.source_custodied_by,
+    report.source_domain_reviewed_by,
+    report.source_security_reviewed_by,
+    report.source_lab_operated_by,
+  ];
+  const noAuthority = [
+    report.vulnerability_scan_completed,
+    report.malware_scan_completed,
+    report.license_scan_completed,
+    report.static_code_validation_completed,
+    report.permission_behavior_validation_completed,
+    report.contract_validation_completed,
+    report.runner_validation_completed,
+    report.lab_validation_completed,
+    report.package_signed,
+    report.publisher_attested,
+    report.connector_rejected,
+    report.connector_registered,
+    report.connector_approved,
+    report.connector_installed,
+    report.connector_enabled,
+    report.target_configured,
+    report.credentials_resolved,
+    report.runtime_trust_granted,
+    report.execution_authorized,
+    report.deployment_approved,
+    report.infrastructure_mutation_performed,
+  ];
+  return (
+    report.schema_version === "atlas.connector-package-schema-semantics-validation.v1" &&
+    report.version === 1 &&
+    report.lifecycle === "validating" &&
+    (report.outcome === "passed" || report.outcome === "failed") &&
+    report.promotion_blocked === (report.outcome === "failed") &&
+    report.validation_profile === "atlas.connector-schema-semantics.python312.v1" &&
+    report.validator_version ===
+      "atlas.connector-configuration-capability-schema-validator.v1" &&
+    report.secret_content_scan_completed === true &&
+    report.prohibited_content_scan_completed === true &&
+    report.schema_semantic_validation_completed === true &&
+    typeof report.validated_by === "string" &&
+    sourceActors.every((actor) => typeof actor === "string") &&
+    !sourceActors.includes(report.validated_by) &&
+    typeof report.package_digest === "string" &&
+    report.package_digest.length === 64 &&
+    typeof report.inventory_digest === "string" &&
+    report.inventory_digest.length === 64 &&
+    typeof report.content_scan_digest === "string" &&
+    report.content_scan_digest.length === 64 &&
+    typeof report.schema_set_digest === "string" &&
+    report.schema_set_digest.length === 64 &&
+    typeof report.finding_set_digest === "string" &&
+    report.finding_set_digest.length === 64 &&
+    typeof report.semantic_validation_digest === "string" &&
+    report.semantic_validation_digest.length === 64 &&
+    typeof report.canonical_digest === "string" &&
+    report.canonical_digest.length === 64 &&
+    schemas.length > 0 &&
+    schemas.every(isSchemaSemanticsSummary) &&
+    findings.length <= 500 &&
+    findings.every(isSchemaSemanticsFinding) &&
+    checks.length === 5 &&
+    checks.every(isValidationCheck) &&
+    isStringArray(report.limitations) &&
+    report.limitations.length > 0 &&
+    noAuthority.every((flag) => flag === false)
+  );
+}
+
 function isSafeAcquisition(
   value: unknown,
 ): value is { data: ConnectorPackageAcquisition } {
@@ -802,6 +1006,61 @@ export async function scanConnectorPackageContent(
     scan.scanned_file_count !== inventory.files.length
   ) {
     throw new Error("Content-policy scan does not match the exact package inventory");
+  }
+  return payload;
+}
+
+export async function validateConnectorPackageSchemaSemantics(
+  scan: ConnectorPackageContentPolicyScan,
+) {
+  if (scan.outcome !== "passed" || scan.promotion_blocked) {
+    throw new Error("Only a passed content-policy report can receive schema validation");
+  }
+  const response = await apiFetch(
+    "/api/v1/connectors/package-schema-semantics-validations",
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": `connector-schema-semantics.${crypto.randomUUID()}`,
+      },
+      body: JSON.stringify({
+        schema_version: "atlas.connector-package-schema-semantics-validation-request.v1",
+        source_content_policy_scan_id: scan.scan_id,
+        source_content_policy_scan_digest: scan.canonical_digest,
+        package_digest: scan.package_digest,
+        validation_profile: "atlas.connector-schema-semantics.python312.v1",
+        acknowledged_untrusted_schema_content: true,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Connector package schema validation failed with ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  if (!isSafeSchemaSemanticsValidation(payload)) {
+    throw new Error("Connector registry returned unsafe schema semantics evidence");
+  }
+  const report = payload.data;
+  if (
+    report.source_content_policy_scan_id !== scan.scan_id ||
+    report.source_content_policy_scan_digest !== scan.canonical_digest ||
+    report.source_inventory_id !== scan.source_inventory_id ||
+    report.source_inventory_digest !== scan.source_inventory_digest ||
+    report.source_validation_id !== scan.source_validation_id ||
+    report.source_validation_digest !== scan.source_validation_digest ||
+    report.source_acquisition_id !== scan.source_acquisition_id ||
+    report.source_acquisition_digest !== scan.source_acquisition_digest ||
+    report.source_content_scanned_by !== scan.scanned_by ||
+    report.organization_id !== scan.organization_id ||
+    report.environment_id !== scan.environment_id ||
+    report.package_digest !== scan.package_digest ||
+    report.package_size_bytes !== scan.package_size_bytes ||
+    report.inventory_digest !== scan.inventory_digest ||
+    report.content_scan_digest !== scan.content_scan_digest
+  ) {
+    throw new Error("Schema semantics report does not match the exact content-policy scan");
   }
   return payload;
 }

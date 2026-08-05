@@ -719,10 +719,28 @@ class PackageValidationService:
         ):
             return False
         for key in configuration_keys:
-            if value["properties"].get(key) != {
-                "type": "string",
-                "x-atlas-sensitive": False,
-            }:
+            definition = value["properties"].get(key)
+            if (
+                not isinstance(definition, dict)
+                or definition.get("type") not in {"string", "integer", "number", "boolean", "array"}
+                or definition.get("x-atlas-sensitive") is not False
+                or set(definition)
+                - {
+                    "type",
+                    "format",
+                    "enum",
+                    "default",
+                    "minimum",
+                    "maximum",
+                    "minLength",
+                    "maxLength",
+                    "minItems",
+                    "maxItems",
+                    "items",
+                    "pattern",
+                    "x-atlas-sensitive",
+                }
+            ):
                 return False
         for key in secret_reference_ids:
             if value["properties"].get(key) != {
@@ -740,24 +758,45 @@ class PackageValidationService:
         common = (
             value.get("$schema") == JSON_SCHEMA_DRAFT
             and value.get("type") == "object"
-            and value.get("x-atlas-generation-status") == "draft_requires_schema_review"
+            and value.get("x-atlas-generation-status")
+            in {"draft_requires_schema_review", "reviewed"}
         )
         if input_schema:
             return bool(
                 common
                 and set(value)
-                == {
-                    "$schema",
-                    "$id",
-                    "type",
-                    "additionalProperties",
-                    "properties",
-                    "x-atlas-parameter-evidence-count",
-                    "x-atlas-generation-status",
-                }
+                in (
+                    {
+                        "$schema",
+                        "$id",
+                        "type",
+                        "additionalProperties",
+                        "properties",
+                        "x-atlas-parameter-evidence-count",
+                        "x-atlas-generation-status",
+                    },
+                    {
+                        "$schema",
+                        "$id",
+                        "type",
+                        "additionalProperties",
+                        "properties",
+                        "required",
+                        "x-atlas-parameter-evidence-count",
+                        "x-atlas-generation-status",
+                    },
+                )
                 and value.get("$id") == f"atlas://generated/{capability_id}/input.schema.json"
                 and value.get("additionalProperties") is False
-                and value.get("properties") == {}
+                and isinstance(value.get("properties"), dict)
+                and len(value["properties"]) <= 500
+                and (
+                    "required" not in value
+                    or (
+                        isinstance(value["required"], list)
+                        and all(isinstance(item, str) for item in value["required"])
+                    )
+                )
                 and isinstance(value.get("x-atlas-parameter-evidence-count"), int)
                 and 0 <= value["x-atlas-parameter-evidence-count"] <= 1000
             )
@@ -765,16 +804,36 @@ class PackageValidationService:
         return bool(
             common
             and set(value)
-            == {
-                "$schema",
-                "$id",
-                "type",
-                "additionalProperties",
-                "x-atlas-response-code-evidence",
-                "x-atlas-generation-status",
-            }
+            in (
+                {
+                    "$schema",
+                    "$id",
+                    "type",
+                    "additionalProperties",
+                    "x-atlas-response-code-evidence",
+                    "x-atlas-generation-status",
+                },
+                {
+                    "$schema",
+                    "$id",
+                    "type",
+                    "additionalProperties",
+                    "properties",
+                    "required",
+                    "x-atlas-response-code-evidence",
+                    "x-atlas-generation-status",
+                },
+            )
             and value.get("$id") == f"atlas://generated/{capability_id}/output.schema.json"
-            and value.get("additionalProperties") is True
+            and isinstance(value.get("additionalProperties"), bool)
+            and ("properties" not in value or isinstance(value["properties"], dict))
+            and (
+                "required" not in value
+                or (
+                    isinstance(value["required"], list)
+                    and all(isinstance(item, str) for item in value["required"])
+                )
+            )
             and PackageValidationService._safe_string_list(
                 codes, maximum_items=100, maximum_length=20, allow_empty=True
             )

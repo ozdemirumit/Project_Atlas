@@ -861,7 +861,7 @@ const packageContentPolicyScan = {
     source_lab_operated_by: packageInventory.data.source_lab_operated_by,
     organization_id: packageInventory.data.organization_id,
     environment_id: packageInventory.data.environment_id,
-    scanned_by: identity.data.subject_id,
+    scanned_by: "subject.content-policy.scanner",
     scan_profile: "atlas.connector-content-policy-scan.python312.v1",
     scanner_version: "atlas.connector-secret-prohibited-content-scanner.v1",
     package_digest: packageInventory.data.package_digest,
@@ -921,6 +921,140 @@ const packageContentPolicyScan = {
   },
 };
 
+const packageSchemaSemanticsValidation = {
+  data: {
+    validation_id: "connector-schema-semantics-validation.dddddddddddddddddddddddd",
+    schema_version: "atlas.connector-package-schema-semantics-validation.v1",
+    version: 1,
+    lifecycle: "validating",
+    outcome: "failed",
+    source_content_policy_scan_id: packageContentPolicyScan.data.scan_id,
+    source_content_policy_scan_digest: packageContentPolicyScan.data.canonical_digest,
+    source_inventory_id: packageContentPolicyScan.data.source_inventory_id,
+    source_inventory_digest: packageContentPolicyScan.data.source_inventory_digest,
+    source_validation_id: packageContentPolicyScan.data.source_validation_id,
+    source_validation_digest: packageContentPolicyScan.data.source_validation_digest,
+    source_acquisition_id: packageContentPolicyScan.data.source_acquisition_id,
+    source_acquisition_digest: packageContentPolicyScan.data.source_acquisition_digest,
+    source_handoff_id: packageContentPolicyScan.data.source_handoff_id,
+    source_project_id: packageContentPolicyScan.data.source_project_id,
+    source_acquired_by: packageContentPolicyScan.data.source_acquired_by,
+    source_manifest_validated_by: packageContentPolicyScan.data.source_validated_by,
+    source_inventoried_by: packageContentPolicyScan.data.source_inventoried_by,
+    source_content_scanned_by: packageContentPolicyScan.data.scanned_by,
+    source_custodied_by: packageContentPolicyScan.data.source_custodied_by,
+    source_domain_reviewed_by: packageContentPolicyScan.data.source_domain_reviewed_by,
+    source_security_reviewed_by: packageContentPolicyScan.data.source_security_reviewed_by,
+    source_lab_operated_by: packageContentPolicyScan.data.source_lab_operated_by,
+    organization_id: packageContentPolicyScan.data.organization_id,
+    environment_id: packageContentPolicyScan.data.environment_id,
+    validated_by: identity.data.subject_id,
+    validation_profile: "atlas.connector-schema-semantics.python312.v1",
+    validator_version: "atlas.connector-configuration-capability-schema-validator.v1",
+    package_digest: packageContentPolicyScan.data.package_digest,
+    package_size_bytes: packageContentPolicyScan.data.package_size_bytes,
+    inventory_digest: packageContentPolicyScan.data.inventory_digest,
+    content_scan_digest: packageContentPolicyScan.data.content_scan_digest,
+    schemas: [
+      {
+        relative_path: "schemas/config/config.schema.json",
+        digest: "d".repeat(64),
+        purpose: "configuration",
+        capability_id: null,
+        property_count: 2,
+        required_count: 2,
+        closed_object: true,
+        semantically_complete: false,
+      },
+      {
+        relative_path: "schemas/inputs/capability_read.schema.json",
+        digest: "e".repeat(64),
+        purpose: "capability_input",
+        capability_id: packageValidation.data.capability_ids[0],
+        property_count: 0,
+        required_count: 0,
+        closed_object: true,
+        semantically_complete: false,
+      },
+      {
+        relative_path: "schemas/outputs/capability_read.schema.json",
+        digest: "f".repeat(64),
+        purpose: "capability_output",
+        capability_id: packageValidation.data.capability_ids[0],
+        property_count: 0,
+        required_count: 0,
+        closed_object: false,
+        semantically_complete: false,
+      },
+    ],
+    schema_set_digest: "8".repeat(64),
+    findings: [
+      {
+        rule_code: "schema.capability.placeholder",
+        kind: "capability_input",
+        severity: "error",
+        relative_path: "schemas/inputs/capability_read.schema.json",
+        json_pointer: "/properties",
+        evidence_fingerprint: "9".repeat(64),
+        summary: "Capability schema is an empty placeholder.",
+        remediation: "Define the reviewed typed capability contract.",
+      },
+    ],
+    finding_set_digest: "a".repeat(64),
+    semantic_validation_digest: "b".repeat(64),
+    checks: [
+      "schema-semantics.source.accepted",
+      "schema-semantics.archive.contract",
+      "schema-semantics.inventory.contract",
+      "schema-semantics.configuration.contract",
+      "schema-semantics.capability.contracts",
+    ].map((code) => ({
+      code,
+      state: code === "schema-semantics.capability.contracts" ? "failed" : "passed",
+      severity:
+        code === "schema-semantics.capability.contracts" ? "error" : "informational",
+      summary: `Bounded ${code} evidence completed.`,
+      evidence_paths:
+        code === "schema-semantics.capability.contracts"
+          ? ["schemas/inputs/capability_read.schema.json"]
+          : [],
+      remediation: "Resolve findings while preserving the exact package.",
+    })),
+    limitations: [
+      "This report proves only bounded configuration and capability schema semantics.",
+      "No package or infrastructure authority was granted.",
+    ],
+    promotion_blocked: true,
+    canonical_digest: "c".repeat(64),
+    validated_at: "2026-08-05T16:10:00Z",
+    secret_content_scan_completed: true,
+    prohibited_content_scan_completed: true,
+    schema_semantic_validation_completed: true,
+    vulnerability_scan_completed: false,
+    malware_scan_completed: false,
+    license_scan_completed: false,
+    static_code_validation_completed: false,
+    permission_behavior_validation_completed: false,
+    contract_validation_completed: false,
+    runner_validation_completed: false,
+    lab_validation_completed: false,
+    package_signed: false,
+    publisher_attested: false,
+    connector_rejected: false,
+    connector_registered: false,
+    connector_approved: false,
+    connector_installed: false,
+    connector_enabled: false,
+    target_configured: false,
+    credentials_resolved: false,
+    runtime_trust_granted: false,
+    execution_authorized: false,
+    deployment_approved: false,
+    infrastructure_mutation_performed: false,
+    reused: false,
+  },
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -943,6 +1077,10 @@ describe("MCP Builder workspace", () => {
     const packageValidationRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const packageInventoryRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const packageContentPolicyRequests: Array<{
+      body: string;
+      idempotencyKey: string | null;
+    }> = [];
+    const packageSchemaSemanticsRequests: Array<{
       body: string;
       idempotencyKey: string | null;
     }> = [];
@@ -1048,6 +1186,16 @@ describe("MCP Builder workspace", () => {
         });
         return Promise.resolve(
           new Response(JSON.stringify(packageContentPolicyScan), { status: 201 }),
+        );
+      }
+      if (url.endsWith("/api/v1/connectors/package-schema-semantics-validations")) {
+        const headers = new Headers(init?.headers);
+        packageSchemaSemanticsRequests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(
+          new Response(JSON.stringify(packageSchemaSemanticsValidation), { status: 201 }),
         );
       }
       if (
@@ -1225,6 +1373,16 @@ describe("MCP Builder workspace", () => {
     expect(screen.getByText("content-policy.secret-content")).toBeVisible();
     expect(screen.getByText("Content-policy boundaries")).toBeVisible();
     expect(screen.getByText("Not blocked")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Validate schema semantics" })).toBeVisible();
+    fireEvent.click(screen.getByLabelText(/I am the independent schema validator/i));
+    fireEvent.click(screen.getByRole("button", { name: "Validate schema semantics" }));
+
+    expect(
+      await screen.findByText(packageSchemaSemanticsValidation.data.validation_id),
+    ).toBeVisible();
+    expect(screen.getByText("IMMUTABLE SCHEMA SEMANTICS REPORT")).toBeVisible();
+    expect(screen.getByText("schema.capability.placeholder")).toBeVisible();
+    expect(screen.getAllByText("Blocked").length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: /install|execute|register|enable/i })).not.toBeInTheDocument();
     expect(requests).toHaveLength(1);
     expect(designRequests).toHaveLength(1);
@@ -1238,6 +1396,7 @@ describe("MCP Builder workspace", () => {
     expect(packageValidationRequests).toHaveLength(1);
     expect(packageInventoryRequests).toHaveLength(1);
     expect(packageContentPolicyRequests).toHaveLength(1);
+    expect(packageSchemaSemanticsRequests).toHaveLength(1);
     expect(requests[0]?.idempotencyKey).toBe("mcp-builder.mcp-builder-ui-001");
     const body = JSON.parse(requests[0]?.body ?? "{}") as Record<string, unknown>;
     expect(body.source_document).toBe(source);
@@ -1431,6 +1590,21 @@ describe("MCP Builder workspace", () => {
     expect(packageContentPolicyBody).not.toHaveProperty("secret");
     expect(packageContentPolicyBody).not.toHaveProperty("reject");
     expect(packageContentPolicyBody).not.toHaveProperty("execute");
+    expect(packageSchemaSemanticsRequests[0]?.idempotencyKey).toBe(
+      "connector-schema-semantics.mcp-builder-ui-001",
+    );
+    const packageSchemaSemanticsBody = JSON.parse(
+      packageSchemaSemanticsRequests[0]?.body ?? "{}",
+    ) as Record<string, unknown>;
+    expect(packageSchemaSemanticsBody.source_content_policy_scan_id).toBe(
+      packageContentPolicyScan.data.scan_id,
+    );
+    expect(packageSchemaSemanticsBody.source_content_policy_scan_digest).toBe(
+      packageContentPolicyScan.data.canonical_digest,
+    );
+    expect(packageSchemaSemanticsBody.acknowledged_untrusted_schema_content).toBe(true);
+    expect(packageSchemaSemanticsBody).not.toHaveProperty("schema_body");
+    expect(packageSchemaSemanticsBody).not.toHaveProperty("execute");
   }, 15_000);
 
   it("verifies the downloaded candidate archive against immutable evidence", async () => {
