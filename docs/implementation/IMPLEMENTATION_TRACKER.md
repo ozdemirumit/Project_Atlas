@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-047 |
 | Title | Governed MCP Builder human design checkpoint |
-| Status | Validation Complete |
+| Status | Completed |
 | Branch | `agent/mcp-builder-human-design-checkpoint` |
-| Pull Request | Pending |
+| Pull Request | [#59](https://github.com/ozdemirumit/Project_Atlas/pull/59) |
 | Governing Documents | ATLAS-003, ATLAS-014, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056 |
 | Last Updated | 2026-08-05 |
-| Next Action | Open the implementation PR and complete GitHub CI validation |
+| Next Action | Select the next approved implementation slice |
 
 ### ATLAS-IMP-047 Scope Rationale
 
@@ -66,7 +66,8 @@
   duplicate, unknown, class-lowered, or blocked include decisions fail closed. Broad administrator
   permission requests, arbitrary network destinations, malformed stable references, and incomplete
   entity mappings are rejected; excluded candidates retain explicit human rationale.
-- Full backend verification passes Ruff, strict mypy across 351 source files, one Alembic head at
+- Full backend verification passes Ruff formatting and lint, strict mypy across 396 source and test
+  files, one Alembic head at
   `20260805_0019`, and 393 pytest tests with three existing Windows symbolic-link skips. Full frontend
   verification passes ESLint, TypeScript, all 35 Vitest tests, and the production build.
 - Live LDAP validation created project `mcp-builder-project.0e66a6e1f2c1051ee1aa934b` and checkpoint
@@ -81,6 +82,8 @@
   body client/scroll widths matched, all bounded fields remained inside the viewport, and browser
   warning/error logs were empty. The automated web flow completed analysis and the full human design
   checkpoint without exposing generation, installation, or execution controls.
+- Source commit `318d023` passed both backend and frontend gates in [GitHub Actions run
+  30978221239](https://github.com/ozdemirumit/Project_Atlas/actions/runs/30978221239).
 
 ### ATLAS-IMP-046 Scope Rationale
 
@@ -2731,6 +2734,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-044 | Governed upgrade human-review inbox and decision workspace | Completed through [PR #56](https://github.com/ozdemirumit/Project_Atlas/pull/56) from source commit `65aca6d`; 373 backend tests, 33 frontend tests, live four-identity API and desktop/mobile decision validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-045 | Governed non-executable human-review completion receipt | Completed through [PR #57](https://github.com/ozdemirumit/Project_Atlas/pull/57) from source commit `53429db`; 379 backend tests, 34 frontend tests, live four-identity API and desktop/mobile receipt validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-046 | Governed MCP Builder project and OpenAPI source-analysis foundation | Completed through [PR #58](https://github.com/ozdemirumit/Project_Atlas/pull/58) from source commit `0e0bccc`; 389 backend tests, 35 frontend tests, live secret-free source-analysis API and desktop/mobile Builder validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-047 | Governed MCP Builder human design checkpoint | Completed through [PR #59](https://github.com/ozdemirumit/Project_Atlas/pull/59) from source commit `318d023`; 393 backend tests, 35 frontend tests, live immutable design-checkpoint API and desktop/mobile Builder validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
