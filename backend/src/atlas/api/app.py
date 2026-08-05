@@ -50,6 +50,7 @@ from atlas.api.routes import (
     recovery,
     release_preflight,
     reports,
+    runner_validations,
     schema_semantics_validations,
     security_export,
     sessions,
@@ -143,6 +144,13 @@ from atlas.modules.connectors.adapters.malware_analysis_memory import (
 from atlas.modules.connectors.adapters.malware_analysis_postgres import (
     PostgreSQLPackageMalwareAnalysisRepository,
 )
+from atlas.modules.connectors.adapters.runner_subprocess import SubprocessPackageRunner
+from atlas.modules.connectors.adapters.runner_validation_memory import (
+    InMemoryPackageRunnerValidationRepository,
+)
+from atlas.modules.connectors.adapters.runner_validation_postgres import (
+    PostgreSQLPackageRunnerValidationRepository,
+)
 from atlas.modules.connectors.adapters.schema_semantics_validation_memory import (
     InMemoryPackageSchemaSemanticsValidationRepository,
 )
@@ -190,6 +198,7 @@ from atlas.modules.connectors.application.malware_analysis import (
     PackageMalwareAnalysisService,
     build_bootstrap_definition_snapshot,
 )
+from atlas.modules.connectors.application.runner_validation import PackageRunnerValidationService
 from atlas.modules.connectors.application.schema_semantics_validation import (
     PackageSchemaSemanticsValidationService,
 )
@@ -470,6 +479,7 @@ def create_app(
     package_malware_analysis_service: PackageMalwareAnalysisService | None = None,
     package_license_analysis_service: PackageLicenseAnalysisService | None = None,
     package_contract_validation_service: PackageContractValidationService | None = None,
+    package_runner_validation_service: PackageRunnerValidationService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -1192,6 +1202,28 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if package_runner_validation_service is not None:
+        resolved_package_runner_validation_service = package_runner_validation_service
+    else:
+        package_runner_validation_repository = (
+            PostgreSQLPackageRunnerValidationRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryPackageRunnerValidationRepository()
+        )
+        resolved_package_runner_validation_service = PackageRunnerValidationService(
+            repository=package_runner_validation_repository,
+            contract_source=resolved_package_contract_validation_service.repository,
+            inventory_source=(
+                resolved_package_schema_semantics_validation_service.inventory_source
+            ),
+            acquisition_source=(
+                resolved_package_schema_semantics_validation_service.acquisition_source
+            ),
+            archive_source=(resolved_package_schema_semantics_validation_service.archive_source),
+            runner=SubprocessPackageRunner(),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -1382,6 +1414,7 @@ def create_app(
         app.state.package_malware_analysis_service = resolved_package_malware_analysis_service
         app.state.package_license_analysis_service = resolved_package_license_analysis_service
         app.state.package_contract_validation_service = resolved_package_contract_validation_service
+        app.state.package_runner_validation_service = resolved_package_runner_validation_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -1394,6 +1427,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_package_runner_validation_service.close()
         await resolved_package_contract_validation_service.close()
         await resolved_package_license_analysis_service.close()
         await resolved_package_malware_analysis_service.close()
@@ -1476,6 +1510,7 @@ def create_app(
     app.include_router(malware_analyses.router, prefix="/api/v1")
     app.include_router(license_analyses.router, prefix="/api/v1")
     app.include_router(contract_validations.router, prefix="/api/v1")
+    app.include_router(runner_validations.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

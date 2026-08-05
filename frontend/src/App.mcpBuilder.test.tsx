@@ -819,7 +819,7 @@ const packageContractValidation = () => {
       source_lab_operated_by: license.source_lab_operated_by,
       organization_id: license.organization_id,
       environment_id: license.environment_id,
-      validated_by: identity.data.subject_id,
+      validated_by: "subject.contract.validator",
       validation_profile: "atlas.connector-contract.python312.v1",
       validator_version: "atlas.connector-contract-validator.v1",
       package_digest: license.package_digest,
@@ -874,6 +874,97 @@ const packageContractValidation = () => {
       license_scan_completed: true,
       contract_validation_completed: true,
       runner_validation_completed: false,
+      lab_validation_completed: false,
+      package_signed: false,
+      publisher_attested: false,
+      connector_rejected: false,
+      connector_registered: false,
+      connector_approved: false,
+      connector_installed: false,
+      connector_enabled: false,
+      target_configured: false,
+      credentials_resolved: false,
+      runtime_trust_granted: false,
+      execution_authorized: false,
+      deployment_approved: false,
+      infrastructure_mutation_performed: false,
+      reused: false,
+    },
+  };
+};
+
+const packageRunnerValidation = () => {
+  const contract = packageContractValidation().data;
+  return {
+    data: {
+      validation_id: "connector-runner-validation.eeeeeeeeeeeeeeeeeeeeeeee",
+      schema_version: "atlas.connector-package-runner-validation.v1",
+      version: 1,
+      outcome: "passed",
+      source_contract_validation_id: contract.validation_id,
+      source_contract_validation_digest: contract.canonical_digest,
+      source_license_analysis_id: contract.source_license_analysis_id,
+      source_license_analysis_digest: contract.source_license_analysis_digest,
+      source_inventory_id: contract.source_inventory_id,
+      source_acquisition_id: contract.source_acquisition_id,
+      source_project_id: contract.source_project_id,
+      source_contract_validated_by: contract.validated_by,
+      source_actor_set_digest: "e".repeat(64),
+      organization_id: contract.organization_id,
+      environment_id: contract.environment_id,
+      validated_by: identity.data.subject_id,
+      validation_profile: "atlas.connector-runner.python312.v1",
+      adapter_contract: "atlas.connector-isolated-subprocess.v1",
+      harness_version: "atlas.connector-runner-harness.v1",
+      runtime_version: "python.3.12.11",
+      package_digest: contract.package_digest,
+      package_size_bytes: contract.package_size_bytes,
+      inventory_digest: contract.inventory_digest,
+      capability_count: contract.coverage.capability_count,
+      invoked_capability_count: contract.coverage.capability_count,
+      fail_closed_count: 0,
+      bounded_literal_count: contract.coverage.capability_count,
+      checks: [
+        "runner.source.accepted",
+        "runner.archive.integrity",
+        "runner.process.isolation",
+        "runner.environment.secret-free",
+        "runner.authority.denied",
+        "runner.package.import",
+        "runner.quarantine.contract",
+        "runner.capabilities.synthetic",
+        "runner.output.bounded",
+        "runner.workspace.cleaned",
+      ].map((code) => ({
+        code,
+        state: "passed",
+        severity: "informational",
+        summary: `Bounded ${code} evidence completed.`,
+        remediation: "Regenerate the package before retrying.",
+      })),
+      child_started: true,
+      child_exit_code: 0,
+      duration_ms: 23,
+      output_digest: "f".repeat(64),
+      output_size_bytes: 512,
+      workspace_removed: true,
+      limitations: [
+        "Disconnected synthetic behavior does not prove vendor compatibility.",
+        "No package tests, credentials, network, model, or target were used.",
+      ],
+      promotion_blocked: false,
+      canonical_digest: "1".repeat(64),
+      validated_at: "2026-08-05T20:20:00Z",
+      secret_content_scan_completed: true,
+      prohibited_content_scan_completed: true,
+      schema_semantic_validation_completed: true,
+      permission_behavior_validation_completed: true,
+      static_code_validation_completed: true,
+      vulnerability_scan_completed: true,
+      malware_scan_completed: true,
+      license_scan_completed: true,
+      contract_validation_completed: true,
+      runner_validation_completed: true,
       lab_validation_completed: false,
       package_signed: false,
       publisher_attested: false,
@@ -1819,6 +1910,10 @@ describe("MCP Builder workspace", () => {
       body: string;
       idempotencyKey: string | null;
     }> = [];
+    const packageRunnerRequests: Array<{
+      body: string;
+      idempotencyKey: string | null;
+    }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -1991,6 +2086,16 @@ describe("MCP Builder workspace", () => {
         });
         return Promise.resolve(
           new Response(JSON.stringify(packageContractValidation()), { status: 201 }),
+        );
+      }
+      if (url.endsWith("/api/v1/connectors/package-runner-validations")) {
+        const headers = new Headers(init?.headers);
+        packageRunnerRequests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(
+          new Response(JSON.stringify(packageRunnerValidation()), { status: 201 }),
         );
       }
       if (
@@ -2233,6 +2338,17 @@ describe("MCP Builder workspace", () => {
     expect(screen.getByText("IMMUTABLE CONTRACT REPORT")).toBeVisible();
     expect(screen.getByText("contract.handlers.binding")).toBeVisible();
     expect(screen.getByText("Contract boundaries")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Run isolated validation" })).toBeVisible();
+    fireEvent.click(screen.getByLabelText(/I am the independent runner validator/i));
+    fireEvent.click(screen.getByRole("button", { name: "Run isolated validation" }));
+
+    expect(
+      await screen.findByText(packageRunnerValidation().data.validation_id),
+    ).toBeVisible();
+    expect(screen.getByText("IMMUTABLE RUNNER REPORT")).toBeVisible();
+    expect(screen.getByText("runner.authority.denied")).toBeVisible();
+    expect(screen.getByText("Runner boundaries")).toBeVisible();
+    expect(screen.getByText("Removed")).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|execute|register|enable/i })).not.toBeInTheDocument();
     expect(requests).toHaveLength(1);
     expect(designRequests).toHaveLength(1);
@@ -2253,6 +2369,7 @@ describe("MCP Builder workspace", () => {
     expect(packageMalwareRequests).toHaveLength(1);
     expect(packageLicenseRequests).toHaveLength(1);
     expect(packageContractRequests).toHaveLength(1);
+    expect(packageRunnerRequests).toHaveLength(1);
     expect(requests[0]?.idempotencyKey).toBe("mcp-builder.mcp-builder-ui-001");
     const body = JSON.parse(requests[0]?.body ?? "{}") as Record<string, unknown>;
     expect(body.source_document).toBe(source);
@@ -2564,6 +2681,24 @@ describe("MCP Builder workspace", () => {
     expect(packageContractBody).not.toHaveProperty("fixtures");
     expect(packageContractBody).not.toHaveProperty("expected_values");
     expect(packageContractBody).not.toHaveProperty("execute");
+    expect(packageRunnerRequests[0]?.idempotencyKey).toBe(
+      "connector-runner.mcp-builder-ui-001",
+    );
+    const packageRunnerBody = JSON.parse(
+      packageRunnerRequests[0]?.body ?? "{}",
+    ) as Record<string, unknown>;
+    expect(packageRunnerBody.source_contract_validation_id).toBe(
+      packageContractValidation().data.validation_id,
+    );
+    expect(packageRunnerBody.source_contract_validation_digest).toBe(
+      packageContractValidation().data.canonical_digest,
+    );
+    expect(packageRunnerBody.acknowledged_disconnected_synthetic_execution).toBe(true);
+    expect(packageRunnerBody).not.toHaveProperty("tests");
+    expect(packageRunnerBody).not.toHaveProperty("command");
+    expect(packageRunnerBody).not.toHaveProperty("environment");
+    expect(packageRunnerBody).not.toHaveProperty("target");
+    expect(packageRunnerBody).not.toHaveProperty("credentials");
   }, 30_000);
 
   it("verifies the downloaded candidate archive against immutable evidence", async () => {

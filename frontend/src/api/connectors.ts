@@ -1011,6 +1011,78 @@ export type ConnectorPackageContractValidation = {
   reused: boolean;
 };
 
+export type ConnectorPackageRunnerValidation = {
+  validation_id: string;
+  schema_version: "atlas.connector-package-runner-validation.v1";
+  version: 1;
+  outcome: "passed" | "failed";
+  source_contract_validation_id: string;
+  source_contract_validation_digest: string;
+  source_license_analysis_id: string;
+  source_license_analysis_digest: string;
+  source_inventory_id: string;
+  source_acquisition_id: string;
+  source_project_id: string;
+  source_contract_validated_by: string;
+  source_actor_set_digest: string;
+  organization_id: string;
+  environment_id: string;
+  validated_by: string;
+  validation_profile: "atlas.connector-runner.python312.v1";
+  adapter_contract: "atlas.connector-isolated-subprocess.v1";
+  harness_version: "atlas.connector-runner-harness.v1";
+  runtime_version: string;
+  package_digest: string;
+  package_size_bytes: number;
+  inventory_digest: string;
+  capability_count: number;
+  invoked_capability_count: number;
+  fail_closed_count: number;
+  bounded_literal_count: number;
+  checks: Array<{
+    code: string;
+    state: "passed" | "failed";
+    severity: "informational" | "error";
+    summary: string;
+    remediation: string;
+  }>;
+  child_started: boolean;
+  child_exit_code: number | null;
+  duration_ms: number;
+  output_digest: string;
+  output_size_bytes: number;
+  workspace_removed: boolean;
+  limitations: string[];
+  promotion_blocked: boolean;
+  canonical_digest: string;
+  validated_at: string;
+  secret_content_scan_completed: true;
+  prohibited_content_scan_completed: true;
+  schema_semantic_validation_completed: true;
+  permission_behavior_validation_completed: true;
+  static_code_validation_completed: true;
+  vulnerability_scan_completed: true;
+  malware_scan_completed: true;
+  license_scan_completed: true;
+  contract_validation_completed: true;
+  runner_validation_completed: true;
+  lab_validation_completed: false;
+  package_signed: false;
+  publisher_attested: false;
+  connector_rejected: false;
+  connector_registered: false;
+  connector_approved: false;
+  connector_installed: false;
+  connector_enabled: false;
+  target_configured: false;
+  credentials_resolved: false;
+  runtime_trust_granted: false;
+  execution_authorized: false;
+  deployment_approved: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -2158,6 +2230,94 @@ function isSafeContractValidation(
   );
 }
 
+function isSafeRunnerValidation(
+  value: unknown,
+): value is { data: ConnectorPackageRunnerValidation } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const report = value.data;
+  const checks: unknown[] = Array.isArray(report.checks) ? report.checks : [];
+  const identifiers = [
+    report.source_contract_validation_id,
+    report.source_license_analysis_id,
+    report.source_inventory_id,
+    report.source_acquisition_id,
+    report.source_project_id,
+    report.source_contract_validated_by,
+    report.organization_id,
+    report.environment_id,
+    report.validated_by,
+    report.runtime_version,
+  ];
+  const digests = [
+    report.source_contract_validation_digest,
+    report.source_license_analysis_digest,
+    report.source_actor_set_digest,
+    report.package_digest,
+    report.inventory_digest,
+    report.output_digest,
+    report.canonical_digest,
+  ];
+  const counts = [
+    report.package_size_bytes,
+    report.capability_count,
+    report.invoked_capability_count,
+    report.fail_closed_count,
+    report.bounded_literal_count,
+    report.duration_ms,
+    report.output_size_bytes,
+  ];
+  const noAuthority = [
+    report.lab_validation_completed,
+    report.package_signed,
+    report.publisher_attested,
+    report.connector_rejected,
+    report.connector_registered,
+    report.connector_approved,
+    report.connector_installed,
+    report.connector_enabled,
+    report.target_configured,
+    report.credentials_resolved,
+    report.runtime_trust_granted,
+    report.execution_authorized,
+    report.deployment_approved,
+    report.infrastructure_mutation_performed,
+  ];
+  return (
+    report.schema_version === "atlas.connector-package-runner-validation.v1" &&
+    report.version === 1 &&
+    (report.outcome === "passed" || report.outcome === "failed") &&
+    report.promotion_blocked === (report.outcome === "failed") &&
+    report.validation_profile === "atlas.connector-runner.python312.v1" &&
+    report.adapter_contract === "atlas.connector-isolated-subprocess.v1" &&
+    report.harness_version === "atlas.connector-runner-harness.v1" &&
+    report.secret_content_scan_completed === true &&
+    report.prohibited_content_scan_completed === true &&
+    report.schema_semantic_validation_completed === true &&
+    report.permission_behavior_validation_completed === true &&
+    report.static_code_validation_completed === true &&
+    report.vulnerability_scan_completed === true &&
+    report.malware_scan_completed === true &&
+    report.license_scan_completed === true &&
+    report.contract_validation_completed === true &&
+    report.runner_validation_completed === true &&
+    report.workspace_removed === true &&
+    identifiers.every((item) => typeof item === "string") &&
+    report.validated_by !== report.source_contract_validated_by &&
+    digests.every((item) => typeof item === "string" && item.length === 64) &&
+    counts.every((item) => typeof item === "number" && item >= 0) &&
+    Number(report.invoked_capability_count) <= Number(report.capability_count) &&
+    Number(report.fail_closed_count) + Number(report.bounded_literal_count) ===
+      Number(report.invoked_capability_count) &&
+    (report.child_exit_code === null || typeof report.child_exit_code === "number") &&
+    typeof report.child_started === "boolean" &&
+    checks.length === 10 &&
+    checks.every(isVulnerabilityCheck) &&
+    isStringArray(report.limitations) &&
+    report.limitations.length > 0 &&
+    noAuthority.every((item) => item === false)
+  );
+}
+
 function isSafeSchemaSemanticsValidation(
   value: unknown,
 ): value is { data: ConnectorPackageSchemaSemanticsValidation } {
@@ -2913,6 +3073,62 @@ export async function validateConnectorPackageContracts(
     report.dependency_set_digest !== source.dependency_set_digest
   ) {
     throw new Error("Contract report does not match the exact license analysis");
+  }
+  return payload;
+}
+
+export async function validateConnectorPackageRunner(
+  source: ConnectorPackageContractValidation,
+) {
+  if (
+    source.outcome !== "passed" ||
+    source.promotion_blocked ||
+    !source.contract_validation_completed ||
+    source.runner_validation_completed
+  ) {
+    throw new Error("Only a passed contract report can receive runner validation");
+  }
+  const response = await apiFetch("/api/v1/connectors/package-runner-validations", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "Idempotency-Key": `connector-runner.${crypto.randomUUID()}`,
+    },
+    body: JSON.stringify({
+      schema_version: "atlas.connector-package-runner-validation-request.v1",
+      source_contract_validation_id: source.validation_id,
+      source_contract_validation_digest: source.canonical_digest,
+      package_digest: source.package_digest,
+      validation_profile: "atlas.connector-runner.python312.v1",
+      acknowledged_disconnected_synthetic_execution: true,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Connector package runner validation failed with ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  if (!isSafeRunnerValidation(payload)) {
+    throw new Error("Connector registry returned unsafe runner validation evidence");
+  }
+  const report = payload.data;
+  if (
+    report.source_contract_validation_id !== source.validation_id ||
+    report.source_contract_validation_digest !== source.canonical_digest ||
+    report.source_license_analysis_id !== source.source_license_analysis_id ||
+    report.source_license_analysis_digest !== source.source_license_analysis_digest ||
+    report.source_inventory_id !== source.source_inventory_id ||
+    report.source_acquisition_id !== source.source_acquisition_id ||
+    report.source_project_id !== source.source_project_id ||
+    report.source_contract_validated_by !== source.validated_by ||
+    report.organization_id !== source.organization_id ||
+    report.environment_id !== source.environment_id ||
+    report.package_digest !== source.package_digest ||
+    report.package_size_bytes !== source.package_size_bytes ||
+    report.inventory_digest !== source.inventory_digest ||
+    report.capability_count !== source.coverage.capability_count
+  ) {
+    throw new Error("Runner report does not match the exact contract validation");
   }
   return payload;
 }

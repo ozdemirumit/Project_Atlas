@@ -124,6 +124,7 @@ import {
   validateConnectorPackage,
   validateConnectorPackageAuthorityBehavior,
   validateConnectorPackageContracts,
+  validateConnectorPackageRunner,
   validateConnectorPackageSchemaSemantics,
 } from "./api/connectors";
 import {
@@ -536,6 +537,7 @@ export function App() {
   const [builderMalwareAcknowledged, setBuilderMalwareAcknowledged] = useState(false);
   const [builderLicenseAcknowledged, setBuilderLicenseAcknowledged] = useState(false);
   const [builderContractAcknowledged, setBuilderContractAcknowledged] = useState(false);
+  const [builderRunnerAcknowledged, setBuilderRunnerAcknowledged] = useState(false);
   const [builderSelectedGeneratedFile, setBuilderSelectedGeneratedFile] = useState("");
   const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
     Record<string, McpBuilderDesignDecision>
@@ -603,6 +605,10 @@ export function App() {
     mutationFn: validateConnectorPackageContracts,
     onSuccess: () => setBuilderContractAcknowledged(false),
   });
+  const builderRunnerMutation = useMutation({
+    mutationFn: validateConnectorPackageRunner,
+    onSuccess: () => setBuilderRunnerAcknowledged(false),
+  });
   const builderCandidateArchiveMutation = useMutation({
     mutationFn: downloadMcpBuilderCandidateArchive,
     onSuccess: ({ blob, filename }) => {
@@ -630,6 +636,7 @@ export function App() {
     builderMalwareMutation.reset();
     builderLicenseMutation.reset();
     builderContractMutation.reset();
+    builderRunnerMutation.reset();
     setBuilderCandidateHandoffAcknowledged(false);
     setBuilderPackageAcquisitionAcknowledged(false);
     setBuilderPackageValidationAcknowledged(false);
@@ -642,6 +649,7 @@ export function App() {
     setBuilderMalwareAcknowledged(false);
     setBuilderLicenseAcknowledged(false);
     setBuilderContractAcknowledged(false);
+    setBuilderRunnerAcknowledged(false);
   };
   const builderPackageValidationSeparated = Boolean(
     identity &&
@@ -797,6 +805,27 @@ export function App() {
         builderLicenseMutation.data.data.source_domain_reviewed_by,
         builderLicenseMutation.data.data.source_security_reviewed_by,
         builderLicenseMutation.data.data.source_lab_operated_by,
+      ].includes(identity.subject_id),
+  );
+  const builderRunnerSeparated = Boolean(
+    identity &&
+      builderContractMutation.data?.data &&
+      ![
+        builderContractMutation.data.data.validated_by,
+        builderContractMutation.data.data.source_license_analyzed_by,
+        builderContractMutation.data.data.source_malware_analyzed_by,
+        builderContractMutation.data.data.source_vulnerability_analyzed_by,
+        builderContractMutation.data.data.source_static_analyzed_by,
+        builderContractMutation.data.data.source_authority_validated_by,
+        builderContractMutation.data.data.source_schema_validated_by,
+        builderContractMutation.data.data.source_content_scanned_by,
+        builderContractMutation.data.data.source_inventoried_by,
+        builderContractMutation.data.data.source_manifest_validated_by,
+        builderContractMutation.data.data.source_acquired_by,
+        builderContractMutation.data.data.source_custodied_by,
+        builderContractMutation.data.data.source_domain_reviewed_by,
+        builderContractMutation.data.data.source_security_reviewed_by,
+        builderContractMutation.data.data.source_lab_operated_by,
       ].includes(identity.subject_id),
   );
   const builderLabValidationMutation = useMutation({
@@ -7268,6 +7297,225 @@ export function App() {
                                                                     <strong>Contract boundaries</strong>
                                                                     <ul>
                                                                       {builderContractMutation.data.data.limitations.map(
+                                                                        (limitation) => (
+                                                                          <li key={limitation}>{limitation}</li>
+                                                                        ),
+                                                                      )}
+                                                                    </ul>
+                                                                  </div>
+                                                                </div>
+                                                              )}
+                                                              {builderContractMutation.data?.data
+                                                                .outcome === "passed" &&
+                                                                !builderRunnerSeparated &&
+                                                                !builderRunnerMutation.data && (
+                                                                  <div
+                                                                    className="workspace-message error-state"
+                                                                    role="alert"
+                                                                  >
+                                                                    <UserX size={20} />
+                                                                    <div>
+                                                                      <h3>
+                                                                        Independent runner validator required
+                                                                      </h3>
+                                                                      <p>
+                                                                        Contract and prior package actors cannot
+                                                                        run this package. Continue with a
+                                                                        different authorized MFA session.
+                                                                      </p>
+                                                                    </div>
+                                                                  </div>
+                                                                )}
+                                                              {builderContractMutation.data?.data
+                                                                .outcome === "passed" &&
+                                                                builderRunnerSeparated &&
+                                                                !builderRunnerMutation.data && (
+                                                                  <section className="mcp-builder-validation">
+                                                                    <div className="section-heading">
+                                                                      <div>
+                                                                        <p className="eyebrow">
+                                                                          ISOLATED RUNNER
+                                                                        </p>
+                                                                        <h3>
+                                                                          Exercise disconnected synthetic behavior
+                                                                        </h3>
+                                                                        <p>
+                                                                          Invoke every accepted capability with the
+                                                                          platform harness. Package tests, network,
+                                                                          credentials, targets, and models remain
+                                                                          unavailable.
+                                                                        </p>
+                                                                      </div>
+                                                                      <FlaskConical size={24} />
+                                                                    </div>
+                                                                    <label className="approval-check">
+                                                                      <input
+                                                                        type="checkbox"
+                                                                        checked={builderRunnerAcknowledged}
+                                                                        onChange={(event) =>
+                                                                          setBuilderRunnerAcknowledged(
+                                                                            event.target.checked,
+                                                                          )
+                                                                        }
+                                                                      />
+                                                                      <span>
+                                                                        I am the independent runner validator. This
+                                                                        executes only the fixed disconnected
+                                                                        synthetic harness and grants no runtime
+                                                                        authority.
+                                                                      </span>
+                                                                    </label>
+                                                                    <button
+                                                                      className="primary-button"
+                                                                      type="button"
+                                                                      disabled={
+                                                                        !builderRunnerAcknowledged ||
+                                                                        builderRunnerMutation.isPending
+                                                                      }
+                                                                      onClick={() => {
+                                                                        const report =
+                                                                          builderContractMutation.data?.data;
+                                                                        if (report) {
+                                                                          builderRunnerMutation.mutate(report);
+                                                                        }
+                                                                      }}
+                                                                    >
+                                                                      {builderRunnerMutation.isPending ? (
+                                                                        <RefreshCw
+                                                                          className="spin"
+                                                                          size={16}
+                                                                        />
+                                                                      ) : (
+                                                                        <Play size={16} />
+                                                                      )}
+                                                                      Run isolated validation
+                                                                    </button>
+                                                                  </section>
+                                                                )}
+                                                              {builderRunnerMutation.isError && (
+                                                                <div
+                                                                  className="workspace-message error-state"
+                                                                  role="alert"
+                                                                >
+                                                                  <AlertTriangle size={20} />
+                                                                  <div>
+                                                                    <h3>Runner validation unavailable</h3>
+                                                                    <p>
+                                                                      Exact lineage, archive integrity, process
+                                                                      isolation, synthetic behavior, or cleanup did
+                                                                      not reconcile.
+                                                                    </p>
+                                                                  </div>
+                                                                </div>
+                                                              )}
+                                                              {builderRunnerMutation.data?.data && (
+                                                                <div className="mcp-builder-validation">
+                                                                  <div className="section-heading">
+                                                                    <div>
+                                                                      <p className="eyebrow">
+                                                                        IMMUTABLE RUNNER REPORT
+                                                                      </p>
+                                                                      <strong>
+                                                                        {
+                                                                          builderRunnerMutation.data.data
+                                                                            .validation_id
+                                                                        }
+                                                                      </strong>
+                                                                      <code>
+                                                                        {
+                                                                          builderRunnerMutation.data.data
+                                                                            .canonical_digest
+                                                                        }
+                                                                      </code>
+                                                                    </div>
+                                                                    <span
+                                                                      className={`state-badge ${
+                                                                        builderRunnerMutation.data.data.outcome ===
+                                                                        "passed"
+                                                                          ? "healthy"
+                                                                          : "critical"
+                                                                      }`}
+                                                                    >
+                                                                      {builderRunnerMutation.data.data.outcome ===
+                                                                      "passed" ? (
+                                                                        <CheckCircle2 size={14} />
+                                                                      ) : (
+                                                                        <AlertTriangle size={14} />
+                                                                      )}
+                                                                      {
+                                                                        builderRunnerMutation.data.data.outcome
+                                                                      }
+                                                                    </span>
+                                                                  </div>
+                                                                  <div className="mcp-builder-facts">
+                                                                    <div>
+                                                                      <span>Capabilities</span>
+                                                                      <strong>
+                                                                        {builderRunnerMutation.data.data.capability_count.toLocaleString()}
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Invoked</span>
+                                                                      <strong>
+                                                                        {builderRunnerMutation.data.data.invoked_capability_count.toLocaleString()}
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Fail closed</span>
+                                                                      <strong>
+                                                                        {builderRunnerMutation.data.data.fail_closed_count.toLocaleString()}
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Bounded results</span>
+                                                                      <strong>
+                                                                        {builderRunnerMutation.data.data.bounded_literal_count.toLocaleString()}
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Runtime</span>
+                                                                      <strong>
+                                                                        {
+                                                                          builderRunnerMutation.data.data
+                                                                            .runtime_version
+                                                                        }
+                                                                      </strong>
+                                                                    </div>
+                                                                    <div>
+                                                                      <span>Workspace</span>
+                                                                      <strong>
+                                                                        {builderRunnerMutation.data.data
+                                                                          .workspace_removed
+                                                                          ? "Removed"
+                                                                          : "Unresolved"}
+                                                                      </strong>
+                                                                    </div>
+                                                                  </div>
+                                                                  <div className="mcp-builder-validation-checks">
+                                                                    {builderRunnerMutation.data.data.checks.map(
+                                                                      (check) => (
+                                                                        <article
+                                                                          key={check.code}
+                                                                          data-state={check.state}
+                                                                        >
+                                                                          {check.state === "passed" ? (
+                                                                            <CheckCircle2 size={16} />
+                                                                          ) : (
+                                                                            <AlertTriangle size={16} />
+                                                                          )}
+                                                                          <div>
+                                                                            <strong>{check.code}</strong>
+                                                                            <p>{check.summary}</p>
+                                                                          </div>
+                                                                          <span>{check.state}</span>
+                                                                        </article>
+                                                                      ),
+                                                                    )}
+                                                                  </div>
+                                                                  <div className="mcp-builder-limitations">
+                                                                    <strong>Runner boundaries</strong>
+                                                                    <ul>
+                                                                      {builderRunnerMutation.data.data.limitations.map(
                                                                         (limitation) => (
                                                                           <li key={limitation}>{limitation}</li>
                                                                         ),

@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-065 |
 | Title | Governed connector isolated runner validation foundation |
-| Status | In Progress |
+| Status | In Review |
 | Branch | `agent/mcp-runner-validation` |
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-021 |
 | Last Updated | 2026-08-05 |
-| Next Action | Implement the exact-package isolated runner, immutable report, API, web workflow, tests, and evidence |
+| Next Action | Publish the implementation PR, pass CI, merge, and record closure evidence |
 
 ### ATLAS-IMP-065 Scope Rationale
 
@@ -66,7 +66,26 @@
 
 ### ATLAS-IMP-065 Validation Evidence
 
-- Pending implementation.
+- Backend Ruff formatting passed across 559 files and lint passed; strict type checking passed across
+  463 source files.
+- The full backend suite passed 534 tests with 3 expected Windows symlink skips and one Alembic head
+  at `20260805_0037`.
+- A real Python 3.12 isolated child imported the exact handoff package, denied network/process/
+  native-library/filesystem-write probes, invoked every capability with disconnected synthetic
+  evidence, returned bounded aggregate output, and removed its ephemeral workspace.
+- Timeout produced immutable failed evidence with promotion blocked and no runtime authority.
+  Separation of duties, tampered source, idempotency, concurrency, audit-before-persist, and
+  memory/PostgreSQL equivalence passed.
+- Live in-process HTTP checks returned the expected missing-CSRF `403`, authorized creation `201`,
+  immutable read `200`, and `no-store` responses with minimized payloads.
+- Frontend lint and type checking passed; 36 tests and the production build passed. Integrated web
+  coverage exercised independent acknowledgement, exact minimized request, safe aggregate runner
+  evidence, cleanup state, and the absence of installation/execution controls. The existing bundle
+  size advisory remains non-blocking.
+- Playwright/Edge inspection at 1440x1000 and 390x844 found no horizontal overflow or page
+  exceptions in the live sign-in boundary. The unauthenticated identity probe returned the expected
+  `401`; the desktop favicon request returned a non-functional `404`.
+- GitHub PR CI, merge, and main-branch CI evidence remain pending until publication.
 
 ### ATLAS-IMP-064 Scope Rationale
 
