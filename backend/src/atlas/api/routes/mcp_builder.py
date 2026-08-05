@@ -22,12 +22,16 @@ from atlas.api.mcp_builder_schemas import (
     McpBuilderProjectData,
     McpBuilderProjectInput,
     McpBuilderProjectResponse,
+    McpBuilderSecurityReviewData,
+    McpBuilderSecurityReviewInput,
+    McpBuilderSecurityReviewResponse,
     McpBuilderValidationData,
     McpBuilderValidationInput,
     McpBuilderValidationResponse,
     design_capability_decision,
     design_entity_mapping,
     domain_capability_decision,
+    security_control_assessment,
 )
 from atlas.api.schemas import ResponseMeta
 from atlas.api.security import (
@@ -39,6 +43,8 @@ from atlas.api.security import (
     authorize_mcp_builder_generation_create,
     authorize_mcp_builder_generation_read,
     authorize_mcp_builder_read,
+    authorize_mcp_builder_security_review_create,
+    authorize_mcp_builder_security_review_read,
     authorize_mcp_builder_validation_create,
     authorize_mcp_builder_validation_read,
     browser_session_subject,
@@ -51,6 +57,7 @@ from atlas.modules.mcp_builder.domain.design_review import McpBuilderDesignCheck
 from atlas.modules.mcp_builder.domain.domain_review import McpBuilderDomainReview
 from atlas.modules.mcp_builder.domain.generation import McpBuilderGeneration
 from atlas.modules.mcp_builder.domain.models import McpBuilderProject
+from atlas.modules.mcp_builder.domain.security_review import McpBuilderSecurityReview
 from atlas.modules.mcp_builder.domain.validation import McpBuilderValidation
 
 router = APIRouter(prefix="/mcp-builder/projects", tags=["mcp-builder"])
@@ -133,6 +140,18 @@ def _domain_review_response(
     response.headers["Cache-Control"] = "no-store"
     return McpBuilderDomainReviewResponse(
         data=McpBuilderDomainReviewData.from_domain(review),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+def _security_review_response(
+    review: McpBuilderSecurityReview, request: Request, response: Response
+) -> McpBuilderSecurityReviewResponse:
+    response.headers["Cache-Control"] = "no-store"
+    return McpBuilderSecurityReviewResponse(
+        data=McpBuilderSecurityReviewData.from_domain(review),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),
@@ -428,3 +447,58 @@ async def get_mcp_builder_domain_review(
     except McpBuilderError as error:
         _raise(error)
     return _domain_review_response(review, request, response)
+
+
+@router.post(
+    "/{project_id}/security-reviews",
+    response_model=McpBuilderSecurityReviewResponse,
+    status_code=201,
+)
+async def create_mcp_builder_security_review(
+    project_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    payload: McpBuilderSecurityReviewInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_mcp_builder_security_review_create)
+    ],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> McpBuilderSecurityReviewResponse:
+    service: McpBuilderService = request.app.state.mcp_builder_service
+    try:
+        review = await service.create_security_review(
+            actor=subject,
+            project_id=project_id,
+            idempotency_key=idempotency_key,
+            correlation_id=str(request.state.correlation_id),
+            control_assessments=tuple(
+                security_control_assessment(item) for item in payload.control_assessments
+            ),
+            **payload.model_dump(exclude={"schema_version", "control_assessments"}),
+        )
+    except McpBuilderError as error:
+        _raise(error)
+    return _security_review_response(review, request, response)
+
+
+@router.get("/{project_id}/security-review", response_model=McpBuilderSecurityReviewResponse)
+async def get_mcp_builder_security_review(
+    project_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_mcp_builder_security_review_read)
+    ],
+) -> McpBuilderSecurityReviewResponse:
+    service: McpBuilderService = request.app.state.mcp_builder_service
+    try:
+        review = await service.get_security_review(
+            actor=subject,
+            project_id=project_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except McpBuilderError as error:
+        _raise(error)
+    return _security_review_response(review, request, response)
