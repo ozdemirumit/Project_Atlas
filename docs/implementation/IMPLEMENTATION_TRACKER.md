@@ -8,10 +8,10 @@
 | Title | Governed connector configuration and capability schema semantics foundation |
 | Status | In Progress |
 | Branch | `agent/mcp-schema-semantics-validation` |
-| Pull Request | Not opened |
+| Pull Request | [#70](https://github.com/ozdemirumit/Project_Atlas/pull/70) |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-014 |
 | Last Updated | 2026-08-05 |
-| Next Action | Implement ATLAS-IMP-058 backend, API, persistence, web, tests, and validation evidence |
+| Next Action | Pass PR #70 CI, merge, and close ATLAS-IMP-058 on `main` |
 
 ### ATLAS-IMP-058 Scope Rationale
 
