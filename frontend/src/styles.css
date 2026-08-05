@@ -869,6 +869,16 @@ textarea:focus-visible {
   border-top: 1px solid #cfdad6;
 }
 
+.mcp-builder-candidate-handoff,
+.mcp-builder-acquisition-result {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+  margin-top: 4px;
+  padding-top: 18px;
+  border-top: 1px solid #cfdad6;
+}
+
 .mcp-builder-domain-review-form,
 .mcp-builder-domain-result,
 .mcp-builder-domain-decisions,

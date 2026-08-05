@@ -406,6 +406,51 @@ class McpBuilderCandidateHandoffModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class ConnectorPackageAcquisitionModel(Base):
+    __tablename__ = "connector_package_acquisitions"
+    __table_args__ = (
+        CheckConstraint("version = 1", name="ck_connector_package_acquisitions_version"),
+        UniqueConstraint(
+            "source_handoff_id", name="uq_connector_package_acquisitions_source_handoff"
+        ),
+        UniqueConstraint(
+            "acquired_by",
+            "idempotency_key",
+            name="uq_connector_package_acquisitions_actor_idempotency",
+        ),
+    )
+
+    acquisition_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_handoff_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_handoff_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_project_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_custodied_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_domain_reviewed_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_security_reviewed_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_lab_operated_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    acquired_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    acquisition_profile: Mapped[str] = mapped_column(String(128), nullable=False)
+    archive_contract_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    package_filename: Mapped[str] = mapped_column(String(132), nullable=False)
+    package_digest: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    package_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    publisher_identity: Mapped[str] = mapped_column(String(128), nullable=False)
+    signature_state: Mapped[str] = mapped_column(String(32), nullable=False)
+    attestation_state: Mapped[str] = mapped_column(String(32), nullable=False)
+    capabilities: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    limitations: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class RuntimeMetadata(Base):
     __tablename__ = "platform_runtime_metadata"
     __table_args__ = (
