@@ -8,10 +8,10 @@
 | Title | Governed connector package malware analysis foundation |
 | Status | In Progress |
 | Branch | `agent/mcp-malware-analysis` |
-| Pull Request | Not opened |
+| Pull Request | [#74](https://github.com/ozdemirumit/Project_Atlas/pull/74) |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-018 |
 | Last Updated | 2026-08-05 |
-| Next Action | Commit the verified malware-analysis slice, open its pull request, and complete GitHub CI |
+| Next Action | Complete pull-request CI, merge IMP-062, and verify post-merge `main` CI |
 
 ### ATLAS-IMP-062 Scope Rationale
 
