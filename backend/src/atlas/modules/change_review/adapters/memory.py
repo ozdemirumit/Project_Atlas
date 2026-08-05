@@ -17,6 +17,12 @@ class InMemoryChangeReviewPacketRepository:
     async def get(self, *, actor_id: str, idempotency_key: str) -> UpgradeChangeReviewPacket | None:
         return self._records.get((actor_id, idempotency_key))
 
+    async def get_by_id(self, *, packet_id: str) -> UpgradeChangeReviewPacket | None:
+        return next(
+            (record for record in self._records.values() if record.packet_id == packet_id),
+            None,
+        )
+
     async def add(self, record: UpgradeChangeReviewPacket) -> bool:
         async with self._lock:
             key = (record.actor_id, record.idempotency_key)

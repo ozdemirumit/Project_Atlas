@@ -59,6 +59,9 @@ UPGRADE_READINESS_PREVIEW = "platform.upgrade.readiness-preview"
 UPGRADE_ROLLBACK_SIMULATE = "platform.upgrade.simulate"
 UPGRADE_CHANGE_REVIEW_PREVIEW = "platform.upgrade-change-review.preview"
 UPGRADE_CHANGE_REVIEW_CREATE = "platform.upgrade-change-review.create"
+UPGRADE_HUMAN_REVIEW_CREATE = "platform.upgrade-change-human-review.create"
+UPGRADE_HUMAN_REVIEW_READ = "platform.upgrade-change-human-review.read"
+UPGRADE_HUMAN_REVIEW_DECIDE = "platform.upgrade-change-human-review.decide"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -317,6 +320,19 @@ def upgrade_change_review_scope(
         site_id="site.local",
         domain_id="domain.platform",
         resource_id="resource.platform.upgrade-change-review",
+        capability_class=capability_class,
+    )
+
+
+def upgrade_human_review_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.platform",
+        resource_id="resource.platform.upgrade-change-human-review",
         capability_class=capability_class,
     )
 
@@ -634,6 +650,18 @@ def build_development_authorization_service(
             permission_id=UPGRADE_CHANGE_REVIEW_CREATE,
             description="Create one confirmed local upgrade change review packet.",
         ),
+        PermissionDefinition(
+            permission_id=UPGRADE_HUMAN_REVIEW_CREATE,
+            description="Create one exact-packet multi-stage human review request.",
+        ),
+        PermissionDefinition(
+            permission_id=UPGRADE_HUMAN_REVIEW_READ,
+            description="Read one exact-scope upgrade human review request.",
+        ),
+        PermissionDefinition(
+            permission_id=UPGRADE_HUMAN_REVIEW_DECIDE,
+            description="Record one eligible human decision for an exact review stage.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -675,6 +703,9 @@ def build_development_authorization_service(
                 UPGRADE_ROLLBACK_SIMULATE,
                 UPGRADE_CHANGE_REVIEW_PREVIEW,
                 UPGRADE_CHANGE_REVIEW_CREATE,
+                UPGRADE_HUMAN_REVIEW_CREATE,
+                UPGRADE_HUMAN_REVIEW_READ,
+                UPGRADE_HUMAN_REVIEW_DECIDE,
             }
         ),
     )
@@ -919,6 +950,42 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=upgrade_change_review_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.upgrade-human-review-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=upgrade_human_review_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.upgrade-human-review-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=upgrade_human_review_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.upgrade-human-review-decide",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=upgrade_human_review_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C2_DIAGNOSTIC,

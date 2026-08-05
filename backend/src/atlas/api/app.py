@@ -69,10 +69,17 @@ from atlas.modules.authorization.application.bootstrap import (
     build_development_authorization_service,
 )
 from atlas.modules.authorization.application.service import AuthorizationService
+from atlas.modules.change_review.adapters.human_review_memory import (
+    InMemoryHumanReviewRepository,
+)
+from atlas.modules.change_review.adapters.human_review_postgres import (
+    PostgreSQLHumanReviewRepository,
+)
 from atlas.modules.change_review.adapters.memory import InMemoryChangeReviewPacketRepository
 from atlas.modules.change_review.adapters.postgres import (
     PostgreSQLChangeReviewPacketRepository,
 )
+from atlas.modules.change_review.application.human_review_service import HumanReviewService
 from atlas.modules.change_review.application.service import ChangeReviewService
 from atlas.modules.graph.adapters.synthetic import build_synthetic_graph_snapshot
 from atlas.modules.graph.application.engine import InMemoryGraphImpactAnalyzer
@@ -269,6 +276,7 @@ def create_app(
     recovery_service: RecoveryService | None = None,
     upgrade_service: UpgradeService | None = None,
     change_review_service: ChangeReviewService | None = None,
+    human_review_service: HumanReviewService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -641,6 +649,21 @@ def create_app(
             environment_id=f"environment.{resolved_settings.environment}",
             site_id="site.local",
         )
+    if human_review_service is not None:
+        resolved_human_review_service = human_review_service
+    else:
+        human_review_repository = (
+            PostgreSQLHumanReviewRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryHumanReviewRepository()
+        )
+        resolved_human_review_service = HumanReviewService(
+            packet_repository=resolved_change_review_service.packet_repository,
+            review_repository=human_review_repository,
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -807,6 +830,7 @@ def create_app(
         app.state.recovery_service = resolved_recovery_service
         app.state.upgrade_service = resolved_upgrade_service
         app.state.change_review_service = resolved_change_review_service
+        app.state.human_review_service = resolved_human_review_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -819,6 +843,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_human_review_service.close()
         await resolved_change_review_service.close()
         await resolved_upgrade_service.close()
         await resolved_recovery_service.close()

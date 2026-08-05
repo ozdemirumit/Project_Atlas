@@ -3090,6 +3090,55 @@ describe("deployment configuration preview", () => {
         workflow_executed: false,
       },
     };
+    const humanReview = {
+      data: {
+        review_id: "change-human-review.ui-001",
+        schema_version: "atlas.upgrade-change-human-review.v1",
+        version: 1,
+        state: "pending",
+        packet_id: changeReviewPacket.data.packet_id,
+        packet_digest: changeReviewPacket.data.packet_digest,
+        requester_id: "subject.development.operator",
+        risk_class: "risk.medium",
+        change_class: "change.reviewed-standard",
+        impacted_service_ids: changeReviewPacket.data.impacted_service_ids,
+        evidence_digests: changeReviewPacket.data.evidence_digests,
+        proposed_window_start: changeReviewPacket.data.proposed_window_start,
+        proposed_window_end: changeReviewPacket.data.proposed_window_end,
+        justification: "Route the exact packet through separated accountable review",
+        required_role_ids: changeReviewPacket.data.owner_role_ids,
+        stages: changeReviewPacket.data.owner_role_ids.map((roleId, index) => ({
+          stage_id: [
+            "stage.platform-technical",
+            "stage.service-owner",
+            "stage.security-review",
+            "stage.change-authority",
+          ][index],
+          sequence: index + 1,
+          required_role_id: roleId,
+          quorum: 1,
+          state: index === 0 ? "pending" : "waiting",
+          packet_digest: changeReviewPacket.data.packet_digest,
+          reviewer_id: null,
+          decision_id: null,
+          decided_at: null,
+          rationale: null,
+        })),
+        decisions: [],
+        canonical_digest: "1".repeat(64),
+        created_at: "2026-08-04T16:15:00Z",
+        updated_at: "2026-08-04T16:15:00Z",
+        expires_at: "2026-08-04T20:15:00Z",
+        reused: false,
+        human_review_completed: false,
+        approval_granted: false,
+        itsm_dispatched: false,
+        handoff_issued: false,
+        workflow_executed: false,
+        execution_authorized: false,
+        infrastructure_mutation_performed: false,
+      },
+    };
     const requests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const recoveryRequests: Array<{ path: string; body: string }> = [];
     const upgradeRequests: Array<{ path: string; body: string; idempotencyKey: string | null }> = [];
@@ -3223,6 +3272,18 @@ describe("deployment configuration preview", () => {
           new Response(JSON.stringify(changeReviewPacket), { status: 200 }),
         );
       }
+      if (
+        url.endsWith(
+          `/platform/upgrade-change-reviews/${changeReviewPacket.data.packet_id}/human-reviews`,
+        )
+      ) {
+        changeReviewRequests.push({
+          path: url,
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: new Headers(init?.headers).get("Idempotency-Key"),
+        });
+        return Promise.resolve(new Response(JSON.stringify(humanReview), { status: 200 }));
+      }
       return Promise.resolve(new Response(JSON.stringify({ code: "denied" }), { status: 403 }));
     });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -3320,6 +3381,31 @@ describe("deployment configuration preview", () => {
     expect(changeReviewRequests[1]?.body).not.toContain("execution_authorized");
     expect(changeReviewRequests[1]?.idempotencyKey).toBe(
       "change-review.19.support-request-001",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Review routing" }));
+    expect(await screen.findByText("Confirm separated human review")).toBeVisible();
+    expect(screen.getByText(/four distinct eligible humans/i)).toBeVisible();
+    const reviewConfirm = screen.getByRole("button", { name: "Create review stages" });
+    expect(reviewConfirm).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Review routing justification"), {
+      target: { value: "Route this exact packet through separated accountable review." },
+    });
+    fireEvent.click(
+      screen.getByLabelText(
+        "I acknowledge review completion will not authorize execution.",
+      ),
+    );
+    fireEvent.click(reviewConfirm);
+
+    expect(await screen.findByText("Separated human review created")).toBeVisible();
+    expect(screen.getByText("Requester is ineligible to self-review")).toBeVisible();
+    expect(screen.getAllByText("waiting")).toHaveLength(3);
+    expect(changeReviewRequests).toHaveLength(3);
+    expect(changeReviewRequests[2]?.body).toContain('"acknowledged_no_authority":true');
+    expect(changeReviewRequests[2]?.body).not.toContain("execution_authorized");
+    expect(changeReviewRequests[2]?.idempotencyKey).toBe(
+      "human-review.19.support-request-001",
     );
   });
 });

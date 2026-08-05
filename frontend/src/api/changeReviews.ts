@@ -86,6 +86,60 @@ export type UpgradeChangeReviewPacket = {
   infrastructure_mutation_performed: false;
 };
 
+export type UpgradeHumanReviewStage = {
+  stage_id: string;
+  sequence: number;
+  required_role_id: string;
+  quorum: 1;
+  state: "waiting" | "pending" | "approved" | "needs_evidence" | "deferred" | "rejected";
+  packet_digest: string;
+  reviewer_id: string | null;
+  decision_id: string | null;
+  decided_at: string | null;
+  rationale: string | null;
+};
+
+export type UpgradeHumanReview = {
+  review_id: string;
+  schema_version: "atlas.upgrade-change-human-review.v1";
+  version: number;
+  state: "pending" | "needs_evidence" | "deferred" | "rejected" | "completed" | "expired";
+  packet_id: string;
+  packet_digest: string;
+  requester_id: string;
+  risk_class: string;
+  change_class: string;
+  impacted_service_ids: string[];
+  evidence_digests: string[];
+  proposed_window_start: string;
+  proposed_window_end: string;
+  justification: string;
+  required_role_ids: string[];
+  stages: UpgradeHumanReviewStage[];
+  decisions: Array<{
+    decision_id: string;
+    stage_id: string;
+    request_version: number;
+    outcome: "approve" | "reject" | "needs_evidence" | "defer";
+    reviewer_id: string;
+    reviewer_role_id: string;
+    rationale: string;
+    decided_at: string;
+  }>;
+  canonical_digest: string;
+  created_at: string;
+  updated_at: string;
+  expires_at: string;
+  reused: boolean;
+  human_review_completed: boolean;
+  approval_granted: false;
+  itsm_dispatched: false;
+  handoff_issued: false;
+  workflow_executed: false;
+  execution_authorized: false;
+  infrastructure_mutation_performed: false;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -139,6 +193,44 @@ function isPacket(value: unknown): value is { data: UpgradeChangeReviewPacket } 
     item.itsm_dispatched === false &&
     item.notification_sent === false &&
     item.workflow_executed === false &&
+    item.infrastructure_mutation_performed === false
+  );
+}
+
+function isHumanReview(value: unknown): value is { data: UpgradeHumanReview } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const item = value.data;
+  const safeStates = ["pending", "needs_evidence", "deferred", "rejected", "completed", "expired"];
+  return (
+    item.schema_version === "atlas.upgrade-change-human-review.v1" &&
+    typeof item.review_id === "string" &&
+    typeof item.packet_id === "string" &&
+    typeof item.packet_digest === "string" &&
+    typeof item.canonical_digest === "string" &&
+    typeof item.state === "string" &&
+    safeStates.includes(item.state) &&
+    Array.isArray(item.impacted_service_ids) &&
+    item.impacted_service_ids.length === 2 &&
+    Array.isArray(item.evidence_digests) &&
+    item.evidence_digests.length === 4 &&
+    Array.isArray(item.required_role_ids) &&
+    item.required_role_ids.length === 4 &&
+    Array.isArray(item.stages) &&
+    item.stages.length === 4 &&
+    item.stages.every(
+      (stage) =>
+        isRecord(stage) &&
+        typeof stage.stage_id === "string" &&
+        typeof stage.required_role_id === "string" &&
+        stage.quorum === 1 &&
+        stage.packet_digest === item.packet_digest,
+    ) &&
+    Array.isArray(item.decisions) &&
+    item.approval_granted === false &&
+    item.itsm_dispatched === false &&
+    item.handoff_issued === false &&
+    item.workflow_executed === false &&
+    item.execution_authorized === false &&
     item.infrastructure_mutation_performed === false
   );
 }
@@ -213,5 +305,75 @@ export async function createUpgradeChangeReviewPacket(input: {
   if (!response.ok) throw new Error(`Change review creation failed with ${response.status}`);
   const payload: unknown = await response.json();
   if (!isPacket(payload)) throw new Error("Change review creation returned unsafe data");
+  return payload;
+}
+
+export async function createUpgradeHumanReview(
+  packet: UpgradeChangeReviewPacket,
+  justification: string,
+) {
+  const response = await apiFetch(
+    `/api/v1/platform/upgrade-change-reviews/${encodeURIComponent(packet.packet_id)}/human-reviews`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": `human-review.${packet.source_run_version}.${nonce()}`,
+      },
+      body: JSON.stringify({
+        schema_version: "atlas.upgrade-change-human-review-create-request.v1",
+        packet_id: packet.packet_id,
+        packet_digest: packet.packet_digest,
+        justification,
+        confirmed: true,
+        acknowledged_no_authority: true,
+      }),
+    },
+  );
+  if (!response.ok) throw new Error(`Human review creation failed with ${response.status}`);
+  const payload: unknown = await response.json();
+  if (!isHumanReview(payload)) throw new Error("Human review creation returned unsafe data");
+  return payload;
+}
+
+export async function getUpgradeHumanReview(reviewId: string) {
+  const response = await apiFetch(
+    `/api/v1/platform/upgrade-change-reviews/human-reviews/${encodeURIComponent(reviewId)}`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (!response.ok) throw new Error(`Human review read failed with ${response.status}`);
+  const payload: unknown = await response.json();
+  if (!isHumanReview(payload)) throw new Error("Human review read returned unsafe data");
+  return payload;
+}
+
+export async function decideUpgradeHumanReview(input: {
+  review: UpgradeHumanReview;
+  stageId: string;
+  outcome: "approve" | "reject" | "needs_evidence" | "defer";
+  rationale: string;
+}) {
+  const response = await apiFetch(
+    `/api/v1/platform/upgrade-change-reviews/human-reviews/${encodeURIComponent(input.review.review_id)}/decisions`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": `human-review-decision.${input.review.version}.${nonce()}`,
+      },
+      body: JSON.stringify({
+        schema_version: "atlas.upgrade-change-human-review-decision-request.v1",
+        stage_id: input.stageId,
+        outcome: input.outcome,
+        rationale: input.rationale,
+        expected_version: input.review.version,
+      }),
+    },
+  );
+  if (!response.ok) throw new Error(`Human review decision failed with ${response.status}`);
+  const payload: unknown = await response.json();
+  if (!isHumanReview(payload)) throw new Error("Human review decision returned unsafe data");
   return payload;
 }
