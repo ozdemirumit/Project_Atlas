@@ -113,6 +113,8 @@ CONNECTOR_PACKAGE_VULNERABILITY_ANALYSIS_CREATE = "connectors.package-vulnerabil
 CONNECTOR_PACKAGE_VULNERABILITY_ANALYSIS_READ = "connectors.package-vulnerability-analyses.read"
 CONNECTOR_PACKAGE_MALWARE_ANALYSIS_CREATE = "connectors.package-malware-analyses.create"
 CONNECTOR_PACKAGE_MALWARE_ANALYSIS_READ = "connectors.package-malware-analyses.read"
+CONNECTOR_PACKAGE_LICENSE_ANALYSIS_CREATE = "connectors.package-license-analyses.create"
+CONNECTOR_PACKAGE_LICENSE_ANALYSIS_READ = "connectors.package-license-analyses.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -527,6 +529,19 @@ def connector_package_malware_analysis_scope(
         site_id="site.local",
         domain_id="domain.connectors",
         resource_id="resource.connector.package-malware-analyses",
+        capability_class=capability_class,
+    )
+
+
+def connector_package_license_analysis_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.connectors",
+        resource_id="resource.connector.package-license-analyses",
         capability_class=capability_class,
     )
 
@@ -1004,6 +1019,14 @@ def build_development_authorization_service(
             permission_id=CONNECTOR_PACKAGE_MALWARE_ANALYSIS_READ,
             description="Read one immutable connector package malware report.",
         ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_PACKAGE_LICENSE_ANALYSIS_CREATE,
+            description="Analyze represented package licenses against trusted policy.",
+        ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_PACKAGE_LICENSE_ANALYSIS_READ,
+            description="Read one immutable connector package license policy report.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -1085,6 +1108,8 @@ def build_development_authorization_service(
                 CONNECTOR_PACKAGE_VULNERABILITY_ANALYSIS_READ,
                 CONNECTOR_PACKAGE_MALWARE_ANALYSIS_CREATE,
                 CONNECTOR_PACKAGE_MALWARE_ANALYSIS_READ,
+                CONNECTOR_PACKAGE_LICENSE_ANALYSIS_CREATE,
+                CONNECTOR_PACKAGE_LICENSE_ANALYSIS_READ,
             }
         ),
     )
@@ -1649,6 +1674,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=connector_package_malware_analysis_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-package-license-analysis-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_package_license_analysis_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-package-license-analysis-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_package_license_analysis_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,

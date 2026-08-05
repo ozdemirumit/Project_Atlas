@@ -171,6 +171,8 @@ class PythonScaffoldGenerator:
             '"""Generated capability drafts. No module is imported automatically."""\n\n'
             f"GENERATED_CAPABILITY_MODULES = {tuple(capability_exports)!r}\n"
         )
+        source_license_id = json.dumps(project.license_id, ensure_ascii=True)
+        source_redistribution_allowed = str(project.redistribution_allowed).lower()
         pyproject = (
             "[build-system]\n"
             'requires = ["setuptools>=75,<76"]\n'
@@ -180,7 +182,12 @@ class PythonScaffoldGenerator:
             'version = "0.1.0.dev0"\n'
             'description = "Quarantined Project Atlas connector review scaffold"\n'
             'requires-python = ">=3.12,<3.13"\n'
+            'license = "LicenseRef-Atlas-Internal-Generated"\n'
             "dependencies = []\n\n"
+            "[tool.atlas.licensing]\n"
+            f"source-license-id = {source_license_id}\n"
+            f"source-redistribution-allowed = {source_redistribution_allowed}\n"
+            'distribution-mode = "internal"\n\n'
             "[tool.ruff]\n"
             'target-version = "py312"\n'
             "line-length = 100\n\n"

@@ -40,6 +40,7 @@ from atlas.api.routes import (
     identity,
     identity_governance,
     investigations,
+    license_analyses,
     malware_analyses,
     mcp_builder,
     platform,
@@ -121,6 +122,13 @@ from atlas.modules.connectors.adapters.content_policy_scan_memory import (
 from atlas.modules.connectors.adapters.content_policy_scan_postgres import (
     PostgreSQLPackageContentPolicyScanRepository,
 )
+from atlas.modules.connectors.adapters.license_analysis_memory import (
+    InMemoryPackageLicenseAnalysisRepository,
+    StaticLicensePolicySnapshotProvider,
+)
+from atlas.modules.connectors.adapters.license_analysis_postgres import (
+    PostgreSQLPackageLicenseAnalysisRepository,
+)
 from atlas.modules.connectors.adapters.malware_analysis_memory import (
     InMemoryPackageMalwareAnalysisRepository,
     StaticMalwareDefinitionSnapshotProvider,
@@ -164,6 +172,10 @@ from atlas.modules.connectors.application.authority_behavior_validation import (
     PackageAuthorityBehaviorValidationService,
 )
 from atlas.modules.connectors.application.content_policy_scan import PackageContentPolicyScanService
+from atlas.modules.connectors.application.license_analysis import (
+    PackageLicenseAnalysisService,
+    build_bootstrap_license_policy_snapshot,
+)
 from atlas.modules.connectors.application.malware_analysis import (
     PackageMalwareAnalysisService,
     build_bootstrap_definition_snapshot,
@@ -446,6 +458,7 @@ def create_app(
     | None = None,
     package_vulnerability_analysis_service: PackageVulnerabilityAnalysisService | None = None,
     package_malware_analysis_service: PackageMalwareAnalysisService | None = None,
+    package_license_analysis_service: PackageLicenseAnalysisService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -1120,6 +1133,33 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if package_license_analysis_service is not None:
+        resolved_package_license_analysis_service = package_license_analysis_service
+    else:
+        package_license_analysis_repository = (
+            PostgreSQLPackageLicenseAnalysisRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryPackageLicenseAnalysisRepository()
+        )
+        license_policy_snapshot = build_bootstrap_license_policy_snapshot(
+            organization_id=resolved_settings.development_organization_id,
+            environment_id=f"environment.{resolved_settings.environment}",
+            now=datetime.now(UTC),
+        )
+        resolved_package_license_analysis_service = PackageLicenseAnalysisService(
+            repository=package_license_analysis_repository,
+            malware_source=resolved_package_malware_analysis_service.repository,
+            inventory_source=(
+                resolved_package_schema_semantics_validation_service.inventory_source
+            ),
+            acquisition_source=(
+                resolved_package_schema_semantics_validation_service.acquisition_source
+            ),
+            archive_source=(resolved_package_schema_semantics_validation_service.archive_source),
+            policy_provider=StaticLicensePolicySnapshotProvider(license_policy_snapshot),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -1308,6 +1348,7 @@ def create_app(
             resolved_package_vulnerability_analysis_service
         )
         app.state.package_malware_analysis_service = resolved_package_malware_analysis_service
+        app.state.package_license_analysis_service = resolved_package_license_analysis_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -1320,6 +1361,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_package_license_analysis_service.close()
         await resolved_package_malware_analysis_service.close()
         await resolved_package_vulnerability_analysis_service.close()
         await resolved_package_static_dependency_analysis_service.close()
@@ -1398,6 +1440,7 @@ def create_app(
     app.include_router(static_dependency_analyses.router, prefix="/api/v1")
     app.include_router(vulnerability_analyses.router, prefix="/api/v1")
     app.include_router(malware_analyses.router, prefix="/api/v1")
+    app.include_router(license_analyses.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
