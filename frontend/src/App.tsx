@@ -34,6 +34,7 @@ import {
   PanelRightClose,
   Play,
   RefreshCw,
+  ScanSearch,
   Search,
   Send,
   Server,
@@ -117,6 +118,7 @@ import {
   inventoryConnectorPackage,
   scanConnectorPackageContent,
   validateConnectorPackage,
+  validateConnectorPackageAuthorityBehavior,
   validateConnectorPackageSchemaSemantics,
 } from "./api/connectors";
 import {
@@ -521,6 +523,8 @@ export function App() {
     useState(false);
   const [builderSchemaSemanticsAcknowledged, setBuilderSchemaSemanticsAcknowledged] =
     useState(false);
+  const [builderAuthorityBehaviorAcknowledged, setBuilderAuthorityBehaviorAcknowledged] =
+    useState(false);
   const [builderSelectedGeneratedFile, setBuilderSelectedGeneratedFile] = useState("");
   const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
     Record<string, McpBuilderDesignDecision>
@@ -564,6 +568,10 @@ export function App() {
     mutationFn: validateConnectorPackageSchemaSemantics,
     onSuccess: () => setBuilderSchemaSemanticsAcknowledged(false),
   });
+  const builderAuthorityBehaviorMutation = useMutation({
+    mutationFn: validateConnectorPackageAuthorityBehavior,
+    onSuccess: () => setBuilderAuthorityBehaviorAcknowledged(false),
+  });
   const builderCandidateArchiveMutation = useMutation({
     mutationFn: downloadMcpBuilderCandidateArchive,
     onSuccess: ({ blob, filename }) => {
@@ -585,12 +593,14 @@ export function App() {
     builderPackageInventoryMutation.reset();
     builderContentPolicyScanMutation.reset();
     builderSchemaSemanticsMutation.reset();
+    builderAuthorityBehaviorMutation.reset();
     setBuilderCandidateHandoffAcknowledged(false);
     setBuilderPackageAcquisitionAcknowledged(false);
     setBuilderPackageValidationAcknowledged(false);
     setBuilderPackageInventoryAcknowledged(false);
     setBuilderContentPolicyScanAcknowledged(false);
     setBuilderSchemaSemanticsAcknowledged(false);
+    setBuilderAuthorityBehaviorAcknowledged(false);
   };
   const builderPackageValidationSeparated = Boolean(
     identity &&
@@ -641,6 +651,21 @@ export function App() {
         builderContentPolicyScanMutation.data.data.source_domain_reviewed_by,
         builderContentPolicyScanMutation.data.data.source_security_reviewed_by,
         builderContentPolicyScanMutation.data.data.source_lab_operated_by,
+      ].includes(identity.subject_id),
+  );
+  const builderAuthorityBehaviorSeparated = Boolean(
+    identity &&
+      builderSchemaSemanticsMutation.data?.data &&
+      ![
+        builderSchemaSemanticsMutation.data.data.validated_by,
+        builderSchemaSemanticsMutation.data.data.source_content_scanned_by,
+        builderSchemaSemanticsMutation.data.data.source_inventoried_by,
+        builderSchemaSemanticsMutation.data.data.source_manifest_validated_by,
+        builderSchemaSemanticsMutation.data.data.source_acquired_by,
+        builderSchemaSemanticsMutation.data.data.source_custodied_by,
+        builderSchemaSemanticsMutation.data.data.source_domain_reviewed_by,
+        builderSchemaSemanticsMutation.data.data.source_security_reviewed_by,
+        builderSchemaSemanticsMutation.data.data.source_lab_operated_by,
       ].includes(identity.subject_id),
   );
   const builderLabValidationMutation = useMutation({
@@ -5549,6 +5574,300 @@ export function App() {
                                                                         <strong>Schema boundaries</strong>
                                                                         <ul>
                                                                           {builderSchemaSemanticsMutation.data.data.limitations.map(
+                                                                            (limitation) => (
+                                                                              <li key={limitation}>
+                                                                                {limitation}
+                                                                              </li>
+                                                                            ),
+                                                                          )}
+                                                                        </ul>
+                                                                      </div>
+                                                                    </div>
+                                                                  )}
+                                                                  {builderSchemaSemanticsMutation.data?.data
+                                                                    .outcome === "passed" &&
+                                                                    !builderAuthorityBehaviorSeparated &&
+                                                                    !builderAuthorityBehaviorMutation.data && (
+                                                                      <div
+                                                                        className="workspace-message warning-state"
+                                                                        role="status"
+                                                                      >
+                                                                        <UserX size={20} />
+                                                                        <div>
+                                                                          <h3>
+                                                                            Independent behavior validator required
+                                                                          </h3>
+                                                                          <p>
+                                                                            The schema validator and all earlier
+                                                                            package actors remain separated from
+                                                                            implementation behavior review.
+                                                                          </p>
+                                                                        </div>
+                                                                      </div>
+                                                                    )}
+                                                                  {builderSchemaSemanticsMutation.data?.data
+                                                                    .outcome === "passed" &&
+                                                                    builderAuthorityBehaviorSeparated &&
+                                                                    !builderAuthorityBehaviorMutation.data && (
+                                                                      <section className="mcp-builder-handoff-action">
+                                                                        <div>
+                                                                          <p className="eyebrow">
+                                                                            VALIDATION PIPELINE STEP 6
+                                                                          </p>
+                                                                          <strong>
+                                                                            Compare declared authority
+                                                                          </strong>
+                                                                          <p>
+                                                                            Inspect bounded Python AST evidence
+                                                                            without importing, compiling, or
+                                                                            executing connector code.
+                                                                          </p>
+                                                                        </div>
+                                                                        <label className="confirmation-row">
+                                                                          <input
+                                                                            type="checkbox"
+                                                                            checked={
+                                                                              builderAuthorityBehaviorAcknowledged
+                                                                            }
+                                                                            onChange={(event) =>
+                                                                              setBuilderAuthorityBehaviorAcknowledged(
+                                                                                event.target.checked,
+                                                                              )
+                                                                            }
+                                                                          />
+                                                                          I am the independent behavior validator. I
+                                                                          understand static evidence is limited and
+                                                                          grants no runtime authority.
+                                                                        </label>
+                                                                        <button
+                                                                          className="run-check-button mcp-builder-submit"
+                                                                          type="button"
+                                                                          disabled={
+                                                                            !builderAuthorityBehaviorAcknowledged ||
+                                                                            builderAuthorityBehaviorMutation.isPending
+                                                                          }
+                                                                          onClick={() => {
+                                                                            const report =
+                                                                              builderSchemaSemanticsMutation.data
+                                                                                ?.data;
+                                                                            if (report) {
+                                                                              builderAuthorityBehaviorMutation.mutate(
+                                                                                report,
+                                                                              );
+                                                                            }
+                                                                          }}
+                                                                        >
+                                                                          {builderAuthorityBehaviorMutation.isPending ? (
+                                                                            <RefreshCw
+                                                                              className="spin"
+                                                                              size={16}
+                                                                            />
+                                                                          ) : (
+                                                                            <ScanSearch size={16} />
+                                                                          )}
+                                                                          Compare authority and behavior
+                                                                        </button>
+                                                                      </section>
+                                                                    )}
+                                                                  {builderAuthorityBehaviorMutation.isError && (
+                                                                    <div
+                                                                      className="workspace-message error-state"
+                                                                      role="alert"
+                                                                    >
+                                                                      <AlertTriangle size={20} />
+                                                                      <div>
+                                                                        <h3>Behavior validation unavailable</h3>
+                                                                        <p>
+                                                                          Exact lineage, package bytes,
+                                                                          authorization, or bounded AST analysis did
+                                                                          not pass.
+                                                                        </p>
+                                                                      </div>
+                                                                    </div>
+                                                                  )}
+                                                                  {builderAuthorityBehaviorMutation.data?.data && (
+                                                                    <div className="mcp-builder-validation">
+                                                                      <div className="section-heading">
+                                                                        <div>
+                                                                          <p className="eyebrow">
+                                                                            IMMUTABLE AUTHORITY BEHAVIOR REPORT
+                                                                          </p>
+                                                                          <strong>
+                                                                            {
+                                                                              builderAuthorityBehaviorMutation.data
+                                                                                .data.validation_id
+                                                                            }
+                                                                          </strong>
+                                                                          <code>
+                                                                            {
+                                                                              builderAuthorityBehaviorMutation.data
+                                                                                .data.canonical_digest
+                                                                            }
+                                                                          </code>
+                                                                        </div>
+                                                                        <span
+                                                                          className={`state-badge ${
+                                                                            builderAuthorityBehaviorMutation.data
+                                                                              .data.outcome === "passed"
+                                                                              ? "healthy"
+                                                                              : "critical"
+                                                                          }`}
+                                                                        >
+                                                                          {builderAuthorityBehaviorMutation.data.data
+                                                                            .outcome === "passed" ? (
+                                                                            <CheckCircle2 size={14} />
+                                                                          ) : (
+                                                                            <AlertTriangle size={14} />
+                                                                          )}
+                                                                          {
+                                                                            builderAuthorityBehaviorMutation.data
+                                                                              .data.outcome
+                                                                          }
+                                                                        </span>
+                                                                      </div>
+                                                                      <div className="mcp-builder-facts">
+                                                                        <div>
+                                                                          <span>Capabilities</span>
+                                                                          <strong>
+                                                                            {
+                                                                              builderAuthorityBehaviorMutation.data
+                                                                                .data.capabilities.length
+                                                                            }
+                                                                          </strong>
+                                                                        </div>
+                                                                        <div>
+                                                                          <span>Findings</span>
+                                                                          <strong>
+                                                                            {
+                                                                              builderAuthorityBehaviorMutation.data
+                                                                                .data.findings.length
+                                                                            }
+                                                                          </strong>
+                                                                        </div>
+                                                                        <div>
+                                                                          <span>Resolved</span>
+                                                                          <strong>
+                                                                            {
+                                                                              builderAuthorityBehaviorMutation.data.data.capabilities.filter(
+                                                                                (capability) =>
+                                                                                  capability.statically_resolved,
+                                                                              ).length
+                                                                            }
+                                                                          </strong>
+                                                                        </div>
+                                                                        <div>
+                                                                          <span>Promotion</span>
+                                                                          <strong>
+                                                                            {builderAuthorityBehaviorMutation.data
+                                                                              .data.promotion_blocked
+                                                                              ? "Blocked"
+                                                                              : "Not blocked"}
+                                                                          </strong>
+                                                                        </div>
+                                                                      </div>
+                                                                      <div className="mcp-builder-validation-checks">
+                                                                        {builderAuthorityBehaviorMutation.data.data.capabilities.map(
+                                                                          (capability) => (
+                                                                            <article
+                                                                              key={capability.capability_id}
+                                                                              data-state={
+                                                                                capability.declaration_matches &&
+                                                                                capability.permission_matches &&
+                                                                                capability.behavior_compatible &&
+                                                                                capability.statically_resolved
+                                                                                  ? "passed"
+                                                                                  : "failed"
+                                                                              }
+                                                                            >
+                                                                              {capability.behavior_compatible &&
+                                                                              capability.statically_resolved ? (
+                                                                                <CheckCircle2 size={16} />
+                                                                              ) : (
+                                                                                <AlertTriangle size={16} />
+                                                                              )}
+                                                                              <div>
+                                                                                <strong>
+                                                                                  {
+                                                                                    capability.capability_id
+                                                                                  }
+                                                                                </strong>
+                                                                                <p>
+                                                                                  {capability.observed_categories.join(
+                                                                                    ", ",
+                                                                                  )}
+                                                                                </p>
+                                                                                <small>
+                                                                                  {
+                                                                                    capability.required_permission
+                                                                                  }
+                                                                                </small>
+                                                                              </div>
+                                                                              <span>
+                                                                                {
+                                                                                  capability.declared_class
+                                                                                }
+                                                                              </span>
+                                                                            </article>
+                                                                          ),
+                                                                        )}
+                                                                      </div>
+                                                                      {builderAuthorityBehaviorMutation.data.data
+                                                                        .findings.length > 0 && (
+                                                                        <div className="mcp-builder-validation-checks">
+                                                                          {builderAuthorityBehaviorMutation.data.data.findings.map(
+                                                                            (finding) => (
+                                                                              <article
+                                                                                key={
+                                                                                  finding.evidence_fingerprint
+                                                                                }
+                                                                                data-state="failed"
+                                                                              >
+                                                                                <AlertTriangle size={16} />
+                                                                                <div>
+                                                                                  <strong>
+                                                                                    {finding.rule_code}
+                                                                                  </strong>
+                                                                                  <p>{finding.summary}</p>
+                                                                                  <small>
+                                                                                    {finding.relative_path}
+                                                                                    {finding.line_number > 0
+                                                                                      ? `:${finding.line_number}`
+                                                                                      : ""}
+                                                                                  </small>
+                                                                                </div>
+                                                                                <span>
+                                                                                  {finding.category}
+                                                                                </span>
+                                                                              </article>
+                                                                            ),
+                                                                          )}
+                                                                        </div>
+                                                                      )}
+                                                                      <div className="mcp-builder-validation-checks">
+                                                                        {builderAuthorityBehaviorMutation.data.data.checks.map(
+                                                                          (check) => (
+                                                                            <article
+                                                                              key={check.code}
+                                                                              data-state={check.state}
+                                                                            >
+                                                                              {check.state === "passed" ? (
+                                                                                <CheckCircle2 size={16} />
+                                                                              ) : (
+                                                                                <AlertTriangle size={16} />
+                                                                              )}
+                                                                              <div>
+                                                                                <strong>{check.code}</strong>
+                                                                                <p>{check.summary}</p>
+                                                                              </div>
+                                                                              <span>{check.state}</span>
+                                                                            </article>
+                                                                          ),
+                                                                        )}
+                                                                      </div>
+                                                                      <div className="mcp-builder-limitations">
+                                                                        <strong>Behavior boundaries</strong>
+                                                                        <ul>
+                                                                          {builderAuthorityBehaviorMutation.data.data.limitations.map(
                                                                             (limitation) => (
                                                                               <li key={limitation}>
                                                                                 {limitation}

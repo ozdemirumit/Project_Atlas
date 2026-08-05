@@ -678,6 +678,74 @@ class ConnectorPackageSchemaSemanticsValidationModel(Base):
     validated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class ConnectorPackageAuthorityBehaviorValidationModel(Base):
+    __tablename__ = "connector_package_authority_behavior_validations"
+    __table_args__ = (
+        CheckConstraint(
+            "version = 1", name="ck_connector_package_authority_behavior_validations_version"
+        ),
+        UniqueConstraint(
+            "source_schema_semantics_validation_id",
+            name="uq_connector_package_authority_behavior_validations_source",
+        ),
+        UniqueConstraint(
+            "validated_by",
+            "idempotency_key",
+            name="uq_connector_package_authority_behavior_validations_actor_idempotency",
+        ),
+    )
+
+    validation_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    lifecycle: Mapped[str] = mapped_column(String(32), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_schema_semantics_validation_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    source_schema_semantics_validation_digest: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    source_content_policy_scan_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    source_inventory_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_validation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_acquisition_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_handoff_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_project_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_acquired_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_manifest_validated_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_inventoried_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_content_scanned_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_schema_validated_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_custodied_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_domain_reviewed_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_security_reviewed_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_lab_operated_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    validated_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    validation_profile: Mapped[str] = mapped_column(String(128), nullable=False)
+    analyzer_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    package_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    package_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    inventory_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    semantic_validation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    capabilities: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    capability_set_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    findings: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    finding_set_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    behavior_validation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    checks: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    limitations: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    promotion_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    validated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class RuntimeMetadata(Base):
     __tablename__ = "platform_runtime_metadata"
     __table_args__ = (

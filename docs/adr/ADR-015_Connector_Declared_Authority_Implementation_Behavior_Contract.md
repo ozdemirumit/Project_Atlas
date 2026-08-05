@@ -32,8 +32,8 @@ without package or report discovery.
 
 The stage accepts only the exact passed ADR-014 report with `promotion_blocked=false`. Atlas
 verifies the complete upstream canonical lineage and no-authority flags, independently rereads the
-immutable archive, and reconciles manifest, permission evidence, network-boundary evidence, Python
-source paths, digests, sizes, and content classes to the passed inventory.
+immutable archive, and reconciles manifest authority declarations, Python source paths, digests,
+sizes, and content classes to the passed inventory.
 
 The analyzer parses Python 3.12 source with the standard AST without importing, compiling, or
 executing connector code. It uses bounded files, source sizes, AST depth, node counts, findings,
@@ -45,10 +45,10 @@ For every manifest capability, Atlas compares:
 
 - the declared capability class to statically observed read, mutation, process, filesystem,
   dynamic-execution, and network behavior categories;
-- the declared required permission to the matching permission evidence and module constant;
+- the declared required permission to the matching capability module constant;
 - the declared capability identifier and class to the matching module constants and one handler;
-- the declared network destinations and network enablement to bounded client construction, URL,
-  socket, and request call evidence where literals can be resolved safely; and
+- the declared network destinations and quarantine authority flags to bounded client construction,
+  socket, and request call evidence where behavior can be resolved safely; and
 - quarantine, runtime-trust, execution-authority, redirect, broad-administrator, and fail-closed
   declarations to implementation evidence.
 

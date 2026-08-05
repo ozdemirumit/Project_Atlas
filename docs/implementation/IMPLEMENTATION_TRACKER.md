@@ -11,7 +11,7 @@
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-015 |
 | Last Updated | 2026-08-05 |
-| Next Action | Implement the immutable authority-behavior report across backend, API, persistence, UI, and tests |
+| Next Action | Publish the completed authority-behavior validation slice for review and verify GitHub CI |
 
 ### ATLAS-IMP-059 Scope Rationale
 
@@ -31,12 +31,12 @@
   wrong-scope actor, and insufficient-assurance identity fails closed without evidence discovery.
 - The request accepts only the exact passed IMP-058 report with promotion unblocked, verifies all
   upstream canonical lineage and no-authority flags, independently verifies archive bytes, and
-  reconciles manifest, permission/network evidence, and Python source to the passed inventory.
+  reconciles manifest authority declarations and Python source to the passed inventory.
 - A bounded deterministic offline Python 3.12 AST analyzer parses without importing, compiling, or
   executing code and fails closed on syntax errors, unsupported layouts, excessive complexity,
   dynamic imports/evaluation, reflection, generated execution, or unresolved indirection.
-- Every manifest capability binds one-to-one to permission evidence, network evidence, a source
-  module, identifier/class/permission constants, and one handler. Missing, duplicate, contradictory,
+- Every manifest capability binds one-to-one to a source module, identifier/class/permission
+  constants, and one handler. Missing, duplicate, contradictory,
   broad, wildcard, or unresolved declarations produce blocking findings.
 - Capability class is compared to observable read, mutation, network, process, filesystem, and
   dynamic-execution behavior. C0/C1 cannot expose mutation, process, filesystem-write, or dynamic
@@ -66,9 +66,17 @@
 
 ### ATLAS-IMP-059 Validation Evidence
 
-- Pending implementation.
-
-### ATLAS-IMP-058 Scope Rationale
+- Backend formatting, Ruff, strict mypy, and Alembic single-head validation passed; the full backend
+  suite passed with 502 tests and 3 existing Windows symlink skips.
+- The focused authority-behavior suite passed 6 tests covering passed and blocked behavior,
+  no-source-disclosure findings, dynamic execution, separation of duties, audit failure,
+  concurrency, PostgreSQL mapping, CSRF, no-store responses, and minimized API output.
+- Frontend lint and TypeScript checks passed; all 36 frontend tests and the production build passed.
+- Live HTTP verification passed for evidence retrieval, authentication, denied creation without CSRF,
+  authorized creation and read, `no-store` responses, immutable lineage, and all no-authority flags.
+- Desktop inspection at 1280 by 720 and mobile inspection at 390 by 844 showed no horizontal
+  overflow; navigation changed to the compact mobile mode and browser error/warning logs were empty.
+- GitHub pull-request and post-merge CI evidence remains pending until publication.
 
 ### ATLAS-IMP-058 Scope Rationale
 
