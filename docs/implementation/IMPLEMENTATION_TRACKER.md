@@ -4,14 +4,66 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-060 |
-| Title | Governed connector static-code and dependency-hygiene analysis foundation |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#72](https://github.com/ozdemirumit/Project_Atlas/pull/72) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-016 |
+| Task ID | ATLAS-IMP-061 |
+| Title | Governed connector dependency vulnerability analysis foundation |
+| Status | In Progress |
+| Branch | `agent/mcp-vulnerability-analysis` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-017 |
 | Last Updated | 2026-08-05 |
-| Next Action | Scope the next independently governed connector vulnerability-analysis stage |
+| Next Action | Implement immutable offline advisory-snapshot vulnerability analysis across backend, API, persistence, UI, and tests |
+
+### ATLAS-IMP-061 Scope Rationale
+
+- IMP-060 proves the exact package has bounded source structure and deterministic dependency
+  declarations, but it does not establish that those dependencies are free from known vulnerabilities.
+- ADR-017 defines an offline analysis against a trusted, immutable, signed, versioned, and fresh
+  advisory snapshot selected by platform policy rather than the request actor.
+- Malware, license, contract, runner, self-test, lab, final-validation, approval, registration,
+  installation, and enablement remain independent later stages.
+
+### ATLAS-IMP-061 Acceptance Criteria
+
+- Only a dedicated multi-factor human vulnerability-analysis operator in the exact organization and
+  environment can create or read a report. Every prior-stage actor, AI/service identity,
+  wrong-scope actor, and insufficient-assurance identity fails closed without evidence discovery.
+- The request accepts only the exact passed IMP-060 report with promotion unblocked and static-code
+  completion, verifies all upstream digests and no-authority flags, independently verifies archive
+  and inventory evidence, and reconciles the exact dependency-set digest.
+- The request cannot upload or choose advisory data. A trusted provider supplies the exact
+  organization/environment snapshot with stable schema, identity, version, issuance/expiry,
+  ecosystem coverage, canonical digest, signing key, verified signature, and bounded records.
+- Malformed, unsigned, signature-invalid, digest-invalid, future-issued, duplicate, conflicting,
+  oversized, or wrong-scope snapshots produce no report. Trusted but expired or coverage-incomplete
+  snapshots produce immutable failed reports and block promotion.
+- Exact runtime and locked transitive dependencies plus bounded direct build requirements are
+  matched deterministically and offline. Missing lock coverage, unsupported versions, unknown
+  aliases, ambiguity, or dependency drift fails closed.
+- Every applicable non-withdrawn known advisory blocks promotion regardless of severity. Withdrawn
+  records do not match. Zero-subject scans are explicit and make no package-security guarantee.
+- Reports and findings expose only advisory identity, severity, dependency scope, safe fingerprints,
+  aggregate counts, generic summaries, and remediation. Package names, versions, constraints,
+  indexes, URLs, advisory bodies, exploit text, and snapshot records never enter API, audit, logs,
+  errors, or model context.
+- Reports are one-to-one, deterministic, immutable, idempotent, concurrency-safe,
+  audit-before-persist, and equivalent in memory and PostgreSQL. Trust, audit, matching, or
+  persistence failure cannot fabricate success.
+- Failed analysis sets `promotion_blocked=true`; either outcome marks only
+  `vulnerability_scan_completed=true`. No package or infrastructure state changes.
+- Strict no-store APIs require CSRF for creation, dedicated default-deny RBAC, correlation, bounded
+  schemas, safe errors, exact tenant scope, acknowledgement, and full-lineage separation of duties.
+- The Connector workspace displays safe dataset, freshness, coverage, subject, severity, finding,
+  limitation, lineage, and promotion summaries without dependency identities or later-stage controls.
+- Backend/frontend coverage, one Alembic head, live authorized/denied HTTP checks, trusted/invalid/
+  stale/affected/unaffected fixtures, desktop and 390-pixel mobile inspection, browser logs, and
+  GitHub CI apply.
+- This slice performs no package rewrite, dependency resolution/download, build, installation,
+  import, compilation, execution, network/model/target access, malware/license/contract/runner/
+  self-test/lab validation, and grants no lifecycle or runtime authority.
+
+### ATLAS-IMP-061 Validation Evidence
+
+- Pending implementation.
 
 ### ATLAS-IMP-060 Scope Rationale
 
@@ -84,7 +136,7 @@
   overflow or incoherent overlap, and browser error/warning logs were empty.
 - [PR #72](https://github.com/ozdemirumit/Project_Atlas/pull/72) merged as
   `f67ccbb2ebad8461d85d115616b92e894d6a6986`; pull-request CI run `31027974665` and post-merge
-  `main` CI run `31028206172` passed both backend and frontend jobs.
+  `main` CI run `31028206172`, and closure CI run `31028452558` passed both backend and frontend jobs.
 
 ### ATLAS-IMP-059 Scope Rationale
 
