@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-059 |
 | Title | Governed connector declared-authority and implementation-behavior comparison foundation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/mcp-authority-behavior-validation` |
-| Pull Request | Not opened |
+| Pull Request | [#71](https://github.com/ozdemirumit/Project_Atlas/pull/71) |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-015 |
 | Last Updated | 2026-08-05 |
-| Next Action | Publish the completed authority-behavior validation slice for review and verify GitHub CI |
+| Next Action | Verify pull-request CI, merge the accepted slice, and verify post-merge `main` CI |
 
 ### ATLAS-IMP-059 Scope Rationale
 
