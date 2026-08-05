@@ -383,7 +383,7 @@ const securityReview = {
     domain_reviewed_by: domainReview.data.reviewed_by,
     organization_id: identity.data.organization_id,
     environment_id: "environment.development",
-    reviewed_by: identity.data.subject_id,
+    reviewed_by: "subject.security.reviewer",
     review_profile: "atlas.security-review.connector.v1",
     reviewer_contract_version: "mcp-builder-security-review.v1",
     control_assessments: securityControls.map((control) => ({
@@ -425,6 +425,93 @@ const securityReview = {
   },
 };
 
+const labCheckCodes = [
+  "lab.artifact_integrity",
+  "lab.runner_isolation",
+  "lab.secret_free_environment",
+  "lab.network_denial",
+  "lab.package_import",
+  "lab.quarantine_contract",
+  "lab.capability_fail_closed",
+  "lab.bounded_output",
+];
+
+const labValidation = {
+  data: {
+    lab_validation_id: "mcp-builder-lab-validation.444444444444444444444444",
+    schema_version: "atlas.mcp-builder-lab-validation.v1",
+    version: 1,
+    state: "passed",
+    project_id: project.data.project_id,
+    project_version: 1,
+    project_digest: project.data.canonical_digest,
+    source_digest: project.data.source_digest,
+    checkpoint_id: checkpoint.data.checkpoint_id,
+    checkpoint_digest: checkpoint.data.canonical_digest,
+    generation_id: generation.data.generation_id,
+    generation_digest: generation.data.canonical_digest,
+    artifact_digest: generation.data.artifact_digest,
+    validation_id: validation.data.validation_id,
+    validation_digest: validation.data.canonical_digest,
+    domain_review_id: domainReview.data.review_id,
+    domain_review_digest: domainReview.data.canonical_digest,
+    domain_reviewed_by: domainReview.data.reviewed_by,
+    security_review_id: securityReview.data.review_id,
+    security_review_digest: securityReview.data.canonical_digest,
+    security_reviewed_by: securityReview.data.reviewed_by,
+    organization_id: identity.data.organization_id,
+    environment_id: "environment.development",
+    operated_by: identity.data.subject_id,
+    lab_profile: "atlas.lab-validation.python312.v1",
+    runner_contract_version: "mcp-builder-isolated-runner.v1",
+    runtime_version: "python.3.12.10",
+    checks: labCheckCodes.map((code) => ({
+      code,
+      state: "passed",
+      severity: "info",
+      summary: "The isolated synthetic check passed.",
+      evidence_paths: ["artifact inventory"],
+      remediation: null,
+    })),
+    passed_count: 8,
+    failed_count: 0,
+    skipped_count: 0,
+    child_started: true,
+    child_exit_code: 0,
+    duration_ms: 87,
+    output_digest: "4".repeat(64),
+    output_size_bytes: 512,
+    artifact_file_count: 14,
+    artifact_size_bytes: 8192,
+    workspace_removed: true,
+    limitations: [
+      "This result covers only the exact deterministic quarantined scaffold.",
+      "No vendor target, credential, package, installation, or runtime trust was exercised.",
+    ],
+    canonical_digest: "5".repeat(64),
+    completed_at: "2026-08-05T13:00:00Z",
+    lab_validation_completed: true,
+    lab_validation_passed: true,
+    synthetic_fixture_used: true,
+    secret_values_present: false,
+    target_connected: false,
+    network_request_performed: false,
+    runtime_self_test_performed: true,
+    subprocess_invoked: true,
+    dynamic_code_execution_performed: true,
+    dependency_resolution_performed: false,
+    malware_or_dynamic_scan_performed: false,
+    candidate_package_created: false,
+    connector_registered: false,
+    connector_installed: false,
+    connector_enabled: false,
+    runtime_trust_granted: false,
+    execution_authorized: false,
+    infrastructure_mutation_performed: false,
+    reused: false,
+  },
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -441,6 +528,7 @@ describe("MCP Builder workspace", () => {
     const validationRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const domainReviewRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const securityReviewRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    const labValidationRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -494,6 +582,14 @@ describe("MCP Builder workspace", () => {
           idempotencyKey: headers.get("Idempotency-Key"),
         });
         return Promise.resolve(new Response(JSON.stringify(securityReview), { status: 201 }));
+      }
+      if (url.endsWith(`/mcp-builder/projects/${project.data.project_id}/lab-validations`)) {
+        const headers = new Headers(init?.headers);
+        labValidationRequests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(new Response(JSON.stringify(labValidation), { status: 201 }));
       }
       if (
         url.endsWith(
@@ -602,7 +698,17 @@ describe("MCP Builder workspace", () => {
     expect(await screen.findByText(securityReview.data.review_id)).toBeVisible();
     expect(screen.getByText("IMMUTABLE SECURITY REVIEW")).toBeVisible();
     expect(screen.getAllByText("No declared security findings")).toHaveLength(9);
-    expect(screen.getByText(identity.data.subject_id)).toBeVisible();
+    expect(screen.getByText(securityReview.data.reviewed_by)).toBeVisible();
+    expect(screen.getByText("Verify the fail-closed scaffold")).toBeVisible();
+    fireEvent.click(
+      screen.getByLabelText(/I am the independent lab operator/i),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Run isolated validation" }));
+
+    expect(await screen.findByText(labValidation.data.lab_validation_id)).toBeVisible();
+    expect(screen.getByText("IMMUTABLE LAB EVIDENCE")).toBeVisible();
+    expect(screen.getByText(labValidation.data.runtime_version)).toBeVisible();
+    expect(screen.getByText("capability fail closed")).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|execute|register|enable/i })).not.toBeInTheDocument();
     expect(requests).toHaveLength(1);
     expect(designRequests).toHaveLength(1);
@@ -610,6 +716,7 @@ describe("MCP Builder workspace", () => {
     expect(validationRequests).toHaveLength(1);
     expect(domainReviewRequests).toHaveLength(1);
     expect(securityReviewRequests).toHaveLength(1);
+    expect(labValidationRequests).toHaveLength(1);
     expect(requests[0]?.idempotencyKey).toBe("mcp-builder.mcp-builder-ui-001");
     const body = JSON.parse(requests[0]?.body ?? "{}") as Record<string, unknown>;
     expect(body.source_document).toBe(source);
@@ -697,5 +804,22 @@ describe("MCP Builder workspace", () => {
     );
     expect(securityReviewBody).not.toHaveProperty("lab_validation_completed");
     expect(securityReviewBody).not.toHaveProperty("execute");
+    expect(labValidationRequests[0]?.idempotencyKey).toBe(
+      "mcp-builder-lab-validation.mcp-builder-ui-001",
+    );
+    const labValidationBody = JSON.parse(
+      labValidationRequests[0]?.body ?? "{}",
+    ) as Record<string, unknown>;
+    expect(labValidationBody.security_review_id).toBe(securityReview.data.review_id);
+    expect(labValidationBody.security_review_digest).toBe(
+      securityReview.data.canonical_digest,
+    );
+    expect(labValidationBody.lab_profile).toBe(
+      "atlas.lab-validation.python312.v1",
+    );
+    expect(labValidationBody.acknowledged_isolated_synthetic_execution).toBe(true);
+    expect(labValidationBody).not.toHaveProperty("target");
+    expect(labValidationBody).not.toHaveProperty("secret");
+    expect(labValidationBody).not.toHaveProperty("execute");
   });
 });

@@ -76,6 +76,8 @@ MCP_BUILDER_DOMAIN_REVIEW_CREATE = "mcp-builder.domain-review.create"
 MCP_BUILDER_DOMAIN_REVIEW_READ = "mcp-builder.domain-review.read"
 MCP_BUILDER_SECURITY_REVIEW_CREATE = "mcp-builder.security-review.create"
 MCP_BUILDER_SECURITY_REVIEW_READ = "mcp-builder.security-review.read"
+MCP_BUILDER_LAB_VALIDATION_CREATE = "mcp-builder.lab-validation.create"
+MCP_BUILDER_LAB_VALIDATION_READ = "mcp-builder.lab-validation.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -758,6 +760,14 @@ def build_development_authorization_service(
             permission_id=MCP_BUILDER_SECURITY_REVIEW_READ,
             description="Read one exact-scope MCP Builder independent security review.",
         ),
+        PermissionDefinition(
+            permission_id=MCP_BUILDER_LAB_VALIDATION_CREATE,
+            description="Run one exact-scaffold isolated synthetic MCP Builder lab validation.",
+        ),
+        PermissionDefinition(
+            permission_id=MCP_BUILDER_LAB_VALIDATION_READ,
+            description="Read one exact-scope MCP Builder isolated lab validation.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -816,6 +826,8 @@ def build_development_authorization_service(
                 MCP_BUILDER_DOMAIN_REVIEW_READ,
                 MCP_BUILDER_SECURITY_REVIEW_CREATE,
                 MCP_BUILDER_SECURITY_REVIEW_READ,
+                MCP_BUILDER_LAB_VALIDATION_CREATE,
+                MCP_BUILDER_LAB_VALIDATION_READ,
             }
         ),
     )

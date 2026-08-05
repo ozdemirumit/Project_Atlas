@@ -6,6 +6,10 @@ from atlas.modules.mcp_builder.application.generator import BuilderGeneratedCont
 from atlas.modules.mcp_builder.domain.design_review import McpBuilderDesignCheckpoint
 from atlas.modules.mcp_builder.domain.domain_review import McpBuilderDomainReview
 from atlas.modules.mcp_builder.domain.generation import BuilderGeneratedFile, McpBuilderGeneration
+from atlas.modules.mcp_builder.domain.lab_validation import (
+    BuilderLabRunnerResult,
+    McpBuilderLabValidation,
+)
 from atlas.modules.mcp_builder.domain.models import McpBuilderProject
 from atlas.modules.mcp_builder.domain.security_review import McpBuilderSecurityReview
 from atlas.modules.mcp_builder.domain.validation import McpBuilderValidation
@@ -146,3 +150,30 @@ class McpBuilderSecurityReviewRepository(Protocol):
     async def add(self, review: McpBuilderSecurityReview) -> bool: ...
 
     async def close(self) -> None: ...
+
+
+class McpBuilderLabValidationRepository(Protocol):
+    @property
+    def durable(self) -> bool: ...
+
+    async def get_by_id(self, *, lab_validation_id: str) -> McpBuilderLabValidation | None: ...
+
+    async def get_by_project(self, *, project_id: str) -> McpBuilderLabValidation | None: ...
+
+    async def get_by_security_review(
+        self, *, security_review_id: str
+    ) -> McpBuilderLabValidation | None: ...
+
+    async def get_by_create_key(
+        self, *, operated_by: str, idempotency_key: str
+    ) -> McpBuilderLabValidation | None: ...
+
+    async def add(self, validation: McpBuilderLabValidation) -> bool: ...
+
+    async def close(self) -> None: ...
+
+
+class McpBuilderLabRunner(Protocol):
+    async def run(
+        self, *, files: tuple[BuilderGeneratedContent, ...], lab_profile: str
+    ) -> BuilderLabRunnerResult: ...

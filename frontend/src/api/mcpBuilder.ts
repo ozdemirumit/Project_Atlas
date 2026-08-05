@@ -410,6 +410,87 @@ export type McpBuilderSecurityReview = {
   reused: boolean;
 };
 
+export type McpBuilderLabCheck = {
+  code:
+    | "lab.artifact_integrity"
+    | "lab.runner_isolation"
+    | "lab.secret_free_environment"
+    | "lab.network_denial"
+    | "lab.package_import"
+    | "lab.quarantine_contract"
+    | "lab.capability_fail_closed"
+    | "lab.bounded_output";
+  state: "passed" | "failed" | "skipped";
+  severity: "info" | "error";
+  summary: string;
+  evidence_paths: string[];
+  remediation: string | null;
+};
+
+export type McpBuilderLabValidation = {
+  lab_validation_id: string;
+  schema_version: "atlas.mcp-builder-lab-validation.v1";
+  version: 1;
+  state: "passed" | "failed";
+  project_id: string;
+  project_version: 1;
+  project_digest: string;
+  source_digest: string;
+  checkpoint_id: string;
+  checkpoint_digest: string;
+  generation_id: string;
+  generation_digest: string;
+  artifact_digest: string;
+  validation_id: string;
+  validation_digest: string;
+  domain_review_id: string;
+  domain_review_digest: string;
+  domain_reviewed_by: string;
+  security_review_id: string;
+  security_review_digest: string;
+  security_reviewed_by: string;
+  organization_id: string;
+  environment_id: string;
+  operated_by: string;
+  lab_profile: "atlas.lab-validation.python312.v1";
+  runner_contract_version: "mcp-builder-isolated-runner.v1";
+  runtime_version: string;
+  checks: McpBuilderLabCheck[];
+  passed_count: number;
+  failed_count: number;
+  skipped_count: number;
+  child_started: boolean;
+  child_exit_code: number | null;
+  duration_ms: number;
+  output_digest: string;
+  output_size_bytes: number;
+  artifact_file_count: number;
+  artifact_size_bytes: number;
+  workspace_removed: true;
+  limitations: string[];
+  canonical_digest: string;
+  completed_at: string;
+  lab_validation_completed: true;
+  lab_validation_passed: boolean;
+  synthetic_fixture_used: true;
+  secret_values_present: false;
+  target_connected: false;
+  network_request_performed: false;
+  runtime_self_test_performed: boolean;
+  subprocess_invoked: boolean;
+  dynamic_code_execution_performed: boolean;
+  dependency_resolution_performed: false;
+  malware_or_dynamic_scan_performed: false;
+  candidate_package_created: false;
+  connector_registered: false;
+  connector_installed: false;
+  connector_enabled: false;
+  runtime_trust_granted: false;
+  execution_authorized: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -784,6 +865,90 @@ function isSafeSecurityReview(value: unknown): value is { data: McpBuilderSecuri
   );
 }
 
+const LAB_CHECK_CODES = [
+  "lab.artifact_integrity",
+  "lab.runner_isolation",
+  "lab.secret_free_environment",
+  "lab.network_denial",
+  "lab.package_import",
+  "lab.quarantine_contract",
+  "lab.capability_fail_closed",
+  "lab.bounded_output",
+] as const;
+
+function isSafeLabCheck(value: unknown): value is McpBuilderLabCheck {
+  return (
+    isRecord(value) &&
+    LAB_CHECK_CODES.includes(value.code as McpBuilderLabCheck["code"]) &&
+    ["passed", "failed", "skipped"].includes(String(value.state)) &&
+    ["info", "error"].includes(String(value.severity)) &&
+    typeof value.summary === "string" &&
+    Array.isArray(value.evidence_paths) &&
+    value.evidence_paths.every((item) => typeof item === "string") &&
+    (value.remediation === null || typeof value.remediation === "string") &&
+    (value.state === "passed"
+      ? value.severity === "info" && value.remediation === null
+      : value.severity === "error" && typeof value.remediation === "string")
+  );
+}
+
+function isSafeLabValidation(
+  value: unknown,
+): value is { data: McpBuilderLabValidation } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const validation = value.data;
+  const checks = validation.checks;
+  if (!Array.isArray(checks) || checks.length !== 8 || !checks.every(isSafeLabCheck)) {
+    return false;
+  }
+  if (new Set(checks.map((item) => item.code)).size !== 8) return false;
+  const passed = checks.filter((item) => item.state === "passed").length;
+  const failed = checks.filter((item) => item.state === "failed").length;
+  const skipped = checks.filter((item) => item.state === "skipped").length;
+  const noAuthority = [
+    validation.secret_values_present,
+    validation.target_connected,
+    validation.network_request_performed,
+    validation.dependency_resolution_performed,
+    validation.malware_or_dynamic_scan_performed,
+    validation.candidate_package_created,
+    validation.connector_registered,
+    validation.connector_installed,
+    validation.connector_enabled,
+    validation.runtime_trust_granted,
+    validation.execution_authorized,
+    validation.infrastructure_mutation_performed,
+  ];
+  const expectedState = passed === 8 ? "passed" : "failed";
+  return (
+    validation.schema_version === "atlas.mcp-builder-lab-validation.v1" &&
+    validation.version === 1 &&
+    validation.state === expectedState &&
+    validation.lab_profile === "atlas.lab-validation.python312.v1" &&
+    validation.runner_contract_version === "mcp-builder-isolated-runner.v1" &&
+    validation.lab_validation_completed === true &&
+    validation.lab_validation_passed === (validation.state === "passed") &&
+    validation.synthetic_fixture_used === true &&
+    validation.workspace_removed === true &&
+    validation.passed_count === passed &&
+    validation.failed_count === failed &&
+    validation.skipped_count === skipped &&
+    validation.operated_by !== validation.domain_reviewed_by &&
+    validation.operated_by !== validation.security_reviewed_by &&
+    validation.runtime_self_test_performed === validation.child_started &&
+    validation.subprocess_invoked === validation.child_started &&
+    validation.dynamic_code_execution_performed === validation.child_started &&
+    typeof validation.lab_validation_id === "string" &&
+    typeof validation.security_review_id === "string" &&
+    typeof validation.runtime_version === "string" &&
+    typeof validation.canonical_digest === "string" &&
+    Array.isArray(validation.limitations) &&
+    validation.limitations.length > 0 &&
+    validation.limitations.every((item) => typeof item === "string") &&
+    noAuthority.every((flag) => flag === false)
+  );
+}
+
 function nonce(): string {
   return typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`;
 }
@@ -1061,6 +1226,52 @@ export async function createMcpBuilderSecurityReview(input: {
   const payload: unknown = await response.json();
   if (!isSafeSecurityReview(payload)) {
     throw new Error("MCP Builder returned an unsafe security review");
+  }
+  return payload;
+}
+
+export async function createMcpBuilderLabValidation(input: {
+  project: McpBuilderProject;
+  checkpoint: McpBuilderDesignCheckpoint;
+  generation: McpBuilderGeneration;
+  validation: McpBuilderValidation;
+  domainReview: McpBuilderDomainReview;
+  securityReview: McpBuilderSecurityReview;
+}) {
+  const response = await apiFetch(
+    `/api/v1/mcp-builder/projects/${input.project.project_id}/lab-validations`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": `mcp-builder-lab-validation.${nonce()}`,
+      },
+      body: JSON.stringify({
+        schema_version: "atlas.mcp-builder-lab-validation-request.v1",
+        project_version: input.project.version,
+        project_digest: input.project.canonical_digest,
+        source_digest: input.project.source_digest,
+        checkpoint_id: input.checkpoint.checkpoint_id,
+        checkpoint_digest: input.checkpoint.canonical_digest,
+        generation_id: input.generation.generation_id,
+        generation_digest: input.generation.canonical_digest,
+        artifact_digest: input.generation.artifact_digest,
+        validation_id: input.validation.validation_id,
+        validation_digest: input.validation.canonical_digest,
+        domain_review_id: input.domainReview.review_id,
+        domain_review_digest: input.domainReview.canonical_digest,
+        security_review_id: input.securityReview.review_id,
+        security_review_digest: input.securityReview.canonical_digest,
+        lab_profile: "atlas.lab-validation.python312.v1",
+        acknowledged_isolated_synthetic_execution: true,
+      }),
+    },
+  );
+  if (!response.ok) throw new Error(`MCP Builder lab validation failed with ${response.status}`);
+  const payload: unknown = await response.json();
+  if (!isSafeLabValidation(payload)) {
+    throw new Error("MCP Builder returned unsafe lab validation evidence");
   }
   return payload;
 }

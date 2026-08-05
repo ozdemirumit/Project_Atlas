@@ -860,15 +860,86 @@ textarea:focus-visible {
   border-top: 1px solid #cfdad6;
 }
 
+.mcp-builder-lab-validation {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+  margin-top: 4px;
+  padding-top: 18px;
+  border-top: 1px solid #cfdad6;
+}
+
 .mcp-builder-domain-review-form,
 .mcp-builder-domain-result,
 .mcp-builder-domain-decisions,
 .mcp-builder-security-review-form,
 .mcp-builder-security-result,
-.mcp-builder-security-controls {
+.mcp-builder-security-controls,
+.mcp-builder-lab-form,
+.mcp-builder-lab-result {
   display: grid;
   min-width: 0;
   gap: 14px;
+}
+
+.mcp-builder-lab-checks {
+  display: grid;
+  min-width: 0;
+  border-top: 1px solid #d8e0dd;
+}
+
+.mcp-builder-lab-checks article {
+  display: grid;
+  min-width: 0;
+  gap: 6px 12px;
+  padding: 11px 4px;
+  border-bottom: 1px solid #d8e0dd;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.mcp-builder-lab-checks article > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: #2f705f;
+}
+
+.mcp-builder-lab-checks strong,
+.mcp-builder-lab-checks span,
+.mcp-builder-lab-checks p,
+.mcp-builder-lab-checks code {
+  overflow-wrap: anywhere;
+}
+
+.mcp-builder-lab-checks strong {
+  color: #2d3d39;
+  font-size: 10px;
+  text-transform: capitalize;
+}
+
+.mcp-builder-lab-checks span {
+  color: #2f705f;
+  font-size: 8px;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.mcp-builder-lab-checks p,
+.mcp-builder-lab-checks code {
+  min-width: 0;
+  margin: 0;
+  grid-column: 1 / -1;
+}
+
+.mcp-builder-lab-checks p {
+  color: #5f6f6b;
+  font-size: 9px;
+}
+
+.mcp-builder-lab-checks code {
+  color: #71807c;
+  font-size: 8px;
 }
 
 .mcp-builder-domain-contract {
@@ -1196,6 +1267,7 @@ textarea:focus-visible {
   .mcp-builder-validation .section-heading,
   .mcp-builder-domain-review .section-heading,
   .mcp-builder-security-review .section-heading,
+  .mcp-builder-lab-validation .workspace-section-heading,
   .mcp-builder-generation-summary {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -1204,6 +1276,7 @@ textarea:focus-visible {
   .mcp-builder-validation .section-heading .state-badge,
   .mcp-builder-domain-review .section-heading .state-badge,
   .mcp-builder-security-review .section-heading .state-badge,
+  .mcp-builder-lab-validation .workspace-section-heading .state-badge,
   .mcp-builder-generation-summary .state-badge {
     justify-self: start;
   }

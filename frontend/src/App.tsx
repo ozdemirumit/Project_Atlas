@@ -116,6 +116,7 @@ import {
   createMcpBuilderDomainReview,
   createMcpBuilderDesignCheckpoint,
   createMcpBuilderGeneration,
+  createMcpBuilderLabValidation,
   createMcpBuilderProject,
   createMcpBuilderSecurityReview,
   createMcpBuilderValidation,
@@ -497,6 +498,8 @@ export function App() {
   const [builderSecurityAssessments, setBuilderSecurityAssessments] = useState<
     Partial<Record<McpBuilderSecurityControl, McpBuilderSecurityAssessment>>
   >({});
+  const [builderLabValidationAcknowledged, setBuilderLabValidationAcknowledged] =
+    useState(false);
   const [builderSelectedGeneratedFile, setBuilderSelectedGeneratedFile] = useState("");
   const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
     Record<string, McpBuilderDesignDecision>
@@ -516,16 +519,26 @@ export function App() {
   const builderGeneratedFileMutation = useMutation({
     mutationFn: getMcpBuilderGeneratedFile,
   });
+  const builderLabValidationMutation = useMutation({
+    mutationFn: createMcpBuilderLabValidation,
+    onSuccess: () => setBuilderLabValidationAcknowledged(false),
+  });
   const builderSecurityReviewMutation = useMutation({
     mutationFn: createMcpBuilderSecurityReview,
-    onSuccess: () => setBuilderSecurityReviewAcknowledged(false),
+    onSuccess: () => {
+      builderLabValidationMutation.reset();
+      setBuilderSecurityReviewAcknowledged(false);
+      setBuilderLabValidationAcknowledged(false);
+    },
   });
   const builderDomainReviewMutation = useMutation({
     mutationFn: createMcpBuilderDomainReview,
     onSuccess: (result) => {
+      builderLabValidationMutation.reset();
       builderSecurityReviewMutation.reset();
       setBuilderDomainReviewAcknowledged(false);
       setBuilderSecurityReviewAcknowledged(false);
+      setBuilderLabValidationAcknowledged(false);
       const evidenceReference =
         result.data.capability_decisions[0]?.evidence_citations[0] ?? "";
       setBuilderSecurityAssessments(
@@ -550,17 +563,20 @@ export function App() {
   const builderValidationMutation = useMutation({
     mutationFn: createMcpBuilderValidation,
     onSuccess: () => {
+      builderLabValidationMutation.reset();
       builderSecurityReviewMutation.reset();
       builderDomainReviewMutation.reset();
       setBuilderValidationAcknowledged(false);
       setBuilderDomainReviewAcknowledged(false);
       setBuilderSecurityReviewAcknowledged(false);
+      setBuilderLabValidationAcknowledged(false);
       setBuilderSecurityAssessments({});
     },
   });
   const builderGenerationMutation = useMutation({
     mutationFn: createMcpBuilderGeneration,
     onSuccess: (result) => {
+      builderLabValidationMutation.reset();
       builderValidationMutation.reset();
       builderSecurityReviewMutation.reset();
       builderDomainReviewMutation.reset();
@@ -568,6 +584,7 @@ export function App() {
       setBuilderValidationAcknowledged(false);
       setBuilderDomainReviewAcknowledged(false);
       setBuilderSecurityReviewAcknowledged(false);
+      setBuilderLabValidationAcknowledged(false);
       setBuilderSecurityAssessments({});
       setBuilderDomainDecisions({});
       const firstFile =
@@ -585,6 +602,7 @@ export function App() {
   const builderDesignMutation = useMutation({
     mutationFn: createMcpBuilderDesignCheckpoint,
     onSuccess: () => {
+      builderLabValidationMutation.reset();
       builderGenerationMutation.reset();
       builderGeneratedFileMutation.reset();
       builderValidationMutation.reset();
@@ -594,6 +612,7 @@ export function App() {
       setBuilderValidationAcknowledged(false);
       setBuilderDomainReviewAcknowledged(false);
       setBuilderSecurityReviewAcknowledged(false);
+      setBuilderLabValidationAcknowledged(false);
       setBuilderSecurityAssessments({});
       setBuilderDomainDecisions({});
       setBuilderSelectedGeneratedFile("");
@@ -602,6 +621,7 @@ export function App() {
   const builderMutation = useMutation({
     mutationFn: createMcpBuilderProject,
     onSuccess: (result) => {
+      builderLabValidationMutation.reset();
       builderDesignMutation.reset();
       builderGenerationMutation.reset();
       builderGeneratedFileMutation.reset();
@@ -613,6 +633,7 @@ export function App() {
       setBuilderValidationAcknowledged(false);
       setBuilderDomainReviewAcknowledged(false);
       setBuilderSecurityReviewAcknowledged(false);
+      setBuilderLabValidationAcknowledged(false);
       setBuilderSecurityAssessments({});
       setBuilderDomainDecisions({});
       setBuilderSelectedGeneratedFile("");
@@ -2206,11 +2227,13 @@ export function App() {
                           builderGenerationMutation.reset();
                           builderGeneratedFileMutation.reset();
                           builderValidationMutation.reset();
+                          builderLabValidationMutation.reset();
                           builderSecurityReviewMutation.reset();
                           builderDomainReviewMutation.reset();
                           setBuilderValidationAcknowledged(false);
                           setBuilderDomainReviewAcknowledged(false);
                           setBuilderSecurityReviewAcknowledged(false);
+                          setBuilderLabValidationAcknowledged(false);
                           setBuilderSecurityAssessments({});
                           setBuilderDomainDecisions({});
                           setBuilderDesignDecisions({});
@@ -2246,11 +2269,13 @@ export function App() {
                           builderGenerationMutation.reset();
                           builderGeneratedFileMutation.reset();
                           builderValidationMutation.reset();
+                          builderLabValidationMutation.reset();
                           builderSecurityReviewMutation.reset();
                           builderDomainReviewMutation.reset();
                           setBuilderValidationAcknowledged(false);
                           setBuilderDomainReviewAcknowledged(false);
                           setBuilderSecurityReviewAcknowledged(false);
+                          setBuilderLabValidationAcknowledged(false);
                           setBuilderSecurityAssessments({});
                           setBuilderDomainDecisions({});
                           setBuilderDesignDecisions({});
@@ -3923,6 +3948,290 @@ export function App() {
                                                       </p>
                                                     </div>
                                                   </div>
+                                                )}
+                                                {builderSecurityReviewMutation.data?.data.state ===
+                                                  "accepted" && (
+                                                  <section
+                                                    className="mcp-builder-lab-validation"
+                                                    aria-label="Isolated lab validation"
+                                                  >
+                                                    <div className="workspace-section-heading">
+                                                      <div>
+                                                        <p className="eyebrow">ISOLATED LAB</p>
+                                                        <h3>Verify the fail-closed scaffold</h3>
+                                                        <p>
+                                                          Run eight synthetic checks in an ephemeral,
+                                                          network-denied Python 3.12 process.
+                                                        </p>
+                                                      </div>
+                                                      <span className="state-badge pending">
+                                                        <FlaskConical size={14} /> Synthetic only
+                                                      </span>
+                                                    </div>
+                                                    {(identity?.subject_id ===
+                                                      builderDomainReviewMutation.data?.data
+                                                        .reviewed_by ||
+                                                      identity?.subject_id ===
+                                                        builderSecurityReviewMutation.data.data
+                                                          .reviewed_by) &&
+                                                      !builderLabValidationMutation.data && (
+                                                        <div
+                                                          className="workspace-message mcp-builder-security-sod"
+                                                          role="status"
+                                                        >
+                                                          <UserX size={20} />
+                                                          <div>
+                                                            <h3>Independent lab operator required</h3>
+                                                            <p>
+                                                              Domain and security reviewers cannot
+                                                              operate this validation. Continue with a
+                                                              different authorized operator session.
+                                                            </p>
+                                                          </div>
+                                                        </div>
+                                                      )}
+                                                    {identity?.subject_id !==
+                                                      builderDomainReviewMutation.data?.data
+                                                        .reviewed_by &&
+                                                      identity?.subject_id !==
+                                                        builderSecurityReviewMutation.data.data
+                                                          .reviewed_by &&
+                                                      !builderLabValidationMutation.data && (
+                                                        <form
+                                                          className="mcp-builder-lab-form"
+                                                          onSubmit={(event) => {
+                                                            event.preventDefault();
+                                                            const project = builderMutation.data?.data;
+                                                            const checkpoint =
+                                                              builderDesignMutation.data?.data;
+                                                            const generation =
+                                                              builderGenerationMutation.data?.data;
+                                                            const validation =
+                                                              builderValidationMutation.data?.data;
+                                                            const domainReview =
+                                                              builderDomainReviewMutation.data?.data;
+                                                            const securityReview =
+                                                              builderSecurityReviewMutation.data?.data;
+                                                            if (
+                                                              !project ||
+                                                              !checkpoint ||
+                                                              !generation ||
+                                                              !validation ||
+                                                              !domainReview ||
+                                                              !securityReview ||
+                                                              !builderLabValidationAcknowledged ||
+                                                              builderLabValidationMutation.isPending
+                                                            ) {
+                                                              return;
+                                                            }
+                                                            builderLabValidationMutation.mutate({
+                                                              project,
+                                                              checkpoint,
+                                                              generation,
+                                                              validation,
+                                                              domainReview,
+                                                              securityReview,
+                                                            });
+                                                          }}
+                                                        >
+                                                          <div className="mcp-builder-domain-contract">
+                                                            <div>
+                                                              <span>Lab profile</span>
+                                                              <code>
+                                                                atlas.lab-validation.python312.v1
+                                                              </code>
+                                                            </div>
+                                                            <div>
+                                                              <span>Runner contract</span>
+                                                              <code>
+                                                                mcp-builder-isolated-runner.v1
+                                                              </code>
+                                                            </div>
+                                                            <div>
+                                                              <span>Target access</span>
+                                                              <strong>Denied</strong>
+                                                            </div>
+                                                          </div>
+                                                          <label className="mcp-builder-check">
+                                                            <input
+                                                              type="checkbox"
+                                                              checked={
+                                                                builderLabValidationAcknowledged
+                                                              }
+                                                              onChange={(event) =>
+                                                                setBuilderLabValidationAcknowledged(
+                                                                  event.target.checked,
+                                                                )
+                                                              }
+                                                            />
+                                                            <span>
+                                                              I am the independent lab operator. I
+                                                              authorize only ephemeral, secret-free,
+                                                              synthetic scaffold checks with no vendor
+                                                              target or infrastructure access.
+                                                            </span>
+                                                          </label>
+                                                          <button
+                                                            className="run-check-button mcp-builder-submit"
+                                                            type="submit"
+                                                            disabled={
+                                                              !builderLabValidationAcknowledged ||
+                                                              builderLabValidationMutation.isPending
+                                                            }
+                                                          >
+                                                            {builderLabValidationMutation.isPending ? (
+                                                              <RefreshCw
+                                                                className="spin"
+                                                                size={16}
+                                                              />
+                                                            ) : (
+                                                              <FlaskConical size={16} />
+                                                            )}
+                                                            Run isolated validation
+                                                          </button>
+                                                        </form>
+                                                      )}
+                                                    {builderLabValidationMutation.isError && (
+                                                      <div
+                                                        className="workspace-message error-state"
+                                                        role="alert"
+                                                      >
+                                                        <AlertTriangle size={20} />
+                                                        <div>
+                                                          <h3>Lab validation unavailable</h3>
+                                                          <p>
+                                                            Exact evidence, operator separation, or
+                                                            the isolated runner boundary was rejected.
+                                                          </p>
+                                                        </div>
+                                                      </div>
+                                                    )}
+                                                    {builderLabValidationMutation.data?.data && (
+                                                      <div className="mcp-builder-lab-result">
+                                                        <div className="mcp-builder-generation-summary">
+                                                          <div>
+                                                            <p className="eyebrow">
+                                                              IMMUTABLE LAB EVIDENCE
+                                                            </p>
+                                                            <strong>
+                                                              {
+                                                                builderLabValidationMutation.data.data
+                                                                  .lab_validation_id
+                                                              }
+                                                            </strong>
+                                                            <code>
+                                                              {
+                                                                builderLabValidationMutation.data.data
+                                                                  .canonical_digest
+                                                              }
+                                                            </code>
+                                                          </div>
+                                                          <span
+                                                            className={`state-badge ${
+                                                              builderLabValidationMutation.data.data
+                                                                .state === "passed"
+                                                                ? "analyzed"
+                                                                : "failed"
+                                                            }`}
+                                                          >
+                                                            {builderLabValidationMutation.data.data
+                                                              .state === "passed" ? (
+                                                              <CheckCircle2 size={14} />
+                                                            ) : (
+                                                              <AlertTriangle size={14} />
+                                                            )}
+                                                            {
+                                                              builderLabValidationMutation.data.data
+                                                                .state
+                                                            }
+                                                          </span>
+                                                        </div>
+                                                        <div className="mcp-builder-facts">
+                                                          <div>
+                                                            <span>Passed</span>
+                                                            <strong>
+                                                              {
+                                                                builderLabValidationMutation.data.data
+                                                                  .passed_count
+                                                              }
+                                                            </strong>
+                                                          </div>
+                                                          <div>
+                                                            <span>Failed</span>
+                                                            <strong>
+                                                              {
+                                                                builderLabValidationMutation.data.data
+                                                                  .failed_count
+                                                              }
+                                                            </strong>
+                                                          </div>
+                                                          <div>
+                                                            <span>Runtime</span>
+                                                            <code>
+                                                              {
+                                                                builderLabValidationMutation.data.data
+                                                                  .runtime_version
+                                                              }
+                                                            </code>
+                                                          </div>
+                                                          <div>
+                                                            <span>Duration</span>
+                                                            <strong>
+                                                              {
+                                                                builderLabValidationMutation.data.data
+                                                                  .duration_ms
+                                                              }
+                                                              ms
+                                                            </strong>
+                                                          </div>
+                                                        </div>
+                                                        <div className="mcp-builder-lab-checks">
+                                                          {builderLabValidationMutation.data.data.checks.map(
+                                                            (check) => (
+                                                              <article key={check.code}>
+                                                                <div>
+                                                                  {check.state === "passed" ? (
+                                                                    <CheckCircle2 size={17} />
+                                                                  ) : (
+                                                                    <AlertTriangle size={17} />
+                                                                  )}
+                                                                  <strong>
+                                                                    {check.code
+                                                                      .replace("lab.", "")
+                                                                      .replaceAll("_", " ")}
+                                                                  </strong>
+                                                                </div>
+                                                                <span>{check.state}</span>
+                                                                <p>{check.summary}</p>
+                                                                <code>
+                                                                  {check.evidence_paths.join(", ")}
+                                                                </code>
+                                                              </article>
+                                                            ),
+                                                          )}
+                                                        </div>
+                                                        <div className="mcp-builder-limitations">
+                                                          <strong>Lab-validation boundaries</strong>
+                                                          <ul>
+                                                            {builderLabValidationMutation.data.data.limitations.map(
+                                                              (limitation) => (
+                                                                <li key={limitation}>{limitation}</li>
+                                                              ),
+                                                            )}
+                                                          </ul>
+                                                        </div>
+                                                        <div className="mcp-builder-boundary">
+                                                          <LockKeyhole size={18} />
+                                                          <p>
+                                                            Package creation, signing, registration,
+                                                            installation, vendor target access, runtime
+                                                            trust, execution authority, and
+                                                            infrastructure mutation remain false.
+                                                          </p>
+                                                        </div>
+                                                      </div>
+                                                    )}
+                                                  </section>
                                                 )}
                                               </section>
                                             )}

@@ -35,6 +35,12 @@ from atlas.modules.mcp_builder.adapters.generation_memory import (
     InMemoryMcpBuilderArtifactPublisher,
     InMemoryMcpBuilderGenerationRepository,
 )
+from atlas.modules.mcp_builder.adapters.lab_runner_subprocess import (
+    SubprocessMcpBuilderLabRunner,
+)
+from atlas.modules.mcp_builder.adapters.lab_validation_memory import (
+    InMemoryMcpBuilderLabValidationRepository,
+)
 from atlas.modules.mcp_builder.adapters.memory import InMemoryMcpBuilderProjectRepository
 from atlas.modules.mcp_builder.adapters.security_review_memory import (
     InMemoryMcpBuilderSecurityReviewRepository,
@@ -51,6 +57,8 @@ from atlas.modules.mcp_builder.application.ports import McpBuilderArtifactError,
 from atlas.modules.mcp_builder.application.service import (
     DOMAIN_REVIEW_PROFILE,
     DOMAIN_REVIEWER_CONTRACT_VERSION,
+    LAB_RUNNER_CONTRACT_VERSION,
+    LAB_VALIDATION_PROFILE,
     SECURITY_REVIEW_PROFILE,
     SECURITY_REVIEWER_CONTRACT_VERSION,
     McpBuilderService,
@@ -69,6 +77,7 @@ from atlas.modules.mcp_builder.domain.domain_review import (
     BuilderDomainCapabilityDecision,
     BuilderDomainCapabilityDecisionKind,
 )
+from atlas.modules.mcp_builder.domain.lab_validation import BuilderLabCheckCode
 from atlas.modules.mcp_builder.domain.models import BuilderProjectState
 from atlas.modules.mcp_builder.domain.security_review import (
     BuilderSecurityControl,
@@ -389,6 +398,57 @@ def security_review_request(
     }
     values.update(overrides)
     return values
+
+
+def lab_validation_request(
+    project: Any,
+    checkpoint: Any,
+    generation: Any,
+    validation: Any,
+    domain_review: Any,
+    security_review: Any,
+    **overrides: Any,
+) -> dict[str, Any]:
+    values: dict[str, Any] = {
+        "actor": actor(subject_id="subject.lab.operator"),
+        "project_id": project.project_id,
+        "project_version": project.version,
+        "project_digest": project.canonical_digest,
+        "source_digest": project.source_digest,
+        "checkpoint_id": checkpoint.checkpoint_id,
+        "checkpoint_digest": checkpoint.canonical_digest,
+        "generation_id": generation.generation_id,
+        "generation_digest": generation.canonical_digest,
+        "artifact_digest": generation.artifact_digest,
+        "validation_id": validation.validation_id,
+        "validation_digest": validation.canonical_digest,
+        "domain_review_id": domain_review.review_id,
+        "domain_review_digest": domain_review.canonical_digest,
+        "security_review_id": security_review.review_id,
+        "security_review_digest": security_review.canonical_digest,
+        "lab_profile": LAB_VALIDATION_PROFILE,
+        "acknowledged_isolated_synthetic_execution": True,
+        "idempotency_key": "mcp-builder-lab-validation-0001",
+        "correlation_id": "correlation.mcp-builder-lab-validation",
+    }
+    values.update(overrides)
+    return values
+
+
+async def accepted_security_chain(builder: McpBuilderService) -> tuple[Any, ...]:
+    project = await builder.create_project(**create_request())
+    checkpoint = await builder.create_design_checkpoint(**design_request(project))
+    generation = await builder.create_generation(**generation_request(project, checkpoint))
+    validation = await builder.create_validation(
+        **validation_request(project, checkpoint, generation)
+    )
+    domain_review = await builder.create_domain_review(
+        **domain_review_request(project, checkpoint, generation, validation)
+    )
+    security_review = await builder.create_security_review(
+        **security_review_request(project, checkpoint, generation, validation, domain_review)
+    )
+    return project, checkpoint, generation, validation, domain_review, security_review
 
 
 def test_analyzer_extracts_only_explicit_read_only_capability() -> None:
@@ -1488,6 +1548,145 @@ async def test_security_review_audit_failure_prevents_persistence() -> None:
 
 
 @pytest.mark.asyncio
+async def test_lab_validation_runs_isolated_replays_and_grants_no_runtime_authority() -> None:
+    builder, _, _, sink = service()
+    (
+        project,
+        checkpoint,
+        generation,
+        validation,
+        domain_review,
+        security_review,
+    ) = await accepted_security_chain(builder)
+    request = lab_validation_request(
+        project, checkpoint, generation, validation, domain_review, security_review
+    )
+
+    result = await builder.create_lab_validation(**request)
+    replay = await builder.create_lab_validation(**request)
+    loaded = await builder.get_lab_validation(
+        actor=actor(subject_id="subject.lab.operator"),
+        project_id=project.project_id,
+        correlation_id="correlation.mcp-builder-lab-validation-read",
+    )
+
+    assert result.state.value == "passed", [
+        (item.code.value, item.state.value, item.summary) for item in result.checks
+    ]
+    assert result.lab_profile == LAB_VALIDATION_PROFILE
+    assert result.runner_contract_version == LAB_RUNNER_CONTRACT_VERSION
+    assert result.passed_count == len(BuilderLabCheckCode) == 8
+    assert result.failed_count == result.skipped_count == 0
+    assert result.child_started is True
+    assert result.child_exit_code == 0
+    assert result.workspace_removed is True
+    assert result.operated_by not in {result.domain_reviewed_by, result.security_reviewed_by}
+    assert replay == replace(result, reused=True)
+    assert loaded == result
+    assert result.lab_validation_completed is True
+    assert result.lab_validation_passed is True
+    assert result.synthetic_fixture_used is True
+    assert result.runtime_self_test_performed is True
+    assert result.subprocess_invoked is True
+    assert result.dynamic_code_execution_performed is True
+    for attribute in (
+        "secret_values_present",
+        "target_connected",
+        "network_request_performed",
+        "dependency_resolution_performed",
+        "malware_or_dynamic_scan_performed",
+        "candidate_package_created",
+        "connector_registered",
+        "connector_installed",
+        "connector_enabled",
+        "runtime_trust_granted",
+        "execution_authorized",
+        "infrastructure_mutation_performed",
+    ):
+        assert getattr(result, attribute) is False
+    assert sink.records[-1].result_code == "mcp_builder_lab_validation_read"
+
+
+@pytest.mark.asyncio
+async def test_lab_validation_rejects_stale_profile_ack_and_separation_of_duties() -> None:
+    builder, _, _, _ = service()
+    (
+        project,
+        checkpoint,
+        generation,
+        validation,
+        domain_review,
+        security_review,
+    ) = await accepted_security_chain(builder)
+    request = lab_validation_request(
+        project, checkpoint, generation, validation, domain_review, security_review
+    )
+    cases = (
+        ({"security_review_digest": "0" * 64}, "builder_lab_validation_source_stale"),
+        (
+            {"lab_profile": "atlas.lab-validation.unsupported.v1"},
+            "builder_lab_validation_profile_unsupported",
+        ),
+        (
+            {"acknowledged_isolated_synthetic_execution": False},
+            "builder_lab_validation_execution_acknowledgement_required",
+        ),
+        (
+            {"actor": actor(subject_id=domain_review.reviewed_by)},
+            "builder_lab_validation_separation_of_duties_required",
+        ),
+        (
+            {"actor": actor(subject_id=security_review.reviewed_by)},
+            "builder_lab_validation_separation_of_duties_required",
+        ),
+    )
+    for overrides, error_code in cases:
+        with pytest.raises(McpBuilderError, match=error_code):
+            await builder.create_lab_validation(**{**request, **overrides})
+
+
+@pytest.mark.asyncio
+async def test_lab_validation_persists_fail_closed_runner_result() -> None:
+    lab_repository = InMemoryMcpBuilderLabValidationRepository()
+    builder = McpBuilderService(
+        repository=InMemoryMcpBuilderProjectRepository(),
+        design_repository=InMemoryMcpBuilderDesignCheckpointRepository(),
+        generation_repository=InMemoryMcpBuilderGenerationRepository(),
+        validation_repository=InMemoryMcpBuilderValidationRepository(),
+        domain_review_repository=InMemoryMcpBuilderDomainReviewRepository(),
+        security_review_repository=InMemoryMcpBuilderSecurityReviewRepository(),
+        lab_validation_repository=lab_repository,
+        lab_runner=SubprocessMcpBuilderLabRunner(timeout_seconds=0.000001),
+        artifact_publisher=InMemoryMcpBuilderArtifactPublisher(),
+        audit_sink=CollectingAuditSink(),
+        environment_id="environment.test",
+        clock=lambda: NOW,
+    )
+    (
+        project,
+        checkpoint,
+        generation,
+        validation,
+        domain_review,
+        security_review,
+    ) = await accepted_security_chain(builder)
+
+    result = await builder.create_lab_validation(
+        **lab_validation_request(
+            project, checkpoint, generation, validation, domain_review, security_review
+        )
+    )
+    stored = await lab_repository.get_by_project(project_id=project.project_id)
+
+    assert result.state.value == "failed"
+    assert result.lab_validation_passed is False
+    assert result.failed_count > 0
+    assert result.child_started is True
+    assert result.workspace_removed is True
+    assert stored == result
+
+
+@pytest.mark.asyncio
 async def test_static_validator_fails_unsafe_python_and_embedded_secret() -> None:
     builder, _, _, _ = service()
     project = await builder.create_project(**create_request())
@@ -2047,6 +2246,109 @@ def test_security_review_api_requires_independent_csrf_scoped_human(tmp_path: Pa
         "runtime_self_test_performed",
         "subprocess_invoked",
         "dynamic_code_execution_performed",
+        "runtime_trust_granted",
+        "execution_authorized",
+        "infrastructure_mutation_performed",
+    ):
+        assert data[field] is False
+
+
+def test_lab_validation_api_requires_independent_csrf_scoped_operator(tmp_path: Path) -> None:
+    sink = CollectingAuditSink()
+    builder, _, _, _ = service(sink)
+    chain = asyncio.run(accepted_security_chain(builder))
+    project, checkpoint, generation, validation, domain_review, security_review = chain
+    request = lab_validation_request(
+        project, checkpoint, generation, validation, domain_review, security_review
+    )
+    payload = {
+        "schema_version": "atlas.mcp-builder-lab-validation-request.v1",
+        **{
+            key: value
+            for key, value in request.items()
+            if key not in {"actor", "project_id", "idempotency_key", "correlation_id"}
+        },
+    }
+    lab_operator = actor(subject_id="subject.lab.operator")
+    provider = BasicTestIdentityProvider(lab_operator)
+    app_settings = settings(
+        development_subject_id=lab_operator.subject_id,
+        mcp_builder_generation_root=tmp_path / "mcp-builder-generations",
+    )
+    with TestClient(
+        create_app(
+            app_settings,
+            identity_provider=provider,
+            audit_sink=sink,
+            mcp_builder_service=builder,
+        )
+    ) as client:
+        login_response = login(client)
+        endpoint = f"/api/v1/mcp-builder/projects/{project.project_id}/lab-validations"
+        denied = client.post(
+            endpoint,
+            json=payload,
+            headers={"Idempotency-Key": "mcp-builder-lab-api-0001"},
+        )
+        unsupported = client.post(
+            endpoint,
+            json={**payload, "lab_profile": "atlas.lab-validation.unsupported.v1"},
+            headers={
+                "Idempotency-Key": "mcp-builder-lab-api-unsupported",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+        )
+        stale = client.post(
+            endpoint,
+            json={**payload, "security_review_digest": "0" * 64},
+            headers={
+                "Idempotency-Key": "mcp-builder-lab-api-stale",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+        )
+        created = client.post(
+            endpoint,
+            json=payload,
+            headers={
+                "Idempotency-Key": "mcp-builder-lab-api-0001",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+        )
+        read = client.get(f"/api/v1/mcp-builder/projects/{project.project_id}/lab-validation")
+
+    assert denied.status_code == 403
+    assert unsupported.status_code == 422
+    assert stale.status_code == 409
+    assert created.status_code == 201, created.text
+    assert read.status_code == 200
+    assert created.headers["Cache-Control"] == "no-store"
+    assert read.headers["Cache-Control"] == "no-store"
+    data = created.json()["data"]
+    assert data["state"] == "passed"
+    assert data["lab_profile"] == LAB_VALIDATION_PROFILE
+    assert data["runner_contract_version"] == LAB_RUNNER_CONTRACT_VERSION
+    assert data["security_review_id"] == security_review.review_id
+    assert data["operated_by"] == lab_operator.subject_id
+    assert data["passed_count"] == 8
+    assert len(data["checks"]) == 8
+    assert data["child_started"] is True
+    assert data["child_exit_code"] == 0
+    assert data["workspace_removed"] is True
+    assert data["lab_validation_completed"] is True
+    assert data["lab_validation_passed"] is True
+    assert data["runtime_self_test_performed"] is True
+    assert data["subprocess_invoked"] is True
+    assert data["dynamic_code_execution_performed"] is True
+    for field in (
+        "secret_values_present",
+        "target_connected",
+        "network_request_performed",
+        "dependency_resolution_performed",
+        "malware_or_dynamic_scan_performed",
+        "candidate_package_created",
+        "connector_registered",
+        "connector_installed",
+        "connector_enabled",
         "runtime_trust_granted",
         "execution_authorized",
         "infrastructure_mutation_performed",
