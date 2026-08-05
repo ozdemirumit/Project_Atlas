@@ -8,7 +8,7 @@
 | Title | Governed connector package validation intake foundation |
 | Status | In Progress |
 | Branch | `agent/mcp-package-validation-intake` |
-| Pull Request | Pending |
+| Pull Request | [#67](https://github.com/ozdemirumit/Project_Atlas/pull/67) |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009, ADR-010, ADR-011 |
 | Last Updated | 2026-08-05 |
 | Next Action | Publish PR, pass GitHub CI, merge, and synchronize `main` |
