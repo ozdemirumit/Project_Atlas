@@ -609,7 +609,7 @@ const packageAcquisition = {
     source_custodied_by: candidateHandoff.data.custodied_by,
     organization_id: candidateHandoff.data.organization_id,
     environment_id: candidateHandoff.data.environment_id,
-    acquired_by: identity.data.subject_id,
+    acquired_by: "subject.registry.intake",
     acquisition_profile: "atlas.connector-acquisition.builder-handoff.v1",
     archive_contract_version: "mcp-builder-candidate-zip.v1",
     package_filename: candidateHandoff.data.package_filename,
@@ -649,6 +649,99 @@ const packageAcquisition = {
   },
 };
 
+const packageValidation = {
+  data: {
+    validation_id: "connector-package-validation.aaaaaaaaaaaaaaaaaaaaaaaa",
+    schema_version: "atlas.connector-package-validation.v1",
+    version: 1,
+    lifecycle: "validating",
+    outcome: "passed",
+    source_acquisition_id: packageAcquisition.data.acquisition_id,
+    source_acquisition_digest: packageAcquisition.data.canonical_digest,
+    source_handoff_id: candidateHandoff.data.handoff_id,
+    source_handoff_digest: candidateHandoff.data.canonical_digest,
+    source_project_id: candidateHandoff.data.project_id,
+    source_acquired_by: packageAcquisition.data.acquired_by,
+    organization_id: candidateHandoff.data.organization_id,
+    environment_id: candidateHandoff.data.environment_id,
+    validated_by: identity.data.subject_id,
+    validation_profile: "atlas.connector-validation-intake.builder-v1",
+    validator_version: "atlas.connector-manifest-schema-validator.v1",
+    package_digest: packageAcquisition.data.package_digest,
+    package_size_bytes: packageAcquisition.data.package_size_bytes,
+    manifest_path: "atlas-connector.yaml",
+    manifest_digest: "b".repeat(64),
+    capability_ids: packageAcquisition.data.capabilities.map((item) => item.capability_id),
+    schema_evidence: [
+      {
+        relative_path: "schemas/config/config.schema.json",
+        digest: "c".repeat(64),
+        schema_id: "atlas://generated/config.schema.json",
+        purpose: "configuration",
+        capability_id: null,
+      },
+      {
+        relative_path: "schemas/inputs/capability_read.schema.json",
+        digest: "d".repeat(64),
+        schema_id: "atlas://generated/capability.storage.health.read/input.schema.json",
+        purpose: "capability_input",
+        capability_id: "capability.storage.health.read",
+      },
+      {
+        relative_path: "schemas/outputs/capability_read.schema.json",
+        digest: "e".repeat(64),
+        schema_id: "atlas://generated/capability.storage.health.read/output.schema.json",
+        purpose: "capability_output",
+        capability_id: "capability.storage.health.read",
+      },
+    ],
+    checks: [
+      ["validation.source.accepted", "ATLAS-CANDIDATE-HANDOFF.json"],
+      ["validation.archive.contract", "ATLAS-CANDIDATE-HANDOFF.json"],
+      ["validation.manifest.contract", "atlas-connector.yaml"],
+      ["validation.schemas.contract", "schemas/config/config.schema.json"],
+    ].map(([code, path]) => ({
+      code,
+      state: "passed",
+      severity: "informational",
+      summary: `Bounded ${code} evidence passed.`,
+      evidence_paths: [path],
+      remediation: "Preserve the exact bounded contract.",
+    })),
+    limitations: [
+      "This report covers exact acquisition, archive, manifest, and JSON Schema intake only.",
+      "Dependency, vulnerability, malware, secret-content, license, static-code, contract, runner, self-test, and lab validation remain incomplete.",
+      "Signing, registration, installation, enablement, runtime trust, execution, and deployment remain prohibited.",
+    ],
+    canonical_digest: "f".repeat(64),
+    validated_at: "2026-08-05T15:00:00Z",
+    source_integrity_accepted: true,
+    manifest_schema_validation_completed: true,
+    dependency_scan_completed: false,
+    vulnerability_scan_completed: false,
+    malware_scan_completed: false,
+    secret_content_scan_completed: false,
+    license_scan_completed: false,
+    static_code_validation_completed: false,
+    contract_validation_completed: false,
+    runner_validation_completed: false,
+    lab_validation_completed: false,
+    package_signed: false,
+    publisher_attested: false,
+    connector_registered: false,
+    connector_approved: false,
+    connector_installed: false,
+    connector_enabled: false,
+    target_configured: false,
+    credentials_resolved: false,
+    runtime_trust_granted: false,
+    execution_authorized: false,
+    deployment_approved: false,
+    infrastructure_mutation_performed: false,
+    reused: false,
+  },
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -668,6 +761,7 @@ describe("MCP Builder workspace", () => {
     const labValidationRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const candidateHandoffRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const packageAcquisitionRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    const packageValidationRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -745,6 +839,14 @@ describe("MCP Builder workspace", () => {
           idempotencyKey: headers.get("Idempotency-Key"),
         });
         return Promise.resolve(new Response(JSON.stringify(packageAcquisition), { status: 201 }));
+      }
+      if (url.endsWith("/api/v1/connectors/package-validations")) {
+        const headers = new Headers(init?.headers);
+        packageValidationRequests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(new Response(JSON.stringify(packageValidation), { status: 201 }));
       }
       if (
         url.endsWith(
@@ -888,6 +990,16 @@ describe("MCP Builder workspace", () => {
     expect(screen.getByText("Verified")).toBeVisible();
     expect(screen.getByText("Unattested")).toBeVisible();
     expect(screen.getAllByText("Not run")).toHaveLength(2);
+    expect(screen.getByText("Validate manifest and schemas")).toBeVisible();
+    fireEvent.click(
+      screen.getByLabelText(/I am the independent package validator/i),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Run package intake validation" }));
+
+    expect(await screen.findByText(packageValidation.data.validation_id)).toBeVisible();
+    expect(screen.getAllByText("IMMUTABLE VALIDATION REPORT")).toHaveLength(2);
+    expect(screen.getAllByText("validation.manifest.contract")).toHaveLength(2);
+    expect(screen.getAllByText("Validation boundaries")).toHaveLength(2);
     expect(screen.queryByRole("button", { name: /install|execute|register|enable/i })).not.toBeInTheDocument();
     expect(requests).toHaveLength(1);
     expect(designRequests).toHaveLength(1);
@@ -898,6 +1010,7 @@ describe("MCP Builder workspace", () => {
     expect(labValidationRequests).toHaveLength(1);
     expect(candidateHandoffRequests).toHaveLength(1);
     expect(packageAcquisitionRequests).toHaveLength(1);
+    expect(packageValidationRequests).toHaveLength(1);
     expect(requests[0]?.idempotencyKey).toBe("mcp-builder.mcp-builder-ui-001");
     const body = JSON.parse(requests[0]?.body ?? "{}") as Record<string, unknown>;
     expect(body.source_document).toBe(source);
@@ -1040,6 +1153,23 @@ describe("MCP Builder workspace", () => {
     expect(packageAcquisitionBody).not.toHaveProperty("register");
     expect(packageAcquisitionBody).not.toHaveProperty("install");
     expect(packageAcquisitionBody).not.toHaveProperty("execute");
+    expect(packageValidationRequests[0]?.idempotencyKey).toBe(
+      "connector-package-validation.mcp-builder-ui-001",
+    );
+    const packageValidationBody = JSON.parse(
+      packageValidationRequests[0]?.body ?? "{}",
+    ) as Record<string, unknown>;
+    expect(packageValidationBody.source_acquisition_id).toBe(
+      packageAcquisition.data.acquisition_id,
+    );
+    expect(packageValidationBody.source_acquisition_digest).toBe(
+      packageAcquisition.data.canonical_digest,
+    );
+    expect(packageValidationBody.package_digest).toBe(packageAcquisition.data.package_digest);
+    expect(packageValidationBody.acknowledged_untrusted_quarantined_package).toBe(true);
+    expect(packageValidationBody).not.toHaveProperty("register");
+    expect(packageValidationBody).not.toHaveProperty("install");
+    expect(packageValidationBody).not.toHaveProperty("execute");
   }, 15_000);
 
   it("verifies the downloaded candidate archive against immutable evidence", async () => {

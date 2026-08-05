@@ -29,6 +29,7 @@ from atlas.api.routes import (
     bootstrap_trust,
     bootstrap_verification,
     change_reviews,
+    connector_validations,
     connectors,
     deployment_configuration,
     graph,
@@ -101,7 +102,14 @@ from atlas.modules.connectors.adapters.acquisition_memory import (
 from atlas.modules.connectors.adapters.acquisition_postgres import (
     PostgreSQLPackageAcquisitionRepository,
 )
+from atlas.modules.connectors.adapters.validation_intake_memory import (
+    InMemoryPackageValidationRepository,
+)
+from atlas.modules.connectors.adapters.validation_intake_postgres import (
+    PostgreSQLPackageValidationRepository,
+)
 from atlas.modules.connectors.application.acquisition import PackageAcquisitionService
+from atlas.modules.connectors.application.validation_intake import PackageValidationService
 from atlas.modules.graph.adapters.synthetic import build_synthetic_graph_snapshot
 from atlas.modules.graph.application.engine import InMemoryGraphImpactAnalyzer
 from atlas.modules.graph.application.service import GraphImpactService
@@ -355,6 +363,7 @@ def create_app(
     completion_receipt_service: CompletionReceiptService | None = None,
     mcp_builder_service: McpBuilderService | None = None,
     package_acquisition_service: PackageAcquisitionService | None = None,
+    package_validation_service: PackageValidationService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -839,6 +848,21 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if package_validation_service is not None:
+        resolved_package_validation_service = package_validation_service
+    else:
+        package_validation_repository = (
+            PostgreSQLPackageValidationRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryPackageValidationRepository()
+        )
+        resolved_package_validation_service = PackageValidationService(
+            repository=package_validation_repository,
+            acquisition_source=resolved_package_acquisition_service.repository,
+            archive_source=resolved_package_acquisition_service.archive_publisher,
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -1009,6 +1033,7 @@ def create_app(
         app.state.completion_receipt_service = resolved_completion_receipt_service
         app.state.mcp_builder_service = resolved_mcp_builder_service
         app.state.package_acquisition_service = resolved_package_acquisition_service
+        app.state.package_validation_service = resolved_package_validation_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -1021,6 +1046,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_package_validation_service.close()
         await resolved_package_acquisition_service.close()
         await resolved_mcp_builder_service.close()
         await resolved_completion_receipt_service.close()
@@ -1083,6 +1109,7 @@ def create_app(
     app.include_router(upgrades.router, prefix="/api/v1")
     app.include_router(mcp_builder.router, prefix="/api/v1")
     app.include_router(connectors.router, prefix="/api/v1")
+    app.include_router(connector_validations.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
