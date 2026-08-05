@@ -129,6 +129,67 @@ export type McpBuilderDesignInput = {
   decisions: McpBuilderDesignDecision[];
 };
 
+export type McpBuilderGeneratedFile = {
+  relative_path: string;
+  media_type:
+    | "application/json"
+    | "application/toml"
+    | "application/yaml"
+    | "text/markdown"
+    | "text/x-python";
+  sha256: string;
+  size_bytes: number;
+  source_candidate_ids: string[];
+};
+
+export type McpBuilderGeneration = {
+  generation_id: string;
+  schema_version: "atlas.mcp-builder-generation.v1";
+  version: 1;
+  state: "quarantined";
+  project_id: string;
+  project_version: 1;
+  project_digest: string;
+  source_digest: string;
+  checkpoint_id: string;
+  checkpoint_digest: string;
+  requested_by: string;
+  language_profile: "atlas.python312.v1";
+  template_version: string;
+  artifact_digest: string;
+  artifact_size_bytes: number;
+  files: McpBuilderGeneratedFile[];
+  canonical_digest: string;
+  created_at: string;
+  artifact_published: true;
+  generated_artifact_created: true;
+  validation_completed: false;
+  candidate_package_created: false;
+  connector_registered: false;
+  connector_installed: false;
+  connector_enabled: false;
+  network_request_performed: false;
+  model_inference_performed: false;
+  subprocess_invoked: false;
+  dynamic_code_execution_performed: false;
+  runtime_trust_granted: false;
+  execution_authorized: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
+export type McpBuilderGeneratedFileView = {
+  generation_id: string;
+  state: "quarantined";
+  artifact_digest: string;
+  file: McpBuilderGeneratedFile;
+  content: string;
+  content_verified: true;
+  quarantined: true;
+  runtime_trust_granted: false;
+  execution_authorized: false;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -196,6 +257,75 @@ function isSafeDesignCheckpoint(
     noAuthority.every((flag) => flag === false) &&
     Array.isArray(checkpoint.capability_decisions) &&
     checkpoint.capability_decisions.length > 0
+  );
+}
+
+function isSafeGeneratedFile(value: unknown): value is McpBuilderGeneratedFile {
+  return (
+    isRecord(value) &&
+    typeof value.relative_path === "string" &&
+    [
+      "application/json",
+      "application/toml",
+      "application/yaml",
+      "text/markdown",
+      "text/x-python",
+    ].includes(String(value.media_type)) &&
+    typeof value.sha256 === "string" &&
+    value.sha256.length === 64 &&
+    typeof value.size_bytes === "number" &&
+    value.size_bytes > 0 &&
+    Array.isArray(value.source_candidate_ids) &&
+    value.source_candidate_ids.every((item) => typeof item === "string")
+  );
+}
+
+function isSafeGeneration(value: unknown): value is { data: McpBuilderGeneration } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const generation = value.data;
+  const noAuthority = [
+    generation.validation_completed,
+    generation.candidate_package_created,
+    generation.connector_registered,
+    generation.connector_installed,
+    generation.connector_enabled,
+    generation.network_request_performed,
+    generation.model_inference_performed,
+    generation.subprocess_invoked,
+    generation.dynamic_code_execution_performed,
+    generation.runtime_trust_granted,
+    generation.execution_authorized,
+    generation.infrastructure_mutation_performed,
+  ];
+  return (
+    generation.schema_version === "atlas.mcp-builder-generation.v1" &&
+    generation.version === 1 &&
+    generation.state === "quarantined" &&
+    generation.language_profile === "atlas.python312.v1" &&
+    generation.artifact_published === true &&
+    generation.generated_artifact_created === true &&
+    typeof generation.generation_id === "string" &&
+    typeof generation.artifact_digest === "string" &&
+    noAuthority.every((flag) => flag === false) &&
+    Array.isArray(generation.files) &&
+    generation.files.length > 0 &&
+    generation.files.every(isSafeGeneratedFile)
+  );
+}
+
+function isSafeGeneratedFileView(
+  value: unknown,
+): value is { data: McpBuilderGeneratedFileView } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const view = value.data;
+  return (
+    view.state === "quarantined" &&
+    view.quarantined === true &&
+    view.content_verified === true &&
+    view.runtime_trust_granted === false &&
+    view.execution_authorized === false &&
+    typeof view.content === "string" &&
+    isSafeGeneratedFile(view.file)
   );
 }
 
@@ -274,6 +404,54 @@ export async function createMcpBuilderDesignCheckpoint(input: McpBuilderDesignIn
   const payload: unknown = await response.json();
   if (!isSafeDesignCheckpoint(payload)) {
     throw new Error("MCP Builder returned an unsafe design checkpoint");
+  }
+  return payload;
+}
+
+export async function createMcpBuilderGeneration(input: {
+  project: McpBuilderProject;
+  checkpoint: McpBuilderDesignCheckpoint;
+}) {
+  const response = await apiFetch(
+    `/api/v1/mcp-builder/projects/${input.project.project_id}/generations`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": `mcp-builder-generation.${nonce()}`,
+      },
+      body: JSON.stringify({
+        schema_version: "atlas.mcp-builder-generation-request.v1",
+        project_version: input.project.version,
+        project_digest: input.project.canonical_digest,
+        source_digest: input.project.source_digest,
+        checkpoint_id: input.checkpoint.checkpoint_id,
+        checkpoint_digest: input.checkpoint.canonical_digest,
+        language_profile: "atlas.python312.v1",
+        acknowledged_quarantine: true,
+      }),
+    },
+  );
+  if (!response.ok) throw new Error(`MCP Builder generation failed with ${response.status}`);
+  const payload: unknown = await response.json();
+  if (!isSafeGeneration(payload)) throw new Error("MCP Builder returned unsafe generation data");
+  return payload;
+}
+
+export async function getMcpBuilderGeneratedFile(input: {
+  projectId: string;
+  relativePath: string;
+}) {
+  const path = input.relativePath.split("/").map(encodeURIComponent).join("/");
+  const response = await apiFetch(
+    `/api/v1/mcp-builder/projects/${input.projectId}/generation/files/${path}`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (!response.ok) throw new Error(`MCP Builder file preview failed with ${response.status}`);
+  const payload: unknown = await response.json();
+  if (!isSafeGeneratedFileView(payload)) {
+    throw new Error("MCP Builder returned an unsafe generated file preview");
   }
   return payload;
 }

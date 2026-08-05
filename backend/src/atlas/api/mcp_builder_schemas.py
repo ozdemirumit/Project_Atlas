@@ -13,6 +13,10 @@ from atlas.modules.mcp_builder.domain.design_review import (
     BuilderEntityMapping,
     McpBuilderDesignCheckpoint,
 )
+from atlas.modules.mcp_builder.domain.generation import (
+    BuilderGeneratedFile,
+    McpBuilderGeneration,
+)
 from atlas.modules.mcp_builder.domain.models import McpBuilderProject
 
 STABLE_ID = r"^[a-z][a-z0-9_.:-]{2,127}$"
@@ -317,6 +321,110 @@ class McpBuilderDesignCheckpointData(BaseModel):
 
 class McpBuilderDesignCheckpointResponse(BaseModel):
     data: McpBuilderDesignCheckpointData
+    meta: ResponseMeta
+
+
+class McpBuilderGenerationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: str = Field(
+        default="atlas.mcp-builder-generation-request.v1", pattern=STABLE_ID
+    )
+    project_version: int = Field(ge=1)
+    project_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    source_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    checkpoint_id: str = Field(pattern=STABLE_ID)
+    checkpoint_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    language_profile: str = Field(default="atlas.python312.v1", pattern=STABLE_ID)
+    acknowledged_quarantine: bool
+
+
+class BuilderGeneratedFileData(BaseModel):
+    relative_path: str
+    media_type: str
+    sha256: str
+    size_bytes: int
+    source_candidate_ids: list[str]
+
+    @classmethod
+    def from_domain(cls, item: BuilderGeneratedFile) -> BuilderGeneratedFileData:
+        return cls(
+            relative_path=item.relative_path,
+            media_type=item.media_type,
+            sha256=item.sha256,
+            size_bytes=item.size_bytes,
+            source_candidate_ids=list(item.source_candidate_ids),
+        )
+
+
+class McpBuilderGenerationData(BaseModel):
+    generation_id: str
+    schema_version: str
+    version: int
+    state: str
+    project_id: str
+    project_version: int
+    project_digest: str
+    source_digest: str
+    checkpoint_id: str
+    checkpoint_digest: str
+    organization_id: str
+    environment_id: str
+    requested_by: str
+    language_profile: str
+    template_version: str
+    artifact_digest: str
+    artifact_size_bytes: int
+    files: list[BuilderGeneratedFileData]
+    canonical_digest: str
+    created_at: datetime
+    artifact_published: bool
+    generated_artifact_created: bool
+    validation_completed: bool
+    candidate_package_created: bool
+    connector_registered: bool
+    connector_installed: bool
+    connector_enabled: bool
+    network_request_performed: bool
+    model_inference_performed: bool
+    subprocess_invoked: bool
+    dynamic_code_execution_performed: bool
+    runtime_trust_granted: bool
+    execution_authorized: bool
+    infrastructure_mutation_performed: bool
+    reused: bool
+
+    @classmethod
+    def from_domain(cls, generation: McpBuilderGeneration) -> McpBuilderGenerationData:
+        return cls(
+            **{
+                field: getattr(generation, field)
+                for field in cls.model_fields
+                if field not in {"state", "files"}
+            },
+            state=generation.state.value,
+            files=[BuilderGeneratedFileData.from_domain(item) for item in generation.files],
+        )
+
+
+class McpBuilderGenerationResponse(BaseModel):
+    data: McpBuilderGenerationData
+    meta: ResponseMeta
+
+
+class McpBuilderGeneratedFileData(BaseModel):
+    generation_id: str
+    state: str
+    artifact_digest: str
+    file: BuilderGeneratedFileData
+    content: str
+    content_verified: bool = True
+    quarantined: bool = True
+    runtime_trust_granted: bool = False
+    execution_authorized: bool = False
+
+
+class McpBuilderGeneratedFileResponse(BaseModel):
+    data: McpBuilderGeneratedFileData
     meta: ResponseMeta
 
 

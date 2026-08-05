@@ -23,9 +23,17 @@ from atlas.modules.mcp_builder.application.analyzer import (
     BuilderSourceError,
     OpenApiSourceAnalyzer,
 )
+from atlas.modules.mcp_builder.application.generator import (
+    LANGUAGE_PROFILE,
+    BuilderGenerationError,
+    PythonScaffoldGenerator,
+)
 from atlas.modules.mcp_builder.application.ports import (
+    McpBuilderArtifactError,
+    McpBuilderArtifactPublisher,
     McpBuilderDesignCheckpointRepository,
     McpBuilderError,
+    McpBuilderGenerationRepository,
     McpBuilderProjectRepository,
 )
 from atlas.modules.mcp_builder.domain.design_review import (
@@ -33,6 +41,11 @@ from atlas.modules.mcp_builder.domain.design_review import (
     BuilderCapabilityDecisionKind,
     BuilderEntityMapping,
     McpBuilderDesignCheckpoint,
+)
+from atlas.modules.mcp_builder.domain.generation import (
+    BuilderGeneratedFile,
+    BuilderGenerationState,
+    McpBuilderGeneration,
 )
 from atlas.modules.mcp_builder.domain.models import BuilderProjectState, McpBuilderProject
 
@@ -42,6 +55,9 @@ READ_PERMISSION = "mcp-builder.project.read"
 DESIGN_CREATE_PERMISSION = "mcp-builder.design.create"
 DESIGN_READ_PERMISSION = "mcp-builder.design.read"
 DESIGN_SCHEMA = "atlas.mcp-builder-design-checkpoint.v1"
+GENERATION_CREATE_PERMISSION = "mcp-builder.generation.create"
+GENERATION_READ_PERMISSION = "mcp-builder.generation.read"
+GENERATION_SCHEMA = "atlas.mcp-builder-generation.v1"
 
 
 class McpBuilderService:
@@ -50,16 +66,22 @@ class McpBuilderService:
         *,
         repository: McpBuilderProjectRepository,
         design_repository: McpBuilderDesignCheckpointRepository,
+        generation_repository: McpBuilderGenerationRepository,
+        artifact_publisher: McpBuilderArtifactPublisher,
         audit_sink: AuditSink,
         environment_id: str,
         analyzer: OpenApiSourceAnalyzer | None = None,
+        generator: PythonScaffoldGenerator | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
         self._design_repository = design_repository
+        self._generation_repository = generation_repository
+        self._artifact_publisher = artifact_publisher
         self._audit_sink = audit_sink
         self._environment_id = environment_id
         self._analyzer = analyzer or OpenApiSourceAnalyzer()
+        self._generator = generator or PythonScaffoldGenerator()
         self._clock = clock or (lambda: datetime.now(UTC))
 
     @property
@@ -67,6 +89,7 @@ class McpBuilderService:
         return self._repository
 
     async def close(self) -> None:
+        await self._generation_repository.close()
         await self._design_repository.close()
         await self._repository.close()
 
@@ -406,6 +429,248 @@ class McpBuilderService:
         )
         return checkpoint
 
+    async def create_generation(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        project_id: str,
+        project_version: int,
+        project_digest: str,
+        source_digest: str,
+        checkpoint_id: str,
+        checkpoint_digest: str,
+        language_profile: str,
+        acknowledged_quarantine: bool,
+        idempotency_key: str,
+        correlation_id: str,
+    ) -> McpBuilderGeneration:
+        self._require_enterprise_human(actor)
+        if not acknowledged_quarantine:
+            raise McpBuilderError("builder_generation_quarantine_acknowledgement_required")
+        if not 8 <= len(idempotency_key) <= 128:
+            raise McpBuilderError("builder_generation_idempotency_key_invalid")
+        if language_profile != LANGUAGE_PROFILE:
+            raise McpBuilderError("builder_generation_language_profile_unsupported")
+        project, checkpoint = await self._generation_context(actor=actor, project_id=project_id)
+        if (
+            project.version != project_version
+            or project.canonical_digest != project_digest
+            or project.source_digest != source_digest
+            or checkpoint.checkpoint_id != checkpoint_id
+            or checkpoint.canonical_digest != checkpoint_digest
+        ):
+            raise McpBuilderError("builder_generation_source_stale")
+        try:
+            draft = self._generator.generate(project=project, checkpoint=checkpoint)
+        except BuilderGenerationError as error:
+            raise McpBuilderError(error.code) from error
+        files = draft.metadata
+        included_ids = {
+            item.candidate_id
+            for item in checkpoint.capability_decisions
+            if item.generation_eligible
+        }
+        observed_lineage = {
+            candidate_id for item in files for candidate_id in item.source_candidate_ids
+        }
+        if not observed_lineage.issubset(included_ids) or observed_lineage != included_ids:
+            raise McpBuilderError("builder_generation_lineage_incomplete")
+        artifact_digest = self._digest(
+            [
+                (
+                    item.relative_path,
+                    item.media_type,
+                    item.sha256,
+                    item.size_bytes,
+                    item.source_candidate_ids,
+                )
+                for item in files
+            ]
+        )
+        payload = {
+            "project_id": project.project_id,
+            "project_version": project.version,
+            "project_digest": project.canonical_digest,
+            "source_digest": project.source_digest,
+            "checkpoint_id": checkpoint.checkpoint_id,
+            "checkpoint_digest": checkpoint.canonical_digest,
+            "organization_id": actor.organization_id,
+            "environment_id": self._environment_id,
+            "requested_by": actor.subject_id,
+            "language_profile": draft.language_profile,
+            "template_version": draft.template_version,
+            "artifact_digest": artifact_digest,
+            "files": [
+                (
+                    item.relative_path,
+                    item.media_type,
+                    item.sha256,
+                    item.size_bytes,
+                    item.source_candidate_ids,
+                )
+                for item in files
+            ],
+        }
+        fingerprint = self._digest(
+            {
+                **payload,
+                "acknowledged_quarantine": acknowledged_quarantine,
+                "idempotency_key": idempotency_key,
+            }
+        )
+        prior = await self._generation_repository.get_by_create_key(
+            requested_by=actor.subject_id, idempotency_key=idempotency_key
+        )
+        if prior is not None:
+            self._verify_generation(prior)
+            if prior.request_fingerprint != fingerprint:
+                raise McpBuilderError("builder_generation_idempotency_conflict")
+            return replace(prior, reused=True)
+        existing = await self._generation_repository.get_by_project(project_id=project.project_id)
+        if existing is not None:
+            self._verify_generation(existing)
+            raise McpBuilderError("builder_generation_exists")
+
+        canonical_digest = self._digest(payload)
+        generation = McpBuilderGeneration(
+            generation_id=f"mcp-builder-generation.{canonical_digest[:24]}",
+            schema_version=GENERATION_SCHEMA,
+            version=1,
+            state=BuilderGenerationState.QUARANTINED,
+            project_id=project.project_id,
+            project_version=project.version,
+            project_digest=project.canonical_digest,
+            source_digest=project.source_digest,
+            checkpoint_id=checkpoint.checkpoint_id,
+            checkpoint_digest=checkpoint.canonical_digest,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+            requested_by=actor.subject_id,
+            language_profile=draft.language_profile,
+            template_version=draft.template_version,
+            artifact_digest=artifact_digest,
+            artifact_size_bytes=sum(item.size_bytes for item in files),
+            files=files,
+            canonical_digest=canonical_digest,
+            request_fingerprint=fingerprint,
+            idempotency_key=idempotency_key,
+            created_at=self._clock(),
+        )
+        await self._audit_generation(
+            actor=actor,
+            correlation_id=correlation_id,
+            permission_id=GENERATION_CREATE_PERMISSION,
+            result_code="mcp_builder_generation_authorized",
+            generation=generation,
+        )
+        try:
+            await self._artifact_publisher.publish(
+                generation_id=generation.generation_id,
+                artifact_digest=generation.artifact_digest,
+                files=draft.files,
+            )
+        except McpBuilderArtifactError as error:
+            raise McpBuilderError(error.code) from error
+        if not await self._generation_repository.add(generation):
+            raced = await self._generation_repository.get_by_create_key(
+                requested_by=actor.subject_id, idempotency_key=idempotency_key
+            )
+            if raced is None or raced.request_fingerprint != fingerprint:
+                raise McpBuilderError("builder_generation_idempotency_conflict")
+            self._verify_generation(raced)
+            return replace(raced, reused=True)
+        return generation
+
+    async def get_generation(
+        self, *, actor: AuthenticatedSubject, project_id: str, correlation_id: str
+    ) -> McpBuilderGeneration:
+        generation = await self._generation_for_actor(actor=actor, project_id=project_id)
+        await self._audit_generation(
+            actor=actor,
+            correlation_id=correlation_id,
+            permission_id=GENERATION_READ_PERMISSION,
+            result_code="mcp_builder_generation_read",
+            generation=generation,
+        )
+        return generation
+
+    async def get_generated_file(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        project_id: str,
+        relative_path: str,
+        correlation_id: str,
+    ) -> tuple[McpBuilderGeneration, BuilderGeneratedFile, str]:
+        generation = await self._generation_for_actor(actor=actor, project_id=project_id)
+        metadata = next(
+            (item for item in generation.files if item.relative_path == relative_path), None
+        )
+        if metadata is None:
+            raise McpBuilderError("builder_generation_file_not_found")
+        try:
+            content = await self._artifact_publisher.read(
+                generation_id=generation.generation_id,
+                artifact_digest=generation.artifact_digest,
+                inventory=generation.files,
+                relative_path=relative_path,
+            )
+        except (McpBuilderArtifactError, ValueError) as error:
+            code = getattr(error, "code", "builder_generation_file_not_found")
+            raise McpBuilderError(code) from error
+        await self._audit_generation(
+            actor=actor,
+            correlation_id=correlation_id,
+            permission_id=GENERATION_READ_PERMISSION,
+            result_code="mcp_builder_generation_file_read",
+            generation=generation,
+            relative_path=relative_path,
+        )
+        return generation, metadata, content
+
+    async def _generation_for_actor(
+        self, *, actor: AuthenticatedSubject, project_id: str
+    ) -> McpBuilderGeneration:
+        self._require_enterprise_human(actor)
+        generation = await self._generation_repository.get_by_project(project_id=project_id)
+        if (
+            generation is None
+            or generation.organization_id != actor.organization_id
+            or generation.environment_id != self._environment_id
+        ):
+            raise McpBuilderError("builder_generation_not_found")
+        project, checkpoint = await self._generation_context(actor=actor, project_id=project_id)
+        if (
+            generation.project_version != project.version
+            or generation.project_digest != project.canonical_digest
+            or generation.source_digest != project.source_digest
+            or generation.checkpoint_id != checkpoint.checkpoint_id
+            or generation.checkpoint_digest != checkpoint.canonical_digest
+        ):
+            raise McpBuilderError("builder_generation_source_stale")
+        self._verify_generation(generation)
+        return generation
+
+    async def _generation_context(
+        self, *, actor: AuthenticatedSubject, project_id: str
+    ) -> tuple[McpBuilderProject, McpBuilderDesignCheckpoint]:
+        project = await self._project_for_design(actor=actor, project_id=project_id)
+        checkpoint = await self._design_repository.get_by_project(project_id=project_id)
+        if (
+            checkpoint is None
+            or checkpoint.organization_id != actor.organization_id
+            or checkpoint.environment_id != self._environment_id
+        ):
+            raise McpBuilderError("builder_design_checkpoint_not_found")
+        self._verify_checkpoint(checkpoint)
+        if (
+            checkpoint.project_version != project.version
+            or checkpoint.project_digest != project.canonical_digest
+            or checkpoint.source_digest != project.source_digest
+        ):
+            raise McpBuilderError("builder_design_project_stale")
+        return project, checkpoint
+
     async def _project_for_design(
         self, *, actor: AuthenticatedSubject, project_id: str
     ) -> McpBuilderProject:
@@ -564,6 +829,46 @@ class McpBuilderService:
             != checkpoint.request_fingerprint
         ):
             raise McpBuilderError("builder_design_integrity_failed")
+
+    @classmethod
+    def _verify_generation(cls, generation: McpBuilderGeneration) -> None:
+        file_payload = [
+            (
+                item.relative_path,
+                item.media_type,
+                item.sha256,
+                item.size_bytes,
+                item.source_candidate_ids,
+            )
+            for item in generation.files
+        ]
+        if cls._digest(file_payload) != generation.artifact_digest:
+            raise McpBuilderError("builder_generation_integrity_failed")
+        payload = {
+            "project_id": generation.project_id,
+            "project_version": generation.project_version,
+            "project_digest": generation.project_digest,
+            "source_digest": generation.source_digest,
+            "checkpoint_id": generation.checkpoint_id,
+            "checkpoint_digest": generation.checkpoint_digest,
+            "organization_id": generation.organization_id,
+            "environment_id": generation.environment_id,
+            "requested_by": generation.requested_by,
+            "language_profile": generation.language_profile,
+            "template_version": generation.template_version,
+            "artifact_digest": generation.artifact_digest,
+            "files": file_payload,
+        }
+        fingerprint_payload = {
+            **payload,
+            "acknowledged_quarantine": True,
+            "idempotency_key": generation.idempotency_key,
+        }
+        if (
+            cls._digest(payload) != generation.canonical_digest
+            or cls._digest(fingerprint_payload) != generation.request_fingerprint
+        ):
+            raise McpBuilderError("builder_generation_integrity_failed")
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
@@ -732,5 +1037,50 @@ class McpBuilderService:
                     ("canonical_digest", checkpoint.canonical_digest),
                     ("source_digest", checkpoint.source_digest),
                 ),
+            )
+        )
+
+    async def _audit_generation(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+        permission_id: str,
+        result_code: str,
+        generation: McpBuilderGeneration,
+        relative_path: str | None = None,
+    ) -> None:
+        metadata = [
+            ("generation_id", generation.generation_id),
+            ("project_id", generation.project_id),
+            ("checkpoint_id", generation.checkpoint_id),
+            ("artifact_digest", generation.artifact_digest),
+        ]
+        if relative_path is not None:
+            metadata.append(("relative_path", relative_path))
+        await self._audit_sink.record(
+            AuditRecord(
+                event_id=f"evt_{uuid4().hex}",
+                event_type="atlas.mcp-builder.generation",
+                schema_version="1.0",
+                producer="atlas-api",
+                producer_version=__version__,
+                occurred_at=self._clock(),
+                correlation_id=correlation_id,
+                subject_id=actor.subject_id,
+                actor_type=actor.kind.value,
+                authentication_method=actor.authentication_method.value,
+                assurance_level=actor.assurance_level.value,
+                permission_id=permission_id,
+                resource_type="resource.mcp-builder.generation",
+                scope_reference=(
+                    f"{actor.organization_id}/{self._environment_id}/site.local/"
+                    "domain.mcp-builder/resource.mcp-builder.projects/C2"
+                ),
+                decision_id=None,
+                outcome="succeeded",
+                result_code=result_code,
+                idempotency_key=generation.idempotency_key,
+                target_metadata=tuple(metadata),
             )
         )

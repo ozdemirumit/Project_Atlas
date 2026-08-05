@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import ast
 import json
+import tomllib
 from dataclasses import replace
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -21,9 +24,17 @@ from atlas.modules.identity.domain.models import (
 from atlas.modules.mcp_builder.adapters.design_review_memory import (
     InMemoryMcpBuilderDesignCheckpointRepository,
 )
+from atlas.modules.mcp_builder.adapters.generation_filesystem import (
+    FileSystemMcpBuilderArtifactPublisher,
+)
+from atlas.modules.mcp_builder.adapters.generation_memory import (
+    InMemoryMcpBuilderArtifactPublisher,
+    InMemoryMcpBuilderGenerationRepository,
+)
 from atlas.modules.mcp_builder.adapters.memory import InMemoryMcpBuilderProjectRepository
 from atlas.modules.mcp_builder.application.analyzer import BuilderSourceError, OpenApiSourceAnalyzer
-from atlas.modules.mcp_builder.application.ports import McpBuilderError
+from atlas.modules.mcp_builder.application.generator import BuilderGeneratedContent
+from atlas.modules.mcp_builder.application.ports import McpBuilderArtifactError, McpBuilderError
 from atlas.modules.mcp_builder.application.service import McpBuilderService
 from atlas.modules.mcp_builder.domain.design_review import (
     BuilderCapabilityDecision,
@@ -116,6 +127,8 @@ def service(
         McpBuilderService(
             repository=repository,
             design_repository=design_repository,
+            generation_repository=InMemoryMcpBuilderGenerationRepository(),
+            artifact_publisher=InMemoryMcpBuilderArtifactPublisher(),
             audit_sink=resolved_sink,
             environment_id="environment.test",
             clock=lambda: NOW,
@@ -166,6 +179,24 @@ def design_request(project: Any, **overrides: Any) -> dict[str, Any]:
         "capability_decisions": decisions,
         "idempotency_key": "mcp-builder-design-0001",
         "correlation_id": "correlation.mcp-builder-design",
+    }
+    values.update(overrides)
+    return values
+
+
+def generation_request(project: Any, checkpoint: Any, **overrides: Any) -> dict[str, Any]:
+    values: dict[str, Any] = {
+        "actor": actor(),
+        "project_id": project.project_id,
+        "project_version": project.version,
+        "project_digest": project.canonical_digest,
+        "source_digest": project.source_digest,
+        "checkpoint_id": checkpoint.checkpoint_id,
+        "checkpoint_digest": checkpoint.canonical_digest,
+        "language_profile": "atlas.python312.v1",
+        "acknowledged_quarantine": True,
+        "idempotency_key": "mcp-builder-generation-0001",
+        "correlation_id": "correlation.mcp-builder-generation",
     }
     values.update(overrides)
     return values
@@ -444,6 +475,8 @@ async def test_design_audit_failure_prevents_checkpoint_persistence() -> None:
     failing_builder = McpBuilderService(
         repository=repository,
         design_repository=design_repository,
+        generation_repository=InMemoryMcpBuilderGenerationRepository(),
+        artifact_publisher=InMemoryMcpBuilderArtifactPublisher(),
         audit_sink=FailingAuditSink(),
         environment_id="environment.test",
         clock=lambda: NOW,
@@ -451,6 +484,191 @@ async def test_design_audit_failure_prevents_checkpoint_persistence() -> None:
     with pytest.raises(RuntimeError, match="audit unavailable"):
         await failing_builder.create_design_checkpoint(**design_request(project))
     assert await design_repository.get_by_project(project_id=project.project_id) is None
+
+
+@pytest.mark.asyncio
+async def test_generation_is_deterministic_quarantined_and_structurally_valid() -> None:
+    project_repository = InMemoryMcpBuilderProjectRepository()
+    design_repository = InMemoryMcpBuilderDesignCheckpointRepository()
+    generation_repository = InMemoryMcpBuilderGenerationRepository()
+    publisher = InMemoryMcpBuilderArtifactPublisher()
+    sink = CollectingAuditSink()
+    builder = McpBuilderService(
+        repository=project_repository,
+        design_repository=design_repository,
+        generation_repository=generation_repository,
+        artifact_publisher=publisher,
+        audit_sink=sink,
+        environment_id="environment.test",
+        clock=lambda: NOW,
+    )
+    project = await builder.create_project(**create_request())
+    checkpoint = await builder.create_design_checkpoint(**design_request(project))
+
+    generation = await builder.create_generation(**generation_request(project, checkpoint))
+    replay = await builder.create_generation(**generation_request(project, checkpoint))
+    loaded = await builder.get_generation(
+        actor=actor(),
+        project_id=project.project_id,
+        correlation_id="correlation.mcp-builder-generation-read",
+    )
+
+    assert replay == replace(generation, reused=True)
+    assert loaded == generation
+    assert generation.state.value == "quarantined"
+    assert generation.generated_artifact_created is True
+    assert generation.artifact_published is True
+    assert generation.validation_completed is False
+    assert generation.candidate_package_created is False
+    assert generation.connector_registered is False
+    assert generation.connector_installed is False
+    assert generation.connector_enabled is False
+    assert generation.network_request_performed is False
+    assert generation.model_inference_performed is False
+    assert generation.subprocess_invoked is False
+    assert generation.dynamic_code_execution_performed is False
+    assert generation.runtime_trust_granted is False
+    assert generation.execution_authorized is False
+    assert generation.infrastructure_mutation_performed is False
+    assert 10 <= len(generation.files) <= 256
+
+    observed_candidates: set[str] = set()
+    for metadata in generation.files:
+        _, verified, content = await builder.get_generated_file(
+            actor=actor(),
+            project_id=project.project_id,
+            relative_path=metadata.relative_path,
+            correlation_id="correlation.mcp-builder-generated-file",
+        )
+        assert verified == metadata
+        assert project.canonical_source_json not in content
+        assert "X-API-Key" not in content
+        observed_candidates.update(metadata.source_candidate_ids)
+        if metadata.media_type == "text/x-python":
+            ast.parse(content)
+        elif metadata.media_type in {"application/json", "application/yaml"}:
+            json.loads(content)
+        elif metadata.media_type == "application/toml":
+            tomllib.loads(content)
+    assert observed_candidates == {
+        item.candidate_id for item in checkpoint.capability_decisions if item.generation_eligible
+    }
+    assert sink.records[-1].result_code == "mcp_builder_generation_file_read"
+
+
+@pytest.mark.asyncio
+async def test_generation_rejects_stale_unsupported_and_unacknowledged_requests() -> None:
+    builder, _, _, _ = service()
+    project = await builder.create_project(**create_request())
+    checkpoint = await builder.create_design_checkpoint(**design_request(project))
+
+    with pytest.raises(McpBuilderError, match="builder_generation_source_stale"):
+        await builder.create_generation(
+            **generation_request(project, checkpoint, checkpoint_digest="0" * 64)
+        )
+    with pytest.raises(McpBuilderError, match="builder_generation_language_profile_unsupported"):
+        await builder.create_generation(
+            **generation_request(project, checkpoint, language_profile="atlas.rust.v1")
+        )
+    with pytest.raises(
+        McpBuilderError, match="builder_generation_quarantine_acknowledgement_required"
+    ):
+        await builder.create_generation(
+            **generation_request(project, checkpoint, acknowledged_quarantine=False)
+        )
+
+
+@pytest.mark.asyncio
+async def test_generation_audit_failure_prevents_publication_and_metadata() -> None:
+    class FailingAuditSink(CollectingAuditSink):
+        async def record(self, event: Any) -> None:
+            raise RuntimeError("audit unavailable")
+
+    project_repository = InMemoryMcpBuilderProjectRepository()
+    design_repository = InMemoryMcpBuilderDesignCheckpointRepository()
+    generation_repository = InMemoryMcpBuilderGenerationRepository()
+    publisher = InMemoryMcpBuilderArtifactPublisher()
+    builder = McpBuilderService(
+        repository=project_repository,
+        design_repository=design_repository,
+        generation_repository=generation_repository,
+        artifact_publisher=publisher,
+        audit_sink=CollectingAuditSink(),
+        environment_id="environment.test",
+        clock=lambda: NOW,
+    )
+    project = await builder.create_project(**create_request())
+    checkpoint = await builder.create_design_checkpoint(**design_request(project))
+    failing_builder = McpBuilderService(
+        repository=project_repository,
+        design_repository=design_repository,
+        generation_repository=generation_repository,
+        artifact_publisher=publisher,
+        audit_sink=FailingAuditSink(),
+        environment_id="environment.test",
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        await failing_builder.create_generation(**generation_request(project, checkpoint))
+    assert await generation_repository.get_by_project(project_id=project.project_id) is None
+
+
+@pytest.mark.asyncio
+async def test_filesystem_generation_publisher_reuses_exact_output_and_detects_tampering(
+    tmp_path: Path,
+) -> None:
+    publisher = FileSystemMcpBuilderArtifactPublisher(root=tmp_path / "quarantine")
+    files = (
+        BuilderGeneratedContent(
+            relative_path="README.md",
+            media_type="text/markdown",
+            content="# Generated\n",
+        ),
+        BuilderGeneratedContent(
+            relative_path="src/connector.py",
+            media_type="text/x-python",
+            content="QUARANTINED = True\n",
+        ),
+    )
+    inventory = tuple(item.metadata for item in files)
+    published = await publisher.publish(
+        generation_id="mcp-builder-generation.test0001",
+        artifact_digest="a" * 64,
+        files=files,
+    )
+    reused = await publisher.publish(
+        generation_id="mcp-builder-generation.test0001",
+        artifact_digest="a" * 64,
+        files=files,
+    )
+    content = await publisher.read(
+        generation_id="mcp-builder-generation.test0001",
+        artifact_digest="a" * 64,
+        inventory=inventory,
+        relative_path="src/connector.py",
+    )
+
+    assert published is True
+    assert reused is False
+    assert content == "QUARANTINED = True\n"
+    target = (
+        tmp_path
+        / "quarantine"
+        / "generations"
+        / "mcp-builder-generation.test0001"
+        / ("a" * 64)
+        / "src"
+        / "connector.py"
+    )
+    target.write_text("QUARANTINED = False\n", encoding="utf-8")
+    with pytest.raises(McpBuilderArtifactError, match="artifact_integrity_failed"):
+        await publisher.read(
+            generation_id="mcp-builder-generation.test0001",
+            artifact_digest="a" * 64,
+            inventory=inventory,
+            relative_path="README.md",
+        )
 
 
 def api_payload() -> dict[str, Any]:
@@ -473,10 +691,15 @@ def api_payload() -> dict[str, Any]:
     }
 
 
-def test_api_requires_csrf_and_returns_secret_free_no_store_evidence() -> None:
+def test_api_requires_csrf_and_returns_secret_free_no_store_evidence(tmp_path: Path) -> None:
     sink = CollectingAuditSink()
     provider = BasicTestIdentityProvider(actor())
-    with TestClient(create_app(settings(), identity_provider=provider, audit_sink=sink)) as client:
+    app_settings = settings().model_copy(
+        update={"mcp_builder_generation_root": tmp_path / "mcp-builder-generations"}
+    )
+    with TestClient(
+        create_app(app_settings, identity_provider=provider, audit_sink=sink)
+    ) as client:
         login_response = login(client)
         denied = client.post(
             "/api/v1/mcp-builder/projects",
@@ -536,6 +759,35 @@ def test_api_requires_csrf_and_returns_secret_free_no_store_evidence() -> None:
             },
         )
         read_design = client.get(f"/api/v1/mcp-builder/projects/{project_id}/design-checkpoint")
+        checkpoint_data = created_design.json()["data"]
+        generation_payload = {
+            "schema_version": "atlas.mcp-builder-generation-request.v1",
+            "project_version": project_data["version"],
+            "project_digest": project_data["canonical_digest"],
+            "source_digest": project_data["source_digest"],
+            "checkpoint_id": checkpoint_data["checkpoint_id"],
+            "checkpoint_digest": checkpoint_data["canonical_digest"],
+            "language_profile": "atlas.python312.v1",
+            "acknowledged_quarantine": True,
+        }
+        denied_generation = client.post(
+            f"/api/v1/mcp-builder/projects/{project_id}/generations",
+            json=generation_payload,
+            headers={"Idempotency-Key": "mcp-builder-generation-api-0001"},
+        )
+        created_generation = client.post(
+            f"/api/v1/mcp-builder/projects/{project_id}/generations",
+            json=generation_payload,
+            headers={
+                "Idempotency-Key": "mcp-builder-generation-api-0001",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+        )
+        read_generation = client.get(f"/api/v1/mcp-builder/projects/{project_id}/generation")
+        read_file = client.get(
+            f"/api/v1/mcp-builder/projects/{project_id}/generation/files/"
+            "docs/source-traceability.json"
+        )
 
     assert denied.status_code == 403
     assert created.status_code == 201
@@ -543,15 +795,37 @@ def test_api_requires_csrf_and_returns_secret_free_no_store_evidence() -> None:
     assert denied_design.status_code == 403
     assert created_design.status_code == 201
     assert read_design.status_code == 200
+    assert denied_generation.status_code == 403
+    assert created_generation.status_code == 201
+    assert read_generation.status_code == 200
+    assert read_file.status_code == 200
     assert created.headers["Cache-Control"] == "no-store"
     assert read.headers["Cache-Control"] == "no-store"
     assert created_design.headers["Cache-Control"] == "no-store"
     assert read_design.headers["Cache-Control"] == "no-store"
+    assert created_generation.headers["Cache-Control"] == "no-store"
+    assert read_generation.headers["Cache-Control"] == "no-store"
+    assert read_file.headers["Cache-Control"] == "no-store"
     assert created.json()["data"]["state"] == "analyzed"
     assert created.json()["data"]["capability_candidates"][0]["proposed_capability_class"] == "C1"
     for forbidden in ("canonical_source_json", "source_document", "request_fingerprint"):
         assert forbidden not in created.text
         assert forbidden not in created_design.text
+        assert forbidden not in created_generation.text
     assert created_design.json()["data"]["ready_for_generation_design"] is True
     assert created_design.json()["data"]["generated_artifact_created"] is False
     assert created_design.json()["data"]["execution_authorized"] is False
+    generation_data = created_generation.json()["data"]
+    assert generation_data["state"] == "quarantined"
+    assert generation_data["generated_artifact_created"] is True
+    assert generation_data["validation_completed"] is False
+    assert generation_data["candidate_package_created"] is False
+    assert generation_data["network_request_performed"] is False
+    assert generation_data["model_inference_performed"] is False
+    assert generation_data["subprocess_invoked"] is False
+    assert generation_data["dynamic_code_execution_performed"] is False
+    assert generation_data["runtime_trust_granted"] is False
+    assert generation_data["execution_authorized"] is False
+    assert read_file.json()["data"]["content_verified"] is True
+    assert read_file.json()["data"]["quarantined"] is True
+    assert project_data["source_digest"] in read_file.json()["data"]["content"]

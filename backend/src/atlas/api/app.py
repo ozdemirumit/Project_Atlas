@@ -126,6 +126,15 @@ from atlas.modules.mcp_builder.adapters.design_review_memory import (
 from atlas.modules.mcp_builder.adapters.design_review_postgres import (
     PostgreSQLMcpBuilderDesignCheckpointRepository,
 )
+from atlas.modules.mcp_builder.adapters.generation_filesystem import (
+    FileSystemMcpBuilderArtifactPublisher,
+)
+from atlas.modules.mcp_builder.adapters.generation_memory import (
+    InMemoryMcpBuilderGenerationRepository,
+)
+from atlas.modules.mcp_builder.adapters.generation_postgres import (
+    PostgreSQLMcpBuilderGenerationRepository,
+)
 from atlas.modules.mcp_builder.adapters.memory import InMemoryMcpBuilderProjectRepository
 from atlas.modules.mcp_builder.adapters.postgres import PostgreSQLMcpBuilderProjectRepository
 from atlas.modules.mcp_builder.application.service import McpBuilderService
@@ -714,9 +723,18 @@ def create_app(
             if resolved_settings.database_url
             else InMemoryMcpBuilderDesignCheckpointRepository()
         )
+        mcp_builder_generation_repository = (
+            PostgreSQLMcpBuilderGenerationRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryMcpBuilderGenerationRepository()
+        )
         resolved_mcp_builder_service = McpBuilderService(
             repository=mcp_builder_repository,
             design_repository=mcp_builder_design_repository,
+            generation_repository=mcp_builder_generation_repository,
+            artifact_publisher=FileSystemMcpBuilderArtifactPublisher(
+                root=resolved_settings.mcp_builder_generation_root
+            ),
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )

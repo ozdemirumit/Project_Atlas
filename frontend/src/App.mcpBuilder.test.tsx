@@ -131,6 +131,66 @@ const checkpoint = {
   },
 };
 
+const generation = {
+  data: {
+    generation_id: "mcp-builder-generation.eeeeeeeeeeeeeeeeeeeeeeee",
+    schema_version: "atlas.mcp-builder-generation.v1",
+    version: 1,
+    state: "quarantined",
+    project_id: project.data.project_id,
+    project_version: 1,
+    project_digest: project.data.canonical_digest,
+    source_digest: project.data.source_digest,
+    checkpoint_id: checkpoint.data.checkpoint_id,
+    checkpoint_digest: checkpoint.data.canonical_digest,
+    requested_by: identity.data.subject_id,
+    language_profile: "atlas.python312.v1",
+    template_version: "mcp-builder-python.v1",
+    artifact_digest: "e".repeat(64),
+    artifact_size_bytes: 214,
+    files: [
+      {
+        relative_path: "README.md",
+        media_type: "text/markdown",
+        sha256: "f".repeat(64),
+        size_bytes: 214,
+        source_candidate_ids: [],
+      },
+    ],
+    canonical_digest: "a".repeat(64),
+    created_at: "2026-08-05T12:20:00Z",
+    artifact_published: true,
+    generated_artifact_created: true,
+    validation_completed: false,
+    candidate_package_created: false,
+    connector_registered: false,
+    connector_installed: false,
+    connector_enabled: false,
+    network_request_performed: false,
+    model_inference_performed: false,
+    subprocess_invoked: false,
+    dynamic_code_execution_performed: false,
+    runtime_trust_granted: false,
+    execution_authorized: false,
+    infrastructure_mutation_performed: false,
+    reused: false,
+  },
+};
+
+const generatedFile = {
+  data: {
+    generation_id: generation.data.generation_id,
+    state: "quarantined",
+    artifact_digest: generation.data.artifact_digest,
+    file: generation.data.files[0],
+    content: "# Quarantined Atlas Connector Draft\n\nNo runtime trust.\n",
+    content_verified: true,
+    quarantined: true,
+    runtime_trust_granted: false,
+    execution_authorized: false,
+  },
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -138,11 +198,12 @@ afterEach(() => {
 });
 
 describe("MCP Builder workspace", () => {
-  it("submits bounded OpenAPI evidence and records a non-generating design checkpoint", async () => {
+  it("records design evidence and creates a quarantined scaffold with verified preview", async () => {
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
     vi.stubGlobal("crypto", { randomUUID: () => "mcp-builder-ui-001" });
     const requests: Array<{ body: string; idempotencyKey: string | null }> = [];
     const designRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
+    const generationRequests: Array<{ body: string; idempotencyKey: string | null }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -164,6 +225,21 @@ describe("MCP Builder workspace", () => {
           idempotencyKey: headers.get("Idempotency-Key"),
         });
         return Promise.resolve(new Response(JSON.stringify(checkpoint), { status: 201 }));
+      }
+      if (url.endsWith(`/mcp-builder/projects/${project.data.project_id}/generations`)) {
+        const headers = new Headers(init?.headers);
+        generationRequests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(new Response(JSON.stringify(generation), { status: 201 }));
+      }
+      if (
+        url.endsWith(
+          `/mcp-builder/projects/${project.data.project_id}/generation/files/README.md`,
+        )
+      ) {
+        return Promise.resolve(new Response(JSON.stringify(generatedFile), { status: 200 }));
       }
       return Promise.resolve(
         new Response(JSON.stringify({ code: "authorization_denied" }), { status: 403 }),
@@ -222,9 +298,19 @@ describe("MCP Builder workspace", () => {
 
     expect(await screen.findByText("Design checkpoint recorded")).toBeVisible();
     expect(screen.getByText(checkpoint.data.checkpoint_id)).toBeVisible();
-    expect(screen.queryByRole("button", { name: /generate|install|execute/i })).not.toBeInTheDocument();
+    expect(screen.getByText("Create a Python review scaffold")).toBeVisible();
+    fireEvent.click(
+      screen.getByLabelText(/I authorize deterministic file creation inside quarantine/i),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Create quarantined scaffold" }));
+
+    expect(await screen.findByText(generation.data.generation_id)).toBeVisible();
+    expect(screen.getByText("No runtime trust.", { exact: false })).toBeVisible();
+    expect(screen.getByText("Not run")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /install|execute|register|enable/i })).not.toBeInTheDocument();
     expect(requests).toHaveLength(1);
     expect(designRequests).toHaveLength(1);
+    expect(generationRequests).toHaveLength(1);
     expect(requests[0]?.idempotencyKey).toBe("mcp-builder.mcp-builder-ui-001");
     const body = JSON.parse(requests[0]?.body ?? "{}") as Record<string, unknown>;
     expect(body.source_document).toBe(source);
@@ -238,5 +324,17 @@ describe("MCP Builder workspace", () => {
     expect(designBody.network_destinations).toEqual(project.data.declared_servers);
     expect(designBody).not.toHaveProperty("runtime_trust_granted");
     expect(designBody).not.toHaveProperty("generated_artifact_created");
+    expect(generationRequests[0]?.idempotencyKey).toBe(
+      "mcp-builder-generation.mcp-builder-ui-001",
+    );
+    const generationBody = JSON.parse(
+      generationRequests[0]?.body ?? "{}",
+    ) as Record<string, unknown>;
+    expect(generationBody.project_digest).toBe(project.data.canonical_digest);
+    expect(generationBody.checkpoint_digest).toBe(checkpoint.data.canonical_digest);
+    expect(generationBody.language_profile).toBe("atlas.python312.v1");
+    expect(generationBody.acknowledged_quarantine).toBe(true);
+    expect(generationBody).not.toHaveProperty("runtime_trust_granted");
+    expect(generationBody).not.toHaveProperty("execute");
   });
 });
