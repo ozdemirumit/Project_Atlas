@@ -1,15 +1,71 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, Integer, String, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
     pass
+
+
+class McpBuilderProjectModel(Base):
+    __tablename__ = "mcp_builder_projects"
+    __table_args__ = (
+        CheckConstraint("version = 1", name="ck_mcp_builder_projects_version"),
+        UniqueConstraint(
+            "owner_id", "idempotency_key", name="uq_mcp_builder_projects_owner_idempotency"
+        ),
+    )
+
+    project_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    owner_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    vendor: Mapped[str] = mapped_column(String(200), nullable=False)
+    product: Mapped[str] = mapped_column(String(200), nullable=False)
+    intended_product_versions: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    target_environment: Mapped[str] = mapped_column(String(200), nullable=False)
+    sdk_profile: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_authority: Mapped[str] = mapped_column(String(200), nullable=False)
+    source_owner: Mapped[str] = mapped_column(String(200), nullable=False)
+    documentation_version: Mapped[str] = mapped_column(String(200), nullable=False)
+    publication_date: Mapped[date] = mapped_column(Date, nullable=False)
+    license_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    redistribution_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    classification: Mapped[str] = mapped_column(String(32), nullable=False)
+    openapi_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    api_title: Mapped[str] = mapped_column(String(160), nullable=False)
+    api_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    canonical_source_json: Mapped[str] = mapped_column(Text, nullable=False)
+    declared_servers: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    authentication_schemes: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    capability_candidates: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    findings: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    analyzed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class RuntimeMetadata(Base):

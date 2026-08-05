@@ -64,6 +64,8 @@ UPGRADE_HUMAN_REVIEW_READ = "platform.upgrade-change-human-review.read"
 UPGRADE_HUMAN_REVIEW_DECIDE = "platform.upgrade-change-human-review.decide"
 UPGRADE_COMPLETION_RECEIPT_CREATE = "platform.upgrade-human-review-receipt.create"
 UPGRADE_COMPLETION_RECEIPT_READ = "platform.upgrade-human-review-receipt.read"
+MCP_BUILDER_PROJECT_CREATE = "mcp-builder.project.create"
+MCP_BUILDER_PROJECT_READ = "mcp-builder.project.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -348,6 +350,19 @@ def upgrade_completion_receipt_scope(
         site_id="site.local",
         domain_id="domain.platform",
         resource_id="resource.platform.upgrade-human-review-receipt",
+        capability_class=capability_class,
+    )
+
+
+def mcp_builder_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.mcp-builder",
+        resource_id="resource.mcp-builder.projects",
         capability_class=capability_class,
     )
 
@@ -685,6 +700,14 @@ def build_development_authorization_service(
             permission_id=UPGRADE_COMPLETION_RECEIPT_READ,
             description="Read one exact-scope non-executable human review completion receipt.",
         ),
+        PermissionDefinition(
+            permission_id=MCP_BUILDER_PROJECT_CREATE,
+            description="Analyze one approved OpenAPI source in the quarantined MCP Builder.",
+        ),
+        PermissionDefinition(
+            permission_id=MCP_BUILDER_PROJECT_READ,
+            description="Read one owned secret-free MCP Builder source-analysis project.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -731,6 +754,8 @@ def build_development_authorization_service(
                 UPGRADE_HUMAN_REVIEW_DECIDE,
                 UPGRADE_COMPLETION_RECEIPT_CREATE,
                 UPGRADE_COMPLETION_RECEIPT_READ,
+                MCP_BUILDER_PROJECT_CREATE,
+                MCP_BUILDER_PROJECT_READ,
             }
         ),
     )
@@ -1035,6 +1060,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=upgrade_completion_receipt_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.mcp-builder-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=mcp_builder_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.mcp-builder-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=mcp_builder_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,

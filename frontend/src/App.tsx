@@ -112,6 +112,10 @@ import {
 import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
 import {
+  createMcpBuilderProject,
+  type McpBuilderProject,
+} from "./api/mcpBuilder";
+import {
   createUpgradeHumanReviewCompletionReceipt,
   createUpgradeHumanReview,
   createUpgradeChangeReviewPacket,
@@ -285,6 +289,7 @@ function downloadMarkdown(filename: string, content: string): void {
 
 export function App() {
   const queryClient = useQueryClient();
+  const [activeNavigation, setActiveNavigation] = useState("Health");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(shouldOpenInspector);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
@@ -421,6 +426,22 @@ export function App() {
   const [investigationQuestion, setInvestigationQuestion] = useState(
     "What evidence explains the current storage warning?",
   );
+  const [builderVendor, setBuilderVendor] = useState("");
+  const [builderProduct, setBuilderProduct] = useState("");
+  const [builderProductVersion, setBuilderProductVersion] = useState("");
+  const [builderSourceAuthority, setBuilderSourceAuthority] = useState("");
+  const [builderSourceOwner, setBuilderSourceOwner] = useState("");
+  const [builderDocumentationVersion, setBuilderDocumentationVersion] = useState("");
+  const [builderPublicationDate, setBuilderPublicationDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [builderLicenseId, setBuilderLicenseId] = useState("");
+  const [builderClassification, setBuilderClassification] =
+    useState<McpBuilderProject["classification"]>("internal");
+  const [builderRedistributionAllowed, setBuilderRedistributionAllowed] = useState(false);
+  const [builderSourceDocument, setBuilderSourceDocument] = useState("");
+  const [builderSourceName, setBuilderSourceName] = useState("");
+  const [builderFileError, setBuilderFileError] = useState("");
   const statusQuery = useQuery({
     queryKey: ["platform-status"],
     queryFn: getPlatformStatus,
@@ -433,6 +454,9 @@ export function App() {
     retry: false,
   });
   const identity = identityQuery.data?.data;
+  const builderMutation = useMutation({
+    mutationFn: createMcpBuilderProject,
+  });
   const humanReviewInboxQuery = useQuery({
     queryKey: ["upgrade-human-review-inbox", identity?.subject_id],
     queryFn: () => getUpgradeHumanReviewInbox(),
@@ -1712,11 +1736,16 @@ export function App() {
 
         <nav aria-label="Primary navigation">
           <p className="nav-heading">OPERATE</p>
-          {navigation.map(({ label, icon: Icon, active }) => (
+          {navigation.map(({ label, icon: Icon }) => (
             <button
-              className={`nav-item ${active ? "active" : ""}`}
+              className={`nav-item ${activeNavigation === label ? "active" : ""}`}
               type="button"
               key={label}
+              onClick={() => {
+                setActiveNavigation(label);
+                if (label === "Connectors") setInspectorOpen(false);
+                setSidebarOpen(false);
+              }}
             >
               <Icon size={18} strokeWidth={1.8} />
               <span>{label}</span>
@@ -1816,16 +1845,290 @@ export function App() {
           <section className="conversation" aria-label="Storage health workspace">
             <div className="conversation-heading">
               <div>
-                <p className="eyebrow">STORAGE HEALTH</p>
-                <h1>Storage estate assessment</h1>
-                <p>Evidence-linked inventory, findings, and provisional analysis.</p>
+                <p className="eyebrow">
+                  {activeNavigation === "Connectors" ? "MCP BUILDER" : "STORAGE HEALTH"}
+                </p>
+                <h1>
+                  {activeNavigation === "Connectors"
+                    ? "Governed connector analysis"
+                    : "Storage estate assessment"}
+                </h1>
+                <p>
+                  {activeNavigation === "Connectors"
+                    ? "Quarantined OpenAPI evidence review for read-only connector candidates."
+                    : "Evidence-linked inventory, findings, and provisional analysis."}
+                </p>
               </div>
               <span className="decision-badge">
                 <ShieldCheck size={15} /> Human decision required
               </span>
             </div>
 
-            <div className="operations-workspace">
+            {activeNavigation === "Connectors" && (
+            <div className="mcp-builder-workspace">
+              <section className="workspace-section mcp-builder-section">
+                <div className="section-heading">
+                  <div>
+                    <p className="eyebrow">SOURCE INTAKE</p>
+                    <h2>OpenAPI source analysis</h2>
+                    <p>OpenAPI 3.0 or 3.1 JSON, reviewed in an isolated laboratory boundary.</p>
+                  </div>
+                  <span className="state-badge pending">
+                    <LockKeyhole size={14} /> No runtime authority
+                  </span>
+                </div>
+
+                <form
+                  className="mcp-builder-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (!builderSourceDocument || builderMutation.isPending) return;
+                    builderMutation.mutate({
+                      vendor: builderVendor.trim(),
+                      product: builderProduct.trim(),
+                      productVersion: builderProductVersion.trim(),
+                      sourceAuthority: builderSourceAuthority.trim(),
+                      sourceOwner: builderSourceOwner.trim(),
+                      documentationVersion: builderDocumentationVersion.trim(),
+                      publicationDate: builderPublicationDate,
+                      licenseId: builderLicenseId.trim(),
+                      redistributionAllowed: builderRedistributionAllowed,
+                      classification: builderClassification,
+                      sourceDocument: builderSourceDocument,
+                    });
+                  }}
+                >
+                  <div className="mcp-builder-fields">
+                    <label>
+                      <span>Vendor</span>
+                      <input
+                        value={builderVendor}
+                        onChange={(event) => setBuilderVendor(event.target.value)}
+                        maxLength={200}
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>Product</span>
+                      <input
+                        value={builderProduct}
+                        onChange={(event) => setBuilderProduct(event.target.value)}
+                        maxLength={200}
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>Product version</span>
+                      <input
+                        value={builderProductVersion}
+                        onChange={(event) => setBuilderProductVersion(event.target.value)}
+                        maxLength={80}
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>Documentation version</span>
+                      <input
+                        value={builderDocumentationVersion}
+                        onChange={(event) => setBuilderDocumentationVersion(event.target.value)}
+                        maxLength={200}
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>Source authority</span>
+                      <input
+                        value={builderSourceAuthority}
+                        onChange={(event) => setBuilderSourceAuthority(event.target.value)}
+                        maxLength={200}
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>Source owner</span>
+                      <input
+                        value={builderSourceOwner}
+                        onChange={(event) => setBuilderSourceOwner(event.target.value)}
+                        maxLength={200}
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>Publication date</span>
+                      <input
+                        type="date"
+                        value={builderPublicationDate}
+                        onChange={(event) => setBuilderPublicationDate(event.target.value)}
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>License identifier</span>
+                      <input
+                        value={builderLicenseId}
+                        onChange={(event) => setBuilderLicenseId(event.target.value)}
+                        maxLength={200}
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>Classification</span>
+                      <select
+                        value={builderClassification}
+                        onChange={(event) =>
+                          setBuilderClassification(
+                            event.target.value as McpBuilderProject["classification"],
+                          )
+                        }
+                      >
+                        <option value="public">Public</option>
+                        <option value="internal">Internal</option>
+                        <option value="confidential">Confidential</option>
+                        <option value="restricted">Restricted</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="mcp-builder-source">
+                    <label className="mcp-builder-file">
+                      <FileText size={20} />
+                      <span>
+                        <strong>{builderSourceName || "Select OpenAPI JSON"}</strong>
+                        <small>Maximum 512 KB. Secrets and duplicate keys are rejected.</small>
+                      </span>
+                      <input
+                        type="file"
+                        accept=".json,application/json"
+                        onChange={(event) => {
+                          const file = event.currentTarget.files?.[0];
+                          setBuilderFileError("");
+                          builderMutation.reset();
+                          if (!file) {
+                            setBuilderSourceName("");
+                            setBuilderSourceDocument("");
+                            return;
+                          }
+                          if (file.size > 524_288) {
+                            setBuilderSourceName(file.name);
+                            setBuilderSourceDocument("");
+                            setBuilderFileError("The selected source exceeds the 512 KB limit.");
+                            return;
+                          }
+                          setBuilderSourceName(file.name);
+                          void file.text().then(setBuilderSourceDocument);
+                        }}
+                      />
+                    </label>
+                    {builderFileError && <p role="alert">{builderFileError}</p>}
+                    <label className="mcp-builder-check">
+                      <input
+                        type="checkbox"
+                        checked={builderRedistributionAllowed}
+                        onChange={(event) =>
+                          setBuilderRedistributionAllowed(event.target.checked)
+                        }
+                      />
+                      <span>Source license permits redistribution inside the organization</span>
+                    </label>
+                  </div>
+
+                  <div className="mcp-builder-boundary">
+                    <ShieldCheck size={18} />
+                    <p>
+                      Analysis records evidence only. It cannot generate packages, install a
+                      connector, contact a vendor endpoint, call a model, or execute code.
+                    </p>
+                  </div>
+
+                  <button
+                    className="run-check-button mcp-builder-submit"
+                    type="submit"
+                    disabled={
+                      !builderVendor.trim() ||
+                      !builderProduct.trim() ||
+                      !builderProductVersion.trim() ||
+                      !builderSourceAuthority.trim() ||
+                      !builderSourceOwner.trim() ||
+                      !builderDocumentationVersion.trim() ||
+                      !builderPublicationDate ||
+                      !builderLicenseId.trim() ||
+                      !builderSourceDocument ||
+                      builderMutation.isPending
+                    }
+                  >
+                    {builderMutation.isPending ? (
+                      <RefreshCw className="spin" size={16} />
+                    ) : (
+                      <FlaskConical size={16} />
+                    )}
+                    Analyze source
+                  </button>
+                </form>
+
+                {builderMutation.isError && (
+                  <div className="workspace-message error-state" role="alert">
+                    <AlertTriangle size={20} />
+                    <div>
+                      <h3>Source analysis unavailable</h3>
+                      <p>The source did not pass the governed intake boundary.</p>
+                    </div>
+                  </div>
+                )}
+
+                {builderMutation.data?.data && (
+                  <div className="mcp-builder-results">
+                    <div className="mcp-builder-result-heading">
+                      <div>
+                        <p className="eyebrow">ANALYSIS EVIDENCE</p>
+                        <h3>{builderMutation.data.data.api_title}</h3>
+                        <code>{builderMutation.data.data.project_id}</code>
+                      </div>
+                      <span className={`state-badge ${builderMutation.data.data.state}`}>
+                        {builderMutation.data.data.state.replaceAll("_", " ")}
+                      </span>
+                    </div>
+                    <div className="mcp-builder-facts">
+                      <div><span>OpenAPI</span><strong>{builderMutation.data.data.openapi_version}</strong></div>
+                      <div><span>Candidates</span><strong>{builderMutation.data.data.capability_candidates.length}</strong></div>
+                      <div><span>Blocked</span><strong>{builderMutation.data.data.capability_candidates.filter((item) => item.generation_blocked).length}</strong></div>
+                      <div><span>Findings</span><strong>{builderMutation.data.data.findings.length}</strong></div>
+                    </div>
+                    <div className="mcp-builder-candidates">
+                      {builderMutation.data.data.capability_candidates.map((candidate) => (
+                        <article key={candidate.candidate_id}>
+                          <span className={`capability-class ${candidate.proposed_capability_class.toLowerCase()}`}>
+                            {candidate.proposed_capability_class}
+                          </span>
+                          <div>
+                            <strong>{candidate.operation_id ?? `${candidate.method} ${candidate.path}`}</strong>
+                            <p>{candidate.summary}</p>
+                            <code>{candidate.method.toUpperCase()} {candidate.path}</code>
+                          </div>
+                          <span>{candidate.generation_blocked ? "Blocked" : "Read-only candidate"}</span>
+                        </article>
+                      ))}
+                    </div>
+                    {builderMutation.data.data.findings.length > 0 && (
+                      <div className="mcp-builder-findings">
+                        {builderMutation.data.data.findings.map((finding) => (
+                          <div key={`${finding.code}:${finding.location}`}>
+                            <AlertTriangle size={15} />
+                            <span><strong>{finding.code}</strong>{finding.message}</span>
+                            <code>{finding.location}</code>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            </div>
+            )}
+
+            <div
+              className="operations-workspace"
+              hidden={activeNavigation === "Connectors"}
+            >
               {!identityQuery.isLoading && !identity && (
                 <div className="workspace-message error-state">
                   <ShieldCheck size={22} />
@@ -7653,7 +7956,7 @@ export function App() {
               )}
             </div>
 
-            <div className="composer-wrap">
+            {activeNavigation !== "Connectors" && <div className="composer-wrap">
               <form
                 className="composer"
                 onSubmit={(event) => {
@@ -7691,10 +7994,10 @@ export function App() {
                   </button>
                 </div>
               </form>
-            </div>
+            </div>}
           </section>
 
-          {inspectorOpen && (
+          {inspectorOpen && activeNavigation !== "Connectors" && (
             <aside className="inspector" aria-label="Current context">
               <div className="inspector-header">
                 <div>
