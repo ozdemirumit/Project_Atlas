@@ -50,6 +50,11 @@ class PostgreSQLMcpBuilderProjectRepository:
             )
             return self._to_domain(row) if row is not None else None
 
+    async def get_by_id_for_scope(self, *, project_id: str) -> McpBuilderProject | None:
+        async with self._sessions() as session:
+            row = await session.get(McpBuilderProjectModel, project_id)
+            return self._to_domain(row) if row is not None else None
+
     async def add(self, project: McpBuilderProject) -> bool:
         try:
             async with self._sessions.begin() as session:

@@ -7,13 +7,20 @@ from fastapi import APIRouter, Depends, Header, Path, Request, Response
 
 from atlas.api.errors import AtlasError
 from atlas.api.mcp_builder_schemas import (
+    McpBuilderDesignCheckpointData,
+    McpBuilderDesignCheckpointInput,
+    McpBuilderDesignCheckpointResponse,
     McpBuilderProjectData,
     McpBuilderProjectInput,
     McpBuilderProjectResponse,
+    design_capability_decision,
+    design_entity_mapping,
 )
 from atlas.api.schemas import ResponseMeta
 from atlas.api.security import (
     authorize_mcp_builder_create,
+    authorize_mcp_builder_design_create,
+    authorize_mcp_builder_design_read,
     authorize_mcp_builder_read,
     browser_session_subject,
 )
@@ -21,6 +28,7 @@ from atlas.modules.authorization.domain.models import AuthorizationDecision
 from atlas.modules.identity.domain.models import AuthenticatedSubject
 from atlas.modules.mcp_builder.application.ports import McpBuilderError
 from atlas.modules.mcp_builder.application.service import McpBuilderService
+from atlas.modules.mcp_builder.domain.design_review import McpBuilderDesignCheckpoint
 from atlas.modules.mcp_builder.domain.models import McpBuilderProject
 
 router = APIRouter(prefix="/mcp-builder/projects", tags=["mcp-builder"])
@@ -35,7 +43,7 @@ IDEMPOTENCY = Header(
 def _raise(error: McpBuilderError) -> NoReturn:
     if error.code in {"builder_enterprise_human_mfa_required"}:
         status = 403
-    elif error.code == "builder_project_not_found":
+    elif error.code.endswith("not_found"):
         status = 404
     elif error.code.endswith(("invalid", "missing", "unsupported", "exceeded", "detected")):
         status = 422
@@ -55,6 +63,18 @@ def _response(
     response.headers["Cache-Control"] = "no-store"
     return McpBuilderProjectResponse(
         data=McpBuilderProjectData.from_domain(project),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+def _design_response(
+    checkpoint: McpBuilderDesignCheckpoint, request: Request, response: Response
+) -> McpBuilderDesignCheckpointResponse:
+    response.headers["Cache-Control"] = "no-store"
+    return McpBuilderDesignCheckpointResponse(
+        data=McpBuilderDesignCheckpointData.from_domain(checkpoint),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),
@@ -102,3 +122,71 @@ async def get_mcp_builder_project(
     except McpBuilderError as error:
         _raise(error)
     return _response(project, request, response)
+
+
+@router.post(
+    "/{project_id}/design-checkpoints",
+    response_model=McpBuilderDesignCheckpointResponse,
+    status_code=201,
+)
+async def create_mcp_builder_design_checkpoint(
+    project_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    payload: McpBuilderDesignCheckpointInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_mcp_builder_design_create)],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> McpBuilderDesignCheckpointResponse:
+    service: McpBuilderService = request.app.state.mcp_builder_service
+    try:
+        checkpoint = await service.create_design_checkpoint(
+            actor=subject,
+            project_id=project_id,
+            idempotency_key=idempotency_key,
+            correlation_id=str(request.state.correlation_id),
+            target_products=tuple(payload.target_products),
+            network_destinations=tuple(payload.network_destinations),
+            configuration_keys=tuple(payload.configuration_keys),
+            secret_reference_ids=tuple(payload.secret_reference_ids),
+            entity_mappings=tuple(design_entity_mapping(item) for item in payload.entity_mappings),
+            capability_decisions=tuple(
+                design_capability_decision(item) for item in payload.capability_decisions
+            ),
+            **payload.model_dump(
+                exclude={
+                    "schema_version",
+                    "target_products",
+                    "network_destinations",
+                    "configuration_keys",
+                    "secret_reference_ids",
+                    "entity_mappings",
+                    "capability_decisions",
+                }
+            ),
+        )
+    except McpBuilderError as error:
+        _raise(error)
+    return _design_response(checkpoint, request, response)
+
+
+@router.get(
+    "/{project_id}/design-checkpoint", response_model=McpBuilderDesignCheckpointResponse
+)
+async def get_mcp_builder_design_checkpoint(
+    project_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_mcp_builder_design_read)],
+) -> McpBuilderDesignCheckpointResponse:
+    service: McpBuilderService = request.app.state.mcp_builder_service
+    try:
+        checkpoint = await service.get_design_checkpoint(
+            actor=subject,
+            project_id=project_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except McpBuilderError as error:
+        _raise(error)
+    return _design_response(checkpoint, request, response)

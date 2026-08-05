@@ -112,7 +112,9 @@ import {
 import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
 import {
+  createMcpBuilderDesignCheckpoint,
   createMcpBuilderProject,
+  type McpBuilderDesignDecision,
   type McpBuilderProject,
 } from "./api/mcpBuilder";
 import {
@@ -442,6 +444,21 @@ export function App() {
   const [builderSourceDocument, setBuilderSourceDocument] = useState("");
   const [builderSourceName, setBuilderSourceName] = useState("");
   const [builderFileError, setBuilderFileError] = useState("");
+  const [builderBoundary, setBuilderBoundary] = useState(
+    "Read-only inventory and health evidence for the declared product boundary.",
+  );
+  const [builderConfigurationKey, setBuilderConfigurationKey] = useState(
+    "config.vendor-endpoint",
+  );
+  const [builderSecretReference, setBuilderSecretReference] = useState(
+    "secret.vendor-api-key",
+  );
+  const [builderSourceEntity, setBuilderSourceEntity] = useState("vendor.storage-system");
+  const [builderAtlasEntity, setBuilderAtlasEntity] = useState("atlas.storage-system");
+  const [builderDesignAcknowledged, setBuilderDesignAcknowledged] = useState(false);
+  const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
+    Record<string, McpBuilderDesignDecision>
+  >({});
   const statusQuery = useQuery({
     queryKey: ["platform-status"],
     queryFn: getPlatformStatus,
@@ -454,8 +471,33 @@ export function App() {
     retry: false,
   });
   const identity = identityQuery.data?.data;
+  const builderDesignMutation = useMutation({
+    mutationFn: createMcpBuilderDesignCheckpoint,
+  });
   const builderMutation = useMutation({
     mutationFn: createMcpBuilderProject,
+    onSuccess: (result) => {
+      builderDesignMutation.reset();
+      setBuilderDesignAcknowledged(false);
+      setBuilderDesignDecisions(
+        Object.fromEntries(
+          result.data.capability_candidates.map((candidate) => [
+            candidate.candidate_id,
+            {
+              candidateId: candidate.candidate_id,
+              decision: candidate.generation_blocked ? "exclude" : "include",
+              analyzedClass: candidate.proposed_capability_class,
+              requiredPermission: candidate.generation_blocked
+                ? "permission.not-applicable"
+                : "storage.system.read",
+              rationale: candidate.generation_blocked
+                ? "Excluded because analyzed evidence remains blocked or ambiguous."
+                : "Included as an authenticated, bounded read-only operation.",
+            },
+          ]),
+        ),
+      );
+    },
   });
   const humanReviewInboxQuery = useQuery({
     queryKey: ["upgrade-human-review-inbox", identity?.subject_id],
@@ -2003,6 +2045,8 @@ export function App() {
                           const file = event.currentTarget.files?.[0];
                           setBuilderFileError("");
                           builderMutation.reset();
+                          builderDesignMutation.reset();
+                          setBuilderDesignDecisions({});
                           if (!file) {
                             setBuilderSourceName("");
                             setBuilderSourceDocument("");
@@ -2119,6 +2163,245 @@ export function App() {
                         ))}
                       </div>
                     )}
+                    <section className="mcp-builder-design" aria-label="Human design checkpoint">
+                      <div className="section-heading">
+                        <div>
+                          <p className="eyebrow">HUMAN DESIGN CHECKPOINT</p>
+                          <h3>Confirm connector boundaries</h3>
+                          <p>
+                            Review every candidate before an isolated generation task can be proposed.
+                          </p>
+                        </div>
+                        <span className="state-badge pending">
+                          <UserCheck size={14} /> Human evidence only
+                        </span>
+                      </div>
+                      <form
+                        className="mcp-builder-design-form"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          const project = builderMutation.data?.data;
+                          if (!project || builderDesignMutation.isPending) return;
+                          const decisions = project.capability_candidates
+                            .map(
+                              (candidate) =>
+                                builderDesignDecisions[candidate.candidate_id],
+                            )
+                            .filter(
+                              (decision): decision is McpBuilderDesignDecision =>
+                                decision !== undefined,
+                            );
+                          if (decisions.length !== project.capability_candidates.length) return;
+                          builderDesignMutation.mutate({
+                            project,
+                            connectorBoundary: builderBoundary.trim(),
+                            configurationKeys: [builderConfigurationKey.trim()],
+                            secretReferenceIds: [builderSecretReference.trim()],
+                            sourceEntity: builderSourceEntity.trim(),
+                            atlasEntity: builderAtlasEntity.trim(),
+                            decisions,
+                          });
+                        }}
+                      >
+                        <div className="mcp-builder-design-fields">
+                          <label className="wide-field">
+                            <span>Connector boundary</span>
+                            <textarea
+                              value={builderBoundary}
+                              onChange={(event) => setBuilderBoundary(event.target.value)}
+                              maxLength={1000}
+                              rows={3}
+                              required
+                            />
+                          </label>
+                          <label>
+                            <span>Configuration key</span>
+                            <input
+                              value={builderConfigurationKey}
+                              onChange={(event) => setBuilderConfigurationKey(event.target.value)}
+                              pattern="[a-z][a-z0-9_.:-]{2,127}"
+                              required
+                            />
+                          </label>
+                          <label>
+                            <span>Secret reference</span>
+                            <input
+                              value={builderSecretReference}
+                              onChange={(event) => setBuilderSecretReference(event.target.value)}
+                              pattern="[a-z][a-z0-9_.:-]{2,127}"
+                              required
+                            />
+                          </label>
+                          <label>
+                            <span>Source entity</span>
+                            <input
+                              value={builderSourceEntity}
+                              onChange={(event) => setBuilderSourceEntity(event.target.value)}
+                              pattern="[a-z][a-z0-9_.:-]{2,127}"
+                              required
+                            />
+                          </label>
+                          <label>
+                            <span>Atlas entity</span>
+                            <input
+                              value={builderAtlasEntity}
+                              onChange={(event) => setBuilderAtlasEntity(event.target.value)}
+                              pattern="[a-z][a-z0-9_.:-]{2,127}"
+                              required
+                            />
+                          </label>
+                        </div>
+                        <div className="mcp-builder-destinations">
+                          <span>Declared network destinations</span>
+                          {builderMutation.data.data.declared_servers.length > 0 ? (
+                            builderMutation.data.data.declared_servers.map((destination) => (
+                              <code key={destination}>{destination}</code>
+                            ))
+                          ) : (
+                            <strong>No destination evidence</strong>
+                          )}
+                        </div>
+                        <div className="mcp-builder-decision-list">
+                          {builderMutation.data.data.capability_candidates.map((candidate) => {
+                            const decision = builderDesignDecisions[candidate.candidate_id];
+                            if (!decision) return null;
+                            return (
+                              <fieldset key={candidate.candidate_id}>
+                                <legend>
+                                  <span
+                                    className={`capability-class ${candidate.proposed_capability_class.toLowerCase()}`}
+                                  >
+                                    {candidate.proposed_capability_class}
+                                  </span>
+                                  {candidate.operation_id ?? `${candidate.method} ${candidate.path}`}
+                                </legend>
+                                <label>
+                                  <span>Decision</span>
+                                  <select
+                                    value={decision.decision}
+                                    disabled={candidate.generation_blocked}
+                                    onChange={(event) =>
+                                      setBuilderDesignDecisions((current) => ({
+                                        ...current,
+                                        [candidate.candidate_id]: {
+                                          ...decision,
+                                          decision: event.target.value as "include" | "exclude",
+                                        },
+                                      }))
+                                    }
+                                  >
+                                    <option value="include">Include</option>
+                                    <option value="exclude">Exclude</option>
+                                  </select>
+                                </label>
+                                <label>
+                                  <span>Minimum vendor permission</span>
+                                  <input
+                                    value={decision.requiredPermission}
+                                    onChange={(event) =>
+                                      setBuilderDesignDecisions((current) => ({
+                                        ...current,
+                                        [candidate.candidate_id]: {
+                                          ...decision,
+                                          requiredPermission: event.target.value,
+                                        },
+                                      }))
+                                    }
+                                    maxLength={160}
+                                    required
+                                  />
+                                </label>
+                                <label className="wide-field">
+                                  <span>Rationale</span>
+                                  <textarea
+                                    value={decision.rationale}
+                                    onChange={(event) =>
+                                      setBuilderDesignDecisions((current) => ({
+                                        ...current,
+                                        [candidate.candidate_id]: {
+                                          ...decision,
+                                          rationale: event.target.value,
+                                        },
+                                      }))
+                                    }
+                                    maxLength={1000}
+                                    rows={2}
+                                    required
+                                  />
+                                </label>
+                              </fieldset>
+                            );
+                          })}
+                        </div>
+                        <label className="mcp-builder-check">
+                          <input
+                            type="checkbox"
+                            checked={builderDesignAcknowledged}
+                            onChange={(event) =>
+                              setBuilderDesignAcknowledged(event.target.checked)
+                            }
+                          />
+                          <span>
+                            I confirm this checkpoint records design evidence only and grants no
+                            generation, runtime, credential, or execution authority.
+                          </span>
+                        </label>
+                        <button
+                          className="run-check-button mcp-builder-submit"
+                          type="submit"
+                          disabled={
+                            !builderDesignAcknowledged ||
+                            !builderBoundary.trim() ||
+                            !builderConfigurationKey.trim() ||
+                            !builderSecretReference.trim() ||
+                            !builderSourceEntity.trim() ||
+                            !builderAtlasEntity.trim() ||
+                            !Object.values(builderDesignDecisions).some(
+                              (decision) => decision.decision === "include",
+                            ) ||
+                            Object.values(builderDesignDecisions).some(
+                              (decision) =>
+                                !decision.requiredPermission.trim() || !decision.rationale.trim(),
+                            ) ||
+                            Boolean(builderDesignMutation.data) ||
+                            builderDesignMutation.isPending
+                          }
+                        >
+                          {builderDesignMutation.isPending ? (
+                            <RefreshCw className="spin" size={16} />
+                          ) : (
+                            <FileCheck2 size={16} />
+                          )}
+                          Confirm design checkpoint
+                        </button>
+                      </form>
+                      {builderDesignMutation.isError && (
+                        <div className="workspace-message error-state" role="alert">
+                          <AlertTriangle size={20} />
+                          <div>
+                            <h3>Design checkpoint unavailable</h3>
+                            <p>The human design evidence did not pass the governed boundary.</p>
+                          </div>
+                        </div>
+                      )}
+                      {builderDesignMutation.data?.data && (
+                        <div className="mcp-builder-design-result">
+                          <CheckCircle2 size={20} />
+                          <div>
+                            <strong>Design checkpoint recorded</strong>
+                            <code>{builderDesignMutation.data.data.checkpoint_id}</code>
+                            <p>
+                              {
+                                builderDesignMutation.data.data.capability_decisions.filter(
+                                  (decision) => decision.generation_eligible,
+                                ).length
+                              }{" "}
+                              capability candidates are design-eligible. No artifacts were generated.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </section>
                   </div>
                 )}
               </section>

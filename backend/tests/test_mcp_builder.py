@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from test_browser_sessions import BasicTestIdentityProvider, CollectingAuditSink, login, settings
 
 from atlas.api.app import create_app
+from atlas.core.capabilities import CapabilityClass
 from atlas.core.classification import DataClassification
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
@@ -17,10 +18,18 @@ from atlas.modules.identity.domain.models import (
     AuthenticationMethod,
     SubjectKind,
 )
+from atlas.modules.mcp_builder.adapters.design_review_memory import (
+    InMemoryMcpBuilderDesignCheckpointRepository,
+)
 from atlas.modules.mcp_builder.adapters.memory import InMemoryMcpBuilderProjectRepository
 from atlas.modules.mcp_builder.application.analyzer import BuilderSourceError, OpenApiSourceAnalyzer
 from atlas.modules.mcp_builder.application.ports import McpBuilderError
 from atlas.modules.mcp_builder.application.service import McpBuilderService
+from atlas.modules.mcp_builder.domain.design_review import (
+    BuilderCapabilityDecision,
+    BuilderCapabilityDecisionKind,
+    BuilderEntityMapping,
+)
 from atlas.modules.mcp_builder.domain.models import BuilderProjectState
 
 NOW = datetime(2026, 8, 5, 12, 0, tzinfo=UTC)
@@ -94,19 +103,72 @@ def create_request(**overrides: Any) -> dict[str, Any]:
 
 def service(
     sink: CollectingAuditSink | None = None,
-) -> tuple[McpBuilderService, InMemoryMcpBuilderProjectRepository, CollectingAuditSink]:
+) -> tuple[
+    McpBuilderService,
+    InMemoryMcpBuilderProjectRepository,
+    InMemoryMcpBuilderDesignCheckpointRepository,
+    CollectingAuditSink,
+]:
     repository = InMemoryMcpBuilderProjectRepository()
+    design_repository = InMemoryMcpBuilderDesignCheckpointRepository()
     resolved_sink = sink or CollectingAuditSink()
     return (
         McpBuilderService(
             repository=repository,
+            design_repository=design_repository,
             audit_sink=resolved_sink,
             environment_id="environment.test",
             clock=lambda: NOW,
         ),
         repository,
+        design_repository,
         resolved_sink,
     )
+
+
+def design_request(project: Any, **overrides: Any) -> dict[str, Any]:
+    decisions = tuple(
+        BuilderCapabilityDecision(
+            candidate_id=item.candidate_id,
+            decision=(
+                BuilderCapabilityDecisionKind.EXCLUDE
+                if item.generation_blocked
+                else BuilderCapabilityDecisionKind.INCLUDE
+            ),
+            analyzed_class=item.proposed_capability_class,
+            confirmed_class=item.proposed_capability_class,
+            required_permission="storage.system.read",
+            rationale=(
+                "Excluded because the analyzed operation remains blocked."
+                if item.generation_blocked
+                else "Included as an authenticated, bounded read-only operation."
+            ),
+            generation_eligible=not item.generation_blocked,
+        )
+        for item in project.capability_candidates
+    )
+    values: dict[str, Any] = {
+        "actor": actor(),
+        "project_id": project.project_id,
+        "project_version": project.version,
+        "project_digest": project.canonical_digest,
+        "source_digest": project.source_digest,
+        "connector_boundary": "Synthetic storage inventory reads only.",
+        "target_products": (project.product,),
+        "network_destinations": project.declared_servers,
+        "configuration_keys": ("config.vendor-endpoint",),
+        "secret_reference_ids": ("secret.vendor-api-key",),
+        "entity_mappings": (
+            BuilderEntityMapping(
+                source_entity="vendor.storage-system", atlas_entity="atlas.storage-system"
+            ),
+        ),
+        "capability_decisions": decisions,
+        "idempotency_key": "mcp-builder-design-0001",
+        "correlation_id": "correlation.mcp-builder-design",
+    }
+    values.update(overrides)
+    return values
 
 
 def test_analyzer_extracts_only_explicit_read_only_capability() -> None:
@@ -182,7 +244,7 @@ def test_analyzer_propagates_external_reference_block_to_candidates() -> None:
 
 @pytest.mark.asyncio
 async def test_service_persists_audited_project_and_replays_idempotently() -> None:
-    builder, repository, sink = service()
+    builder, repository, _, sink = service()
     project = await builder.create_project(**create_request())
     replay = await builder.create_project(**create_request())
     loaded = await builder.get_project(
@@ -219,7 +281,7 @@ async def test_service_persists_audited_project_and_replays_idempotently() -> No
 
 @pytest.mark.asyncio
 async def test_service_rejects_changed_replay_non_mfa_and_foreign_owner() -> None:
-    builder, _, _ = service()
+    builder, _, _, _ = service()
     project = await builder.create_project(**create_request())
     with pytest.raises(McpBuilderError, match="builder_idempotency_conflict"):
         await builder.create_project(**create_request(product="Different product"))
@@ -244,13 +306,157 @@ async def test_audit_failure_prevents_project_persistence() -> None:
         async def record(self, event: Any) -> None:
             raise RuntimeError("audit unavailable")
 
-    builder, repository, _ = service(FailingAuditSink())
+    builder, repository, _, _ = service(FailingAuditSink())
     with pytest.raises(RuntimeError, match="audit unavailable"):
         await builder.create_project(**create_request())
     assert (
         await repository.get(owner_id=actor().subject_id, idempotency_key="mcp-builder-test-0001")
         is None
     )
+
+
+@pytest.mark.asyncio
+async def test_design_checkpoint_is_complete_immutable_and_idempotent() -> None:
+    builder, _, design_repository, sink = service()
+    project = await builder.create_project(**create_request())
+    checkpoint = await builder.create_design_checkpoint(**design_request(project))
+    replay = await builder.create_design_checkpoint(**design_request(project))
+    loaded = await builder.get_design_checkpoint(
+        actor=actor(),
+        project_id=project.project_id,
+        correlation_id="correlation.mcp-builder-design-read",
+    )
+
+    assert replay == replace(checkpoint, reused=True)
+    assert loaded == checkpoint
+    assert checkpoint.ready_for_generation_design is True
+    assert checkpoint.capability_decisions[0].generation_eligible is True
+    assert await design_repository.get_by_project(project_id=project.project_id) == checkpoint
+    assert [record.result_code for record in sink.records] == [
+        "mcp_builder_source_analyzed",
+        "mcp_builder_design_confirmed",
+        "mcp_builder_design_read",
+    ]
+    assert not any(
+        (
+            checkpoint.generated_artifact_created,
+            checkpoint.candidate_package_created,
+            checkpoint.connector_registered,
+            checkpoint.connector_installed,
+            checkpoint.connector_enabled,
+            checkpoint.network_request_performed,
+            checkpoint.model_inference_performed,
+            checkpoint.dynamic_code_execution_performed,
+            checkpoint.runtime_trust_granted,
+            checkpoint.execution_authorized,
+            checkpoint.infrastructure_mutation_performed,
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_design_checkpoint_rejects_stale_scope_risk_and_candidate_drift() -> None:
+    builder, _, _, _ = service()
+    project = await builder.create_project(**create_request())
+    decision = design_request(project)["capability_decisions"][0]
+
+    with pytest.raises(McpBuilderError, match="builder_design_project_stale"):
+        await builder.create_design_checkpoint(
+            **design_request(project, project_digest="0" * 64)
+        )
+    with pytest.raises(McpBuilderError, match="builder_design_network_destination_unapproved"):
+        await builder.create_design_checkpoint(
+            **design_request(project, network_destinations=("https://other.example.invalid",))
+        )
+    with pytest.raises(McpBuilderError, match="builder_design_risk_class_mismatch"):
+        await builder.create_design_checkpoint(
+            **design_request(
+                project,
+                capability_decisions=(
+                    replace(decision, confirmed_class=CapabilityClass.C0_INFORMATIONAL),
+                ),
+            )
+        )
+    with pytest.raises(McpBuilderError, match="builder_design_candidate_set_mismatch"):
+        await builder.create_design_checkpoint(
+            **design_request(project, capability_decisions=())
+        )
+    with pytest.raises(McpBuilderError, match="builder_design_broad_permission_rejected"):
+        await builder.create_design_checkpoint(
+            **design_request(
+                project,
+                capability_decisions=(replace(decision, required_permission="administrator"),),
+            )
+        )
+    with pytest.raises(McpBuilderError, match="builder_enterprise_human_mfa_required"):
+        await builder.create_design_checkpoint(
+            **design_request(
+                project,
+                actor=replace(
+                    actor(),
+                    kind=SubjectKind.SERVICE,
+                    authentication_method=AuthenticationMethod.WORKLOAD_TOKEN,
+                    assurance_level=AssuranceLevel.HARDWARE_BACKED,
+                ),
+            )
+        )
+    with pytest.raises(McpBuilderError, match="builder_stored_source_integrity_failed"):
+        builder._verify_stored(replace(project, product="Tampered product"))
+
+
+@pytest.mark.asyncio
+async def test_design_checkpoint_requires_blocked_candidate_exclusion() -> None:
+    document = json.loads(openapi_spec())
+    document["paths"]["/systems/restart"] = {
+        "post": {
+            "operationId": "restartSystems",
+            "responses": {"202": {"description": "Synthetic response"}},
+        }
+    }
+    builder, _, _, _ = service()
+    project = await builder.create_project(
+        **create_request(source_document=json.dumps(document), idempotency_key="mixed-source-0001")
+    )
+    request = design_request(project)
+    blocked = next(
+        item for item in request["capability_decisions"] if not item.generation_eligible
+    )
+    unsafe = replace(
+        blocked,
+        decision=BuilderCapabilityDecisionKind.INCLUDE,
+        generation_eligible=True,
+    )
+
+    with pytest.raises(McpBuilderError, match="builder_design_blocked_candidate_included"):
+        await builder.create_design_checkpoint(
+            **design_request(
+                project,
+                capability_decisions=tuple(
+                    unsafe if item.candidate_id == unsafe.candidate_id else item
+                    for item in request["capability_decisions"]
+                ),
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_design_audit_failure_prevents_checkpoint_persistence() -> None:
+    class FailingAuditSink(CollectingAuditSink):
+        async def record(self, event: Any) -> None:
+            raise RuntimeError("audit unavailable")
+
+    builder, repository, design_repository, _ = service()
+    project = await builder.create_project(**create_request())
+    failing_builder = McpBuilderService(
+        repository=repository,
+        design_repository=design_repository,
+        audit_sink=FailingAuditSink(),
+        environment_id="environment.test",
+        clock=lambda: NOW,
+    )
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        await failing_builder.create_design_checkpoint(**design_request(project))
+    assert await design_repository.get_by_project(project_id=project.project_id) is None
 
 
 def api_payload() -> dict[str, Any]:
@@ -291,15 +497,69 @@ def test_api_requires_csrf_and_returns_secret_free_no_store_evidence() -> None:
                 "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
             },
         )
-        project_id = created.json()["data"]["project_id"]
+        project_data = created.json()["data"]
+        project_id = project_data["project_id"]
         read = client.get(f"/api/v1/mcp-builder/projects/{project_id}")
+        candidate = project_data["capability_candidates"][0]
+        design_payload = {
+            "schema_version": "atlas.mcp-builder-design-checkpoint-request.v1",
+            "project_version": project_data["version"],
+            "project_digest": project_data["canonical_digest"],
+            "source_digest": project_data["source_digest"],
+            "connector_boundary": "Synthetic storage inventory reads only.",
+            "target_products": [project_data["product"]],
+            "network_destinations": project_data["declared_servers"],
+            "configuration_keys": ["config.vendor-endpoint"],
+            "secret_reference_ids": ["secret.vendor-api-key"],
+            "entity_mappings": [
+                {
+                    "source_entity": "vendor.storage-system",
+                    "atlas_entity": "atlas.storage-system",
+                }
+            ],
+            "capability_decisions": [
+                {
+                    "candidate_id": candidate["candidate_id"],
+                    "decision": "include",
+                    "analyzed_class": candidate["proposed_capability_class"],
+                    "confirmed_class": candidate["proposed_capability_class"],
+                    "required_permission": "storage.system.read",
+                    "rationale": "Confirmed as a bounded read-only operation.",
+                }
+            ],
+        }
+        denied_design = client.post(
+            f"/api/v1/mcp-builder/projects/{project_id}/design-checkpoints",
+            json=design_payload,
+            headers={"Idempotency-Key": "mcp-builder-design-api-0001"},
+        )
+        created_design = client.post(
+            f"/api/v1/mcp-builder/projects/{project_id}/design-checkpoints",
+            json=design_payload,
+            headers={
+                "Idempotency-Key": "mcp-builder-design-api-0001",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+        )
+        read_design = client.get(
+            f"/api/v1/mcp-builder/projects/{project_id}/design-checkpoint"
+        )
 
     assert denied.status_code == 403
     assert created.status_code == 201
     assert read.status_code == 200
+    assert denied_design.status_code == 403
+    assert created_design.status_code == 201
+    assert read_design.status_code == 200
     assert created.headers["Cache-Control"] == "no-store"
     assert read.headers["Cache-Control"] == "no-store"
+    assert created_design.headers["Cache-Control"] == "no-store"
+    assert read_design.headers["Cache-Control"] == "no-store"
     assert created.json()["data"]["state"] == "analyzed"
     assert created.json()["data"]["capability_candidates"][0]["proposed_capability_class"] == "C1"
     for forbidden in ("canonical_source_json", "source_document", "request_fingerprint"):
         assert forbidden not in created.text
+        assert forbidden not in created_design.text
+    assert created_design.json()["data"]["ready_for_generation_design"] is True
+    assert created_design.json()["data"]["generated_artifact_created"] is False
+    assert created_design.json()["data"]["execution_authorized"] is False

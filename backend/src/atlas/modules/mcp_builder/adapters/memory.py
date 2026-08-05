@@ -27,6 +27,12 @@ class InMemoryMcpBuilderProjectRepository:
             None,
         )
 
+    async def get_by_id_for_scope(self, *, project_id: str) -> McpBuilderProject | None:
+        return next(
+            (project for project in self._projects.values() if project.project_id == project_id),
+            None,
+        )
+
     async def add(self, project: McpBuilderProject) -> bool:
         async with self._lock:
             key = (project.owner_id, project.idempotency_key)

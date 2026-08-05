@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-047 |
 | Title | Governed MCP Builder human design checkpoint |
-| Status | In Progress |
+| Status | Validation Complete |
 | Branch | `agent/mcp-builder-human-design-checkpoint` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-014, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056 |
 | Last Updated | 2026-08-05 |
-| Next Action | Implement and validate the non-generating human design checkpoint |
+| Next Action | Open the implementation PR and complete GitHub CI validation |
 
 ### ATLAS-IMP-047 Scope Rationale
 
@@ -58,7 +58,29 @@
 
 ### ATLAS-IMP-047 Validation Evidence
 
-- Pending implementation and validation.
+- Domain, application, API, authorization, audit, memory, PostgreSQL, and migration coverage verifies
+  exact project version and digest binding, complete candidate decisions, immutable idempotent replay,
+  stale and tampered source-analysis rejection, exact organization and environment scope, enterprise
+  human MFA, and fail-closed required audit behavior.
+- Included candidates must retain their analyzed `C0` or `C1` class and cannot be blocked. Missing,
+  duplicate, unknown, class-lowered, or blocked include decisions fail closed. Broad administrator
+  permission requests, arbitrary network destinations, malformed stable references, and incomplete
+  entity mappings are rejected; excluded candidates retain explicit human rationale.
+- Full backend verification passes Ruff, strict mypy across 351 source files, one Alembic head at
+  `20260805_0019`, and 393 pytest tests with three existing Windows symbolic-link skips. Full frontend
+  verification passes ESLint, TypeScript, all 35 Vitest tests, and the production build.
+- Live LDAP validation created project `mcp-builder-project.0e66a6e1f2c1051ee1aa934b` and checkpoint
+  `mcp-builder-design.03489e3e1b3ec23a3bf43666`. Missing CSRF failed with HTTP 403, an undeclared
+  network destination failed closed, and exact checkpoint create/read returned HTTP 201/200 with
+  `Cache-Control: no-store` and one design-eligible `C1` capability.
+- Live and automated output retained generated artifact, package, connector registration, installation,
+  enablement, network request, model inference, dynamic execution, runtime trust, execution authority,
+  and infrastructure mutation as false. Canonical source content and request fingerprints were absent
+  from API responses.
+- The MCP Builder workspace was inspected at desktop and a fixed 390-by-844 mobile viewport. Page and
+  body client/scroll widths matched, all bounded fields remained inside the viewport, and browser
+  warning/error logs were empty. The automated web flow completed analysis and the full human design
+  checkpoint without exposing generation, installation, or execution controls.
 
 ### ATLAS-IMP-046 Scope Rationale
 

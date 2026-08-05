@@ -5,7 +5,14 @@ from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from atlas.api.schemas import ResponseMeta
+from atlas.core.capabilities import CapabilityClass
 from atlas.core.classification import DataClassification
+from atlas.modules.mcp_builder.domain.design_review import (
+    BuilderCapabilityDecision,
+    BuilderCapabilityDecisionKind,
+    BuilderEntityMapping,
+    McpBuilderDesignCheckpoint,
+)
 from atlas.modules.mcp_builder.domain.models import McpBuilderProject
 
 STABLE_ID = r"^[a-z][a-z0-9_.:-]{2,127}$"
@@ -183,3 +190,151 @@ class McpBuilderProjectData(BaseModel):
 class McpBuilderProjectResponse(BaseModel):
     data: McpBuilderProjectData
     meta: ResponseMeta
+
+
+class BuilderEntityMappingInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source_entity: str = Field(pattern=STABLE_ID)
+    atlas_entity: str = Field(pattern=STABLE_ID)
+
+
+class BuilderCapabilityDecisionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    candidate_id: str = Field(pattern=STABLE_ID)
+    decision: BuilderCapabilityDecisionKind
+    analyzed_class: CapabilityClass
+    confirmed_class: CapabilityClass
+    required_permission: str = Field(min_length=1, max_length=160)
+    rationale: str = Field(min_length=1, max_length=1000)
+
+
+class McpBuilderDesignCheckpointInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: str = Field(
+        default="atlas.mcp-builder-design-checkpoint-request.v1", pattern=STABLE_ID
+    )
+    project_version: int = Field(ge=1)
+    project_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    source_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    connector_boundary: str = Field(min_length=1, max_length=1000)
+    target_products: list[str] = Field(min_length=1, max_length=20)
+    network_destinations: list[str] = Field(max_length=20)
+    configuration_keys: list[str] = Field(max_length=50)
+    secret_reference_ids: list[str] = Field(max_length=50)
+    entity_mappings: list[BuilderEntityMappingInput] = Field(min_length=1, max_length=100)
+    capability_decisions: list[BuilderCapabilityDecisionInput] = Field(min_length=1, max_length=500)
+
+
+class BuilderEntityMappingData(BaseModel):
+    source_entity: str
+    atlas_entity: str
+
+
+class BuilderCapabilityDecisionData(BaseModel):
+    candidate_id: str
+    decision: str
+    analyzed_class: str
+    confirmed_class: str
+    required_permission: str
+    rationale: str
+    generation_eligible: bool
+
+
+class McpBuilderDesignCheckpointData(BaseModel):
+    checkpoint_id: str
+    schema_version: str
+    version: int
+    project_id: str
+    project_version: int
+    project_digest: str
+    source_digest: str
+    organization_id: str
+    environment_id: str
+    reviewer_id: str
+    connector_boundary: str
+    target_products: list[str]
+    network_destinations: list[str]
+    configuration_keys: list[str]
+    secret_reference_ids: list[str]
+    entity_mappings: list[BuilderEntityMappingData]
+    capability_decisions: list[BuilderCapabilityDecisionData]
+    canonical_digest: str
+    created_at: datetime
+    ready_for_generation_design: bool
+    generated_artifact_created: bool
+    candidate_package_created: bool
+    connector_registered: bool
+    connector_installed: bool
+    connector_enabled: bool
+    network_request_performed: bool
+    model_inference_performed: bool
+    dynamic_code_execution_performed: bool
+    runtime_trust_granted: bool
+    execution_authorized: bool
+    infrastructure_mutation_performed: bool
+    reused: bool
+
+    @classmethod
+    def from_domain(
+        cls, checkpoint: McpBuilderDesignCheckpoint
+    ) -> McpBuilderDesignCheckpointData:
+        return cls(
+            **{
+                field: getattr(checkpoint, field)
+                for field in cls.model_fields
+                if field
+                not in {
+                    "target_products",
+                    "network_destinations",
+                    "configuration_keys",
+                    "secret_reference_ids",
+                    "entity_mappings",
+                    "capability_decisions",
+                }
+            },
+            target_products=list(checkpoint.target_products),
+            network_destinations=list(checkpoint.network_destinations),
+            configuration_keys=list(checkpoint.configuration_keys),
+            secret_reference_ids=list(checkpoint.secret_reference_ids),
+            entity_mappings=[
+                BuilderEntityMappingData(
+                    source_entity=item.source_entity, atlas_entity=item.atlas_entity
+                )
+                for item in checkpoint.entity_mappings
+            ],
+            capability_decisions=[
+                BuilderCapabilityDecisionData(
+                    candidate_id=item.candidate_id,
+                    decision=item.decision.value,
+                    analyzed_class=item.analyzed_class.value,
+                    confirmed_class=item.confirmed_class.value,
+                    required_permission=item.required_permission,
+                    rationale=item.rationale,
+                    generation_eligible=item.generation_eligible,
+                )
+                for item in checkpoint.capability_decisions
+            ],
+        )
+
+
+class McpBuilderDesignCheckpointResponse(BaseModel):
+    data: McpBuilderDesignCheckpointData
+    meta: ResponseMeta
+
+
+def design_entity_mapping(value: BuilderEntityMappingInput) -> BuilderEntityMapping:
+    return BuilderEntityMapping(source_entity=value.source_entity, atlas_entity=value.atlas_entity)
+
+
+def design_capability_decision(
+    value: BuilderCapabilityDecisionInput,
+) -> BuilderCapabilityDecision:
+    return BuilderCapabilityDecision(
+        candidate_id=value.candidate_id,
+        decision=value.decision,
+        analyzed_class=value.analyzed_class,
+        confirmed_class=value.confirmed_class,
+        required_permission=value.required_permission,
+        rationale=value.rationale,
+        generation_eligible=value.decision is BuilderCapabilityDecisionKind.INCLUDE,
+    )
