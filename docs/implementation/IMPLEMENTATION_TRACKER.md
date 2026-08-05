@@ -8,7 +8,7 @@
 | Title | Governed connector final validation foundation |
 | Status | Ready for PR |
 | Branch | `agent/connector-final-validation` |
-| Pull Request | Not opened |
+| Pull Request | [PR #79](https://github.com/ozdemirumit/Project_Atlas/pull/79) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-023 |
 | Last Updated | 2026-08-06 |
 | Next Action | Open the implementation PR and complete GitHub CI and merge validation |
