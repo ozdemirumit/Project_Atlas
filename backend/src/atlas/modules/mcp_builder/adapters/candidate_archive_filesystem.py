@@ -46,7 +46,9 @@ class FileSystemMcpBuilderCandidateArchivePublisher:
             attempt.chmod(0o600)
             if sha256(attempt.read_bytes()).hexdigest() != package_digest:
                 raise McpBuilderArtifactError("builder_candidate_archive_integrity_failed")
-            attempt.replace(destination)
+            # A hard link publishes the verified inode atomically without replacing an
+            # archive that another process may have published concurrently.
+            os.link(attempt, destination, follow_symlinks=False)
         except FileExistsError:
             if destination.exists() and self._read(package_digest, len(content)) == content:
                 return False

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import zipfile
 from hashlib import sha256
+from pathlib import Path
 
 import pytest
 
@@ -58,7 +60,9 @@ def test_candidate_archive_is_deterministic_bounded_and_quarantined() -> None:
 
 
 @pytest.mark.asyncio
-async def test_candidate_archive_publisher_is_immutable_and_detects_corruption(tmp_path) -> None:
+async def test_candidate_archive_publisher_is_immutable_and_detects_corruption(
+    tmp_path: Path,
+) -> None:
     publisher = FileSystemMcpBuilderCandidateArchivePublisher(root=tmp_path / "candidates")
     content = b"deterministic-candidate"
     digest = sha256(content).hexdigest()
@@ -71,3 +75,22 @@ async def test_candidate_archive_publisher_is_immutable_and_detects_corruption(t
     path.write_bytes(b"changed")
     with pytest.raises(McpBuilderArtifactError, match="builder_candidate_archive_integrity_failed"):
         await publisher.read(package_digest=digest, size_bytes=len(content))
+
+
+@pytest.mark.asyncio
+async def test_candidate_archive_publication_is_atomic_across_publishers(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "candidates"
+    first = FileSystemMcpBuilderCandidateArchivePublisher(root=root)
+    second = FileSystemMcpBuilderCandidateArchivePublisher(root=root)
+    content = b"shared-deterministic-candidate"
+    digest = sha256(content).hexdigest()
+
+    results = await asyncio.gather(
+        first.publish(package_digest=digest, content=content),
+        second.publish(package_digest=digest, content=content),
+    )
+
+    assert sorted(results) == [False, True]
+    assert await first.read(package_digest=digest, size_bytes=len(content)) == content

@@ -1875,15 +1875,15 @@ class McpBuilderService:
             idempotency_key=idempotency_key,
             created_at=self._clock(),
         )
+        await self._candidate_archive_publisher.publish(
+            package_digest=archive.digest, content=archive.content
+        )
         await self._audit_candidate_handoff(
             actor=actor,
             correlation_id=correlation_id,
             permission_id=CANDIDATE_HANDOFF_CREATE_PERMISSION,
             result_code="mcp_builder_candidate_handoff_created",
             handoff=handoff,
-        )
-        await self._candidate_archive_publisher.publish(
-            package_digest=archive.digest, content=archive.content
         )
         if not await self._candidate_handoff_repository.add(handoff):
             raced = await self._candidate_handoff_repository.get_by_create_key(
@@ -1912,9 +1912,12 @@ class McpBuilderService:
         self, *, actor: AuthenticatedSubject, project_id: str, correlation_id: str
     ) -> tuple[McpBuilderCandidateHandoff, bytes]:
         handoff = await self._candidate_handoff_for_actor(actor=actor, project_id=project_id)
-        content = await self._candidate_archive_publisher.read(
-            package_digest=handoff.package_digest, size_bytes=handoff.package_size_bytes
-        )
+        try:
+            content = await self._candidate_archive_publisher.read(
+                package_digest=handoff.package_digest, size_bytes=handoff.package_size_bytes
+            )
+        except McpBuilderArtifactError as error:
+            raise McpBuilderError("builder_candidate_archive_integrity_failed") from error
         await self._audit_candidate_handoff(
             actor=actor,
             correlation_id=correlation_id,

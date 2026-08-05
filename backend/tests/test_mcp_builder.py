@@ -1769,6 +1769,43 @@ async def test_candidate_handoff_is_deterministic_downloadable_and_grants_no_aut
 
 
 @pytest.mark.asyncio
+async def test_candidate_handoff_rejects_stale_profile_ack_and_separation_of_duties() -> None:
+    builder, _, _, _ = service()
+    chain = await accepted_security_chain(builder)
+    lab = await builder.create_lab_validation(**lab_validation_request(*chain))
+    request = candidate_handoff_request(chain, lab)
+    domain_review = chain[4]
+    security_review = chain[5]
+    cases = (
+        ({"lab_validation_digest": "0" * 64}, "builder_candidate_handoff_source_stale"),
+        (
+            {"handoff_profile": "atlas.candidate-handoff.unsupported.v1"},
+            "builder_candidate_handoff_profile_unsupported",
+        ),
+        (
+            {"acknowledged_unsigned_quarantined_package": False},
+            "builder_candidate_handoff_acknowledgement_required",
+        ),
+        (
+            {"actor": actor(subject_id=domain_review.reviewed_by)},
+            "builder_candidate_handoff_separation_of_duties_required",
+        ),
+        (
+            {"actor": actor(subject_id=security_review.reviewed_by)},
+            "builder_candidate_handoff_separation_of_duties_required",
+        ),
+        (
+            {"actor": actor(subject_id=lab.operated_by)},
+            "builder_candidate_handoff_separation_of_duties_required",
+        ),
+    )
+
+    for overrides, error_code in cases:
+        with pytest.raises(McpBuilderError, match=error_code):
+            await builder.create_candidate_handoff(**{**request, **overrides})
+
+
+@pytest.mark.asyncio
 async def test_static_validator_fails_unsafe_python_and_embedded_secret() -> None:
     builder, _, _, _ = service()
     project = await builder.create_project(**create_request())
@@ -2436,3 +2473,81 @@ def test_lab_validation_api_requires_independent_csrf_scoped_operator(tmp_path: 
         "infrastructure_mutation_performed",
     ):
         assert data[field] is False
+
+
+def test_candidate_handoff_api_requires_custodian_csrf_and_verifies_download(
+    tmp_path: Path,
+) -> None:
+    sink = CollectingAuditSink()
+    builder, _, _, _ = service(sink)
+    chain = asyncio.run(accepted_security_chain(builder))
+    lab = asyncio.run(builder.create_lab_validation(**lab_validation_request(*chain)))
+    request = candidate_handoff_request(chain, lab)
+    payload = {
+        "schema_version": "atlas.mcp-builder-candidate-handoff-request.v1",
+        **{
+            key: value
+            for key, value in request.items()
+            if key not in {"actor", "project_id", "idempotency_key", "correlation_id"}
+        },
+    }
+    custodian = actor(subject_id="subject.package.custodian")
+    provider = BasicTestIdentityProvider(custodian)
+    app_settings = settings(
+        development_subject_id=custodian.subject_id,
+        mcp_builder_generation_root=tmp_path / "mcp-builder-generations",
+    )
+    project = chain[0]
+    with TestClient(
+        create_app(
+            app_settings,
+            identity_provider=provider,
+            audit_sink=sink,
+            mcp_builder_service=builder,
+        )
+    ) as client:
+        login_response = login(client)
+        endpoint = f"/api/v1/mcp-builder/projects/{project.project_id}/candidate-handoffs"
+        denied = client.post(
+            endpoint,
+            json=payload,
+            headers={"Idempotency-Key": "mcp-builder-candidate-api-0001"},
+        )
+        stale = client.post(
+            endpoint,
+            json={**payload, "lab_validation_digest": "0" * 64},
+            headers={
+                "Idempotency-Key": "mcp-builder-candidate-api-stale",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+        )
+        created = client.post(
+            endpoint,
+            json=payload,
+            headers={
+                "Idempotency-Key": "mcp-builder-candidate-api-0001",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+        )
+        base = f"/api/v1/mcp-builder/projects/{project.project_id}/candidate-handoff"
+        read = client.get(base)
+        archive = client.get(f"{base}/archive")
+
+    assert denied.status_code == 403
+    assert stale.status_code == 409
+    assert created.status_code == 201, created.text
+    assert read.status_code == 200
+    assert archive.status_code == 200
+    assert created.headers["Cache-Control"] == read.headers["Cache-Control"] == "no-store"
+    data = created.json()["data"]
+    assert data["state"] == "candidate_quarantined"
+    assert data["signature_state"] == "unsigned"
+    assert data["custodied_by"] == custodian.subject_id
+    assert data["candidate_package_created"] is True
+    assert data["package_signed"] is False
+    assert archive.headers["Cache-Control"] == "no-store"
+    assert archive.headers["Content-Type"] == "application/zip"
+    assert archive.headers["X-Content-Type-Options"] == "nosniff"
+    assert archive.headers["X-Atlas-Package-Digest"] == data["package_digest"]
+    assert sha256(archive.content).hexdigest() == data["package_digest"]
+    assert archive.headers["Content-Disposition"].endswith(f'"{data["package_filename"]}"')

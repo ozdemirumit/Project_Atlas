@@ -114,12 +114,14 @@ import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
 import {
   createMcpBuilderDomainReview,
+  createMcpBuilderCandidateHandoff,
   createMcpBuilderDesignCheckpoint,
   createMcpBuilderGeneration,
   createMcpBuilderLabValidation,
   createMcpBuilderProject,
   createMcpBuilderSecurityReview,
   createMcpBuilderValidation,
+  downloadMcpBuilderCandidateArchive,
   getMcpBuilderGeneratedFile,
   type McpBuilderDesignDecision,
   type McpBuilderDomainDecision,
@@ -500,6 +502,8 @@ export function App() {
   >({});
   const [builderLabValidationAcknowledged, setBuilderLabValidationAcknowledged] =
     useState(false);
+  const [builderCandidateHandoffAcknowledged, setBuilderCandidateHandoffAcknowledged] =
+    useState(false);
   const [builderSelectedGeneratedFile, setBuilderSelectedGeneratedFile] = useState("");
   const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
     Record<string, McpBuilderDesignDecision>
@@ -519,14 +523,40 @@ export function App() {
   const builderGeneratedFileMutation = useMutation({
     mutationFn: getMcpBuilderGeneratedFile,
   });
+  const builderCandidateHandoffMutation = useMutation({
+    mutationFn: createMcpBuilderCandidateHandoff,
+    onSuccess: () => setBuilderCandidateHandoffAcknowledged(false),
+  });
+  const builderCandidateArchiveMutation = useMutation({
+    mutationFn: downloadMcpBuilderCandidateArchive,
+    onSuccess: ({ blob, filename }) => {
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    },
+  });
+  const resetBuilderCandidateHandoff = () => {
+    builderCandidateHandoffMutation.reset();
+    builderCandidateArchiveMutation.reset();
+    setBuilderCandidateHandoffAcknowledged(false);
+  };
   const builderLabValidationMutation = useMutation({
     mutationFn: createMcpBuilderLabValidation,
-    onSuccess: () => setBuilderLabValidationAcknowledged(false),
+    onSuccess: () => {
+      resetBuilderCandidateHandoff();
+      setBuilderLabValidationAcknowledged(false);
+    },
   });
   const builderSecurityReviewMutation = useMutation({
     mutationFn: createMcpBuilderSecurityReview,
     onSuccess: () => {
       builderLabValidationMutation.reset();
+      resetBuilderCandidateHandoff();
       setBuilderSecurityReviewAcknowledged(false);
       setBuilderLabValidationAcknowledged(false);
     },
@@ -535,6 +565,7 @@ export function App() {
     mutationFn: createMcpBuilderDomainReview,
     onSuccess: (result) => {
       builderLabValidationMutation.reset();
+      resetBuilderCandidateHandoff();
       builderSecurityReviewMutation.reset();
       setBuilderDomainReviewAcknowledged(false);
       setBuilderSecurityReviewAcknowledged(false);
@@ -564,6 +595,7 @@ export function App() {
     mutationFn: createMcpBuilderValidation,
     onSuccess: () => {
       builderLabValidationMutation.reset();
+      resetBuilderCandidateHandoff();
       builderSecurityReviewMutation.reset();
       builderDomainReviewMutation.reset();
       setBuilderValidationAcknowledged(false);
@@ -577,6 +609,7 @@ export function App() {
     mutationFn: createMcpBuilderGeneration,
     onSuccess: (result) => {
       builderLabValidationMutation.reset();
+      resetBuilderCandidateHandoff();
       builderValidationMutation.reset();
       builderSecurityReviewMutation.reset();
       builderDomainReviewMutation.reset();
@@ -603,6 +636,7 @@ export function App() {
     mutationFn: createMcpBuilderDesignCheckpoint,
     onSuccess: () => {
       builderLabValidationMutation.reset();
+      resetBuilderCandidateHandoff();
       builderGenerationMutation.reset();
       builderGeneratedFileMutation.reset();
       builderValidationMutation.reset();
@@ -622,6 +656,7 @@ export function App() {
     mutationFn: createMcpBuilderProject,
     onSuccess: (result) => {
       builderLabValidationMutation.reset();
+      resetBuilderCandidateHandoff();
       builderDesignMutation.reset();
       builderGenerationMutation.reset();
       builderGeneratedFileMutation.reset();
@@ -2228,6 +2263,7 @@ export function App() {
                           builderGeneratedFileMutation.reset();
                           builderValidationMutation.reset();
                           builderLabValidationMutation.reset();
+                          resetBuilderCandidateHandoff();
                           builderSecurityReviewMutation.reset();
                           builderDomainReviewMutation.reset();
                           setBuilderValidationAcknowledged(false);
@@ -2270,6 +2306,7 @@ export function App() {
                           builderGeneratedFileMutation.reset();
                           builderValidationMutation.reset();
                           builderLabValidationMutation.reset();
+                          resetBuilderCandidateHandoff();
                           builderSecurityReviewMutation.reset();
                           builderDomainReviewMutation.reset();
                           setBuilderValidationAcknowledged(false);
@@ -4230,6 +4267,295 @@ export function App() {
                                                           </p>
                                                         </div>
                                                       </div>
+                                                    )}
+                                                    {builderLabValidationMutation.data?.data.state ===
+                                                      "passed" && (
+                                                      <section
+                                                        className="mcp-builder-candidate-handoff"
+                                                        aria-label="Candidate package custody"
+                                                      >
+                                                        <div className="workspace-section-heading">
+                                                          <div>
+                                                            <p className="eyebrow">PACKAGE CUSTODY</p>
+                                                            <h3>Create the quarantined candidate</h3>
+                                                            <p>
+                                                              Preserve the exact reviewed scaffold and
+                                                              evidence lineage in a deterministic,
+                                                              unsigned archive.
+                                                            </p>
+                                                          </div>
+                                                          <span className="state-badge pending">
+                                                            <Archive size={14} /> Quarantine only
+                                                          </span>
+                                                        </div>
+                                                        {(identity?.subject_id ===
+                                                          builderDomainReviewMutation.data?.data
+                                                            .reviewed_by ||
+                                                          identity?.subject_id ===
+                                                            builderSecurityReviewMutation.data?.data
+                                                              .reviewed_by ||
+                                                          identity?.subject_id ===
+                                                            builderLabValidationMutation.data.data
+                                                              .operated_by) &&
+                                                          !builderCandidateHandoffMutation.data && (
+                                                            <div
+                                                              className="workspace-message mcp-builder-security-sod"
+                                                              role="status"
+                                                            >
+                                                              <UserX size={20} />
+                                                              <div>
+                                                                <h3>Independent package custodian required</h3>
+                                                                <p>
+                                                                  Reviewers and the lab operator cannot
+                                                                  take custody. Continue with a different
+                                                                  authorized custodian session.
+                                                                </p>
+                                                              </div>
+                                                            </div>
+                                                          )}
+                                                        {identity?.subject_id !==
+                                                          builderDomainReviewMutation.data?.data
+                                                            .reviewed_by &&
+                                                          identity?.subject_id !==
+                                                            builderSecurityReviewMutation.data?.data
+                                                              .reviewed_by &&
+                                                          identity?.subject_id !==
+                                                            builderLabValidationMutation.data.data
+                                                              .operated_by &&
+                                                          !builderCandidateHandoffMutation.data && (
+                                                            <form
+                                                              className="mcp-builder-lab-form"
+                                                              onSubmit={(event) => {
+                                                                event.preventDefault();
+                                                                const project = builderMutation.data?.data;
+                                                                const checkpoint =
+                                                                  builderDesignMutation.data?.data;
+                                                                const generation =
+                                                                  builderGenerationMutation.data?.data;
+                                                                const validation =
+                                                                  builderValidationMutation.data?.data;
+                                                                const domainReview =
+                                                                  builderDomainReviewMutation.data?.data;
+                                                                const securityReview =
+                                                                  builderSecurityReviewMutation.data?.data;
+                                                                const labValidation =
+                                                                  builderLabValidationMutation.data?.data;
+                                                                if (
+                                                                  !project ||
+                                                                  !checkpoint ||
+                                                                  !generation ||
+                                                                  !validation ||
+                                                                  !domainReview ||
+                                                                  !securityReview ||
+                                                                  !labValidation ||
+                                                                  !builderCandidateHandoffAcknowledged ||
+                                                                  builderCandidateHandoffMutation.isPending
+                                                                ) {
+                                                                  return;
+                                                                }
+                                                                builderCandidateHandoffMutation.mutate({
+                                                                  project,
+                                                                  checkpoint,
+                                                                  generation,
+                                                                  validation,
+                                                                  domainReview,
+                                                                  securityReview,
+                                                                  labValidation,
+                                                                });
+                                                              }}
+                                                            >
+                                                              <div className="mcp-builder-domain-contract">
+                                                                <div>
+                                                                  <span>Handoff profile</span>
+                                                                  <code>
+                                                                    atlas.candidate-handoff.python312.v1
+                                                                  </code>
+                                                                </div>
+                                                                <div>
+                                                                  <span>Package state</span>
+                                                                  <strong>Quarantined</strong>
+                                                                </div>
+                                                                <div>
+                                                                  <span>Signature</span>
+                                                                  <strong>Unsigned</strong>
+                                                                </div>
+                                                              </div>
+                                                              <label className="mcp-builder-check">
+                                                                <input
+                                                                  type="checkbox"
+                                                                  checked={
+                                                                    builderCandidateHandoffAcknowledged
+                                                                  }
+                                                                  onChange={(event) =>
+                                                                    setBuilderCandidateHandoffAcknowledged(
+                                                                      event.target.checked,
+                                                                    )
+                                                                  }
+                                                                />
+                                                                <span>
+                                                                  I am the independent package custodian. I
+                                                                  acknowledge that this creates only an
+                                                                  unsigned quarantined archive and grants no
+                                                                  registration, installation, runtime, or
+                                                                  execution authority.
+                                                                </span>
+                                                              </label>
+                                                              <button
+                                                                className="run-check-button mcp-builder-submit"
+                                                                type="submit"
+                                                                disabled={
+                                                                  !builderCandidateHandoffAcknowledged ||
+                                                                  builderCandidateHandoffMutation.isPending
+                                                                }
+                                                              >
+                                                                {builderCandidateHandoffMutation.isPending ? (
+                                                                  <RefreshCw className="spin" size={16} />
+                                                                ) : (
+                                                                  <PackageCheck size={16} />
+                                                                )}
+                                                                Create candidate package
+                                                              </button>
+                                                            </form>
+                                                          )}
+                                                        {builderCandidateHandoffMutation.isError && (
+                                                          <div
+                                                            className="workspace-message error-state"
+                                                            role="alert"
+                                                          >
+                                                            <AlertTriangle size={20} />
+                                                            <div>
+                                                              <h3>Candidate package unavailable</h3>
+                                                              <p>
+                                                                Custody separation, evidence lineage, or
+                                                                archive integrity was rejected.
+                                                              </p>
+                                                            </div>
+                                                          </div>
+                                                        )}
+                                                        {builderCandidateHandoffMutation.data?.data && (
+                                                          <div className="mcp-builder-lab-result">
+                                                            <div className="mcp-builder-generation-summary">
+                                                              <div>
+                                                                <p className="eyebrow">
+                                                                  IMMUTABLE PACKAGE EVIDENCE
+                                                                </p>
+                                                                <strong>
+                                                                  {
+                                                                    builderCandidateHandoffMutation.data.data
+                                                                      .handoff_id
+                                                                  }
+                                                                </strong>
+                                                                <code>
+                                                                  {
+                                                                    builderCandidateHandoffMutation.data.data
+                                                                      .package_digest
+                                                                  }
+                                                                </code>
+                                                              </div>
+                                                              <span className="state-badge pending">
+                                                                <LockKeyhole size={14} /> candidate
+                                                                quarantined
+                                                              </span>
+                                                            </div>
+                                                            <div className="mcp-builder-facts">
+                                                              <div>
+                                                                <span>Signature</span>
+                                                                <strong>Unsigned</strong>
+                                                              </div>
+                                                              <div>
+                                                                <span>Files</span>
+                                                                <strong>
+                                                                  {
+                                                                    builderCandidateHandoffMutation.data.data
+                                                                      .generated_file_count
+                                                                  }
+                                                                </strong>
+                                                              </div>
+                                                              <div>
+                                                                <span>Archive entries</span>
+                                                                <strong>
+                                                                  {
+                                                                    builderCandidateHandoffMutation.data.data
+                                                                      .package_entry_count
+                                                                  }
+                                                                </strong>
+                                                              </div>
+                                                              <div>
+                                                                <span>Size</span>
+                                                                <strong>
+                                                                  {builderCandidateHandoffMutation.data.data.package_size_bytes.toLocaleString()} bytes
+                                                                </strong>
+                                                              </div>
+                                                            </div>
+                                                            <div className="mcp-builder-limitations">
+                                                              <strong>Approved capabilities</strong>
+                                                              <ul>
+                                                                {builderCandidateHandoffMutation.data.data.capabilities.map(
+                                                                  (capability) => (
+                                                                    <li key={capability.candidate_id}>
+                                                                      {capability.candidate_id} · {capability.capability_class} · {capability.required_permission}
+                                                                    </li>
+                                                                  ),
+                                                                )}
+                                                              </ul>
+                                                            </div>
+                                                            <div className="mcp-builder-limitations">
+                                                              <strong>Candidate boundaries</strong>
+                                                              <ul>
+                                                                {builderCandidateHandoffMutation.data.data.limitations.map(
+                                                                  (limitation) => (
+                                                                    <li key={limitation}>{limitation}</li>
+                                                                  ),
+                                                                )}
+                                                              </ul>
+                                                            </div>
+                                                            <button
+                                                              className="run-check-button mcp-builder-submit"
+                                                              type="button"
+                                                              disabled={
+                                                                builderCandidateArchiveMutation.isPending
+                                                              }
+                                                              onClick={() =>
+                                                                builderCandidateArchiveMutation.mutate(
+                                                                  builderCandidateHandoffMutation.data.data,
+                                                                )
+                                                              }
+                                                            >
+                                                              {builderCandidateArchiveMutation.isPending ? (
+                                                                <RefreshCw className="spin" size={16} />
+                                                              ) : (
+                                                                <Download size={16} />
+                                                              )}
+                                                              Download verified archive
+                                                            </button>
+                                                            {builderCandidateArchiveMutation.isError && (
+                                                              <div
+                                                                className="workspace-message error-state"
+                                                                role="alert"
+                                                              >
+                                                                <AlertTriangle size={20} />
+                                                                <div>
+                                                                  <h3>Archive integrity check failed</h3>
+                                                                  <p>
+                                                                    The archive was not downloaded because
+                                                                    its evidence did not match.
+                                                                  </p>
+                                                                </div>
+                                                              </div>
+                                                            )}
+                                                            <div className="mcp-builder-boundary">
+                                                              <LockKeyhole size={18} />
+                                                              <p>
+                                                                Signing, publisher attestation, registry
+                                                                validation, registration, installation,
+                                                                enablement, target configuration, credentials,
+                                                                runtime trust, deployment approval, execution,
+                                                                and infrastructure mutation remain false.
+                                                              </p>
+                                                            </div>
+                                                          </div>
+                                                        )}
+                                                      </section>
                                                     )}
                                                   </section>
                                                 )}
