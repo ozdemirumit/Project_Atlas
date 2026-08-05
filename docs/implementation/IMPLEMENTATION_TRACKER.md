@@ -4,14 +4,60 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-056 |
-| Title | Governed connector package content and dependency inventory foundation |
-| Status | Done |
-| Branch | `agent/mcp-package-supply-chain-inventory` |
-| Pull Request | [#68](https://github.com/ozdemirumit/Project_Atlas/pull/68) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009, ADR-010, ADR-011, ADR-012 |
+| Task ID | ATLAS-IMP-057 |
+| Title | Governed connector package secret and prohibited-content scan foundation |
+| Status | In Progress |
+| Branch | `agent/mcp-package-content-policy-scan` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009, ADR-010, ADR-011, ADR-012, ADR-013 |
 | Last Updated | 2026-08-05 |
-| Next Action | Select and scope ATLAS-IMP-057 from validation pipeline step 4 |
+| Next Action | Implement the accepted ADR-013 backend, persistence, API, web, and validation scope |
+
+### ATLAS-IMP-057 Scope Rationale
+
+- IMP-056 supplies a passed, complete inventory bound to exact immutable package bytes. ATLAS-020
+  validation pipeline step 4 next requires rejection of embedded secrets and prohibited files.
+- ADR-013 defines a separate MFA content-policy operator, strict inventory-to-archive reconciliation,
+  bounded deterministic detectors, and safe findings that never contain matched text.
+- This slice blocks promotion when a detector fails but does not independently reject or mutate a
+  connector. It neither claims malware/static/dependency safety nor grants runtime authority.
+
+### ATLAS-IMP-057 Acceptance Criteria
+
+- Only a dedicated multi-factor human content-policy operator in the exact package organization and
+  environment with create/read permissions can create or read a report. Every Builder, acquisition,
+  validation, and inventory actor, AI and service identity, wrong-scope actor, and insufficient
+  assurance fails closed without evidence discovery.
+- Scan accepts only an exact passed `atlas.connector-supply-chain-inventory.python312.v1` inventory.
+  It verifies canonical inventory, validation, acquisition, package, file, dependency, actor, tenant,
+  completion, and no-authority bindings before rereading bytes.
+- The acquired archive is independently reverified and every path, digest, byte count, and content
+  class must exactly match the passed inventory. Trust failure creates no scan report.
+- Strict UTF-8 and bounded deterministic rules detect private-key material, known token forms,
+  authorization literals, credential-bearing URLs, and non-placeholder sensitive assignments while
+  allowing opaque secret references and documented synthetic placeholders.
+- Prohibited paths, extensions, nested archives, executable/bytecode signatures, control characters,
+  and content-class conflicts fail the report. Static behavior, vulnerabilities, malware, licenses,
+  and prompt-injection detection are outside this slice.
+- Findings contain only stable rule code, severity, relative path, optional line number, remediation,
+  and a one-way evidence fingerprint. Raw matches, snippets, bodies, secret lengths, reversible hashes,
+  and offsets never enter reports, persistence, APIs, audit, logs, errors, or model context.
+- Reports are one-to-one, deterministic, immutable, idempotent, concurrency-safe,
+  audit-before-persist, and equivalent in memory and PostgreSQL. Audit, trust, decode, or persistence
+  failure cannot fabricate success.
+- Failed scans set `promotion_blocked=true`; passed scans set it false. Neither outcome sets
+  `connector_rejected` or changes registration, approval, trust, deployment, or execution state.
+- Strict no-store APIs require browser CSRF for creation, dedicated default-deny RBAC, correlation,
+  bounded schemas, safe errors, exact tenant scope, explicit acknowledgement, and separation of duties.
+- The Connector workspace displays outcome, digest lineage, safe findings, checks, limitations, and
+  promotion state without raw matched content or later-stage action controls.
+- Automated backend and frontend coverage, one Alembic head, live authorized and denied HTTP checks,
+  passed and failed fixtures, desktop and 390-pixel mobile inspection, browser-log inspection, and
+  GitHub CI apply.
+- This slice performs no vulnerability, malware, license, provenance, schema-semantic, static-code,
+  permission-behavior, contract, mock-target, runner, self-test, or lab validation and grants no
+  signing, attestation, rejection, registration, approval, installation, enablement, configuration,
+  credential, trust, execution, deployment, or infrastructure mutation.
 
 ### ATLAS-IMP-056 Scope Rationale
 
