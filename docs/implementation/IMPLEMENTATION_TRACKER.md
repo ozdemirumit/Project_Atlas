@@ -4,14 +4,61 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-046 |
-| Title | Governed MCP Builder project and OpenAPI source-analysis foundation |
-| Status | Completed |
-| Branch | `agent/mcp-builder-openapi-analysis` |
-| Pull Request | [#58](https://github.com/ozdemirumit/Project_Atlas/pull/58) |
-| Governing Documents | ATLAS-002, ATLAS-003, ATLAS-014, ATLAS-015, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056 |
+| Task ID | ATLAS-IMP-047 |
+| Title | Governed MCP Builder human design checkpoint |
+| Status | In Progress |
+| Branch | `agent/mcp-builder-human-design-checkpoint` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056 |
 | Last Updated | 2026-08-05 |
-| Next Action | Select and scope the next approved implementation slice |
+| Next Action | Implement and validate the non-generating human design checkpoint |
+
+### ATLAS-IMP-047 Scope Rationale
+
+- IMP-046 provides attributable, deterministic OpenAPI analysis and conservative capability candidates,
+  but no human-confirmed connector boundary exists. ATLAS-022 requires a domain checkpoint before code
+  generation can begin.
+- This slice records an immutable human design decision against the exact project version, project
+  digest, source digest, candidate set, and analysis findings. It does not change the source analysis,
+  generate artifacts, or advance a connector into a package or runtime lifecycle.
+- Every candidate receives an explicit include or exclude decision. Only unblocked `C0` or `C1`
+  candidates can be included. Blocked, ambiguous, write, and `C5` candidates require exclusion and a
+  bounded human rationale; risk cannot be lowered by the reviewer or AI.
+
+### ATLAS-IMP-047 Acceptance Criteria
+
+- Only an authorized, multi-factor human in the exact project organization and environment can create
+  or read design checkpoints. Service and AI identities, insufficient assurance, wrong roles, and
+  out-of-scope actors fail closed without project, candidate, or checkpoint discovery.
+- A checkpoint binds the exact project ID, project version, project canonical digest, source digest,
+  reviewer, connector boundary, target products, declared network destinations, configuration keys,
+  secret-reference identifiers, normalized entity mappings, and one decision for every analyzed
+  capability candidate.
+- Included candidates must be unblocked and retain their analyzed `C0` or `C1` class. Excluded
+  candidates require rationale. Unknown, duplicate, missing, stale, tampered, class-lowered, or blocked
+  include decisions fail closed. At least one candidate must remain eligible before the checkpoint can
+  be ready for a later generation slice.
+- Network destinations are an exact normalized subset of analyzed OpenAPI server evidence. Secret
+  values, arbitrary endpoints, embedded credentials, wildcard configuration, broad administrator
+  permissions, and unresolved entity mappings are rejected. Only stable secret references may be
+  recorded; Atlas never resolves them in this slice.
+- Creation is immutable, versioned, deterministic, idempotent, audit-before-persist, and safe under
+  replay, changed replay, concurrent creation, audit failure, persistence failure, and source or
+  analysis drift. Memory and PostgreSQL behavior match.
+- Strict no-store APIs require browser CSRF for creation, default-deny RBAC, correlation, bounded
+  schemas, safe errors, and redacted responses. The web workspace supports complete candidate review
+  and checkpoint evidence but exposes no generation, export, package, registration, installation,
+  enablement, invocation, credential resolution, network, model, shell, or execution control.
+- Automated backend and frontend coverage, migration single-head verification, live authorized and
+  denied identity validation, desktop and 390-pixel mobile inspection, browser-log inspection, and
+  GitHub CI apply.
+- This slice performs no external request, model inference, dynamic code execution, artifact or package
+  generation, connector registration, secret resolution, workflow execution, deployment, service
+  restart, traffic switch, restore, rollback, or infrastructure mutation.
+
+### ATLAS-IMP-047 Validation Evidence
+
+- Pending implementation and validation.
 
 ### ATLAS-IMP-046 Scope Rationale
 
