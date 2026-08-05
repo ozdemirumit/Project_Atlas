@@ -40,6 +40,7 @@ from atlas.api.routes import (
     identity,
     identity_governance,
     investigations,
+    malware_analyses,
     mcp_builder,
     platform,
     rca,
@@ -120,6 +121,13 @@ from atlas.modules.connectors.adapters.content_policy_scan_memory import (
 from atlas.modules.connectors.adapters.content_policy_scan_postgres import (
     PostgreSQLPackageContentPolicyScanRepository,
 )
+from atlas.modules.connectors.adapters.malware_analysis_memory import (
+    InMemoryPackageMalwareAnalysisRepository,
+    StaticMalwareDefinitionSnapshotProvider,
+)
+from atlas.modules.connectors.adapters.malware_analysis_postgres import (
+    PostgreSQLPackageMalwareAnalysisRepository,
+)
 from atlas.modules.connectors.adapters.schema_semantics_validation_memory import (
     InMemoryPackageSchemaSemanticsValidationRepository,
 )
@@ -156,6 +164,10 @@ from atlas.modules.connectors.application.authority_behavior_validation import (
     PackageAuthorityBehaviorValidationService,
 )
 from atlas.modules.connectors.application.content_policy_scan import PackageContentPolicyScanService
+from atlas.modules.connectors.application.malware_analysis import (
+    PackageMalwareAnalysisService,
+    build_bootstrap_definition_snapshot,
+)
 from atlas.modules.connectors.application.schema_semantics_validation import (
     PackageSchemaSemanticsValidationService,
 )
@@ -433,6 +445,7 @@ def create_app(
     package_static_dependency_analysis_service: PackageStaticDependencyAnalysisService
     | None = None,
     package_vulnerability_analysis_service: PackageVulnerabilityAnalysisService | None = None,
+    package_malware_analysis_service: PackageMalwareAnalysisService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -1080,6 +1093,33 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if package_malware_analysis_service is not None:
+        resolved_package_malware_analysis_service = package_malware_analysis_service
+    else:
+        package_malware_analysis_repository = (
+            PostgreSQLPackageMalwareAnalysisRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryPackageMalwareAnalysisRepository()
+        )
+        definition_snapshot = build_bootstrap_definition_snapshot(
+            organization_id=resolved_settings.development_organization_id,
+            environment_id=f"environment.{resolved_settings.environment}",
+            now=datetime.now(UTC),
+        )
+        resolved_package_malware_analysis_service = PackageMalwareAnalysisService(
+            repository=package_malware_analysis_repository,
+            vulnerability_source=resolved_package_vulnerability_analysis_service.repository,
+            inventory_source=(
+                resolved_package_schema_semantics_validation_service.inventory_source
+            ),
+            acquisition_source=(
+                resolved_package_schema_semantics_validation_service.acquisition_source
+            ),
+            archive_source=(resolved_package_schema_semantics_validation_service.archive_source),
+            definition_provider=StaticMalwareDefinitionSnapshotProvider(definition_snapshot),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -1267,6 +1307,7 @@ def create_app(
         app.state.package_vulnerability_analysis_service = (
             resolved_package_vulnerability_analysis_service
         )
+        app.state.package_malware_analysis_service = resolved_package_malware_analysis_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -1279,6 +1320,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_package_malware_analysis_service.close()
         await resolved_package_vulnerability_analysis_service.close()
         await resolved_package_static_dependency_analysis_service.close()
         await resolved_package_authority_behavior_validation_service.close()
@@ -1355,6 +1397,7 @@ def create_app(
     app.include_router(authority_behavior_validations.router, prefix="/api/v1")
     app.include_router(static_dependency_analyses.router, prefix="/api/v1")
     app.include_router(vulnerability_analyses.router, prefix="/api/v1")
+    app.include_router(malware_analyses.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

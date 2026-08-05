@@ -11,7 +11,7 @@
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-018 |
 | Last Updated | 2026-08-05 |
-| Next Action | Implement immutable offline malware-definition analysis across backend, API, persistence, UI, and tests |
+| Next Action | Commit the verified malware-analysis slice, open its pull request, and complete GitHub CI |
 
 ### ATLAS-IMP-062 Scope Rationale
 
@@ -68,7 +68,30 @@
 
 ### ATLAS-IMP-062 Validation Evidence
 
-- Pending implementation.
+- Domain, application, API, authorization, audit, memory, PostgreSQL, migration, and web coverage
+  verifies exact passed IMP-061 lineage, full-lineage MFA separation of duties, immutable archive and
+  inventory reconciliation, deterministic package/file/byte-signature matching, safe findings,
+  one-to-one idempotency and concurrency, audit-before-persist, and every no-authority flag.
+- Trusted, stale, untrusted, package-match, file-match, byte-signature, audit-failure, concurrency,
+  CSRF, no-store, and minimized-response fixtures pass. Untrusted definitions create no report;
+  stale or incomplete trusted definitions create immutable failed evidence; any active known match
+  blocks promotion without disclosing file identity, content, matched bytes, offsets, or signatures.
+- Backend formatting covers 532 files; Ruff is clean; strict mypy passes across 496 source files.
+  The focused malware-analysis suite passes 6 tests, and the complete backend suite passes 518 tests
+  with 3 expected Windows symlink skips and only the 3 existing dependency warnings.
+- Alembic reports the single head `20260805_0034`; the migration, memory repository, and PostgreSQL
+  repository preserve the immutable one-to-one analysis contract.
+- Frontend lint and TypeScript checks pass; all 36 frontend tests pass; the production build succeeds
+  with only the existing non-blocking bundle-size warning.
+- Live HTTP verification records login `201`, missing-CSRF denial `403`, authorized creation `201`,
+  and owner-scoped read `200`; create/read both return `Cache-Control: no-store`.
+- The trusted test snapshot `malware-definition-snapshot.test.v1` is fresh and package, file, and
+  stream coverage-complete. Its exact one-package, 13-file, zero-match report passes, marks only
+  malware analysis complete, leaves license and later stages incomplete, leaves promotion unblocked
+  for this stage, and exposes none of the forbidden raw definition or subject payload fields.
+- Browser inspection at 1280 x 720 and 390 x 844 confirms the Connector workspace remains usable,
+  both documents have no horizontal overflow, and captured warning/error logs are empty.
+- GitHub pull-request, pull-request CI, merge, and post-merge CI evidence remain pending.
 
 ### ATLAS-IMP-061 Scope Rationale
 

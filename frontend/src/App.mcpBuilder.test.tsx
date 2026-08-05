@@ -433,7 +433,7 @@ const packageVulnerabilityAnalysis = () => ({
     source_lab_operated_by: packageStaticDependencyAnalysis().data.source_lab_operated_by,
     organization_id: packageStaticDependencyAnalysis().data.organization_id,
     environment_id: packageStaticDependencyAnalysis().data.environment_id,
-    analyzed_by: identity.data.subject_id,
+    analyzed_by: "subject.vulnerability.analyst",
     analysis_profile: "atlas.connector-vulnerability.python312.v1",
     analyzer_version: "atlas.connector-vulnerability-analyzer.v1",
     package_digest: packageStaticDependencyAnalysis().data.package_digest,
@@ -517,6 +517,133 @@ const packageVulnerabilityAnalysis = () => ({
     reused: false,
   },
 });
+
+const packageMalwareAnalysis = () => {
+  const vulnerability = packageVulnerabilityAnalysis().data;
+  return {
+    data: {
+      analysis_id: "connector-malware-analysis.bbbbbbbbbbbbbbbbbbbbbbbb",
+      schema_version: "atlas.connector-package-malware-analysis.v1",
+      version: 1,
+      lifecycle: "validating",
+      outcome: "passed",
+      source_vulnerability_analysis_id: vulnerability.analysis_id,
+      source_vulnerability_analysis_digest: vulnerability.canonical_digest,
+      source_static_dependency_analysis_id:
+        vulnerability.source_static_dependency_analysis_id,
+      source_static_dependency_analysis_digest:
+        vulnerability.source_static_dependency_analysis_digest,
+      source_authority_behavior_validation_id:
+        vulnerability.source_authority_behavior_validation_id,
+      source_schema_semantics_validation_id:
+        vulnerability.source_schema_semantics_validation_id,
+      source_content_policy_scan_id: vulnerability.source_content_policy_scan_id,
+      source_inventory_id: vulnerability.source_inventory_id,
+      source_validation_id: vulnerability.source_validation_id,
+      source_acquisition_id: vulnerability.source_acquisition_id,
+      source_handoff_id: vulnerability.source_handoff_id,
+      source_project_id: vulnerability.source_project_id,
+      source_acquired_by: vulnerability.source_acquired_by,
+      source_manifest_validated_by: vulnerability.source_manifest_validated_by,
+      source_inventoried_by: vulnerability.source_inventoried_by,
+      source_content_scanned_by: vulnerability.source_content_scanned_by,
+      source_schema_validated_by: vulnerability.source_schema_validated_by,
+      source_authority_validated_by: vulnerability.source_authority_validated_by,
+      source_static_analyzed_by: vulnerability.source_static_analyzed_by,
+      source_vulnerability_analyzed_by: vulnerability.analyzed_by,
+      source_custodied_by: vulnerability.source_custodied_by,
+      source_domain_reviewed_by: vulnerability.source_domain_reviewed_by,
+      source_security_reviewed_by: vulnerability.source_security_reviewed_by,
+      source_lab_operated_by: vulnerability.source_lab_operated_by,
+      organization_id: vulnerability.organization_id,
+      environment_id: vulnerability.environment_id,
+      analyzed_by: identity.data.subject_id,
+      analysis_profile: "atlas.connector-malware.offline.v1",
+      scanner_version: "atlas.connector-malware-scanner.v1",
+      package_digest: vulnerability.package_digest,
+      package_size_bytes: vulnerability.package_size_bytes,
+      inventory_digest: vulnerability.inventory_digest,
+      definition_snapshot: {
+        snapshot_id: "malware-definition-snapshot.test.v1",
+        snapshot_version: "snapshot.test.v1",
+        snapshot_digest: "e".repeat(64),
+        signing_key_id: "signing-key.test.v1",
+        issued_at: "2026-08-05T00:00:00Z",
+        expires_at: "2026-09-05T00:00:00Z",
+        scan_profile: "atlas.connector-malware.offline.v1",
+        scanner_version: "atlas.connector-malware-scanner.v1",
+        record_count: 16,
+        package_coverage_complete: true,
+        file_coverage_complete: true,
+        stream_coverage_complete: true,
+        fresh: true,
+      },
+      subject_summary: {
+        package_subject_count: 1,
+        file_subject_count: 8,
+        scanned_subject_count: 9,
+        scanned_bytes: 4096,
+        matched_subject_count: 0,
+        definition_match_count: 0,
+        inactive_record_count: 1,
+        low_count: 0,
+        medium_count: 0,
+        high_count: 0,
+        critical_count: 0,
+        content_set_digest: "f".repeat(64),
+      },
+      findings: [],
+      finding_set_digest: "1".repeat(64),
+      analysis_digest: "2".repeat(64),
+      checks: [
+        "malware.source.accepted",
+        "malware.archive.contract",
+        "malware.dataset.trusted",
+        "malware.dataset.coverage",
+        "malware.subjects.complete",
+        "malware.indicators.clear",
+      ].map((code) => ({
+        code,
+        state: "passed",
+        severity: "informational",
+        summary: `Bounded ${code} evidence completed.`,
+        remediation: "Resolve blocking evidence before retrying.",
+      })),
+      limitations: [
+        "This report covers only platform-selected known indicators.",
+        "No package or infrastructure authority was granted.",
+      ],
+      promotion_blocked: false,
+      canonical_digest: "3".repeat(64),
+      analyzed_at: "2026-08-05T19:00:00Z",
+      secret_content_scan_completed: true,
+      prohibited_content_scan_completed: true,
+      schema_semantic_validation_completed: true,
+      permission_behavior_validation_completed: true,
+      static_code_validation_completed: true,
+      vulnerability_scan_completed: true,
+      malware_scan_completed: true,
+      license_scan_completed: false,
+      contract_validation_completed: false,
+      runner_validation_completed: false,
+      lab_validation_completed: false,
+      package_signed: false,
+      publisher_attested: false,
+      connector_rejected: false,
+      connector_registered: false,
+      connector_approved: false,
+      connector_installed: false,
+      connector_enabled: false,
+      target_configured: false,
+      credentials_resolved: false,
+      runtime_trust_granted: false,
+      execution_authorized: false,
+      deployment_approved: false,
+      infrastructure_mutation_performed: false,
+      reused: false,
+    },
+  };
+};
 
 const domainReview = {
   data: {
@@ -1432,6 +1559,10 @@ describe("MCP Builder workspace", () => {
       body: string;
       idempotencyKey: string | null;
     }> = [];
+    const packageMalwareRequests: Array<{
+      body: string;
+      idempotencyKey: string | null;
+    }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -1574,6 +1705,16 @@ describe("MCP Builder workspace", () => {
         });
         return Promise.resolve(
           new Response(JSON.stringify(packageVulnerabilityAnalysis()), { status: 201 }),
+        );
+      }
+      if (url.endsWith("/api/v1/connectors/package-malware-analyses")) {
+        const headers = new Headers(init?.headers);
+        packageMalwareRequests.push({
+          body: typeof init?.body === "string" ? init.body : "",
+          idempotencyKey: headers.get("Idempotency-Key"),
+        });
+        return Promise.resolve(
+          new Response(JSON.stringify(packageMalwareAnalysis()), { status: 201 }),
         );
       }
       if (
@@ -1790,6 +1931,14 @@ describe("MCP Builder workspace", () => {
     expect(screen.getByText("IMMUTABLE VULNERABILITY REPORT")).toBeVisible();
     expect(screen.getByText("vulnerability.dataset.trusted")).toBeVisible();
     expect(screen.getByText("Current and complete")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Scan known malware indicators" })).toBeVisible();
+    fireEvent.click(screen.getByLabelText(/I am the independent malware analyst/i));
+    fireEvent.click(screen.getByRole("button", { name: "Scan known malware indicators" }));
+
+    expect(await screen.findByText(packageMalwareAnalysis().data.analysis_id)).toBeVisible();
+    expect(screen.getByText("IMMUTABLE MALWARE REPORT")).toBeVisible();
+    expect(screen.getByText("malware.dataset.trusted")).toBeVisible();
+    expect(screen.getByText("Malware scan boundaries")).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|execute|register|enable/i })).not.toBeInTheDocument();
     expect(requests).toHaveLength(1);
     expect(designRequests).toHaveLength(1);
@@ -1807,6 +1956,7 @@ describe("MCP Builder workspace", () => {
     expect(packageAuthorityBehaviorRequests).toHaveLength(1);
     expect(packageStaticDependencyRequests).toHaveLength(1);
     expect(packageVulnerabilityRequests).toHaveLength(1);
+    expect(packageMalwareRequests).toHaveLength(1);
     expect(requests[0]?.idempotencyKey).toBe("mcp-builder.mcp-builder-ui-001");
     const body = JSON.parse(requests[0]?.body ?? "{}") as Record<string, unknown>;
     expect(body.source_document).toBe(source);
@@ -2065,7 +2215,25 @@ describe("MCP Builder workspace", () => {
     expect(packageVulnerabilityBody).not.toHaveProperty("dependencies");
     expect(packageVulnerabilityBody).not.toHaveProperty("versions");
     expect(packageVulnerabilityBody).not.toHaveProperty("execute");
-  }, 15_000);
+    expect(packageMalwareRequests[0]?.idempotencyKey).toBe(
+      "connector-malware.mcp-builder-ui-001",
+    );
+    const packageMalwareBody = JSON.parse(
+      packageMalwareRequests[0]?.body ?? "{}",
+    ) as Record<string, unknown>;
+    expect(packageMalwareBody.source_vulnerability_analysis_id).toBe(
+      packageVulnerabilityAnalysis().data.analysis_id,
+    );
+    expect(packageMalwareBody.source_vulnerability_analysis_digest).toBe(
+      packageVulnerabilityAnalysis().data.canonical_digest,
+    );
+    expect(packageMalwareBody.acknowledged_offline_definition_limitations).toBe(true);
+    expect(packageMalwareBody).not.toHaveProperty("snapshot_id");
+    expect(packageMalwareBody).not.toHaveProperty("definitions");
+    expect(packageMalwareBody).not.toHaveProperty("files");
+    expect(packageMalwareBody).not.toHaveProperty("content");
+    expect(packageMalwareBody).not.toHaveProperty("execute");
+  }, 30_000);
 
   it("verifies the downloaded candidate archive against immutable evidence", async () => {
     const digestBytes = Uint8Array.from(
