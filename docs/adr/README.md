@@ -37,3 +37,4 @@ ADR numbers are permanent and never reused. Material changes require a new ADR r
 | [ADR-020](ADR-020_Connector_Contract_Validation_Contract.md) | Connector contract validation contract | Accepted |
 | [ADR-021](ADR-021_Connector_Isolated_Runner_Validation_Contract.md) | Connector isolated runner validation contract | Accepted |
 | [ADR-022](ADR-022_Connector_Isolated_Lab_Self_Test_Contract.md) | Connector isolated lab self-test contract | Accepted |
+| [ADR-023](ADR-023_Connector_Final_Validation_Contract.md) | Connector final validation contract | Accepted |
