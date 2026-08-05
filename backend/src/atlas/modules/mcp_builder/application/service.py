@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, date, datetime
@@ -25,6 +26,7 @@ from atlas.modules.mcp_builder.application.analyzer import (
 )
 from atlas.modules.mcp_builder.application.generator import (
     LANGUAGE_PROFILE,
+    BuilderGeneratedContent,
     BuilderGenerationError,
     PythonScaffoldGenerator,
 )
@@ -35,6 +37,8 @@ from atlas.modules.mcp_builder.application.ports import (
     McpBuilderDomainReviewRepository,
     McpBuilderError,
     McpBuilderGenerationRepository,
+    McpBuilderLabRunner,
+    McpBuilderLabValidationRepository,
     McpBuilderProjectRepository,
     McpBuilderSecurityReviewRepository,
     McpBuilderValidationRepository,
@@ -60,6 +64,15 @@ from atlas.modules.mcp_builder.domain.generation import (
     BuilderGeneratedFile,
     BuilderGenerationState,
     McpBuilderGeneration,
+)
+from atlas.modules.mcp_builder.domain.lab_validation import (
+    BuilderLabCheck,
+    BuilderLabCheckCode,
+    BuilderLabCheckSeverity,
+    BuilderLabCheckState,
+    BuilderLabRunnerResult,
+    BuilderLabValidationState,
+    McpBuilderLabValidation,
 )
 from atlas.modules.mcp_builder.domain.models import BuilderProjectState, McpBuilderProject
 from atlas.modules.mcp_builder.domain.security_review import (
@@ -105,6 +118,18 @@ SECURITY_REVIEW_LIMITATIONS = (
     "Security review covers the exact quarantined scaffold and declared evidence only.",
     "Dynamic scanning, lab validation, and candidate package approval remain required.",
 )
+LAB_VALIDATION_CREATE_PERMISSION = "mcp-builder.lab-validation.create"
+LAB_VALIDATION_READ_PERMISSION = "mcp-builder.lab-validation.read"
+LAB_VALIDATION_SCHEMA = "atlas.mcp-builder-lab-validation.v1"
+LAB_VALIDATION_PROFILE = "atlas.lab-validation.python312.v1"
+LAB_RUNNER_CONTRACT_VERSION = "mcp-builder-isolated-runner.v1"
+LAB_VALIDATION_LIMITATIONS = (
+    "This result covers only the exact deterministic quarantined scaffold in a local "
+    "isolated synthetic runner.",
+    "No vendor target, credential, dependency resolution, vulnerability scan, malware "
+    "scan, package, signature, installation, registration, enablement, or runtime trust "
+    "was exercised or granted.",
+)
 
 
 class McpBuilderService:
@@ -120,6 +145,8 @@ class McpBuilderService:
         artifact_publisher: McpBuilderArtifactPublisher,
         audit_sink: AuditSink,
         environment_id: str,
+        lab_validation_repository: McpBuilderLabValidationRepository | None = None,
+        lab_runner: McpBuilderLabRunner | None = None,
         analyzer: OpenApiSourceAnalyzer | None = None,
         generator: PythonScaffoldGenerator | None = None,
         validator: PythonScaffoldStaticValidator | None = None,
@@ -131,6 +158,20 @@ class McpBuilderService:
         self._validation_repository = validation_repository
         self._domain_review_repository = domain_review_repository
         self._security_review_repository = security_review_repository
+        if lab_validation_repository is None or lab_runner is None:
+            from atlas.modules.mcp_builder.adapters.lab_runner_subprocess import (
+                SubprocessMcpBuilderLabRunner,
+            )
+            from atlas.modules.mcp_builder.adapters.lab_validation_memory import (
+                InMemoryMcpBuilderLabValidationRepository,
+            )
+
+            lab_validation_repository = (
+                lab_validation_repository or InMemoryMcpBuilderLabValidationRepository()
+            )
+            lab_runner = lab_runner or SubprocessMcpBuilderLabRunner()
+        self._lab_validation_repository = lab_validation_repository
+        self._lab_runner = lab_runner
         self._artifact_publisher = artifact_publisher
         self._audit_sink = audit_sink
         self._environment_id = environment_id
@@ -144,6 +185,7 @@ class McpBuilderService:
         return self._repository
 
     async def close(self) -> None:
+        await self._lab_validation_repository.close()
         await self._security_review_repository.close()
         await self._domain_review_repository.close()
         await self._validation_repository.close()
@@ -1289,6 +1331,288 @@ class McpBuilderService:
         )
         return review
 
+    async def create_lab_validation(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        project_id: str,
+        project_version: int,
+        project_digest: str,
+        source_digest: str,
+        checkpoint_id: str,
+        checkpoint_digest: str,
+        generation_id: str,
+        generation_digest: str,
+        artifact_digest: str,
+        validation_id: str,
+        validation_digest: str,
+        domain_review_id: str,
+        domain_review_digest: str,
+        security_review_id: str,
+        security_review_digest: str,
+        lab_profile: str,
+        acknowledged_isolated_synthetic_execution: bool,
+        idempotency_key: str,
+        correlation_id: str,
+    ) -> McpBuilderLabValidation:
+        self._require_enterprise_human(actor)
+        if not acknowledged_isolated_synthetic_execution:
+            raise McpBuilderError("builder_lab_validation_execution_acknowledgement_required")
+        if not 8 <= len(idempotency_key) <= 128:
+            raise McpBuilderError("builder_lab_validation_idempotency_key_invalid")
+        if lab_profile != LAB_VALIDATION_PROFILE:
+            raise McpBuilderError("builder_lab_validation_profile_unsupported")
+
+        project, checkpoint = await self._generation_context(actor=actor, project_id=project_id)
+        generation = await self._generation_for_actor(actor=actor, project_id=project_id)
+        validation = await self._validation_for_actor(actor=actor, project_id=project_id)
+        domain_review = await self._domain_review_for_actor(actor=actor, project_id=project_id)
+        security_review = await self._security_review_for_actor(actor=actor, project_id=project_id)
+        if security_review.state is not BuilderSecurityReviewState.ACCEPTED:
+            raise McpBuilderError("builder_lab_validation_accepted_security_review_required")
+        if actor.subject_id in {domain_review.reviewed_by, security_review.reviewed_by}:
+            raise McpBuilderError("builder_lab_validation_separation_of_duties_required")
+        if (
+            project.version != project_version
+            or project.canonical_digest != project_digest
+            or project.source_digest != source_digest
+            or checkpoint.checkpoint_id != checkpoint_id
+            or checkpoint.canonical_digest != checkpoint_digest
+            or generation.generation_id != generation_id
+            or generation.canonical_digest != generation_digest
+            or generation.artifact_digest != artifact_digest
+            or validation.validation_id != validation_id
+            or validation.canonical_digest != validation_digest
+            or domain_review.review_id != domain_review_id
+            or domain_review.canonical_digest != domain_review_digest
+            or security_review.review_id != security_review_id
+            or security_review.canonical_digest != security_review_digest
+        ):
+            raise McpBuilderError("builder_lab_validation_source_stale")
+
+        lineage_payload = {
+            "project_id": project.project_id,
+            "project_version": project.version,
+            "project_digest": project.canonical_digest,
+            "source_digest": project.source_digest,
+            "checkpoint_id": checkpoint.checkpoint_id,
+            "checkpoint_digest": checkpoint.canonical_digest,
+            "generation_id": generation.generation_id,
+            "generation_digest": generation.canonical_digest,
+            "artifact_digest": generation.artifact_digest,
+            "validation_id": validation.validation_id,
+            "validation_digest": validation.canonical_digest,
+            "domain_review_id": domain_review.review_id,
+            "domain_review_digest": domain_review.canonical_digest,
+            "domain_reviewed_by": domain_review.reviewed_by,
+            "security_review_id": security_review.review_id,
+            "security_review_digest": security_review.canonical_digest,
+            "security_reviewed_by": security_review.reviewed_by,
+            "organization_id": actor.organization_id,
+            "environment_id": self._environment_id,
+            "operated_by": actor.subject_id,
+            "lab_profile": lab_profile,
+            "runner_contract_version": LAB_RUNNER_CONTRACT_VERSION,
+        }
+        request_fingerprint = self._digest(
+            {
+                **lineage_payload,
+                "acknowledged_isolated_synthetic_execution": True,
+                "idempotency_key": idempotency_key,
+            }
+        )
+        prior = await self._lab_validation_repository.get_by_create_key(
+            operated_by=actor.subject_id, idempotency_key=idempotency_key
+        )
+        if prior is not None:
+            self._verify_lab_validation(prior)
+            if prior.request_fingerprint != request_fingerprint:
+                raise McpBuilderError("builder_lab_validation_idempotency_conflict")
+            return replace(prior, reused=True)
+        existing = await self._lab_validation_repository.get_by_security_review(
+            security_review_id=security_review.review_id
+        )
+        if existing is not None:
+            self._verify_lab_validation(existing)
+            raise McpBuilderError("builder_lab_validation_exists")
+
+        draft = self._generator.generate(project=project, checkpoint=checkpoint)
+        runner_result: BuilderLabRunnerResult
+        verified_files: list[BuilderGeneratedContent] = []
+        artifact_failure: str | None = None
+        if (
+            draft.language_profile != generation.language_profile
+            or draft.metadata != generation.files
+        ):
+            artifact_failure = (
+                "The deterministic scaffold no longer matches its immutable inventory."
+            )
+        else:
+            for expected in draft.files:
+                try:
+                    content = await self._artifact_publisher.read(
+                        generation_id=generation.generation_id,
+                        artifact_digest=generation.artifact_digest,
+                        inventory=generation.files,
+                        relative_path=expected.relative_path,
+                    )
+                except McpBuilderArtifactError:
+                    artifact_failure = (
+                        "The published scaffold failed artifact integrity verification."
+                    )
+                    break
+                if content != expected.content:
+                    artifact_failure = (
+                        "The published scaffold differs from deterministic regeneration."
+                    )
+                    break
+                verified_files.append(expected)
+        if artifact_failure is not None or len(verified_files) != len(draft.files):
+            runner_result = self._failed_lab_runner_result(
+                artifact_failure or "The complete scaffold could not be verified."
+            )
+        else:
+            runner_result = await self._lab_runner.run(
+                files=tuple(verified_files), lab_profile=lab_profile
+            )
+        if not runner_result.workspace_removed:
+            raise McpBuilderError("builder_lab_validation_workspace_cleanup_failed")
+
+        passed_count = sum(
+            item.state is BuilderLabCheckState.PASSED for item in runner_result.checks
+        )
+        failed_count = sum(
+            item.state is BuilderLabCheckState.FAILED for item in runner_result.checks
+        )
+        skipped_count = sum(
+            item.state is BuilderLabCheckState.SKIPPED for item in runner_result.checks
+        )
+        state = (
+            BuilderLabValidationState.PASSED
+            if passed_count == len(BuilderLabCheckCode)
+            else BuilderLabValidationState.FAILED
+        )
+        checks_payload = self._lab_check_payload(runner_result.checks)
+        payload = {
+            **lineage_payload,
+            "runtime_version": runner_result.runtime_version,
+            "state": state.value,
+            "checks": checks_payload,
+            "passed_count": passed_count,
+            "failed_count": failed_count,
+            "skipped_count": skipped_count,
+            "child_started": runner_result.child_started,
+            "child_exit_code": runner_result.child_exit_code,
+            "duration_ms": runner_result.duration_ms,
+            "output_digest": runner_result.output_digest,
+            "output_size_bytes": runner_result.output_size_bytes,
+            "artifact_file_count": len(generation.files),
+            "artifact_size_bytes": sum(item.size_bytes for item in generation.files),
+            "workspace_removed": runner_result.workspace_removed,
+            "limitations": LAB_VALIDATION_LIMITATIONS,
+        }
+        canonical_digest = self._digest(payload)
+        lab_validation = McpBuilderLabValidation(
+            lab_validation_id=f"mcp-builder-lab-validation.{canonical_digest[:24]}",
+            schema_version=LAB_VALIDATION_SCHEMA,
+            version=1,
+            state=state,
+            project_id=project.project_id,
+            project_version=project.version,
+            project_digest=project.canonical_digest,
+            source_digest=project.source_digest,
+            checkpoint_id=checkpoint.checkpoint_id,
+            checkpoint_digest=checkpoint.canonical_digest,
+            generation_id=generation.generation_id,
+            generation_digest=generation.canonical_digest,
+            artifact_digest=generation.artifact_digest,
+            validation_id=validation.validation_id,
+            validation_digest=validation.canonical_digest,
+            domain_review_id=domain_review.review_id,
+            domain_review_digest=domain_review.canonical_digest,
+            domain_reviewed_by=domain_review.reviewed_by,
+            security_review_id=security_review.review_id,
+            security_review_digest=security_review.canonical_digest,
+            security_reviewed_by=security_review.reviewed_by,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+            operated_by=actor.subject_id,
+            lab_profile=lab_profile,
+            runner_contract_version=LAB_RUNNER_CONTRACT_VERSION,
+            runtime_version=runner_result.runtime_version,
+            checks=runner_result.checks,
+            passed_count=passed_count,
+            failed_count=failed_count,
+            skipped_count=skipped_count,
+            child_started=runner_result.child_started,
+            child_exit_code=runner_result.child_exit_code,
+            duration_ms=runner_result.duration_ms,
+            output_digest=runner_result.output_digest,
+            output_size_bytes=runner_result.output_size_bytes,
+            artifact_file_count=len(generation.files),
+            artifact_size_bytes=sum(item.size_bytes for item in generation.files),
+            workspace_removed=runner_result.workspace_removed,
+            limitations=LAB_VALIDATION_LIMITATIONS,
+            canonical_digest=canonical_digest,
+            request_fingerprint=request_fingerprint,
+            idempotency_key=idempotency_key,
+            completed_at=self._clock(),
+            lab_validation_passed=state is BuilderLabValidationState.PASSED,
+            runtime_self_test_performed=runner_result.child_started,
+            subprocess_invoked=runner_result.child_started,
+            dynamic_code_execution_performed=runner_result.child_started,
+        )
+        await self._audit_lab_validation(
+            actor=actor,
+            correlation_id=correlation_id,
+            permission_id=LAB_VALIDATION_CREATE_PERMISSION,
+            result_code=f"mcp_builder_lab_validation_{state.value}",
+            validation=lab_validation,
+        )
+        if not await self._lab_validation_repository.add(lab_validation):
+            raced = await self._lab_validation_repository.get_by_create_key(
+                operated_by=actor.subject_id, idempotency_key=idempotency_key
+            )
+            if raced is None or raced.request_fingerprint != request_fingerprint:
+                raise McpBuilderError("builder_lab_validation_idempotency_conflict")
+            self._verify_lab_validation(raced)
+            return replace(raced, reused=True)
+        return lab_validation
+
+    async def get_lab_validation(
+        self, *, actor: AuthenticatedSubject, project_id: str, correlation_id: str
+    ) -> McpBuilderLabValidation:
+        validation = await self._lab_validation_for_actor(actor=actor, project_id=project_id)
+        await self._audit_lab_validation(
+            actor=actor,
+            correlation_id=correlation_id,
+            permission_id=LAB_VALIDATION_READ_PERMISSION,
+            result_code="mcp_builder_lab_validation_read",
+            validation=validation,
+        )
+        return validation
+
+    async def _lab_validation_for_actor(
+        self, *, actor: AuthenticatedSubject, project_id: str
+    ) -> McpBuilderLabValidation:
+        self._require_enterprise_human(actor)
+        validation = await self._lab_validation_repository.get_by_project(project_id=project_id)
+        if (
+            validation is None
+            or validation.organization_id != actor.organization_id
+            or validation.environment_id != self._environment_id
+        ):
+            raise McpBuilderError("builder_lab_validation_not_found")
+        security_review = await self._security_review_for_actor(actor=actor, project_id=project_id)
+        if (
+            validation.security_review_id != security_review.review_id
+            or validation.security_review_digest != security_review.canonical_digest
+            or validation.security_reviewed_by != security_review.reviewed_by
+        ):
+            raise McpBuilderError("builder_lab_validation_source_stale")
+        self._verify_lab_validation(validation)
+        return validation
+
     async def _security_review_for_actor(
         self, *, actor: AuthenticatedSubject, project_id: str
     ) -> McpBuilderSecurityReview:
@@ -1628,6 +1952,53 @@ class McpBuilderService:
             for item in assessments
         ]
 
+    @staticmethod
+    def _lab_check_payload(checks: tuple[BuilderLabCheck, ...]) -> list[tuple[object, ...]]:
+        return [
+            (
+                item.code.value,
+                item.state.value,
+                item.severity.value,
+                item.summary,
+                item.evidence_paths,
+                item.remediation,
+            )
+            for item in checks
+        ]
+
+    @staticmethod
+    def _failed_lab_runner_result(summary: str) -> BuilderLabRunnerResult:
+        checks = tuple(
+            BuilderLabCheck(
+                code=code,
+                state=(
+                    BuilderLabCheckState.FAILED
+                    if code is BuilderLabCheckCode.ARTIFACT_INTEGRITY
+                    else BuilderLabCheckState.SKIPPED
+                ),
+                severity=BuilderLabCheckSeverity.ERROR,
+                summary=summary,
+                evidence_paths=("artifact inventory",),
+                remediation=(
+                    "Restore the exact immutable scaffold and create a new governed project "
+                    "version."
+                ),
+            )
+            for code in BuilderLabCheckCode
+        )
+        return BuilderLabRunnerResult(
+            checks=checks,
+            runtime_version=(
+                f"python.{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+            ),
+            child_started=False,
+            child_exit_code=None,
+            duration_ms=0,
+            output_digest=sha256(b"").hexdigest(),
+            output_size_bytes=0,
+            workspace_removed=True,
+        )
+
     @classmethod
     def _verify_checkpoint(cls, checkpoint: McpBuilderDesignCheckpoint) -> None:
         payload = {
@@ -1835,6 +2206,81 @@ class McpBuilderService:
             or cls._digest(fingerprint_payload) != review.request_fingerprint
         ):
             raise McpBuilderError("builder_security_review_integrity_failed")
+
+    @classmethod
+    def _verify_lab_validation(cls, validation: McpBuilderLabValidation) -> None:
+        payload = {
+            "project_id": validation.project_id,
+            "project_version": validation.project_version,
+            "project_digest": validation.project_digest,
+            "source_digest": validation.source_digest,
+            "checkpoint_id": validation.checkpoint_id,
+            "checkpoint_digest": validation.checkpoint_digest,
+            "generation_id": validation.generation_id,
+            "generation_digest": validation.generation_digest,
+            "artifact_digest": validation.artifact_digest,
+            "validation_id": validation.validation_id,
+            "validation_digest": validation.validation_digest,
+            "domain_review_id": validation.domain_review_id,
+            "domain_review_digest": validation.domain_review_digest,
+            "domain_reviewed_by": validation.domain_reviewed_by,
+            "security_review_id": validation.security_review_id,
+            "security_review_digest": validation.security_review_digest,
+            "security_reviewed_by": validation.security_reviewed_by,
+            "organization_id": validation.organization_id,
+            "environment_id": validation.environment_id,
+            "operated_by": validation.operated_by,
+            "lab_profile": validation.lab_profile,
+            "runner_contract_version": validation.runner_contract_version,
+            "runtime_version": validation.runtime_version,
+            "state": validation.state.value,
+            "checks": cls._lab_check_payload(validation.checks),
+            "passed_count": validation.passed_count,
+            "failed_count": validation.failed_count,
+            "skipped_count": validation.skipped_count,
+            "child_started": validation.child_started,
+            "child_exit_code": validation.child_exit_code,
+            "duration_ms": validation.duration_ms,
+            "output_digest": validation.output_digest,
+            "output_size_bytes": validation.output_size_bytes,
+            "artifact_file_count": validation.artifact_file_count,
+            "artifact_size_bytes": validation.artifact_size_bytes,
+            "workspace_removed": validation.workspace_removed,
+            "limitations": validation.limitations,
+        }
+        fingerprint = cls._digest(
+            {
+                **{
+                    key: value
+                    for key, value in payload.items()
+                    if key
+                    not in {
+                        "runtime_version",
+                        "state",
+                        "checks",
+                        "passed_count",
+                        "failed_count",
+                        "skipped_count",
+                        "child_started",
+                        "child_exit_code",
+                        "duration_ms",
+                        "output_digest",
+                        "output_size_bytes",
+                        "artifact_file_count",
+                        "artifact_size_bytes",
+                        "workspace_removed",
+                        "limitations",
+                    }
+                },
+                "acknowledged_isolated_synthetic_execution": True,
+                "idempotency_key": validation.idempotency_key,
+            }
+        )
+        if (
+            cls._digest(payload) != validation.canonical_digest
+            or fingerprint != validation.request_fingerprint
+        ):
+            raise McpBuilderError("builder_lab_validation_integrity_failed")
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
@@ -2175,6 +2621,49 @@ class McpBuilderService:
                     ("artifact_digest", review.artifact_digest),
                     ("review_state", review.state.value),
                     ("reviewed_by", review.reviewed_by),
+                ),
+            )
+        )
+
+    async def _audit_lab_validation(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+        permission_id: str,
+        result_code: str,
+        validation: McpBuilderLabValidation,
+    ) -> None:
+        await self._audit_sink.record(
+            AuditRecord(
+                event_id=f"evt_{uuid4().hex}",
+                event_type="atlas.mcp-builder.lab-validation",
+                schema_version="1.0",
+                producer="atlas-api",
+                producer_version=__version__,
+                occurred_at=self._clock(),
+                correlation_id=correlation_id,
+                subject_id=actor.subject_id,
+                actor_type=actor.kind.value,
+                authentication_method=actor.authentication_method.value,
+                assurance_level=actor.assurance_level.value,
+                permission_id=permission_id,
+                resource_type="resource.mcp-builder.lab-validation",
+                scope_reference=(
+                    f"{actor.organization_id}/{self._environment_id}/site.local/"
+                    "domain.mcp-builder/resource.mcp-builder.projects/C2"
+                ),
+                decision_id=None,
+                outcome="succeeded",
+                result_code=result_code,
+                idempotency_key=validation.idempotency_key,
+                target_metadata=(
+                    ("lab_validation_id", validation.lab_validation_id),
+                    ("project_id", validation.project_id),
+                    ("security_review_id", validation.security_review_id),
+                    ("artifact_digest", validation.artifact_digest),
+                    ("lab_state", validation.state.value),
+                    ("operated_by", validation.operated_by),
                 ),
             )
         )

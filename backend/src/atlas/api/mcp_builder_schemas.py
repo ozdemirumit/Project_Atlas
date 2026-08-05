@@ -24,6 +24,10 @@ from atlas.modules.mcp_builder.domain.generation import (
     BuilderGeneratedFile,
     McpBuilderGeneration,
 )
+from atlas.modules.mcp_builder.domain.lab_validation import (
+    BuilderLabCheck,
+    McpBuilderLabValidation,
+)
 from atlas.modules.mcp_builder.domain.models import McpBuilderProject
 from atlas.modules.mcp_builder.domain.security_review import (
     BuilderSecurityControl,
@@ -875,6 +879,131 @@ class McpBuilderSecurityReviewData(BaseModel):
 
 class McpBuilderSecurityReviewResponse(BaseModel):
     data: McpBuilderSecurityReviewData
+    meta: ResponseMeta
+
+
+class McpBuilderLabValidationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: str = Field(
+        default="atlas.mcp-builder-lab-validation-request.v1", pattern=STABLE_ID
+    )
+    project_version: int = Field(ge=1)
+    project_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    source_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    checkpoint_id: str = Field(pattern=STABLE_ID)
+    checkpoint_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    generation_id: str = Field(pattern=STABLE_ID)
+    generation_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    artifact_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    validation_id: str = Field(pattern=STABLE_ID)
+    validation_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    domain_review_id: str = Field(pattern=STABLE_ID)
+    domain_review_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    security_review_id: str = Field(pattern=STABLE_ID)
+    security_review_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    lab_profile: str = Field(default="atlas.lab-validation.python312.v1", pattern=STABLE_ID)
+    acknowledged_isolated_synthetic_execution: bool
+
+
+class BuilderLabCheckData(BaseModel):
+    code: str
+    state: str
+    severity: str
+    summary: str
+    evidence_paths: list[str]
+    remediation: str | None
+
+    @classmethod
+    def from_domain(cls, item: BuilderLabCheck) -> BuilderLabCheckData:
+        return cls(
+            code=item.code.value,
+            state=item.state.value,
+            severity=item.severity.value,
+            summary=item.summary,
+            evidence_paths=list(item.evidence_paths),
+            remediation=item.remediation,
+        )
+
+
+class McpBuilderLabValidationData(BaseModel):
+    lab_validation_id: str
+    schema_version: str
+    version: int
+    state: str
+    project_id: str
+    project_version: int
+    project_digest: str
+    source_digest: str
+    checkpoint_id: str
+    checkpoint_digest: str
+    generation_id: str
+    generation_digest: str
+    artifact_digest: str
+    validation_id: str
+    validation_digest: str
+    domain_review_id: str
+    domain_review_digest: str
+    domain_reviewed_by: str
+    security_review_id: str
+    security_review_digest: str
+    security_reviewed_by: str
+    organization_id: str
+    environment_id: str
+    operated_by: str
+    lab_profile: str
+    runner_contract_version: str
+    runtime_version: str
+    checks: list[BuilderLabCheckData]
+    passed_count: int
+    failed_count: int
+    skipped_count: int
+    child_started: bool
+    child_exit_code: int | None
+    duration_ms: int
+    output_digest: str
+    output_size_bytes: int
+    artifact_file_count: int
+    artifact_size_bytes: int
+    workspace_removed: bool
+    limitations: list[str]
+    canonical_digest: str
+    completed_at: datetime
+    lab_validation_completed: bool
+    lab_validation_passed: bool
+    synthetic_fixture_used: bool
+    secret_values_present: bool
+    target_connected: bool
+    network_request_performed: bool
+    runtime_self_test_performed: bool
+    subprocess_invoked: bool
+    dynamic_code_execution_performed: bool
+    dependency_resolution_performed: bool
+    malware_or_dynamic_scan_performed: bool
+    candidate_package_created: bool
+    connector_registered: bool
+    connector_installed: bool
+    connector_enabled: bool
+    runtime_trust_granted: bool
+    execution_authorized: bool
+    infrastructure_mutation_performed: bool
+    reused: bool
+
+    @classmethod
+    def from_domain(cls, validation: McpBuilderLabValidation) -> McpBuilderLabValidationData:
+        return cls(
+            **{
+                field: getattr(validation, field)
+                for field in cls.model_fields
+                if field not in {"state", "checks", "limitations"}
+            },
+            state=validation.state.value,
+            checks=[BuilderLabCheckData.from_domain(item) for item in validation.checks],
+            limitations=list(validation.limitations),
+        )
+
+
+class McpBuilderLabValidationResponse(BaseModel):
+    data: McpBuilderLabValidationData
     meta: ResponseMeta
 
 

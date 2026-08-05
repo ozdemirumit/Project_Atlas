@@ -4,14 +4,89 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-051 |
-| Title | Governed MCP Builder independent security review foundation |
-| Status | Done |
-| Branch | `agent/mcp-builder-security-review` |
-| Pull Request | [#63](https://github.com/ozdemirumit/Project_Atlas/pull/63) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-004, ADR-005, ADR-006, ADR-007 |
+| Task ID | ATLAS-IMP-052 |
+| Title | Governed MCP Builder isolated lab validation foundation |
+| Status | In Progress |
+| Branch | `agent/mcp-builder-lab-validation` |
+| Pull Request | [PR #64](https://github.com/ozdemirumit/Project_Atlas/pull/64) |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008 |
 | Last Updated | 2026-08-05 |
-| Next Action | Select and scope ATLAS-IMP-052 from the approved MCP Builder lifecycle |
+| Next Action | Publish the completed slice, pass GitHub CI, merge, and synchronize `main` |
+
+### ATLAS-IMP-052 Scope Rationale
+
+- IMP-051 supplies an accepted independent security assessment for the exact quarantined scaffold.
+  ATLAS-022 next requires isolated laboratory evidence before a candidate package handoff.
+- ADR-008 defines the first Python 3.12 lab profile: exact deterministic generated source is copied
+  into an ephemeral, secret-free, network-denied child runner and exercised against synthetic fixtures.
+- This slice proves bounded fail-closed runtime behavior only. It neither contacts a vendor target nor
+  grants package, installation, runtime, execution, deployment, or infrastructure authority.
+
+### ATLAS-IMP-052 Acceptance Criteria
+
+- Only an authorized multi-factor human lab operator in the exact project organization and environment
+  with dedicated create/read permissions can run or inspect validation. AI and service identities, the
+  domain reviewer, the security reviewer, wrong roles, insufficient assurance, and out-of-scope actors
+  fail closed without project, artifact, review, runner, result, or finding discovery.
+- Validation requires an accepted `atlas.security-review.connector.v1` record and binds the exact
+  project, source, checkpoint, generation, artifact, static-validation, domain-review, security-review,
+  profiles, contracts, digests, capabilities, tenant, and operator. Missing, stale, changed, unsupported,
+  non-accepted, or tampered evidence is rejected before runner launch.
+- Every artifact file is reread through quarantine and reverified against immutable path, media type,
+  size, digest, deterministic regeneration, language profile, and template. Unreadable, missing, extra,
+  changed, unsupported, or human-modified source records failed evidence without executing a child.
+- `atlas.lab-validation.python312.v1` uses `mcp-builder-isolated-runner.v1`, an ephemeral workspace,
+  isolated Python mode, a minimal secret-free environment, hard timeout, bounded output, deny-first
+  socket/process/shell/native-library policy, and guaranteed workspace cleanup. The API process never
+  imports or invokes generated modules itself.
+- Eight stable checks cover artifact integrity, runner isolation, secret-free environment, network
+  denial, package import, quarantine contract, every-capability fail-closed behavior, and bounded output.
+  All pass yields `passed`; any required failed or skipped check yields `failed`. Timeout, abnormal exit,
+  malformed or excessive output, unsupported runtime, or policy failure cannot become success.
+- Result creation is immutable, one-to-one with the exact accepted security review, idempotent,
+  audit-before-persist, concurrency-safe, and behaviorally equivalent for memory and PostgreSQL. Required
+  audit or persistence failure cannot disclose or fabricate success.
+- Strict no-store APIs require browser CSRF for creation, default-deny RBAC, correlation, bounded schemas,
+  safe errors, exact-scope reads, explicit untrusted-execution acknowledgement, synthetic-only
+  confirmation, and separation of duties. The web workspace shows all checks, runner evidence,
+  limitations, operator identity, overall state, and explicit no-package/no-runtime/no-execution bounds.
+- Automated backend and frontend coverage, one Alembic head, live authorized and denied API validation,
+  passed and failed runner fixtures, desktop and 390-pixel mobile inspection, browser-log inspection,
+  guaranteed temporary-workspace cleanup, and GitHub CI apply.
+- This slice performs no model inference, dependency installation or resolution, malware scan, real
+  target request, real credential resolution, package creation or signing, connector registration,
+  installation, enablement, runtime trust grant, production workflow execution, deployment, or
+  infrastructure mutation.
+
+### ATLAS-IMP-052 Validation Evidence
+
+- Domain, runner, application, API, authorization, audit, memory, PostgreSQL, and migration coverage
+  verifies the exact accepted-security-review lineage, deterministic artifact reread and regeneration,
+  reviewer/operator separation, idempotent one-to-one persistence, cleanup-before-result behavior, and
+  every no-authority boundary. The runner imports and exercises only the verified scaffold in an
+  ephemeral child process; unsupported runtime, timeout, malformed result, denied operation, or failed
+  required check remains fail closed.
+- The `atlas.lab-validation.python312.v1` profile records exactly eight stable checks for artifact
+  integrity, runner isolation, secret-free environment, network denial, package import, quarantine
+  contract, capability fail-closed behavior, and bounded output. The first implementation uses Python
+  isolated mode, an allowlisted environment, runtime audit-hook denials, synthetic fixtures, a five-second
+  timeout, a 65,536-byte output ceiling, and guaranteed temporary-workspace removal. It does not claim
+  operating-system container, memory, or CPU isolation.
+- Strict POST and GET APIs require dedicated permissions, multi-factor human identity, exact tenant scope,
+  browser CSRF for creation, supported validation and runner contracts, explicit untrusted-execution and
+  synthetic-only acknowledgements, and `Cache-Control: no-store`. Results expose bounded evidence and
+  digests rather than raw child output, credentials, generated source, or target data.
+- Local quality gates passed with Ruff formatting and lint over 441 files, strict mypy over 415 source
+  files, 419 backend tests, 35 frontend tests, ESLint, TypeScript checking, a production build, and a
+  single Alembic head at `20260805_0024`. The three backend skips are the existing Windows symbolic-link
+  cases; the production build retains the existing non-blocking bundle-size advisory.
+- The Connector workspace was visually inspected at 1280-by-720 and 390-by-844 viewport sizes. The
+  accepted-security-review handoff, separation-of-duties warning, lab acknowledgements, immutable result,
+  counts, runtime evidence, all eight checks, limitations, and no-authority statements remained readable
+  without horizontal overflow or incoherent overlap. The current page produced no console warnings or
+  errors, and the temporary mobile viewport override was reset afterward.
+- Source commit `d4330b6` and [PR #64](https://github.com/ozdemirumit/Project_Atlas/pull/64)
+  are published; GitHub Actions evidence, merge commit, and synchronized `main` are pending.
 
 ### ATLAS-IMP-051 Scope Rationale
 

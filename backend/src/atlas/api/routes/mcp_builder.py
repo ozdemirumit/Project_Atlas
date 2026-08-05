@@ -19,6 +19,9 @@ from atlas.api.mcp_builder_schemas import (
     McpBuilderGenerationData,
     McpBuilderGenerationInput,
     McpBuilderGenerationResponse,
+    McpBuilderLabValidationData,
+    McpBuilderLabValidationInput,
+    McpBuilderLabValidationResponse,
     McpBuilderProjectData,
     McpBuilderProjectInput,
     McpBuilderProjectResponse,
@@ -42,6 +45,8 @@ from atlas.api.security import (
     authorize_mcp_builder_domain_review_read,
     authorize_mcp_builder_generation_create,
     authorize_mcp_builder_generation_read,
+    authorize_mcp_builder_lab_validation_create,
+    authorize_mcp_builder_lab_validation_read,
     authorize_mcp_builder_read,
     authorize_mcp_builder_security_review_create,
     authorize_mcp_builder_security_review_read,
@@ -56,6 +61,7 @@ from atlas.modules.mcp_builder.application.service import McpBuilderService
 from atlas.modules.mcp_builder.domain.design_review import McpBuilderDesignCheckpoint
 from atlas.modules.mcp_builder.domain.domain_review import McpBuilderDomainReview
 from atlas.modules.mcp_builder.domain.generation import McpBuilderGeneration
+from atlas.modules.mcp_builder.domain.lab_validation import McpBuilderLabValidation
 from atlas.modules.mcp_builder.domain.models import McpBuilderProject
 from atlas.modules.mcp_builder.domain.security_review import McpBuilderSecurityReview
 from atlas.modules.mcp_builder.domain.validation import McpBuilderValidation
@@ -152,6 +158,18 @@ def _security_review_response(
     response.headers["Cache-Control"] = "no-store"
     return McpBuilderSecurityReviewResponse(
         data=McpBuilderSecurityReviewData.from_domain(review),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+def _lab_validation_response(
+    validation: McpBuilderLabValidation, request: Request, response: Response
+) -> McpBuilderLabValidationResponse:
+    response.headers["Cache-Control"] = "no-store"
+    return McpBuilderLabValidationResponse(
+        data=McpBuilderLabValidationData.from_domain(validation),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),
@@ -502,3 +520,53 @@ async def get_mcp_builder_security_review(
     except McpBuilderError as error:
         _raise(error)
     return _security_review_response(review, request, response)
+
+
+@router.post(
+    "/{project_id}/lab-validations",
+    response_model=McpBuilderLabValidationResponse,
+    status_code=201,
+)
+async def create_mcp_builder_lab_validation(
+    project_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    payload: McpBuilderLabValidationInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_mcp_builder_lab_validation_create)
+    ],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> McpBuilderLabValidationResponse:
+    service: McpBuilderService = request.app.state.mcp_builder_service
+    try:
+        validation = await service.create_lab_validation(
+            actor=subject,
+            project_id=project_id,
+            idempotency_key=idempotency_key,
+            correlation_id=str(request.state.correlation_id),
+            **payload.model_dump(exclude={"schema_version"}),
+        )
+    except McpBuilderError as error:
+        _raise(error)
+    return _lab_validation_response(validation, request, response)
+
+
+@router.get("/{project_id}/lab-validation", response_model=McpBuilderLabValidationResponse)
+async def get_mcp_builder_lab_validation(
+    project_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_mcp_builder_lab_validation_read)],
+) -> McpBuilderLabValidationResponse:
+    service: McpBuilderService = request.app.state.mcp_builder_service
+    try:
+        validation = await service.get_lab_validation(
+            actor=subject,
+            project_id=project_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except McpBuilderError as error:
+        _raise(error)
+    return _lab_validation_response(validation, request, response)
