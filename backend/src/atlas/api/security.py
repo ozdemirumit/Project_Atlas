@@ -40,6 +40,8 @@ from atlas.modules.authorization.application.bootstrap import (
     CONNECTOR_INSTANCE_READ,
     CONNECTOR_INVOCATION_AUTHORIZATION_CREATE,
     CONNECTOR_INVOCATION_AUTHORIZATION_READ,
+    CONNECTOR_INVOCATION_EVIDENCE_CREATE,
+    CONNECTOR_INVOCATION_EVIDENCE_READ,
     CONNECTOR_PACKAGE_ACQUIRE,
     CONNECTOR_PACKAGE_ACQUISITION_READ,
     CONNECTOR_PACKAGE_APPROVAL_CREATE,
@@ -154,6 +156,7 @@ from atlas.modules.authorization.application.bootstrap import (
     connector_credential_assignment_scope,
     connector_instance_scope,
     connector_invocation_authorization_scope,
+    connector_invocation_evidence_scope,
     connector_package_acquisition_scope,
     connector_package_approval_scope,
     connector_package_authority_behavior_validation_scope,
@@ -3674,5 +3677,61 @@ async def authorize_connector_bounded_invocation_read(
         request,
         subject,
         permission_id=CONNECTOR_BOUNDED_INVOCATION_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def _authorize_connector_invocation_evidence(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.connector.invocation-evidence",
+            scope=connector_invocation_evidence_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail="Connector invocation evidence ingestion is not permitted.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_connector_invocation_evidence_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_invocation_evidence(
+        request,
+        subject,
+        permission_id=CONNECTOR_INVOCATION_EVIDENCE_CREATE,
+        capability_class=CapabilityClass.C3_CONTROLLED_CHANGE,
+    )
+
+
+async def authorize_connector_invocation_evidence_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_invocation_evidence(
+        request,
+        subject,
+        permission_id=CONNECTOR_INVOCATION_EVIDENCE_READ,
         capability_class=CapabilityClass.C1_READ_ONLY,
     )

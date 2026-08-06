@@ -49,6 +49,89 @@ textarea:focus-visible {
   padding: 18px;
 }
 
+.connector-lifecycle {
+  border-block: 1px solid #dce4e1;
+  margin: 0 auto 24px;
+  max-width: 1120px;
+  padding: 20px 0;
+}
+
+.connector-lifecycle-list {
+  display: grid;
+  margin-top: 16px;
+}
+
+.connector-lifecycle-row {
+  align-items: center;
+  border-top: 1px solid #dce4e1;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 34px minmax(0, 1fr) max-content;
+  min-height: 58px;
+  padding: 8px 0;
+}
+
+.connector-lifecycle-row:last-child {
+  border-bottom: 1px solid #dce4e1;
+}
+
+.connector-lifecycle-index {
+  color: #74827f;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.connector-lifecycle-row > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.connector-lifecycle-row > div strong,
+.connector-lifecycle-row > div span {
+  overflow-wrap: anywhere;
+}
+
+.connector-lifecycle-row > div span {
+  color: #61716d;
+  font-size: 13px;
+}
+
+.connector-lifecycle-state {
+  align-items: center;
+  color: #168477;
+  display: inline-flex;
+  font-size: 12px;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.connector-lifecycle-row[data-state="current"] .connector-lifecycle-state {
+  color: #9a6515;
+}
+
+.connector-lifecycle-row[data-state="future"] .connector-lifecycle-state {
+  color: #74827f;
+}
+
+.connector-lifecycle-boundary {
+  color: #61716d;
+  font-size: 12px;
+  margin: 12px 0 0;
+}
+
+@media (max-width: 560px) {
+  .connector-lifecycle-row {
+    align-items: start;
+    grid-template-columns: 28px minmax(0, 1fr);
+    padding: 12px 0;
+  }
+
+  .connector-lifecycle-state {
+    grid-column: 2;
+  }
+}
+
 .mcp-builder-section {
   max-width: 1120px;
   margin: 0 auto;

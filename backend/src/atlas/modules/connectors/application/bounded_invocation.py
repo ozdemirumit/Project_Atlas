@@ -332,6 +332,12 @@ class ConnectorBoundedInvocationService:
         if record is None:
             raise ConnectorBoundedInvocationError("bounded_invocation_record_not_found")
         self._verify_record(record)
+        claim = await self._repository.get_claim_by_authorization(
+            source_authorization_id=record.source_authorization_id
+        )
+        if claim is None:
+            raise ConnectorBoundedInvocationError("bounded_invocation_claim_not_found")
+        self._verify_claim(claim)
         self._require_scope(actor, record.organization_id, record.environment_id)
         await self._audit(
             actor,
@@ -342,6 +348,70 @@ class ConnectorBoundedInvocationService:
             permission_id=BOUNDED_INVOCATION_READ_PERMISSION,
         )
         return record
+
+    async def evidence_ingestion_source(
+        self, *, invocation_id: str
+    ) -> tuple[ConnectorBoundedInvocationRecord, frozenset[str]]:
+        record = await self._repository.get(invocation_id=invocation_id)
+        if record is None:
+            raise ConnectorBoundedInvocationError("bounded_invocation_record_not_found")
+        self._verify_record(record)
+        claim = await self._repository.get_claim_by_authorization(
+            source_authorization_id=record.source_authorization_id
+        )
+        if claim is None:
+            raise ConnectorBoundedInvocationError("bounded_invocation_claim_not_found")
+        self._verify_claim(claim)
+        try:
+            authorization, source_actors = await self._source.bounded_invocation_source(
+                authorization_id=record.source_authorization_id
+            )
+        except ConnectorInvocationAuthorizationError as error:
+            raise ConnectorBoundedInvocationError("bounded_invocation_source_not_found") from error
+        policy = await self._policy_source.get_by_id(policy_id=record.invocation_policy_id)
+        if policy is None:
+            raise ConnectorBoundedInvocationError("bounded_invocation_policy_not_found")
+        self._verify_snapshot(policy)
+        if (
+            authorization.canonical_digest != record.source_authorization_digest
+            or authorization.package_digest != record.package_digest
+            or authorization.connector_id != record.connector_id
+            or authorization.instance_id != record.instance_id
+            or authorization.capability_id != record.capability_id
+            or authorization.required_permission != record.required_permission
+            or authorization.output_schema_digest != record.output_schema_digest
+            or authorization.result_policy_digest != record.result_policy_digest
+            or policy.canonical_digest != record.invocation_policy_digest
+            or claim.claim_id != record.consumption_claim_id
+            or claim.source_authorization_id != record.source_authorization_id
+            or claim.source_authorization_digest != record.source_authorization_digest
+            or claim.invocation_id != record.invocation_id
+            or claim.claimed_by != record.invoked_by
+            or claim.purpose != record.purpose
+            or record.instance_state != ENABLED_BOUNDED_CAPABILITY_INVOCATION_COMPLETED
+            or not record.authorization_consumed
+            or not record.capability_invoked
+            or not record.result_received
+            or not record.result_validated
+            or not record.result_redacted
+            or not record.target_session_closed
+            or not record.delivery_channel_closed
+            or not record.lease_revocation_confirmed
+            or record.target_connected
+            or record.reusable_session_available
+            or record.scheduled
+            or record.evidence_ingested
+            or record.execution_authorized
+            or record.deployment_approved
+            or record.infrastructure_mutation_performed
+            or record.observation_count < 1
+        ):
+            raise ConnectorBoundedInvocationError("bounded_invocation_evidence_source_invalid")
+        return record, source_actors | {
+            record.invoked_by,
+            policy.signed_by,
+            policy.required_adapter_attestor_id,
+        }
 
     async def close(self) -> None:
         await self._repository.close()

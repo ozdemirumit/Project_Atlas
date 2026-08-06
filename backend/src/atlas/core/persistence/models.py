@@ -1995,3 +1995,54 @@ class ConnectorBoundedInvocationModel(Base):
     environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class ConnectorInvocationEvidenceClaimModel(Base):
+    __tablename__ = "connector_invocation_evidence_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_invocation_id",
+            name="uq_connector_invocation_evidence_claims_source",
+        ),
+        UniqueConstraint(
+            "claimed_by",
+            "idempotency_digest",
+            name="uq_connector_invocation_evidence_claims_actor_idempotency",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source_invocation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    ingestion_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    claimed_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class ConnectorInvocationEvidenceModel(Base):
+    __tablename__ = "connector_invocation_evidence_ingestions"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_invocation_id",
+            name="uq_connector_invocation_evidence_source",
+        ),
+        UniqueConstraint(
+            "claim_id",
+            name="uq_connector_invocation_evidence_claim",
+        ),
+    )
+
+    ingestion_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    claim_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_invocation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    instance_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    capability_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    evidence_package_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    ingested_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
