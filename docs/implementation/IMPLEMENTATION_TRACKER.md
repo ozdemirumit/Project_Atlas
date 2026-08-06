@@ -4,14 +4,70 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-086 |
-| Title | Governed operational-evidence knowledge-draft curation foundation |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#98](https://github.com/ozdemirumit/Project_Atlas/pull/98) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-042 |
+| Task ID | ATLAS-IMP-087 |
+| Title | Governed operational knowledge-draft review-request foundation |
+| Status | CI In Progress |
+| Branch | `agent/governed-knowledge-draft-review` |
+| Pull Request | [#99](https://github.com/ozdemirumit/Project_Atlas/pull/99) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-043 |
 | Last Updated | 2026-08-06 |
-| Next Action | Select the next approved implementation slice |
+| Next Action | Pass PR #99 CI, mark ready, merge, and verify main |
+
+### ATLAS-IMP-087 Scope Rationale
+
+- IMP-086 creates an immutable non-retrievable operational knowledge draft but deliberately opens
+  no content inspection, assignment, decision, approval, publication, or retrieval authority.
+- ADR-043 atomically claims that exact draft and lets only a trusted adapter create an immutable
+  domain/security review manifest with policy-selected queues and no content disclosure.
+- Protected assignment and inspection, domain/security decisions, correction, approval, indexing,
+  retrieval, scheduling, workflow, execution, deployment, and mutation remain later independent
+  stages.
+
+### ATLAS-IMP-087 Acceptance Criteria
+
+- Only an exact-tenant hardware-MFA human with C3 review-request and draft-read permissions may
+  request review using draft ID/digest, signed orchestration-policy ID/digest, purpose,
+  acknowledgement, idempotency, and correlation. Caller content, reviewer, queue, decision,
+  approval, indexing, publication, and operational-control fields fail.
+- The service revalidates complete lineage, exact immutable draft and cleanup proof, signed policy,
+  inherited governance, scope, and no-later-authority state. Intent audit succeeds before a unique
+  immutable source-draft claim is atomically created.
+- A trusted adapter resolves the exact draft internally, validates integrity and decryptability,
+  derives required domain/security tracks and queues only from policy, stores one encrypted
+  immutable review manifest, cleans buffers, and returns only a signed minimized receipt.
+- Failure or uncertainty after claim creation never reads infrastructure, recreates the draft, or
+  retries automatically. Only a fully bound receipt with immutable-manifest and cleanup proof can
+  create `operational_knowledge_review_requested` state.
+- API, application, audit, logs, and web output exclude draft/evidence content, excerpts, reviewer
+  identities, target details, storage coordinates, ACL principals, keys, secrets, tokens,
+  signatures, request fingerprints, and idempotency material. Assignment, inspection, decisions,
+  correction, approval, chunks, embeddings, retrieval, model context, graph, scheduling, workflow,
+  execution, deployment, and mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC, CSRF, safe
+  errors, focused failure/uncertainty/concurrency tests, minimized web evidence, full backend and
+  frontend suites, live desktop/mobile inspection, and GitHub CI apply.
+
+### ATLAS-IMP-087 Validation Evidence
+
+- ADR-043 is accepted. The service revalidates the exact immutable ADR-042 draft, complete
+  connector/evidence lineage, signed orchestration policy, inherited governance, hardware MFA,
+  C3 request plus draft-read permissions, exact tenant scope, and absence of later authority before
+  atomically claiming one source draft.
+- Seven focused backend tests cover immutable minimized request creation, exact idempotency,
+  concurrent source claiming, permission denial before claim, altered and uncertain receipts,
+  audit failure after claim, PostgreSQL round-trip, CSRF, forbidden routing/content controls,
+  no-store, and minimized responses. Claimed uncertain outcomes are not retried.
+- Backend Ruff formatting and lint passed across 709 files; strict mypy passed across 709 source
+  and test files; the full suite passed with 670 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0059` head for immutable review-request claims and records.
+- Frontend ESLint and TypeScript checks passed; 27 test files and 57 tests passed; the production
+  bundle built successfully. The browser can submit only exact draft/policy lineage, purpose, and
+  acknowledgement and exposes no content, reviewer selection, decision, approval, or publication
+  control.
+- Live backend health returned `alive` and OpenAPI exposed create/read review-request endpoints.
+  Desktop at 1280 pixels and mobile at 390 pixels showed Review request as the latest available
+  capability while Protected inspection and Review decisions remain pending; the browser was
+  restored to the desktop viewport.
 
 ### ATLAS-IMP-086 Scope Rationale
 

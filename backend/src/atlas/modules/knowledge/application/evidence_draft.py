@@ -268,6 +268,17 @@ class OperationalEvidenceKnowledgeDraftService:
     async def close(self) -> None:
         await self._repository.close()
 
+    async def review_request_source(
+        self, *, draft_id: str
+    ) -> OperationalEvidenceKnowledgeDraftRecord:
+        record = await self._repository.get(draft_id=draft_id)
+        if record is None:
+            raise OperationalEvidenceKnowledgeDraftError(
+                "operational_evidence_knowledge_draft_record_not_found"
+            )
+        self._verify_record(record)
+        return record
+
     async def _reuse(
         self,
         claim: OperationalEvidenceKnowledgeDraftClaim,

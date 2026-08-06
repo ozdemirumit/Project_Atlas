@@ -162,6 +162,8 @@ CONNECTOR_INVOCATION_EVIDENCE_CREATE = "connectors.invocation-evidence.create"
 CONNECTOR_INVOCATION_EVIDENCE_READ = "connectors.invocation-evidence.read"
 KNOWLEDGE_EVIDENCE_DRAFT_CREATE = "knowledge.operational-evidence-drafts.create"
 KNOWLEDGE_EVIDENCE_DRAFT_READ = "knowledge.operational-evidence-drafts.read"
+KNOWLEDGE_DRAFT_REVIEW_REQUEST_CREATE = "knowledge.operational-review-requests.create"
+KNOWLEDGE_DRAFT_REVIEW_REQUEST_READ = "knowledge.operational-review-requests.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -906,6 +908,19 @@ def operational_evidence_knowledge_draft_scope(
     )
 
 
+def operational_knowledge_review_request_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.knowledge",
+        resource_id="resource.knowledge.operational-review-requests",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -1579,6 +1594,14 @@ def build_development_authorization_service(
             permission_id=KNOWLEDGE_EVIDENCE_DRAFT_READ,
             description="Read minimized operational evidence knowledge draft metadata.",
         ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_DRAFT_REVIEW_REQUEST_CREATE,
+            description="Create one governed operational knowledge review request.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_DRAFT_REVIEW_REQUEST_READ,
+            description="Read minimized operational knowledge review request metadata.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -1710,6 +1733,8 @@ def build_development_authorization_service(
                 CONNECTOR_INVOCATION_EVIDENCE_READ,
                 KNOWLEDGE_EVIDENCE_DRAFT_CREATE,
                 KNOWLEDGE_EVIDENCE_DRAFT_READ,
+                KNOWLEDGE_DRAFT_REVIEW_REQUEST_CREATE,
+                KNOWLEDGE_DRAFT_REVIEW_REQUEST_READ,
             }
         ),
     )
@@ -2874,6 +2899,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=operational_evidence_knowledge_draft_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.operational-knowledge-review-request-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=operational_knowledge_review_request_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C3_CONTROLLED_CHANGE,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.operational-knowledge-review-request-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=operational_knowledge_review_request_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,

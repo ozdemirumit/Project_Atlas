@@ -6,6 +6,7 @@ import {
   createOperationalEvidenceKnowledgeDraft,
 } from "../../api/evidenceDrafts";
 import type { ConnectorInvocationEvidence } from "../../api/invocationEvidence";
+import { KnowledgeDraftReviewRequestPanel } from "./KnowledgeDraftReviewRequestPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -109,6 +110,7 @@ export function EvidenceKnowledgeDraftPanel({
         </div>
       )}
       {draft && (
+        <>
         <div className="package-signing-record">
           <div className="section-heading">
             <div>
@@ -142,6 +144,8 @@ export function EvidenceKnowledgeDraftPanel({
             indexing, retrieval publication, and model use remain separate controlled stages.
           </p>
         </div>
+        <KnowledgeDraftReviewRequestPanel draft={draft} />
+        </>
       )}
     </section>
   );
