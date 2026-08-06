@@ -99,7 +99,8 @@ describe("PackageSigningPanel", () => {
 
     expect(await screen.findByText(receipt.receipt_id)).toBeVisible();
     expect(screen.getByText(receipt.signature.signature_digest)).toBeVisible();
-    expect(screen.queryByRole("button", { name: /publish|register|install|enable|execute/i })).toBeNull();
+    expect(screen.getByRole("button", { name: "Publish signed package" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /register|install|enable|execute/i })).toBeNull();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     const init = fetchMock.mock.calls[0]?.[1];
     const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<

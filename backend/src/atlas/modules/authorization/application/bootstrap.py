@@ -130,6 +130,8 @@ CONNECTOR_PUBLISHER_ATTESTATION_CREATE = "connectors.publisher-attestations.crea
 CONNECTOR_PUBLISHER_ATTESTATION_READ = "connectors.publisher-attestations.read"
 CONNECTOR_PACKAGE_SIGNING_CREATE = "connectors.package-signing-receipts.create"
 CONNECTOR_PACKAGE_SIGNING_READ = "connectors.package-signing-receipts.read"
+CONNECTOR_REGISTRY_PUBLICATION_CREATE = "connectors.registry-publication-receipts.create"
+CONNECTOR_REGISTRY_PUBLICATION_READ = "connectors.registry-publication-receipts.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -648,6 +650,19 @@ def connector_package_signing_scope(
         site_id="site.local",
         domain_id="domain.connectors",
         resource_id="resource.connector.package-signing-receipts",
+        capability_class=capability_class,
+    )
+
+
+def connector_registry_publication_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.connectors",
+        resource_id="resource.connector.registry-publication-receipts",
         capability_class=capability_class,
     )
 
@@ -1193,6 +1208,14 @@ def build_development_authorization_service(
             permission_id=CONNECTOR_PACKAGE_SIGNING_READ,
             description="Read one immutable minimized connector package signing receipt.",
         ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_REGISTRY_PUBLICATION_CREATE,
+            description="Publish one exact signed connector package to the governed registry.",
+        ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_REGISTRY_PUBLICATION_READ,
+            description="Read one immutable minimized connector registry publication receipt.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -1291,6 +1314,8 @@ def build_development_authorization_service(
                 CONNECTOR_PUBLISHER_ATTESTATION_READ,
                 CONNECTOR_PACKAGE_SIGNING_CREATE,
                 CONNECTOR_PACKAGE_SIGNING_READ,
+                CONNECTOR_REGISTRY_PUBLICATION_CREATE,
+                CONNECTOR_REGISTRY_PUBLICATION_READ,
             }
         ),
     )
@@ -2059,6 +2084,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=connector_package_signing_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-registry-publication-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_registry_publication_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-registry-publication-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_registry_publication_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,

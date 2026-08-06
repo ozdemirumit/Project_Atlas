@@ -272,6 +272,61 @@ class PackageSigningService:
         )
         return receipt
 
+    async def registry_publication_source(
+        self, *, receipt_id: str
+    ) -> tuple[
+        ConnectorPackageSigningReceipt,
+        ConnectorPackageSigningPolicySnapshot,
+        frozenset[str],
+    ]:
+        """Reverify the complete signing lineage for internal registry governance."""
+        receipt = await self._repository.get(receipt_id=receipt_id)
+        if receipt is None:
+            raise PackageSigningError("package_signing_receipt_not_found")
+        self._verify_receipt(receipt)
+        try:
+            attestation, upstream = await self._attestation_source.package_signing_source(
+                report_id=receipt.envelope.source_attestation_report_id
+            )
+        except PublisherAttestationError as error:
+            raise PackageSigningError("package_signing_attestation_not_found") from error
+        policy = await self._policy_source.get_by_id(policy_id=receipt.signing_policy_id)
+        if policy is None:
+            raise PackageSigningError("package_signing_policy_not_found")
+        self._verify_policy(policy)
+        now = self._clock()
+        self._verify_signature(receipt.signature, receipt.envelope, policy, receipt.signed_at)
+        if (
+            receipt.envelope.source_attestation_report_digest != attestation.canonical_digest
+            or receipt.envelope.package_digest != attestation.package_digest
+            or receipt.signing_policy_digest != policy.canonical_digest
+            or receipt.envelope.signing_policy_digest != policy.canonical_digest
+            or receipt.envelope.signing_policy_id != policy.policy_id
+            or receipt.envelope.signer_profile_id != policy.signer_profile_id
+            or not (
+                receipt.organization_id == attestation.organization_id == policy.organization_id
+            )
+            or not (receipt.environment_id == attestation.environment_id == policy.environment_id)
+            or not policy.issued_at <= now < policy.expires_at
+            or not receipt.signature.issued_at <= now < receipt.signature.expires_at
+            or not receipt.package_signed
+            or not receipt.publisher_attested
+            or not receipt.eligible_for_registry_governance
+            or receipt.promotion_blocked
+        ):
+            raise PackageSigningError("package_signing_not_eligible_for_registry")
+        return (
+            receipt,
+            policy,
+            upstream
+            | {
+                receipt.requested_by,
+                policy.signed_by,
+                policy.signer_workload_id,
+                policy.key_custodian_id,
+            },
+        )
+
     async def close(self) -> None:
         await self._repository.close()
 
