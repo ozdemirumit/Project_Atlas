@@ -8196,7 +8196,8 @@ tbody tr.selected {
 
 .package-signing-panel,
 .registry-publication-panel,
-.package-registration-panel {
+.package-registration-panel,
+.package-installation-panel {
   display: grid;
   gap: 16px;
   margin-top: 20px;
@@ -8206,7 +8207,8 @@ tbody tr.selected {
 
 .package-signing-panel > label,
 .registry-publication-panel > label,
-.package-registration-panel > label {
+.package-registration-panel > label,
+.package-installation-panel > label {
   display: grid;
   gap: 8px;
 }
@@ -8214,7 +8216,9 @@ tbody tr.selected {
 .registry-publication-panel input,
 .registry-publication-panel textarea,
 .package-registration-panel input,
-.package-registration-panel textarea {
+.package-registration-panel textarea,
+.package-installation-panel input,
+.package-installation-panel textarea {
   width: 100%;
   min-width: 0;
 }
@@ -8222,7 +8226,9 @@ tbody tr.selected {
 .registry-publication-panel strong,
 .registry-publication-panel code,
 .package-registration-panel strong,
-.package-registration-panel code {
+.package-registration-panel code,
+.package-installation-panel strong,
+.package-installation-panel code {
   min-width: 0;
   overflow-wrap: anywhere;
 }

@@ -9,6 +9,9 @@ from pathlib import PurePosixPath
 from typing import Any, cast
 
 from atlas.modules.connectors.application.package_registration_ports import PackageRegistrationError
+from atlas.modules.connectors.domain.package_installation import (
+    ConnectorPackageInstallationPolicySnapshot,
+)
 from atlas.modules.connectors.domain.package_registration import (
     ConnectorPackageRegistrationPolicySnapshot,
     ConnectorRegisteredCapability,
@@ -34,7 +37,12 @@ _CAPABILITY_KEYS = {"id", "class", "permission", "handler_status"}
 
 class BoundedConnectorPackageManifestInspector:
     def inspect(
-        self, *, content: bytes, policy: ConnectorPackageRegistrationPolicySnapshot
+        self,
+        *,
+        content: bytes,
+        policy: (
+            ConnectorPackageRegistrationPolicySnapshot | ConnectorPackageInstallationPolicySnapshot
+        ),
     ) -> ConnectorRegisteredManifestSnapshot:
         try:
             with zipfile.ZipFile(io.BytesIO(content), mode="r") as archive:
@@ -108,7 +116,9 @@ class BoundedConnectorPackageManifestInspector:
 
     @staticmethod
     def _verify_entries(
-        entries: list[zipfile.ZipInfo], policy: ConnectorPackageRegistrationPolicySnapshot
+        entries: list[zipfile.ZipInfo],
+        policy: ConnectorPackageRegistrationPolicySnapshot
+        | ConnectorPackageInstallationPolicySnapshot,
     ) -> None:
         names = [item.filename for item in entries]
         if (
@@ -163,7 +173,9 @@ class BoundedConnectorPackageManifestInspector:
     def _capabilities(
         cls,
         manifest: dict[str, Any],
-        policy: ConnectorPackageRegistrationPolicySnapshot,
+        policy: (
+            ConnectorPackageRegistrationPolicySnapshot | ConnectorPackageInstallationPolicySnapshot
+        ),
     ) -> tuple[ConnectorRegisteredCapability, ...]:
         value = manifest.get("capabilities")
         if not isinstance(value, list) or not 1 <= len(value) <= policy.maximum_capabilities:

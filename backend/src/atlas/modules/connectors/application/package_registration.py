@@ -253,6 +253,70 @@ class PackageRegistrationService:
         )
         return record
 
+    async def package_installation_source(
+        self, *, record_id: str
+    ) -> tuple[
+        ConnectorPackageRegistrationRecord,
+        ConnectorInternalRegistryPublicationReceipt,
+        McpBuilderCandidateHandoff,
+        frozenset[str],
+    ]:
+        record = await self._repository.get(record_id=record_id)
+        if record is None:
+            raise PackageRegistrationError("package_registration_record_not_found")
+        self._verify_record(record)
+        policy = await self._policy_source.get_by_id(policy_id=record.registration_policy_id)
+        if policy is None:
+            raise PackageRegistrationError("package_registration_policy_not_found")
+        self._verify_policy(policy)
+        try:
+            (
+                publication,
+                handoff,
+                source_actors,
+            ) = await self._publication_source.package_registration_source(
+                receipt_id=record.source_publication_receipt_id
+            )
+        except RegistryPublicationError as error:
+            raise PackageRegistrationError("package_registration_source_not_found") from error
+        self._verify_manifest(record.manifest, publication, handoff)
+        if (
+            record.source_publication_receipt_digest != publication.canonical_digest
+            or record.source_signing_receipt_id != publication.source_signing_receipt_id
+            or record.source_signing_receipt_digest != publication.source_signing_receipt_digest
+            or record.source_approval_request_id != publication.source_approval_request_id
+            or record.source_approval_request_digest != publication.source_approval_request_digest
+            or record.source_final_validation_id != publication.source_final_validation_id
+            or record.source_final_validation_digest != publication.source_final_validation_digest
+            or record.source_acquisition_id != publication.source_acquisition_id
+            or record.source_acquisition_digest != publication.source_acquisition_digest
+            or record.package_digest != publication.package_digest
+            or record.package_size_bytes != publication.package_size_bytes
+            or record.publisher_id != publication.publisher_id
+            or record.provenance_digest != publication.provenance_digest
+            or record.registration_policy_digest != policy.canonical_digest
+            or record.registry_profile_id != publication.publication.registry_profile_id
+            or record.organization_id != publication.organization_id
+            or record.environment_id != publication.environment_id
+            or record.connector_id != publication.connector_id
+            or record.release_version != publication.release_version
+            or not record.connector_registered
+            or not record.eligible_for_installation_governance
+            or record.promotion_blocked
+        ):
+            raise PackageRegistrationError("package_registration_binding_invalid")
+        return (
+            record,
+            publication,
+            handoff,
+            source_actors
+            | {
+                record.registered_by,
+                policy.signed_by,
+                policy.reader_workload_id,
+            },
+        )
+
     async def close(self) -> None:
         await self._repository.close()
 

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from atlas.modules.connectors.domain.package_installation import (
+    ConnectorPackageInstallationPolicySnapshot,
+)
 from atlas.modules.connectors.domain.package_registration import (
     ConnectorPackageRegistrationPolicySnapshot,
     ConnectorPackageRegistrationRecord,
@@ -33,7 +36,9 @@ class InternalRegistryArtifactReader(Protocol):
         self,
         *,
         publication: ConnectorInternalRegistryPublicationResult,
-        policy: ConnectorPackageRegistrationPolicySnapshot,
+        policy: (
+            ConnectorPackageRegistrationPolicySnapshot | ConnectorPackageInstallationPolicySnapshot
+        ),
     ) -> bytes: ...
 
 

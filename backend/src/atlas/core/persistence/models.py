@@ -1305,6 +1305,42 @@ class ConnectorPackageRegistrationRecordModel(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
+class ConnectorPackageInstallationReceiptModel(Base):
+    __tablename__ = "connector_package_installation_receipts"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_registration_record_id",
+            name="uq_connector_package_installation_receipts_registration",
+        ),
+        UniqueConstraint(
+            "connector_id",
+            "release_version",
+            name="uq_connector_package_installation_receipts_release",
+        ),
+        UniqueConstraint(
+            "installed_by",
+            "idempotency_key",
+            name="uq_connector_package_installation_receipts_actor_idempotency",
+        ),
+    )
+
+    receipt_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source_registration_record_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    connector_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    release_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    installation_store_profile_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    installed_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class RuntimeMetadata(Base):
     __tablename__ = "platform_runtime_metadata"
     __table_args__ = (

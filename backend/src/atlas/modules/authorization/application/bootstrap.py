@@ -134,6 +134,8 @@ CONNECTOR_REGISTRY_PUBLICATION_CREATE = "connectors.registry-publication-receipt
 CONNECTOR_REGISTRY_PUBLICATION_READ = "connectors.registry-publication-receipts.read"
 CONNECTOR_PACKAGE_REGISTRATION_CREATE = "connectors.package-registration-records.create"
 CONNECTOR_PACKAGE_REGISTRATION_READ = "connectors.package-registration-records.read"
+CONNECTOR_PACKAGE_INSTALLATION_CREATE = "connectors.package-installation-receipts.create"
+CONNECTOR_PACKAGE_INSTALLATION_READ = "connectors.package-installation-receipts.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -678,6 +680,19 @@ def connector_package_registration_scope(
         site_id="site.local",
         domain_id="domain.connectors",
         resource_id="resource.connector.package-registration-records",
+        capability_class=capability_class,
+    )
+
+
+def connector_package_installation_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.connectors",
+        resource_id="resource.connector.package-installation-receipts",
         capability_class=capability_class,
     )
 
@@ -1239,6 +1254,14 @@ def build_development_authorization_service(
             permission_id=CONNECTOR_PACKAGE_REGISTRATION_READ,
             description="Read one immutable minimized connector package registration record.",
         ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_PACKAGE_INSTALLATION_CREATE,
+            description="Install one exact registered connector package without enabling it.",
+        ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_PACKAGE_INSTALLATION_READ,
+            description="Read one immutable minimized connector package installation receipt.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -1341,6 +1364,8 @@ def build_development_authorization_service(
                 CONNECTOR_REGISTRY_PUBLICATION_READ,
                 CONNECTOR_PACKAGE_REGISTRATION_CREATE,
                 CONNECTOR_PACKAGE_REGISTRATION_READ,
+                CONNECTOR_PACKAGE_INSTALLATION_CREATE,
+                CONNECTOR_PACKAGE_INSTALLATION_READ,
             }
         ),
     )
@@ -2157,6 +2182,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=connector_package_registration_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-package-installation-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_package_installation_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C3_CONTROLLED_CHANGE,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-package-installation-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_package_installation_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,
