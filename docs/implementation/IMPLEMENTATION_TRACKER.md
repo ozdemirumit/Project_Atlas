@@ -67,8 +67,10 @@
   exposes no draft content, governance override, reviewer, approver, indexing, or publication
   control.
 - Live OpenAPI inspection exposed create/read draft endpoints. Desktop at 1280 pixels and mobile at
-  390 pixels showed eight available lifecycle stages and Knowledge publication as in progress with
-  no horizontal overflow; the browser was restored to the desktop viewport. Review, approval,
+  390 pixels showed an always-visible delivery summary, eight available lifecycle stages, their
+  concrete available capabilities, Draft curation as the latest capability, and Knowledge
+  publication as in progress with no horizontal overflow; the browser was restored to the desktop
+  viewport. Review, approval,
   chunks, embeddings, retrieval, model context, graph, scheduling, workflow, execution, deployment,
   and infrastructure mutation remain disabled.
 

@@ -61,6 +61,33 @@ textarea:focus-visible {
   margin-top: 16px;
 }
 
+.connector-lifecycle-summary {
+  border-block: 1px solid #dce4e1;
+  display: grid;
+  grid-template-columns: 1fr 1fr 2fr;
+  margin-top: 16px;
+}
+
+.connector-lifecycle-summary > div {
+  display: grid;
+  gap: 3px;
+  padding: 12px 16px;
+}
+
+.connector-lifecycle-summary > div + div {
+  border-left: 1px solid #dce4e1;
+}
+
+.connector-lifecycle-summary strong {
+  color: #263431;
+  font-size: 15px;
+}
+
+.connector-lifecycle-summary span {
+  color: #61716d;
+  font-size: 12px;
+}
+
 .connector-lifecycle-row {
   align-items: center;
   border-top: 1px solid #dce4e1;
@@ -97,6 +124,26 @@ textarea:focus-visible {
   font-size: 13px;
 }
 
+.connector-lifecycle-row > div .connector-capability-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.connector-lifecycle-row > div .connector-capability {
+  border-left: 2px solid #168477;
+  color: #42514e;
+  font-size: 11px;
+  line-height: 1.3;
+  padding-left: 6px;
+}
+
+.connector-lifecycle-row > div .connector-capability[data-state="pending"] {
+  border-color: #c8a257;
+  color: #80601f;
+}
+
 .connector-lifecycle-state {
   align-items: center;
   color: #168477;
@@ -121,6 +168,16 @@ textarea:focus-visible {
 }
 
 @media (max-width: 560px) {
+  .connector-lifecycle-summary {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .connector-lifecycle-summary > div:last-child {
+    border-left: 0;
+    border-top: 1px solid #dce4e1;
+    grid-column: 1 / -1;
+  }
+
   .connector-lifecycle-row {
     align-items: start;
     grid-template-columns: 28px minmax(0, 1fr);
