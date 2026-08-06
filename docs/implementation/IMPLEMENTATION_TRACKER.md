@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-085 |
 | Title | Governed connector invocation evidence-ingestion foundation |
-| Status | CI In Progress |
+| Status | Completed |
 | Branch | `agent/governed-invocation-evidence-ingestion` |
 | Pull Request | [#97](https://github.com/ozdemirumit/Project_Atlas/pull/97) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-041 |
 | Last Updated | 2026-08-06 |
-| Next Action | Pass PR #97 CI, mark ready, merge, and verify main |
+| Next Action | Select and define the next implementation slice |
 
 ### ATLAS-IMP-085 Scope Rationale
 
@@ -68,6 +68,9 @@
   at 390 pixels showed the lifecycle without horizontal overflow; the browser was restored to the
   desktop viewport. Knowledge publication, retrieval, model context, scheduling, workflow,
   execution, deployment, and infrastructure mutation remain disabled.
+- PR [#97](https://github.com/ozdemirumit/Project_Atlas/pull/97) passed backend and frontend CI,
+  merged to `main` as `f0d217f43e1b87a16916250bc69c1f0981f5d9df`, and merged-main CI run
+  `31101607910` passed both jobs.
 
 ### ATLAS-IMP-084 Scope Rationale
 
