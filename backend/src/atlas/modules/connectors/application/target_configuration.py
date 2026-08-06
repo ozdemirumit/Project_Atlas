@@ -27,6 +27,9 @@ from atlas.modules.connectors.domain.instance_creation import (
     DISABLED_UNCONFIGURED,
     ConnectorInstanceRecord,
 )
+from atlas.modules.connectors.domain.package_registration import (
+    ConnectorPackageRegistrationRecord,
+)
 from atlas.modules.connectors.domain.target_configuration import (
     DISABLED_TARGET_CONFIGURED,
     ConnectorTargetConfigurationBinding,
@@ -246,7 +249,11 @@ class ConnectorTargetConfigurationService:
 
     async def credential_assignment_source(
         self, *, binding_id: str
-    ) -> tuple[ConnectorTargetConfigurationBinding, frozenset[str]]:
+    ) -> tuple[
+        ConnectorTargetConfigurationBinding,
+        ConnectorPackageRegistrationRecord,
+        frozenset[str],
+    ]:
         binding = await self._repository.get(binding_id=binding_id)
         if binding is None:
             raise ConnectorTargetConfigurationError("target_configuration_record_not_found")
@@ -262,7 +269,7 @@ class ConnectorTargetConfigurationService:
                 instance,
                 _instance_policy,
                 _installation,
-                _registration,
+                registration,
                 source_actors,
             ) = await self._instance_source.target_configuration_source(
                 record_id=binding.source_instance_record_id
@@ -284,13 +291,17 @@ class ConnectorTargetConfigurationService:
             or binding.target_product != profile.target_product
         ):
             raise ConnectorTargetConfigurationError("target_configuration_source_invalid")
-        return binding, frozenset(
-            source_actors
-            | {
-                binding.bound_by,
-                profile.signed_by,
-                policy.signed_by,
-            }
+        return (
+            binding,
+            registration,
+            frozenset(
+                source_actors
+                | {
+                    binding.bound_by,
+                    profile.signed_by,
+                    policy.signed_by,
+                }
+            ),
         )
 
     async def close(self) -> None:

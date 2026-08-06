@@ -16,7 +16,7 @@ must not be confused with runtime trust, credential resolution, target access, o
 Atlas introduces an immutable capability-enablement record that verifies one exact current
 configuration validation, one signed capability profile, and one signed enablement policy. Version
 one permits only manifest-declared C0 informational and C1 read-only capabilities with read-only
-side effects and bounded timeouts.
+permissions already admitted by the governed registration pipeline.
 
 ### Request Boundary
 
@@ -29,7 +29,7 @@ forbidden in the request.
 ### Signed Capability Profile
 
 The profile binds organization, environment, package, connector, release, manifest, instance,
-target type, exact capability ID/version/class/side-effect/timeout tuples, profile signer,
+target type, exact capability ID/class/required-permission tuples, profile signer,
 signature-verification state, issue/expiry time, and canonical digest. It contains no endpoint,
 credential, invocation parameter, command, executable content, or target data.
 
@@ -38,7 +38,7 @@ credential, invocation parameter, command, executable content, or target data.
 The service independently reloads and completely revalidates the current configuration validation
 and all package, registration, installation, instance, target, credential, and evidence lineage.
 It verifies exact digests and scope, signed profile/policy integrity and freshness, manifest parity,
-allowed C0/C1 classes, read-only side effects, bounded timeouts, target compatibility, required
+allowed C0/C1 classes, registered permissions, target compatibility, required
 separation, and no-later-authority state.
 
 Only a dedicated exact-tenant MFA human with C3 permission may enable the governed capability set.

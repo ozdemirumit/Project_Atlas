@@ -167,7 +167,7 @@ async def test_assignment_enforces_exact_source_policy_profile_and_separation() 
         profile,
         policy,
     ) = await credential_assignment_fixture()
-    _, actors = await target_service.credential_assignment_source(binding_id=binding.binding_id)
+    _, _, actors = await target_service.credential_assignment_source(binding_id=binding.binding_id)
     for subject_id in (*sorted(actors), profile.signed_by, policy.signed_by):
         with pytest.raises(ConnectorCredentialAssignmentError, match="separation_required"):
             await assign_credential(

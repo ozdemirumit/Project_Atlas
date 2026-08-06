@@ -186,7 +186,7 @@ async def test_validation_enforces_exact_lineage_results_and_separation() -> Non
         evidence,
         policy,
     ) = await configuration_validation_fixture()
-    _, actors = await assignment_service.configuration_validation_source(
+    _, _, actors = await assignment_service.configuration_validation_source(
         assignment_id=assignment.assignment_id
     )
     for subject_id in (*sorted(actors), evidence.signed_by, policy.signed_by):

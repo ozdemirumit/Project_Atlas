@@ -28,8 +28,8 @@
   idempotency, and correlation. Caller-selected capabilities, commands, parameters, targets,
   credentials, network, runtime, deployment, and mutation fields fail validation.
 - The service revalidates complete lifecycle lineage, exact signed profile/policy, scope, freshness,
-  package/manifest parity, target compatibility, C0/C1-only classes, read-only side effects, bounded
-  timeouts, actor separation, and no-later-authority state without secret, network, package runtime,
+  package/manifest parity, target compatibility, C0/C1-only classes, registered permissions,
+  actor separation, and no-later-authority state without secret, network, package runtime,
   target, health, scheduling, or capability invocation access.
 - Required intent/completion audit precede immutable deterministic persistence and expose no target,
   credential/secret, invocation, signature, request-fingerprint, or idempotency internals.
