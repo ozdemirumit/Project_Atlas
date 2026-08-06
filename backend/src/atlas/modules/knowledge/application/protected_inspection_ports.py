@@ -3,6 +3,10 @@ from __future__ import annotations
 from typing import Protocol
 
 from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.knowledge.domain.draft_review_request import (
+    OperationalKnowledgeReviewRequestRecord,
+)
+from atlas.modules.knowledge.domain.evidence_draft import OperationalEvidenceKnowledgeDraftRecord
 from atlas.modules.knowledge.domain.protected_inspection import (
     OperationalKnowledgeProtectedInspectionBrokerGrant,
     OperationalKnowledgeProtectedInspectionClaim,
@@ -32,6 +36,14 @@ class OperationalKnowledgeProtectedInspectionSource(Protocol):
     ) -> tuple[
         OperationalKnowledgeReviewerAssignmentRecord,
         OperationalKnowledgeReviewerAssignmentPolicySnapshot,
+    ]: ...
+
+    async def protected_content_lineage(
+        self, *, assignment_set_id: str
+    ) -> tuple[
+        OperationalKnowledgeReviewerAssignmentRecord,
+        OperationalKnowledgeReviewRequestRecord,
+        OperationalEvidenceKnowledgeDraftRecord,
     ]: ...
 
 

@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-090 |
 | Title | Governed operational knowledge protected content presentation foundation |
-| Status | Architecture In Progress |
+| Status | Validation Complete |
 | Branch | `agent/governed-knowledge-content-presentation` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-046 |
 | Last Updated | 2026-08-06 |
-| Next Action | Accept ADR-046 and implement bounded protected content presentation |
+| Next Action | Open the implementation pull request and complete GitHub CI |
 
 ### ATLAS-IMP-090 Scope Rationale
 
@@ -46,6 +46,26 @@
 - Memory/PostgreSQL parity, one Alembic head, strict schemas, dedicated RBAC, CSRF and cookie tests,
   focused exact-assignee/cross-track/expiry/concurrency/integrity/redaction/replay/failure tests,
   minimized web evidence, full suites, live desktop/mobile inspection, and GitHub CI apply.
+
+### ATLAS-IMP-090 Local Validation Evidence
+
+- ADR-046 is accepted. The implementation revalidates exact immutable draft lineage, active lease,
+  exact salted assignee, browser session and track cookie, signed policy, recent hardware MFA,
+  dedicated C2 permissions, tenant scope, and absence of later authority before atomically claiming
+  one presentation per lease.
+- Nine focused service tests plus the protected-inspection API integration cover bounded plain-text
+  presentation, exact idempotent replay, wrong-cookie and permission rejection before claim,
+  non-retry after a failed first presentation, metadata-only PostgreSQL mapping, CSRF, no-store,
+  HttpOnly cookie continuity, minimized responses, and inert browser rendering.
+- Backend Ruff and strict mypy passed; the full suite passed with 694 tests and three expected
+  Windows symlink skips. Alembic reports one `20260806_0062` head for metadata-only protected
+  content claims and presentation records.
+- Frontend ESLint and TypeScript checks passed; 30 test files and 60 tests passed; the production
+  bundle built successfully. The content panel accepts only signed policy, purpose, and explicit
+  read-only acknowledgement and renders returned content only as escaped text.
+- The live backend status was healthy at `127.0.0.1:8052`. The Connectors lifecycle at
+  `127.0.0.1:5208` showed Content presentation as the latest available capability without layout
+  overlap. GitHub PR, CI, merge, and merged-main evidence remain pending.
 
 ### ATLAS-IMP-089 Scope Rationale
 

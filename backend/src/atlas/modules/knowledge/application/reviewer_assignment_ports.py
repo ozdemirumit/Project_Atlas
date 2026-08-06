@@ -6,6 +6,7 @@ from atlas.modules.identity.domain.models import AuthenticatedSubject
 from atlas.modules.knowledge.domain.draft_review_request import (
     OperationalKnowledgeReviewRequestRecord,
 )
+from atlas.modules.knowledge.domain.evidence_draft import OperationalEvidenceKnowledgeDraftRecord
 from atlas.modules.knowledge.domain.reviewer_assignment import (
     OperationalKnowledgeReviewerAssignmentClaim,
     OperationalKnowledgeReviewerAssignmentInstruction,
@@ -29,6 +30,13 @@ class OperationalKnowledgeReviewerAssignmentSource(Protocol):
     async def reviewer_assignment_source(
         self, *, review_request_id: str
     ) -> tuple[OperationalKnowledgeReviewRequestRecord, frozenset[str]]: ...
+
+    async def protected_content_lineage(
+        self, *, review_request_id: str
+    ) -> tuple[
+        OperationalKnowledgeReviewRequestRecord,
+        OperationalEvidenceKnowledgeDraftRecord,
+    ]: ...
 
 
 class OperationalKnowledgeReviewerAssignmentPolicySource(Protocol):

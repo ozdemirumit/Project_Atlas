@@ -9,7 +9,7 @@ describe("ConnectorLifecycleOverview", () => {
 
     expect(screen.getByRole("heading", { name: "Connector lifecycle" })).toBeVisible();
     expect(screen.getByLabelText("Delivery status")).toHaveTextContent(
-      "8Available stages1In progressInspection leaseLatest available capability",
+      "8Available stages1In progressContent presentationLatest available capability",
     );
     expect(screen.getAllByText("Available")).toHaveLength(8);
     expect(screen.getByText("Evidence preservation")).toBeVisible();
@@ -44,7 +44,7 @@ describe("ConnectorLifecycleOverview", () => {
     );
     expect(within(knowledge as HTMLElement).getByText("Content presentation")).toHaveAttribute(
       "data-state",
-      "pending",
+      "available",
     );
   });
 });

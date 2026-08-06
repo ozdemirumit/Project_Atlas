@@ -8396,6 +8396,27 @@ tbody tr.selected {
   overflow-wrap: anywhere;
 }
 
+.protected-content-record {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.protected-content-text {
+  max-height: 28rem;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid #cbd6d2;
+  background: #f7faf9;
+  padding: 16px;
+  color: #1c2b27;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .package-approval-panel > label,
 .package-approval-decision > label {
   display: grid;

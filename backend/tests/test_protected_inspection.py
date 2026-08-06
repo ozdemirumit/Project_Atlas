@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import asdict, replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
@@ -16,6 +16,13 @@ from test_target_session import target_session_operator
 
 from atlas.api.app import create_app
 from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.knowledge.adapters.protected_content_memory import (
+    InMemoryOperationalKnowledgeProtectedContentPolicySource,
+    InMemoryOperationalKnowledgeProtectedContentRepository,
+)
+from atlas.modules.knowledge.adapters.protected_content_synthetic import (
+    SyntheticOperationalKnowledgeProtectedContentPresenter,
+)
 from atlas.modules.knowledge.adapters.protected_inspection_memory import (
     InMemoryOperationalKnowledgeProtectedInspectionPolicySource,
     InMemoryOperationalKnowledgeProtectedInspectionRepository,
@@ -25,6 +32,10 @@ from atlas.modules.knowledge.adapters.protected_inspection_postgres import (
 )
 from atlas.modules.knowledge.adapters.protected_inspection_synthetic import (
     SyntheticOperationalKnowledgeProtectedInspectionBroker,
+)
+from atlas.modules.knowledge.application.protected_content import (
+    OperationalKnowledgeProtectedContentService,
+    build_development_operational_knowledge_protected_content_policy,
 )
 from atlas.modules.knowledge.application.protected_inspection import (
     OperationalKnowledgeProtectedInspectionService,
@@ -407,6 +418,24 @@ def test_protected_inspection_api_sets_http_only_cookie_and_returns_minimized_me
         ),
         ACKNOWLEDGEMENT_FIELD: True,
     }
+    content_policy = build_development_operational_knowledge_protected_content_policy(
+        organization_id=assignment.organization_id,
+        environment_id=assignment.environment_id,
+        issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+        expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+    )
+    content_service = OperationalKnowledgeProtectedContentService(
+        repository=InMemoryOperationalKnowledgeProtectedContentRepository(),
+        source=service,
+        policy_source=InMemoryOperationalKnowledgeProtectedContentPolicySource((content_policy,)),
+        permission_authorizer=RecordingProtectedInspectionPermissionAuthorizer(),
+        presenter=SyntheticOperationalKnowledgeProtectedContentPresenter(
+            clock=lambda: assignment.created_at
+        ),
+        audit_sink=CollectingAuditSink(),
+        environment_id=assignment.environment_id,
+        clock=lambda: assignment.created_at,
+    )
     with TestClient(
         create_app(
             app_settings,
@@ -429,6 +458,7 @@ def test_protected_inspection_api_sets_http_only_cookie_and_returns_minimized_me
             operational_knowledge_review_request_service=review_service,
             operational_knowledge_reviewer_assignment_service=assignment_service,
             operational_knowledge_protected_inspection_service=service,
+            operational_knowledge_protected_content_service=content_service,
         )
     ) as client:
         login_response = login(client)
@@ -453,10 +483,30 @@ def test_protected_inspection_api_sets_http_only_cookie_and_returns_minimized_me
         assert created.status_code == 201, created.text
         lease_id = created.json()["data"]["lease_id"]
         read = client.get(f"{endpoint}/{lease_id}")
+        content = client.post(
+            f"{endpoint}/{lease_id}/presentations",
+            json={
+                "schema_version": "atlas.operational-knowledge-protected-content-input.v1",
+                "source_lease_digest": created.json()["data"]["canonical_digest"],
+                "presentation_policy_id": content_policy.policy_id,
+                "presentation_policy_digest": content_policy.canonical_digest,
+                "purpose": (
+                    "Inspect the exact assigned-track operational knowledge snapshot in a "
+                    "read-only boundary."
+                ),
+                "acknowledged_sensitive_read_only_content_grants_no_review_authority": True,
+            },
+            headers={
+                "Idempotency-Key": "protected-content-api-1",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+        )
 
     assert denied.status_code == 403 and forbidden.status_code == 422
     assert read.status_code == 200
+    assert content.status_code == 201, content.text
     assert created.headers["Cache-Control"] == read.headers["Cache-Control"] == "no-store"
+    assert content.headers["Cache-Control"] == "no-store, max-age=0"
     cookie = created.headers["Set-Cookie"]
     assert "atlas_knowledge_inspection_domain=" in cookie
     assert "HttpOnly" in cookie and "SameSite=strict" in cookie
@@ -480,3 +530,22 @@ def test_protected_inspection_api_sets_http_only_cookie_and_returns_minimized_me
         "idempotency_key",
     ):
         assert hidden not in data
+    content_data = content.json()["data"]
+    assert content_data["content"].startswith("Operational knowledge review snapshot")
+    assert content_data["output_media_type"] == "media-type.text-plain"
+    assert content_data["redaction_applied"] is True
+    assert content_data["domain_review_completed"] is False
+    assert content_data["knowledge_approved"] is False
+    assert content_data["execution_authorized"] is False
+    for hidden in (
+        "lease_secret",
+        "lease_secret_digest",
+        "browser_session_id",
+        "browser_session_binding_digest",
+        "lease_holder_subject_digest",
+        "draft_artifact_id",
+        "draft_content_digest",
+        "request_binding_digest",
+        "idempotency_digest",
+    ):
+        assert hidden not in content_data

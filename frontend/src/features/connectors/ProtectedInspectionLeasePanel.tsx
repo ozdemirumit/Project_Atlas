@@ -7,6 +7,7 @@ import {
   type InspectionTrack,
 } from "../../api/protectedInspections";
 import type { OperationalKnowledgeReviewerAssignment } from "../../api/reviewerAssignments";
+import { ProtectedContentPanel } from "./ProtectedContentPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -130,39 +131,42 @@ export function ProtectedInspectionLeasePanel({
         </div>
       )}
       {lease && (
-        <div className="package-signing-record">
-          <div className="section-heading">
-            <div>
-              <strong>{lease.title}</strong>
-              <code>{lease.lease_id}</code>
+        <>
+          <div className="package-signing-record">
+            <div className="section-heading">
+              <div>
+                <strong>{lease.title}</strong>
+                <code>{lease.lease_id}</code>
+              </div>
+              <span className="state-badge approved">
+                <LockKeyhole size={14} /> lease active
+              </span>
             </div>
-            <span className="state-badge approved">
-              <LockKeyhole size={14} /> lease active
-            </span>
+            <div className="mcp-builder-facts">
+              <div>
+                <span>Track</span>
+                <strong>{lease.track_code.replace("review-track.", "")}</strong>
+              </div>
+              <div>
+                <span>Browser binding</span>
+                <strong>verified</strong>
+              </div>
+              <div>
+                <span>Content disclosed</span>
+                <strong>none</strong>
+              </div>
+              <div>
+                <span>Review decision</span>
+                <strong>not recorded</strong>
+              </div>
+            </div>
+            <p className="muted-copy">
+              <LockKeyhole size={14} /> The lease secret is held in a protected browser cookie.
+              Content presentation and review decisions remain separate controlled stages.
+            </p>
           </div>
-          <div className="mcp-builder-facts">
-            <div>
-              <span>Track</span>
-              <strong>{lease.track_code.replace("review-track.", "")}</strong>
-            </div>
-            <div>
-              <span>Browser binding</span>
-              <strong>verified</strong>
-            </div>
-            <div>
-              <span>Content disclosed</span>
-              <strong>none</strong>
-            </div>
-            <div>
-              <span>Review decision</span>
-              <strong>not recorded</strong>
-            </div>
-          </div>
-          <p className="muted-copy">
-            <LockKeyhole size={14} /> The lease secret is held in a protected browser cookie.
-            Content presentation and review decisions remain separate controlled stages.
-          </p>
-        </div>
+          <ProtectedContentPanel lease={lease} />
+        </>
       )}
     </section>
   );
