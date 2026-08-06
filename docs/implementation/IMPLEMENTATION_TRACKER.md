@@ -4,14 +4,67 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-076 |
-| Title | Governed connector credential-reference assignment foundation |
-| Status | Done |
-| Branch | `main` |
-| Pull Request | [#88](https://github.com/ozdemirumit/Project_Atlas/pull/88) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-032 |
+| Task ID | ATLAS-IMP-077 |
+| Title | Governed connector configuration and connectivity validation foundation |
+| Status | Review |
+| Branch | `agent/governed-connector-configuration-validation` |
+| Pull Request | [#89](https://github.com/ozdemirumit/Project_Atlas/pull/89) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-033 |
 | Last Updated | 2026-08-06 |
-| Next Action | Start ATLAS-IMP-077 governed connector configuration and connectivity validation foundation |
+| Next Action | Complete PR #89 CI, merge, post-merge verification, and main closure |
+
+### ATLAS-IMP-077 Scope Rationale
+
+- IMP-076 assigns only governed credential metadata to an exact disabled target-bound instance.
+- ADR-033 verifies signed bounded configuration/connectivity evidence without allowing Atlas web/API
+  services to resolve credentials, connect to a target, execute a package, or expose raw probe data.
+- Capability enablement, runtime trust, health evidence, invocation, deployment, and infrastructure
+  mutation remain later independent stages.
+
+### ATLAS-IMP-077 Acceptance Criteria
+
+- Only a dedicated exact-tenant MFA human may request validation using exact assignment ID/digest,
+  package digest, evidence ID/digest, policy ID/digest, purpose, acknowledgement, idempotency, and
+  correlation. Target coordinates, credentials, secret references, raw probe output, commands,
+  capabilities, runtime, enablement, deployment, and mutation fields fail validation.
+- The service reloads and verifies complete assignment lineage, exact signed bounded probe evidence,
+  exact policy, scope, freshness, expected target/product identity, allowed runner/network zone,
+  read-only authentication/authorization classifications, required checks, and no-later-authority
+  state without network, DNS, secret-store, package, target, or capability access.
+- The requester is distinct from all upstream actors and evidence/policy signers; AI, service,
+  shared, wrong-scope, and insufficient-assurance identities fail closed without discovery.
+- Required intent/completion audit precede immutable deterministic persistence and expose no target
+  coordinates, credential or secret internals, session material, raw probe data, signature,
+  request fingerprint, or idempotency key.
+- A valid record sets only configuration/connectivity evidence and capability-governance eligibility
+  in `disabled_configuration_validated` state. Enablement, credential resolution, runtime trust,
+  execution, deployment, and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC, CSRF, safe errors,
+  minimized web evidence, backend/frontend tests, live desktop/mobile inspection, and GitHub CI apply.
+
+### ATLAS-IMP-077 Validation Evidence
+
+- ADR-033 is accepted. Exact current credential-assignment and complete upstream-lineage
+  reverification, signed bounded probe evidence and policy enforcement, deterministic disabled
+  validation, two-stage required audit, immutable records, default-deny API/RBAC,
+  memory/PostgreSQL persistence, and migration now establish only configuration/connectivity
+  evidence for later capability governance.
+- Six focused backend tests cover validation-only authority, deterministic idempotency, exact source,
+  evidence and policy binding, complete actor separation, read-only authorization rejection,
+  audit-before-persist, PostgreSQL round-trip, CSRF, no-store, forbidden target-field rejection, and
+  response minimization without secret-store, DNS, network, package, target, or capability access.
+- Backend formatting and Ruff checks passed across 620 files; strict mypy passed across 620 source
+  and test files; the full suite passed with 608 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0049` head for immutable connector configuration validations.
+- Frontend ESLint and TypeScript checks passed with the CI-equivalent 6 GB Node heap; all 46 Vitest
+  tests passed and the production Vite build completed. The panel accepts only exact signed evidence
+  and policy metadata, with no target coordinate, credential, secret, raw probe, network, command,
+  capability, enablement, runtime, execution, deployment, or mutation input/control.
+- A clean live local page at `http://localhost:5202/` was inspected at 1280 x 720 and 390 x 844.
+  Both views had no horizontal overflow or browser errors/warnings; the real login boundary remained
+  fail-closed.
+- [PR #89](https://github.com/ozdemirumit/Project_Atlas/pull/89) is open; CI, merge, and
+  post-merge evidence are pending.
 
 ### ATLAS-IMP-076 Scope Rationale
 

@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { createConnectorCredentialAssignment } from "../../api/credentialAssignments";
 import type { ConnectorTargetConfigurationBinding } from "../../api/targetConfigurations";
+import { ConfigurationValidationPanel } from "./ConfigurationValidationPanel";
 
 const EVIDENCE: Record<string, { profile: string; policy: string }> = {
   "environment.development": {
@@ -44,6 +45,7 @@ export function CredentialAssignmentPanel({ binding }: { binding: ConnectorTarge
       </>}
       {mutation.isError && <div className="workspace-message error-state" role="alert"><AlertTriangle size={20} /><div><h3>Credential assignment unavailable</h3><p>Target lineage, credential profile, policy, scope, rotation, or separation failed.</p></div></div>}
       {assignment && <div className="package-signing-record"><div className="section-heading"><div><strong>{assignment.credential_class}</strong><code>{assignment.assignment_id}</code></div><span className="state-badge neutral"><BadgeCheck size={14} />assigned</span></div><div className="mcp-builder-facts"><div><span>Authentication</span><strong>{assignment.authentication_method}</strong></div><div><span>Privilege</span><strong>{assignment.privilege_class}</strong></div><div><span>Rotation</span><strong>{assignment.rotation_state}</strong></div><div><span>State</span><strong>{assignment.instance_state}</strong></div></div><p className="muted-copy">Only governed credential metadata is assigned. Secret reference internals, values, credential resolution, enablement, health validation, capabilities, and runtime remain unavailable here.</p></div>}
+      {assignment && <ConfigurationValidationPanel assignment={assignment} />}
     </section>
   );
 }
