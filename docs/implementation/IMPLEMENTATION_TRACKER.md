@@ -8,10 +8,10 @@
 | Title | Governed connector package installation foundation |
 | Status | In Progress |
 | Branch | `agent/governed-connector-installation` |
-| Pull Request | Not opened |
+| Pull Request | [#85](https://github.com/ozdemirumit/Project_Atlas/pull/85) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-029 |
 | Last Updated | 2026-08-06 |
-| Next Action | Review, publish, and validate the governed package-installation implementation |
+| Next Action | Pass PR #85 CI, merge, and close the implementation record |
 
 ### ATLAS-IMP-073 Scope Rationale
 
