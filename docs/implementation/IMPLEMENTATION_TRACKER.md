@@ -4,14 +4,49 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-088 |
-| Title | Governed operational knowledge reviewer-assignment foundation |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#100](https://github.com/ozdemirumit/Project_Atlas/pull/100) (merged) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-044 |
+| Task ID | ATLAS-IMP-089 |
+| Title | Governed operational knowledge protected-inspection lease foundation |
+| Status | Architecture In Progress |
+| Branch | `agent/governed-knowledge-protected-inspection` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-045 |
 | Last Updated | 2026-08-06 |
-| Next Action | Begin ATLAS-IMP-089 governed protected inspection lease architecture |
+| Next Action | Accept ADR-045 and implement protected inspection lease issuance |
+
+### ATLAS-IMP-089 Scope Rationale
+
+- IMP-088 assigns distinct accountable domain and security reviewers but deliberately opens no
+  content and returns no access credential or review authority.
+- ADR-045 atomically claims one exact assignment track for its exact current assignee and lets only
+  a trusted broker create a short-lived browser-bound inspection lease without returning content
+  or bearer material in JSON.
+- Protected content presentation, findings, decisions, correction, approval, indexing, retrieval,
+  scheduling, workflow, execution, deployment, and mutation remain later independent stages.
+
+### ATLAS-IMP-089 Acceptance Criteria
+
+- Only the exact assigned, exact-tenant, recently authenticated hardware-MFA human with C2 lease
+  and assignment-read permissions may request one track lease using assignment ID/digest, track,
+  signed policy ID/digest, purpose, acknowledgement, idempotency, and correlation. Caller identity,
+  assignment, queue, content, range, duration, secret, decision, and operational fields fail.
+- The service revalidates complete lineage, exact immutable assignment and manifest, signed policy,
+  inherited governance, assignment/track expiry, salted current-subject match, browser-session
+  binding, scope, and no-later-authority state. Intent audit succeeds before a unique immutable
+  assignment-plus-track claim is atomically created.
+- A trusted broker creates one maximum-ten-minute non-transferable browser-bound lease, stores only
+  keyed/encrypted bindings, and returns a signed minimized receipt. The one-time secret crosses
+  only the API cookie boundary and is emitted as a scoped HttpOnly SameSite-Strict cookie.
+- Failure or uncertainty after claim creation never reads content, sets an unverified usable
+  cookie, retries automatically, or grants cross-track access. Only a fully bound receipt with
+  assignment, subject, session, expiry, immutable-write, and cleanup proof creates
+  `operational_knowledge_protected_inspection_leased`.
+- API, application records, logs, and web output exclude content, raw identity, directory data,
+  lease/cookie secrets, browser identifiers, storage coordinates, keys, tokens, signatures,
+  request fingerprints, and idempotency material. Content disclosure and every later authority
+  remain false; only `content_inspection_opened` becomes true to represent the bounded channel.
+- Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC, CSRF, safe
+  errors, secure cookie tests, focused failure/uncertainty/concurrency tests, minimized web
+  evidence, full backend/frontend suites, live desktop/mobile inspection, and GitHub CI apply.
 
 ### ATLAS-IMP-088 Scope Rationale
 
