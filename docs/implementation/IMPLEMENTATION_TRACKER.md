@@ -4,14 +4,76 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-075 |
-| Title | Governed connector target and configuration binding foundation |
-| Status | Done |
-| Branch | `main` |
-| Pull Request | [#87](https://github.com/ozdemirumit/Project_Atlas/pull/87) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-031 |
+| Task ID | ATLAS-IMP-076 |
+| Title | Governed connector credential-reference assignment foundation |
+| Status | Review |
+| Branch | `agent/governed-connector-credential-reference` |
+| Pull Request | [#88](https://github.com/ozdemirumit/Project_Atlas/pull/88) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-032 |
 | Last Updated | 2026-08-06 |
-| Next Action | Start ATLAS-IMP-076 governed connector credential-reference assignment foundation |
+| Next Action | Complete PR #88 CI, merge, post-merge verification, and main closure |
+
+### ATLAS-IMP-076 Scope Rationale
+
+- IMP-075 creates only a disabled target-configured instance with exact signed target evidence.
+- ADR-032 assigns exact credential-profile metadata without accepting or resolving a secret
+  reference, reading a secret store, connecting to the target, or exposing credential internals.
+- Configuration/connectivity validation, capability enablement, health evidence, runtime secret
+  resolution, execution, deployment, and infrastructure mutation remain later independent stages.
+
+### ATLAS-IMP-076 Acceptance Criteria
+
+- Only a dedicated exact-tenant MFA human may request assignment using exact target-binding
+  ID/digest, package digest, credential-profile ID/digest, assignment-policy ID/digest, purpose,
+  acknowledgement, idempotency, and correlation. Secret reference, vault/store path, value, token,
+  key, certificate, username, password, endpoint, target, capability, runtime, command, or lifecycle
+  fields fail validation.
+- The service independently reloads and verifies the current target binding and complete upstream
+  lineage, credential profile, policy, exact digests, scope, compatibility, freshness,
+  rotation/revocation posture, and no-later-authority state. No secret-store or network access,
+  credential resolution, package execution, or target authentication occurs.
+- Signed credential profiles reject inline material and bind internal reference/store evidence,
+  target/site, credential class, authentication method, vendor role, privilege, compatibility,
+  rotation, expiry, revocation, assurance, signer, and digest. Signed policy fixes allowed metadata,
+  least privilege, source age, separation, effective disabled state, and record schema.
+- The assigner is distinct from every upstream, policy, credential-profile, target-profile,
+  workload, publisher, installer, and custody actor. AI/service/shared/wrong-scope identities fail
+  closed without discovery.
+- Required intent and completion audit precede persistence and expose no internal secret reference,
+  store path/profile internals, secret material, token, key, certificate, username, password, target
+  coordinates, signature, request fingerprint, or idempotency key.
+- Immutable deterministic assignments are one-to-one per target binding for version one,
+  idempotent, concurrency-safe, and equivalent in memory/PostgreSQL. Instance/profile conflicts
+  fail closed.
+- A valid assignment sets only credential-reference assignment and configuration-validation
+  eligibility in `disabled_credentials_assigned` state. It does not resolve credentials or grant
+  capabilities, enablement, runtime, execution, deployment, or infrastructure mutation authority.
+- Strict no-store create/read APIs, dedicated RBAC, CSRF, exact scope, bounded schemas, safe errors,
+  minimized web evidence, backend/frontend tests, one Alembic head, live desktop/mobile inspection,
+  browser logs, and GitHub CI apply.
+
+### ATLAS-IMP-076 Validation Evidence
+
+- ADR-032 is accepted. Exact current target binding and complete upstream-lineage reverification,
+  signed credential-profile and assignment-policy enforcement, deterministic disabled assignment,
+  two-stage required audit, immutable records, default-deny API/RBAC, memory/PostgreSQL persistence,
+  and migration now assign only governed credential metadata for later configuration validation.
+- Six focused backend tests cover assignment-only authority, deterministic idempotency, exact source,
+  profile and policy binding, complete actor separation, least-privilege rejection,
+  audit-before-persist, PostgreSQL round-trip, CSRF, no-store, extra-field rejection, and response
+  minimization without secret-store or network access.
+- Backend formatting and Ruff checks passed across 612 files; strict mypy passed across 612 source
+  and test files; the full suite passed with 602 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0048` head for immutable connector credential assignments.
+- Frontend ESLint and TypeScript checks passed with the CI-equivalent 6 GB Node heap; all 45 Vitest
+  tests passed and the production Vite build completed. The panel accepts no caller-selected secret
+  reference, store/vault path, value, token, key, certificate, username, password, endpoint, target,
+  capability, runtime, command, enablement, execution, or deployment input/control.
+- A clean live local page at `http://localhost:5202/` was inspected at 1280 x 720 and 390 x 844.
+  Both views had no horizontal overflow and a fresh browser tab had no errors or warnings; the real
+  login boundary remained fail-closed.
+- [PR #88](https://github.com/ozdemirumit/Project_Atlas/pull/88) is open; CI, merge, and post-merge
+  evidence are pending.
 
 ### ATLAS-IMP-075 Scope Rationale
 

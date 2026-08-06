@@ -1401,6 +1401,32 @@ class ConnectorTargetConfigurationBindingModel(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
+class ConnectorCredentialAssignmentModel(Base):
+    __tablename__ = "connector_credential_assignments"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_target_binding_id",
+            name="uq_connector_credential_assignments_target_binding",
+        ),
+        UniqueConstraint(
+            "assigned_by",
+            "idempotency_key",
+            name="uq_connector_credential_assignments_actor_idempotency",
+        ),
+    )
+
+    assignment_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source_target_binding_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    instance_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    credential_profile_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    assigned_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class RuntimeMetadata(Base):
     __tablename__ = "platform_runtime_metadata"
     __table_args__ = (

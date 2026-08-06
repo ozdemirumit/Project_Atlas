@@ -244,6 +244,55 @@ class ConnectorTargetConfigurationService:
         )
         return binding
 
+    async def credential_assignment_source(
+        self, *, binding_id: str
+    ) -> tuple[ConnectorTargetConfigurationBinding, frozenset[str]]:
+        binding = await self._repository.get(binding_id=binding_id)
+        if binding is None:
+            raise ConnectorTargetConfigurationError("target_configuration_record_not_found")
+        self._verify_record(binding)
+        profile = await self._target_profile_source.get_by_id(profile_id=binding.target_profile_id)
+        policy = await self._policy_source.get_by_id(policy_id=binding.configuration_policy_id)
+        if profile is None or policy is None:
+            raise ConnectorTargetConfigurationError("target_configuration_source_not_found")
+        self._verify_profile(profile)
+        self._verify_policy(policy)
+        try:
+            (
+                instance,
+                _instance_policy,
+                _installation,
+                _registration,
+                source_actors,
+            ) = await self._instance_source.target_configuration_source(
+                record_id=binding.source_instance_record_id
+            )
+        except ConnectorInstanceCreationError as error:
+            raise ConnectorTargetConfigurationError(
+                "target_configuration_source_not_found"
+            ) from error
+        if (
+            binding.source_instance_record_digest != instance.canonical_digest
+            or binding.package_digest != instance.package_digest
+            or binding.target_profile_digest != profile.canonical_digest
+            or binding.configuration_policy_digest != policy.canonical_digest
+            or binding.organization_id != profile.organization_id
+            or binding.environment_id != profile.environment_id
+            or binding.site_id != profile.site_id
+            or binding.target_id != profile.target_id
+            or binding.target_type != profile.target_type
+            or binding.target_product != profile.target_product
+        ):
+            raise ConnectorTargetConfigurationError("target_configuration_source_invalid")
+        return binding, frozenset(
+            source_actors
+            | {
+                binding.bound_by,
+                profile.signed_by,
+                policy.signed_by,
+            }
+        )
+
     async def close(self) -> None:
         await self._repository.close()
 

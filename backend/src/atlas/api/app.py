@@ -34,6 +34,7 @@ from atlas.api.routes import (
     connectors,
     content_policy_scans,
     contract_validations,
+    credential_assignments,
     deployment_configuration,
     final_validations,
     graph,
@@ -139,6 +140,14 @@ from atlas.modules.connectors.adapters.contract_validation_memory import (
 )
 from atlas.modules.connectors.adapters.contract_validation_postgres import (
     PostgreSQLPackageContractValidationRepository,
+)
+from atlas.modules.connectors.adapters.credential_assignment_memory import (
+    InMemoryConnectorCredentialAssignmentPolicySource,
+    InMemoryConnectorCredentialAssignmentRepository,
+    InMemoryConnectorCredentialProfileSource,
+)
+from atlas.modules.connectors.adapters.credential_assignment_postgres import (
+    PostgreSQLConnectorCredentialAssignmentRepository,
 )
 from atlas.modules.connectors.adapters.final_validation_memory import (
     InMemoryFinalValidationPolicySource,
@@ -287,6 +296,11 @@ from atlas.modules.connectors.application.authority_behavior_validation import (
 from atlas.modules.connectors.application.content_policy_scan import PackageContentPolicyScanService
 from atlas.modules.connectors.application.contract_validation import (
     PackageContractValidationService,
+)
+from atlas.modules.connectors.application.credential_assignment import (
+    ConnectorCredentialAssignmentService,
+    build_development_connector_credential_assignment_policy,
+    build_development_connector_credential_profile,
 )
 from atlas.modules.connectors.application.final_validation import (
     PackageFinalValidationService,
@@ -635,6 +649,7 @@ def create_app(
     package_installation_service: PackageInstallationService | None = None,
     connector_instance_creation_service: ConnectorInstanceCreationService | None = None,
     target_configuration_service: ConnectorTargetConfigurationService | None = None,
+    credential_assignment_service: ConnectorCredentialAssignmentService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -1769,6 +1784,48 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if credential_assignment_service is not None:
+        resolved_credential_assignment_service = credential_assignment_service
+    else:
+        credential_assignment_repository = (
+            PostgreSQLConnectorCredentialAssignmentRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryConnectorCredentialAssignmentRepository()
+        )
+        credential_profiles = (
+            ()
+            if is_production
+            else (
+                build_development_connector_credential_profile(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        credential_policies = (
+            ()
+            if is_production
+            else (
+                build_development_connector_credential_assignment_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_credential_assignment_service = ConnectorCredentialAssignmentService(
+            repository=credential_assignment_repository,
+            target_source=resolved_target_configuration_service,
+            credential_profile_source=InMemoryConnectorCredentialProfileSource(credential_profiles),
+            policy_source=InMemoryConnectorCredentialAssignmentPolicySource(credential_policies),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -1970,6 +2027,7 @@ def create_app(
         app.state.package_installation_service = resolved_package_installation_service
         app.state.connector_instance_creation_service = resolved_connector_instance_creation_service
         app.state.target_configuration_service = resolved_target_configuration_service
+        app.state.credential_assignment_service = resolved_credential_assignment_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -1982,6 +2040,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_credential_assignment_service.close()
         await resolved_target_configuration_service.close()
         await resolved_connector_instance_creation_service.close()
         await resolved_package_installation_service.close()
@@ -2086,6 +2145,7 @@ def create_app(
     app.include_router(package_installations.router, prefix="/api/v1")
     app.include_router(instance_creation.router, prefix="/api/v1")
     app.include_router(target_configuration.router, prefix="/api/v1")
+    app.include_router(credential_assignments.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

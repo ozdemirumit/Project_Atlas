@@ -28,6 +28,8 @@ from atlas.modules.authorization.application.bootstrap import (
     BOOTSTRAP_PLAN_READ,
     BOOTSTRAP_STATE_MANAGE,
     BOOTSTRAP_STATE_READ,
+    CONNECTOR_CREDENTIAL_ASSIGNMENT_CREATE,
+    CONNECTOR_CREDENTIAL_ASSIGNMENT_READ,
     CONNECTOR_INSTANCE_CREATE,
     CONNECTOR_INSTANCE_READ,
     CONNECTOR_PACKAGE_ACQUIRE,
@@ -130,6 +132,7 @@ from atlas.modules.authorization.application.bootstrap import (
     bootstrap_invalidation_scope,
     bootstrap_plan_scope,
     bootstrap_state_scope,
+    connector_credential_assignment_scope,
     connector_instance_scope,
     connector_package_acquisition_scope,
     connector_package_approval_scope,
@@ -3143,5 +3146,61 @@ async def authorize_connector_target_configuration_read(
         request,
         subject,
         permission_id=CONNECTOR_TARGET_CONFIGURATION_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def _authorize_connector_credential_assignment(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.connector.credential-assignment",
+            scope=connector_credential_assignment_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail="The requested connector credential assignment is not permitted.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_connector_credential_assignment_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_credential_assignment(
+        request,
+        subject,
+        permission_id=CONNECTOR_CREDENTIAL_ASSIGNMENT_CREATE,
+        capability_class=CapabilityClass.C3_CONTROLLED_CHANGE,
+    )
+
+
+async def authorize_connector_credential_assignment_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_credential_assignment(
+        request,
+        subject,
+        permission_id=CONNECTOR_CREDENTIAL_ASSIGNMENT_READ,
         capability_class=CapabilityClass.C1_READ_ONLY,
     )
