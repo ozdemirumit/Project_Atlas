@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-084 |
 | Title | Governed bounded connector capability invocation foundation |
-| Status | In Review |
-| Branch | `agent/governed-bounded-connector-invocation` |
+| Status | Completed |
+| Branch | `main` |
 | Pull Request | [#96](https://github.com/ozdemirumit/Project_Atlas/pull/96) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-040 |
 | Last Updated | 2026-08-06 |
-| Next Action | Complete PR #96 CI, merge, and verify the resulting `main` revision |
+| Next Action | Select and define ATLAS-IMP-085 for durable governed invocation evidence ingestion |
 
 ### ATLAS-IMP-084 Scope Rationale
 
@@ -70,6 +70,11 @@
   invocation API operations. The authenticated application at `http://127.0.0.1:5208/` loaded the
   Atlas and Connectors workspace at 1280 x 720 and 390 x 844; automated measurements found no
   horizontal overflow at either size and the desktop viewport was restored.
+- [PR #96](https://github.com/ozdemirumit/Project_Atlas/pull/96) passed CI run
+  [31097546211](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31097546211), was
+  squash-merged as `1333cff1889cf8f8c2fe63ede27d6b455e1d3845`, and the merged `main` revision
+  passed CI run
+  [31097765626](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31097765626).
 
 ### ATLAS-IMP-083 Scope Rationale
 
