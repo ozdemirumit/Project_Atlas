@@ -42,6 +42,29 @@
 - Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC, CSRF, safe errors,
   minimized web evidence, backend/frontend tests, live desktop/mobile inspection, and GitHub CI apply.
 
+### ATLAS-IMP-077 Validation Evidence
+
+- ADR-033 is accepted. Exact current credential-assignment and complete upstream-lineage
+  reverification, signed bounded probe evidence and policy enforcement, deterministic disabled
+  validation, two-stage required audit, immutable records, default-deny API/RBAC,
+  memory/PostgreSQL persistence, and migration now establish only configuration/connectivity
+  evidence for later capability governance.
+- Six focused backend tests cover validation-only authority, deterministic idempotency, exact source,
+  evidence and policy binding, complete actor separation, read-only authorization rejection,
+  audit-before-persist, PostgreSQL round-trip, CSRF, no-store, forbidden target-field rejection, and
+  response minimization without secret-store, DNS, network, package, target, or capability access.
+- Backend formatting and Ruff checks passed across 620 files; strict mypy passed across 620 source
+  and test files; the full suite passed with 608 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0049` head for immutable connector configuration validations.
+- Frontend ESLint and TypeScript checks passed with the CI-equivalent 6 GB Node heap; all 46 Vitest
+  tests passed and the production Vite build completed. The panel accepts only exact signed evidence
+  and policy metadata, with no target coordinate, credential, secret, raw probe, network, command,
+  capability, enablement, runtime, execution, deployment, or mutation input/control.
+- A clean live local page at `http://localhost:5202/` was inspected at 1280 x 720 and 390 x 844.
+  Both views had no horizontal overflow or browser errors/warnings; the real login boundary remained
+  fail-closed.
+- Pull request, GitHub CI, merge, and post-merge evidence are pending.
+
 ### ATLAS-IMP-076 Scope Rationale
 
 - IMP-075 creates only a disabled target-configured instance with exact signed target evidence.

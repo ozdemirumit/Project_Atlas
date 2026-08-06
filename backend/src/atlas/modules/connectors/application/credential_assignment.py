@@ -245,6 +245,46 @@ class ConnectorCredentialAssignmentService:
         )
         return record
 
+    async def configuration_validation_source(
+        self, *, assignment_id: str
+    ) -> tuple[ConnectorCredentialAssignmentRecord, frozenset[str]]:
+        record = await self._repository.get(assignment_id=assignment_id)
+        if record is None:
+            raise ConnectorCredentialAssignmentError("credential_assignment_record_not_found")
+        self._verify_record(record)
+        profile = await self._credential_profile_source.get_by_id(
+            profile_id=record.credential_profile_id
+        )
+        policy = await self._policy_source.get_by_id(policy_id=record.credential_policy_id)
+        if profile is None or policy is None:
+            raise ConnectorCredentialAssignmentError("credential_assignment_source_not_found")
+        self._verify_profile(profile)
+        self._verify_policy(policy)
+        try:
+            binding, source_actors = await self._target_source.credential_assignment_source(
+                binding_id=record.source_target_binding_id
+            )
+        except ConnectorTargetConfigurationError as error:
+            raise ConnectorCredentialAssignmentError(
+                "credential_assignment_source_not_found"
+            ) from error
+        if (
+            record.source_target_binding_digest != binding.canonical_digest
+            or record.package_digest != binding.package_digest
+            or record.credential_profile_digest != profile.canonical_digest
+            or record.credential_policy_digest != policy.canonical_digest
+            or record.organization_id != profile.organization_id
+            or record.environment_id != profile.environment_id
+            or record.target_profile_id != profile.target_profile_id
+            or record.site_id != profile.site_id
+            or record.target_type != profile.target_type
+            or record.target_product != profile.target_product
+        ):
+            raise ConnectorCredentialAssignmentError("credential_assignment_source_invalid")
+        return record, frozenset(
+            source_actors | {record.assigned_by, profile.signed_by, policy.signed_by}
+        )
+
     async def close(self) -> None:
         await self._repository.close()
 

@@ -142,6 +142,8 @@ CONNECTOR_TARGET_CONFIGURATION_CREATE = "connectors.target-configuration-binding
 CONNECTOR_TARGET_CONFIGURATION_READ = "connectors.target-configuration-bindings.read"
 CONNECTOR_CREDENTIAL_ASSIGNMENT_CREATE = "connectors.credential-assignments.create"
 CONNECTOR_CREDENTIAL_ASSIGNMENT_READ = "connectors.credential-assignments.read"
+CONNECTOR_CONFIGURATION_VALIDATION_CREATE = "connectors.configuration-validations.create"
+CONNECTOR_CONFIGURATION_VALIDATION_READ = "connectors.configuration-validations.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -742,6 +744,19 @@ def connector_credential_assignment_scope(
     )
 
 
+def connector_configuration_validation_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.connectors",
+        resource_id="resource.connector.configuration-validations",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -1331,6 +1346,14 @@ def build_development_authorization_service(
             permission_id=CONNECTOR_CREDENTIAL_ASSIGNMENT_READ,
             description="Read one minimized immutable connector credential assignment.",
         ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_CONFIGURATION_VALIDATION_CREATE,
+            description="Verify one signed bounded connector configuration evidence set.",
+        ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_CONFIGURATION_VALIDATION_READ,
+            description="Read one minimized immutable connector configuration validation.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -1441,6 +1464,8 @@ def build_development_authorization_service(
                 CONNECTOR_TARGET_CONFIGURATION_READ,
                 CONNECTOR_CREDENTIAL_ASSIGNMENT_CREATE,
                 CONNECTOR_CREDENTIAL_ASSIGNMENT_READ,
+                CONNECTOR_CONFIGURATION_VALIDATION_CREATE,
+                CONNECTOR_CONFIGURATION_VALIDATION_READ,
             }
         ),
     )
@@ -2353,6 +2378,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=connector_credential_assignment_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-configuration-validation-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_configuration_validation_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C3_CONTROLLED_CHANGE,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-configuration-validation-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_configuration_validation_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,
