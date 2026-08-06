@@ -4,14 +4,51 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-074 |
-| Title | Governed connector instance creation foundation |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#86](https://github.com/ozdemirumit/Project_Atlas/pull/86) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-030 |
+| Task ID | ATLAS-IMP-075 |
+| Title | Governed connector target and configuration binding foundation |
+| Status | In Progress |
+| Branch | `agent/governed-connector-target-binding` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-031 |
 | Last Updated | 2026-08-06 |
-| Next Action | Define ATLAS-IMP-075 governed connector target and configuration binding foundation |
+| Next Action | Implement backend target-profile, policy, binding, persistence, API, and focused tests |
+
+### ATLAS-IMP-075 Scope Rationale
+
+- IMP-074 creates only a disabled, unconfigured instance identity with exact installation lineage.
+- ADR-031 binds that instance to exact signed target-inventory and configuration-policy evidence,
+  without accepting raw network configuration or making a network connection.
+- Credential assignment, connectivity/health validation, capability enablement, runtime trust,
+  execution, deployment, and infrastructure mutation remain later independent stages.
+
+### ATLAS-IMP-075 Acceptance Criteria
+
+- Only a dedicated exact-tenant MFA human may request binding using exact instance record/digest,
+  package digest, target-profile ID/digest, configuration-policy ID/digest, purpose,
+  acknowledgement, idempotency, and correlation. Raw endpoint, host, IP, URL, port, certificate,
+  route, proxy, target, secret, capability, runtime, command, or lifecycle fields fail validation.
+- The service independently reloads and verifies the current instance and complete upstream lineage,
+  target profile, policy, exact digests, scope, compatibility, freshness, and no-later-authority
+  state. No DNS lookup, target connection, credential resolution, or package execution occurs.
+- Signed target profiles reject unsafe origins and fix site/target/product/endpoint/trust/route/proxy
+  evidence. Signed policy fixes schemas, source age, assurance, allowed suffix/port/product,
+  required profile identities, separation, effective disabled state, and record schema.
+- The binder is distinct from every upstream, instance, policy, target-profile, workload, publisher,
+  installer, and custody actor. AI/service/shared/wrong-scope identities fail closed.
+- Required intent and completion audit precede persistence and expose no endpoint, host, port,
+  certificate/trust material, route/proxy detail, profile payload, key, credential, or secret.
+- Immutable deterministic records are one-to-one per instance for version one, idempotent,
+  concurrency-safe, and equivalent in memory/PostgreSQL. Instance/target conflicts fail closed.
+- A valid binding sets only target configuration and credential-governance eligibility in
+  `disabled_target_configured` state. It grants no credentials, capabilities, enablement, runtime,
+  execution, deployment, or infrastructure mutation authority.
+- Strict no-store create/read APIs, dedicated RBAC, CSRF, exact scope, bounded schemas, safe errors,
+  minimized web evidence, backend/frontend tests, one Alembic head, live desktop/mobile inspection,
+  browser logs, and GitHub CI apply.
+
+### ATLAS-IMP-075 Validation Evidence
+
+- Pending implementation and verification.
 
 ### ATLAS-IMP-074 Scope Rationale
 
