@@ -74,6 +74,7 @@ from atlas.api.routes import (
     supply_chain_inventories,
     support_bundles,
     target_configuration,
+    target_session_verifications,
     upgrades,
     vulnerability_analyses,
     workload_identities,
@@ -325,6 +326,18 @@ from atlas.modules.connectors.adapters.target_configuration_memory import (
 from atlas.modules.connectors.adapters.target_configuration_postgres import (
     PostgreSQLConnectorTargetConfigurationRepository,
 )
+from atlas.modules.connectors.adapters.target_session_memory import (
+    InMemoryConnectorTargetSessionPolicySource,
+    InMemoryConnectorTargetSessionProfileSource,
+    InMemoryConnectorTargetSessionRepository,
+)
+from atlas.modules.connectors.adapters.target_session_postgres import (
+    PostgreSQLConnectorTargetSessionRepository,
+)
+from atlas.modules.connectors.adapters.target_session_synthetic import (
+    SyntheticConnectorTargetSessionAdapter,
+    UnavailableConnectorTargetSessionAdapter,
+)
 from atlas.modules.connectors.adapters.validation_intake_memory import (
     InMemoryPackageValidationRepository,
 )
@@ -435,6 +448,10 @@ from atlas.modules.connectors.application.target_configuration import (
     ConnectorTargetConfigurationService,
     build_development_connector_target_configuration_policy,
     build_development_connector_target_profile,
+)
+from atlas.modules.connectors.application.target_session import (
+    ConnectorTargetSessionService,
+    build_development_connector_target_session_policy,
 )
 from atlas.modules.connectors.application.validation_intake import PackageValidationService
 from atlas.modules.connectors.application.vulnerability_analysis import (
@@ -724,6 +741,7 @@ def create_app(
     runtime_trust_service: ConnectorRuntimeTrustService | None = None,
     secret_brokerage_service: ConnectorSecretBrokerageService | None = None,
     runtime_activation_service: ConnectorRuntimeActivationService | None = None,
+    target_session_service: ConnectorTargetSessionService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -2056,6 +2074,39 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if target_session_service is not None:
+        resolved_target_session_service = target_session_service
+    else:
+        target_session_repository = (
+            PostgreSQLConnectorTargetSessionRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryConnectorTargetSessionRepository()
+        )
+        target_session_policies = (
+            ()
+            if is_production
+            else (
+                build_development_connector_target_session_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_target_session_service = ConnectorTargetSessionService(
+            repository=target_session_repository,
+            source=resolved_runtime_activation_service,
+            profile_source=InMemoryConnectorTargetSessionProfileSource(()),
+            policy_source=InMemoryConnectorTargetSessionPolicySource(target_session_policies),
+            adapter=(
+                UnavailableConnectorTargetSessionAdapter()
+                if is_production
+                else SyntheticConnectorTargetSessionAdapter()
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -2263,6 +2314,7 @@ def create_app(
         app.state.runtime_trust_service = resolved_runtime_trust_service
         app.state.secret_brokerage_service = resolved_secret_brokerage_service
         app.state.runtime_activation_service = resolved_runtime_activation_service
+        app.state.target_session_service = resolved_target_session_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -2275,6 +2327,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_target_session_service.close()
         await resolved_runtime_activation_service.close()
         await resolved_secret_brokerage_service.close()
         await resolved_runtime_trust_service.close()
@@ -2391,6 +2444,7 @@ def create_app(
     app.include_router(runtime_trust_grants.router, prefix="/api/v1")
     app.include_router(secret_brokerage_authorizations.router, prefix="/api/v1")
     app.include_router(runtime_activations.router, prefix="/api/v1")
+    app.include_router(target_session_verifications.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

@@ -11,7 +11,7 @@
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-038 |
 | Last Updated | 2026-08-06 |
-| Next Action | Implement the ADR-038 domain, adapter, persistence, API, UI, and validation slice |
+| Next Action | Open the implementation pull request and complete GitHub CI review |
 
 ### ATLAS-IMP-082 Scope Rationale
 
@@ -47,6 +47,27 @@
   scheduling, execution, deployment, and infrastructure mutation remain false.
 - Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC, CSRF, safe errors,
   minimized web evidence, backend/frontend tests, live desktop/mobile inspection, and GitHub CI apply.
+
+### ATLAS-IMP-082 Validation Evidence
+
+- ADR-038 is accepted. The service revalidates complete runtime-activation, secret-brokerage,
+  runtime-trust, credential, target-product, workload, network, TLS, and policy lineage before a
+  narrow target-session adapter is called. Production fails closed without a trusted adapter; the
+  development adapter is deterministic and synthetic.
+- Five focused backend tests cover bounded read-only session evidence, deterministic idempotency,
+  actor separation, altered signed network controls, completion-audit compensation before
+  persistence, PostgreSQL round-trip, CSRF, forbidden caller coordinates, no-store, and minimized
+  responses.
+- Backend formatting and Ruff checks passed across 717 files; strict mypy passed across 662 source
+  and test files; the full suite passed with 636 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0054` head for immutable connector target-session verifications.
+- Frontend ESLint and TypeScript checks passed; all 51 Vitest tests passed and the production Vite
+  build completed. The panel cannot select target coordinates, credentials, secrets, broker or
+  lease/session handles, certificates, routes, commands, capability inputs, execution, or
+  deployment controls.
+- The authenticated local application at `http://127.0.0.1:5208/` loaded the Connectors workspace
+  at 1280 x 720 and 390 x 844. Automated measurements found no horizontal overflow at either size;
+  the temporary viewport override was reset.
 
 ### ATLAS-IMP-081 Scope Rationale
 
