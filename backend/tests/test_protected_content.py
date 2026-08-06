@@ -332,6 +332,8 @@ async def test_protected_content_postgres_mapping_contains_metadata_only() -> No
 
     raw_claim = OperationalKnowledgeProtectedContentService._normalize(asdict(claim))
     raw_record = OperationalKnowledgeProtectedContentService._normalize(asdict(grant.record))
+    assert isinstance(raw_claim, dict)
+    assert isinstance(raw_record, dict)
     assert (
         PostgreSQLOperationalKnowledgeProtectedContentRepository._claim_to_domain(raw_claim)
         == claim
