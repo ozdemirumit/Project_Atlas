@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-076 |
 | Title | Governed connector credential-reference assignment foundation |
-| Status | Review |
-| Branch | `agent/governed-connector-credential-reference` |
+| Status | Done |
+| Branch | `main` |
 | Pull Request | [#88](https://github.com/ozdemirumit/Project_Atlas/pull/88) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-032 |
 | Last Updated | 2026-08-06 |
-| Next Action | Complete PR #88 CI, merge, post-merge verification, and main closure |
+| Next Action | Start ATLAS-IMP-077 governed connector configuration and connectivity validation foundation |
 
 ### ATLAS-IMP-076 Scope Rationale
 
@@ -72,8 +72,11 @@
 - A clean live local page at `http://localhost:5202/` was inspected at 1280 x 720 and 390 x 844.
   Both views had no horizontal overflow and a fresh browser tab had no errors or warnings; the real
   login boundary remained fail-closed.
-- [PR #88](https://github.com/ozdemirumit/Project_Atlas/pull/88) is open; CI, merge, and post-merge
-  evidence are pending.
+- [PR #88](https://github.com/ozdemirumit/Project_Atlas/pull/88) passed CI run
+  [31074282848](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31074282848), was
+  squash-merged as `f177539a75e400fd169e946050a39f7cabdf445f`, and the merged `main` revision
+  passed CI run
+  [31074519596](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31074519596).
 
 ### ATLAS-IMP-075 Scope Rationale
 
@@ -4877,6 +4880,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-073 | Governed connector package installation foundation | Completed through [PR #85](https://github.com/ozdemirumit/Project_Atlas/pull/85) at merge `5f273df`; 584 backend tests, 42 frontend tests, live desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-074 | Governed connector instance creation foundation | Completed through [PR #86](https://github.com/ozdemirumit/Project_Atlas/pull/86) at merge `fcec954`; 590 backend tests, 43 frontend tests, live desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-075 | Governed connector target and configuration binding foundation | Completed through [PR #87](https://github.com/ozdemirumit/Project_Atlas/pull/87) at merge `83633f2`; 596 backend tests, 44 frontend tests, live desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-076 | Governed connector credential-reference assignment foundation | Completed through [PR #88](https://github.com/ozdemirumit/Project_Atlas/pull/88) at merge `f177539`; 602 backend tests, 45 frontend tests, live desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
