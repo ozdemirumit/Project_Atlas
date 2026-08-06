@@ -6,13 +6,13 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-078 |
 | Title | Governed connector capability governance and enablement foundation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/governed-connector-capability-enable` |
-| Pull Request | Pending |
+| Pull Request | [#90](https://github.com/ozdemirumit/Project_Atlas/pull/90) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-034 |
 | Last Updated | 2026-08-06 |
 | Local Validation | 614 backend tests, 47 frontend tests, lint, strict typing, production build, Alembic head `20260806_0050`, and live desktop/mobile overflow and browser-log inspection passed; three expected Windows symlink tests skipped |
-| Next Action | Commit the completed vertical slice, open its pull request, pass GitHub CI, merge, and verify `main` |
+| Next Action | Pass GitHub CI, merge PR #90, verify `main`, and record completion evidence |
 
 ### ATLAS-IMP-078 Scope Rationale
 
