@@ -1,7 +1,7 @@
 # ADR-030: Connector Instance Creation Contract
 
-**Status:** Accepted  
-**Date:** 2026-08-06  
+**Status:** Accepted
+**Date:** 2026-08-06
 **Decision Owners:** Product Owner, Solution Architecture, Security Architecture
 
 ## Context
