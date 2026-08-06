@@ -6,13 +6,13 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-078 |
 | Title | Governed connector capability governance and enablement foundation |
-| Status | Review |
-| Branch | `agent/governed-connector-capability-enable` |
+| Status | Done |
+| Branch | `main` |
 | Pull Request | [#90](https://github.com/ozdemirumit/Project_Atlas/pull/90) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-034 |
 | Last Updated | 2026-08-06 |
 | Local Validation | 614 backend tests, 47 frontend tests, lint, strict typing, production build, Alembic head `20260806_0050`, and live desktop/mobile overflow and browser-log inspection passed; three expected Windows symlink tests skipped |
-| Next Action | Pass GitHub CI, merge PR #90, verify `main`, and record completion evidence |
+| Next Action | Start ATLAS-IMP-079 governed connector runtime-trust foundation |
 
 ### ATLAS-IMP-078 Scope Rationale
 
@@ -39,6 +39,33 @@
   execution, deployment, and infrastructure mutation remain false.
 - Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC, CSRF, safe errors,
   minimized web evidence, backend/frontend tests, live desktop/mobile inspection, and GitHub CI apply.
+
+### ATLAS-IMP-078 Validation Evidence
+
+- ADR-034 is accepted. Exact current configuration-validation and complete upstream-lineage
+  reverification, signed manifest-bound profile and policy enforcement, C0/C1-only parity,
+  deterministic administrative enablement, two-stage required audit, immutable records,
+  default-deny API/RBAC, memory/PostgreSQL persistence, and migration now establish only
+  capability governance and later runtime-trust eligibility.
+- Six focused backend tests cover enablement-only authority, deterministic idempotency, exact
+  source/profile/policy binding, manifest capability and permission parity, complete actor
+  separation, audit-before-persist, PostgreSQL round-trip, CSRF, no-store, forbidden operational
+  field rejection, and minimized responses without secret, target, command, or runtime access.
+- Backend formatting and Ruff checks passed across 679 files; strict mypy passed across 628 source
+  and test files; the full suite passed with 614 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0050` head for immutable connector capability enablements.
+- Frontend ESLint and TypeScript checks passed with the CI-equivalent 6 GB Node heap; all 47 Vitest
+  tests passed and the production Vite build completed. The panel accepts only exact signed profile
+  and policy metadata and cannot select capabilities, targets, credentials, commands, parameters,
+  runtime trust, execution, deployment, or mutation authority.
+- The live local page at `http://127.0.0.1:5208/` was inspected at 1280 x 720 and 390 x 844 before
+  and after a synthetic development login. Both views had no horizontal overflow or browser runtime
+  errors; the development identity was explicitly treated as local validation only.
+- [PR #90](https://github.com/ozdemirumit/Project_Atlas/pull/90) passed CI run
+  [31079055561](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31079055561), was
+  squash-merged as `0a6bb8ff11232a17e12b20522087e57bcd8ac44e`, and the merged `main` revision
+  passed CI run
+  [31079308709](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31079308709).
 
 ### ATLAS-IMP-077 Scope Rationale
 
@@ -4965,6 +4992,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-075 | Governed connector target and configuration binding foundation | Completed through [PR #87](https://github.com/ozdemirumit/Project_Atlas/pull/87) at merge `83633f2`; 596 backend tests, 44 frontend tests, live desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-076 | Governed connector credential-reference assignment foundation | Completed through [PR #88](https://github.com/ozdemirumit/Project_Atlas/pull/88) at merge `f177539`; 602 backend tests, 45 frontend tests, live desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-077 | Governed connector configuration and connectivity validation foundation | Completed through [PR #89](https://github.com/ozdemirumit/Project_Atlas/pull/89) at merge `24f8ba6`; 608 backend tests, 46 frontend tests, live desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-078 | Governed connector capability governance and enablement foundation | Completed through [PR #90](https://github.com/ozdemirumit/Project_Atlas/pull/90) at merge `0a6bb8f`; 614 backend tests, 47 frontend tests, live desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
