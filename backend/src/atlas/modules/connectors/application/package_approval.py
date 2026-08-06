@@ -301,6 +301,41 @@ class PackageApprovalService:
         await self._audit_read(actor, correlation_id, request)
         return self._record(request, decision, self._clock())
 
+    async def publisher_attestation_source(
+        self, *, request_id: str
+    ) -> tuple[ConnectorPackageApprovalRecord, frozenset[str]]:
+        request = await self._repository.get_request(request_id=request_id)
+        if request is None:
+            raise PackageApprovalError("package_approval_request_not_found")
+        self._verify_request(request)
+        decision = await self._repository.get_decision(request_id=request_id)
+        if decision is None:
+            raise PackageApprovalError("package_approval_decision_not_found")
+        self._verify_decision(decision)
+        policy = await self._policy_source.get_by_id(policy_id=request.approval_policy_id)
+        if policy is None:
+            raise PackageApprovalError("package_approval_policy_not_found")
+        self._verify_policy(policy)
+        validation, upstream = await self._load_final(request.source_final_validation_id)
+        now = self._clock()
+        record = self._record(request, decision, now)
+        if (
+            validation.canonical_digest != request.source_final_validation_digest
+            or decision.request_digest != request.canonical_digest
+            or decision.package_digest != request.package_digest
+            or policy.canonical_digest != request.approval_policy_digest
+            or not policy.issued_at <= now < policy.expires_at
+            or not record.approval_valid
+            or not record.eligible_for_publisher_governance
+            or record.promotion_blocked
+        ):
+            raise PackageApprovalError("package_approval_not_eligible_for_attestation")
+        return record, upstream | {
+            request.requested_by,
+            decision.decided_by,
+            policy.signed_by,
+        }
+
     async def close(self) -> None:
         await self._repository.close()
 

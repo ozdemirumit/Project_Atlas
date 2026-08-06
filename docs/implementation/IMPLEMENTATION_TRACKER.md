@@ -4,14 +4,70 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-068 |
-| Title | Governed connector package human approval foundation |
-| Status | Completed |
-| Branch | `agent/connector-package-approval` |
-| Pull Request | [PR #80](https://github.com/ozdemirumit/Project_Atlas/pull/80) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-024 |
+| Task ID | ATLAS-IMP-069 |
+| Title | Governed connector publisher attestation foundation |
+| Status | In Progress |
+| Branch | `agent/connector-publisher-attestation` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-025 |
 | Last Updated | 2026-08-06 |
-| Next Action | Select and record the next governed connector lifecycle slice |
+| Next Action | Implement the immutable publisher claim and independent attestation contract |
+
+### ATLAS-IMP-069 Scope Rationale
+
+- IMP-068 records an accountable human approval for one exact validated package, but approval does
+  not prove publisher identity, ownership, support responsibility, or release provenance.
+- ADR-025 introduces an immutable publisher claim plus independent verification bound to the exact
+  still-valid approval, package, signed policy, trusted issuer, and separated human verifier.
+- Package signing, registry publication, installation, configuration, enablement, runtime trust,
+  target or secret access, execution, deployment, and infrastructure mutation remain later stages.
+
+### ATLAS-IMP-069 Acceptance Criteria
+
+- A governed source provides one immutable, signed, verified, fresh, exact-tenant publisher claim
+  binding stable publisher identity, exact package/connector/release/provenance digests, ownership,
+  support responsibility, trusted issuer, support validity, and explicit no-authority assertions.
+- Only a dedicated exact-tenant MFA human may request independent verification using exact approval
+  request/digest, package digest, claim ID/digest, signed attestation-policy ID/digest, bounded
+  purpose, acknowledgement, idempotency, and correlation. No caller-selected checks or outcome exist.
+- The service independently reloads the complete IMP-068 record and verifies an approved, unexpired,
+  exact decision and package; a rejected, pending, stale, changed, or tampered approval fails closed.
+- Platform policy is immutable, signed, verified, fresh, tenant-scoped, and fixes accepted schemas,
+  evidence age, assurance, required assertions, issuer trust, support validity, separation, and report
+  canonicalization. Customer policy cannot weaken mandatory controls.
+- The verifier is distinct from requester, approver, every upstream actor, approval-policy signer,
+  claim issuer, publisher identity, and attestation-policy signer. AI/service/shared/wrong-scope and
+  insufficient-assurance identities fail closed without discovery.
+- Reports are one-to-one, immutable, deterministic, idempotent, concurrency-safe,
+  audit-before-persist, and equivalent in memory and PostgreSQL. Historical evidence is unchanged.
+- Verified sets only publisher attestation and eligibility for later package-signing governance.
+  Rejected remains blocked. Every result grants no signing, registry, installation, configuration,
+  enablement, target/secret, runtime, execution, deployment, or infrastructure mutation authority.
+- Strict no-store create/read APIs require dedicated RBAC, CSRF on mutation, exact scope, MFA,
+  acknowledgement, bounded schemas, safe errors, and minimized non-disclosing responses.
+- The web view shows exact approval/package/claim/policy/verifier/check/outcome evidence and explicit
+  no-authority scope with no controls for any later lifecycle stage.
+- Backend/frontend tests, one Alembic head, live authorized/denied HTTP checks, desktop and
+  390-pixel mobile inspection, browser logs, and GitHub CI apply.
+
+### ATLAS-IMP-069 Validation Evidence
+
+- ADR-025 is accepted. The immutable domain, independent verifier service, default-deny API/RBAC,
+  audit, memory/PostgreSQL persistence, and migration bind one exact current IMP-068 approval to
+  one governed publisher claim and signed attestation policy without trusting manifest text.
+- Five focused backend tests cover verified-only signing-governance eligibility, rejected ownership
+  and support assertions, complete actor separation, exact digest binding, idempotency,
+  audit-before-persist, PostgreSQL round-trip, CSRF, no-store responses, and no runtime authority.
+- Backend formatting and Ruff checks passed across 554 files; strict mypy passed across 554 source
+  and test files; the full suite passed with 562 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0041` head for immutable publisher attestation reports.
+- Frontend ESLint and TypeScript checks passed with the CI-equivalent 6 GB Node heap; all 38 Vitest
+  tests passed and the production Vite build completed. The new panel test proves exact approval,
+  claim, package, policy, acknowledgement, CSRF, minimized request, and no later lifecycle controls.
+- A clean live local page at `http://localhost:5202/` was inspected at 1280 x 720 and 390 x 844.
+  Both views had no horizontal overflow and no browser errors or warnings. The real login boundary
+  remained fail-closed because no synthetic publisher claim is created by the default app.
+- GitHub PR, CI, merge, and post-merge main evidence are pending.
 
 ### ATLAS-IMP-068 Scope Rationale
 

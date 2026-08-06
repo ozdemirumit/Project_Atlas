@@ -16,6 +16,7 @@ import {
   type ConnectorPackageApprovalOutcome,
   type ConnectorPackageFinalValidation,
 } from "../../api/connectors";
+import { PublisherAttestationPanel } from "./PublisherAttestationPanel";
 
 const OUTCOMES: Array<{ value: ConnectorPackageApprovalOutcome; label: string }> = [
   { value: "approve", label: "Approve" },
@@ -252,6 +253,10 @@ export function PackageApprovalPanel({ source, subjectId }: Props) {
               <span>{record.decision.decided_by}</span>
               <p>{record.decision.rationale}</p>
             </div>
+          )}
+
+          {record.approval_valid && record.eligible_for_publisher_governance && (
+            <PublisherAttestationPanel approval={record} />
           )}
         </div>
       )}
