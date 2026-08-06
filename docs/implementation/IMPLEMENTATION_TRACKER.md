@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-036 |
 | Last Updated | 2026-08-06 |
-| Next Action | Implement ADR-036 backend, web flow, tests, live validation, and delivery gates |
+| Next Action | Publish the validated implementation and complete GitHub delivery gates |
 
 ### ATLAS-IMP-080 Scope Rationale
 
@@ -41,6 +41,24 @@
   deployment, and infrastructure mutation remain false.
 - Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC, CSRF, safe errors,
   minimized web evidence, backend/frontend tests, live desktop/mobile inspection, and GitHub CI apply.
+
+### ATLAS-IMP-080 Validation Evidence
+
+- ADR-036 is accepted. The implementation independently revalidates runtime-trust and credential
+  lineage before authorizing only a future workload-bound, single-use, memory-only brokerage path.
+  It performs no secret-store call and contains no secret reference, value, or lease handle.
+- Six focused backend tests cover authorization-only authority, deterministic idempotency, complete
+  actor separation, altered signed delivery rejection, audit-before-persist, PostgreSQL round-trip,
+  CSRF, forbidden caller controls, no-store, and minimized API responses.
+- Backend formatting and Ruff checks passed across 697 files; strict mypy passed across 644 source
+  and test files; the full suite passed with 626 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0052` head for immutable connector secret-brokerage authorizations.
+- Frontend ESLint and TypeScript checks passed with the CI-equivalent 6 GB Node heap; all 49 Vitest
+  tests passed and the production Vite build completed. The panel cannot select credential, secret,
+  store, broker, workload, lease, delivery, target, network, runtime, command, or execution controls.
+- The authenticated local application at `http://127.0.0.1:5208/` loaded at 1280 x 720 and 390 x
+  844. Automated measurements found no horizontal overflow and confirmed the Atlas and Connectors
+  interface tree at both sizes; the temporary viewport override was reset.
 
 ### ATLAS-IMP-079 Scope Rationale
 

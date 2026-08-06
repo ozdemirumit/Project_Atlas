@@ -302,6 +302,39 @@ class ConnectorCredentialAssignmentService:
             frozenset(source_actors | {record.assigned_by, profile.signed_by, policy.signed_by}),
         )
 
+    async def secret_brokerage_source(
+        self, *, credential_profile_id: str, instance_id: str
+    ) -> tuple[
+        ConnectorCredentialAssignmentRecord,
+        ConnectorCredentialProfileSnapshot,
+        frozenset[str],
+    ]:
+        candidate = await self._repository.get_by_profile_and_instance(
+            credential_profile_id=credential_profile_id,
+            instance_id=instance_id,
+        )
+        if candidate is None:
+            raise ConnectorCredentialAssignmentError("credential_assignment_record_not_found")
+        record, _, source_actors = await self.configuration_validation_source(
+            assignment_id=candidate.assignment_id
+        )
+        profile = await self._credential_profile_source.get_by_id(
+            profile_id=record.credential_profile_id
+        )
+        if profile is None:
+            raise ConnectorCredentialAssignmentError("credential_assignment_source_not_found")
+        self._verify_profile(profile)
+        if (
+            profile.profile_id != credential_profile_id
+            or profile.canonical_digest != record.credential_profile_digest
+            or profile.target_profile_id != record.target_profile_id
+            or profile.site_id != record.site_id
+            or profile.organization_id != record.organization_id
+            or profile.environment_id != record.environment_id
+        ):
+            raise ConnectorCredentialAssignmentError("credential_assignment_source_invalid")
+        return record, profile, source_actors
+
     async def close(self) -> None:
         await self._repository.close()
 

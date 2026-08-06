@@ -1505,6 +1505,34 @@ class ConnectorRuntimeTrustGrantModel(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
+class ConnectorSecretBrokerageAuthorizationModel(Base):
+    __tablename__ = "connector_secret_brokerage_authorizations"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_runtime_trust_grant_id",
+            name="uq_connector_secret_brokerage_authorizations_runtime_trust",
+        ),
+        UniqueConstraint(
+            "authorized_by",
+            "idempotency_key",
+            name="uq_connector_secret_brokerage_authorizations_actor_idempotency",
+        ),
+    )
+
+    authorization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source_runtime_trust_grant_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    instance_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    brokerage_profile_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    authorized_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class RuntimeMetadata(Base):
     __tablename__ = "platform_runtime_metadata"
     __table_args__ = (

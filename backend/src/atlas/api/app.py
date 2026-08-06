@@ -65,6 +65,7 @@ from atlas.api.routes import (
     runner_validations,
     runtime_trust_grants,
     schema_semantics_validations,
+    secret_brokerage_authorizations,
     security_export,
     sessions,
     static_dependency_analyses,
@@ -283,6 +284,14 @@ from atlas.modules.connectors.adapters.schema_semantics_validation_memory import
 from atlas.modules.connectors.adapters.schema_semantics_validation_postgres import (
     PostgreSQLPackageSchemaSemanticsValidationRepository,
 )
+from atlas.modules.connectors.adapters.secret_brokerage_memory import (
+    InMemoryConnectorSecretBrokeragePolicySource,
+    InMemoryConnectorSecretBrokerageProfileSource,
+    InMemoryConnectorSecretBrokerageRepository,
+)
+from atlas.modules.connectors.adapters.secret_brokerage_postgres import (
+    PostgreSQLConnectorSecretBrokerageRepository,
+)
 from atlas.modules.connectors.adapters.static_dependency_analysis_memory import (
     InMemoryPackageStaticDependencyAnalysisRepository,
 )
@@ -394,6 +403,10 @@ from atlas.modules.connectors.application.runtime_trust import (
 )
 from atlas.modules.connectors.application.schema_semantics_validation import (
     PackageSchemaSemanticsValidationService,
+)
+from atlas.modules.connectors.application.secret_brokerage import (
+    ConnectorSecretBrokerageService,
+    build_development_connector_secret_brokerage_policy,
 )
 from atlas.modules.connectors.application.static_dependency_analysis import (
     PackageStaticDependencyAnalysisService,
@@ -692,6 +705,7 @@ def create_app(
     configuration_validation_service: ConnectorConfigurationValidationService | None = None,
     capability_enablement_service: ConnectorCapabilityEnablementService | None = None,
     runtime_trust_service: ConnectorRuntimeTrustService | None = None,
+    secret_brokerage_service: ConnectorSecretBrokerageService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -1960,6 +1974,35 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if secret_brokerage_service is not None:
+        resolved_secret_brokerage_service = secret_brokerage_service
+    else:
+        secret_brokerage_repository = (
+            PostgreSQLConnectorSecretBrokerageRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryConnectorSecretBrokerageRepository()
+        )
+        secret_brokerage_policies = (
+            ()
+            if is_production
+            else (
+                build_development_connector_secret_brokerage_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_secret_brokerage_service = ConnectorSecretBrokerageService(
+            repository=secret_brokerage_repository,
+            runtime_trust_source=resolved_runtime_trust_service,
+            credential_source=resolved_credential_assignment_service,
+            profile_source=InMemoryConnectorSecretBrokerageProfileSource(()),
+            policy_source=InMemoryConnectorSecretBrokeragePolicySource(secret_brokerage_policies),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -2165,6 +2208,7 @@ def create_app(
         app.state.configuration_validation_service = resolved_configuration_validation_service
         app.state.capability_enablement_service = resolved_capability_enablement_service
         app.state.runtime_trust_service = resolved_runtime_trust_service
+        app.state.secret_brokerage_service = resolved_secret_brokerage_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -2177,6 +2221,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_secret_brokerage_service.close()
         await resolved_runtime_trust_service.close()
         await resolved_capability_enablement_service.close()
         await resolved_configuration_validation_service.close()
@@ -2289,6 +2334,7 @@ def create_app(
     app.include_router(configuration_validations.router, prefix="/api/v1")
     app.include_router(capability_enablements.router, prefix="/api/v1")
     app.include_router(runtime_trust_grants.router, prefix="/api/v1")
+    app.include_router(secret_brokerage_authorizations.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { ConnectorCapabilityEnablement } from "../../api/capabilityEnablements";
 import { createConnectorRuntimeTrustGrant } from "../../api/runtimeTrustGrants";
+import { SecretBrokeragePanel } from "./SecretBrokeragePanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development": "42157b3d8b23514b4f754a2f0f9f507122c6718289a2ae8986e226287d718d33",
@@ -33,5 +34,6 @@ export function RuntimeTrustPanel({ enablement }: { enablement: ConnectorCapabil
       <button className="primary-button" type="button" disabled={!canSubmit} onClick={() => mutation.mutate({ enablement, profileId, profileDigest, policyId, policyDigest, purpose })}>{mutation.isPending ? <RefreshCw className="spin" size={16} /> : <ShieldCheck size={16} />}Grant runtime trust</button></>}
     {mutation.isError && <div className="workspace-message error-state" role="alert"><AlertTriangle size={20} /><div><h3>Runtime trust unavailable</h3><p>Enablement lineage, signed runtime controls, trust policy, freshness, scope, hardware-backed assurance, or separation failed.</p></div></div>}
     {grant && <div className="package-signing-record"><div className="section-heading"><div><strong>Isolated boundary trusted</strong><code>{grant.grant_id}</code></div><span className="state-badge neutral"><BadgeCheck size={14} />trusted</span></div><div className="mcp-builder-facts"><div><span>Runner</span><strong>not started</strong></div><div><span>Secrets</span><strong>not resolved</strong></div><div><span>Target</span><strong>not connected</strong></div><div><span>State</span><strong>{grant.instance_state}</strong></div></div><p className="muted-copy">The signed runtime boundary is bound and eligible for later secret brokerage. No connector process, package, credential, target connection, capability invocation, execution, deployment, or infrastructure change occurred.</p></div>}
+    {grant && <SecretBrokeragePanel runtimeTrust={grant} />}
   </section>;
 }

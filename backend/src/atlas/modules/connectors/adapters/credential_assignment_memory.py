@@ -33,6 +33,19 @@ class InMemoryConnectorCredentialAssignmentRepository:
             None,
         )
 
+    async def get_by_profile_and_instance(
+        self, *, credential_profile_id: str, instance_id: str
+    ) -> ConnectorCredentialAssignmentRecord | None:
+        return next(
+            (
+                item
+                for item in self._records.values()
+                if item.credential_profile_id == credential_profile_id
+                and item.instance_id == instance_id
+            ),
+            None,
+        )
+
     async def get_by_create_key(
         self, *, assigned_by: str, idempotency_key: str
     ) -> ConnectorCredentialAssignmentRecord | None:
