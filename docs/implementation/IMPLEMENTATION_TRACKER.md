@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-084 |
 | Title | Governed bounded connector capability invocation foundation |
-| Status | Ready for PR |
+| Status | In Review |
 | Branch | `agent/governed-bounded-connector-invocation` |
-| Pull Request | Not opened |
+| Pull Request | [#96](https://github.com/ozdemirumit/Project_Atlas/pull/96) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-040 |
 | Last Updated | 2026-08-06 |
-| Next Action | Publish the validated IMP-084 implementation for review and complete CI |
+| Next Action | Complete PR #96 CI, merge, and verify the resulting `main` revision |
 
 ### ATLAS-IMP-084 Scope Rationale
 
