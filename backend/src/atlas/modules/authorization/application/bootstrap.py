@@ -123,6 +123,9 @@ CONNECTOR_PACKAGE_LAB_SELF_TEST_CREATE = "connectors.package-lab-self-tests.crea
 CONNECTOR_PACKAGE_LAB_SELF_TEST_READ = "connectors.package-lab-self-tests.read"
 CONNECTOR_PACKAGE_FINAL_VALIDATION_CREATE = "connectors.package-final-validations.create"
 CONNECTOR_PACKAGE_FINAL_VALIDATION_READ = "connectors.package-final-validations.read"
+CONNECTOR_PACKAGE_APPROVAL_CREATE = "connectors.package-approval-requests.create"
+CONNECTOR_PACKAGE_APPROVAL_READ = "connectors.package-approval-requests.read"
+CONNECTOR_PACKAGE_APPROVAL_DECIDE = "connectors.package-approval-requests.decide"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -602,6 +605,19 @@ def connector_package_final_validation_scope(
         site_id="site.local",
         domain_id="domain.connectors",
         resource_id="resource.connector.package-final-validations",
+        capability_class=capability_class,
+    )
+
+
+def connector_package_approval_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.connectors",
+        resource_id="resource.connector.package-approval-requests",
         capability_class=capability_class,
     )
 
@@ -1119,6 +1135,18 @@ def build_development_authorization_service(
             permission_id=CONNECTOR_PACKAGE_FINAL_VALIDATION_READ,
             description="Read one immutable connector package final-validation report.",
         ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_PACKAGE_APPROVAL_CREATE,
+            description="Create one exact-final-validation connector approval request.",
+        ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_PACKAGE_APPROVAL_READ,
+            description="Read one immutable connector package approval record.",
+        ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_PACKAGE_APPROVAL_DECIDE,
+            description="Record one separated human connector package approval decision.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -1210,6 +1238,9 @@ def build_development_authorization_service(
                 CONNECTOR_PACKAGE_LAB_SELF_TEST_READ,
                 CONNECTOR_PACKAGE_FINAL_VALIDATION_CREATE,
                 CONNECTOR_PACKAGE_FINAL_VALIDATION_READ,
+                CONNECTOR_PACKAGE_APPROVAL_CREATE,
+                CONNECTOR_PACKAGE_APPROVAL_READ,
+                CONNECTOR_PACKAGE_APPROVAL_DECIDE,
             }
         ),
     )
@@ -1897,6 +1928,42 @@ def build_development_authorization_service(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-package-approval-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_package_approval_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-package-approval-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_package_approval_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-package-approval-decide",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_package_approval_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),

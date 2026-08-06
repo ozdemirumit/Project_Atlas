@@ -113,6 +113,7 @@ import {
 } from "./api/approvals";
 import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
+import { PackageApprovalPanel } from "./features/connectors/PackageApprovalPanel";
 import {
   acquireConnectorPackage,
   analyzeConnectorPackageLicenses,
@@ -8119,6 +8120,19 @@ export function App() {
                                                                   </div>
                                                                 </div>
                                                               )}
+                                                              {builderFinalValidationMutation.data?.data &&
+                                                                identity && (
+                                                                  <PackageApprovalPanel
+                                                                    key={
+                                                                      builderFinalValidationMutation.data.data
+                                                                        .validation_id
+                                                                    }
+                                                                    source={
+                                                                      builderFinalValidationMutation.data.data
+                                                                    }
+                                                                    subjectId={identity.subject_id}
+                                                                  />
+                                                                )}
                                                               {builderPackageInventoryMutation.data?.data
                                                                 .outcome === "passed" &&
                                                                 !builderContentPolicyScanSeparated &&

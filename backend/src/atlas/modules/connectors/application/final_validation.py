@@ -385,6 +385,35 @@ class PackageFinalValidationService:
         )
         return validation
 
+    async def approval_source(
+        self, *, validation_id: str
+    ) -> tuple[ConnectorPackageFinalValidation, frozenset[str]]:
+        """Resolve and re-verify approval lineage without exposing actor identities via HTTP."""
+        validation = await self._repository.get_by_id(validation_id=validation_id)
+        if validation is None:
+            raise PackageFinalValidationError("package_final_not_found")
+        self._verify_validation(validation)
+        lab = await self._lab_source.get_by_id(self_test_id=validation.source_lab_self_test_id)
+        if lab is None:
+            raise PackageFinalValidationError("package_final_lineage_incomplete")
+        sources = await self._load_sources(lab)
+        self._verify_sources(sources)
+        self._verify_bindings(sources)
+        policy = await self._policy_source.get_by_id(policy_id=validation.policy_id)
+        if policy is None:
+            raise PackageFinalValidationError("package_final_policy_not_found")
+        self._verify_policy(policy)
+        if (
+            validation.source_lab_self_test_digest != lab.canonical_digest
+            or validation.package_digest != lab.package_digest
+            or validation.policy_digest != policy.canonical_digest
+            or validation.source_actor_set_digest
+            != self._digest(sorted(self._source_actors(sources)))
+        ):
+            raise PackageFinalValidationError("package_final_source_integrity_failed")
+        forbidden = self._source_actors(sources) | {validation.validated_by, policy.signed_by}
+        return validation, frozenset(forbidden)
+
     async def close(self) -> None:
         await self._repository.close()
 
