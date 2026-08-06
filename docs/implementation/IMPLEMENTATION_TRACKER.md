@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-087 |
 | Title | Governed operational knowledge-draft review-request foundation |
-| Status | CI In Progress |
-| Branch | `agent/governed-knowledge-draft-review` |
+| Status | Completed |
+| Branch | `main` |
 | Pull Request | [#99](https://github.com/ozdemirumit/Project_Atlas/pull/99) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-043 |
 | Last Updated | 2026-08-06 |
-| Next Action | Pass PR #99 CI, mark ready, merge, and verify main |
+| Next Action | Select the next approved implementation slice |
 
 ### ATLAS-IMP-087 Scope Rationale
 
@@ -49,6 +49,8 @@
 
 ### ATLAS-IMP-087 Validation Evidence
 
+- PR #99 passed backend and frontend CI, merged to `main` as `c9bf4a3`, and the merged-main
+  Continuous Integration run `31109644211` passed (backend 1m33s, frontend 3m35s).
 - ADR-043 is accepted. The service revalidates the exact immutable ADR-042 draft, complete
   connector/evidence lineage, signed orchestration policy, inherited governance, hardware MFA,
   C3 request plus draft-read permissions, exact tenant scope, and absence of later authority before
