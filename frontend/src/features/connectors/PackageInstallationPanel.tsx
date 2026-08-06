@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { createConnectorPackageInstallation } from "../../api/packageInstallations";
 import type { ConnectorPackageRegistrationRecord } from "../../api/packageRegistrations";
+import { ConnectorInstanceCreationPanel } from "./ConnectorInstanceCreationPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -124,6 +125,7 @@ export function PackageInstallationPanel({
             The exact package is in non-executable installation custody. Instance creation, target
             and credential binding, enablement, runtime trust, and execution remain separate.
           </p>
+          <ConnectorInstanceCreationPanel installation={receipt} />
         </div>
       )}
     </section>

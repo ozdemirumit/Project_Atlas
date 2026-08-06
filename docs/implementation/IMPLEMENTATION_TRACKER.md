@@ -4,14 +4,68 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-073 |
-| Title | Governed connector package installation foundation |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#85](https://github.com/ozdemirumit/Project_Atlas/pull/85) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-029 |
+| Task ID | ATLAS-IMP-074 |
+| Title | Governed connector instance creation foundation |
+| Status | In Progress |
+| Branch | `agent/governed-connector-instance-creation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-030 |
 | Last Updated | 2026-08-06 |
-| Next Action | Define ATLAS-IMP-074 governed connector instance creation foundation |
+| Next Action | Publish ATLAS-IMP-074, pass GitHub CI, merge, and close the implementation record |
+
+### ATLAS-IMP-074 Scope Rationale
+
+- IMP-073 installs one exact package and grants only eligibility for later instance governance.
+- ADR-030 creates an independently governed instance identity in `disabled_unconfigured` state,
+  with exact installation lineage, accountable ownership, and no sensitive configuration.
+- Target/endpoint configuration, trust and credential binding, capability enablement, health tests,
+  runtime trust, execution, deployment, and infrastructure mutation remain later separate stages.
+
+### ATLAS-IMP-074 Acceptance Criteria
+
+- Only a dedicated exact-tenant MFA human may request creation using exact installation receipt and
+  digest, package digest, bounded instance key/display name, signed policy ID/digest, purpose,
+  acknowledgement, idempotency, and correlation. Caller-selected IDs, state, target, endpoint,
+  secret, capability, runtime, command, or deployment fields fail validation.
+- The service independently reloads and verifies the current immutable installation receipt,
+  complete upstream lineage, exact identities/digests, policy integrity/freshness, instance
+  eligibility, installation/store binding, and no-later-authority state.
+- Immutable signed policy fixes source age/schema, assurance, installation/store/artifact profiles,
+  SDK/class bounds, disabled-unconfigured state, support group, naming bounds, separation, and record
+  schema. Customer configuration cannot weaken platform controls.
+- The creator is distinct from every upstream human, policy, publisher, workload, installer, and
+  custody actor. AI/service/shared/wrong-scope identities fail closed without discovery.
+- Required intent and completion audits succeed before persistence and expose no package/store
+  reference, installer/custodian identity, raw manifest, bytes, signature, key, target, or secret.
+- Records are immutable, deterministic, idempotent, concurrency-safe, allow multiple distinct
+  instances per installation, and are equivalent in memory/PostgreSQL. Tenant-key collisions fail.
+- A valid record sets only instance creation and configuration-governance eligibility in
+  `disabled_unconfigured` state. It grants no target, credential, capability, enablement, runtime,
+  execution, deployment, or infrastructure mutation authority.
+- Strict no-store create/read APIs, dedicated RBAC, CSRF, exact scope, MFA, bounded schemas, safe
+  errors, minimized web evidence, backend/frontend tests, one Alembic head, live desktop/mobile
+  inspection, browser logs, and GitHub CI apply.
+
+### ATLAS-IMP-074 Validation Evidence
+
+- ADR-030 is accepted. Exact current installation and complete upstream-lineage reverification,
+  signed policy enforcement, deterministic disabled instance identity, two-stage required audit,
+  immutable records, default-deny API/RBAC, memory/PostgreSQL persistence, and migration now create
+  only a `disabled_unconfigured` instance eligible for later configuration governance.
+- Six focused backend tests cover instance-only authority, multiple instances per installation,
+  deterministic idempotency, scope-key collision, complete actor separation, exact source/store
+  binding, hardware-backed assurance, audit-before-persist, PostgreSQL round-trip, CSRF, no-store,
+  extra-field rejection, and response minimization.
+- Backend formatting and Ruff checks passed across 596 files; strict mypy passed across 596 source
+  and test files; the full suite passed with 590 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0046` head for immutable connector instance records.
+- Frontend ESLint and TypeScript checks passed with the CI-equivalent 6 GB Node heap; all 43 Vitest
+  tests passed and the production Vite build completed. The panel accepts no caller-selected
+  instance ID/state, endpoint, target, secret, credential, capability, proxy, network route,
+  schedule, runtime, command, enablement, execution, or deployment input/control.
+- A clean live local page at `http://localhost:5202/` was inspected at 1280 x 720 and 390 x 844.
+  Both views had no horizontal overflow and no browser errors or warnings; the real login boundary
+  remained fail-closed.
 
 ### ATLAS-IMP-073 Scope Rationale
 

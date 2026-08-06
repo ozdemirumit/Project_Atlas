@@ -136,6 +136,8 @@ CONNECTOR_PACKAGE_REGISTRATION_CREATE = "connectors.package-registration-records
 CONNECTOR_PACKAGE_REGISTRATION_READ = "connectors.package-registration-records.read"
 CONNECTOR_PACKAGE_INSTALLATION_CREATE = "connectors.package-installation-receipts.create"
 CONNECTOR_PACKAGE_INSTALLATION_READ = "connectors.package-installation-receipts.read"
+CONNECTOR_INSTANCE_CREATE = "connectors.instances.create"
+CONNECTOR_INSTANCE_READ = "connectors.instances.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -693,6 +695,19 @@ def connector_package_installation_scope(
         site_id="site.local",
         domain_id="domain.connectors",
         resource_id="resource.connector.package-installation-receipts",
+        capability_class=capability_class,
+    )
+
+
+def connector_instance_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.connectors",
+        resource_id="resource.connector.instances",
         capability_class=capability_class,
     )
 
@@ -1262,6 +1277,14 @@ def build_development_authorization_service(
             permission_id=CONNECTOR_PACKAGE_INSTALLATION_READ,
             description="Read one immutable minimized connector package installation receipt.",
         ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_INSTANCE_CREATE,
+            description="Create one disabled unconfigured connector instance identity.",
+        ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_INSTANCE_READ,
+            description="Read one immutable minimized connector instance record.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -1366,6 +1389,8 @@ def build_development_authorization_service(
                 CONNECTOR_PACKAGE_REGISTRATION_READ,
                 CONNECTOR_PACKAGE_INSTALLATION_CREATE,
                 CONNECTOR_PACKAGE_INSTALLATION_READ,
+                CONNECTOR_INSTANCE_CREATE,
+                CONNECTOR_INSTANCE_READ,
             }
         ),
     )
@@ -2206,6 +2231,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=connector_package_installation_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-instance-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_instance_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C3_CONTROLLED_CHANGE,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-instance-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_instance_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,

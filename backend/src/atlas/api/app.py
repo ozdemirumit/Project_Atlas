@@ -41,6 +41,7 @@ from atlas.api.routes import (
     health_checks,
     identity,
     identity_governance,
+    instance_creation,
     investigations,
     lab_self_tests,
     license_analyses,
@@ -144,6 +145,13 @@ from atlas.modules.connectors.adapters.final_validation_memory import (
 )
 from atlas.modules.connectors.adapters.final_validation_postgres import (
     PostgreSQLPackageFinalValidationRepository,
+)
+from atlas.modules.connectors.adapters.instance_creation_memory import (
+    InMemoryConnectorInstanceCreationPolicySource,
+    InMemoryConnectorInstanceRepository,
+)
+from atlas.modules.connectors.adapters.instance_creation_postgres import (
+    PostgreSQLConnectorInstanceRepository,
 )
 from atlas.modules.connectors.adapters.lab_mock_target import MockTargetConnectorLabRunner
 from atlas.modules.connectors.adapters.lab_self_test_memory import (
@@ -274,6 +282,10 @@ from atlas.modules.connectors.application.contract_validation import (
 from atlas.modules.connectors.application.final_validation import (
     PackageFinalValidationService,
     build_development_final_validation_policy,
+)
+from atlas.modules.connectors.application.instance_creation import (
+    ConnectorInstanceCreationService,
+    build_development_connector_instance_creation_policy,
 )
 from atlas.modules.connectors.application.lab_self_test import (
     PackageLabSelfTestService,
@@ -607,6 +619,7 @@ def create_app(
     registry_publication_service: RegistryPublicationService | None = None,
     package_registration_service: PackageRegistrationService | None = None,
     package_installation_service: PackageInstallationService | None = None,
+    connector_instance_creation_service: ConnectorInstanceCreationService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -1670,6 +1683,35 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if connector_instance_creation_service is not None:
+        resolved_connector_instance_creation_service = connector_instance_creation_service
+    else:
+        connector_instance_repository = (
+            PostgreSQLConnectorInstanceRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryConnectorInstanceRepository()
+        )
+        development_connector_instance_policies = (
+            ()
+            if is_production
+            else (
+                build_development_connector_instance_creation_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_connector_instance_creation_service = ConnectorInstanceCreationService(
+            repository=connector_instance_repository,
+            installation_source=resolved_package_installation_service,
+            policy_source=InMemoryConnectorInstanceCreationPolicySource(
+                development_connector_instance_policies
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -1869,6 +1911,7 @@ def create_app(
         app.state.registry_publication_service = resolved_registry_publication_service
         app.state.package_registration_service = resolved_package_registration_service
         app.state.package_installation_service = resolved_package_installation_service
+        app.state.connector_instance_creation_service = resolved_connector_instance_creation_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -1881,6 +1924,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_connector_instance_creation_service.close()
         await resolved_package_installation_service.close()
         await resolved_package_registration_service.close()
         await resolved_registry_publication_service.close()
@@ -1981,6 +2025,7 @@ def create_app(
     app.include_router(registry_publications.router, prefix="/api/v1")
     app.include_router(package_registrations.router, prefix="/api/v1")
     app.include_router(package_installations.router, prefix="/api/v1")
+    app.include_router(instance_creation.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
