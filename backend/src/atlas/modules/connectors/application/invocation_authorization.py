@@ -295,6 +295,70 @@ class ConnectorInvocationAuthorizationService:
         )
         return record
 
+    async def bounded_invocation_source(
+        self, *, authorization_id: str
+    ) -> tuple[ConnectorInvocationAuthorizationRecord, frozenset[str]]:
+        record = await self._repository.get(authorization_id=authorization_id)
+        if record is None:
+            raise ConnectorInvocationAuthorizationError("invocation_authorization_record_not_found")
+        self._verify_record(record)
+        try:
+            (
+                source,
+                enablement,
+                source_actors,
+            ) = await self._source.capability_invocation_authorization_source(
+                verification_id=record.source_target_session_verification_id
+            )
+        except ConnectorTargetSessionError as error:
+            raise ConnectorInvocationAuthorizationError(
+                "invocation_authorization_source_not_found"
+            ) from error
+        profile = await self._profile_source.get_by_id(profile_id=record.invocation_profile_id)
+        envelope = await self._envelope_source.get_by_id(envelope_id=record.input_envelope_id)
+        policy = await self._policy_source.get_by_id(policy_id=record.authorization_policy_id)
+        if profile is None or envelope is None or policy is None:
+            raise ConnectorInvocationAuthorizationError(
+                "invocation_authorization_evidence_not_found"
+            )
+        self._verify_snapshot(profile, "profile")
+        self._verify_snapshot(envelope, "envelope")
+        self._verify_snapshot(policy, "policy")
+        capability = self._capability(enablement, record.capability_id)
+        if (
+            source.canonical_digest != record.source_target_session_digest
+            or source.package_digest != record.package_digest
+            or source.instance_id != record.instance_id
+            or capability.capability_class != record.capability_class
+            or capability.required_permission != record.required_permission
+            or profile.canonical_digest != record.invocation_profile_digest
+            or envelope.canonical_digest != record.input_envelope_digest
+            or policy.canonical_digest != record.authorization_policy_digest
+            or record.instance_state != ENABLED_CAPABILITY_INVOCATION_GOVERNED
+            or not record.capability_invocation_authorized
+            or not record.eligible_for_bounded_capability_invocation
+            or not record.single_use
+            or record.renewable
+            or record.consumed
+            or record.target_connected
+            or record.capability_invoked
+            or record.scheduled
+            or record.result_received
+            or record.evidence_ingested
+            or record.execution_authorized
+            or record.deployment_approved
+            or record.infrastructure_mutation_performed
+        ):
+            raise ConnectorInvocationAuthorizationError("invocation_authorization_invalid")
+        return record, source_actors | {
+            source.verified_by,
+            enablement.enabled_by,
+            record.authorized_by,
+            profile.signed_by,
+            envelope.signed_by,
+            policy.signed_by,
+        }
+
     async def close(self) -> None:
         await self._repository.close()
 

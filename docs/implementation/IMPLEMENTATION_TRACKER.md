@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-084 |
 | Title | Governed bounded connector capability invocation foundation |
-| Status | In Progress |
+| Status | Ready for PR |
 | Branch | `agent/governed-bounded-connector-invocation` |
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-040 |
 | Last Updated | 2026-08-06 |
-| Next Action | Implement the ADR-040 domain, atomic consumption, adapter, persistence, API, UI, and validation slice |
+| Next Action | Publish the validated IMP-084 implementation for review and complete CI |
 
 ### ATLAS-IMP-084 Scope Rationale
 
@@ -46,6 +46,30 @@
 - Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC plus exact
   capability permission, CSRF, safe errors, focused failure/uncertainty/concurrency tests, minimized
   web evidence, full backend/frontend suites, live desktop/mobile inspection, and GitHub CI apply.
+
+### ATLAS-IMP-084 Validation Evidence
+
+- ADR-040 is accepted. The service revalidates the complete single-use authorization lineage,
+  signed invocation policy, C0/C1 capability permission, freshness, scope, actor separation, and
+  no-later-authority state before atomically creating an immutable consumption claim.
+- Seven focused backend tests cover exact idempotency, a concurrent second-claim race, actor
+  separation, exact permission denial before consumption, uncertain and invalid receipts,
+  audit failure after consumption, PostgreSQL round-trip, CSRF, forbidden controls, no-store, and
+  minimized responses. Every post-claim failure remains permanently consumed without retry.
+- The trusted adapter resolves all operational inputs internally, invokes the exact synthetic
+  read-only handler once, validates and redacts its bounded receipt, and proves target-session,
+  delivery-channel, and lease cleanup. Production remains fail-closed without a trusted adapter.
+- Backend Ruff checks passed; strict mypy passed across 680 source and test files; the full suite
+  passed with 648 tests and three expected Windows symlink skips. Alembic reports one
+  `20260806_0056` head for immutable consumption claims and bounded invocation records.
+- Frontend ESLint and TypeScript checks passed with the CI-equivalent 6 GB Node heap; all 53 Vitest
+  tests passed and the production Vite build completed. The UI accepts no target, transport,
+  credential, secret, broker, lease/session, capability, handler, input, command, timeout, output,
+  schedule, execution, deployment, or infrastructure-mutation controls.
+- The restarted backend at `http://127.0.0.1:8052/` reported `alive` and exposed both bounded
+  invocation API operations. The authenticated application at `http://127.0.0.1:5208/` loaded the
+  Atlas and Connectors workspace at 1280 x 720 and 390 x 844; automated measurements found no
+  horizontal overflow at either size and the desktop viewport was restored.
 
 ### ATLAS-IMP-083 Scope Rationale
 
