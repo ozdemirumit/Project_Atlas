@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-071 |
 | Title | Governed connector internal registry publication foundation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/connector-registry-publication` |
-| Pull Request | Not opened |
+| Pull Request | [#83](https://github.com/ozdemirumit/Project_Atlas/pull/83) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-027 |
 | Last Updated | 2026-08-06 |
-| Next Action | Open the implementation pull request and complete GitHub CI, merge, and `main` synchronization |
+| Next Action | Complete PR #83 CI, merge, and post-merge `main` synchronization |
 
 ### ATLAS-IMP-071 Scope Rationale
 
@@ -68,7 +68,8 @@
 - A clean live local page at `http://localhost:5202/` was inspected at 1280 x 720 and 390 x 844.
   Both views had no horizontal overflow and no browser errors or warnings; the real login boundary
   remained fail-closed.
-- GitHub PR, CI, merge, and post-merge `main` evidence are pending.
+- [PR #83](https://github.com/ozdemirumit/Project_Atlas/pull/83) is open; CI, merge, and post-merge
+  `main` evidence are pending.
 
 ### ATLAS-IMP-070 Scope Rationale
 
