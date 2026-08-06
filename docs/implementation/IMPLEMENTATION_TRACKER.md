@@ -4,14 +4,47 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-082 |
-| Title | Governed connector target-session authorization and bounded connectivity evidence foundation |
-| Status | Done |
-| Branch | `agent/governed-connector-target-session` |
-| Pull Request | [#94](https://github.com/ozdemirumit/Project_Atlas/pull/94) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-038 |
+| Task ID | ATLAS-IMP-083 |
+| Title | Governed connector capability-invocation authorization foundation |
+| Status | In Progress |
+| Branch | `agent/governed-connector-invocation-authorization` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-039 |
 | Last Updated | 2026-08-06 |
-| Next Action | Select and define ATLAS-IMP-083 from the approved connector lifecycle |
+| Next Action | Implement the ADR-039 domain, persistence, API, UI, and validation slice |
+
+### ATLAS-IMP-083 Scope Rationale
+
+- IMP-082 proves one exact bounded read-only target session and closes every ephemeral session,
+  delivery channel, and lease without invoking a connector capability.
+- ADR-039 authorizes only one short-lived, single-use future C0/C1 invocation bound to the exact
+  target-session evidence, enabled capability, signed profile, and signed typed-input envelope.
+- Atomic consumption, target access, handler invocation, scheduling, result validation and
+  ingestion, execution, deployment, and infrastructure mutation remain later independent stages.
+
+### ATLAS-IMP-083 Acceptance Criteria
+
+- Only a dedicated exact-tenant hardware-MFA human with generic C3 record permission and the exact
+  capability's required permission may request authorization using exact target-session ID/digest,
+  package digest, capability ID, profile ID/digest, input-envelope ID/digest, policy ID/digest,
+  purpose, acknowledgement, idempotency, and correlation. Caller-selected target, transport,
+  credential, secret, lease/session, raw parameter, command, output, schedule, execution, or
+  deployment fields fail.
+- The service revalidates complete lifecycle lineage, exact signed profile/envelope/policy,
+  capability enablement and C0/C1 class, capability-specific permission, target identity, package,
+  instance, schemas, scope, freshness, actor separation, and no-later-authority state without
+  invoking an adapter or opening a target session.
+- A valid immutable record is short-lived, single-use, non-renewable, initially unconsumed, bound to
+  one exact input-envelope digest, and sets only invocation authorization and bounded-invocation
+  eligibility in `enabled_capability_invocation_governed` state. Invocation, scheduling, results,
+  evidence ingestion, execution, deployment, and infrastructure mutation remain false.
+- Required intent and completion audit precede immutable persistence. API, application,
+  persistence, audit, logs, and web output exclude raw input, target coordinates, credential and
+  secret identities, lease/session identity, invocation tokens, commands, output, signatures,
+  request fingerprints, and mutable runtime data.
+- Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC plus exact
+  capability permission, CSRF, safe errors, minimized web evidence, backend/frontend tests, live
+  desktop/mobile inspection, and GitHub CI apply.
 
 ### ATLAS-IMP-082 Scope Rationale
 
