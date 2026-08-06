@@ -6,12 +6,65 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-081 |
 | Title | Governed connector runtime activation and health-evidence foundation |
-| Status | Planned |
-| Branch | `main` |
-| Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-036 |
+| Status | Review |
+| Branch | `agent/governed-connector-runtime-activation` |
+| Pull Request | [#93](https://github.com/ozdemirumit/Project_Atlas/pull/93) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-037 |
 | Last Updated | 2026-08-06 |
-| Next Action | Accept ADR-037, define the activation boundary, and implement ATLAS-IMP-081 |
+| Next Action | Complete PR #93 CI, merge, merged-main CI, and closure evidence |
+
+### ATLAS-IMP-081 Scope Rationale
+
+- IMP-080 authorizes one exact workload-bound, single-use, memory-only brokerage path without
+  issuing a lease, resolving credentials, starting a runner, or loading a package.
+- ADR-037 activates only the exact signed isolated runtime, delivers secrets solely inside the
+  trusted broker-to-runtime boundary, and produces bounded signed local health evidence.
+- Target sessions, vendor calls, scheduling, capability invocation, deployment, and infrastructure
+  mutation remain later independent stages.
+
+### ATLAS-IMP-081 Acceptance Criteria
+
+- Only a dedicated exact-tenant hardware-MFA human may request activation using exact brokerage
+  authorization ID/digest, package digest, activation-profile ID/digest, policy ID/digest, purpose,
+  acknowledgement, idempotency, and correlation. Caller-selected credential, secret, store, broker,
+  lease, workload, runner, image, environment, health command, target, network, capability, command,
+  execution, or deployment fields fail.
+- The service revalidates complete lifecycle lineage, exact signed profile/policy, credential
+  rotation/revocation, runtime/workload/package parity, immutable controls, local-only health probe,
+  scope, freshness, actor separation, and no-later-authority state before invoking a narrow trusted
+  activation adapter.
+- The adapter returns signed minimized evidence only; API/application/persistence/audit never receive
+  secret material, lease handles, process output, raw health output, target coordinates, or mutable
+  runner internals. Production fails closed without a trusted adapter; development is synthetic.
+- Required intent audit precedes activation and completion audit precedes immutable persistence.
+  Failure or uncertain outcome grants no later authority and requires adapter compensation or
+  quarantine.
+- A valid record sets only lease-delivery evidence, credential resolution inside runtime, runner and
+  package activation, local runtime health, and target-session eligibility in
+  `enabled_runtime_healthy` state. Target connection/authorization, invocation, execution,
+  deployment, and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC, CSRF, safe errors,
+  minimized web evidence, backend/frontend tests, live desktop/mobile inspection, and GitHub CI apply.
+
+### ATLAS-IMP-081 Validation Evidence
+
+- ADR-037 is accepted. The application revalidates exact secret-brokerage and complete upstream
+  lineage before invoking a narrow activation adapter. Production fails closed without an adapter;
+  the development adapter is deterministic and synthetic and performs no secret-store, process,
+  filesystem, network, target, capability, deployment, or infrastructure operation.
+- Five focused backend tests cover activation-only authority, deterministic idempotency, actor
+  separation, altered signed controls, completion-audit compensation before persistence,
+  PostgreSQL round-trip, CSRF, forbidden caller controls, no-store, and minimized responses.
+- Backend formatting and Ruff checks passed across 707 files; strict mypy passed across 653 source
+  and test files; the full suite passed with 631 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0053` head for immutable connector runtime activations.
+- Frontend ESLint and TypeScript checks passed with the CI-equivalent 6 GB Node heap; all 50 Vitest
+  tests passed and the production Vite build completed. The panel cannot select secret, broker,
+  lease, workload, runner, image, environment, health command, target, network, command, execution,
+  deployment, or mutation controls.
+- The authenticated local application at `http://127.0.0.1:5208/` loaded at 1280 x 720 and 390 x
+  844. Automated measurements found no horizontal overflow and confirmed the Atlas and Connectors
+  interface tree at both sizes; the temporary viewport override was reset.
 
 ### ATLAS-IMP-080 Scope Rationale
 

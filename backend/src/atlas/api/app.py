@@ -63,6 +63,7 @@ from atlas.api.routes import (
     release_preflight,
     reports,
     runner_validations,
+    runtime_activations,
     runtime_trust_grants,
     schema_semantics_validations,
     secret_brokerage_authorizations,
@@ -270,6 +271,18 @@ from atlas.modules.connectors.adapters.runner_validation_memory import (
 from atlas.modules.connectors.adapters.runner_validation_postgres import (
     PostgreSQLPackageRunnerValidationRepository,
 )
+from atlas.modules.connectors.adapters.runtime_activation_memory import (
+    InMemoryConnectorRuntimeActivationPolicySource,
+    InMemoryConnectorRuntimeActivationProfileSource,
+    InMemoryConnectorRuntimeActivationRepository,
+)
+from atlas.modules.connectors.adapters.runtime_activation_postgres import (
+    PostgreSQLConnectorRuntimeActivationRepository,
+)
+from atlas.modules.connectors.adapters.runtime_activation_synthetic import (
+    SyntheticConnectorRuntimeActivator,
+    UnavailableConnectorRuntimeActivator,
+)
 from atlas.modules.connectors.adapters.runtime_trust_memory import (
     InMemoryConnectorRuntimeTrustPolicySource,
     InMemoryConnectorRuntimeTrustProfileSource,
@@ -397,6 +410,10 @@ from atlas.modules.connectors.application.registry_publication_ports import (
     InternalRegistryPublisher,
 )
 from atlas.modules.connectors.application.runner_validation import PackageRunnerValidationService
+from atlas.modules.connectors.application.runtime_activation import (
+    ConnectorRuntimeActivationService,
+    build_development_connector_runtime_activation_policy,
+)
 from atlas.modules.connectors.application.runtime_trust import (
     ConnectorRuntimeTrustService,
     build_development_connector_runtime_trust_policy,
@@ -706,6 +723,7 @@ def create_app(
     capability_enablement_service: ConnectorCapabilityEnablementService | None = None,
     runtime_trust_service: ConnectorRuntimeTrustService | None = None,
     secret_brokerage_service: ConnectorSecretBrokerageService | None = None,
+    runtime_activation_service: ConnectorRuntimeActivationService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -2003,6 +2021,41 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if runtime_activation_service is not None:
+        resolved_runtime_activation_service = runtime_activation_service
+    else:
+        runtime_activation_repository = (
+            PostgreSQLConnectorRuntimeActivationRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryConnectorRuntimeActivationRepository()
+        )
+        runtime_activation_policies = (
+            ()
+            if is_production
+            else (
+                build_development_connector_runtime_activation_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_runtime_activation_service = ConnectorRuntimeActivationService(
+            repository=runtime_activation_repository,
+            source=resolved_secret_brokerage_service,
+            profile_source=InMemoryConnectorRuntimeActivationProfileSource(()),
+            policy_source=InMemoryConnectorRuntimeActivationPolicySource(
+                runtime_activation_policies
+            ),
+            activator=(
+                UnavailableConnectorRuntimeActivator()
+                if is_production
+                else SyntheticConnectorRuntimeActivator()
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -2209,6 +2262,7 @@ def create_app(
         app.state.capability_enablement_service = resolved_capability_enablement_service
         app.state.runtime_trust_service = resolved_runtime_trust_service
         app.state.secret_brokerage_service = resolved_secret_brokerage_service
+        app.state.runtime_activation_service = resolved_runtime_activation_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -2221,6 +2275,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_runtime_activation_service.close()
         await resolved_secret_brokerage_service.close()
         await resolved_runtime_trust_service.close()
         await resolved_capability_enablement_service.close()
@@ -2335,6 +2390,7 @@ def create_app(
     app.include_router(capability_enablements.router, prefix="/api/v1")
     app.include_router(runtime_trust_grants.router, prefix="/api/v1")
     app.include_router(secret_brokerage_authorizations.router, prefix="/api/v1")
+    app.include_router(runtime_activations.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

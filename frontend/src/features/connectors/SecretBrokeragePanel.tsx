@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { ConnectorRuntimeTrustGrant } from "../../api/runtimeTrustGrants";
 import { createConnectorSecretBrokerageAuthorization } from "../../api/secretBrokerageAuthorizations";
+import { RuntimeActivationPanel } from "./RuntimeActivationPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development": "be0056e233010d40f427b23cd80f6089e52264adf8a503d39c0d130fa85ced59",
@@ -33,5 +34,6 @@ export function SecretBrokeragePanel({ runtimeTrust }: { runtimeTrust: Connector
       <button className="primary-button" type="button" disabled={!canSubmit} onClick={() => mutation.mutate({ runtimeTrust, profileId, profileDigest, policyId, policyDigest, purpose })}>{mutation.isPending ? <RefreshCw className="spin" size={16} /> : <KeyRound size={16} />}Authorize brokerage</button></>}
     {mutation.isError && <div className="workspace-message error-state" role="alert"><AlertTriangle size={20} /><div><h3>Secret brokerage unavailable</h3><p>Runtime lineage, credential posture, signed delivery controls, scope, hardware-backed assurance, or separation failed.</p></div></div>}
     {authorization && <div className="package-signing-record"><div className="section-heading"><div><strong>Future brokerage governed</strong><code>{authorization.authorization_id}</code></div><span className="state-badge neutral"><BadgeCheck size={14} />authorized</span></div><div className="mcp-builder-facts"><div><span>Lease</span><strong>not issued</strong></div><div><span>Secrets</span><strong>not resolved</strong></div><div><span>Runtime</span><strong>not started</strong></div><div><span>State</span><strong>{authorization.instance_state}</strong></div></div><p className="muted-copy">A future isolated runtime may request a fresh single-use lease only after independent revalidation. No secret, lease handle, process, package, target session, invocation, deployment, or infrastructure change exists.</p></div>}
+    {authorization && <RuntimeActivationPanel brokerage={authorization} />}
   </section>;
 }
