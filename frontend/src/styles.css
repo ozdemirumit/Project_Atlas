@@ -8197,7 +8197,8 @@ tbody tr.selected {
 .package-signing-panel,
 .registry-publication-panel,
 .package-registration-panel,
-.package-installation-panel {
+.package-installation-panel,
+.connector-instance-panel {
   display: grid;
   gap: 16px;
   margin-top: 20px;
@@ -8208,7 +8209,8 @@ tbody tr.selected {
 .package-signing-panel > label,
 .registry-publication-panel > label,
 .package-registration-panel > label,
-.package-installation-panel > label {
+.package-installation-panel > label,
+.connector-instance-panel > label {
   display: grid;
   gap: 8px;
 }
@@ -8218,7 +8220,9 @@ tbody tr.selected {
 .package-registration-panel input,
 .package-registration-panel textarea,
 .package-installation-panel input,
-.package-installation-panel textarea {
+.package-installation-panel textarea,
+.connector-instance-panel input,
+.connector-instance-panel textarea {
   width: 100%;
   min-width: 0;
 }
@@ -8228,7 +8232,9 @@ tbody tr.selected {
 .package-registration-panel strong,
 .package-registration-panel code,
 .package-installation-panel strong,
-.package-installation-panel code {
+.package-installation-panel code,
+.connector-instance-panel strong,
+.connector-instance-panel code {
   min-width: 0;
   overflow-wrap: anywhere;
 }

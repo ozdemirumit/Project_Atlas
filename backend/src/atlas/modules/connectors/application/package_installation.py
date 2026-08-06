@@ -289,6 +289,88 @@ class PackageInstallationService:
         )
         return receipt
 
+    async def connector_instance_creation_source(
+        self, *, receipt_id: str
+    ) -> tuple[
+        ConnectorPackageInstallationReceipt,
+        ConnectorPackageInstallationPolicySnapshot,
+        ConnectorPackageRegistrationRecord,
+        frozenset[str],
+    ]:
+        receipt = await self._repository.get(receipt_id=receipt_id)
+        if receipt is None:
+            raise PackageInstallationError("package_installation_receipt_not_found")
+        self._verify_receipt(receipt)
+        try:
+            (
+                registration,
+                _publication,
+                _handoff,
+                source_actors,
+            ) = await self._registration_source.package_installation_source(
+                record_id=receipt.source_registration_record_id
+            )
+        except PackageRegistrationError as error:
+            raise PackageInstallationError("package_installation_source_not_found") from error
+        policy = await self._policy_source.get_by_id(policy_id=receipt.installation_policy_id)
+        if policy is None:
+            raise PackageInstallationError("package_installation_policy_not_found")
+        self._verify_policy(policy)
+        self._verify_result(receipt.installation, registration, policy)
+        if (
+            receipt.source_registration_record_digest != registration.canonical_digest
+            or receipt.source_publication_receipt_id != registration.source_publication_receipt_id
+            or receipt.source_publication_receipt_digest
+            != registration.source_publication_receipt_digest
+            or receipt.source_signing_receipt_id != registration.source_signing_receipt_id
+            or receipt.source_signing_receipt_digest != registration.source_signing_receipt_digest
+            or receipt.source_approval_request_id != registration.source_approval_request_id
+            or receipt.source_approval_request_digest != registration.source_approval_request_digest
+            or receipt.source_final_validation_id != registration.source_final_validation_id
+            or receipt.source_final_validation_digest != registration.source_final_validation_digest
+            or receipt.source_acquisition_id != registration.source_acquisition_id
+            or receipt.source_acquisition_digest != registration.source_acquisition_digest
+            or receipt.organization_id != registration.organization_id
+            or receipt.environment_id != registration.environment_id
+            or receipt.package_digest != registration.package_digest
+            or receipt.package_size_bytes != registration.package_size_bytes
+            or receipt.publisher_id != registration.publisher_id
+            or receipt.connector_id != registration.connector_id
+            or receipt.release_version != registration.release_version
+            or receipt.provenance_digest != registration.provenance_digest
+            or receipt.manifest_digest != registration.manifest.manifest_digest
+            or receipt.sdk_profile != registration.manifest.sdk_profile
+            or receipt.registry_profile_id != registration.registry_profile_id
+            or receipt.registration_policy_id != registration.registration_policy_id
+            or receipt.registration_policy_digest != registration.registration_policy_digest
+            or receipt.installation_policy_digest != policy.canonical_digest
+            or receipt.installation_policy_version != policy.policy_version
+            or not receipt.package_installed
+            or not receipt.eligible_for_instance_governance
+            or receipt.instance_created
+            or receipt.promotion_blocked
+            or any(
+                (
+                    receipt.target_configured,
+                    receipt.credentials_resolved,
+                    receipt.connector_enabled,
+                    receipt.runtime_trust_granted,
+                    receipt.execution_authorized,
+                    receipt.deployment_approved,
+                    receipt.infrastructure_mutation_performed,
+                )
+            )
+        ):
+            raise PackageInstallationError("package_installation_source_binding_invalid")
+        actors = source_actors | {
+            receipt.installed_by,
+            policy.signed_by,
+            policy.reader_workload_id,
+            policy.installer_workload_id,
+            policy.installation_custodian_id,
+        }
+        return receipt, policy, registration, frozenset(actors)
+
     async def close(self) -> None:
         await self._repository.close()
 
