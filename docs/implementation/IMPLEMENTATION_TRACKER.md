@@ -11,7 +11,7 @@
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-024 |
 | Last Updated | 2026-08-06 |
-| Next Action | Implement the accepted package-approval contract and complete local validation |
+| Next Action | Open the implementation PR, pass CI, merge, and record closure evidence |
 
 ### ATLAS-IMP-068 Scope Rationale
 
@@ -52,7 +52,23 @@
 
 ### ATLAS-IMP-068 Validation Evidence
 
-- ADR-024 accepted; implementation is pending.
+- ADR-024 is accepted. Domain, application, API, default-deny authorization, audit,
+  memory/PostgreSQL persistence, migration, and web coverage now bind one exact eligible IMP-067
+  report to one immutable request and at most one immutable terminal human decision.
+- Eight focused backend tests cover approval-only publisher-governance eligibility, all four neutral
+  outcomes, complete actor and policy-signer separation, exact digest/version binding, expiry,
+  audit-before-persist, idempotency, concurrency, PostgreSQL round-trips, CSRF, minimized no-store
+  responses, and the complete no-runtime-authority boundary.
+- Backend formatting and Ruff checks passed across 547 files; strict mypy passed across 546 source
+  and test files; the full suite passed with 557 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0040` head for immutable package approval requests and decisions.
+- Frontend ESLint and TypeScript checks passed with the CI-equivalent 6 GB Node heap; all 37 Vitest
+  tests passed and the production Vite build completed. The dedicated component test verifies
+  neutral no-preselection, exact packet binding, CSRF, rationale, and no-authority request fields.
+- The live local app was reloaded in the in-app browser. Desktop and 390 x 844 mobile checks had no
+  horizontal overflow, and the browser console contained no errors. The final-validation flow keeps
+  later approval controls isolated in the dedicated human approval panel.
+- GitHub PR and CI evidence remain pending.
 
 ### ATLAS-IMP-067 Scope Rationale
 

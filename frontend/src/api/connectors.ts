@@ -1253,6 +1253,92 @@ export type ConnectorPackageFinalValidation = {
   reused: boolean;
 };
 
+export type ConnectorPackageApprovalOutcome =
+  | "approve"
+  | "reject"
+  | "needs_evidence"
+  | "defer";
+
+export type ConnectorPackageApprovalRecord = {
+  request: {
+    request_id: string;
+    schema_version: "atlas.connector-package-approval-request.v1";
+    version: 1;
+    source_final_validation_id: string;
+    source_final_validation_digest: string;
+    source_handoff_id: string;
+    source_project_id: string;
+    source_actor_set_digest: string;
+    organization_id: string;
+    environment_id: string;
+    requested_by: string;
+    purpose: string;
+    approval_policy_id: string;
+    approval_policy_digest: string;
+    approval_policy_version: string;
+    package_digest: string;
+    inventory_digest: string;
+    product_family: string;
+    observed_product_version: string;
+    evidence_digest: string;
+    final_policy_id: string;
+    final_policy_digest: string;
+    final_policy_version: string;
+    stage_count: number;
+    passed_stage_count: number;
+    finding_count: number;
+    limitation_count: number;
+    blocking_risk_count: number;
+    created_at: string;
+    expires_at: string;
+    canonical_digest: string;
+    final_validation_completed: true;
+    connector_approved: false;
+    connector_rejected: false;
+    eligible_for_publisher_governance: false;
+    promotion_blocked: true;
+    reused: boolean;
+  };
+  decision: null | {
+    decision_id: string;
+    schema_version: "atlas.connector-package-approval-decision.v1";
+    version: 1;
+    request_id: string;
+    request_version: 1;
+    request_digest: string;
+    outcome: ConnectorPackageApprovalOutcome;
+    decided_by: string;
+    rationale: string;
+    organization_id: string;
+    environment_id: string;
+    source_final_validation_id: string;
+    source_final_validation_digest: string;
+    package_digest: string;
+    approval_policy_id: string;
+    approval_policy_digest: string;
+    decided_at: string;
+    canonical_digest: string;
+    reused: boolean;
+  };
+  state: "pending" | "approved" | "rejected" | "needs_evidence" | "deferred" | "expired";
+  approval_valid: boolean;
+  connector_approved: boolean;
+  connector_rejected: boolean;
+  eligible_for_publisher_governance: boolean;
+  promotion_blocked: boolean;
+  package_signed: false;
+  publisher_attested: false;
+  connector_registered: false;
+  connector_installed: false;
+  connector_enabled: false;
+  target_configured: false;
+  credentials_resolved: false;
+  runtime_trust_granted: false;
+  execution_authorized: false;
+  deployment_approved: false;
+  infrastructure_mutation_performed: false;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -2746,6 +2832,86 @@ function isSafeFinalValidation(
   );
 }
 
+function isSafePackageApproval(
+  value: unknown,
+): value is { data: ConnectorPackageApprovalRecord } {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  const record = value.data;
+  if (!isRecord(record.request)) return false;
+  const request = record.request;
+  const decision = record.decision;
+  const state = String(record.state);
+  const approved = state === "approved" && record.approval_valid === true;
+  const rejected = state === "rejected";
+  const noAuthority = [
+    record.package_signed,
+    record.publisher_attested,
+    record.connector_registered,
+    record.connector_installed,
+    record.connector_enabled,
+    record.target_configured,
+    record.credentials_resolved,
+    record.runtime_trust_granted,
+    record.execution_authorized,
+    record.deployment_approved,
+    record.infrastructure_mutation_performed,
+  ];
+  const forbidden = [
+    "request_fingerprint",
+    "idempotency_key",
+    "forbidden_actor_ids",
+    "credential_handle",
+    "endpoint",
+    "request_payload",
+    "response_payload",
+  ];
+  return (
+    ["pending", "approved", "rejected", "needs_evidence", "deferred", "expired"].includes(
+      state,
+    ) &&
+    request.schema_version === "atlas.connector-package-approval-request.v1" &&
+    request.version === 1 &&
+    typeof request.request_id === "string" &&
+    typeof request.source_final_validation_id === "string" &&
+    typeof request.source_final_validation_digest === "string" &&
+    request.source_final_validation_digest.length === 64 &&
+    typeof request.package_digest === "string" &&
+    request.package_digest.length === 64 &&
+    typeof request.approval_policy_id === "string" &&
+    typeof request.approval_policy_digest === "string" &&
+    request.approval_policy_digest.length === 64 &&
+    typeof request.requested_by === "string" &&
+    typeof request.purpose === "string" &&
+    typeof request.canonical_digest === "string" &&
+    request.canonical_digest.length === 64 &&
+    request.final_validation_completed === true &&
+    request.connector_approved === false &&
+    request.connector_rejected === false &&
+    request.eligible_for_publisher_governance === false &&
+    request.promotion_blocked === true &&
+    (decision === null ||
+      (isRecord(decision) &&
+        decision.schema_version === "atlas.connector-package-approval-decision.v1" &&
+        decision.version === 1 &&
+        decision.request_id === request.request_id &&
+        decision.request_version === request.version &&
+        decision.request_digest === request.canonical_digest &&
+        ["approve", "reject", "needs_evidence", "defer"].includes(
+          String(decision.outcome),
+        ) &&
+        typeof decision.decided_by === "string" &&
+        typeof decision.rationale === "string" &&
+        typeof decision.canonical_digest === "string" &&
+        decision.canonical_digest.length === 64)) &&
+    record.connector_approved === approved &&
+    record.eligible_for_publisher_governance === approved &&
+    record.connector_rejected === rejected &&
+    record.promotion_blocked === !approved &&
+    noAuthority.every((item) => item === false) &&
+    forbidden.every((field) => !(field in record) && !(field in request))
+  );
+}
+
 function isSafeSchemaSemanticsValidation(
   value: unknown,
 ): value is { data: ConnectorPackageSchemaSemanticsValidation } {
@@ -3686,6 +3852,105 @@ export async function validateConnectorPackageFinal(input: {
     report.policy_digest !== policyDigest
   ) {
     throw new Error("Final-validation report does not match the exact lab evidence and policy");
+  }
+  return payload;
+}
+
+export async function createConnectorPackageApprovalRequest(input: {
+  source: ConnectorPackageFinalValidation;
+  policyId: string;
+  policyDigest: string;
+  purpose: string;
+}) {
+  const { source, policyId, policyDigest, purpose } = input;
+  if (!source.eligible_for_human_approval || source.promotion_blocked) {
+    throw new Error("Only an eligible final-validation report can enter human approval");
+  }
+  if (
+    !/^[a-z][a-z0-9_.:-]{2,127}$/.test(policyId) ||
+    !/^[a-f0-9]{64}$/.test(policyDigest) ||
+    purpose.trim().length < 20
+  ) {
+    throw new Error("A signed approval policy and a bounded purpose are required");
+  }
+  const response = await apiFetch("/api/v1/connectors/package-approval-requests", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "Idempotency-Key": `connector-package-approval.${crypto.randomUUID()}`,
+    },
+    body: JSON.stringify({
+      schema_version: "atlas.connector-package-approval-request-input.v1",
+      source_final_validation_id: source.validation_id,
+      source_final_validation_digest: source.canonical_digest,
+      package_digest: source.package_digest,
+      approval_policy_id: policyId,
+      approval_policy_digest: policyDigest,
+      purpose: purpose.trim(),
+      acknowledged_request_is_not_approval: true,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Connector package approval request failed with ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  if (!isSafePackageApproval(payload)) {
+    throw new Error("Connector registry returned an unsafe approval record");
+  }
+  if (
+    payload.data.request.source_final_validation_id !== source.validation_id ||
+    payload.data.request.source_final_validation_digest !== source.canonical_digest ||
+    payload.data.request.package_digest !== source.package_digest ||
+    payload.data.request.approval_policy_id !== policyId ||
+    payload.data.request.approval_policy_digest !== policyDigest
+  ) {
+    throw new Error("Approval request does not match the exact final-validation packet");
+  }
+  return payload;
+}
+
+export async function decideConnectorPackageApproval(input: {
+  record: ConnectorPackageApprovalRecord;
+  outcome: ConnectorPackageApprovalOutcome;
+  rationale: string;
+}) {
+  const { record, outcome, rationale } = input;
+  if (record.state !== "pending" || record.decision !== null || rationale.trim().length < 20) {
+    throw new Error("A pending exact approval packet and a substantive rationale are required");
+  }
+  const response = await apiFetch(
+    `/api/v1/connectors/package-approval-requests/${encodeURIComponent(record.request.request_id)}/decisions`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": `connector-package-decision.${crypto.randomUUID()}`,
+      },
+      body: JSON.stringify({
+        schema_version: "atlas.connector-package-approval-decision-input.v1",
+        expected_request_version: record.request.version,
+        request_digest: record.request.canonical_digest,
+        outcome,
+        rationale: rationale.trim(),
+        acknowledged_decision_grants_no_runtime_authority: true,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Connector package approval decision failed with ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  if (!isSafePackageApproval(payload)) {
+    throw new Error("Connector registry returned an unsafe approval decision");
+  }
+  if (
+    payload.data.request.request_id !== record.request.request_id ||
+    payload.data.request.canonical_digest !== record.request.canonical_digest ||
+    payload.data.decision?.outcome !== outcome
+  ) {
+    throw new Error("Approval decision does not match the exact pending packet");
   }
   return payload;
 }
