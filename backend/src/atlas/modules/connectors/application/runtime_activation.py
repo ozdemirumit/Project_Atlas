@@ -251,6 +251,52 @@ class ConnectorRuntimeActivationService:
         )
         return record
 
+    async def target_session_source(
+        self, *, activation_id: str
+    ) -> tuple[
+        ConnectorRuntimeActivationRecord,
+        ConnectorSecretBrokerageAuthorizationRecord,
+        ConnectorRuntimeTrustGrantRecord,
+        ConnectorCredentialProfileSnapshot,
+        frozenset[str],
+    ]:
+        record = await self._repository.get(activation_id=activation_id)
+        if record is None:
+            raise ConnectorRuntimeActivationError("runtime_activation_record_not_found")
+        self._verify_record(record)
+        (
+            source,
+            runtime_trust,
+            credential_profile,
+            source_actors,
+        ) = await self._source.runtime_activation_source(
+            authorization_id=record.source_brokerage_authorization_id
+        )
+        if (
+            record.source_brokerage_authorization_digest != source.canonical_digest
+            or record.package_digest != source.package_digest
+            or record.instance_id != source.instance_id
+            or record.runtime_profile_digest != runtime_trust.runtime_profile_digest
+            or record.instance_state != ENABLED_RUNTIME_HEALTHY
+            or not record.runtime_health_verified
+            or not record.eligible_for_target_session_authorization
+            or record.target_connected
+            or record.target_connection_authorized
+            or record.capability_invocation_authorized
+            or record.capability_invoked
+            or record.execution_authorized
+            or record.deployment_approved
+            or record.infrastructure_mutation_performed
+        ):
+            raise ConnectorRuntimeActivationError("runtime_activation_target_session_invalid")
+        return (
+            record,
+            source,
+            runtime_trust,
+            credential_profile,
+            source_actors | {record.activated_by},
+        )
+
     async def close(self) -> None:
         await self._repository.close()
 

@@ -1889,3 +1889,31 @@ class ConnectorRuntimeActivationModel(Base):
     environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class ConnectorTargetSessionVerificationModel(Base):
+    __tablename__ = "connector_target_session_verifications"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_runtime_activation_id",
+            name="uq_connector_target_sessions_runtime_activation",
+        ),
+        UniqueConstraint(
+            "verified_by",
+            "idempotency_key",
+            name="uq_connector_target_sessions_actor_idempotency",
+        ),
+    )
+
+    verification_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source_runtime_activation_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    instance_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    session_profile_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    verified_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

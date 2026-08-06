@@ -152,6 +152,8 @@ CONNECTOR_SECRET_BROKERAGE_CREATE = "connectors.secret-brokerage-authorizations.
 CONNECTOR_SECRET_BROKERAGE_READ = "connectors.secret-brokerage-authorizations.read"
 CONNECTOR_RUNTIME_ACTIVATION_CREATE = "connectors.runtime-activations.create"
 CONNECTOR_RUNTIME_ACTIVATION_READ = "connectors.runtime-activations.read"
+CONNECTOR_TARGET_SESSION_CREATE = "connectors.target-session-verifications.create"
+CONNECTOR_TARGET_SESSION_READ = "connectors.target-session-verifications.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -817,6 +819,19 @@ def connector_runtime_activation_scope(
     )
 
 
+def connector_target_session_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.connectors",
+        resource_id="resource.connector.target-session-verifications",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -1446,6 +1461,14 @@ def build_development_authorization_service(
             permission_id=CONNECTOR_RUNTIME_ACTIVATION_READ,
             description="Read one minimized immutable connector runtime activation.",
         ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_TARGET_SESSION_CREATE,
+            description="Verify one governed bounded connector target session.",
+        ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_TARGET_SESSION_READ,
+            description="Read one minimized immutable target session verification.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -1566,6 +1589,8 @@ def build_development_authorization_service(
                 CONNECTOR_SECRET_BROKERAGE_READ,
                 CONNECTOR_RUNTIME_ACTIVATION_CREATE,
                 CONNECTOR_RUNTIME_ACTIVATION_READ,
+                CONNECTOR_TARGET_SESSION_CREATE,
+                CONNECTOR_TARGET_SESSION_READ,
             }
         ),
     )
@@ -2598,6 +2623,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=connector_runtime_activation_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-target-session-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_target_session_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C3_CONTROLLED_CHANGE,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-target-session-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_target_session_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,
