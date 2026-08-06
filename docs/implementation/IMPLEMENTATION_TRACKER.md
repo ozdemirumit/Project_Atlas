@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-035 |
 | Last Updated | 2026-08-06 |
-| Next Action | Implement ADR-035 backend, web flow, tests, live validation, and delivery gates |
+| Next Action | Publish the validated implementation and complete GitHub delivery gates |
 
 ### ATLAS-IMP-079 Scope Rationale
 
@@ -40,6 +40,25 @@
   connection, capability invocation, execution, deployment, and infrastructure mutation remain false.
 - Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC, CSRF, safe errors,
   minimized web evidence, backend/frontend tests, live desktop/mobile inspection, and GitHub CI apply.
+
+### ATLAS-IMP-079 Validation Evidence
+
+- ADR-035 is accepted. The implementation revalidates complete connector lineage and binds exact
+  signed runner, image, workload identity, isolation, filesystem, egress, secret-delivery,
+  telemetry, and resource controls without starting a runner or loading a package.
+- Six focused backend tests cover trust-only authority, deterministic idempotency, exact signed
+  evidence and actor separation, altered-control rejection, audit-before-persist, PostgreSQL
+  round-trip, CSRF, no-store, forbidden caller controls, and minimized API responses.
+- Backend formatting and Ruff checks passed across 688 files; strict mypy passed across 636 source
+  and test files; the full suite passed with 620 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0051` head for immutable connector runtime-trust grants.
+- Frontend ESLint and TypeScript checks passed with the CI-equivalent 6 GB Node heap; all 48 Vitest
+  tests passed and the production Vite build completed. The runtime-trust panel cannot select
+  runner, image, identity, isolation, network, secret, target, command, execution, or deployment
+  controls.
+- The authenticated local application at `http://127.0.0.1:5208/` loaded successfully at 1280 x
+  720 and 390 x 844. Automated layout measurements found no horizontal overflow at either size;
+  the temporary viewport override was reset after inspection.
 
 ### ATLAS-IMP-078 Scope Rationale
 

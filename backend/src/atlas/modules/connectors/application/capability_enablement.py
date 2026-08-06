@@ -254,6 +254,81 @@ class ConnectorCapabilityEnablementService:
         )
         return record
 
+    async def runtime_trust_source(
+        self, *, enablement_id: str
+    ) -> tuple[
+        ConnectorCapabilityEnablementRecord,
+        ConnectorPackageRegistrationRecord,
+        frozenset[str],
+    ]:
+        record = await self._repository.get(enablement_id=enablement_id)
+        if record is None:
+            raise ConnectorCapabilityEnablementError("capability_enablement_record_not_found")
+        self._verify_record(record)
+        profile = await self._profile_source.get_by_id(profile_id=record.capability_profile_id)
+        policy = await self._policy_source.get_by_id(policy_id=record.enablement_policy_id)
+        if profile is None or policy is None:
+            raise ConnectorCapabilityEnablementError("capability_enablement_source_not_found")
+        self._verify_snapshot(profile, "profile")
+        self._verify_snapshot(policy, "policy")
+        try:
+            (
+                validation,
+                registration,
+                source_actors,
+            ) = await self._validation_source.capability_enablement_source(
+                validation_id=record.source_validation_id
+            )
+        except ConnectorConfigurationValidationError as error:
+            raise ConnectorCapabilityEnablementError(
+                "capability_enablement_source_not_found"
+            ) from error
+        registered = tuple(
+            sorted(
+                (
+                    item.capability_id,
+                    item.capability_class,
+                    item.required_permission,
+                )
+                for item in registration.manifest.capabilities
+            )
+        )
+        selected = tuple(
+            sorted(
+                (
+                    item.capability_id,
+                    item.capability_class,
+                    item.required_permission,
+                )
+                for item in record.capabilities
+            )
+        )
+        now = self._clock()
+        if (
+            record.source_validation_digest != validation.canonical_digest
+            or record.package_digest != registration.package_digest
+            or record.manifest_digest != registration.manifest.manifest_digest
+            or record.capability_profile_digest != profile.canonical_digest
+            or record.enablement_policy_digest != policy.canonical_digest
+            or profile.package_digest != record.package_digest
+            or profile.manifest_digest != record.manifest_digest
+            or profile.instance_id != record.instance_id
+            or selected != registered
+            or record.instance_state != ENABLED_CAPABILITIES_GOVERNED
+            or not record.eligible_for_runtime_trust
+            or not record.connector_enabled
+            or record.runtime_trust_granted
+            or record.credentials_resolved
+            or not profile.issued_at <= now < profile.expires_at
+            or not policy.issued_at <= now < policy.expires_at
+        ):
+            raise ConnectorCapabilityEnablementError("capability_enablement_source_invalid")
+        return (
+            record,
+            registration,
+            frozenset(source_actors | {record.enabled_by, profile.signed_by, policy.signed_by}),
+        )
+
     async def close(self) -> None:
         await self._repository.close()
 
