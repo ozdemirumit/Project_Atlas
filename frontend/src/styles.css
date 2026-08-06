@@ -8170,6 +8170,30 @@ tbody tr.selected {
   border-top: 1px solid #cfdad6;
 }
 
+.publisher-attestation-panel {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.publisher-attestation-panel > label {
+  display: grid;
+  gap: 8px;
+}
+
+.publisher-attestation-record {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.publisher-attestation-record code {
+  max-width: min(100%, 44rem);
+  overflow-wrap: anywhere;
+}
+
 .package-approval-panel > label,
 .package-approval-decision > label {
   display: grid;
