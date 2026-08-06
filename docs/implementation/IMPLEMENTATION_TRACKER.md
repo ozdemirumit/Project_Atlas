@@ -4,14 +4,49 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-085 |
-| Title | Governed connector invocation evidence-ingestion foundation |
-| Status | Completed |
-| Branch | `agent/governed-invocation-evidence-ingestion` |
-| Pull Request | [#97](https://github.com/ozdemirumit/Project_Atlas/pull/97) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-041 |
+| Task ID | ATLAS-IMP-086 |
+| Title | Governed operational-evidence knowledge-draft curation foundation |
+| Status | In Progress |
+| Branch | `agent/governed-evidence-knowledge-curation` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-042 |
 | Last Updated | 2026-08-06 |
-| Next Action | Select and define the next implementation slice |
+| Next Action | Implement the ADR-042 domain, atomic claim, adapter, persistence, API, UI, and validation slice |
+
+### ATLAS-IMP-086 Scope Rationale
+
+- IMP-085 preserves exact normalized connector observations as immutable operational evidence but
+  deliberately creates no knowledge item and grants no retrieval or model-context eligibility.
+- ADR-042 atomically claims that evidence package and lets only a trusted adapter create one
+  immutable, non-authoritative, non-retrievable Knowledge Engine draft under inherited governance.
+- Content inspection, correction, domain/security review, approval, chunking, embedding, index
+  validation, publication, retrieval, scheduling, workflow, execution, deployment, and mutation
+  remain later independent stages.
+
+### ATLAS-IMP-086 Acceptance Criteria
+
+- Only a dedicated exact-tenant hardware-MFA human with C3 curation and evidence-read permissions
+  may request draft creation using evidence ID/digest, signed curation-policy ID/digest, purpose,
+  acknowledgement, idempotency, and correlation. Caller content, metadata governance, reviewer,
+  publication, model, schedule, workflow, execution, deployment, and mutation fields fail.
+- The service revalidates complete lineage, exact immutable evidence and cleanup proof, signed
+  policy, inherited classification/access/retention, scope, actor separation, and no-later-authority
+  state. Intent audit succeeds before a unique immutable source-evidence claim is atomically created.
+- A trusted adapter resolves the exact evidence artifact internally, validates integrity, schema,
+  redaction and content safety, derives a deterministic system-generated operational draft, writes
+  encrypted immutable draft content and metadata, cleans buffers, and returns only signed minimized
+  metadata. Production fails closed; development is deterministic and synthetic.
+- Failure or uncertainty after claim creation never reads infrastructure, reinvokes the connector,
+  or retries automatically. Only a fully bound receipt with immutable-draft and cleanup proof can
+  create `draft_operational_knowledge_created` state.
+- API, application, audit, logs, and web output exclude evidence/draft content, excerpts, values,
+  target details, storage coordinates, ACL principals, keys, secret/session identity, tokens,
+  signatures, request fingerprints, and idempotency material. Review, approval, chunks, embeddings,
+  retrieval, model context, graph, scheduling, workflow, execution, deployment, and mutation remain
+  false.
+- Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC, CSRF, safe
+  errors, focused failure/uncertainty/concurrency tests, minimized web evidence, full backend and
+  frontend suites, live desktop/mobile inspection, and GitHub CI apply.
 
 ### ATLAS-IMP-085 Scope Rationale
 
