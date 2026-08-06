@@ -8,7 +8,7 @@
 | Title | Governed connector instance creation foundation |
 | Status | In Progress |
 | Branch | `agent/governed-connector-instance-creation` |
-| Pull Request | Pending |
+| Pull Request | [#86](https://github.com/ozdemirumit/Project_Atlas/pull/86) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-030 |
 | Last Updated | 2026-08-06 |
 | Next Action | Publish ATLAS-IMP-074, pass GitHub CI, merge, and close the implementation record |
