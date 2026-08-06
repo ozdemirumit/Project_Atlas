@@ -39,6 +39,7 @@ from atlas.api.routes import (
     contract_validations,
     credential_assignments,
     deployment_configuration,
+    draft_review_requests,
     evidence_drafts,
     final_validations,
     graph,
@@ -536,6 +537,20 @@ from atlas.modules.identity.application.sessions import SessionService
 from atlas.modules.identity.application.workload_identities import WorkloadIdentityService
 from atlas.modules.investigations.adapters.synthetic import SyntheticInvestigationAssembler
 from atlas.modules.investigations.application.service import InvestigationService
+from atlas.modules.knowledge.adapters.draft_review_request_memory import (
+    InMemoryOperationalKnowledgeReviewRequestPolicySource,
+    InMemoryOperationalKnowledgeReviewRequestRepository,
+)
+from atlas.modules.knowledge.adapters.draft_review_request_permission import (
+    AuthorizationOperationalKnowledgeReviewRequestPermissionAuthorizer,
+)
+from atlas.modules.knowledge.adapters.draft_review_request_postgres import (
+    PostgreSQLOperationalKnowledgeReviewRequestRepository,
+)
+from atlas.modules.knowledge.adapters.draft_review_request_synthetic import (
+    SyntheticOperationalKnowledgeReviewRequestAdapter,
+    UnavailableOperationalKnowledgeReviewRequestAdapter,
+)
 from atlas.modules.knowledge.adapters.evidence_draft_memory import (
     InMemoryOperationalEvidenceKnowledgeDraftPolicySource,
     InMemoryOperationalEvidenceKnowledgeDraftRepository,
@@ -552,6 +567,10 @@ from atlas.modules.knowledge.adapters.evidence_draft_synthetic import (
 )
 from atlas.modules.knowledge.adapters.memory import InMemoryKnowledgeRetriever
 from atlas.modules.knowledge.adapters.synthetic import build_synthetic_knowledge_chunks
+from atlas.modules.knowledge.application.draft_review_request import (
+    OperationalKnowledgeReviewRequestService,
+    build_development_operational_knowledge_review_request_policy,
+)
 from atlas.modules.knowledge.application.evidence_draft import (
     OperationalEvidenceKnowledgeDraftService,
     build_development_operational_evidence_knowledge_draft_policy,
@@ -817,6 +836,9 @@ def create_app(
     invocation_evidence_service: ConnectorInvocationEvidenceService | None = None,
     operational_evidence_knowledge_draft_service: (
         OperationalEvidenceKnowledgeDraftService | None
+    ) = None,
+    operational_knowledge_review_request_service: (
+        OperationalKnowledgeReviewRequestService | None
     ) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
@@ -2346,6 +2368,52 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    if operational_knowledge_review_request_service is not None:
+        resolved_operational_knowledge_review_request_service = (
+            operational_knowledge_review_request_service
+        )
+    else:
+        review_request_repository = (
+            PostgreSQLOperationalKnowledgeReviewRequestRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryOperationalKnowledgeReviewRequestRepository()
+        )
+        review_request_policies = (
+            ()
+            if is_production
+            else (
+                build_development_operational_knowledge_review_request_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_operational_knowledge_review_request_service = (
+            OperationalKnowledgeReviewRequestService(
+                repository=review_request_repository,
+                source=resolved_operational_evidence_knowledge_draft_service,
+                policy_source=InMemoryOperationalKnowledgeReviewRequestPolicySource(
+                    review_request_policies
+                ),
+                permission_authorizer=(
+                    AuthorizationOperationalKnowledgeReviewRequestPermissionAuthorizer(
+                        service=resolved_authorization_service,
+                        environment=resolved_settings.environment,
+                    )
+                ),
+                adapter=(
+                    UnavailableOperationalKnowledgeReviewRequestAdapter()
+                    if is_production
+                    else SyntheticOperationalKnowledgeReviewRequestAdapter()
+                ),
+                audit_sink=resolved_audit_sink,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -2556,6 +2624,9 @@ def create_app(
         app.state.operational_evidence_knowledge_draft_service = (
             resolved_operational_evidence_knowledge_draft_service
         )
+        app.state.operational_knowledge_review_request_service = (
+            resolved_operational_knowledge_review_request_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -2568,6 +2639,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_operational_knowledge_review_request_service.close()
         await resolved_operational_evidence_knowledge_draft_service.close()
         await resolved_invocation_evidence_service.close()
         await resolved_bounded_invocation_service.close()
@@ -2694,6 +2766,7 @@ def create_app(
     app.include_router(bounded_invocations.router, prefix="/api/v1")
     app.include_router(invocation_evidence.router, prefix="/api/v1")
     app.include_router(evidence_drafts.router, prefix="/api/v1")
+    app.include_router(draft_review_requests.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
