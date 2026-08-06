@@ -1861,3 +1861,31 @@ class HumanReviewCompletionReceiptModel(Base):
     request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ConnectorRuntimeActivationModel(Base):
+    __tablename__ = "connector_runtime_activations"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_brokerage_authorization_id",
+            name="uq_connector_runtime_activations_brokerage_authorization",
+        ),
+        UniqueConstraint(
+            "activated_by",
+            "idempotency_key",
+            name="uq_connector_runtime_activations_actor_idempotency",
+        ),
+    )
+
+    activation_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source_brokerage_authorization_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    instance_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    activation_profile_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    activated_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

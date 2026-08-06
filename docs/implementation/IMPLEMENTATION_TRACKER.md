@@ -46,6 +46,26 @@
 - Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC, CSRF, safe errors,
   minimized web evidence, backend/frontend tests, live desktop/mobile inspection, and GitHub CI apply.
 
+### ATLAS-IMP-081 Validation Evidence
+
+- ADR-037 is accepted. The application revalidates exact secret-brokerage and complete upstream
+  lineage before invoking a narrow activation adapter. Production fails closed without an adapter;
+  the development adapter is deterministic and synthetic and performs no secret-store, process,
+  filesystem, network, target, capability, deployment, or infrastructure operation.
+- Five focused backend tests cover activation-only authority, deterministic idempotency, actor
+  separation, altered signed controls, completion-audit compensation before persistence,
+  PostgreSQL round-trip, CSRF, forbidden caller controls, no-store, and minimized responses.
+- Backend formatting and Ruff checks passed across 707 files; strict mypy passed across 653 source
+  and test files; the full suite passed with 631 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0053` head for immutable connector runtime activations.
+- Frontend ESLint and TypeScript checks passed with the CI-equivalent 6 GB Node heap; all 50 Vitest
+  tests passed and the production Vite build completed. The panel cannot select secret, broker,
+  lease, workload, runner, image, environment, health command, target, network, command, execution,
+  deployment, or mutation controls.
+- The authenticated local application at `http://127.0.0.1:5208/` loaded at 1280 x 720 and 390 x
+  844. Automated measurements found no horizontal overflow and confirmed the Atlas and Connectors
+  interface tree at both sizes; the temporary viewport override was reset.
+
 ### ATLAS-IMP-080 Scope Rationale
 
 - IMP-079 binds an exact enabled connector to a signed isolated runtime boundary without starting

@@ -267,6 +267,56 @@ class ConnectorSecretBrokerageService:
         )
         return record
 
+    async def runtime_activation_source(
+        self, *, authorization_id: str
+    ) -> tuple[
+        ConnectorSecretBrokerageAuthorizationRecord,
+        ConnectorRuntimeTrustGrantRecord,
+        ConnectorCredentialProfileSnapshot,
+        frozenset[str],
+    ]:
+        record = await self._repository.get(authorization_id=authorization_id)
+        if record is None:
+            raise ConnectorSecretBrokerageError("secret_brokerage_record_not_found")
+        self._verify_record(record)
+        runtime_trust, runtime_actors = await self._runtime_trust_source.secret_brokerage_source(
+            grant_id=record.source_runtime_trust_grant_id
+        )
+        (
+            assignment,
+            credential_profile,
+            credential_actors,
+        ) = await self._credential_source.secret_brokerage_source(
+            credential_profile_id=record.credential_profile_id,
+            instance_id=record.instance_id,
+        )
+        if (
+            record.source_runtime_trust_digest != runtime_trust.canonical_digest
+            or record.package_digest != runtime_trust.package_digest
+            or record.instance_id != runtime_trust.instance_id
+            or record.runtime_profile_digest != runtime_trust.runtime_profile_digest
+            or record.credential_profile_digest != credential_profile.canonical_digest
+            or assignment.credential_profile_digest != credential_profile.canonical_digest
+            or record.instance_state != ENABLED_SECRET_BROKERAGE_GOVERNED
+            or not record.eligible_for_runtime_activation
+            or record.secret_lease_issued
+            or record.credentials_resolved
+            or record.runner_started
+            or record.package_loaded
+            or record.target_connection_authorized
+            or record.capability_invocation_authorized
+            or record.execution_authorized
+            or record.deployment_approved
+            or record.infrastructure_mutation_performed
+        ):
+            raise ConnectorSecretBrokerageError("secret_brokerage_runtime_activation_invalid")
+        return (
+            record,
+            runtime_trust,
+            credential_profile,
+            runtime_actors | credential_actors | {record.authorized_by},
+        )
+
     async def close(self) -> None:
         await self._repository.close()
 
