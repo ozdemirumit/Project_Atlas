@@ -6,12 +6,45 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-081 |
 | Title | Governed connector runtime activation and health-evidence foundation |
-| Status | Planned |
-| Branch | `main` |
+| Status | In Progress |
+| Branch | `agent/governed-connector-runtime-activation` |
 | Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-036 |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-037 |
 | Last Updated | 2026-08-06 |
-| Next Action | Accept ADR-037, define the activation boundary, and implement ATLAS-IMP-081 |
+| Next Action | Implement the ADR-037 domain, adapter, persistence, API, UI, and validation slice |
+
+### ATLAS-IMP-081 Scope Rationale
+
+- IMP-080 authorizes one exact workload-bound, single-use, memory-only brokerage path without
+  issuing a lease, resolving credentials, starting a runner, or loading a package.
+- ADR-037 activates only the exact signed isolated runtime, delivers secrets solely inside the
+  trusted broker-to-runtime boundary, and produces bounded signed local health evidence.
+- Target sessions, vendor calls, scheduling, capability invocation, deployment, and infrastructure
+  mutation remain later independent stages.
+
+### ATLAS-IMP-081 Acceptance Criteria
+
+- Only a dedicated exact-tenant hardware-MFA human may request activation using exact brokerage
+  authorization ID/digest, package digest, activation-profile ID/digest, policy ID/digest, purpose,
+  acknowledgement, idempotency, and correlation. Caller-selected credential, secret, store, broker,
+  lease, workload, runner, image, environment, health command, target, network, capability, command,
+  execution, or deployment fields fail.
+- The service revalidates complete lifecycle lineage, exact signed profile/policy, credential
+  rotation/revocation, runtime/workload/package parity, immutable controls, local-only health probe,
+  scope, freshness, actor separation, and no-later-authority state before invoking a narrow trusted
+  activation adapter.
+- The adapter returns signed minimized evidence only; API/application/persistence/audit never receive
+  secret material, lease handles, process output, raw health output, target coordinates, or mutable
+  runner internals. Production fails closed without a trusted adapter; development is synthetic.
+- Required intent audit precedes activation and completion audit precedes immutable persistence.
+  Failure or uncertain outcome grants no later authority and requires adapter compensation or
+  quarantine.
+- A valid record sets only lease-delivery evidence, credential resolution inside runtime, runner and
+  package activation, local runtime health, and target-session eligibility in
+  `enabled_runtime_healthy` state. Target connection/authorization, invocation, execution,
+  deployment, and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC, CSRF, safe errors,
+  minimized web evidence, backend/frontend tests, live desktop/mobile inspection, and GitHub CI apply.
 
 ### ATLAS-IMP-080 Scope Rationale
 
