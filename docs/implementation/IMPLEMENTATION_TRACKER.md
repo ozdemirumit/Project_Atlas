@@ -4,14 +4,50 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-084 |
-| Title | Governed bounded connector capability invocation foundation |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#96](https://github.com/ozdemirumit/Project_Atlas/pull/96) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-040 |
+| Task ID | ATLAS-IMP-085 |
+| Title | Governed connector invocation evidence-ingestion foundation |
+| Status | In Progress |
+| Branch | `agent/governed-invocation-evidence-ingestion` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-041 |
 | Last Updated | 2026-08-06 |
-| Next Action | Select and define ATLAS-IMP-085 for durable governed invocation evidence ingestion |
+| Next Action | Implement the ADR-041 domain, atomic claim, adapter, persistence, API, UI, and validation slice |
+
+### ATLAS-IMP-085 Scope Rationale
+
+- IMP-084 invokes exactly one authorized C0/C1 capability and persists only a minimized digest and
+  cleanup record; the normalized redacted observations are not durable evidence.
+- ADR-041 atomically claims that exact completed invocation and lets only a trusted adapter persist
+  its signed normalized-result package under fixed classification, ACL, retention, and encryption.
+- Knowledge-item creation, chunking, embeddings, retrieval publication, model context, graph
+  updates, scheduling, workflow continuation, execution, deployment, and mutation remain later
+  independent stages.
+
+### ATLAS-IMP-085 Acceptance Criteria
+
+- Only a dedicated exact-tenant hardware-MFA human with C3 evidence-ingestion permission and the
+  capability's exact read permission may request ingestion using invocation ID/digest, signed
+  ingestion-policy ID/digest, purpose, acknowledgement, idempotency, and correlation. Caller
+  content, classification, ACL, retention, storage, indexing, model, schedule, workflow, execution,
+  deployment, and mutation fields fail.
+- The service revalidates complete lineage, exact successful invocation/receipt/result/cleanup
+  evidence, signed policy, scope, actor separation, and no-later-authority state. Intent audit
+  succeeds before an immutable unique source-invocation claim is atomically created.
+- A trusted adapter resolves the exact normalized redacted result package internally, validates its
+  signature/schema/redaction/content safety, applies policy-fixed governance, stores immutable
+  encrypted evidence, erases transient buffers, and returns only signed minimized metadata.
+  Production fails closed; development is deterministic and synthetic.
+- Failure or uncertainty after claim creation never reinvokes the connector and never retries
+  ingestion automatically. Only a fully bound receipt with immutable-storage and cleanup proof can
+  create `enabled_invocation_evidence_ingested` state.
+- API, application, audit, logs, and web output exclude evidence content/excerpts, target details,
+  storage coordinates, ACL principals, encryption keys, credential/secret/store/lease/session
+  identity, tokens, signatures, request fingerprints, and idempotency material. Knowledge,
+  retrieval, model context, graph, scheduling, workflow, execution, deployment, and mutation remain
+  false.
+- Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC plus exact
+  capability permission, CSRF, safe errors, focused failure/uncertainty/concurrency tests, minimized
+  web evidence, full backend/frontend suites, live desktop/mobile inspection, and GitHub CI apply.
 
 ### ATLAS-IMP-084 Scope Rationale
 
