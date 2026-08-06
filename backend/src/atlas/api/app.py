@@ -47,6 +47,7 @@ from atlas.api.routes import (
     malware_analyses,
     mcp_builder,
     package_approvals,
+    package_signing,
     platform,
     publisher_attestations,
     rca,
@@ -171,6 +172,15 @@ from atlas.modules.connectors.adapters.package_approval_memory import (
 from atlas.modules.connectors.adapters.package_approval_postgres import (
     PostgreSQLPackageApprovalRepository,
 )
+from atlas.modules.connectors.adapters.package_signing_memory import (
+    InMemoryPackageSigningPolicySource,
+    InMemoryPackageSigningRepository,
+    NonProductionHmacPackageSigner,
+    UnavailablePackageSigner,
+)
+from atlas.modules.connectors.adapters.package_signing_postgres import (
+    PostgreSQLPackageSigningRepository,
+)
 from atlas.modules.connectors.adapters.publisher_attestation_memory import (
     InMemoryPublisherAttestationPolicySource,
     InMemoryPublisherAttestationRepository,
@@ -244,6 +254,10 @@ from atlas.modules.connectors.application.malware_analysis import (
 from atlas.modules.connectors.application.package_approval import (
     PackageApprovalService,
     build_development_package_approval_policy,
+)
+from atlas.modules.connectors.application.package_signing import (
+    PackageSigningService,
+    build_development_package_signing_policy,
 )
 from atlas.modules.connectors.application.publisher_attestation import (
     PublisherAttestationService,
@@ -535,6 +549,7 @@ def create_app(
     package_final_validation_service: PackageFinalValidationService | None = None,
     package_approval_service: PackageApprovalService | None = None,
     publisher_attestation_service: PublisherAttestationService | None = None,
+    package_signing_service: PackageSigningService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -1421,6 +1436,49 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if package_signing_service is not None:
+        resolved_package_signing_service = package_signing_service
+    else:
+        package_signing_repository = (
+            PostgreSQLPackageSigningRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryPackageSigningRepository()
+        )
+        is_production = resolved_settings.environment == "production"
+        development_package_signing_policies = (
+            ()
+            if is_production
+            else (
+                build_development_package_signing_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        package_signer = (
+            UnavailablePackageSigner()
+            if is_production
+            else NonProductionHmacPackageSigner(
+                key_material=sha256(
+                    (
+                        "atlas-nonproduction-package-signer:"
+                        f"{resolved_settings.development_organization_id}:"
+                        f"{resolved_settings.environment}"
+                    ).encode("ascii")
+                ).digest(),
+                signer_workload_id="workload.connector-package-signer",
+            )
+        )
+        resolved_package_signing_service = PackageSigningService(
+            repository=package_signing_repository,
+            attestation_source=resolved_publisher_attestation_service,
+            policy_source=InMemoryPackageSigningPolicySource(development_package_signing_policies),
+            signer=package_signer,
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -1616,6 +1674,7 @@ def create_app(
         app.state.package_final_validation_service = resolved_package_final_validation_service
         app.state.package_approval_service = resolved_package_approval_service
         app.state.publisher_attestation_service = resolved_publisher_attestation_service
+        app.state.package_signing_service = resolved_package_signing_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -1628,6 +1687,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_package_signing_service.close()
         await resolved_publisher_attestation_service.close()
         await resolved_package_approval_service.close()
         await resolved_package_final_validation_service.close()
@@ -1720,6 +1780,7 @@ def create_app(
     app.include_router(final_validations.router, prefix="/api/v1")
     app.include_router(package_approvals.router, prefix="/api/v1")
     app.include_router(publisher_attestations.router, prefix="/api/v1")
+    app.include_router(package_signing.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

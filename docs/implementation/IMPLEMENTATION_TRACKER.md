@@ -4,14 +4,68 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-069 |
-| Title | Governed connector publisher attestation foundation |
-| Status | Completed |
-| Branch | `agent/connector-publisher-attestation` |
-| Pull Request | [PR #81](https://github.com/ozdemirumit/Project_Atlas/pull/81) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-025 |
+| Task ID | ATLAS-IMP-070 |
+| Title | Governed connector package-signing foundation |
+| Status | In Progress |
+| Branch | `agent/connector-package-signing` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-026 |
 | Last Updated | 2026-08-06 |
-| Next Action | Select and record the separately governed connector package-signing slice |
+| Next Action | Implement the isolated signer port and immutable signing receipt contract |
+
+### ATLAS-IMP-070 Scope Rationale
+
+- IMP-069 proves publisher identity, responsibility, and provenance for one exact approved package,
+  but its verified report intentionally creates no signature and exposes no key material.
+- ADR-026 introduces a policy-selected isolated signer, canonical envelope, two-stage required audit,
+  immutable signature receipt, deterministic replay, and complete key/API/runtime separation.
+- Registry publication, registration, installation, configuration, enablement, runtime trust,
+  target/secret access, execution, deployment, and infrastructure mutation remain later stages.
+
+### ATLAS-IMP-070 Acceptance Criteria
+
+- Only a dedicated exact-tenant MFA human may request signing using exact current IMP-069 report and
+  digest, package digest, signed signing-policy ID/digest, bounded purpose, acknowledgement,
+  idempotency, and correlation. Signer, key, algorithm, signature, and lifecycle fields are rejected.
+- The service independently reloads and verifies the complete current attestation/approval lineage,
+  exact package/publisher/claim/release/provenance binding, freshness, integrity, and no-authority.
+- Immutable signed policy fixes accepted schema/age, assurance, signer profile, workload identity,
+  key ID, algorithm, envelope/receipt schemas, signature lifetime, separation, and safe disclosure.
+- The requester is distinct from every upstream, approval, publisher, claim, attestation, policy,
+  signer, and key-custody actor. AI/service/shared/wrong-scope identities fail closed.
+- The canonical envelope is deterministic and includes exact lineage and no-authority declarations.
+  Private/symmetric keys, secrets, package bytes, targets, commands, and raw evidence are excluded.
+- Required audit intent succeeds before signer invocation; returned signature binding and verification
+  are checked; required completion audit succeeds before persistence. Failure cannot fabricate trust.
+- The signer is policy-selected through an isolated port. Production has no local fallback; the
+  deterministic HMAC implementation is explicitly non-production and never exposes its key.
+- Receipts are immutable, one-to-one, idempotent, concurrency-safe, deterministic, audit-before-
+  persist, and equivalent in memory/PostgreSQL. API responses omit signature bytes and key material.
+- A valid receipt sets only package signing and later registry-governance eligibility. It grants no
+  registration, install, configuration, enablement, target/secret, runtime, execution, deployment,
+  or infrastructure mutation authority.
+- Strict no-store create/read APIs, dedicated RBAC, CSRF, exact scope, MFA, bounded schemas, safe
+  errors, minimized web evidence, backend/frontend tests, one Alembic head, live desktop/mobile
+  inspection, browser logs, and GitHub CI apply.
+
+### ATLAS-IMP-070 Validation Evidence
+
+- ADR-026 is accepted. Canonical envelope, signing policy, isolated signer port, two-stage required
+  audit, immutable receipt, default-deny API/RBAC, memory/PostgreSQL persistence, and migration now
+  sign only the exact current IMP-069 package evidence.
+- Five focused backend tests cover registry-governance-only authority, deterministic signature and
+  idempotency, complete actor separation, exact digest binding, audit-before-signer,
+  completion-audit-before-persist, PostgreSQL round-trip, CSRF, no-store, and response minimization.
+- Backend formatting and Ruff checks passed across 606 files; strict mypy passed across 562 source
+  and test files; the full suite passed with 567 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0042` head for immutable package signing receipts.
+- Frontend ESLint and TypeScript checks passed with the CI-equivalent 6 GB Node heap; all 39 Vitest
+  tests passed and the production Vite build completed. The panel accepts no signer, key, algorithm,
+  signature, registry, installation, enablement, or execution input/control.
+- A clean live local page at `http://localhost:5202/` was inspected at 1280 x 720 and 390 x 844.
+  Both views had no horizontal overflow and no browser errors or warnings; the real login boundary
+  remained fail-closed.
+- GitHub PR, CI, merge, and post-merge main evidence are pending.
 
 ### ATLAS-IMP-069 Scope Rationale
 

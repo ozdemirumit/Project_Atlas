@@ -273,6 +273,47 @@ class PublisherAttestationService:
         )
         return report
 
+    async def package_signing_source(
+        self, *, report_id: str
+    ) -> tuple[ConnectorPublisherAttestationReport, frozenset[str]]:
+        report = await self._repository.get(report_id=report_id)
+        if report is None:
+            raise PublisherAttestationError("publisher_attestation_report_not_found")
+        self._verify_report(report)
+        try:
+            approval, upstream = await self._approval_source.publisher_attestation_source(
+                request_id=report.source_approval_request_id
+            )
+        except PackageApprovalError as error:
+            raise PublisherAttestationError("publisher_attestation_approval_not_found") from error
+        claim = await self._claim_source.get_by_id(claim_id=report.publisher_claim_id)
+        policy = await self._policy_source.get_by_id(policy_id=report.attestation_policy_id)
+        now = self._clock()
+        if claim is None or policy is None or approval.decision is None:
+            raise PublisherAttestationError("publisher_attestation_evidence_not_found")
+        self._verify_claim(claim)
+        self._verify_policy(policy)
+        if (
+            report.source_approval_request_digest != approval.request.canonical_digest
+            or report.source_approval_decision_digest != approval.decision.canonical_digest
+            or report.package_digest != claim.package_digest
+            or report.publisher_claim_digest != claim.canonical_digest
+            or report.attestation_policy_digest != policy.canonical_digest
+            or not policy.issued_at <= now < policy.expires_at
+            or not claim.issued_at <= now < claim.expires_at
+            or not report.publisher_attested
+            or not report.eligible_for_package_signing_governance
+            or report.promotion_blocked
+            or report.outcome is not PublisherAttestationOutcome.VERIFIED
+        ):
+            raise PublisherAttestationError("publisher_attestation_not_eligible_for_signing")
+        return report, upstream | {
+            report.verified_by,
+            claim.issued_by,
+            claim.publisher_id,
+            policy.signed_by,
+        }
+
     async def close(self) -> None:
         await self._repository.close()
 
