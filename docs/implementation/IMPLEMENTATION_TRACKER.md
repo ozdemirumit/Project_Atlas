@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-087 |
 | Title | Governed operational knowledge-draft review-request foundation |
-| Status | Ready for PR |
+| Status | CI In Progress |
 | Branch | `agent/governed-knowledge-draft-review` |
-| Pull Request | Pending |
+| Pull Request | [#99](https://github.com/ozdemirumit/Project_Atlas/pull/99) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-043 |
 | Last Updated | 2026-08-06 |
-| Next Action | Open the IMP-087 pull request and pass CI |
+| Next Action | Pass PR #99 CI, mark ready, merge, and verify main |
 
 ### ATLAS-IMP-087 Scope Rationale
 
