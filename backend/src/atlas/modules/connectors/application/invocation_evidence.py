@@ -351,6 +351,72 @@ class ConnectorInvocationEvidenceService:
         )
         return record
 
+    async def knowledge_draft_source(
+        self, *, ingestion_id: str
+    ) -> tuple[ConnectorInvocationEvidenceRecord, frozenset[str]]:
+        record = await self._repository.get(ingestion_id=ingestion_id)
+        if record is None:
+            raise ConnectorInvocationEvidenceError("invocation_evidence_record_not_found")
+        self._verify_record(record)
+        claim = await self._repository.get_claim_by_invocation(
+            source_invocation_id=record.source_invocation_id
+        )
+        if claim is None:
+            raise ConnectorInvocationEvidenceError("invocation_evidence_claim_not_found")
+        self._verify_claim(claim)
+        try:
+            source, source_actors = await self._source.evidence_ingestion_source(
+                invocation_id=record.source_invocation_id
+            )
+        except ConnectorInvocationEvidenceError:
+            raise
+        except Exception as error:
+            raise ConnectorInvocationEvidenceError(
+                "invocation_evidence_source_not_found"
+            ) from error
+        policy = await self._policy_source.get_by_id(policy_id=record.ingestion_policy_id)
+        if policy is None:
+            raise ConnectorInvocationEvidenceError("invocation_evidence_policy_not_found")
+        self._verify_snapshot(policy)
+        if (
+            source.canonical_digest != record.source_invocation_digest
+            or source.package_digest != record.package_digest
+            or source.connector_id != record.connector_id
+            or source.instance_id != record.instance_id
+            or source.capability_id != record.capability_id
+            or source.normalized_redacted_result_digest != record.normalized_redacted_result_digest
+            or claim.claim_id != record.claim_id
+            or claim.source_invocation_id != record.source_invocation_id
+            or claim.source_invocation_digest != record.source_invocation_digest
+            or claim.ingestion_id != record.ingestion_id
+            or claim.claimed_by != record.ingested_by
+            or claim.purpose != record.purpose
+            or policy.canonical_digest != record.ingestion_policy_digest
+            or record.instance_state != ENABLED_INVOCATION_EVIDENCE_INGESTED
+            or not record.evidence_ingested
+            or not record.immutable_storage_confirmed
+            or not record.encrypted_at_rest
+            or not record.transient_buffers_erased
+            or not record.artifact_channel_closed
+            or record.knowledge_item_created
+            or record.retrieval_published
+            or record.model_context_available
+            or record.graph_updated
+            or record.scheduled
+            or record.workflow_continued
+            or record.execution_authorized
+            or record.deployment_approved
+            or record.infrastructure_mutation_performed
+        ):
+            raise ConnectorInvocationEvidenceError(
+                "invocation_evidence_knowledge_draft_source_invalid"
+            )
+        return record, source_actors | {
+            record.ingested_by,
+            policy.signed_by,
+            policy.required_adapter_attestor_id,
+        }
+
     async def close(self) -> None:
         await self._repository.close()
 

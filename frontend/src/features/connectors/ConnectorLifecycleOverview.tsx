@@ -15,7 +15,7 @@ const lifecycleStages: readonly LifecycleStage[] = [
   { name: "Runtime trust", detail: "Capability, workload, brokerage, activation", state: "available" },
   { name: "Bounded operations", detail: "Session, authorization, single-use read", state: "available" },
   { name: "Evidence preservation", detail: "Governed immutable ingestion", state: "available" },
-  { name: "Knowledge publication", detail: "Curation, indexing, retrieval", state: "future" },
+  { name: "Knowledge publication", detail: "Curation, indexing, retrieval", state: "current" },
 ];
 
 export function ConnectorLifecycleOverview() {

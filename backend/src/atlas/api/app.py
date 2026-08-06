@@ -39,6 +39,7 @@ from atlas.api.routes import (
     contract_validations,
     credential_assignments,
     deployment_configuration,
+    evidence_drafts,
     final_validations,
     graph,
     health,
@@ -535,8 +536,26 @@ from atlas.modules.identity.application.sessions import SessionService
 from atlas.modules.identity.application.workload_identities import WorkloadIdentityService
 from atlas.modules.investigations.adapters.synthetic import SyntheticInvestigationAssembler
 from atlas.modules.investigations.application.service import InvestigationService
+from atlas.modules.knowledge.adapters.evidence_draft_memory import (
+    InMemoryOperationalEvidenceKnowledgeDraftPolicySource,
+    InMemoryOperationalEvidenceKnowledgeDraftRepository,
+)
+from atlas.modules.knowledge.adapters.evidence_draft_permission import (
+    AuthorizationOperationalEvidenceKnowledgeDraftPermissionAuthorizer,
+)
+from atlas.modules.knowledge.adapters.evidence_draft_postgres import (
+    PostgreSQLOperationalEvidenceKnowledgeDraftRepository,
+)
+from atlas.modules.knowledge.adapters.evidence_draft_synthetic import (
+    SyntheticOperationalEvidenceKnowledgeDraftAdapter,
+    UnavailableOperationalEvidenceKnowledgeDraftAdapter,
+)
 from atlas.modules.knowledge.adapters.memory import InMemoryKnowledgeRetriever
 from atlas.modules.knowledge.adapters.synthetic import build_synthetic_knowledge_chunks
+from atlas.modules.knowledge.application.evidence_draft import (
+    OperationalEvidenceKnowledgeDraftService,
+    build_development_operational_evidence_knowledge_draft_policy,
+)
 from atlas.modules.knowledge.application.service import KnowledgeRetrievalService
 from atlas.modules.mcp_builder.adapters.candidate_archive_filesystem import (
     FileSystemMcpBuilderCandidateArchivePublisher,
@@ -796,6 +815,9 @@ def create_app(
     invocation_authorization_service: ConnectorInvocationAuthorizationService | None = None,
     bounded_invocation_service: ConnectorBoundedInvocationService | None = None,
     invocation_evidence_service: ConnectorInvocationEvidenceService | None = None,
+    operational_evidence_knowledge_draft_service: (
+        OperationalEvidenceKnowledgeDraftService | None
+    ) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -2278,6 +2300,52 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if operational_evidence_knowledge_draft_service is not None:
+        resolved_operational_evidence_knowledge_draft_service = (
+            operational_evidence_knowledge_draft_service
+        )
+    else:
+        evidence_draft_repository = (
+            PostgreSQLOperationalEvidenceKnowledgeDraftRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryOperationalEvidenceKnowledgeDraftRepository()
+        )
+        evidence_draft_policies = (
+            ()
+            if is_production
+            else (
+                build_development_operational_evidence_knowledge_draft_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_operational_evidence_knowledge_draft_service = (
+            OperationalEvidenceKnowledgeDraftService(
+                repository=evidence_draft_repository,
+                source=resolved_invocation_evidence_service,
+                policy_source=InMemoryOperationalEvidenceKnowledgeDraftPolicySource(
+                    evidence_draft_policies
+                ),
+                permission_authorizer=(
+                    AuthorizationOperationalEvidenceKnowledgeDraftPermissionAuthorizer(
+                        service=resolved_authorization_service,
+                        environment=resolved_settings.environment,
+                    )
+                ),
+                adapter=(
+                    UnavailableOperationalEvidenceKnowledgeDraftAdapter()
+                    if is_production
+                    else SyntheticOperationalEvidenceKnowledgeDraftAdapter()
+                ),
+                audit_sink=resolved_audit_sink,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -2485,6 +2553,9 @@ def create_app(
         app.state.invocation_authorization_service = resolved_invocation_authorization_service
         app.state.bounded_invocation_service = resolved_bounded_invocation_service
         app.state.invocation_evidence_service = resolved_invocation_evidence_service
+        app.state.operational_evidence_knowledge_draft_service = (
+            resolved_operational_evidence_knowledge_draft_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -2497,6 +2568,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_operational_evidence_knowledge_draft_service.close()
         await resolved_invocation_evidence_service.close()
         await resolved_bounded_invocation_service.close()
         await resolved_invocation_authorization_service.close()
@@ -2621,6 +2693,7 @@ def create_app(
     app.include_router(invocation_authorizations.router, prefix="/api/v1")
     app.include_router(bounded_invocations.router, prefix="/api/v1")
     app.include_router(invocation_evidence.router, prefix="/api/v1")
+    app.include_router(evidence_drafts.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

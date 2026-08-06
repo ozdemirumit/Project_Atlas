@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-086 |
 | Title | Governed operational-evidence knowledge-draft curation foundation |
-| Status | In Progress |
+| Status | Ready for PR |
 | Branch | `agent/governed-evidence-knowledge-curation` |
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-042 |
 | Last Updated | 2026-08-06 |
-| Next Action | Implement the ADR-042 domain, atomic claim, adapter, persistence, API, UI, and validation slice |
+| Next Action | Publish the IMP-086 implementation, pass GitHub CI, merge, and verify main |
 
 ### ATLAS-IMP-086 Scope Rationale
 
@@ -47,6 +47,30 @@
 - Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC, CSRF, safe
   errors, focused failure/uncertainty/concurrency tests, minimized web evidence, full backend and
   frontend suites, live desktop/mobile inspection, and GitHub CI apply.
+
+### ATLAS-IMP-086 Validation Evidence
+
+- ADR-042 is accepted. The service revalidates the complete immutable evidence and connector
+  lineage, signed curation policy, inherited classification/access/retention/encryption, exact
+  tenant scope, hardware MFA, C3 curation plus evidence-read permissions, actor separation, and
+  absence of later authority before atomically claiming one evidence package.
+- Seven focused backend tests cover immutable minimized draft creation, exact idempotency,
+  concurrent source claiming, actor separation, permission denial before claim, altered and
+  uncertain receipts, audit failure after claim, PostgreSQL round-trip, CSRF, forbidden content and
+  governance controls, no-store, and minimized responses. Claimed uncertain outcomes are not
+  retried and never re-invoke infrastructure.
+- Backend formatting and Ruff checks passed across 758 files; strict mypy passed across 699 source
+  and test files; the full suite passed with 663 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0058` head for immutable evidence-draft claims and records.
+- Frontend ESLint and TypeScript checks passed; 26 test files and 56 tests passed; the production
+  bundle built successfully. Curation accepts only signed policy, purpose, and acknowledgement and
+  exposes no draft content, governance override, reviewer, approver, indexing, or publication
+  control.
+- Live OpenAPI inspection exposed create/read draft endpoints. Desktop at 1280 pixels and mobile at
+  390 pixels showed eight available lifecycle stages and Knowledge publication as in progress with
+  no horizontal overflow; the browser was restored to the desktop viewport. Review, approval,
+  chunks, embeddings, retrieval, model context, graph, scheduling, workflow, execution, deployment,
+  and infrastructure mutation remain disabled.
 
 ### ATLAS-IMP-085 Scope Rationale
 
