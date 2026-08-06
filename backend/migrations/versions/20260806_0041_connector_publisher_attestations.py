@@ -50,11 +50,13 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     table = "connector_publisher_attestations"
-    for column in reversed((
-        "source_approval_request_id",
-        "verified_by",
-        "organization_id",
-        "environment_id",
-    )):
+    for column in reversed(
+        (
+            "source_approval_request_id",
+            "verified_by",
+            "organization_id",
+            "environment_id",
+        )
+    ):
         op.drop_index(op.f(f"ix_{table}_{column}"), table_name=table)
     op.drop_table(table)
