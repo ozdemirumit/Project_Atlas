@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-086 |
 | Title | Governed operational-evidence knowledge-draft curation foundation |
-| Status | CI In Progress |
-| Branch | `agent/governed-evidence-knowledge-curation` |
+| Status | Completed |
+| Branch | `main` |
 | Pull Request | [#98](https://github.com/ozdemirumit/Project_Atlas/pull/98) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-042 |
 | Last Updated | 2026-08-06 |
-| Next Action | Pass PR #98 CI, mark ready, merge, and verify main |
+| Next Action | Select the next approved implementation slice |
 
 ### ATLAS-IMP-086 Scope Rationale
 
@@ -50,6 +50,8 @@
 
 ### ATLAS-IMP-086 Validation Evidence
 
+- PR #98 passed backend and frontend CI, merged to `main` as `815954f`, and the merged-main
+  Continuous Integration run `31106099268` passed (backend 2m14s, frontend 3m28s).
 - ADR-042 is accepted. The service revalidates the complete immutable evidence and connector
   lineage, signed curation policy, inherited classification/access/retention/encryption, exact
   tenant scope, hardware MFA, C3 curation plus evidence-read permissions, actor separation, and
