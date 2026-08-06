@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { ConnectorPackageApprovalRecord } from "../../api/connectors";
 import { createConnectorPublisherAttestation } from "../../api/publisherAttestations";
+import { PackageSigningPanel } from "./PackageSigningPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -148,6 +149,9 @@ export function PublisherAttestationPanel({
           <p className="muted-copy">
             Publisher evidence is bound to this package. Signing and every later lifecycle stage remain separate.
           </p>
+          {report.publisher_attested && report.eligible_for_package_signing_governance && (
+            <PackageSigningPanel attestation={report} />
+          )}
         </div>
       )}
     </section>

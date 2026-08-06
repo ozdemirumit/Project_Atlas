@@ -96,7 +96,9 @@ describe("PublisherAttestationPanel", () => {
 
     expect(await screen.findByText("Atlas Labs")).toBeVisible();
     expect(screen.getByText("publisher.atlas-labs")).toBeVisible();
-    expect(screen.queryByRole("button", { name: /sign|install|enable|publish/i })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /register|install|enable|publish|execute/i }),
+    ).toBeNull();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     const init = fetchMock.mock.calls[0]?.[1];
     const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<

@@ -128,6 +128,8 @@ CONNECTOR_PACKAGE_APPROVAL_READ = "connectors.package-approval-requests.read"
 CONNECTOR_PACKAGE_APPROVAL_DECIDE = "connectors.package-approval-requests.decide"
 CONNECTOR_PUBLISHER_ATTESTATION_CREATE = "connectors.publisher-attestations.create"
 CONNECTOR_PUBLISHER_ATTESTATION_READ = "connectors.publisher-attestations.read"
+CONNECTOR_PACKAGE_SIGNING_CREATE = "connectors.package-signing-receipts.create"
+CONNECTOR_PACKAGE_SIGNING_READ = "connectors.package-signing-receipts.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -633,6 +635,19 @@ def connector_publisher_attestation_scope(
         site_id="site.local",
         domain_id="domain.connectors",
         resource_id="resource.connector.publisher-attestations",
+        capability_class=capability_class,
+    )
+
+
+def connector_package_signing_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.connectors",
+        resource_id="resource.connector.package-signing-receipts",
         capability_class=capability_class,
     )
 
@@ -1170,6 +1185,14 @@ def build_development_authorization_service(
             permission_id=CONNECTOR_PUBLISHER_ATTESTATION_READ,
             description="Read one immutable connector publisher attestation report.",
         ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_PACKAGE_SIGNING_CREATE,
+            description="Request one policy-governed exact connector package signature.",
+        ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_PACKAGE_SIGNING_READ,
+            description="Read one immutable minimized connector package signing receipt.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -1266,6 +1289,8 @@ def build_development_authorization_service(
                 CONNECTOR_PACKAGE_APPROVAL_DECIDE,
                 CONNECTOR_PUBLISHER_ATTESTATION_CREATE,
                 CONNECTOR_PUBLISHER_ATTESTATION_READ,
+                CONNECTOR_PACKAGE_SIGNING_CREATE,
+                CONNECTOR_PACKAGE_SIGNING_READ,
             }
         ),
     )
@@ -2010,6 +2035,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=connector_publisher_attestation_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-package-signing-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_package_signing_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-package-signing-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_package_signing_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,
