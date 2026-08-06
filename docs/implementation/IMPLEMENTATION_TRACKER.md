@@ -6,12 +6,47 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-082 |
 | Title | Governed connector target-session authorization and bounded connectivity evidence foundation |
-| Status | Planned |
-| Branch | `main` |
+| Status | In Progress |
+| Branch | `agent/governed-connector-target-session` |
 | Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-037 |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-038 |
 | Last Updated | 2026-08-06 |
-| Next Action | Accept ADR-038, define the target-session boundary, and implement ATLAS-IMP-082 |
+| Next Action | Implement the ADR-038 domain, adapter, persistence, API, UI, and validation slice |
+
+### ATLAS-IMP-082 Scope Rationale
+
+- IMP-081 activates the exact signed isolated runtime, proves local health, and closes its initial
+  lease-delivery channel without target access.
+- ADR-038 permits only a fresh bounded read-only target handshake inside the trusted runtime and
+  returns signed minimized identity, TLS, authentication, and connectivity evidence after closing
+  the session and revoking or expiring the lease.
+- Capability invocation, scheduling, output ingestion, execution, deployment, and infrastructure
+  mutation remain later independent stages.
+
+### ATLAS-IMP-082 Acceptance Criteria
+
+- Only a dedicated exact-tenant hardware-MFA human may request verification using exact activation
+  ID/digest, package digest, session-profile ID/digest, policy ID/digest, purpose,
+  acknowledgement, idempotency, and correlation. Caller-selected target, endpoint, port, protocol,
+  credential, secret, broker, lease, session, workload, runner, capability, command, execution, or
+  deployment fields fail.
+- The service revalidates complete lifecycle lineage, exact signed profile/policy, target/product,
+  credential rotation/revocation and read-only privilege, workload/network/TLS parity, scope,
+  freshness, actor separation, and no-later-authority state before invoking a narrow trusted
+  target-session adapter.
+- The adapter returns signed minimized evidence only and always closes the session and delivery
+  channel and revokes or expires the lease. API/application/persistence/audit never receive target
+  coordinates, credentials, lease/session handles, certificate bodies, routes, transcripts, raw
+  responses, commands, or capability inputs. Production fails closed; development is synthetic.
+- Required intent audit precedes the handshake and completion audit precedes immutable persistence.
+  Failure or uncertain outcome grants no later authority and requires adapter compensation or
+  quarantine.
+- A valid record sets only bounded target connection authorization/evidence, target identity and
+  read-only session verification, closed-session proof, and invocation-governance eligibility in
+  `enabled_target_session_verified` state. No reusable session remains; capability invocation,
+  scheduling, execution, deployment, and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC, CSRF, safe errors,
+  minimized web evidence, backend/frontend tests, live desktop/mobile inspection, and GitHub CI apply.
 
 ### ATLAS-IMP-081 Scope Rationale
 
