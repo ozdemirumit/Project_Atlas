@@ -2,67 +2,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ConnectorCapabilityEnablement } from "../../api/capabilityEnablements";
 import { CapabilityEnablementPanel } from "./CapabilityEnablementPanel";
+import {
+  capabilityEnablement as enablement,
+  capabilityPolicyDigest as policyDigest,
+  capabilityProfileDigest as profileDigest,
+} from "./testCapabilityEnablementFixture";
 import { configurationValidation as validation } from "./testConfigurationValidationFixture";
-
-const profileDigest = "d".repeat(64);
-const policyDigest = "3037f7c378ac3046e92be04e9b71015d63780b6ce961de131e02b13b788da438";
-const enablement = {
-  enablement_id: "connector-capability-enablement.test",
-  schema_version: "atlas.connector-capability-enablement.v1",
-  version: 1,
-  source_validation_id: validation.validation_id,
-  source_validation_digest: validation.canonical_digest,
-  organization_id: validation.organization_id,
-  environment_id: validation.environment_id,
-  package_digest: validation.package_digest,
-  connector_id: validation.connector_id,
-  release_version: validation.release_version,
-  manifest_digest: validation.manifest_digest,
-  instance_id: validation.instance_id,
-  instance_key: validation.instance_key,
-  display_name: validation.display_name,
-  owner_id: validation.owner_id,
-  target_profile_id: validation.target_profile_id,
-  target_profile_digest: validation.target_profile_digest,
-  site_id: validation.site_id,
-  target_type: validation.target_type,
-  target_product: validation.target_product,
-  credential_profile_id: validation.credential_profile_id,
-  credential_profile_digest: validation.credential_profile_digest,
-  capability_profile_id: "connector-capability-profile.development-read-only",
-  capability_profile_digest: profileDigest,
-  capabilities: [
-    {
-      capability_id: "health.read",
-      capability_class: "C1",
-      required_permission: "connector.health.read",
-    },
-  ],
-  enablement_policy_id: "connector-capability-enablement-policy.development",
-  enablement_policy_digest: policyDigest,
-  enablement_policy_version: "policy-v1",
-  enablement_version: 1,
-  instance_state: "enabled_capabilities_governed",
-  enabled_by: "subject.connector-capability-enabler",
-  purpose: "Enable governed read-only capability metadata without runtime authority.",
-  enabled_at: "2026-08-06T00:00:00Z",
-  canonical_digest: "e".repeat(64),
-  configuration_validated: true,
-  connectivity_evidence_verified: true,
-  eligible_for_capability_governance: true,
-  capability_governance_applied: true,
-  connector_enabled: true,
-  eligible_for_runtime_trust: true,
-  promotion_blocked: false,
-  credentials_resolved: false,
-  runtime_trust_granted: false,
-  execution_authorized: false,
-  deployment_approved: false,
-  infrastructure_mutation_performed: false,
-  reused: false,
-} satisfies ConnectorCapabilityEnablement;
 
 afterEach(() => vi.unstubAllGlobals());
 

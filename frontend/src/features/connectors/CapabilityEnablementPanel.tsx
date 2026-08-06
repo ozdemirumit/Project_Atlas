@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { createConnectorCapabilityEnablement } from "../../api/capabilityEnablements";
 import type { ConnectorConfigurationValidation } from "../../api/configurationValidations";
+import { RuntimeTrustPanel } from "./RuntimeTrustPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development": "3037f7c378ac3046e92be04e9b71015d63780b6ce961de131e02b13b788da438",
@@ -33,5 +34,6 @@ export function CapabilityEnablementPanel({ validation }: { validation: Connecto
       <button className="primary-button" type="button" disabled={!canSubmit} onClick={() => mutation.mutate({ validation, profileId, profileDigest, policyId, policyDigest, purpose })}>{mutation.isPending ? <RefreshCw className="spin" size={16} /> : <Power size={16} />}Enable governed capabilities</button></>}
     {mutation.isError && <div className="workspace-message error-state" role="alert"><AlertTriangle size={20} /><div><h3>Capability enablement unavailable</h3><p>Validation lineage, signed profile, manifest parity, policy, scope, or separation failed.</p></div></div>}
     {enablement && <div className="package-signing-record"><div className="section-heading"><div><strong>{enablement.capabilities.length} governed capabilities</strong><code>{enablement.enablement_id}</code></div><span className="state-badge neutral"><BadgeCheck size={14} />enabled</span></div><div className="mcp-builder-facts"><div><span>Classes</span><strong>{[...new Set(enablement.capabilities.map((item) => item.capability_class))].join(", ")}</strong></div><div><span>Runtime trust</span><strong>not granted</strong></div><div><span>Execution</span><strong>not authorized</strong></div><div><span>State</span><strong>{enablement.instance_state}</strong></div></div><p className="muted-copy">Administrative enablement selected only signed manifest-bound capabilities. No connector process, secret, target connection, invocation, runtime trust, deployment, or infrastructure change occurred.</p></div>}
+    {enablement && <RuntimeTrustPanel enablement={enablement} />}
   </section>;
 }
