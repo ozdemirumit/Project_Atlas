@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-077 |
 | Title | Governed connector configuration and connectivity validation foundation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/governed-connector-configuration-validation` |
-| Pull Request | Pending |
+| Pull Request | [#89](https://github.com/ozdemirumit/Project_Atlas/pull/89) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-033 |
 | Last Updated | 2026-08-06 |
-| Next Action | Implement ADR-033 backend, web flow, tests, live validation, and delivery gates |
+| Next Action | Complete PR #89 CI, merge, post-merge verification, and main closure |
 
 ### ATLAS-IMP-077 Scope Rationale
 
@@ -63,7 +63,8 @@
 - A clean live local page at `http://localhost:5202/` was inspected at 1280 x 720 and 390 x 844.
   Both views had no horizontal overflow or browser errors/warnings; the real login boundary remained
   fail-closed.
-- Pull request, GitHub CI, merge, and post-merge evidence are pending.
+- [PR #89](https://github.com/ozdemirumit/Project_Atlas/pull/89) is open; CI, merge, and
+  post-merge evidence are pending.
 
 ### ATLAS-IMP-076 Scope Rationale
 
