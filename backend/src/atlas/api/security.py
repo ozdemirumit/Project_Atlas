@@ -101,6 +101,8 @@ from atlas.modules.authorization.application.bootstrap import (
     IDENTITY_SELF_READ,
     IDENTITY_SUBJECT_ADMIN_DISABLE,
     INVESTIGATION_CREATE,
+    KNOWLEDGE_EVIDENCE_DRAFT_CREATE,
+    KNOWLEDGE_EVIDENCE_DRAFT_READ,
     MCP_BUILDER_CANDIDATE_HANDOFF_CREATE,
     MCP_BUILDER_CANDIDATE_HANDOFF_DOWNLOAD,
     MCP_BUILDER_CANDIDATE_HANDOFF_READ,
@@ -190,6 +192,7 @@ from atlas.modules.authorization.application.bootstrap import (
     investigation_scope,
     logical_backup_scope,
     mcp_builder_scope,
+    operational_evidence_knowledge_draft_scope,
     rca_scope,
     recommendation_scope,
     release_preflight_scope,
@@ -3733,5 +3736,61 @@ async def authorize_connector_invocation_evidence_read(
         request,
         subject,
         permission_id=CONNECTOR_INVOCATION_EVIDENCE_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def _authorize_operational_evidence_knowledge_draft(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.knowledge.operational-evidence-drafts",
+            scope=operational_evidence_knowledge_draft_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail="Operational evidence knowledge draft access is not permitted.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_operational_evidence_knowledge_draft_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_operational_evidence_knowledge_draft(
+        request,
+        subject,
+        permission_id=KNOWLEDGE_EVIDENCE_DRAFT_CREATE,
+        capability_class=CapabilityClass.C3_CONTROLLED_CHANGE,
+    )
+
+
+async def authorize_operational_evidence_knowledge_draft_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_operational_evidence_knowledge_draft(
+        request,
+        subject,
+        permission_id=KNOWLEDGE_EVIDENCE_DRAFT_READ,
         capability_class=CapabilityClass.C1_READ_ONLY,
     )

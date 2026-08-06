@@ -160,6 +160,8 @@ CONNECTOR_BOUNDED_INVOCATION_CREATE = "connectors.bounded-invocations.create"
 CONNECTOR_BOUNDED_INVOCATION_READ = "connectors.bounded-invocations.read"
 CONNECTOR_INVOCATION_EVIDENCE_CREATE = "connectors.invocation-evidence.create"
 CONNECTOR_INVOCATION_EVIDENCE_READ = "connectors.invocation-evidence.read"
+KNOWLEDGE_EVIDENCE_DRAFT_CREATE = "knowledge.operational-evidence-drafts.create"
+KNOWLEDGE_EVIDENCE_DRAFT_READ = "knowledge.operational-evidence-drafts.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -891,6 +893,19 @@ def connector_invocation_evidence_scope(
     )
 
 
+def operational_evidence_knowledge_draft_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.knowledge",
+        resource_id="resource.knowledge.operational-evidence-drafts",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -1556,6 +1571,14 @@ def build_development_authorization_service(
             permission_id=CONNECTOR_INVOCATION_EVIDENCE_READ,
             description="Read minimized connector invocation evidence metadata.",
         ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_EVIDENCE_DRAFT_CREATE,
+            description="Create one governed non-retrievable operational evidence draft.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_EVIDENCE_DRAFT_READ,
+            description="Read minimized operational evidence knowledge draft metadata.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -1685,6 +1708,8 @@ def build_development_authorization_service(
                 CONNECTOR_BOUNDED_INVOCATION_READ,
                 CONNECTOR_INVOCATION_EVIDENCE_CREATE,
                 CONNECTOR_INVOCATION_EVIDENCE_READ,
+                KNOWLEDGE_EVIDENCE_DRAFT_CREATE,
+                KNOWLEDGE_EVIDENCE_DRAFT_READ,
             }
         ),
     )
@@ -2825,6 +2850,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=connector_invocation_evidence_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.operational-evidence-knowledge-draft-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=operational_evidence_knowledge_draft_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C3_CONTROLLED_CHANGE,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.operational-evidence-knowledge-draft-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=operational_evidence_knowledge_draft_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,
