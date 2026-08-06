@@ -39,6 +39,7 @@ from atlas.modules.identity.domain.models import (
     AuthenticationMethod,
     SubjectKind,
 )
+from atlas.modules.mcp_builder.domain.candidate_handoff import McpBuilderCandidateHandoff
 
 PUBLICATION_CREATE_PERMISSION = "connectors.registry-publication-receipts.create"
 PUBLICATION_READ_PERMISSION = "connectors.registry-publication-receipts.read"
@@ -313,6 +314,105 @@ class RegistryPublicationService:
             permission_id=PUBLICATION_READ_PERMISSION,
         )
         return receipt
+
+    async def package_registration_source(
+        self, *, receipt_id: str
+    ) -> tuple[
+        ConnectorInternalRegistryPublicationReceipt,
+        McpBuilderCandidateHandoff,
+        frozenset[str],
+    ]:
+        """Reverify the complete publication lineage for package registration governance."""
+        receipt = await self._repository.get(receipt_id=receipt_id)
+        if receipt is None:
+            raise RegistryPublicationError("registry_publication_receipt_not_found")
+        self._verify_receipt(receipt)
+        policy = await self._policy_source.get_by_id(policy_id=receipt.publication_policy_id)
+        if policy is None:
+            raise RegistryPublicationError("registry_publication_policy_not_found")
+        self._verify_policy(policy)
+        try:
+            signing, _, signing_actors = await self._signing_source.registry_publication_source(
+                receipt_id=receipt.source_signing_receipt_id
+            )
+            approval, approval_actors = await self._approval_source.publisher_attestation_source(
+                request_id=receipt.source_approval_request_id
+            )
+            (
+                final,
+                handoff,
+                acquisition,
+                final_actors,
+            ) = await self._final_source.package_registration_source(
+                validation_id=receipt.source_final_validation_id
+            )
+        except (PackageSigningError, PackageApprovalError, PackageFinalValidationError) as error:
+            raise RegistryPublicationError("registry_publication_source_not_found") from error
+        if (
+            receipt.source_signing_receipt_digest != signing.canonical_digest
+            or receipt.source_approval_request_digest != approval.request.canonical_digest
+            or receipt.source_final_validation_digest != final.canonical_digest
+            or receipt.source_acquisition_id != acquisition.acquisition_id
+            or receipt.source_acquisition_digest != acquisition.canonical_digest
+            or receipt.package_digest != signing.envelope.package_digest
+            or receipt.package_digest != final.package_digest
+            or receipt.publisher_id != signing.envelope.publisher_id
+            or receipt.connector_id != signing.envelope.connector_id
+            or receipt.release_version != signing.envelope.release_version
+            or receipt.provenance_digest != signing.envelope.provenance_digest
+            or receipt.publication_policy_digest != policy.canonical_digest
+            or receipt.publication.registry_profile_id != policy.registry_profile_id
+            or receipt.publication.publisher_workload_id != policy.publisher_workload_id
+            or receipt.publication.artifact_reference_schema != policy.artifact_reference_schema
+            or receipt.publication.package_digest != receipt.package_digest
+            or not (
+                receipt.organization_id
+                == signing.organization_id
+                == approval.request.organization_id
+                == final.organization_id
+                == handoff.organization_id
+                == policy.organization_id
+            )
+            or not (
+                receipt.environment_id
+                == signing.environment_id
+                == approval.request.environment_id
+                == final.environment_id
+                == handoff.environment_id
+                == policy.environment_id
+            )
+            or not receipt.package_published
+            or not receipt.eligible_for_registration_governance
+            or receipt.promotion_blocked
+            or any(
+                (
+                    receipt.connector_registered,
+                    receipt.connector_installed,
+                    receipt.connector_enabled,
+                    receipt.target_configured,
+                    receipt.credentials_resolved,
+                    receipt.runtime_trust_granted,
+                    receipt.execution_authorized,
+                    receipt.deployment_approved,
+                    receipt.infrastructure_mutation_performed,
+                )
+            )
+        ):
+            raise RegistryPublicationError("registry_publication_not_eligible_for_registration")
+        return (
+            receipt,
+            handoff,
+            signing_actors
+            | approval_actors
+            | final_actors
+            | {
+                receipt.requested_by,
+                policy.signed_by,
+                policy.verifier_workload_id,
+                policy.publisher_workload_id,
+                policy.registry_custodian_id,
+            },
+        )
 
     async def close(self) -> None:
         await self._repository.close()

@@ -47,6 +47,8 @@ from atlas.modules.authorization.application.bootstrap import (
     CONNECTOR_PACKAGE_LICENSE_ANALYSIS_READ,
     CONNECTOR_PACKAGE_MALWARE_ANALYSIS_CREATE,
     CONNECTOR_PACKAGE_MALWARE_ANALYSIS_READ,
+    CONNECTOR_PACKAGE_REGISTRATION_CREATE,
+    CONNECTOR_PACKAGE_REGISTRATION_READ,
     CONNECTOR_PACKAGE_RUNNER_VALIDATION_CREATE,
     CONNECTOR_PACKAGE_RUNNER_VALIDATION_READ,
     CONNECTOR_PACKAGE_SCHEMA_SEMANTICS_VALIDATION_CREATE,
@@ -131,6 +133,7 @@ from atlas.modules.authorization.application.bootstrap import (
     connector_package_lab_self_test_scope,
     connector_package_license_analysis_scope,
     connector_package_malware_analysis_scope,
+    connector_package_registration_scope,
     connector_package_runner_validation_scope,
     connector_package_schema_semantics_validation_scope,
     connector_package_signing_scope,
@@ -2907,5 +2910,61 @@ async def authorize_connector_registry_publication_read(
         request,
         subject,
         permission_id=CONNECTOR_REGISTRY_PUBLICATION_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def _authorize_connector_package_registration(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    settings = request.app.state.settings
+    service: AuthorizationService = request.app.state.authorization_service
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.connector.package-registration-record",
+            scope=connector_package_registration_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail="The connector package registration operation is not authorized.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_connector_package_registration_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_package_registration(
+        request,
+        subject,
+        permission_id=CONNECTOR_PACKAGE_REGISTRATION_CREATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_connector_package_registration_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_package_registration(
+        request,
+        subject,
+        permission_id=CONNECTOR_PACKAGE_REGISTRATION_READ,
         capability_class=CapabilityClass.C1_READ_ONLY,
     )

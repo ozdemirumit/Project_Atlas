@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import io
+import json
+import zipfile
 from dataclasses import asdict, replace
 from datetime import timedelta
 from pathlib import Path
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,6 +30,7 @@ from atlas.modules.connectors.adapters.publisher_attestation_memory import (
 from atlas.modules.connectors.adapters.publisher_attestation_postgres import (
     PostgreSQLPublisherAttestationRepository,
 )
+from atlas.modules.connectors.application.final_validation import PackageFinalValidationService
 from atlas.modules.connectors.application.publisher_attestation import (
     PublisherAttestationService,
     build_development_publisher_attestation_policy,
@@ -54,6 +59,8 @@ def claim_for(
     *,
     ownership: bool = True,
     support: bool = True,
+    connector_id: str = "connector.hitachi-ops-center",
+    release_version: str = "version.1.0.0",
 ) -> ConnectorPublisherClaimSnapshot:
     now = approved.decision.decided_at if approved.decision else approved.request.created_at
     claim = ConnectorPublisherClaimSnapshot(
@@ -64,8 +71,8 @@ def claim_for(
         environment_id=approved.request.environment_id,
         publisher_id="publisher.atlas-labs",
         publisher_display_name="Atlas Labs",
-        connector_id="connector.hitachi-ops-center",
-        release_version="version.1.0.0",
+        connector_id=connector_id,
+        release_version=release_version,
         package_digest=approved.request.package_digest,
         provenance_digest="7" * 64,
         ownership_asserted=ownership,
@@ -103,7 +110,19 @@ async def attestation_fixture(
     approval_service, _, final, approval_policy = await approval_fixture()
     pending = await request_approval(approval_service, final, approval_policy)
     approved = await decide(approval_service, pending)
-    claim = claim_for(approved, ownership=ownership, support=support)
+    final_service = cast(PackageFinalValidationService, approval_service._final_validation_source)
+    _, _, content, _ = await final_service.registry_publication_source(
+        validation_id=approved.request.source_final_validation_id
+    )
+    with zipfile.ZipFile(io.BytesIO(content), mode="r") as archive:
+        manifest = json.loads(archive.read("atlas-connector.yaml"))
+    claim = claim_for(
+        approved,
+        ownership=ownership,
+        support=support,
+        connector_id=str(manifest["connector_id"]),
+        release_version=f"version.{manifest['version']}",
+    )
     now = approved.decision.decided_at if approved.decision else approved.request.created_at
     policy = build_development_publisher_attestation_policy(
         organization_id=approved.request.organization_id,

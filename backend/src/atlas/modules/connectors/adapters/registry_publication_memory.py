@@ -10,6 +10,9 @@ from atlas.modules.connectors.application.package_signing import PackageSigningS
 from atlas.modules.connectors.application.registry_publication_ports import (
     RegistryPublicationError,
 )
+from atlas.modules.connectors.domain.package_registration import (
+    ConnectorPackageRegistrationPolicySnapshot,
+)
 from atlas.modules.connectors.domain.package_signing import (
     ConnectorPackageSigningPolicySnapshot,
     ConnectorPackageSigningReceipt,
@@ -122,13 +125,21 @@ class NonProductionHmacPackageSignatureVerifier:
 
 
 class InMemoryNonProductionRegistryPublisher:
-    def __init__(self, *, registry_profile_id: str, publisher_workload_id: str) -> None:
+    def __init__(
+        self,
+        *,
+        registry_profile_id: str,
+        publisher_workload_id: str,
+        reader_workload_id: str = "workload.connector-registry-reader",
+    ) -> None:
         self._registry_profile_id = registry_profile_id
         self._publisher_workload_id = publisher_workload_id
+        self._reader_workload_id = reader_workload_id
         self._results: dict[str, ConnectorInternalRegistryPublicationResult] = {}
         self._content: dict[str, bytes] = {}
         self._lock = asyncio.Lock()
         self.invocation_count = 0
+        self.read_invocation_count = 0
 
     async def publish(
         self,
@@ -174,7 +185,26 @@ class InMemoryNonProductionRegistryPublisher:
             )
             self._content[package_digest] = content
             self._results[package_digest] = result
-            return result
+        return result
+
+    async def read(
+        self,
+        *,
+        publication: ConnectorInternalRegistryPublicationResult,
+        policy: ConnectorPackageRegistrationPolicySnapshot,
+    ) -> bytes:
+        if (
+            policy.required_registry_profile_id != self._registry_profile_id
+            or policy.reader_workload_id != self._reader_workload_id
+            or publication.registry_profile_id != self._registry_profile_id
+            or publication.artifact_reference_schema != policy.required_artifact_reference_schema
+        ):
+            raise RegistryPublicationError("package_registration_registry_binding_invalid")
+        self.read_invocation_count += 1
+        content = self._content.get(publication.package_digest)
+        if content is None:
+            raise RegistryPublicationError("package_registration_registry_artifact_unavailable")
+        return content
 
 
 class UnavailablePackageSignatureVerifier:

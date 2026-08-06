@@ -8195,7 +8195,8 @@ tbody tr.selected {
 }
 
 .package-signing-panel,
-.registry-publication-panel {
+.registry-publication-panel,
+.package-registration-panel {
   display: grid;
   gap: 16px;
   margin-top: 20px;
@@ -8204,19 +8205,24 @@ tbody tr.selected {
 }
 
 .package-signing-panel > label,
-.registry-publication-panel > label {
+.registry-publication-panel > label,
+.package-registration-panel > label {
   display: grid;
   gap: 8px;
 }
 
 .registry-publication-panel input,
-.registry-publication-panel textarea {
+.registry-publication-panel textarea,
+.package-registration-panel input,
+.package-registration-panel textarea {
   width: 100%;
   min-width: 0;
 }
 
 .registry-publication-panel strong,
-.registry-publication-panel code {
+.registry-publication-panel code,
+.package-registration-panel strong,
+.package-registration-panel code {
   min-width: 0;
   overflow-wrap: anywhere;
 }

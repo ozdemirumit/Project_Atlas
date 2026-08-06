@@ -37,7 +37,6 @@ const publication = {
     registry_profile_id: "registry-profile.nonproduction-internal",
     publisher_workload_id: "workload.connector-registry-publisher",
     artifact_reference_schema: "atlas.connector-registry-artifact-reference.v1",
-    artifact_reference: `registry-artifact.sha256-${signing.envelope.package_digest}`,
     package_digest: signing.envelope.package_digest,
     package_size_bytes: 4096,
     source_signing_receipt_digest: signing.canonical_digest,
@@ -92,8 +91,8 @@ describe("RegistryPublicationPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Publish signed package" }));
 
     expect(await screen.findByText(publication.receipt_id)).toBeVisible();
-    expect(screen.getByText(publication.publication.artifact_reference)).toBeVisible();
-    expect(screen.queryByRole("button", { name: /register|install|enable|execute/i })).toBeNull();
+    expect(screen.getByText(publication.package_digest)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Register published package" })).toBeVisible();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     const init = fetchMock.mock.calls[0]?.[1];
     const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<
