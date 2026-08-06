@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { ConnectorInstanceRecord } from "../../api/connectorInstances";
 import { createConnectorTargetConfiguration } from "../../api/targetConfigurations";
+import { CredentialAssignmentPanel } from "./CredentialAssignmentPanel";
 
 const EVIDENCE: Record<string, { profile: string; policy: string }> = {
   "environment.development": {
@@ -82,6 +83,7 @@ export function TargetConfigurationPanel({ instance }: { instance: ConnectorInst
           <p className="muted-copy">The governed target profile is bound. Endpoint, trust, route, credentials, health validation, capabilities, and runtime remain unavailable here.</p>
         </div>
       )}
+      {binding && <CredentialAssignmentPanel binding={binding} />}
     </section>
   );
 }

@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-032 |
 | Last Updated | 2026-08-06 |
-| Next Action | Implement backend credential-profile, policy, assignment, persistence, API, and focused tests |
+| Next Action | Publish the validated implementation branch and complete PR, CI, merge, and main closure |
 
 ### ATLAS-IMP-076 Scope Rationale
 
@@ -54,7 +54,25 @@
 
 ### ATLAS-IMP-076 Validation Evidence
 
-- Pending implementation and verification.
+- ADR-032 is accepted. Exact current target binding and complete upstream-lineage reverification,
+  signed credential-profile and assignment-policy enforcement, deterministic disabled assignment,
+  two-stage required audit, immutable records, default-deny API/RBAC, memory/PostgreSQL persistence,
+  and migration now assign only governed credential metadata for later configuration validation.
+- Six focused backend tests cover assignment-only authority, deterministic idempotency, exact source,
+  profile and policy binding, complete actor separation, least-privilege rejection,
+  audit-before-persist, PostgreSQL round-trip, CSRF, no-store, extra-field rejection, and response
+  minimization without secret-store or network access.
+- Backend formatting and Ruff checks passed across 612 files; strict mypy passed across 612 source
+  and test files; the full suite passed with 602 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0048` head for immutable connector credential assignments.
+- Frontend ESLint and TypeScript checks passed with the CI-equivalent 6 GB Node heap; all 45 Vitest
+  tests passed and the production Vite build completed. The panel accepts no caller-selected secret
+  reference, store/vault path, value, token, key, certificate, username, password, endpoint, target,
+  capability, runtime, command, enablement, execution, or deployment input/control.
+- A clean live local page at `http://localhost:5202/` was inspected at 1280 x 720 and 390 x 844.
+  Both views had no horizontal overflow and a fresh browser tab had no errors or warnings; the real
+  login boundary remained fail-closed.
+- GitHub PR, CI, merge, and post-merge evidence are pending publication.
 
 ### ATLAS-IMP-075 Scope Rationale
 
