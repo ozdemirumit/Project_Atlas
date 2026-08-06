@@ -23,6 +23,9 @@ from atlas.modules.connectors.application.runtime_activation_ports import (
 from atlas.modules.connectors.application.secret_brokerage_ports import (
     ConnectorSecretBrokerageError,
 )
+from atlas.modules.connectors.domain.capability_enablement import (
+    ConnectorCapabilityEnablementRecord,
+)
 from atlas.modules.connectors.domain.credential_assignment import ConnectorCredentialProfileSnapshot
 from atlas.modules.connectors.domain.runtime_activation import (
     ENABLED_RUNTIME_HEALTHY,
@@ -296,6 +299,23 @@ class ConnectorRuntimeActivationService:
             credential_profile,
             source_actors | {record.activated_by},
         )
+
+    async def capability_invocation_source(
+        self, *, activation_id: str
+    ) -> tuple[
+        ConnectorRuntimeActivationRecord,
+        ConnectorCapabilityEnablementRecord,
+        frozenset[str],
+    ]:
+        activation, _, runtime_trust, _, actors = await self.target_session_source(
+            activation_id=activation_id
+        )
+        _, trusted, _, enablement, source_actors = await self._source.capability_invocation_source(
+            authorization_id=activation.source_brokerage_authorization_id
+        )
+        if trusted.canonical_digest != runtime_trust.canonical_digest:
+            raise ConnectorRuntimeActivationError("runtime_activation_source_invalid")
+        return activation, enablement, frozenset(actors | source_actors)
 
     async def close(self) -> None:
         await self._repository.close()

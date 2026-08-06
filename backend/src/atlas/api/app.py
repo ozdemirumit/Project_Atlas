@@ -46,6 +46,7 @@ from atlas.api.routes import (
     identity_governance,
     instance_creation,
     investigations,
+    invocation_authorizations,
     lab_self_tests,
     license_analyses,
     malware_analyses,
@@ -184,6 +185,18 @@ from atlas.modules.connectors.adapters.instance_creation_memory import (
 )
 from atlas.modules.connectors.adapters.instance_creation_postgres import (
     PostgreSQLConnectorInstanceRepository,
+)
+from atlas.modules.connectors.adapters.invocation_authorization_memory import (
+    InMemoryConnectorInvocationAuthorizationPolicySource,
+    InMemoryConnectorInvocationAuthorizationRepository,
+    InMemoryConnectorInvocationInputEnvelopeSource,
+    InMemoryConnectorInvocationProfileSource,
+)
+from atlas.modules.connectors.adapters.invocation_authorization_postgres import (
+    PostgreSQLConnectorInvocationAuthorizationRepository,
+)
+from atlas.modules.connectors.adapters.invocation_permission import (
+    AuthorizationConnectorCapabilityPermissionAuthorizer,
 )
 from atlas.modules.connectors.adapters.lab_mock_target import MockTargetConnectorLabRunner
 from atlas.modules.connectors.adapters.lab_self_test_memory import (
@@ -379,6 +392,10 @@ from atlas.modules.connectors.application.final_validation import (
 from atlas.modules.connectors.application.instance_creation import (
     ConnectorInstanceCreationService,
     build_development_connector_instance_creation_policy,
+)
+from atlas.modules.connectors.application.invocation_authorization import (
+    ConnectorInvocationAuthorizationService,
+    build_development_connector_invocation_authorization_policy,
 )
 from atlas.modules.connectors.application.lab_self_test import (
     PackageLabSelfTestService,
@@ -742,6 +759,7 @@ def create_app(
     secret_brokerage_service: ConnectorSecretBrokerageService | None = None,
     runtime_activation_service: ConnectorRuntimeActivationService | None = None,
     target_session_service: ConnectorTargetSessionService | None = None,
+    invocation_authorization_service: ConnectorInvocationAuthorizationService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -2111,6 +2129,43 @@ def create_app(
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
     )
+    if invocation_authorization_service is not None:
+        resolved_invocation_authorization_service = invocation_authorization_service
+    else:
+        invocation_authorization_repository = (
+            PostgreSQLConnectorInvocationAuthorizationRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryConnectorInvocationAuthorizationRepository()
+        )
+        invocation_authorization_policies = (
+            ()
+            if is_production
+            else (
+                build_development_connector_invocation_authorization_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_invocation_authorization_service = ConnectorInvocationAuthorizationService(
+            repository=invocation_authorization_repository,
+            source=resolved_target_session_service,
+            profile_source=InMemoryConnectorInvocationProfileSource(()),
+            envelope_source=InMemoryConnectorInvocationInputEnvelopeSource(()),
+            policy_source=InMemoryConnectorInvocationAuthorizationPolicySource(
+                invocation_authorization_policies
+            ),
+            permission_authorizer=AuthorizationConnectorCapabilityPermissionAuthorizer(
+                service=resolved_authorization_service,
+                environment=resolved_settings.environment,
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -2315,6 +2370,7 @@ def create_app(
         app.state.secret_brokerage_service = resolved_secret_brokerage_service
         app.state.runtime_activation_service = resolved_runtime_activation_service
         app.state.target_session_service = resolved_target_session_service
+        app.state.invocation_authorization_service = resolved_invocation_authorization_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -2327,6 +2383,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_invocation_authorization_service.close()
         await resolved_target_session_service.close()
         await resolved_runtime_activation_service.close()
         await resolved_secret_brokerage_service.close()
@@ -2445,6 +2502,7 @@ def create_app(
     app.include_router(secret_brokerage_authorizations.router, prefix="/api/v1")
     app.include_router(runtime_activations.router, prefix="/api/v1")
     app.include_router(target_session_verifications.router, prefix="/api/v1")
+    app.include_router(invocation_authorizations.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

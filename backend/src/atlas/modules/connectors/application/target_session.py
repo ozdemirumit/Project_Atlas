@@ -23,6 +23,9 @@ from atlas.modules.connectors.application.target_session_ports import (
     ConnectorTargetSessionRepository,
     ConnectorTargetSessionSource,
 )
+from atlas.modules.connectors.domain.capability_enablement import (
+    ConnectorCapabilityEnablementRecord,
+)
 from atlas.modules.connectors.domain.credential_assignment import ConnectorCredentialProfileSnapshot
 from atlas.modules.connectors.domain.runtime_activation import (
     ENABLED_RUNTIME_HEALTHY,
@@ -253,6 +256,38 @@ class ConnectorTargetSessionService:
 
     async def close(self) -> None:
         await self._repository.close()
+
+    async def capability_invocation_authorization_source(
+        self, *, verification_id: str
+    ) -> tuple[
+        ConnectorTargetSessionVerificationRecord,
+        ConnectorCapabilityEnablementRecord,
+        frozenset[str],
+    ]:
+        record = await self._repository.get(verification_id=verification_id)
+        if record is None:
+            raise ConnectorTargetSessionError("target_session_record_not_found")
+        self._verify_record(record)
+        activation, enablement, actors = await self._source.capability_invocation_source(
+            activation_id=record.source_runtime_activation_id
+        )
+        if (
+            record.source_runtime_activation_digest != activation.canonical_digest
+            or record.package_digest != enablement.package_digest
+            or record.instance_id != enablement.instance_id
+            or record.target_profile_digest != enablement.target_profile_digest
+            or record.instance_state != ENABLED_TARGET_SESSION_VERIFIED
+            or not record.eligible_for_capability_invocation_governance
+            or record.target_connected
+            or record.capability_invocation_authorized
+            or record.capability_invoked
+            or record.scheduled
+            or record.execution_authorized
+            or record.deployment_approved
+            or record.infrastructure_mutation_performed
+        ):
+            raise ConnectorTargetSessionError("target_session_invocation_invalid")
+        return record, enablement, frozenset(actors | {record.verified_by})
 
     def _record(
         self,

@@ -293,6 +293,24 @@ class ConnectorRuntimeTrustService:
             frozenset(source_actors | {record.granted_by, profile.signed_by, policy.signed_by}),
         )
 
+    async def capability_invocation_source(
+        self, *, grant_id: str
+    ) -> tuple[
+        ConnectorRuntimeTrustGrantRecord,
+        ConnectorCapabilityEnablementRecord,
+        frozenset[str],
+    ]:
+        record, actors = await self.secret_brokerage_source(grant_id=grant_id)
+        try:
+            enablement, _, source_actors = await self._enablement_source.runtime_trust_source(
+                enablement_id=record.source_enablement_id
+            )
+        except ConnectorCapabilityEnablementError as error:
+            raise ConnectorRuntimeTrustError("runtime_trust_source_not_found") from error
+        if record.source_enablement_digest != enablement.canonical_digest:
+            raise ConnectorRuntimeTrustError("runtime_trust_source_invalid")
+        return record, enablement, frozenset(actors | source_actors)
+
     async def close(self) -> None:
         await self._repository.close()
 

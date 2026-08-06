@@ -24,6 +24,9 @@ from atlas.modules.connectors.application.secret_brokerage_ports import (
     ConnectorSecretBrokerageRepository,
     ConnectorSecretBrokerageRuntimeTrustSource,
 )
+from atlas.modules.connectors.domain.capability_enablement import (
+    ConnectorCapabilityEnablementRecord,
+)
 from atlas.modules.connectors.domain.credential_assignment import (
     ConnectorCredentialAssignmentRecord,
     ConnectorCredentialProfileSnapshot,
@@ -315,6 +318,35 @@ class ConnectorSecretBrokerageService:
             runtime_trust,
             credential_profile,
             runtime_actors | credential_actors | {record.authorized_by},
+        )
+
+    async def capability_invocation_source(
+        self, *, authorization_id: str
+    ) -> tuple[
+        ConnectorSecretBrokerageAuthorizationRecord,
+        ConnectorRuntimeTrustGrantRecord,
+        ConnectorCredentialProfileSnapshot,
+        ConnectorCapabilityEnablementRecord,
+        frozenset[str],
+    ]:
+        record, runtime_trust, credential_profile, actors = await self.runtime_activation_source(
+            authorization_id=authorization_id
+        )
+        (
+            trusted,
+            enablement,
+            source_actors,
+        ) = await self._runtime_trust_source.capability_invocation_source(
+            grant_id=record.source_runtime_trust_grant_id
+        )
+        if trusted.canonical_digest != runtime_trust.canonical_digest:
+            raise ConnectorSecretBrokerageError("secret_brokerage_source_invalid")
+        return (
+            record,
+            runtime_trust,
+            credential_profile,
+            enablement,
+            frozenset(actors | source_actors),
         )
 
     async def close(self) -> None:
