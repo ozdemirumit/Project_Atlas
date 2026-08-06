@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { OperationalKnowledgeReviewRequest } from "../../api/knowledgeReviewRequests";
 import { createOperationalKnowledgeReviewerAssignment } from "../../api/reviewerAssignments";
+import { ProtectedInspectionLeasePanel } from "./ProtectedInspectionLeasePanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -110,6 +111,7 @@ export function ReviewerAssignmentPanel({
         </div>
       )}
       {assignment && (
+        <>
         <div className="package-signing-record">
           <div className="section-heading">
             <div>
@@ -143,6 +145,8 @@ export function ReviewerAssignmentPanel({
             digests are exposed. Protected inspection and review decisions remain separate stages.
           </p>
         </div>
+        <ProtectedInspectionLeasePanel assignment={assignment} />
+        </>
       )}
     </section>
   );

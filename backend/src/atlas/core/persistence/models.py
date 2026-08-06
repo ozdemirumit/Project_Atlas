@@ -2195,3 +2195,56 @@ class OperationalKnowledgeReviewerAssignmentModel(Base):
     environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class OperationalKnowledgeProtectedInspectionClaimModel(Base):
+    __tablename__ = "operational_knowledge_protected_inspection_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_assignment_set_id",
+            "track_code",
+            name="uq_operational_knowledge_protected_inspection_claims_source_track",
+        ),
+        UniqueConstraint(
+            "claimed_by_subject_digest",
+            "idempotency_digest",
+            name="uq_operational_knowledge_protected_inspection_claims_actor_idempotency",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source_assignment_set_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    track_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    lease_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    claimed_by_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class OperationalKnowledgeProtectedInspectionModel(Base):
+    __tablename__ = "operational_knowledge_protected_inspection_leases"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_assignment_set_id",
+            "track_code",
+            name="uq_operational_knowledge_protected_inspection_leases_source_track",
+        ),
+        UniqueConstraint(
+            "claim_id",
+            name="uq_operational_knowledge_protected_inspection_leases_claim",
+        ),
+    )
+
+    lease_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    claim_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_assignment_set_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    track_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    knowledge_item_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    lease_holder_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
