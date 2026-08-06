@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { createConnectorPackageRegistration } from "../../api/packageRegistrations";
 import type { ConnectorRegistryPublicationReceipt } from "../../api/registryPublications";
+import { PackageInstallationPanel } from "./PackageInstallationPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -104,6 +105,7 @@ export function PackageRegistrationPanel({
       )}
 
       {record && (
+        <>
         <div className="package-signing-record">
           <div className="section-heading">
             <div>
@@ -127,6 +129,8 @@ export function PackageRegistrationPanel({
             runtime trust, and execution remain separate.
           </p>
         </div>
+        <PackageInstallationPanel registration={record} />
+        </>
       )}
     </section>
   );

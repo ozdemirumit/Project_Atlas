@@ -47,6 +47,7 @@ from atlas.api.routes import (
     malware_analyses,
     mcp_builder,
     package_approvals,
+    package_installations,
     package_registrations,
     package_signing,
     platform,
@@ -174,6 +175,15 @@ from atlas.modules.connectors.adapters.package_approval_memory import (
 from atlas.modules.connectors.adapters.package_approval_postgres import (
     PostgreSQLPackageApprovalRepository,
 )
+from atlas.modules.connectors.adapters.package_installation_memory import (
+    InMemoryNonExecutingPackageInstaller,
+    InMemoryPackageInstallationPolicySource,
+    InMemoryPackageInstallationRepository,
+    UnavailablePackageInstaller,
+)
+from atlas.modules.connectors.adapters.package_installation_postgres import (
+    PostgreSQLPackageInstallationRepository,
+)
 from atlas.modules.connectors.adapters.package_registration_inspector import (
     BoundedConnectorPackageManifestInspector,
 )
@@ -280,6 +290,10 @@ from atlas.modules.connectors.application.malware_analysis import (
 from atlas.modules.connectors.application.package_approval import (
     PackageApprovalService,
     build_development_package_approval_policy,
+)
+from atlas.modules.connectors.application.package_installation import (
+    PackageInstallationService,
+    build_development_package_installation_policy,
 )
 from atlas.modules.connectors.application.package_registration import (
     PackageRegistrationService,
@@ -592,6 +606,7 @@ def create_app(
     package_signing_service: PackageSigningService | None = None,
     registry_publication_service: RegistryPublicationService | None = None,
     package_registration_service: PackageRegistrationService | None = None,
+    package_installation_service: PackageInstallationService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -1618,6 +1633,43 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if package_installation_service is not None:
+        resolved_package_installation_service = package_installation_service
+    else:
+        package_installation_repository = (
+            PostgreSQLPackageInstallationRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryPackageInstallationRepository()
+        )
+        development_package_installation_policies = (
+            ()
+            if is_production
+            else (
+                build_development_package_installation_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        package_installer = (
+            UnavailablePackageInstaller()
+            if is_production
+            else InMemoryNonExecutingPackageInstaller()
+        )
+        resolved_package_installation_service = PackageInstallationService(
+            repository=package_installation_repository,
+            registration_source=resolved_package_registration_service,
+            policy_source=InMemoryPackageInstallationPolicySource(
+                development_package_installation_policies
+            ),
+            artifact_reader=registry_artifact_reader,
+            manifest_inspector=BoundedConnectorPackageManifestInspector(),
+            installer=package_installer,
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -1816,6 +1868,7 @@ def create_app(
         app.state.package_signing_service = resolved_package_signing_service
         app.state.registry_publication_service = resolved_registry_publication_service
         app.state.package_registration_service = resolved_package_registration_service
+        app.state.package_installation_service = resolved_package_installation_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -1828,6 +1881,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_package_installation_service.close()
         await resolved_package_registration_service.close()
         await resolved_registry_publication_service.close()
         await resolved_package_signing_service.close()
@@ -1926,6 +1980,7 @@ def create_app(
     app.include_router(package_signing.router, prefix="/api/v1")
     app.include_router(registry_publications.router, prefix="/api/v1")
     app.include_router(package_registrations.router, prefix="/api/v1")
+    app.include_router(package_installations.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

@@ -41,6 +41,8 @@ from atlas.modules.authorization.application.bootstrap import (
     CONNECTOR_PACKAGE_CONTRACT_VALIDATION_READ,
     CONNECTOR_PACKAGE_FINAL_VALIDATION_CREATE,
     CONNECTOR_PACKAGE_FINAL_VALIDATION_READ,
+    CONNECTOR_PACKAGE_INSTALLATION_CREATE,
+    CONNECTOR_PACKAGE_INSTALLATION_READ,
     CONNECTOR_PACKAGE_LAB_SELF_TEST_CREATE,
     CONNECTOR_PACKAGE_LAB_SELF_TEST_READ,
     CONNECTOR_PACKAGE_LICENSE_ANALYSIS_CREATE,
@@ -130,6 +132,7 @@ from atlas.modules.authorization.application.bootstrap import (
     connector_package_content_policy_scan_scope,
     connector_package_contract_validation_scope,
     connector_package_final_validation_scope,
+    connector_package_installation_scope,
     connector_package_lab_self_test_scope,
     connector_package_license_analysis_scope,
     connector_package_malware_analysis_scope,
@@ -2966,5 +2969,61 @@ async def authorize_connector_package_registration_read(
         request,
         subject,
         permission_id=CONNECTOR_PACKAGE_REGISTRATION_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def _authorize_connector_package_installation(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    settings = request.app.state.settings
+    service: AuthorizationService = request.app.state.authorization_service
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.connector.package-installation-receipt",
+            scope=connector_package_installation_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail="The connector package installation operation is not authorized.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_connector_package_installation_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_package_installation(
+        request,
+        subject,
+        permission_id=CONNECTOR_PACKAGE_INSTALLATION_CREATE,
+        capability_class=CapabilityClass.C3_CONTROLLED_CHANGE,
+    )
+
+
+async def authorize_connector_package_installation_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_package_installation(
+        request,
+        subject,
+        permission_id=CONNECTOR_PACKAGE_INSTALLATION_READ,
         capability_class=CapabilityClass.C1_READ_ONLY,
     )

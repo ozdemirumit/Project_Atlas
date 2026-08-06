@@ -10,6 +10,9 @@ from atlas.modules.connectors.application.package_signing import PackageSigningS
 from atlas.modules.connectors.application.registry_publication_ports import (
     RegistryPublicationError,
 )
+from atlas.modules.connectors.domain.package_installation import (
+    ConnectorPackageInstallationPolicySnapshot,
+)
 from atlas.modules.connectors.domain.package_registration import (
     ConnectorPackageRegistrationPolicySnapshot,
 )
@@ -191,7 +194,9 @@ class InMemoryNonProductionRegistryPublisher:
         self,
         *,
         publication: ConnectorInternalRegistryPublicationResult,
-        policy: ConnectorPackageRegistrationPolicySnapshot,
+        policy: (
+            ConnectorPackageRegistrationPolicySnapshot | ConnectorPackageInstallationPolicySnapshot
+        ),
     ) -> bytes:
         if (
             policy.required_registry_profile_id != self._registry_profile_id

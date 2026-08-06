@@ -4,14 +4,77 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-072 |
-| Title | Governed connector package registration foundation |
-| Status | Completed |
-| Branch | `agent/governed-connector-registration` |
-| Pull Request | [#84](https://github.com/ozdemirumit/Project_Atlas/pull/84) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-028 |
+| Task ID | ATLAS-IMP-073 |
+| Title | Governed connector package installation foundation |
+| Status | In Progress |
+| Branch | `agent/governed-connector-installation` |
+| Pull Request | [#85](https://github.com/ozdemirumit/Project_Atlas/pull/85) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-029 |
 | Last Updated | 2026-08-06 |
-| Next Action | Define ATLAS-IMP-073 governed connector package installation foundation |
+| Next Action | Pass PR #85 CI, merge, and close the implementation record |
+
+### ATLAS-IMP-073 Scope Rationale
+
+- IMP-072 admits one exact package into the governed catalog but intentionally creates no installed
+  package, connector instance, target/secret binding, enablement, runtime, or execution authority.
+- ADR-029 adds current registration/source reverification, exact artifact recovery and manifest
+  reconciliation, a policy-selected non-executing installer, two-stage required audit, and an
+  immutable installation receipt.
+- Instance creation, target/configuration and credential binding, enablement, runtime trust,
+  execution, deployment, upgrade, and infrastructure mutation remain later independent stages.
+
+### ATLAS-IMP-073 Acceptance Criteria
+
+- Only a dedicated exact-tenant MFA human may request installation using exact registration
+  record/digest, package digest, signed installation-policy ID/digest, bounded purpose,
+  acknowledgement, idempotency, and correlation. Package, manifest, registry/store coordinate,
+  path, dependency, hook, instance, target, secret, enablement, or execution fields fail validation.
+- The service independently reloads and verifies the current immutable registration, publication,
+  complete upstream lineage, exact identities/digests, policy integrity/freshness, installation
+  eligibility, and no-authority state.
+- A policy-selected registry reader recovers only the exact immutable artifact; size/SHA-256 and a
+  fresh non-executing manifest inspection must match the registration snapshot exactly.
+- A policy-selected installer writes create-if-absent into a fixed immutable non-executable store,
+  verifies its returned artifact binding, and cannot extract active runtime content, run hooks or
+  code, resolve/download dependencies, use public network, or contact targets/secrets/models.
+- Immutable signed policy fixes schemas, age/size, assurance, reader/installer/custodian identities,
+  registry and installation-store profiles, accepted manifest evidence, separation, and receipt
+  contract. Customer configuration cannot weaken platform controls.
+- The installer human is distinct from every upstream, approval, publisher, signing, registry,
+  registration, policy, reader, installer-workload, and custody actor. AI/service/shared/wrong-scope
+  identities fail closed without discovery.
+- Required intent audit succeeds before artifact read/installer invocation; completion audit succeeds
+  after evidence verification and before persistence. Audit exposes no bytes, raw manifest, paths,
+  coordinates, signatures, keys, configuration names, or secret-reference names.
+- Receipts are immutable, one-to-one, idempotent, concurrency-safe, deterministic,
+  audit-before-persist, and equivalent in memory/PostgreSQL. Package/release/store conflicts fail.
+- A valid receipt sets only package installation and instance-governance eligibility. It grants no
+  instance, configuration, target/secret, enablement, runtime, execution, deployment, upgrade, or
+  infrastructure mutation authority.
+- Strict no-store create/read APIs, dedicated RBAC, CSRF, exact scope, MFA, bounded schemas, safe
+  errors, minimized web evidence, backend/frontend tests, one Alembic head, live desktop/mobile
+  inspection, browser logs, and GitHub CI apply.
+
+### ATLAS-IMP-073 Validation Evidence
+
+- ADR-029 is accepted. Current registration and complete upstream-source reverification, exact
+  artifact recovery, fresh manifest reconciliation, policy-selected non-executing installer,
+  two-stage required audit, immutable receipt, default-deny API/RBAC, memory/PostgreSQL persistence,
+  and migration now install only the exact current IMP-072 package.
+- Six focused backend tests cover instance-governance-only authority, exact byte and manifest
+  binding, actor separation, hardware-backed assurance, deterministic idempotency,
+  audit-before-read/installer, completion-audit-before-persist, PostgreSQL round-trip, CSRF,
+  no-store, extra-field rejection, and response minimization.
+- Backend formatting and Ruff checks passed across 635 files; strict mypy passed across 588 source
+  and test files; the full suite passed with 584 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0045` head for immutable connector package-installation receipts.
+- Frontend ESLint and TypeScript checks passed with the CI-equivalent 6 GB Node heap; all 42 Vitest
+  tests passed and the production Vite build completed. The panel accepts no package, manifest,
+  registry/store coordinate, path, dependency, hook, instance, target, secret, enablement, runtime,
+  execution, or deployment input/control.
+- A clean live local page at `http://localhost:5202/` was inspected at 1280 x 720 and 390 x 844.
+  Both views had no horizontal overflow and no browser errors or warnings; the real login boundary
+  remained fail-closed.
 
 ### ATLAS-IMP-072 Scope Rationale
 

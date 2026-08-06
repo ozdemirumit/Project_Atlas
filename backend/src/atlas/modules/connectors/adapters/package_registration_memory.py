@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 
 from atlas.modules.connectors.application.package_registration_ports import PackageRegistrationError
+from atlas.modules.connectors.domain.package_installation import (
+    ConnectorPackageInstallationPolicySnapshot,
+)
 from atlas.modules.connectors.domain.package_registration import (
     ConnectorPackageRegistrationPolicySnapshot,
     ConnectorPackageRegistrationRecord,
@@ -99,7 +102,9 @@ class UnavailableInternalRegistryArtifactReader:
         self,
         *,
         publication: ConnectorInternalRegistryPublicationResult,
-        policy: ConnectorPackageRegistrationPolicySnapshot,
+        policy: (
+            ConnectorPackageRegistrationPolicySnapshot | ConnectorPackageInstallationPolicySnapshot
+        ),
     ) -> bytes:
         del publication, policy
         raise PackageRegistrationError("package_registration_registry_reader_unavailable")
