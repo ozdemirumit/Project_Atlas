@@ -4,14 +4,76 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-071 |
-| Title | Governed connector internal registry publication foundation |
-| Status | Completed |
-| Branch | `agent/connector-registry-publication` |
-| Pull Request | [#83](https://github.com/ozdemirumit/Project_Atlas/pull/83) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-027 |
+| Task ID | ATLAS-IMP-072 |
+| Title | Governed connector package registration foundation |
+| Status | In Progress |
+| Branch | `agent/governed-connector-registration` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-028 |
 | Last Updated | 2026-08-06 |
-| Next Action | Select and govern the connector registration foundation as the next independent vertical slice |
+| Next Action | Review, publish, and validate the governed package-registration implementation |
+
+### ATLAS-IMP-072 Scope Rationale
+
+- IMP-071 places one exact signed package in immutable internal registry custody but intentionally
+  creates no connector catalog record or installation/runtime authority.
+- ADR-028 adds policy-selected artifact recovery, non-executing bounded manifest inspection,
+  exact evidence reconciliation, two-stage required audit, and an immutable registration record.
+- Installation, instance configuration, target/secret access, enablement, runtime trust, execution,
+  deployment, upgrade, and infrastructure mutation remain later independent stages.
+
+### ATLAS-IMP-072 Acceptance Criteria
+
+- Only a dedicated exact-tenant MFA human may request registration using exact publication
+  receipt/digest, package digest, signed registration-policy ID/digest, bounded purpose,
+  acknowledgement, idempotency, and correlation. Manifest, capability, registry, path, bytes,
+  lifecycle, target, secret, install, enable, or execution fields fail schema validation.
+- The service independently reloads and verifies the current publication receipt, policy, exact
+  upstream identities/digests, publication integrity, registration eligibility, and no-authority.
+- A policy-selected registry reader recovers only the stored immutable artifact reference; exact
+  size/SHA-256 are checked and production has no local fallback or caller-selected coordinates.
+- A bounded inspector executes no package code and accepts only the deterministic ZIP plus one
+  UTF-8 JSON `atlas-connector.yaml`; traversal, symlink, encryption, compression, duplicate, active
+  YAML, malformed, extra-field, oversized, or excessive content fails closed.
+- Manifest schema, source status, SDK profile, connector/release identity, target products, network
+  destinations, capabilities, classes, and permissions must match policy and exact source evidence.
+- Immutable signed policy fixes source age/schemas, registry/reader identity, archive/manifest
+  bounds, accepted profile/status/classes, declaration limits, assurance, separation, and record
+  schema. Customer configuration cannot weaken platform controls.
+- The registrar is distinct from every upstream, approval, claim, signing, verification, policy,
+  key, registry publishing/custody/reading actor. AI/service/shared/wrong-scope identities fail
+  closed without discovery.
+- Required audit intent succeeds before registry read/inspection; completion audit succeeds after
+  evidence verification and before persistence. Audit contains no bytes, raw manifest, paths,
+  coordinates, signatures, keys, configuration, or secret-reference names.
+- Records are immutable, one-to-one, idempotent, concurrency-safe, deterministic,
+  audit-before-persist, and equivalent in memory/PostgreSQL. Package/version digest conflicts fail.
+- A valid record sets only connector registration and installation-governance eligibility. It grants
+  no installation, instance, configuration, target/secret, enablement, runtime, execution,
+  deployment, upgrade, or infrastructure mutation authority.
+- Strict no-store create/read APIs, dedicated RBAC, CSRF, exact scope, MFA, bounded schemas, safe
+  errors, minimized web evidence, backend/frontend tests, one Alembic head, live desktop/mobile
+  inspection, browser logs, and GitHub CI apply.
+
+### ATLAS-IMP-072 Validation Evidence
+
+- ADR-028 is accepted. Policy-selected exact-artifact recovery, bounded non-executing manifest
+  inspection, full publication/source reconciliation, two-stage required audit, immutable
+  registration records, default-deny API/RBAC, memory/PostgreSQL persistence, and migration now
+  register only the exact current IMP-071 publication.
+- Six focused backend tests cover registration-only authority, exact artifact and manifest binding,
+  traversal rejection, actor separation, deterministic idempotency, audit-before-read,
+  completion-audit-before-persist, PostgreSQL round-trip, CSRF, no-store, and response minimization.
+- Backend formatting and Ruff checks passed across 626 files; strict mypy passed across 580 source
+  and test files; the full suite passed with 578 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0044` head for immutable connector package-registration records.
+- Frontend ESLint and TypeScript checks passed with the CI-equivalent 6 GB Node heap; all 41 Vitest
+  tests passed and the production Vite build completed. The panel accepts no manifest, capability,
+  registry coordinate, installation, instance, target, secret, runtime, execution, or deployment
+  input/control.
+- A clean live local page at `http://localhost:5202/` was inspected at 1280 x 720 and 390 x 844.
+  Both views had no horizontal overflow and no browser errors or warnings; the real login boundary
+  remained fail-closed.
 
 ### ATLAS-IMP-071 Scope Rationale
 

@@ -47,7 +47,6 @@ class ConnectorInternalRegistryPublicationData(BaseModel):
     registry_profile_id: str
     publisher_workload_id: str
     artifact_reference_schema: str
-    artifact_reference: str
     package_digest: str
     package_size_bytes: int
     source_signing_receipt_digest: str

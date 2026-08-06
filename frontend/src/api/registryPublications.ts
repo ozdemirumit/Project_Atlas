@@ -30,7 +30,6 @@ export type ConnectorRegistryPublicationReceipt = {
     registry_profile_id: string;
     publisher_workload_id: string;
     artifact_reference_schema: string;
-    artifact_reference: string;
     package_digest: string;
     package_size_bytes: number;
     source_signing_receipt_digest: string;
@@ -96,6 +95,7 @@ function isPublicationResponse(
     !!publication &&
     typeof publication === "object" &&
     (publication as Record<string, unknown>).integrity_verified === true
+    && !("artifact_reference" in publication)
   );
 }
 

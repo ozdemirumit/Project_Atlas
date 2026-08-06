@@ -453,6 +453,32 @@ class PackageFinalValidationService:
             raise PackageFinalValidationError("package_final_archive_integrity_failed")
         return validation, sources.acquisition, content, forbidden
 
+    async def package_registration_source(
+        self, *, validation_id: str
+    ) -> tuple[
+        ConnectorPackageFinalValidation,
+        McpBuilderCandidateHandoff,
+        ConnectorPackageAcquisition,
+        frozenset[str],
+    ]:
+        """Resolve exact candidate declarations behind current final-validation evidence."""
+        validation, forbidden = await self.approval_source(validation_id=validation_id)
+        lab = await self._lab_source.get_by_id(self_test_id=validation.source_lab_self_test_id)
+        if lab is None:
+            raise PackageFinalValidationError("package_final_lineage_incomplete")
+        sources = await self._load_sources(lab)
+        self._verify_sources(sources)
+        self._verify_bindings(sources)
+        if (
+            sources.handoff.handoff_id != validation.source_handoff_id
+            or sources.handoff.canonical_digest != validation.source_handoff_digest
+            or sources.handoff.organization_id != validation.organization_id
+            or sources.handoff.environment_id != validation.environment_id
+            or len(sources.handoff.capabilities) != validation.capability_count
+        ):
+            raise PackageFinalValidationError("package_final_source_integrity_failed")
+        return validation, sources.handoff, sources.acquisition, forbidden
+
     async def close(self) -> None:
         await self._repository.close()
 

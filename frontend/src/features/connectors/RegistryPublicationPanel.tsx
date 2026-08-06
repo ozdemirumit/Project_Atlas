@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { ConnectorPackageSigningReceipt } from "../../api/packageSigning";
 import { createConnectorRegistryPublication } from "../../api/registryPublications";
+import { PackageRegistrationPanel } from "./PackageRegistrationPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -119,7 +120,7 @@ export function RegistryPublicationPanel({
             </span>
           </div>
           <div className="mcp-builder-facts">
-            <div><span>Artifact</span><strong>{receipt.publication.artifact_reference}</strong></div>
+            <div><span>Package digest</span><strong>{receipt.package_digest}</strong></div>
             <div><span>Registry profile</span><strong>{receipt.publication.registry_profile_id}</strong></div>
             <div><span>Verifier</span><strong>{receipt.verification.verifier_workload_id}</strong></div>
             <div><span>Publisher</span><strong>{receipt.publication.publisher_workload_id}</strong></div>
@@ -130,6 +131,7 @@ export function RegistryPublicationPanel({
           </p>
         </div>
       )}
+      {receipt && <PackageRegistrationPanel publication={receipt} />}
     </section>
   );
 }

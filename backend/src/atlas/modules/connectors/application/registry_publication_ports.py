@@ -16,6 +16,7 @@ from atlas.modules.connectors.domain.registry_publication import (
     ConnectorPackageSignatureVerification,
     ConnectorRegistryPublicationPolicySnapshot,
 )
+from atlas.modules.mcp_builder.domain.candidate_handoff import McpBuilderCandidateHandoff
 
 
 class RegistryPublicationError(RuntimeError):
@@ -47,6 +48,15 @@ class RegistryPublicationFinalSource(Protocol):
         ConnectorPackageFinalValidation,
         ConnectorPackageAcquisition,
         bytes,
+        frozenset[str],
+    ]: ...
+
+    async def package_registration_source(
+        self, *, validation_id: str
+    ) -> tuple[
+        ConnectorPackageFinalValidation,
+        McpBuilderCandidateHandoff,
+        ConnectorPackageAcquisition,
         frozenset[str],
     ]: ...
 

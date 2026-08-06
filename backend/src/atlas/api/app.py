@@ -47,6 +47,7 @@ from atlas.api.routes import (
     malware_analyses,
     mcp_builder,
     package_approvals,
+    package_registrations,
     package_signing,
     platform,
     publisher_attestations,
@@ -173,6 +174,17 @@ from atlas.modules.connectors.adapters.package_approval_memory import (
 from atlas.modules.connectors.adapters.package_approval_postgres import (
     PostgreSQLPackageApprovalRepository,
 )
+from atlas.modules.connectors.adapters.package_registration_inspector import (
+    BoundedConnectorPackageManifestInspector,
+)
+from atlas.modules.connectors.adapters.package_registration_memory import (
+    InMemoryPackageRegistrationPolicySource,
+    InMemoryPackageRegistrationRepository,
+    UnavailableInternalRegistryArtifactReader,
+)
+from atlas.modules.connectors.adapters.package_registration_postgres import (
+    PostgreSQLPackageRegistrationRepository,
+)
 from atlas.modules.connectors.adapters.package_signing_memory import (
     InMemoryPackageSigningPolicySource,
     InMemoryPackageSigningRepository,
@@ -269,6 +281,13 @@ from atlas.modules.connectors.application.package_approval import (
     PackageApprovalService,
     build_development_package_approval_policy,
 )
+from atlas.modules.connectors.application.package_registration import (
+    PackageRegistrationService,
+    build_development_package_registration_policy,
+)
+from atlas.modules.connectors.application.package_registration_ports import (
+    InternalRegistryArtifactReader,
+)
 from atlas.modules.connectors.application.package_signing import (
     PackageSigningService,
     build_development_package_signing_policy,
@@ -280,6 +299,9 @@ from atlas.modules.connectors.application.publisher_attestation import (
 from atlas.modules.connectors.application.registry_publication import (
     RegistryPublicationService,
     build_development_registry_publication_policy,
+)
+from atlas.modules.connectors.application.registry_publication_ports import (
+    InternalRegistryPublisher,
 )
 from atlas.modules.connectors.application.runner_validation import PackageRunnerValidationService
 from atlas.modules.connectors.application.schema_semantics_validation import (
@@ -569,6 +591,7 @@ def create_app(
     publisher_attestation_service: PublisherAttestationService | None = None,
     package_signing_service: PackageSigningService | None = None,
     registry_publication_service: RegistryPublicationService | None = None,
+    package_registration_service: PackageRegistrationService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -1501,6 +1524,9 @@ def create_app(
         )
     if registry_publication_service is not None:
         resolved_registry_publication_service = registry_publication_service
+        registry_artifact_reader: InternalRegistryArtifactReader = (
+            UnavailableInternalRegistryArtifactReader()
+        )
     else:
         registry_publication_repository = (
             PostgreSQLRegistryPublicationRepository.from_url(resolved_settings.database_url)
@@ -1534,17 +1560,20 @@ def create_app(
                 verifier_workload_id="workload.connector-package-signature-verifier",
             )
         )
-        registry_publisher = (
-            UnavailableInternalRegistryPublisher()
-            if is_production
-            else FileSystemNonProductionInternalRegistryPublisher(
+        registry_publisher: InternalRegistryPublisher
+        if is_production:
+            registry_publisher = UnavailableInternalRegistryPublisher()
+            registry_artifact_reader = UnavailableInternalRegistryArtifactReader()
+        else:
+            filesystem_registry = FileSystemNonProductionInternalRegistryPublisher(
                 root=(
                     resolved_settings.mcp_builder_generation_root / "connector-internal-registry"
                 ),
                 registry_profile_id="registry-profile.nonproduction-internal",
                 publisher_workload_id="workload.connector-registry-publisher",
             )
-        )
+            registry_publisher = filesystem_registry
+            registry_artifact_reader = filesystem_registry
         resolved_registry_publication_service = RegistryPublicationService(
             repository=registry_publication_repository,
             signing_source=resolved_package_signing_service,
@@ -1555,6 +1584,37 @@ def create_app(
             ),
             signature_verifier=signature_verifier,
             publisher=registry_publisher,
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
+    if package_registration_service is not None:
+        resolved_package_registration_service = package_registration_service
+    else:
+        package_registration_repository = (
+            PostgreSQLPackageRegistrationRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryPackageRegistrationRepository()
+        )
+        development_package_registration_policies = (
+            ()
+            if is_production
+            else (
+                build_development_package_registration_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_package_registration_service = PackageRegistrationService(
+            repository=package_registration_repository,
+            publication_source=resolved_registry_publication_service,
+            policy_source=InMemoryPackageRegistrationPolicySource(
+                development_package_registration_policies
+            ),
+            artifact_reader=registry_artifact_reader,
+            manifest_inspector=BoundedConnectorPackageManifestInspector(),
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
@@ -1755,6 +1815,7 @@ def create_app(
         app.state.publisher_attestation_service = resolved_publisher_attestation_service
         app.state.package_signing_service = resolved_package_signing_service
         app.state.registry_publication_service = resolved_registry_publication_service
+        app.state.package_registration_service = resolved_package_registration_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -1767,6 +1828,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_package_registration_service.close()
         await resolved_registry_publication_service.close()
         await resolved_package_signing_service.close()
         await resolved_publisher_attestation_service.close()
@@ -1863,6 +1925,7 @@ def create_app(
     app.include_router(publisher_attestations.router, prefix="/api/v1")
     app.include_router(package_signing.router, prefix="/api/v1")
     app.include_router(registry_publications.router, prefix="/api/v1")
+    app.include_router(package_registrations.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

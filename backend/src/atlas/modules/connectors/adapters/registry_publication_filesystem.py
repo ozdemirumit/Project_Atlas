@@ -11,6 +11,9 @@ from uuid import uuid4
 from atlas.modules.connectors.application.registry_publication_ports import (
     RegistryPublicationError,
 )
+from atlas.modules.connectors.domain.package_registration import (
+    ConnectorPackageRegistrationPolicySnapshot,
+)
 from atlas.modules.connectors.domain.registry_publication import (
     ConnectorInternalRegistryPublicationResult,
     ConnectorRegistryPublicationPolicySnapshot,
@@ -20,10 +23,18 @@ _DIGEST = re.compile(r"^[a-f0-9]{64}$")
 
 
 class FileSystemNonProductionInternalRegistryPublisher:
-    def __init__(self, *, root: Path, registry_profile_id: str, publisher_workload_id: str) -> None:
+    def __init__(
+        self,
+        *,
+        root: Path,
+        registry_profile_id: str,
+        publisher_workload_id: str,
+        reader_workload_id: str = "workload.connector-registry-reader",
+    ) -> None:
         self._root = root.absolute()
         self._registry_profile_id = registry_profile_id
         self._publisher_workload_id = publisher_workload_id
+        self._reader_workload_id = reader_workload_id
         self._lock = asyncio.Lock()
 
     async def publish(
@@ -66,6 +77,28 @@ class FileSystemNonProductionInternalRegistryPublisher:
             integrity_verified=True,
             reused=reused,
         )
+
+    async def read(
+        self,
+        *,
+        publication: ConnectorInternalRegistryPublicationResult,
+        policy: ConnectorPackageRegistrationPolicySnapshot,
+    ) -> bytes:
+        if (
+            policy.required_registry_profile_id != self._registry_profile_id
+            or policy.reader_workload_id != self._reader_workload_id
+            or publication.registry_profile_id != self._registry_profile_id
+            or publication.artifact_reference_schema != policy.required_artifact_reference_schema
+        ):
+            raise RegistryPublicationError("package_registration_registry_binding_invalid")
+        path = self._root / publication.package_digest[:2] / f"{publication.package_digest}.zip"
+        try:
+            content = await asyncio.to_thread(self._read, path, publication.package_digest)
+        except OSError as error:
+            raise RegistryPublicationError(
+                "package_registration_registry_artifact_unavailable"
+            ) from error
+        return content
 
     def _publish(self, package_digest: str, content: bytes) -> bool:
         self._mkdir_safe(self._root)
