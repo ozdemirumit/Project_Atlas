@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-082 |
 | Title | Governed connector target-session authorization and bounded connectivity evidence foundation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/governed-connector-target-session` |
-| Pull Request | Not opened |
+| Pull Request | [#94](https://github.com/ozdemirumit/Project_Atlas/pull/94) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-038 |
 | Last Updated | 2026-08-06 |
-| Next Action | Open the implementation pull request and complete GitHub CI review |
+| Next Action | Complete PR #94 CI review, merge, and synchronize `main` |
 
 ### ATLAS-IMP-082 Scope Rationale
 
