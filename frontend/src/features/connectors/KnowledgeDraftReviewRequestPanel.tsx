@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { OperationalEvidenceKnowledgeDraft } from "../../api/evidenceDrafts";
 import { createOperationalKnowledgeReviewRequest } from "../../api/knowledgeReviewRequests";
+import { ReviewerAssignmentPanel } from "./ReviewerAssignmentPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -106,40 +107,43 @@ export function KnowledgeDraftReviewRequestPanel({
         </div>
       )}
       {reviewRequest && (
-        <div className="package-signing-record">
-          <div className="section-heading">
-            <div>
-              <strong>{reviewRequest.title}</strong>
-              <code>{reviewRequest.review_request_id}</code>
+        <>
+          <div className="package-signing-record">
+            <div className="section-heading">
+              <div>
+                <strong>{reviewRequest.title}</strong>
+                <code>{reviewRequest.review_request_id}</code>
+              </div>
+              <span className="state-badge pending">
+                <ClipboardCheck size={14} /> awaiting reviewers
+              </span>
             </div>
-            <span className="state-badge pending">
-              <ClipboardCheck size={14} /> awaiting reviewers
-            </span>
+            <div className="mcp-builder-facts">
+              <div>
+                <span>Domain review</span>
+                <strong>awaiting reviewer</strong>
+              </div>
+              <div>
+                <span>Security review</span>
+                <strong>awaiting reviewer</strong>
+              </div>
+              <div>
+                <span>Assignment</span>
+                <strong>policy controlled</strong>
+              </div>
+              <div>
+                <span>Content access</span>
+                <strong>locked</strong>
+              </div>
+            </div>
+            <p className="muted-copy">
+              <LockKeyhole size={14} /> The request contains routing metadata only. Protected
+              inspection, decisions, correction, approval, indexing, retrieval, and model use
+              remain separate controlled stages.
+            </p>
           </div>
-          <div className="mcp-builder-facts">
-            <div>
-              <span>Domain review</span>
-              <strong>awaiting reviewer</strong>
-            </div>
-            <div>
-              <span>Security review</span>
-              <strong>awaiting reviewer</strong>
-            </div>
-            <div>
-              <span>Assignment</span>
-              <strong>policy controlled</strong>
-            </div>
-            <div>
-              <span>Content access</span>
-              <strong>locked</strong>
-            </div>
-          </div>
-          <p className="muted-copy">
-            <LockKeyhole size={14} /> The request contains routing metadata only. Protected
-            inspection, decisions, correction, approval, indexing, retrieval, and model use remain
-            separate controlled stages.
-          </p>
-        </div>
+          <ReviewerAssignmentPanel reviewRequest={reviewRequest} />
+        </>
       )}
     </section>
   );

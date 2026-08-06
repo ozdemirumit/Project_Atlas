@@ -4,14 +4,68 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-087 |
-| Title | Governed operational knowledge-draft review-request foundation |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#99](https://github.com/ozdemirumit/Project_Atlas/pull/99) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-043 |
+| Task ID | ATLAS-IMP-088 |
+| Title | Governed operational knowledge reviewer-assignment foundation |
+| Status | Validation Complete |
+| Branch | `agent/governed-knowledge-reviewer-assignment` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-044 |
 | Last Updated | 2026-08-06 |
-| Next Action | Select the next approved implementation slice |
+| Next Action | Open the implementation pull request and complete CI review |
+
+### ATLAS-IMP-088 Scope Rationale
+
+- IMP-087 creates immutable domain and security review work routed to trusted queues but leaves both
+  tracks unassigned and exposes no content or decision authority.
+- ADR-044 atomically claims that exact review request and lets only a trusted directory/routing
+  adapter assign two eligible, distinct, separated human reviewers under signed policy.
+- Protected inspection, decisions, correction, approval, indexing, retrieval, scheduling,
+  workflow, execution, deployment, and mutation remain later independent stages.
+
+### ATLAS-IMP-088 Acceptance Criteria
+
+- Only an exact-tenant hardware-MFA human with C3 assignment-request and review-request-read
+  permissions may request assignment using review-request ID/digest, signed assignment-policy
+  ID/digest, purpose, acknowledgement, idempotency, and correlation. Caller identity, group, queue,
+  track, priority, decision, approval, publication, and operational-control fields fail.
+- The service revalidates complete lineage, exact immutable review manifest and cleanup proof,
+  signed policy, inherited governance, scope, unassigned tracks, and no-later-authority state.
+  Intent audit succeeds before a unique immutable source-request claim is atomically created.
+- A trusted adapter resolves eligible humans internally, excludes all upstream/request/policy and
+  later-authority actors, selects distinct domain/security reviewers, stores encrypted identity
+  references, and returns only opaque assignment IDs and salted subject digests in a signed receipt.
+- Failure or uncertainty after claim creation never opens content, reads infrastructure, or retries
+  automatically. Only a fully bound receipt with eligibility, separation, expiry,
+  immutable-assignment, and cleanup proof can create `operational_knowledge_reviewers_assigned`.
+- API, application, audit, logs, and web output exclude content, names, usernames, emails, groups,
+  directory attributes, raw subject IDs, target details, keys, secrets, tokens, signatures, request
+  fingerprints, and idempotency material. Inspection, decisions, correction, approval, chunks,
+  embeddings, retrieval, model context, graph, scheduling, workflow, execution, deployment, and
+  mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC, CSRF, safe
+  errors, focused failure/uncertainty/concurrency tests, minimized web evidence, full backend and
+  frontend suites, live desktop/mobile inspection, and GitHub CI apply.
+
+### ATLAS-IMP-088 Validation Evidence
+
+- ADR-044 is accepted. The service revalidates the exact immutable review request and manifest,
+  complete connector/evidence/draft lineage, signed assignment policy, hardware MFA, C3 assignment
+  plus review-request-read permissions, exact tenant scope, separation exclusions, and absence of
+  later authority before atomically claiming one review request.
+- Seven focused backend tests cover minimized distinct assignment, exact idempotency, concurrent
+  source claiming, permission denial before claim, altered routing and uncertain receipts, audit
+  failure after claim, PostgreSQL round-trip, CSRF, forbidden identity selection, no-store, and
+  minimized responses. Claimed uncertain outcomes are not retried.
+- Backend Ruff formatting and lint passed; strict mypy passed across 719 source and test files; the
+  full suite passed with 677 tests and three expected Windows symlink skips. Alembic reports one
+  `20260806_0060` head for immutable reviewer-assignment claims and records.
+- Frontend ESLint and TypeScript checks passed; 28 test files and 58 tests passed; the production
+  bundle built successfully. The assignment form accepts only exact review-request lineage,
+  signed policy, purpose, and acknowledgement and exposes no reviewer selection or review control.
+- Live backend health returned `alive` and OpenAPI exposed create/read reviewer-assignment
+  endpoints. Desktop at 1280 pixels and mobile at 390 pixels showed Reviewer assignment as the
+  latest available capability while Protected inspection and Review decisions remain pending; the
+  browser was restored to the desktop viewport.
 
 ### ATLAS-IMP-087 Scope Rationale
 

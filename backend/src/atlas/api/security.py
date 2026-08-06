@@ -105,6 +105,8 @@ from atlas.modules.authorization.application.bootstrap import (
     KNOWLEDGE_DRAFT_REVIEW_REQUEST_READ,
     KNOWLEDGE_EVIDENCE_DRAFT_CREATE,
     KNOWLEDGE_EVIDENCE_DRAFT_READ,
+    KNOWLEDGE_REVIEWER_ASSIGNMENT_CREATE,
+    KNOWLEDGE_REVIEWER_ASSIGNMENT_READ,
     MCP_BUILDER_CANDIDATE_HANDOFF_CREATE,
     MCP_BUILDER_CANDIDATE_HANDOFF_DOWNLOAD,
     MCP_BUILDER_CANDIDATE_HANDOFF_READ,
@@ -196,6 +198,7 @@ from atlas.modules.authorization.application.bootstrap import (
     mcp_builder_scope,
     operational_evidence_knowledge_draft_scope,
     operational_knowledge_review_request_scope,
+    operational_knowledge_reviewer_assignment_scope,
     rca_scope,
     recommendation_scope,
     release_preflight_scope,
@@ -3851,5 +3854,61 @@ async def authorize_operational_knowledge_review_request_read(
         request,
         subject,
         permission_id=KNOWLEDGE_DRAFT_REVIEW_REQUEST_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def _authorize_operational_knowledge_reviewer_assignment(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.knowledge.operational-reviewer-assignments",
+            scope=operational_knowledge_reviewer_assignment_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail="Operational knowledge reviewer assignment access is not permitted.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_operational_knowledge_reviewer_assignment_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_operational_knowledge_reviewer_assignment(
+        request,
+        subject,
+        permission_id=KNOWLEDGE_REVIEWER_ASSIGNMENT_CREATE,
+        capability_class=CapabilityClass.C3_CONTROLLED_CHANGE,
+    )
+
+
+async def authorize_operational_knowledge_reviewer_assignment_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_operational_knowledge_reviewer_assignment(
+        request,
+        subject,
+        permission_id=KNOWLEDGE_REVIEWER_ASSIGNMENT_READ,
         capability_class=CapabilityClass.C1_READ_ONLY,
     )
