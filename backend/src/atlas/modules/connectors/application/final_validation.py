@@ -22,6 +22,7 @@ from atlas.modules.connectors.application.contract_validation import (
 )
 from atlas.modules.connectors.application.final_validation_ports import (
     FinalAcquisitionSource,
+    FinalArchiveSource,
     FinalAuthorityBehaviorSource,
     FinalContentPolicySource,
     FinalContractSource,
@@ -135,6 +136,7 @@ class PackageFinalValidationService:
         repository: PackageFinalValidationRepository,
         handoff_source: FinalHandoffSource,
         acquisition_source: FinalAcquisitionSource,
+        archive_source: FinalArchiveSource,
         validation_source: FinalPackageValidationSource,
         inventory_source: FinalInventorySource,
         content_policy_source: FinalContentPolicySource,
@@ -155,6 +157,7 @@ class PackageFinalValidationService:
         self._repository = repository
         self._handoff_source = handoff_source
         self._acquisition_source = acquisition_source
+        self._archive_source = archive_source
         self._validation_source = validation_source
         self._inventory_source = inventory_source
         self._content_policy_source = content_policy_source
@@ -413,6 +416,42 @@ class PackageFinalValidationService:
             raise PackageFinalValidationError("package_final_source_integrity_failed")
         forbidden = self._source_actors(sources) | {validation.validated_by, policy.signed_by}
         return validation, frozenset(forbidden)
+
+    async def registry_publication_source(
+        self, *, validation_id: str
+    ) -> tuple[
+        ConnectorPackageFinalValidation,
+        ConnectorPackageAcquisition,
+        bytes,
+        frozenset[str],
+    ]:
+        """Resolve the exact acquisition custody behind a still-valid final validation."""
+        validation, forbidden = await self.approval_source(validation_id=validation_id)
+        lab = await self._lab_source.get_by_id(self_test_id=validation.source_lab_self_test_id)
+        if lab is None:
+            raise PackageFinalValidationError("package_final_lineage_incomplete")
+        sources = await self._load_sources(lab)
+        self._verify_sources(sources)
+        self._verify_bindings(sources)
+        if (
+            sources.acquisition.package_digest != validation.package_digest
+            or sources.acquisition.organization_id != validation.organization_id
+            or sources.acquisition.environment_id != validation.environment_id
+        ):
+            raise PackageFinalValidationError("package_final_source_integrity_failed")
+        try:
+            content = await self._archive_source.read(
+                package_digest=sources.acquisition.package_digest,
+                size_bytes=sources.acquisition.package_size_bytes,
+            )
+        except Exception as error:
+            raise PackageFinalValidationError("package_final_archive_unavailable") from error
+        if (
+            len(content) != sources.acquisition.package_size_bytes
+            or sha256(content).hexdigest() != sources.acquisition.package_digest
+        ):
+            raise PackageFinalValidationError("package_final_archive_integrity_failed")
+        return validation, sources.acquisition, content, forbidden
 
     async def close(self) -> None:
         await self._repository.close()

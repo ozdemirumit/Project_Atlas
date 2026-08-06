@@ -4,14 +4,72 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-070 |
-| Title | Governed connector package-signing foundation |
-| Status | Completed |
-| Branch | `agent/connector-package-signing` |
-| Pull Request | [PR #82](https://github.com/ozdemirumit/Project_Atlas/pull/82) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-026 |
+| Task ID | ATLAS-IMP-071 |
+| Title | Governed connector internal registry publication foundation |
+| Status | Review |
+| Branch | `agent/connector-registry-publication` |
+| Pull Request | [#83](https://github.com/ozdemirumit/Project_Atlas/pull/83) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-027 |
 | Last Updated | 2026-08-06 |
-| Next Action | Select and record the separately governed internal registry publication slice |
+| Next Action | Complete PR #83 CI, merge, and post-merge `main` synchronization |
+
+### ATLAS-IMP-071 Scope Rationale
+
+- IMP-070 signs one exact governed package but intentionally creates no registry artifact or entry.
+- ADR-027 adds current cryptographic reverification, exact quarantine-byte recovery, a policy-selected
+  immutable internal registry publisher, two-stage required audit, and an immutable receipt.
+- Connector registration, installation, configuration, enablement, runtime trust, target/secret
+  access, execution, deployment, and infrastructure mutation remain later independent stages.
+
+### ATLAS-IMP-071 Acceptance Criteria
+
+- Only a dedicated exact-tenant MFA human may request publication using exact signing receipt/digest,
+  package digest, signed publication-policy ID/digest, bounded purpose, acknowledgement,
+  idempotency, and correlation. Registry, path, bytes, tags, overwrite, or lifecycle fields fail.
+- The service independently reloads and verifies current signing, attestation, approval, final
+  validation, acquisition, and full upstream evidence plus every exact identity and digest binding.
+- The stored signature is cryptographically reverified through a policy-selected isolated verifier;
+  trusting a persisted verification flag is insufficient and key material never enters Atlas data.
+- Exact package bytes are recovered only from governed quarantine custody and size/SHA-256 checked.
+  They never enter APIs, audit metadata, logs, model context, workflow state, or receipt persistence.
+- Immutable signed policy fixes accepted schemas/age, signer/verifier constraints, internal registry
+  profile, publisher workload, custodian, artifact schema, size, separation, and receipt schema.
+- The requester is distinct from every upstream, signing, policy, key, registry-custody, and
+  publisher actor. AI/service/shared/wrong-scope identities fail closed without discovery.
+- Required audit intent succeeds before publisher invocation; returned artifact binding and
+  integrity are checked; required completion audit succeeds before receipt persistence.
+- The registry publisher is policy-selected and create-if-absent under the package digest. Production
+  has no local fallback; identical replay is safe and conflicting/ambiguous publication fails closed.
+- Receipts are immutable, one-to-one, idempotent, concurrency-safe, deterministic, audit-before-
+  persist, and equivalent in memory/PostgreSQL. Public responses hide bytes, signatures, keys,
+  custody paths, registry coordinates, request fingerprints, and idempotency keys.
+- A valid receipt sets only package publication and later registration-governance eligibility. It
+  grants no registration, install, configuration, enablement, target/secret, runtime, execution,
+  deployment, overwrite/delete/tag/promotion, or infrastructure mutation authority.
+- Strict no-store create/read APIs, dedicated RBAC, CSRF, exact scope, MFA, bounded schemas, safe
+  errors, minimized web evidence, backend/frontend tests, one Alembic head, live desktop/mobile
+  inspection, browser logs, and GitHub CI apply.
+
+### ATLAS-IMP-071 Validation Evidence
+
+- ADR-027 is accepted. Exact final-validation custody recovery, current cryptographic signature
+  reverification, signed publication policy, policy-selected immutable publisher, two-stage required
+  audit, immutable receipt, default-deny API/RBAC, memory/PostgreSQL persistence, and migration now
+  publish only the exact current IMP-070 package bytes.
+- Five focused backend tests cover publication-only authority, exact byte and signature verification,
+  actor separation, binding failures, deterministic idempotency, audit-before-publisher,
+  completion-audit-before-persist, PostgreSQL round-trip, CSRF, no-store, and response minimization.
+- Backend formatting and Ruff checks passed across 616 files; strict mypy passed across 571 source
+  and test files; the full suite passed with 572 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0043` head for immutable registry-publication receipts.
+- Frontend ESLint and TypeScript checks passed with the CI-equivalent 6 GB Node heap; all 40 Vitest
+  tests passed and the production Vite build completed. The panel accepts no registry target, path,
+  tag, bytes, registration, installation, enablement, runtime, or execution input/control.
+- A clean live local page at `http://localhost:5202/` was inspected at 1280 x 720 and 390 x 844.
+  Both views had no horizontal overflow and no browser errors or warnings; the real login boundary
+  remained fail-closed.
+- [PR #83](https://github.com/ozdemirumit/Project_Atlas/pull/83) is open; CI, merge, and post-merge
+  `main` evidence are pending.
 
 ### ATLAS-IMP-070 Scope Rationale
 

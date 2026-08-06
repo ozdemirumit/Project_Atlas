@@ -53,6 +53,7 @@ from atlas.api.routes import (
     rca,
     recommendations,
     recovery,
+    registry_publications,
     release_preflight,
     reports,
     runner_validations,
@@ -189,6 +190,19 @@ from atlas.modules.connectors.adapters.publisher_attestation_memory import (
 from atlas.modules.connectors.adapters.publisher_attestation_postgres import (
     PostgreSQLPublisherAttestationRepository,
 )
+from atlas.modules.connectors.adapters.registry_publication_filesystem import (
+    FileSystemNonProductionInternalRegistryPublisher,
+)
+from atlas.modules.connectors.adapters.registry_publication_memory import (
+    InMemoryRegistryPublicationPolicySource,
+    InMemoryRegistryPublicationRepository,
+    NonProductionHmacPackageSignatureVerifier,
+    UnavailableInternalRegistryPublisher,
+    UnavailablePackageSignatureVerifier,
+)
+from atlas.modules.connectors.adapters.registry_publication_postgres import (
+    PostgreSQLRegistryPublicationRepository,
+)
 from atlas.modules.connectors.adapters.runner_subprocess import SubprocessPackageRunner
 from atlas.modules.connectors.adapters.runner_validation_memory import (
     InMemoryPackageRunnerValidationRepository,
@@ -262,6 +276,10 @@ from atlas.modules.connectors.application.package_signing import (
 from atlas.modules.connectors.application.publisher_attestation import (
     PublisherAttestationService,
     build_development_publisher_attestation_policy,
+)
+from atlas.modules.connectors.application.registry_publication import (
+    RegistryPublicationService,
+    build_development_registry_publication_policy,
 )
 from atlas.modules.connectors.application.runner_validation import PackageRunnerValidationService
 from atlas.modules.connectors.application.schema_semantics_validation import (
@@ -550,6 +568,7 @@ def create_app(
     package_approval_service: PackageApprovalService | None = None,
     publisher_attestation_service: PublisherAttestationService | None = None,
     package_signing_service: PackageSigningService | None = None,
+    registry_publication_service: RegistryPublicationService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -1355,6 +1374,7 @@ def create_app(
             repository=package_final_validation_repository,
             handoff_source=mcp_builder_candidate_handoff_repository,
             acquisition_source=resolved_package_acquisition_service.repository,
+            archive_source=resolved_package_acquisition_service.archive_publisher,
             validation_source=resolved_package_validation_service.repository,
             inventory_source=resolved_package_supply_chain_inventory_service.repository,
             content_policy_source=resolved_package_content_policy_scan_service.repository,
@@ -1436,6 +1456,7 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    is_production = resolved_settings.environment == "production"
     if package_signing_service is not None:
         resolved_package_signing_service = package_signing_service
     else:
@@ -1444,7 +1465,6 @@ def create_app(
             if resolved_settings.database_url
             else InMemoryPackageSigningRepository()
         )
-        is_production = resolved_settings.environment == "production"
         development_package_signing_policies = (
             ()
             if is_production
@@ -1476,6 +1496,65 @@ def create_app(
             attestation_source=resolved_publisher_attestation_service,
             policy_source=InMemoryPackageSigningPolicySource(development_package_signing_policies),
             signer=package_signer,
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
+    if registry_publication_service is not None:
+        resolved_registry_publication_service = registry_publication_service
+    else:
+        registry_publication_repository = (
+            PostgreSQLRegistryPublicationRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryRegistryPublicationRepository()
+        )
+        development_registry_publication_policies = (
+            ()
+            if is_production
+            else (
+                build_development_registry_publication_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        nonproduction_signing_key = sha256(
+            (
+                "atlas-nonproduction-package-signer:"
+                f"{resolved_settings.development_organization_id}:"
+                f"{resolved_settings.environment}"
+            ).encode("ascii")
+        ).digest()
+        signature_verifier = (
+            UnavailablePackageSignatureVerifier()
+            if is_production
+            else NonProductionHmacPackageSignatureVerifier(
+                key_material=nonproduction_signing_key,
+                verifier_workload_id="workload.connector-package-signature-verifier",
+            )
+        )
+        registry_publisher = (
+            UnavailableInternalRegistryPublisher()
+            if is_production
+            else FileSystemNonProductionInternalRegistryPublisher(
+                root=(
+                    resolved_settings.mcp_builder_generation_root / "connector-internal-registry"
+                ),
+                registry_profile_id="registry-profile.nonproduction-internal",
+                publisher_workload_id="workload.connector-registry-publisher",
+            )
+        )
+        resolved_registry_publication_service = RegistryPublicationService(
+            repository=registry_publication_repository,
+            signing_source=resolved_package_signing_service,
+            approval_source=resolved_package_approval_service,
+            final_source=resolved_package_final_validation_service,
+            policy_source=InMemoryRegistryPublicationPolicySource(
+                development_registry_publication_policies
+            ),
+            signature_verifier=signature_verifier,
+            publisher=registry_publisher,
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
@@ -1675,6 +1754,7 @@ def create_app(
         app.state.package_approval_service = resolved_package_approval_service
         app.state.publisher_attestation_service = resolved_publisher_attestation_service
         app.state.package_signing_service = resolved_package_signing_service
+        app.state.registry_publication_service = resolved_registry_publication_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -1687,6 +1767,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_registry_publication_service.close()
         await resolved_package_signing_service.close()
         await resolved_publisher_attestation_service.close()
         await resolved_package_approval_service.close()
@@ -1781,6 +1862,7 @@ def create_app(
     app.include_router(package_approvals.router, prefix="/api/v1")
     app.include_router(publisher_attestations.router, prefix="/api/v1")
     app.include_router(package_signing.router, prefix="/api/v1")
+    app.include_router(registry_publications.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

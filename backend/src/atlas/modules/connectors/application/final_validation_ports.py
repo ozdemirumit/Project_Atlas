@@ -50,6 +50,10 @@ class FinalAcquisitionSource(Protocol):
     async def get_by_id(self, *, acquisition_id: str) -> ConnectorPackageAcquisition | None: ...
 
 
+class FinalArchiveSource(Protocol):
+    async def read(self, *, package_digest: str, size_bytes: int) -> bytes: ...
+
+
 class FinalPackageValidationSource(Protocol):
     async def get_by_id(self, *, validation_id: str) -> ConnectorPackageValidation | None: ...
 

@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { createConnectorPackageSigningReceipt } from "../../api/packageSigning";
 import type { ConnectorPublisherAttestation } from "../../api/publisherAttestations";
+import { RegistryPublicationPanel } from "./RegistryPublicationPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -101,6 +102,7 @@ export function PackageSigningPanel({
       )}
 
       {receipt && (
+        <>
         <div className="package-signing-record">
           <div className="section-heading">
             <div>
@@ -119,6 +121,10 @@ export function PackageSigningPanel({
             The exact package is signed. Registry publication and every runtime stage remain separate.
           </p>
         </div>
+        {receipt.eligible_for_registry_governance && (
+          <RegistryPublicationPanel signing={receipt} />
+        )}
+        </>
       )}
     </section>
   );

@@ -8194,7 +8194,8 @@ tbody tr.selected {
   overflow-wrap: anywhere;
 }
 
-.package-signing-panel {
+.package-signing-panel,
+.registry-publication-panel {
   display: grid;
   gap: 16px;
   margin-top: 20px;
@@ -8202,9 +8203,22 @@ tbody tr.selected {
   border-top: 1px solid var(--border-subtle);
 }
 
-.package-signing-panel > label {
+.package-signing-panel > label,
+.registry-publication-panel > label {
   display: grid;
   gap: 8px;
+}
+
+.registry-publication-panel input,
+.registry-publication-panel textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.registry-publication-panel strong,
+.registry-publication-panel code {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .package-signing-record {

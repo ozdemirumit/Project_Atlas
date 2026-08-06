@@ -140,6 +140,7 @@ async def final_fixture(
         repository=InMemoryPackageFinalValidationRepository(),
         handoff_source=handoffs,
         acquisition_source=contract_service._acquisition_source,
+        archive_source=contract_service._archive_source,
         validation_source=inventory_service._validation_source,
         inventory_source=inventory_service.repository,
         content_policy_source=semantics_service._content_policy_source,
