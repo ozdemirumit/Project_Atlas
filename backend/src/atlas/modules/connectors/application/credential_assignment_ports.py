@@ -47,6 +47,10 @@ class ConnectorCredentialAssignmentRepository(Protocol):
         self, *, source_target_binding_id: str
     ) -> ConnectorCredentialAssignmentRecord | None: ...
 
+    async def get_by_profile_and_instance(
+        self, *, credential_profile_id: str, instance_id: str
+    ) -> ConnectorCredentialAssignmentRecord | None: ...
+
     async def get_by_create_key(
         self, *, assigned_by: str, idempotency_key: str
     ) -> ConnectorCredentialAssignmentRecord | None: ...

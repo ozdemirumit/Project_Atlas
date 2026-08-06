@@ -258,6 +258,41 @@ class ConnectorRuntimeTrustService:
         )
         return record
 
+    async def secret_brokerage_source(
+        self, *, grant_id: str
+    ) -> tuple[ConnectorRuntimeTrustGrantRecord, frozenset[str]]:
+        record = await self._repository.get(grant_id=grant_id)
+        if record is None:
+            raise ConnectorRuntimeTrustError("runtime_trust_record_not_found")
+        self._verify_record(record)
+        profile = await self._profile_source.get_by_id(profile_id=record.runtime_profile_id)
+        policy = await self._policy_source.get_by_id(policy_id=record.trust_policy_id)
+        if profile is None or policy is None:
+            raise ConnectorRuntimeTrustError("runtime_trust_source_not_found")
+        self._verify_snapshot(profile, "profile")
+        self._verify_snapshot(policy, "policy")
+        try:
+            enablement, _, source_actors = await self._enablement_source.runtime_trust_source(
+                enablement_id=record.source_enablement_id
+            )
+        except ConnectorCapabilityEnablementError as error:
+            raise ConnectorRuntimeTrustError("runtime_trust_source_not_found") from error
+        if (
+            record.source_enablement_digest != enablement.canonical_digest
+            or record.package_digest != enablement.package_digest
+            or record.manifest_digest != enablement.manifest_digest
+            or record.instance_id != enablement.instance_id
+            or record.credential_profile_digest != enablement.credential_profile_digest
+            or record.capability_profile_digest != enablement.capability_profile_digest
+            or record.runtime_profile_digest != profile.canonical_digest
+            or record.trust_policy_digest != policy.canonical_digest
+        ):
+            raise ConnectorRuntimeTrustError("runtime_trust_source_invalid")
+        return (
+            record,
+            frozenset(source_actors | {record.granted_by, profile.signed_by, policy.signed_by}),
+        )
+
     async def close(self) -> None:
         await self._repository.close()
 

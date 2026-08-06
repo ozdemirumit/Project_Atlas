@@ -47,6 +47,19 @@ class PostgreSQLConnectorCredentialAssignmentRepository:
             )
             return self._to_domain(row.payload) if row else None
 
+    async def get_by_profile_and_instance(
+        self, *, credential_profile_id: str, instance_id: str
+    ) -> ConnectorCredentialAssignmentRecord | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorCredentialAssignmentModel).where(
+                    ConnectorCredentialAssignmentModel.credential_profile_id
+                    == credential_profile_id,
+                    ConnectorCredentialAssignmentModel.instance_id == instance_id,
+                )
+            )
+            return self._to_domain(row.payload) if row else None
+
     async def get_by_create_key(
         self, *, assigned_by: str, idempotency_key: str
     ) -> ConnectorCredentialAssignmentRecord | None:
