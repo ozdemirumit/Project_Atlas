@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-070 |
 | Title | Governed connector package-signing foundation |
-| Status | In Progress |
+| Status | Completed |
 | Branch | `agent/connector-package-signing` |
-| Pull Request | Not opened |
+| Pull Request | [PR #82](https://github.com/ozdemirumit/Project_Atlas/pull/82) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-026 |
 | Last Updated | 2026-08-06 |
-| Next Action | Implement the isolated signer port and immutable signing receipt contract |
+| Next Action | Select and record the separately governed internal registry publication slice |
 
 ### ATLAS-IMP-070 Scope Rationale
 
@@ -65,7 +65,12 @@
 - A clean live local page at `http://localhost:5202/` was inspected at 1280 x 720 and 390 x 844.
   Both views had no horizontal overflow and no browser errors or warnings; the real login boundary
   remained fail-closed.
-- GitHub PR, CI, merge, and post-merge main evidence are pending.
+- [PR #82](https://github.com/ozdemirumit/Project_Atlas/pull/82) passed backend and frontend CI
+  in run [31062083650](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31062083650)
+  and merged as `c8518cbf51eed969166df197c00e7b868d9ee4ea`.
+- Post-merge `main` run
+  [31062261884](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31062261884)
+  passed both backend and frontend jobs.
 
 ### ATLAS-IMP-069 Scope Rationale
 
@@ -4484,6 +4489,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-067 | Governed connector final validation foundation | Completed through [PR #79](https://github.com/ozdemirumit/Project_Atlas/pull/79) at merge `5a490b6c`; 549 backend tests, 36 frontend tests, live exact-lineage final validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-068 | Governed connector package human approval foundation | Completed through [PR #80](https://github.com/ozdemirumit/Project_Atlas/pull/80) at merge `4b4be71b`; 557 backend tests, 37 frontend tests, live exact-packet human approval, and all local and GitHub quality gates passed |
 | ATLAS-IMP-069 | Governed connector publisher attestation foundation | Completed through [PR #81](https://github.com/ozdemirumit/Project_Atlas/pull/81) at merge `b7165c8`; 562 backend tests, 38 frontend tests, live desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-070 | Governed connector package-signing foundation | Completed through [PR #82](https://github.com/ozdemirumit/Project_Atlas/pull/82) at merge `c8518cb`; 567 backend tests, 39 frontend tests, live desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
