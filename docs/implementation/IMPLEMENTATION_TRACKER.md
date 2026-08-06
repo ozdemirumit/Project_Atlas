@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-079 |
 | Title | Governed connector runtime-trust foundation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/governed-connector-runtime-trust` |
-| Pull Request | Pending |
+| Pull Request | [#91](https://github.com/ozdemirumit/Project_Atlas/pull/91) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-035 |
 | Last Updated | 2026-08-06 |
-| Next Action | Publish the validated implementation and complete GitHub delivery gates |
+| Next Action | Complete PR #91 CI, merge, merged-main CI, and closure evidence |
 
 ### ATLAS-IMP-079 Scope Rationale
 
