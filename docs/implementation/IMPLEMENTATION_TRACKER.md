@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-089 |
 | Title | Governed operational knowledge protected-inspection lease foundation |
-| Status | Architecture In Progress |
+| Status | Validation Complete |
 | Branch | `agent/governed-knowledge-protected-inspection` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-045 |
 | Last Updated | 2026-08-06 |
-| Next Action | Accept ADR-045 and implement protected inspection lease issuance |
+| Next Action | Open PR, pass CI, merge, and verify merged `main` |
 
 ### ATLAS-IMP-089 Scope Rationale
 
@@ -47,6 +47,28 @@
 - Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC, CSRF, safe
   errors, secure cookie tests, focused failure/uncertainty/concurrency tests, minimized web
   evidence, full backend/frontend suites, live desktop/mobile inspection, and GitHub CI apply.
+
+### ATLAS-IMP-089 Validation Evidence
+
+- ADR-045 is accepted. The service revalidates exact assignment lineage, signed policy,
+  assignment and track expiry, exact salted assignee, exact tenant, recent hardware MFA,
+  browser-session binding, dedicated C2 permissions, and absence of later authority before an
+  assignment-plus-track claim is atomically created.
+- Eight focused backend tests cover exact-assignee and idempotent issuance, one-time secret
+  handling, wrong-assignee rejection before claim, concurrent claiming, permission denial,
+  altered and uncertain broker receipts, audit failure after claim, PostgreSQL round-trip, CSRF,
+  HttpOnly SameSite-Strict cookies, and minimized API responses.
+- Backend Ruff formatting and lint passed; strict mypy passed across 729 source and test files; the
+  full suite passed with 685 tests and three expected Windows symlink skips. Alembic reports one
+  `20260806_0061` head for immutable protected-inspection claims and lease records.
+- Frontend ESLint and TypeScript checks passed; 29 test files and 59 tests passed; the production
+  bundle built successfully. The lease form exposes only track, signed policy, purpose, and
+  acknowledgement and never displays or accepts identity, secret, duration, content, or decision
+  controls.
+- Live platform status was healthy and OpenAPI exposed create/read protected-inspection lease
+  endpoints. The Connectors lifecycle showed Inspection lease as the latest available capability;
+  desktop at 1280 pixels and mobile at 390 pixels rendered without overlap, and the browser was
+  restored to the desktop viewport.
 
 ### ATLAS-IMP-088 Scope Rationale
 

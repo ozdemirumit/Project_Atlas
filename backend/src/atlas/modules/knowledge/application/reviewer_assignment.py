@@ -277,6 +277,26 @@ class OperationalKnowledgeReviewerAssignmentService:
         )
         return record
 
+    async def protected_inspection_source(
+        self, *, assignment_set_id: str
+    ) -> tuple[
+        OperationalKnowledgeReviewerAssignmentRecord,
+        OperationalKnowledgeReviewerAssignmentPolicySnapshot,
+    ]:
+        record = await self._repository.get(assignment_set_id=assignment_set_id)
+        if record is None:
+            raise OperationalKnowledgeReviewerAssignmentError(
+                "operational_knowledge_reviewer_assignment_record_not_found"
+            )
+        self._verify_record(record)
+        policy = await self._policy_source.get_by_id(policy_id=record.assignment_policy_id)
+        if policy is None or policy.canonical_digest != record.assignment_policy_digest:
+            raise OperationalKnowledgeReviewerAssignmentError(
+                "operational_knowledge_reviewer_assignment_policy_not_found"
+            )
+        self._verify_snapshot(policy)
+        return record, policy
+
     async def close(self) -> None:
         await self._repository.close()
 

@@ -58,10 +58,10 @@ class SyntheticOperationalKnowledgeReviewerAssignmentAdapter:
             ]
         )
         domain_subject_digest = _digest(
-            [instruction.subject_digest_salt_digest, "synthetic-domain-reviewer", seed]
+            [instruction.subject_digest_salt_digest, "subject.synthetic-domain-reviewer"]
         )
         security_subject_digest = _digest(
-            [instruction.subject_digest_salt_digest, "synthetic-security-reviewer", seed]
+            [instruction.subject_digest_salt_digest, "subject.synthetic-security-reviewer"]
         )
         if domain_subject_digest in instruction.exclusion_subject_digests:
             raise OperationalKnowledgeReviewerAssignmentError(
