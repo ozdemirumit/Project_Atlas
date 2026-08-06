@@ -4,14 +4,14 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-080 |
-| Title | Governed connector secret-brokerage authorization foundation |
-| Status | Review |
-| Branch | `agent/governed-connector-secret-brokerage` |
-| Pull Request | [#92](https://github.com/ozdemirumit/Project_Atlas/pull/92) |
+| Task ID | ATLAS-IMP-081 |
+| Title | Governed connector runtime activation and health-evidence foundation |
+| Status | Planned |
+| Branch | `main` |
+| Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-036 |
 | Last Updated | 2026-08-06 |
-| Next Action | Complete PR #92 CI, merge, merged-main CI, and closure evidence |
+| Next Action | Accept ADR-037, define the activation boundary, and implement ATLAS-IMP-081 |
 
 ### ATLAS-IMP-080 Scope Rationale
 
@@ -59,6 +59,11 @@
 - The authenticated local application at `http://127.0.0.1:5208/` loaded at 1280 x 720 and 390 x
   844. Automated measurements found no horizontal overflow and confirmed the Atlas and Connectors
   interface tree at both sizes; the temporary viewport override was reset.
+- [PR #92](https://github.com/ozdemirumit/Project_Atlas/pull/92) passed CI run
+  [31084618159](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31084618159), was
+  squash-merged as `3a4a10590371fb3530ff6299661e3b3dc2928e0e`, and the merged `main` revision
+  passed CI run
+  [31085066859](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31085066859).
 
 ### ATLAS-IMP-079 Scope Rationale
 
@@ -5094,6 +5099,7 @@ Environment limitation for ATLAS-IMP-001: Docker is not installed on the current
 | ATLAS-IMP-077 | Governed connector configuration and connectivity validation foundation | Completed through [PR #89](https://github.com/ozdemirumit/Project_Atlas/pull/89) at merge `24f8ba6`; 608 backend tests, 46 frontend tests, live desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-078 | Governed connector capability governance and enablement foundation | Completed through [PR #90](https://github.com/ozdemirumit/Project_Atlas/pull/90) at merge `0a6bb8f`; 614 backend tests, 47 frontend tests, live desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-079 | Governed connector runtime-trust foundation | Completed through [PR #91](https://github.com/ozdemirumit/Project_Atlas/pull/91) at merge `dab95f9`; 620 backend tests, 48 frontend tests, live desktop/mobile validation, and all local and GitHub quality gates passed |
+| ATLAS-IMP-080 | Governed connector secret-brokerage authorization foundation | Completed through [PR #92](https://github.com/ozdemirumit/Project_Atlas/pull/92) at merge `3a4a105`; 626 backend tests, 49 frontend tests, live desktop/mobile validation, and all local and GitHub quality gates passed |
 
 ## Status Rules
 
