@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { createConnectorInvocationAuthorization } from "../../api/invocationAuthorizations";
 import type { ConnectorTargetSessionVerification } from "../../api/targetSessionVerifications";
+import { BoundedInvocationPanel } from "./BoundedInvocationPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -52,7 +53,7 @@ export function InvocationAuthorizationPanel({
     !mutation.isPending;
 
   return (
-    <section
+    <><section
       className="target-configuration-panel invocation-authorization-panel"
       aria-labelledby="invocation-authorization-title"
     >
@@ -214,6 +215,6 @@ export function InvocationAuthorizationPanel({
           </p>
         </div>
       )}
-    </section>
+    </section>{authorization && <BoundedInvocationPanel authorization={authorization} />}</>
   );
 }

@@ -4,14 +4,72 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-083 |
-| Title | Governed connector capability-invocation authorization foundation |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#95](https://github.com/ozdemirumit/Project_Atlas/pull/95) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-039 |
+| Task ID | ATLAS-IMP-084 |
+| Title | Governed bounded connector capability invocation foundation |
+| Status | In Review |
+| Branch | `agent/governed-bounded-connector-invocation` |
+| Pull Request | [#96](https://github.com/ozdemirumit/Project_Atlas/pull/96) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-040 |
 | Last Updated | 2026-08-06 |
-| Next Action | Select and define the next bounded invocation lifecycle slice |
+| Next Action | Complete PR #96 CI, merge, and verify the resulting `main` revision |
+
+### ATLAS-IMP-084 Scope Rationale
+
+- IMP-083 authorizes one exact short-lived C0/C1 invocation but performs no connection, lease,
+  handler call, result validation, or evidence ingestion.
+- ADR-040 atomically consumes that authorization before one bounded call, obtains fresh ephemeral
+  resources inside a trusted adapter, validates and redacts a signed result, and proves cleanup.
+- Scheduling, durable evidence ingestion, workflow continuation, autonomous execution, deployment,
+  and infrastructure mutation remain later independent stages.
+
+### ATLAS-IMP-084 Acceptance Criteria
+
+- Only a dedicated exact-tenant hardware-MFA human with generic C3 invoke permission and the exact
+  capability permission may request one call using authorization ID/digest, package digest, signed
+  invocation-policy ID/digest, purpose, acknowledgement, idempotency, and correlation. Caller
+  target, credential, secret, lease/session, capability, input, command, timeout, output, schedule,
+  execution, deployment, and mutation fields fail.
+- The service revalidates complete lineage, signed policy, authorization freshness and single-use
+  state, C0/C1 capability permission, scope, actor separation, and no-later-authority state. Intent
+  audit succeeds before an immutable unique consumption claim is atomically created.
+- The trusted adapter resolves inputs and fresh ephemeral resources internally, calls exactly one
+  authorized handler, enforces timeout/output bounds, validates and redacts the result, closes the
+  target session and delivery channel, and revokes or expires the lease in all outcomes. Production
+  fails closed; development is deterministic and synthetic.
+- Failure or uncertainty after claim creation permanently consumes the authorization and never
+  retries. Only a fully bound signed receipt with cleanup proof can produce an immutable
+  `enabled_bounded_capability_invocation_completed` record.
+- API, application, persistence, audit, logs, and web output exclude raw input/output, target
+  coordinates, credential/secret/store/broker/lease/session identity, tokens, signatures,
+  commands, request fingerprints, idempotency keys, and mutable runtime data. Scheduling, durable
+  evidence ingestion, execution, deployment, and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC plus exact
+  capability permission, CSRF, safe errors, focused failure/uncertainty/concurrency tests, minimized
+  web evidence, full backend/frontend suites, live desktop/mobile inspection, and GitHub CI apply.
+
+### ATLAS-IMP-084 Validation Evidence
+
+- ADR-040 is accepted. The service revalidates the complete single-use authorization lineage,
+  signed invocation policy, C0/C1 capability permission, freshness, scope, actor separation, and
+  no-later-authority state before atomically creating an immutable consumption claim.
+- Seven focused backend tests cover exact idempotency, a concurrent second-claim race, actor
+  separation, exact permission denial before consumption, uncertain and invalid receipts,
+  audit failure after consumption, PostgreSQL round-trip, CSRF, forbidden controls, no-store, and
+  minimized responses. Every post-claim failure remains permanently consumed without retry.
+- The trusted adapter resolves all operational inputs internally, invokes the exact synthetic
+  read-only handler once, validates and redacts its bounded receipt, and proves target-session,
+  delivery-channel, and lease cleanup. Production remains fail-closed without a trusted adapter.
+- Backend Ruff checks passed; strict mypy passed across 680 source and test files; the full suite
+  passed with 648 tests and three expected Windows symlink skips. Alembic reports one
+  `20260806_0056` head for immutable consumption claims and bounded invocation records.
+- Frontend ESLint and TypeScript checks passed with the CI-equivalent 6 GB Node heap; all 53 Vitest
+  tests passed and the production Vite build completed. The UI accepts no target, transport,
+  credential, secret, broker, lease/session, capability, handler, input, command, timeout, output,
+  schedule, execution, deployment, or infrastructure-mutation controls.
+- The restarted backend at `http://127.0.0.1:8052/` reported `alive` and exposed both bounded
+  invocation API operations. The authenticated application at `http://127.0.0.1:5208/` loaded the
+  Atlas and Connectors workspace at 1280 x 720 and 390 x 844; automated measurements found no
+  horizontal overflow at either size and the desktop viewport was restored.
 
 ### ATLAS-IMP-083 Scope Rationale
 

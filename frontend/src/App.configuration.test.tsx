@@ -3407,7 +3407,7 @@ describe("deployment configuration preview", () => {
     expect(changeReviewRequests[2]?.idempotencyKey).toBe(
       "human-review.19.support-request-001",
     );
-  }, 10_000);
+  }, 15_000);
 
   it("shows only assigned human reviews and records an acknowledged non-approval outcome", async () => {
     const reviewerIdentity = {

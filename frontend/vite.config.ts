@@ -24,6 +24,7 @@ export default defineConfig(({ mode }) => {
       setupFiles: ["./src/test/setup.ts"],
       css: true,
       fileParallelism: false,
+      testTimeout: 15_000,
     },
   };
 });

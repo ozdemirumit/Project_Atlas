@@ -29,6 +29,7 @@ from atlas.api.routes import (
     bootstrap_state,
     bootstrap_trust,
     bootstrap_verification,
+    bounded_invocations,
     capability_enablements,
     change_reviews,
     configuration_validations,
@@ -136,6 +137,17 @@ from atlas.modules.connectors.adapters.authority_behavior_validation_memory impo
 from atlas.modules.connectors.adapters.authority_behavior_validation_postgres import (
     PostgreSQLPackageAuthorityBehaviorValidationRepository,
 )
+from atlas.modules.connectors.adapters.bounded_invocation_memory import (
+    InMemoryConnectorBoundedInvocationPolicySource,
+    InMemoryConnectorBoundedInvocationRepository,
+)
+from atlas.modules.connectors.adapters.bounded_invocation_postgres import (
+    PostgreSQLConnectorBoundedInvocationRepository,
+)
+from atlas.modules.connectors.adapters.bounded_invocation_synthetic import (
+    SyntheticConnectorBoundedInvocationAdapter,
+    UnavailableConnectorBoundedInvocationAdapter,
+)
 from atlas.modules.connectors.adapters.capability_enablement_memory import (
     InMemoryConnectorCapabilityEnablementPolicySource,
     InMemoryConnectorCapabilityEnablementRepository,
@@ -196,6 +208,7 @@ from atlas.modules.connectors.adapters.invocation_authorization_postgres import 
     PostgreSQLConnectorInvocationAuthorizationRepository,
 )
 from atlas.modules.connectors.adapters.invocation_permission import (
+    AuthorizationConnectorBoundedInvocationPermissionAuthorizer,
     AuthorizationConnectorCapabilityPermissionAuthorizer,
 )
 from atlas.modules.connectors.adapters.lab_mock_target import MockTargetConnectorLabRunner
@@ -367,6 +380,10 @@ from atlas.modules.connectors.adapters.vulnerability_analysis_postgres import (
 from atlas.modules.connectors.application.acquisition import PackageAcquisitionService
 from atlas.modules.connectors.application.authority_behavior_validation import (
     PackageAuthorityBehaviorValidationService,
+)
+from atlas.modules.connectors.application.bounded_invocation import (
+    ConnectorBoundedInvocationService,
+    build_development_connector_bounded_invocation_policy,
 )
 from atlas.modules.connectors.application.capability_enablement import (
     ConnectorCapabilityEnablementService,
@@ -760,6 +777,7 @@ def create_app(
     runtime_activation_service: ConnectorRuntimeActivationService | None = None,
     target_session_service: ConnectorTargetSessionService | None = None,
     invocation_authorization_service: ConnectorInvocationAuthorizationService | None = None,
+    bounded_invocation_service: ConnectorBoundedInvocationService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -2166,6 +2184,44 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if bounded_invocation_service is not None:
+        resolved_bounded_invocation_service = bounded_invocation_service
+    else:
+        bounded_invocation_repository = (
+            PostgreSQLConnectorBoundedInvocationRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryConnectorBoundedInvocationRepository()
+        )
+        bounded_invocation_policies = (
+            ()
+            if is_production
+            else (
+                build_development_connector_bounded_invocation_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_bounded_invocation_service = ConnectorBoundedInvocationService(
+            repository=bounded_invocation_repository,
+            source=resolved_invocation_authorization_service,
+            policy_source=InMemoryConnectorBoundedInvocationPolicySource(
+                bounded_invocation_policies
+            ),
+            permission_authorizer=AuthorizationConnectorBoundedInvocationPermissionAuthorizer(
+                service=resolved_authorization_service,
+                environment=resolved_settings.environment,
+            ),
+            adapter=(
+                UnavailableConnectorBoundedInvocationAdapter()
+                if is_production
+                else SyntheticConnectorBoundedInvocationAdapter()
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -2371,6 +2427,7 @@ def create_app(
         app.state.runtime_activation_service = resolved_runtime_activation_service
         app.state.target_session_service = resolved_target_session_service
         app.state.invocation_authorization_service = resolved_invocation_authorization_service
+        app.state.bounded_invocation_service = resolved_bounded_invocation_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -2383,6 +2440,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_bounded_invocation_service.close()
         await resolved_invocation_authorization_service.close()
         await resolved_target_session_service.close()
         await resolved_runtime_activation_service.close()
@@ -2503,6 +2561,7 @@ def create_app(
     app.include_router(runtime_activations.router, prefix="/api/v1")
     app.include_router(target_session_verifications.router, prefix="/api/v1")
     app.include_router(invocation_authorizations.router, prefix="/api/v1")
+    app.include_router(bounded_invocations.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
