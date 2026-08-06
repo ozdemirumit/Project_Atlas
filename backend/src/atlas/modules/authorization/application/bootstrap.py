@@ -164,6 +164,8 @@ KNOWLEDGE_EVIDENCE_DRAFT_CREATE = "knowledge.operational-evidence-drafts.create"
 KNOWLEDGE_EVIDENCE_DRAFT_READ = "knowledge.operational-evidence-drafts.read"
 KNOWLEDGE_DRAFT_REVIEW_REQUEST_CREATE = "knowledge.operational-review-requests.create"
 KNOWLEDGE_DRAFT_REVIEW_REQUEST_READ = "knowledge.operational-review-requests.read"
+KNOWLEDGE_REVIEWER_ASSIGNMENT_CREATE = "knowledge.reviewer-assignments.create"
+KNOWLEDGE_REVIEWER_ASSIGNMENT_READ = "knowledge.reviewer-assignments.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -921,6 +923,19 @@ def operational_knowledge_review_request_scope(
     )
 
 
+def operational_knowledge_reviewer_assignment_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.knowledge",
+        resource_id="resource.knowledge.operational-reviewer-assignments",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -1602,6 +1617,14 @@ def build_development_authorization_service(
             permission_id=KNOWLEDGE_DRAFT_REVIEW_REQUEST_READ,
             description="Read minimized operational knowledge review request metadata.",
         ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_REVIEWER_ASSIGNMENT_CREATE,
+            description="Request policy-controlled domain and security reviewer assignment.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_REVIEWER_ASSIGNMENT_READ,
+            description="Read minimized operational knowledge reviewer assignment metadata.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -1735,6 +1758,8 @@ def build_development_authorization_service(
                 KNOWLEDGE_EVIDENCE_DRAFT_READ,
                 KNOWLEDGE_DRAFT_REVIEW_REQUEST_CREATE,
                 KNOWLEDGE_DRAFT_REVIEW_REQUEST_READ,
+                KNOWLEDGE_REVIEWER_ASSIGNMENT_CREATE,
+                KNOWLEDGE_REVIEWER_ASSIGNMENT_READ,
             }
         ),
     )
@@ -2923,6 +2948,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=operational_knowledge_review_request_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-reviewer-assignment-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=operational_knowledge_reviewer_assignment_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C3_CONTROLLED_CHANGE,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-reviewer-assignment-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=operational_knowledge_reviewer_assignment_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,

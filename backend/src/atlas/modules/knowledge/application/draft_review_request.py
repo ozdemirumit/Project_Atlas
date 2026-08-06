@@ -259,6 +259,18 @@ class OperationalKnowledgeReviewRequestService:
     async def close(self) -> None:
         await self._repository.close()
 
+    async def reviewer_assignment_source(
+        self, *, review_request_id: str
+    ) -> tuple[OperationalKnowledgeReviewRequestRecord, frozenset[str]]:
+        record = await self._repository.get(review_request_id=review_request_id)
+        if record is None:
+            raise OperationalKnowledgeReviewRequestError(
+                "operational_knowledge_review_request_record_not_found"
+            )
+        self._verify_record(record)
+        draft = await self._source.review_request_source(draft_id=record.source_draft_id)
+        return record, frozenset((record.requested_by, draft.curated_by))
+
     async def _reuse(
         self,
         claim: OperationalKnowledgeReviewRequestClaim,

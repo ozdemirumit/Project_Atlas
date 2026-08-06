@@ -67,6 +67,7 @@ from atlas.api.routes import (
     registry_publications,
     release_preflight,
     reports,
+    reviewer_assignments,
     runner_validations,
     runtime_activations,
     runtime_trust_grants,
@@ -566,6 +567,20 @@ from atlas.modules.knowledge.adapters.evidence_draft_synthetic import (
     UnavailableOperationalEvidenceKnowledgeDraftAdapter,
 )
 from atlas.modules.knowledge.adapters.memory import InMemoryKnowledgeRetriever
+from atlas.modules.knowledge.adapters.reviewer_assignment_memory import (
+    InMemoryOperationalKnowledgeReviewerAssignmentPolicySource,
+    InMemoryOperationalKnowledgeReviewerAssignmentRepository,
+)
+from atlas.modules.knowledge.adapters.reviewer_assignment_permission import (
+    AuthorizationOperationalKnowledgeReviewerAssignmentPermissionAuthorizer,
+)
+from atlas.modules.knowledge.adapters.reviewer_assignment_postgres import (
+    PostgreSQLOperationalKnowledgeReviewerAssignmentRepository,
+)
+from atlas.modules.knowledge.adapters.reviewer_assignment_synthetic import (
+    SyntheticOperationalKnowledgeReviewerAssignmentAdapter,
+    UnavailableOperationalKnowledgeReviewerAssignmentAdapter,
+)
 from atlas.modules.knowledge.adapters.synthetic import build_synthetic_knowledge_chunks
 from atlas.modules.knowledge.application.draft_review_request import (
     OperationalKnowledgeReviewRequestService,
@@ -574,6 +589,10 @@ from atlas.modules.knowledge.application.draft_review_request import (
 from atlas.modules.knowledge.application.evidence_draft import (
     OperationalEvidenceKnowledgeDraftService,
     build_development_operational_evidence_knowledge_draft_policy,
+)
+from atlas.modules.knowledge.application.reviewer_assignment import (
+    OperationalKnowledgeReviewerAssignmentService,
+    build_development_operational_knowledge_reviewer_assignment_policy,
 )
 from atlas.modules.knowledge.application.service import KnowledgeRetrievalService
 from atlas.modules.mcp_builder.adapters.candidate_archive_filesystem import (
@@ -839,6 +858,9 @@ def create_app(
     ) = None,
     operational_knowledge_review_request_service: (
         OperationalKnowledgeReviewRequestService | None
+    ) = None,
+    operational_knowledge_reviewer_assignment_service: (
+        OperationalKnowledgeReviewerAssignmentService | None
     ) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
@@ -2414,6 +2436,52 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    if operational_knowledge_reviewer_assignment_service is not None:
+        resolved_operational_knowledge_reviewer_assignment_service = (
+            operational_knowledge_reviewer_assignment_service
+        )
+    else:
+        reviewer_assignment_repository = (
+            PostgreSQLOperationalKnowledgeReviewerAssignmentRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryOperationalKnowledgeReviewerAssignmentRepository()
+        )
+        reviewer_assignment_policies = (
+            ()
+            if is_production
+            else (
+                build_development_operational_knowledge_reviewer_assignment_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_operational_knowledge_reviewer_assignment_service = (
+            OperationalKnowledgeReviewerAssignmentService(
+                repository=reviewer_assignment_repository,
+                source=resolved_operational_knowledge_review_request_service,
+                policy_source=InMemoryOperationalKnowledgeReviewerAssignmentPolicySource(
+                    reviewer_assignment_policies
+                ),
+                permission_authorizer=(
+                    AuthorizationOperationalKnowledgeReviewerAssignmentPermissionAuthorizer(
+                        service=resolved_authorization_service,
+                        environment=resolved_settings.environment,
+                    )
+                ),
+                adapter=(
+                    UnavailableOperationalKnowledgeReviewerAssignmentAdapter()
+                    if is_production
+                    else SyntheticOperationalKnowledgeReviewerAssignmentAdapter()
+                ),
+                audit_sink=resolved_audit_sink,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -2627,6 +2695,9 @@ def create_app(
         app.state.operational_knowledge_review_request_service = (
             resolved_operational_knowledge_review_request_service
         )
+        app.state.operational_knowledge_reviewer_assignment_service = (
+            resolved_operational_knowledge_reviewer_assignment_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -2639,6 +2710,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_operational_knowledge_reviewer_assignment_service.close()
         await resolved_operational_knowledge_review_request_service.close()
         await resolved_operational_evidence_knowledge_draft_service.close()
         await resolved_invocation_evidence_service.close()
@@ -2767,6 +2839,7 @@ def create_app(
     app.include_router(invocation_evidence.router, prefix="/api/v1")
     app.include_router(evidence_drafts.router, prefix="/api/v1")
     app.include_router(draft_review_requests.router, prefix="/api/v1")
+    app.include_router(reviewer_assignments.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

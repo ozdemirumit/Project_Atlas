@@ -2146,3 +2146,52 @@ class OperationalKnowledgeReviewRequestModel(Base):
     environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class OperationalKnowledgeReviewerAssignmentClaimModel(Base):
+    __tablename__ = "operational_knowledge_reviewer_assignment_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_review_request_id",
+            name="uq_operational_knowledge_reviewer_assignment_claims_source",
+        ),
+        UniqueConstraint(
+            "claimed_by",
+            "idempotency_digest",
+            name="uq_operational_knowledge_reviewer_assignment_claims_actor_idempotency",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source_review_request_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    assignment_set_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    claimed_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class OperationalKnowledgeReviewerAssignmentModel(Base):
+    __tablename__ = "operational_knowledge_reviewer_assignments"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_review_request_id",
+            name="uq_operational_knowledge_reviewer_assignments_source",
+        ),
+        UniqueConstraint(
+            "claim_id",
+            name="uq_operational_knowledge_reviewer_assignments_claim",
+        ),
+    )
+
+    assignment_set_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    claim_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_review_request_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    knowledge_item_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    requested_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

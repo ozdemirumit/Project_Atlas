@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-088 |
 | Title | Governed operational knowledge reviewer-assignment foundation |
-| Status | Architecture In Progress |
+| Status | Validation Complete |
 | Branch | `agent/governed-knowledge-reviewer-assignment` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-044 |
 | Last Updated | 2026-08-06 |
-| Next Action | Accept ADR-044 and implement reviewer assignment |
+| Next Action | Open the implementation pull request and complete CI review |
 
 ### ATLAS-IMP-088 Scope Rationale
 
@@ -45,6 +45,27 @@
 - Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC, CSRF, safe
   errors, focused failure/uncertainty/concurrency tests, minimized web evidence, full backend and
   frontend suites, live desktop/mobile inspection, and GitHub CI apply.
+
+### ATLAS-IMP-088 Validation Evidence
+
+- ADR-044 is accepted. The service revalidates the exact immutable review request and manifest,
+  complete connector/evidence/draft lineage, signed assignment policy, hardware MFA, C3 assignment
+  plus review-request-read permissions, exact tenant scope, separation exclusions, and absence of
+  later authority before atomically claiming one review request.
+- Seven focused backend tests cover minimized distinct assignment, exact idempotency, concurrent
+  source claiming, permission denial before claim, altered routing and uncertain receipts, audit
+  failure after claim, PostgreSQL round-trip, CSRF, forbidden identity selection, no-store, and
+  minimized responses. Claimed uncertain outcomes are not retried.
+- Backend Ruff formatting and lint passed; strict mypy passed across 719 source and test files; the
+  full suite passed with 677 tests and three expected Windows symlink skips. Alembic reports one
+  `20260806_0060` head for immutable reviewer-assignment claims and records.
+- Frontend ESLint and TypeScript checks passed; 28 test files and 58 tests passed; the production
+  bundle built successfully. The assignment form accepts only exact review-request lineage,
+  signed policy, purpose, and acknowledgement and exposes no reviewer selection or review control.
+- Live backend health returned `alive` and OpenAPI exposed create/read reviewer-assignment
+  endpoints. Desktop at 1280 pixels and mobile at 390 pixels showed Reviewer assignment as the
+  latest available capability while Protected inspection and Review decisions remain pending; the
+  browser was restored to the desktop viewport.
 
 ### ATLAS-IMP-087 Scope Rationale
 
