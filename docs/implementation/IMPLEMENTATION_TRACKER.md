@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-085 |
 | Title | Governed connector invocation evidence-ingestion foundation |
-| Status | Ready for PR |
+| Status | CI In Progress |
 | Branch | `agent/governed-invocation-evidence-ingestion` |
-| Pull Request | Not opened |
+| Pull Request | [#97](https://github.com/ozdemirumit/Project_Atlas/pull/97) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-041 |
 | Last Updated | 2026-08-06 |
-| Next Action | Publish the IMP-085 implementation, pass GitHub CI, merge, and verify main |
+| Next Action | Pass PR #97 CI, mark ready, merge, and verify main |
 
 ### ATLAS-IMP-085 Scope Rationale
 
