@@ -19,7 +19,6 @@ class ConnectorGovernedCapability:
     def __post_init__(self) -> None:
         for value in (
             self.capability_id,
-            self.capability_class,
             self.required_permission,
         ):
             validate_stable_identifier(value, "governed connector capability identifier")
@@ -112,7 +111,6 @@ class ConnectorCapabilityEnablementPolicySnapshot:
             self.required_validation_schema,
             self.required_profile_schema,
             self.required_profile_signer_id,
-            *self.allowed_capability_classes,
             self.required_effective_state,
             self.enablement_record_schema,
             self.signed_by,

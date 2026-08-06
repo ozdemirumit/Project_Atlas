@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { createConnectorConfigurationValidation } from "../../api/configurationValidations";
 import type { ConnectorCredentialAssignment } from "../../api/credentialAssignments";
+import { CapabilityEnablementPanel } from "./CapabilityEnablementPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development": "5c683a88f96dd8597098811fb868453e1566767f92ffe940ea2f05cb2ef02aab",
@@ -37,6 +38,7 @@ export function ConfigurationValidationPanel({ assignment }: { assignment: Conne
       </>}
       {mutation.isError && <div className="workspace-message error-state" role="alert"><AlertTriangle size={20} /><div><h3>Configuration validation unavailable</h3><p>Assignment lineage, signed evidence, policy, freshness, scope, or separation failed.</p></div></div>}
       {validation && <div className="package-signing-record"><div className="section-heading"><div><strong>{validation.configuration_result}</strong><code>{validation.validation_id}</code></div><span className="state-badge neutral"><BadgeCheck size={14} />verified</span></div><div className="mcp-builder-facts"><div><span>Connectivity</span><strong>{validation.connectivity_result}</strong></div><div><span>TLS</span><strong>{validation.tls_result}</strong></div><div><span>Authorization</span><strong>{validation.authorization_result}</strong></div><div><span>State</span><strong>{validation.instance_state}</strong></div></div><p className="muted-copy">Only signed bounded classifications were verified. Target coordinates, secret material, raw probe output, connector enablement, capabilities, and runtime remain unavailable here.</p></div>}
+      {validation && <CapabilityEnablementPanel validation={validation} />}
     </section>
   );
 }

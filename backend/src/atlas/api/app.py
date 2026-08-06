@@ -29,6 +29,7 @@ from atlas.api.routes import (
     bootstrap_state,
     bootstrap_trust,
     bootstrap_verification,
+    capability_enablements,
     change_reviews,
     configuration_validations,
     connector_validations,
@@ -129,6 +130,14 @@ from atlas.modules.connectors.adapters.authority_behavior_validation_memory impo
 )
 from atlas.modules.connectors.adapters.authority_behavior_validation_postgres import (
     PostgreSQLPackageAuthorityBehaviorValidationRepository,
+)
+from atlas.modules.connectors.adapters.capability_enablement_memory import (
+    InMemoryConnectorCapabilityEnablementPolicySource,
+    InMemoryConnectorCapabilityEnablementRepository,
+    InMemoryConnectorCapabilityProfileSource,
+)
+from atlas.modules.connectors.adapters.capability_enablement_postgres import (
+    PostgreSQLConnectorCapabilityEnablementRepository,
 )
 from atlas.modules.connectors.adapters.configuration_validation_memory import (
     InMemoryConnectorConfigurationEvidenceSource,
@@ -301,6 +310,10 @@ from atlas.modules.connectors.adapters.vulnerability_analysis_postgres import (
 from atlas.modules.connectors.application.acquisition import PackageAcquisitionService
 from atlas.modules.connectors.application.authority_behavior_validation import (
     PackageAuthorityBehaviorValidationService,
+)
+from atlas.modules.connectors.application.capability_enablement import (
+    ConnectorCapabilityEnablementService,
+    build_development_connector_capability_enablement_policy,
 )
 from atlas.modules.connectors.application.configuration_validation import (
     ConnectorConfigurationValidationService,
@@ -664,6 +677,7 @@ def create_app(
     target_configuration_service: ConnectorTargetConfigurationService | None = None,
     credential_assignment_service: ConnectorCredentialAssignmentService | None = None,
     configuration_validation_service: ConnectorConfigurationValidationService | None = None,
+    capability_enablement_service: ConnectorCapabilityEnablementService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -1872,6 +1886,38 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if capability_enablement_service is not None:
+        resolved_capability_enablement_service = capability_enablement_service
+    else:
+        capability_enablement_repository = (
+            PostgreSQLConnectorCapabilityEnablementRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryConnectorCapabilityEnablementRepository()
+        )
+        capability_enablement_policies = (
+            ()
+            if is_production
+            else (
+                build_development_connector_capability_enablement_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_capability_enablement_service = ConnectorCapabilityEnablementService(
+            repository=capability_enablement_repository,
+            validation_source=resolved_configuration_validation_service,
+            profile_source=InMemoryConnectorCapabilityProfileSource(()),
+            policy_source=InMemoryConnectorCapabilityEnablementPolicySource(
+                capability_enablement_policies
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -2075,6 +2121,7 @@ def create_app(
         app.state.target_configuration_service = resolved_target_configuration_service
         app.state.credential_assignment_service = resolved_credential_assignment_service
         app.state.configuration_validation_service = resolved_configuration_validation_service
+        app.state.capability_enablement_service = resolved_capability_enablement_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -2087,6 +2134,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_capability_enablement_service.close()
         await resolved_configuration_validation_service.close()
         await resolved_credential_assignment_service.close()
         await resolved_target_configuration_service.close()
@@ -2195,6 +2243,7 @@ def create_app(
     app.include_router(target_configuration.router, prefix="/api/v1")
     app.include_router(credential_assignments.router, prefix="/api/v1")
     app.include_router(configuration_validations.router, prefix="/api/v1")
+    app.include_router(capability_enablements.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
