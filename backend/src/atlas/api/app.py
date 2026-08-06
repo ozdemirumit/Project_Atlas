@@ -67,6 +67,7 @@ from atlas.api.routes import (
     storage,
     supply_chain_inventories,
     support_bundles,
+    target_configuration,
     upgrades,
     vulnerability_analyses,
     workload_identities,
@@ -258,6 +259,14 @@ from atlas.modules.connectors.adapters.supply_chain_inventory_memory import (
 from atlas.modules.connectors.adapters.supply_chain_inventory_postgres import (
     PostgreSQLPackageSupplyChainInventoryRepository,
 )
+from atlas.modules.connectors.adapters.target_configuration_memory import (
+    InMemoryConnectorTargetConfigurationPolicySource,
+    InMemoryConnectorTargetConfigurationRepository,
+    InMemoryConnectorTargetProfileSource,
+)
+from atlas.modules.connectors.adapters.target_configuration_postgres import (
+    PostgreSQLConnectorTargetConfigurationRepository,
+)
 from atlas.modules.connectors.adapters.validation_intake_memory import (
     InMemoryPackageValidationRepository,
 )
@@ -338,6 +347,11 @@ from atlas.modules.connectors.application.static_dependency_analysis import (
 )
 from atlas.modules.connectors.application.supply_chain_inventory import (
     PackageSupplyChainInventoryService,
+)
+from atlas.modules.connectors.application.target_configuration import (
+    ConnectorTargetConfigurationService,
+    build_development_connector_target_configuration_policy,
+    build_development_connector_target_profile,
 )
 from atlas.modules.connectors.application.validation_intake import PackageValidationService
 from atlas.modules.connectors.application.vulnerability_analysis import (
@@ -620,6 +634,7 @@ def create_app(
     package_registration_service: PackageRegistrationService | None = None,
     package_installation_service: PackageInstallationService | None = None,
     connector_instance_creation_service: ConnectorInstanceCreationService | None = None,
+    target_configuration_service: ConnectorTargetConfigurationService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -1712,6 +1727,48 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if target_configuration_service is not None:
+        resolved_target_configuration_service = target_configuration_service
+    else:
+        target_configuration_repository = (
+            PostgreSQLConnectorTargetConfigurationRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryConnectorTargetConfigurationRepository()
+        )
+        target_profiles = (
+            ()
+            if is_production
+            else (
+                build_development_connector_target_profile(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        target_policies = (
+            ()
+            if is_production
+            else (
+                build_development_connector_target_configuration_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_target_configuration_service = ConnectorTargetConfigurationService(
+            repository=target_configuration_repository,
+            instance_source=resolved_connector_instance_creation_service,
+            target_profile_source=InMemoryConnectorTargetProfileSource(target_profiles),
+            policy_source=InMemoryConnectorTargetConfigurationPolicySource(target_policies),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     resolved_authorization_service = (
         authorization_service
         or build_development_authorization_service(resolved_settings, resolved_audit_sink)
@@ -1912,6 +1969,7 @@ def create_app(
         app.state.package_registration_service = resolved_package_registration_service
         app.state.package_installation_service = resolved_package_installation_service
         app.state.connector_instance_creation_service = resolved_connector_instance_creation_service
+        app.state.target_configuration_service = resolved_target_configuration_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -1924,6 +1982,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_target_configuration_service.close()
         await resolved_connector_instance_creation_service.close()
         await resolved_package_installation_service.close()
         await resolved_package_registration_service.close()
@@ -2026,6 +2085,7 @@ def create_app(
     app.include_router(package_registrations.router, prefix="/api/v1")
     app.include_router(package_installations.router, prefix="/api/v1")
     app.include_router(instance_creation.router, prefix="/api/v1")
+    app.include_router(target_configuration.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

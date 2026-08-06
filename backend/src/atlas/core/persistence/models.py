@@ -1374,6 +1374,33 @@ class ConnectorInstanceRecordModel(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
+class ConnectorTargetConfigurationBindingModel(Base):
+    __tablename__ = "connector_target_configuration_bindings"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_instance_record_id",
+            name="uq_connector_target_configuration_bindings_instance",
+        ),
+        UniqueConstraint(
+            "bound_by",
+            "idempotency_key",
+            name="uq_connector_target_configuration_bindings_actor_idempotency",
+        ),
+    )
+
+    binding_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source_instance_record_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    instance_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    target_profile_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    target_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    bound_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class RuntimeMetadata(Base):
     __tablename__ = "platform_runtime_metadata"
     __table_args__ = (

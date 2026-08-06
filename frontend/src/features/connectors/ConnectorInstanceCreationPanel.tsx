@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { createConnectorInstance } from "../../api/connectorInstances";
 import type { ConnectorPackageInstallationReceipt } from "../../api/packageInstallations";
+import { TargetConfigurationPanel } from "./TargetConfigurationPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -143,6 +144,7 @@ export function ConnectorInstanceCreationPanel({
             The identity exists, but target configuration, credentials, capabilities, health
             validation, enablement, runtime trust, and execution remain unavailable.
           </p>
+          <TargetConfigurationPanel instance={record} />
         </div>
       )}
     </section>

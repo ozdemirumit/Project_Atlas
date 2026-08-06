@@ -8198,7 +8198,8 @@ tbody tr.selected {
 .registry-publication-panel,
 .package-registration-panel,
 .package-installation-panel,
-.connector-instance-panel {
+.connector-instance-panel,
+.target-configuration-panel {
   display: grid;
   gap: 16px;
   margin-top: 20px;
@@ -8210,7 +8211,8 @@ tbody tr.selected {
 .registry-publication-panel > label,
 .package-registration-panel > label,
 .package-installation-panel > label,
-.connector-instance-panel > label {
+.connector-instance-panel > label,
+.target-configuration-panel > label {
   display: grid;
   gap: 8px;
 }
@@ -8222,7 +8224,9 @@ tbody tr.selected {
 .package-installation-panel input,
 .package-installation-panel textarea,
 .connector-instance-panel input,
-.connector-instance-panel textarea {
+.connector-instance-panel textarea,
+.target-configuration-panel input,
+.target-configuration-panel textarea {
   width: 100%;
   min-width: 0;
 }
@@ -8234,7 +8238,9 @@ tbody tr.selected {
 .package-installation-panel strong,
 .package-installation-panel code,
 .connector-instance-panel strong,
-.connector-instance-panel code {
+.connector-instance-panel code,
+.target-configuration-panel strong,
+.target-configuration-panel code {
   min-width: 0;
   overflow-wrap: anywhere;
 }

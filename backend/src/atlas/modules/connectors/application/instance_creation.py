@@ -269,6 +269,93 @@ class ConnectorInstanceCreationService:
         )
         return record
 
+    async def target_configuration_source(
+        self, *, record_id: str
+    ) -> tuple[
+        ConnectorInstanceRecord,
+        ConnectorInstanceCreationPolicySnapshot,
+        ConnectorPackageInstallationReceipt,
+        ConnectorPackageRegistrationRecord,
+        frozenset[str],
+    ]:
+        record = await self._repository.get(record_id=record_id)
+        if record is None:
+            raise ConnectorInstanceCreationError("connector_instance_record_not_found")
+        self._verify_record(record)
+        try:
+            (
+                installation,
+                _installation_policy,
+                registration,
+                source_actors,
+            ) = await self._installation_source.connector_instance_creation_source(
+                receipt_id=record.source_installation_receipt_id
+            )
+        except PackageInstallationError as error:
+            raise ConnectorInstanceCreationError("connector_instance_source_not_found") from error
+        policy = await self._policy_source.get_by_id(policy_id=record.instance_policy_id)
+        if policy is None:
+            raise ConnectorInstanceCreationError("connector_instance_policy_not_found")
+        self._verify_policy(policy)
+        if (
+            record.source_installation_receipt_digest != installation.canonical_digest
+            or record.source_registration_record_id != installation.source_registration_record_id
+            or record.source_registration_record_digest
+            != installation.source_registration_record_digest
+            or record.source_publication_receipt_id != installation.source_publication_receipt_id
+            or record.source_publication_receipt_digest
+            != installation.source_publication_receipt_digest
+            or record.source_signing_receipt_id != installation.source_signing_receipt_id
+            or record.source_signing_receipt_digest != installation.source_signing_receipt_digest
+            or record.source_approval_request_id != installation.source_approval_request_id
+            or record.source_approval_request_digest != installation.source_approval_request_digest
+            or record.source_final_validation_id != installation.source_final_validation_id
+            or record.source_final_validation_digest != installation.source_final_validation_digest
+            or record.source_acquisition_id != installation.source_acquisition_id
+            or record.source_acquisition_digest != installation.source_acquisition_digest
+            or record.organization_id != installation.organization_id
+            or record.environment_id != installation.environment_id
+            or record.package_digest != installation.package_digest
+            or record.package_size_bytes != installation.package_size_bytes
+            or record.publisher_id != installation.publisher_id
+            or record.connector_id != installation.connector_id
+            or record.release_version != installation.release_version
+            or record.provenance_digest != installation.provenance_digest
+            or record.manifest_digest != installation.manifest_digest
+            or record.sdk_profile != installation.sdk_profile
+            or record.registry_profile_id != installation.registry_profile_id
+            or record.installation_policy_id != installation.installation_policy_id
+            or record.installation_policy_digest != installation.installation_policy_digest
+            or record.installation_store_profile_id
+            != installation.installation.installation_store_profile_id
+            or record.installation_artifact_reference_schema
+            != installation.installation.artifact_reference_schema
+            or record.instance_policy_digest != policy.canonical_digest
+            or record.instance_policy_version != policy.policy_version
+            or not record.instance_created
+            or not record.eligible_for_configuration_governance
+            or record.instance_state != DISABLED_UNCONFIGURED
+            or record.target_configured
+            or record.promotion_blocked
+            or any(
+                (
+                    record.credentials_resolved,
+                    record.connector_enabled,
+                    record.runtime_trust_granted,
+                    record.execution_authorized,
+                    record.deployment_approved,
+                    record.infrastructure_mutation_performed,
+                )
+            )
+        ):
+            raise ConnectorInstanceCreationError("connector_instance_source_binding_invalid")
+        actors = source_actors | {
+            record.created_by,
+            record.owner_id,
+            policy.signed_by,
+        }
+        return record, policy, installation, registration, frozenset(actors)
+
     async def close(self) -> None:
         await self._repository.close()
 
