@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-089 |
 | Title | Governed operational knowledge protected-inspection lease foundation |
-| Status | Validation Complete |
-| Branch | `agent/governed-knowledge-protected-inspection` |
-| Pull Request | Pending |
+| Status | Completed |
+| Branch | `main` |
+| Pull Request | [#101](https://github.com/ozdemirumit/Project_Atlas/pull/101) (merged) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-045 |
 | Last Updated | 2026-08-06 |
-| Next Action | Open PR, pass CI, merge, and verify merged `main` |
+| Next Action | Begin ATLAS-IMP-090 protected content presentation architecture |
 
 ### ATLAS-IMP-089 Scope Rationale
 
@@ -50,6 +50,9 @@
 
 ### ATLAS-IMP-089 Validation Evidence
 
+- PR #101 passed backend and frontend CI, merged to `main` as `5627a32`, and merged-main
+  Continuous Integration run `31116734243` passed (backend 4m30s, frontend 4m27s) after two
+  transient GitHub action-download service failures were retried without code changes.
 - ADR-045 is accepted. The service revalidates exact assignment lineage, signed policy,
   assignment and track expiry, exact salted assignee, exact tenant, recent hardware MFA,
   browser-session binding, dedicated C2 permissions, and absence of later authority before an
