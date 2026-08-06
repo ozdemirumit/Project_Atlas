@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-086 |
 | Title | Governed operational-evidence knowledge-draft curation foundation |
-| Status | Ready for PR |
+| Status | CI In Progress |
 | Branch | `agent/governed-evidence-knowledge-curation` |
-| Pull Request | Not opened |
+| Pull Request | [#98](https://github.com/ozdemirumit/Project_Atlas/pull/98) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-042 |
 | Last Updated | 2026-08-06 |
-| Next Action | Publish the IMP-086 implementation, pass GitHub CI, merge, and verify main |
+| Next Action | Pass PR #98 CI, mark ready, merge, and verify main |
 
 ### ATLAS-IMP-086 Scope Rationale
 
