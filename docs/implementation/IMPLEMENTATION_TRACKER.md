@@ -57,7 +57,8 @@
   presentation, exact idempotent replay, wrong-cookie and permission rejection before claim,
   non-retry after a failed first presentation, metadata-only PostgreSQL mapping, CSRF, no-store,
   HttpOnly cookie continuity, minimized responses, and inert browser rendering.
-- Backend Ruff and strict mypy passed; the full suite passed with 694 tests and three expected
+- Backend Ruff and CI-equivalent strict mypy passed across 739 files; the full suite passed with
+  694 tests and three expected
   Windows symlink skips. Alembic reports one `20260806_0062` head for metadata-only protected
   content claims and presentation records.
 - Frontend ESLint and TypeScript checks passed; 30 test files and 60 tests passed; the production
