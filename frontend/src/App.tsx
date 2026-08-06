@@ -113,6 +113,7 @@ import {
 } from "./api/approvals";
 import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
+import { ConnectorLifecycleOverview } from "./features/connectors/ConnectorLifecycleOverview";
 import { PackageApprovalPanel } from "./features/connectors/PackageApprovalPanel";
 import {
   acquireConnectorPackage,
@@ -2483,6 +2484,7 @@ export function App() {
 
             {activeNavigation === "Connectors" && (
             <div className="mcp-builder-workspace">
+              <ConnectorLifecycleOverview />
               <section className="workspace-section mcp-builder-section">
                 <div className="section-heading">
                   <div>

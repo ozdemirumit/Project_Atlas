@@ -48,6 +48,7 @@ from atlas.api.routes import (
     instance_creation,
     investigations,
     invocation_authorizations,
+    invocation_evidence,
     lab_self_tests,
     license_analyses,
     malware_analyses,
@@ -207,9 +208,21 @@ from atlas.modules.connectors.adapters.invocation_authorization_memory import (
 from atlas.modules.connectors.adapters.invocation_authorization_postgres import (
     PostgreSQLConnectorInvocationAuthorizationRepository,
 )
+from atlas.modules.connectors.adapters.invocation_evidence_memory import (
+    InMemoryConnectorInvocationEvidencePolicySource,
+    InMemoryConnectorInvocationEvidenceRepository,
+)
+from atlas.modules.connectors.adapters.invocation_evidence_postgres import (
+    PostgreSQLConnectorInvocationEvidenceRepository,
+)
+from atlas.modules.connectors.adapters.invocation_evidence_synthetic import (
+    SyntheticConnectorInvocationEvidenceAdapter,
+    UnavailableConnectorInvocationEvidenceAdapter,
+)
 from atlas.modules.connectors.adapters.invocation_permission import (
     AuthorizationConnectorBoundedInvocationPermissionAuthorizer,
     AuthorizationConnectorCapabilityPermissionAuthorizer,
+    AuthorizationConnectorInvocationEvidencePermissionAuthorizer,
 )
 from atlas.modules.connectors.adapters.lab_mock_target import MockTargetConnectorLabRunner
 from atlas.modules.connectors.adapters.lab_self_test_memory import (
@@ -413,6 +426,10 @@ from atlas.modules.connectors.application.instance_creation import (
 from atlas.modules.connectors.application.invocation_authorization import (
     ConnectorInvocationAuthorizationService,
     build_development_connector_invocation_authorization_policy,
+)
+from atlas.modules.connectors.application.invocation_evidence import (
+    ConnectorInvocationEvidenceService,
+    build_development_connector_invocation_evidence_policy,
 )
 from atlas.modules.connectors.application.lab_self_test import (
     PackageLabSelfTestService,
@@ -778,6 +795,7 @@ def create_app(
     target_session_service: ConnectorTargetSessionService | None = None,
     invocation_authorization_service: ConnectorInvocationAuthorizationService | None = None,
     bounded_invocation_service: ConnectorBoundedInvocationService | None = None,
+    invocation_evidence_service: ConnectorInvocationEvidenceService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -2222,6 +2240,44 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if invocation_evidence_service is not None:
+        resolved_invocation_evidence_service = invocation_evidence_service
+    else:
+        invocation_evidence_repository = (
+            PostgreSQLConnectorInvocationEvidenceRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryConnectorInvocationEvidenceRepository()
+        )
+        invocation_evidence_policies = (
+            ()
+            if is_production
+            else (
+                build_development_connector_invocation_evidence_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_invocation_evidence_service = ConnectorInvocationEvidenceService(
+            repository=invocation_evidence_repository,
+            source=resolved_bounded_invocation_service,
+            policy_source=InMemoryConnectorInvocationEvidencePolicySource(
+                invocation_evidence_policies
+            ),
+            permission_authorizer=AuthorizationConnectorInvocationEvidencePermissionAuthorizer(
+                service=resolved_authorization_service,
+                environment=resolved_settings.environment,
+            ),
+            adapter=(
+                UnavailableConnectorInvocationEvidenceAdapter()
+                if is_production
+                else SyntheticConnectorInvocationEvidenceAdapter()
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -2428,6 +2484,7 @@ def create_app(
         app.state.target_session_service = resolved_target_session_service
         app.state.invocation_authorization_service = resolved_invocation_authorization_service
         app.state.bounded_invocation_service = resolved_bounded_invocation_service
+        app.state.invocation_evidence_service = resolved_invocation_evidence_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -2440,6 +2497,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_invocation_evidence_service.close()
         await resolved_bounded_invocation_service.close()
         await resolved_invocation_authorization_service.close()
         await resolved_target_session_service.close()
@@ -2562,6 +2620,7 @@ def create_app(
     app.include_router(target_session_verifications.router, prefix="/api/v1")
     app.include_router(invocation_authorizations.router, prefix="/api/v1")
     app.include_router(bounded_invocations.router, prefix="/api/v1")
+    app.include_router(invocation_evidence.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

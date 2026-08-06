@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { createConnectorBoundedInvocation } from "../../api/boundedInvocations";
 import type { ConnectorInvocationAuthorization } from "../../api/invocationAuthorizations";
+import { InvocationEvidencePanel } from "./InvocationEvidencePanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -36,6 +37,7 @@ export function BoundedInvocationPanel({
     !mutation.isPending;
 
   return (
+    <>
     <section
       className="target-configuration-panel bounded-invocation-panel"
       aria-labelledby="bounded-invocation-title"
@@ -153,5 +155,7 @@ export function BoundedInvocationPanel({
         </div>
       )}
     </section>
+    {invocation && <InvocationEvidencePanel invocation={invocation} />}
+    </>
   );
 }

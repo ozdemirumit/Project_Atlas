@@ -158,6 +158,8 @@ CONNECTOR_INVOCATION_AUTHORIZATION_CREATE = "connectors.invocation-authorization
 CONNECTOR_INVOCATION_AUTHORIZATION_READ = "connectors.invocation-authorizations.read"
 CONNECTOR_BOUNDED_INVOCATION_CREATE = "connectors.bounded-invocations.create"
 CONNECTOR_BOUNDED_INVOCATION_READ = "connectors.bounded-invocations.read"
+CONNECTOR_INVOCATION_EVIDENCE_CREATE = "connectors.invocation-evidence.create"
+CONNECTOR_INVOCATION_EVIDENCE_READ = "connectors.invocation-evidence.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -876,6 +878,19 @@ def connector_bounded_invocation_scope(
     )
 
 
+def connector_invocation_evidence_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.connectors",
+        resource_id="resource.connector.invocation-evidence",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -1533,6 +1548,14 @@ def build_development_authorization_service(
             permission_id=CONNECTOR_BOUNDED_INVOCATION_READ,
             description="Read one minimized immutable bounded connector invocation.",
         ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_INVOCATION_EVIDENCE_CREATE,
+            description="Persist one governed connector invocation evidence package.",
+        ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_INVOCATION_EVIDENCE_READ,
+            description="Read minimized connector invocation evidence metadata.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -1660,6 +1683,8 @@ def build_development_authorization_service(
                 STORAGE_HEALTH_READ,
                 CONNECTOR_BOUNDED_INVOCATION_CREATE,
                 CONNECTOR_BOUNDED_INVOCATION_READ,
+                CONNECTOR_INVOCATION_EVIDENCE_CREATE,
+                CONNECTOR_INVOCATION_EVIDENCE_READ,
             }
         ),
     )
@@ -2776,6 +2801,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=connector_bounded_invocation_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-invocation-evidence-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_invocation_evidence_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C3_CONTROLLED_CHANGE,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-invocation-evidence-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_invocation_evidence_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,

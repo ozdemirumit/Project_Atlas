@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-085 |
 | Title | Governed connector invocation evidence-ingestion foundation |
-| Status | In Progress |
+| Status | Ready for PR |
 | Branch | `agent/governed-invocation-evidence-ingestion` |
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-041 |
 | Last Updated | 2026-08-06 |
-| Next Action | Implement the ADR-041 domain, atomic claim, adapter, persistence, API, UI, and validation slice |
+| Next Action | Publish the IMP-085 implementation, pass GitHub CI, merge, and verify main |
 
 ### ATLAS-IMP-085 Scope Rationale
 
@@ -48,6 +48,26 @@
 - Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC plus exact
   capability permission, CSRF, safe errors, focused failure/uncertainty/concurrency tests, minimized
   web evidence, full backend/frontend suites, live desktop/mobile inspection, and GitHub CI apply.
+
+### ATLAS-IMP-085 Validation Evidence
+
+- ADR-041 is accepted. The service independently revalidates the exact completed invocation,
+  single-use consumption claim, signed policy, C3 ingestion permission, capability-specific read
+  permission, tenant scope, hardware MFA, actor separation, result integrity, and cleanup proof.
+- Eight focused backend tests cover immutable minimized ingestion, deterministic idempotency,
+  concurrent source claiming, actor separation, exact permission denial, altered and uncertain
+  receipts, audit failure after claiming, PostgreSQL round-trip, CSRF, forbidden controls, no-store,
+  and minimized responses. Claimed uncertain outcomes are never retried automatically.
+- Backend formatting and Ruff checks passed across 747 files; strict mypy passed across 689 source
+  and test files; the full suite passed with 656 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0057` head for immutable invocation evidence claims and records.
+- Frontend ESLint and TypeScript checks passed; 25 test files and 55 tests passed; the production
+  bundle built successfully. The always-visible connector lifecycle distinguishes platform
+  capability coverage from instance authority and exposes evidence preservation as available.
+- Live OpenAPI inspection exposed create/read evidence endpoints. Desktop at 1280 pixels and mobile
+  at 390 pixels showed the lifecycle without horizontal overflow; the browser was restored to the
+  desktop viewport. Knowledge publication, retrieval, model context, scheduling, workflow,
+  execution, deployment, and infrastructure mutation remain disabled.
 
 ### ATLAS-IMP-084 Scope Rationale
 
