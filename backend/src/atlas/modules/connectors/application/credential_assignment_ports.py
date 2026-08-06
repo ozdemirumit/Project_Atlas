@@ -7,6 +7,9 @@ from atlas.modules.connectors.domain.credential_assignment import (
     ConnectorCredentialAssignmentRecord,
     ConnectorCredentialProfileSnapshot,
 )
+from atlas.modules.connectors.domain.package_registration import (
+    ConnectorPackageRegistrationRecord,
+)
 from atlas.modules.connectors.domain.target_configuration import ConnectorTargetConfigurationBinding
 
 
@@ -17,7 +20,11 @@ class ConnectorCredentialAssignmentError(RuntimeError):
 class ConnectorCredentialTargetSource(Protocol):
     async def credential_assignment_source(
         self, *, binding_id: str
-    ) -> tuple[ConnectorTargetConfigurationBinding, frozenset[str]]: ...
+    ) -> tuple[
+        ConnectorTargetConfigurationBinding,
+        ConnectorPackageRegistrationRecord,
+        frozenset[str],
+    ]: ...
 
 
 class ConnectorCredentialProfileSource(Protocol):

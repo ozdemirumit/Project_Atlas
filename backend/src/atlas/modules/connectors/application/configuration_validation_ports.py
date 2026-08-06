@@ -10,6 +10,9 @@ from atlas.modules.connectors.domain.configuration_validation import (
 from atlas.modules.connectors.domain.credential_assignment import (
     ConnectorCredentialAssignmentRecord,
 )
+from atlas.modules.connectors.domain.package_registration import (
+    ConnectorPackageRegistrationRecord,
+)
 
 
 class ConnectorConfigurationValidationError(RuntimeError):
@@ -19,7 +22,11 @@ class ConnectorConfigurationValidationError(RuntimeError):
 class ConnectorConfigurationAssignmentSource(Protocol):
     async def configuration_validation_source(
         self, *, assignment_id: str
-    ) -> tuple[ConnectorCredentialAssignmentRecord, frozenset[str]]: ...
+    ) -> tuple[
+        ConnectorCredentialAssignmentRecord,
+        ConnectorPackageRegistrationRecord,
+        frozenset[str],
+    ]: ...
 
 
 class ConnectorConfigurationEvidenceSource(Protocol):

@@ -32,6 +32,9 @@ from atlas.modules.connectors.domain.credential_assignment import (
     DISABLED_CREDENTIALS_ASSIGNED,
     ConnectorCredentialAssignmentRecord,
 )
+from atlas.modules.connectors.domain.package_registration import (
+    ConnectorPackageRegistrationRecord,
+)
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
@@ -113,6 +116,7 @@ class ConnectorConfigurationValidationService:
         try:
             (
                 assignment,
+                _registration,
                 source_actors,
             ) = await self._assignment_source.configuration_validation_source(
                 assignment_id=source_assignment_id
@@ -246,6 +250,49 @@ class ConnectorConfigurationValidationService:
                 self._verify_record(raced)
                 return replace(raced, reused=True)
         return record
+
+    async def capability_enablement_source(
+        self, *, validation_id: str
+    ) -> tuple[
+        ConnectorConfigurationValidationRecord,
+        ConnectorPackageRegistrationRecord,
+        frozenset[str],
+    ]:
+        record = await self._repository.get(validation_id=validation_id)
+        if record is None:
+            raise ConnectorConfigurationValidationError("configuration_validation_record_not_found")
+        self._verify_record(record)
+        try:
+            (
+                assignment,
+                registration,
+                source_actors,
+            ) = await self._assignment_source.configuration_validation_source(
+                assignment_id=record.source_assignment_id
+            )
+        except ConnectorCredentialAssignmentError as error:
+            raise ConnectorConfigurationValidationError(
+                "configuration_validation_source_not_found"
+            ) from error
+        evidence = await self._evidence_source.get_by_id(evidence_id=record.evidence_id)
+        policy = await self._policy_source.get_by_id(policy_id=record.validation_policy_id)
+        if evidence is None or policy is None:
+            raise ConnectorConfigurationValidationError("configuration_validation_source_not_found")
+        self._verify_snapshot(evidence, "evidence")
+        self._verify_snapshot(policy, "policy")
+        if (
+            record.source_assignment_digest != assignment.canonical_digest
+            or record.package_digest != assignment.package_digest
+            or record.evidence_digest != evidence.canonical_digest
+            or record.validation_policy_digest != policy.canonical_digest
+            or record.manifest_digest != registration.manifest.manifest_digest
+        ):
+            raise ConnectorConfigurationValidationError("configuration_validation_source_invalid")
+        return (
+            record,
+            registration,
+            frozenset(source_actors | {record.validated_by, evidence.signed_by, policy.signed_by}),
+        )
 
     async def get(
         self, *, actor: AuthenticatedSubject, validation_id: str, correlation_id: str

@@ -4,14 +4,41 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-077 |
-| Title | Governed connector configuration and connectivity validation foundation |
-| Status | Done |
-| Branch | `main` |
-| Pull Request | [#89](https://github.com/ozdemirumit/Project_Atlas/pull/89) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-033 |
+| Task ID | ATLAS-IMP-078 |
+| Title | Governed connector capability governance and enablement foundation |
+| Status | Review |
+| Branch | `agent/governed-connector-capability-enable` |
+| Pull Request | [#90](https://github.com/ozdemirumit/Project_Atlas/pull/90) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-034 |
 | Last Updated | 2026-08-06 |
-| Next Action | Start ATLAS-IMP-078 governed connector capability governance and enablement foundation |
+| Local Validation | 614 backend tests, 47 frontend tests, lint, strict typing, production build, Alembic head `20260806_0050`, and live desktop/mobile overflow and browser-log inspection passed; three expected Windows symlink tests skipped |
+| Next Action | Pass GitHub CI, merge PR #90, verify `main`, and record completion evidence |
+
+### ATLAS-IMP-078 Scope Rationale
+
+- IMP-077 proves only bounded signed configuration/connectivity evidence for a disabled connector.
+- ADR-034 selects exact manifest-bound C0/C1 read-only capabilities and enables them
+  administratively without starting runtime, resolving secrets, connecting, or invoking anything.
+- Runtime trust, secret brokerage, health evidence, scheduling, invocation, deployment, and
+  infrastructure mutation remain later independent stages.
+
+### ATLAS-IMP-078 Acceptance Criteria
+
+- Only a dedicated exact-tenant MFA human may request enablement using exact validation ID/digest,
+  package digest, capability-profile ID/digest, policy ID/digest, purpose, acknowledgement,
+  idempotency, and correlation. Caller-selected capabilities, commands, parameters, targets,
+  credentials, network, runtime, deployment, and mutation fields fail validation.
+- The service revalidates complete lifecycle lineage, exact signed profile/policy, scope, freshness,
+  package/manifest parity, target compatibility, C0/C1-only classes, registered permissions,
+  actor separation, and no-later-authority state without secret, network, package runtime,
+  target, health, scheduling, or capability invocation access.
+- Required intent/completion audit precede immutable deterministic persistence and expose no target,
+  credential/secret, invocation, signature, request-fingerprint, or idempotency internals.
+- A valid record sets only capability governance, administrative enablement, and runtime-trust
+  eligibility in `enabled_capabilities_governed` state. Credential resolution, runtime trust,
+  execution, deployment, and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC, CSRF, safe errors,
+  minimized web evidence, backend/frontend tests, live desktop/mobile inspection, and GitHub CI apply.
 
 ### ATLAS-IMP-077 Scope Rationale
 

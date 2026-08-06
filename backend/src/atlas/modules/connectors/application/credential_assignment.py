@@ -28,6 +28,9 @@ from atlas.modules.connectors.domain.credential_assignment import (
     ConnectorCredentialAssignmentRecord,
     ConnectorCredentialProfileSnapshot,
 )
+from atlas.modules.connectors.domain.package_registration import (
+    ConnectorPackageRegistrationRecord,
+)
 from atlas.modules.connectors.domain.target_configuration import (
     DISABLED_TARGET_CONFIGURED,
     ConnectorTargetConfigurationBinding,
@@ -111,7 +114,11 @@ class ConnectorCredentialAssignmentService:
         if existing is not None:
             return self._reuse(existing, actor, fingerprint)
         try:
-            binding, source_actors = await self._target_source.credential_assignment_source(
+            (
+                binding,
+                _registration,
+                source_actors,
+            ) = await self._target_source.credential_assignment_source(
                 binding_id=source_target_binding_id
             )
         except ConnectorTargetConfigurationError as error:
@@ -247,7 +254,11 @@ class ConnectorCredentialAssignmentService:
 
     async def configuration_validation_source(
         self, *, assignment_id: str
-    ) -> tuple[ConnectorCredentialAssignmentRecord, frozenset[str]]:
+    ) -> tuple[
+        ConnectorCredentialAssignmentRecord,
+        ConnectorPackageRegistrationRecord,
+        frozenset[str],
+    ]:
         record = await self._repository.get(assignment_id=assignment_id)
         if record is None:
             raise ConnectorCredentialAssignmentError("credential_assignment_record_not_found")
@@ -261,7 +272,11 @@ class ConnectorCredentialAssignmentService:
         self._verify_profile(profile)
         self._verify_policy(policy)
         try:
-            binding, source_actors = await self._target_source.credential_assignment_source(
+            (
+                binding,
+                registration,
+                source_actors,
+            ) = await self._target_source.credential_assignment_source(
                 binding_id=record.source_target_binding_id
             )
         except ConnectorTargetConfigurationError as error:
@@ -281,8 +296,10 @@ class ConnectorCredentialAssignmentService:
             or record.target_product != profile.target_product
         ):
             raise ConnectorCredentialAssignmentError("credential_assignment_source_invalid")
-        return record, frozenset(
-            source_actors | {record.assigned_by, profile.signed_by, policy.signed_by}
+        return (
+            record,
+            registration,
+            frozenset(source_actors | {record.assigned_by, profile.signed_by, policy.signed_by}),
         )
 
     async def close(self) -> None:
