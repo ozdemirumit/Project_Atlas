@@ -11,7 +11,7 @@
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-039 |
 | Last Updated | 2026-08-06 |
-| Next Action | Implement the ADR-039 domain, persistence, API, UI, and validation slice |
+| Next Action | Publish the locally validated IMP-083 slice and complete GitHub CI |
 
 ### ATLAS-IMP-083 Scope Rationale
 
@@ -45,6 +45,28 @@
 - Memory/PostgreSQL parity, one Alembic head, strict no-store APIs, dedicated RBAC plus exact
   capability permission, CSRF, safe errors, minimized web evidence, backend/frontend tests, live
   desktop/mobile inspection, and GitHub CI apply.
+
+### ATLAS-IMP-083 Validation Evidence
+
+- ADR-039 is accepted. The service revalidates the exact closed target-session lineage, enabled
+  C0/C1 capability, signed profile, signed typed-input envelope, policy, freshness, actor
+  separation, tenant scope, and the capability's own required permission before recording only a
+  short-lived, single-use, non-renewable, unconsumed authorization.
+- Five focused backend tests cover deterministic idempotency, cross-tenant replay denial, exact
+  capability permission, actor separation, altered envelope integrity, permission and audit
+  fail-closed behavior, PostgreSQL round-trip, CSRF, forbidden raw parameters, no-store, and
+  minimized API responses.
+- Backend formatting and Ruff checks passed across 727 files; strict mypy passed across 671 source
+  and test files; the full suite passed with 641 tests and three expected Windows symlink skips.
+- Alembic reports one `20260806_0055` head for immutable connector invocation authorizations.
+- Frontend ESLint and TypeScript checks passed; all 52 Vitest tests passed and the production Vite
+  build completed. The UI cannot select target coordinates, transport, credentials, secrets,
+  broker/lease/session handles, commands, raw input, schedule, execution, deployment, or mutation
+  controls.
+- The restarted local backend reported `alive` and exposed both invocation-authorization API
+  operations. The authenticated application at `http://127.0.0.1:5208/` loaded the Connectors
+  workspace at 1280 x 720 and 390 x 844; automated measurements found no horizontal overflow at
+  either size and the desktop viewport was restored.
 
 ### ATLAS-IMP-082 Scope Rationale
 

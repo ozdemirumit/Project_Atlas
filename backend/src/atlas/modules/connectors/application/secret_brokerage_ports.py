@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from atlas.modules.connectors.domain.capability_enablement import (
+    ConnectorCapabilityEnablementRecord,
+)
 from atlas.modules.connectors.domain.credential_assignment import (
     ConnectorCredentialAssignmentRecord,
     ConnectorCredentialProfileSnapshot,
@@ -22,6 +25,14 @@ class ConnectorSecretBrokerageRuntimeTrustSource(Protocol):
     async def secret_brokerage_source(
         self, *, grant_id: str
     ) -> tuple[ConnectorRuntimeTrustGrantRecord, frozenset[str]]: ...
+
+    async def capability_invocation_source(
+        self, *, grant_id: str
+    ) -> tuple[
+        ConnectorRuntimeTrustGrantRecord,
+        ConnectorCapabilityEnablementRecord,
+        frozenset[str],
+    ]: ...
 
 
 class ConnectorSecretBrokerageCredentialSource(Protocol):

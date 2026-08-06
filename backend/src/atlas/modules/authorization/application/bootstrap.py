@@ -154,6 +154,9 @@ CONNECTOR_RUNTIME_ACTIVATION_CREATE = "connectors.runtime-activations.create"
 CONNECTOR_RUNTIME_ACTIVATION_READ = "connectors.runtime-activations.read"
 CONNECTOR_TARGET_SESSION_CREATE = "connectors.target-session-verifications.create"
 CONNECTOR_TARGET_SESSION_READ = "connectors.target-session-verifications.read"
+CONNECTOR_INVOCATION_AUTHORIZATION_CREATE = "connectors.invocation-authorizations.create"
+CONNECTOR_INVOCATION_AUTHORIZATION_READ = "connectors.invocation-authorizations.read"
+STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -832,6 +835,32 @@ def connector_target_session_scope(
     )
 
 
+def connector_invocation_authorization_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.connectors",
+        resource_id="resource.connector.invocation-authorizations",
+        capability_class=capability_class,
+    )
+
+
+def connector_capability_invocation_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.connectors",
+        resource_id="resource.connector.capability-invocation",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -1469,6 +1498,18 @@ def build_development_authorization_service(
             permission_id=CONNECTOR_TARGET_SESSION_READ,
             description="Read one minimized immutable target session verification.",
         ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_INVOCATION_AUTHORIZATION_CREATE,
+            description="Authorize one bounded governed connector capability invocation.",
+        ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_INVOCATION_AUTHORIZATION_READ,
+            description="Read one minimized immutable connector invocation authorization.",
+        ),
+        PermissionDefinition(
+            permission_id=STORAGE_HEALTH_READ,
+            description="Read governed storage health evidence through a connector capability.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -1591,6 +1632,9 @@ def build_development_authorization_service(
                 CONNECTOR_RUNTIME_ACTIVATION_READ,
                 CONNECTOR_TARGET_SESSION_CREATE,
                 CONNECTOR_TARGET_SESSION_READ,
+                CONNECTOR_INVOCATION_AUTHORIZATION_CREATE,
+                CONNECTOR_INVOCATION_AUTHORIZATION_READ,
+                STORAGE_HEALTH_READ,
             }
         ),
     )
@@ -2647,6 +2691,42 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=connector_target_session_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id=("assignment.development.connector-invocation-authorization-create"),
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_invocation_authorization_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C3_CONTROLLED_CHANGE,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id=("assignment.development.connector-invocation-authorization-read"),
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_invocation_authorization_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.storage-health-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_capability_invocation_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,
