@@ -76,6 +76,7 @@ from atlas.api.routes import (
     registry_publications,
     release_preflight,
     reports,
+    retrieval_index_publication,
     review_decisions,
     review_findings,
     reviewer_assignments,
@@ -705,6 +706,20 @@ from atlas.modules.knowledge.adapters.publication_preparation_synthetic import (
     SyntheticOperationalKnowledgePublicationPreparer,
     UnavailableOperationalKnowledgePublicationPreparer,
 )
+from atlas.modules.knowledge.adapters.retrieval_index_publication_memory import (
+    InMemoryOperationalKnowledgeRetrievalPublicationPolicySource,
+    InMemoryOperationalKnowledgeRetrievalPublicationRepository,
+)
+from atlas.modules.knowledge.adapters.retrieval_index_publication_permission import (
+    AuthorizationOperationalKnowledgeRetrievalPublicationPermissionAuthorizer,
+)
+from atlas.modules.knowledge.adapters.retrieval_index_publication_postgres import (
+    PostgreSQLOperationalKnowledgeRetrievalPublicationRepository,
+)
+from atlas.modules.knowledge.adapters.retrieval_index_publication_synthetic import (
+    SyntheticOperationalKnowledgeRetrievalPublisher,
+    UnavailableOperationalKnowledgeRetrievalPublisher,
+)
 from atlas.modules.knowledge.adapters.review_decision_memory import (
     InMemoryOperationalKnowledgeTrackReviewDecisionPolicySource,
     InMemoryOperationalKnowledgeTrackReviewDecisionRepository,
@@ -805,6 +820,10 @@ from atlas.modules.knowledge.application.protected_inspection import (
 from atlas.modules.knowledge.application.publication_preparation import (
     OperationalKnowledgePublicationPreparationService,
     build_development_operational_knowledge_publication_preparation_policy,
+)
+from atlas.modules.knowledge.application.retrieval_index_publication import (
+    OperationalKnowledgeRetrievalIndexPublicationService,
+    build_development_operational_knowledge_retrieval_publication_policy,
 )
 from atlas.modules.knowledge.application.review_decision import (
     OperationalKnowledgeTrackReviewDecisionService,
@@ -1126,6 +1145,9 @@ def create_app(
     ) = None,
     operational_knowledge_index_staging_validation_service: (
         OperationalKnowledgeIndexStagingValidationService | None
+    ) = None,
+    operational_knowledge_retrieval_index_publication_service: (
+        OperationalKnowledgeRetrievalIndexPublicationService | None
     ) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
@@ -3308,6 +3330,66 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    if operational_knowledge_retrieval_index_publication_service is not None:
+        resolved_operational_knowledge_retrieval_index_publication_service = (
+            operational_knowledge_retrieval_index_publication_service
+        )
+    else:
+        publication_repository = (
+            PostgreSQLOperationalKnowledgeRetrievalPublicationRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryOperationalKnowledgeRetrievalPublicationRepository()
+        )
+        publication_embedding_policy = build_development_operational_knowledge_embedding_policy(
+            organization_id=resolved_settings.development_organization_id,
+            environment_id=f"environment.{resolved_settings.environment}",
+            issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+            expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+        )
+        publication_index_policy = build_development_operational_knowledge_index_policy(
+            organization_id=resolved_settings.development_organization_id,
+            environment_id=f"environment.{resolved_settings.environment}",
+            issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+            expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+            embedding_policy=publication_embedding_policy,
+        )
+        publication_policies = (
+            ()
+            if is_production
+            else (
+                build_development_operational_knowledge_retrieval_publication_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                    index_policy=publication_index_policy,
+                ),
+            )
+        )
+        resolved_operational_knowledge_retrieval_index_publication_service = (
+            OperationalKnowledgeRetrievalIndexPublicationService(
+                repository=publication_repository,
+                index_source=resolved_operational_knowledge_index_staging_validation_service,
+                policy_source=InMemoryOperationalKnowledgeRetrievalPublicationPolicySource(
+                    publication_policies
+                ),
+                permission_authorizer=(
+                    AuthorizationOperationalKnowledgeRetrievalPublicationPermissionAuthorizer(
+                        service=resolved_authorization_service,
+                        environment=resolved_settings.environment,
+                    )
+                ),
+                publisher=(
+                    UnavailableOperationalKnowledgeRetrievalPublisher()
+                    if is_production
+                    else SyntheticOperationalKnowledgeRetrievalPublisher()
+                ),
+                audit_sink=resolved_audit_sink,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -3560,6 +3642,9 @@ def create_app(
         app.state.operational_knowledge_index_staging_validation_service = (
             resolved_operational_knowledge_index_staging_validation_service
         )
+        app.state.operational_knowledge_retrieval_index_publication_service = (
+            resolved_operational_knowledge_retrieval_index_publication_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -3572,6 +3657,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_operational_knowledge_retrieval_index_publication_service.close()
         await resolved_operational_knowledge_index_staging_validation_service.close()
         await resolved_operational_knowledge_embedding_generation_service.close()
         await resolved_operational_knowledge_deterministic_chunking_service.close()
@@ -3726,6 +3812,7 @@ def create_app(
     app.include_router(deterministic_chunking.router, prefix="/api/v1")
     app.include_router(embedding_generation.router, prefix="/api/v1")
     app.include_router(index_staging_validation.router, prefix="/api/v1")
+    app.include_router(retrieval_index_publication.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

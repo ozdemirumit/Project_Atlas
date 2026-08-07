@@ -114,7 +114,8 @@ const lifecycleStages: readonly LifecycleStage[] = [
       { name: "Deterministic chunking" },
       { name: "Embedding generation" },
       { name: "Index staging" },
-      { name: "Retrieval", state: "pending" },
+      { name: "Retrieval publication" },
+      { name: "Governed retrieval", state: "pending" },
     ],
   },
 ];
@@ -141,7 +142,7 @@ export function ConnectorLifecycleOverview() {
           <span>In progress</span>
         </div>
         <div>
-          <strong>Index staging</strong>
+          <strong>Retrieval publication</strong>
           <span>Latest available capability</span>
         </div>
       </div>

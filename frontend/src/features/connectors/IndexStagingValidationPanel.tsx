@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { OperationalKnowledgeEmbeddingSet } from "../../api/embeddingGeneration";
 import { createOperationalKnowledgeIndexStage } from "../../api/indexStagingValidation";
+import { RetrievalIndexPublicationPanel } from "./RetrievalIndexPublicationPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -117,14 +118,18 @@ export function IndexStagingValidationPanel({
         </div>
       )}
       {indexStage && (
-        <div className="correction-record">
-          <strong>Inactive retrieval projection validated</strong>
-          <code>{indexStage.index_staging_id}</code>
-          <p className="muted-copy">
-            {indexStage.staged_point_count} protected points were reconciled and sealed. No content,
-            vector, collection, point identity, query result, or retrieval authority was exposed.
-          </p>
-        </div>
+        <>
+          <div className="correction-record">
+            <strong>Inactive retrieval projection validated</strong>
+            <code>{indexStage.index_staging_id}</code>
+            <p className="muted-copy">
+              {indexStage.staged_point_count} protected points were reconciled and sealed. No
+              content, vector, collection, point identity, query result, or retrieval authority was
+              exposed.
+            </p>
+          </div>
+          <RetrievalIndexPublicationPanel indexStage={indexStage} />
+        </>
       )}
     </div>
   );

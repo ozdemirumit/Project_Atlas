@@ -190,6 +190,8 @@ KNOWLEDGE_EMBEDDING_GENERATION_CREATE = "knowledge.embedding-generation.create"
 KNOWLEDGE_EMBEDDING_GENERATION_READ = "knowledge.embedding-generation.read"
 KNOWLEDGE_INDEX_STAGING_CREATE = "knowledge.index-staging.create"
 KNOWLEDGE_INDEX_STAGING_READ = "knowledge.index-staging.read"
+KNOWLEDGE_RETRIEVAL_PUBLICATION_CREATE = "knowledge.retrieval-publication.create"
+KNOWLEDGE_RETRIEVAL_PUBLICATION_READ = "knowledge.retrieval-publication.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -1116,6 +1118,19 @@ def operational_knowledge_index_staging_scope(
     )
 
 
+def operational_knowledge_retrieval_publication_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.knowledge",
+        resource_id="resource.knowledge.operational-retrieval-publication",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -1901,6 +1916,14 @@ def build_development_authorization_service(
             permission_id=KNOWLEDGE_INDEX_STAGING_READ,
             description="Read minimized protected knowledge index-staging metadata.",
         ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_RETRIEVAL_PUBLICATION_CREATE,
+            description="Atomically publish one governed protected retrieval index.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_RETRIEVAL_PUBLICATION_READ,
+            description="Read minimized protected retrieval-publication metadata.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -2060,6 +2083,8 @@ def build_development_authorization_service(
                 KNOWLEDGE_EMBEDDING_GENERATION_READ,
                 KNOWLEDGE_INDEX_STAGING_CREATE,
                 KNOWLEDGE_INDEX_STAGING_READ,
+                KNOWLEDGE_RETRIEVAL_PUBLICATION_CREATE,
+                KNOWLEDGE_RETRIEVAL_PUBLICATION_READ,
             }
         ),
     )
@@ -3512,6 +3537,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=operational_knowledge_index_staging_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-retrieval-publication-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=operational_knowledge_retrieval_publication_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-retrieval-publication-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=operational_knowledge_retrieval_publication_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,
