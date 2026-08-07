@@ -8533,6 +8533,108 @@ tbody tr.selected {
   white-space: pre-wrap;
 }
 
+.review-decision-panel {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.review-decision-panel > label {
+  display: grid;
+  gap: 8px;
+}
+
+.review-decision-panel input,
+.review-decision-panel textarea {
+  min-width: 0;
+}
+
+.review-decision-segment {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: min(100%, 440px);
+  padding: 3px;
+  border: 1px solid #b8c7c2;
+  border-radius: 6px;
+  background: #edf2f0;
+}
+
+.review-decision-segment button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  gap: 7px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #42534e;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.review-decision-segment button[aria-pressed="true"] {
+  background: #fff;
+  color: #145846;
+  box-shadow: 0 1px 3px rgb(23 45 38 / 14%);
+}
+
+.review-decision-basis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px 14px 14px;
+  border: 1px solid #cbd6d2;
+  border-radius: 6px;
+}
+
+.review-decision-basis legend {
+  padding: 0 5px;
+  color: #33413d;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.review-decision-basis label {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  color: #33413d;
+  font-size: 13px;
+  text-transform: capitalize;
+}
+
+.review-decision-basis input {
+  flex: 0 0 auto;
+}
+
+.review-decision-record {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.review-decision-record strong,
+.review-decision-record code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .review-decision-segment,
+  .review-decision-basis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .protected-content-text {
   max-height: 28rem;
   margin: 0;

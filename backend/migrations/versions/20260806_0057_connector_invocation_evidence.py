@@ -48,7 +48,7 @@ def upgrade() -> None:
         "environment_id",
     ):
         op.create_index(
-            f"ix_connector_invocation_evidence_claims_{column}",
+            op.f(f"ix_connector_invocation_evidence_claims_{column}"),
             "connector_invocation_evidence_claims",
             [column],
             unique=False,
@@ -85,7 +85,7 @@ def upgrade() -> None:
         "environment_id",
     ):
         op.create_index(
-            f"ix_connector_invocation_evidence_ingestions_{column}",
+            op.f(f"ix_connector_invocation_evidence_ingestions_{column}"),
             "connector_invocation_evidence_ingestions",
             [column],
             unique=False,

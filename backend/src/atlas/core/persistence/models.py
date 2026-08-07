@@ -626,7 +626,7 @@ class ConnectorPackageSchemaSemanticsValidationModel(Base):
         UniqueConstraint(
             "validated_by",
             "idempotency_key",
-            name="uq_connector_package_schema_semantics_validations_actor_idempotency",
+            name="uq_pkg_schema_sem_actor_idem",
         ),
     )
 
@@ -691,7 +691,7 @@ class ConnectorPackageAuthorityBehaviorValidationModel(Base):
         UniqueConstraint(
             "validated_by",
             "idempotency_key",
-            name="uq_connector_package_authority_behavior_validations_actor_idempotency",
+            name="uq_pkg_auth_behavior_actor_idem",
         ),
     )
 
@@ -759,7 +759,7 @@ class ConnectorPackageStaticDependencyAnalysisModel(Base):
         UniqueConstraint(
             "analyzed_by",
             "idempotency_key",
-            name="uq_connector_package_static_dependency_analyses_actor_idempotency",
+            name="uq_pkg_static_dep_actor_idem",
         ),
     )
 
@@ -2058,7 +2058,7 @@ class OperationalEvidenceKnowledgeDraftClaimModel(Base):
         UniqueConstraint(
             "claimed_by",
             "idempotency_digest",
-            name="uq_operational_evidence_knowledge_draft_claims_actor_idempotency",
+            name="uq_ok_draft_claim_actor_idem",
         ),
     )
 
@@ -2109,7 +2109,7 @@ class OperationalKnowledgeReviewRequestClaimModel(Base):
         UniqueConstraint(
             "claimed_by",
             "idempotency_digest",
-            name="uq_operational_knowledge_review_request_claims_actor_idempotency",
+            name="uq_ok_review_req_claim_actor_idem",
         ),
     )
 
@@ -2158,7 +2158,7 @@ class OperationalKnowledgeReviewerAssignmentClaimModel(Base):
         UniqueConstraint(
             "claimed_by",
             "idempotency_digest",
-            name="uq_operational_knowledge_reviewer_assignment_claims_actor_idempotency",
+            name="uq_ok_assign_claim_actor_idem",
         ),
     )
 
@@ -2203,12 +2203,12 @@ class OperationalKnowledgeProtectedInspectionClaimModel(Base):
         UniqueConstraint(
             "source_assignment_set_id",
             "track_code",
-            name="uq_operational_knowledge_protected_inspection_claims_source_track",
+            name="uq_ok_inspect_claim_source_track",
         ),
         UniqueConstraint(
             "claimed_by_subject_digest",
             "idempotency_digest",
-            name="uq_operational_knowledge_protected_inspection_claims_actor_idempotency",
+            name="uq_ok_inspect_claim_actor_idem",
         ),
     )
 
@@ -2230,7 +2230,7 @@ class OperationalKnowledgeProtectedInspectionModel(Base):
         UniqueConstraint(
             "source_assignment_set_id",
             "track_code",
-            name="uq_operational_knowledge_protected_inspection_leases_source_track",
+            name="uq_ok_inspect_lease_source_track",
         ),
         UniqueConstraint(
             "claim_id",
@@ -2260,7 +2260,7 @@ class OperationalKnowledgeProtectedContentClaimModel(Base):
         UniqueConstraint(
             "claimed_by_subject_digest",
             "idempotency_digest",
-            name="uq_operational_knowledge_protected_content_claims_actor_idempotency",
+            name="uq_ok_content_claim_actor_idem",
         ),
     )
 
@@ -2280,7 +2280,7 @@ class OperationalKnowledgeProtectedContentModel(Base):
     __table_args__ = (
         UniqueConstraint(
             "source_lease_id",
-            name="uq_operational_knowledge_protected_content_presentations_source_lease",
+            name="uq_ok_content_present_source_lease",
         ),
         UniqueConstraint(
             "claim_id",
@@ -2308,12 +2308,12 @@ class OperationalKnowledgeReviewFindingClaimModel(Base):
     __table_args__ = (
         UniqueConstraint(
             "source_presentation_id",
-            name="uq_operational_knowledge_review_finding_claims_source_presentation",
+            name="uq_ok_finding_claim_source_present",
         ),
         UniqueConstraint(
             "claimed_by_subject_digest",
             "idempotency_digest",
-            name="uq_operational_knowledge_review_finding_claims_actor_idempotency",
+            name="uq_ok_finding_claim_actor_idem",
         ),
     )
 
@@ -2364,12 +2364,12 @@ class OperationalKnowledgeFindingPresentationClaimModel(Base):
     __table_args__ = (
         UniqueConstraint(
             "source_finding_packet_id",
-            name="uq_operational_knowledge_finding_presentation_claims_source_finding",
+            name="uq_ok_finding_present_claim_source",
         ),
         UniqueConstraint(
             "claimed_by_subject_digest",
             "idempotency_digest",
-            name="uq_operational_knowledge_finding_presentation_claims_actor_idempotency",
+            name="uq_ok_finding_present_claim_actor_idem",
         ),
     )
 
@@ -2412,6 +2412,66 @@ class OperationalKnowledgeFindingPresentationModel(Base):
     finding_content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     finding_count: Mapped[int] = mapped_column(Integer, nullable=False)
     finding_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class OperationalKnowledgeTrackReviewDecisionClaimModel(Base):
+    __tablename__ = "operational_knowledge_track_review_decision_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_finding_presentation_id",
+            name="uq_ok_trd_claim_source_present",
+        ),
+        UniqueConstraint(
+            "claimed_by_subject_digest",
+            "idempotency_digest",
+            name="uq_ok_trd_claim_actor_idem",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source_finding_presentation_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    decision_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    track_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    disposition_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    claimed_by_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class OperationalKnowledgeTrackReviewDecisionModel(Base):
+    __tablename__ = "operational_knowledge_track_review_decisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_finding_presentation_id",
+            name="uq_ok_trd_source_present",
+        ),
+        UniqueConstraint(
+            "claim_id",
+            name="uq_ok_trd_claim",
+        ),
+    )
+
+    decision_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    claim_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_finding_presentation_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    source_lease_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_assignment_set_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    review_request_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    track_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    disposition_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    knowledge_item_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    decided_by_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)

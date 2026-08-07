@@ -6,6 +6,7 @@ import { createOperationalKnowledgeFindingPresentation } from "../../api/finding
 import type { OperationalKnowledgeProtectedContent } from "../../api/protectedContent";
 import type { OperationalKnowledgeProtectedInspectionLease } from "../../api/protectedInspections";
 import type { OperationalKnowledgeReviewFinding } from "../../api/reviewFindings";
+import { ReviewDecisionPanel } from "./ReviewDecisionPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -122,6 +123,7 @@ export function FindingPresentationPanel({
         </div>
       )}
       {presentation && (
+        <>
         <div className="finding-presentation-record">
           <div className="section-heading">
             <div>
@@ -170,6 +172,13 @@ export function FindingPresentationPanel({
             approval, publication, workflow, and operational authority remain unavailable.
           </p>
         </div>
+        <ReviewDecisionPanel
+          lease={lease}
+          contentPresentation={contentPresentation}
+          finding={finding}
+          findingPresentation={presentation}
+        />
+        </>
       )}
     </div>
   );
