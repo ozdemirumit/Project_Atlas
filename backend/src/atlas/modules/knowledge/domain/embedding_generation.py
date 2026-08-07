@@ -6,13 +6,13 @@ from datetime import datetime
 
 from atlas.modules.identity.domain.models import validate_stable_identifier
 
-CHUNKS_CREATED_STATE = "operational_knowledge_chunks_created"
+EMBEDDINGS_CREATED_STATE = "operational_knowledge_embeddings_created"
 _DIGEST = re.compile(r"^[a-f0-9]{64}$")
 
 
 def _ids(*values: str) -> None:
     for value in values:
-        validate_stable_identifier(value, "operational knowledge chunking identifier")
+        validate_stable_identifier(value, "operational knowledge embedding identifier")
 
 
 def _digests(*values: str) -> bool:
@@ -20,26 +20,32 @@ def _digests(*values: str) -> bool:
 
 
 @dataclass(frozen=True, slots=True)
-class OperationalKnowledgeChunkingPolicySnapshot:
+class OperationalKnowledgeEmbeddingPolicySnapshot:
     policy_id: str
     schema_version: str
     version: int
     organization_id: str
     environment_id: str
     policy_version: str
-    required_materialization_schema: str
-    required_materialization_state: str
-    algorithm_profile_id: str
-    algorithm_profile_digest: str
+    required_chunk_set_schema: str
+    required_chunk_set_state: str
+    model_profile_id: str
+    model_profile_digest: str
+    model_artifact_digest: str
+    tokenizer_profile_digest: str
+    vector_dimension: int
+    normalization_profile_id: str
+    distance_metric_id: str
+    data_boundary_id: str
+    data_boundary_digest: str
     maximum_chunks: int
-    maximum_chunk_characters: int
-    maximum_chunk_tokens: int
-    maximum_overlap_characters: int
-    maximum_hierarchy_depth: int
+    maximum_total_tokens: int
+    maximum_batch_size: int
     maximum_authentication_age_minutes: int
     subject_digest_salt_digest: str
     browser_binding_key_digest: str
-    required_chunker_id: str
+    required_embedder_id: str
+    model_owner_id: str
     signed_by: str
     issued_at: datetime
     expires_at: datetime
@@ -52,168 +58,183 @@ class OperationalKnowledgeChunkingPolicySnapshot:
             self.organization_id,
             self.environment_id,
             self.policy_version,
-            self.required_materialization_schema,
-            self.required_materialization_state,
-            self.algorithm_profile_id,
-            self.required_chunker_id,
+            self.required_chunk_set_schema,
+            self.required_chunk_set_state,
+            self.model_profile_id,
+            self.normalization_profile_id,
+            self.distance_metric_id,
+            self.data_boundary_id,
+            self.required_embedder_id,
+            self.model_owner_id,
             self.signed_by,
         )
         if (
             self.version != 1
+            or not 1 <= self.vector_dimension <= 65_536
             or not 1 <= self.maximum_chunks <= 100_000
-            or not 1 <= self.maximum_chunk_characters <= 1_000_000
-            or not 1 <= self.maximum_chunk_tokens <= 250_000
-            or not 0 <= self.maximum_overlap_characters < self.maximum_chunk_characters
-            or not 1 <= self.maximum_hierarchy_depth <= 64
+            or not 1 <= self.maximum_total_tokens <= 100_000_000
+            or not 1 <= self.maximum_batch_size <= 4096
             or not 1 <= self.maximum_authentication_age_minutes <= 60
             or self.issued_at.tzinfo is None
             or self.expires_at.tzinfo is None
             or not self.issued_at < self.expires_at
             or not _digests(
-                self.algorithm_profile_digest,
+                self.model_profile_digest,
+                self.model_artifact_digest,
+                self.tokenizer_profile_digest,
+                self.data_boundary_digest,
                 self.subject_digest_salt_digest,
                 self.browser_binding_key_digest,
                 self.canonical_digest,
             )
         ):
-            raise ValueError("Operational knowledge chunking policy is invalid")
+            raise ValueError("Operational knowledge embedding policy is invalid")
 
 
 @dataclass(frozen=True, slots=True)
-class OperationalKnowledgeChunkingInstruction:
-    chunk_set_id: str
+class OperationalKnowledgeEmbeddingInstruction:
+    embedding_set_id: str
     organization_id: str
     environment_id: str
+    chunk_set_id: str
+    chunk_set_digest: str
     materialization_id: str
-    materialization_digest: str
     preparation_id: str
-    preparation_digest: str
     knowledge_item_id: str
-    source_artifact_digest: str
     protected_material_digest: str
+    ordered_chunk_manifest_digest: str
     chunking_profile_digest: str
     governance_binding_digest: str
-    media_type: str
-    canonical_characters: int
+    chunk_count: int
+    total_chunk_tokens: int
     steward_subject_digest: str
     browser_session_binding_digest: str
     policy_id: str
     policy_digest: str
-    algorithm_profile_id: str
-    algorithm_profile_digest: str
-    maximum_chunks: int
-    maximum_chunk_characters: int
-    maximum_chunk_tokens: int
-    maximum_overlap_characters: int
-    maximum_hierarchy_depth: int
+    model_profile_id: str
+    model_profile_digest: str
+    model_artifact_digest: str
+    tokenizer_profile_digest: str
+    vector_dimension: int
+    normalization_profile_id: str
+    distance_metric_id: str
+    data_boundary_id: str
+    data_boundary_digest: str
+    maximum_batch_size: int
     purpose: str
     requested_at: datetime
 
     def __post_init__(self) -> None:
         _ids(
-            self.chunk_set_id,
+            self.embedding_set_id,
             self.organization_id,
             self.environment_id,
+            self.chunk_set_id,
             self.materialization_id,
             self.preparation_id,
             self.knowledge_item_id,
             self.policy_id,
-            self.algorithm_profile_id,
+            self.model_profile_id,
+            self.normalization_profile_id,
+            self.distance_metric_id,
+            self.data_boundary_id,
         )
         if (
             not 20 <= len(self.purpose.strip()) <= 1000
             or self.requested_at.tzinfo is None
-            or re.fullmatch(r"^[a-z]+/[a-z0-9.+-]+$", self.media_type) is None
             or min(
-                self.canonical_characters,
-                self.maximum_chunks,
-                self.maximum_chunk_characters,
-                self.maximum_chunk_tokens,
-                self.maximum_hierarchy_depth,
+                self.chunk_count,
+                self.total_chunk_tokens,
+                self.vector_dimension,
+                self.maximum_batch_size,
             )
             < 1
-            or self.maximum_overlap_characters < 0
             or not _digests(
-                self.materialization_digest,
-                self.preparation_digest,
-                self.source_artifact_digest,
+                self.chunk_set_digest,
                 self.protected_material_digest,
+                self.ordered_chunk_manifest_digest,
                 self.chunking_profile_digest,
                 self.governance_binding_digest,
                 self.steward_subject_digest,
                 self.browser_session_binding_digest,
                 self.policy_digest,
-                self.algorithm_profile_digest,
+                self.model_profile_digest,
+                self.model_artifact_digest,
+                self.tokenizer_profile_digest,
+                self.data_boundary_digest,
             )
         ):
-            raise ValueError("Operational knowledge chunking instruction is invalid")
+            raise ValueError("Operational knowledge embedding instruction is invalid")
 
 
 @dataclass(frozen=True, slots=True)
-class OperationalKnowledgeChunkingReceipt:
-    chunk_set_id: str
+class OperationalKnowledgeEmbeddingReceipt:
+    embedding_set_id: str
     schema_version: str
     version: int
-    chunker_id: str
-    chunked_by: str
+    embedder_id: str
+    embedded_by: str
     instruction_digest: str
-    materialization_digest: str
-    protected_material_digest: str
-    chunking_profile_digest: str
-    algorithm_profile_digest: str
+    chunk_set_digest: str
     ordered_chunk_manifest_digest: str
-    structure_manifest_digest: str
-    governance_binding_digest: str
-    determinism_evidence_digest: str
-    chunk_count: int
-    total_chunk_characters: int
-    total_chunk_tokens: int
-    minimum_chunk_characters: int
-    maximum_chunk_characters: int
-    overlap_characters: int
-    chunked_at: datetime
+    model_profile_digest: str
+    model_artifact_digest: str
+    tokenizer_profile_digest: str
+    vector_dimension: int
+    normalization_profile_id: str
+    distance_metric_id: str
+    data_boundary_digest: str
+    embedding_count: int
+    vector_manifest_digest: str
+    chunk_vector_binding_digest: str
+    numeric_validation_digest: str
+    coverage_validation_digest: str
+    resource_evidence_digest: str
+    embedded_at: datetime
     signature_verified: bool
     canonical_digest: str
 
     def __post_init__(self) -> None:
-        _ids(self.chunk_set_id, self.schema_version, self.chunker_id, self.chunked_by)
+        _ids(
+            self.embedding_set_id,
+            self.schema_version,
+            self.embedder_id,
+            self.embedded_by,
+            self.normalization_profile_id,
+            self.distance_metric_id,
+        )
         if (
             self.version != 1
-            or self.chunked_at.tzinfo is None
+            or self.embedded_at.tzinfo is None
             or not self.signature_verified
-            or min(
-                self.chunk_count,
-                self.total_chunk_characters,
-                self.total_chunk_tokens,
-                self.minimum_chunk_characters,
-                self.maximum_chunk_characters,
-            )
-            < 1
-            or self.minimum_chunk_characters > self.maximum_chunk_characters
-            or self.overlap_characters < 0
+            or self.vector_dimension < 1
+            or self.embedding_count < 1
             or not _digests(
                 self.instruction_digest,
-                self.materialization_digest,
-                self.protected_material_digest,
-                self.chunking_profile_digest,
-                self.algorithm_profile_digest,
+                self.chunk_set_digest,
                 self.ordered_chunk_manifest_digest,
-                self.structure_manifest_digest,
-                self.governance_binding_digest,
-                self.determinism_evidence_digest,
+                self.model_profile_digest,
+                self.model_artifact_digest,
+                self.tokenizer_profile_digest,
+                self.data_boundary_digest,
+                self.vector_manifest_digest,
+                self.chunk_vector_binding_digest,
+                self.numeric_validation_digest,
+                self.coverage_validation_digest,
+                self.resource_evidence_digest,
                 self.canonical_digest,
             )
         ):
-            raise ValueError("Operational knowledge chunking receipt is invalid")
+            raise ValueError("Operational knowledge embedding receipt is invalid")
 
 
 @dataclass(frozen=True, slots=True)
-class OperationalKnowledgeChunkingClaim:
+class OperationalKnowledgeEmbeddingClaim:
     claim_id: str
     schema_version: str
     version: int
-    materialization_id: str
     chunk_set_id: str
+    embedding_set_id: str
     claimed_by_subject_digest: str
     browser_session_binding_digest: str
     request_binding_digest: str
@@ -227,8 +248,8 @@ class OperationalKnowledgeChunkingClaim:
         _ids(
             self.claim_id,
             self.schema_version,
-            self.materialization_id,
             self.chunk_set_id,
+            self.embedding_set_id,
             self.organization_id,
             self.environment_id,
         )
@@ -243,24 +264,22 @@ class OperationalKnowledgeChunkingClaim:
                 self.canonical_digest,
             )
         ):
-            raise ValueError("Operational knowledge chunking claim is invalid")
+            raise ValueError("Operational knowledge embedding claim is invalid")
 
 
 @dataclass(frozen=True, slots=True)
-class OperationalKnowledgeChunkingRecord:
-    chunk_set_id: str
+class OperationalKnowledgeEmbeddingRecord:
+    embedding_set_id: str
     schema_version: str
     version: int
     claim_id: str
+    chunk_set_id: str
+    chunk_set_digest: str
     materialization_id: str
-    materialization_digest: str
     preparation_id: str
-    preparation_digest: str
     resolution_id: str
-    resolution_digest: str
     review_request_id: str
     source_draft_id: str
-    source_draft_digest: str
     knowledge_item_id: str
     organization_id: str
     environment_id: str
@@ -269,31 +288,34 @@ class OperationalKnowledgeChunkingRecord:
     retention_policy_id: str
     publication_steward_subject_digest: str
     materialization_steward_subject_digest: str
-    upstream_accountable_subject_digests: tuple[str, ...]
-    chunked_by_subject_digest: str
+    chunking_steward_subject_digest: str
+    embedded_by_subject_digest: str
     browser_session_binding_digest: str
-    chunking_policy_id: str
-    chunking_policy_digest: str
-    chunking_policy_version: str
-    algorithm_profile_id: str
-    algorithm_profile_digest: str
-    chunker_id: str
-    chunking_receipt_digest: str
-    source_artifact_digest: str
+    embedding_policy_id: str
+    embedding_policy_digest: str
+    embedding_policy_version: str
+    model_profile_id: str
+    model_profile_digest: str
+    model_artifact_digest: str
+    tokenizer_profile_digest: str
+    vector_dimension: int
+    normalization_profile_id: str
+    distance_metric_id: str
+    data_boundary_id: str
+    data_boundary_digest: str
+    embedder_id: str
+    embedding_receipt_digest: str
     protected_material_digest: str
-    chunking_profile_digest: str
     ordered_chunk_manifest_digest: str
-    structure_manifest_digest: str
+    chunking_profile_digest: str
     governance_binding_digest: str
-    determinism_evidence_digest: str
-    media_type: str
-    chunk_count: int
-    total_chunk_characters: int
-    total_chunk_tokens: int
-    minimum_chunk_characters: int
-    maximum_chunk_characters: int
-    overlap_characters: int
-    chunked_at: datetime
+    embedding_count: int
+    vector_manifest_digest: str
+    chunk_vector_binding_digest: str
+    numeric_validation_digest: str
+    coverage_validation_digest: str
+    resource_evidence_digest: str
+    embedded_at: datetime
     instance_state: str
     purpose: str
     canonical_digest: str
@@ -302,7 +324,7 @@ class OperationalKnowledgeChunkingRecord:
     publication_prepared: bool = True
     source_materialized: bool = True
     chunks_created: bool = True
-    embeddings_created: bool = False
+    embeddings_created: bool = True
     index_staged: bool = False
     index_validated: bool = False
     knowledge_published: bool = False
@@ -318,9 +340,10 @@ class OperationalKnowledgeChunkingRecord:
 
     def __post_init__(self) -> None:
         _ids(
-            self.chunk_set_id,
+            self.embedding_set_id,
             self.schema_version,
             self.claim_id,
+            self.chunk_set_id,
             self.materialization_id,
             self.preparation_id,
             self.resolution_id,
@@ -332,14 +355,16 @@ class OperationalKnowledgeChunkingRecord:
             self.classification,
             self.access_policy_id,
             self.retention_policy_id,
-            self.chunking_policy_id,
-            self.chunking_policy_version,
-            self.algorithm_profile_id,
-            self.chunker_id,
+            self.embedding_policy_id,
+            self.embedding_policy_version,
+            self.model_profile_id,
+            self.normalization_profile_id,
+            self.distance_metric_id,
+            self.data_boundary_id,
+            self.embedder_id,
             self.instance_state,
         )
-        later_authority = (
-            self.embeddings_created,
+        later = (
             self.index_staged,
             self.index_validated,
             self.knowledge_published,
@@ -352,15 +377,9 @@ class OperationalKnowledgeChunkingRecord:
             self.deployment_approved,
             self.infrastructure_mutation_performed,
         )
-        upstream_accountability_valid = (
-            len(self.upstream_accountable_subject_digests) >= 4
-            and tuple(sorted(set(self.upstream_accountable_subject_digests)))
-            == self.upstream_accountable_subject_digests
-            and _digests(*self.upstream_accountable_subject_digests)
-        )
         if (
             self.version != 1
-            or self.instance_state != CHUNKS_CREATED_STATE
+            or self.instance_state != EMBEDDINGS_CREATED_STATE
             or not all(
                 (
                     self.knowledge_approved,
@@ -368,44 +387,37 @@ class OperationalKnowledgeChunkingRecord:
                     self.publication_prepared,
                     self.source_materialized,
                     self.chunks_created,
+                    self.embeddings_created,
                 )
             )
-            or any(later_authority)
-            or not upstream_accountability_valid
+            or any(later)
+            or self.vector_dimension < 1
+            or self.embedding_count < 1
             or not 20 <= len(self.purpose.strip()) <= 1000
-            or self.chunked_at.tzinfo is None
-            or re.fullmatch(r"^[a-z]+/[a-z0-9.+-]+$", self.media_type) is None
-            or min(
-                self.chunk_count,
-                self.total_chunk_characters,
-                self.total_chunk_tokens,
-                self.minimum_chunk_characters,
-                self.maximum_chunk_characters,
-            )
-            < 1
-            or self.minimum_chunk_characters > self.maximum_chunk_characters
-            or self.overlap_characters < 0
+            or self.embedded_at.tzinfo is None
             or not _digests(
-                self.materialization_digest,
-                self.preparation_digest,
-                self.resolution_digest,
-                self.source_draft_digest,
+                self.chunk_set_digest,
                 self.publication_steward_subject_digest,
                 self.materialization_steward_subject_digest,
-                *self.upstream_accountable_subject_digests,
-                self.chunked_by_subject_digest,
+                self.chunking_steward_subject_digest,
+                self.embedded_by_subject_digest,
                 self.browser_session_binding_digest,
-                self.chunking_policy_digest,
-                self.algorithm_profile_digest,
-                self.chunking_receipt_digest,
-                self.source_artifact_digest,
+                self.embedding_policy_digest,
+                self.model_profile_digest,
+                self.model_artifact_digest,
+                self.tokenizer_profile_digest,
+                self.data_boundary_digest,
+                self.embedding_receipt_digest,
                 self.protected_material_digest,
-                self.chunking_profile_digest,
                 self.ordered_chunk_manifest_digest,
-                self.structure_manifest_digest,
+                self.chunking_profile_digest,
                 self.governance_binding_digest,
-                self.determinism_evidence_digest,
+                self.vector_manifest_digest,
+                self.chunk_vector_binding_digest,
+                self.numeric_validation_digest,
+                self.coverage_validation_digest,
+                self.resource_evidence_digest,
                 self.canonical_digest,
             )
         ):
-            raise ValueError("Operational knowledge chunking record is invalid")
+            raise ValueError("Operational knowledge embedding record is invalid")

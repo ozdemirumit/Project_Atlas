@@ -380,6 +380,16 @@ class OperationalKnowledgeDeterministicChunkingService:
             retention_policy_id=materialization.retention_policy_id,
             publication_steward_subject_digest=(materialization.publication_steward_subject_digest),
             materialization_steward_subject_digest=(materialization.materialized_by_subject_digest),
+            upstream_accountable_subject_digests=tuple(
+                sorted(
+                    {
+                        self._digest([policy.subject_digest_salt_digest, draft.curated_by]),
+                        preparation.final_approver_subject_digest,
+                        preparation.prepared_by_subject_digest,
+                        *(item.decided_by_subject_digest for item in ordered),
+                    }
+                )
+            ),
             chunked_by_subject_digest=subject_digest,
             browser_session_binding_digest=browser_digest,
             chunking_policy_id=policy.policy_id,
@@ -455,6 +465,11 @@ class OperationalKnowledgeDeterministicChunkingService:
             permission_id=KNOWLEDGE_DETERMINISTIC_CHUNKING_READ,
         )
         return replace(record, reused=True)
+
+    async def source_for_embedding(
+        self, *, chunk_set_id: str
+    ) -> OperationalKnowledgeChunkingRecord | None:
+        return await self._repository.get(chunk_set_id=chunk_set_id)
 
     async def close(self) -> None:
         await self._repository.close()
