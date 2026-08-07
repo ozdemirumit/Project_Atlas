@@ -4,14 +4,45 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-094 |
-| Title | Governed operational knowledge correction and resubmission foundation |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#106](https://github.com/ozdemirumit/Project_Atlas/pull/106) (Merged) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-050 |
+| Task ID | ATLAS-IMP-095 |
+| Title | Governed operational knowledge final resolution foundation |
+| Status | In Progress |
+| Branch | `agent/governed-knowledge-final-resolution` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-051 |
 | Last Updated | 2026-08-07 |
-| Next Action | Define ATLAS-IMP-095 governed final review resolution contract |
+| Next Action | Implement and validate the accepted ADR-051 final resolution contract |
+
+### ATLAS-IMP-095 Scope Rationale
+
+- IMP-093 records independent domain and security decisions; IMP-094 creates a new generation when
+  either track requires correction.
+- ADR-051 permits a separate eligible human approver to record one immutable `approved` or
+  `rejected` final resolution only when both exact tracks pass on the same unchanged generation.
+- Publication, indexing, retrieval, workflow, execution, deployment, and infrastructure mutation
+  remain later independent stages.
+
+### ATLAS-IMP-095 Acceptance Criteria
+
+- Both exact passed track decisions must bind one immutable request, assignment set, draft, and
+  generation. Missing, duplicate, mixed, corrected, superseded, or `changes-required` lineage
+  fails before claim creation.
+- Only a separate eligible human approver in the exact tenant, with recent hardware MFA, dedicated
+  C2 final-resolution and lineage-read permissions, browser binding, CSRF, and a current signed
+  policy may create or read the resolution. Curator, reviewers, signer, attestor, service, AI,
+  shared, cross-tenant, or caller-selected identity fails.
+- Only policy-approved `final-resolution.approved` or `final-resolution.rejected` and structured
+  basis codes are accepted. No content, finding narrative, free-form rationale, artifact location,
+  governance label, or caller-selected lifecycle field enters application persistence or audit.
+- Intent audit and an atomic unique review-request claim precede trusted attestation. Exact
+  completed idempotent reuse is allowed; concurrency, conflict, or failure after claim remains
+  claimed and cannot replace the first resolution. Production fails closed without an attestor.
+- Approval establishes knowledge approval and publication readiness only. Rejection is final for
+  the exact generation. Neither result publishes, indexes, retrieves, schedules, starts workflow,
+  executes, deploys, or mutates infrastructure.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  lineage/separation/concurrency/idempotency/attestor/audit tests, minimized UI evidence, full
+  suites, live desktop/mobile validation, and GitHub CI apply.
 
 ### ATLAS-IMP-094 Scope Rationale
 
@@ -74,6 +105,7 @@
 - [PR #106](https://github.com/ozdemirumit/Project_Atlas/pull/106) CI run `31157806509` passed
   (backend 2m59s, frontend 3m43s), merged to `main` as `777caea`, and merged-main run
   `31158090204` passed (backend 2m57s, frontend 3m50s).
+- The closure commit `f6dc31b` passed main CI run `31158382195` (backend 3m00s, frontend 3m32s).
 
 ### ATLAS-IMP-093 Scope Rationale
 
