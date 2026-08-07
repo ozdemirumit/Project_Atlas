@@ -11,6 +11,7 @@ import {
   type ReviewDisposition,
 } from "../../api/reviewDecisions";
 import { CorrectionResubmissionPanel } from "./CorrectionResubmissionPanel";
+import { FinalResolutionPanel } from "./FinalResolutionPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -231,6 +232,9 @@ export function ReviewDecisionPanel({
         </div>
         {decision.all_tracks_decided && decision.any_correction_required && (
           <CorrectionResubmissionPanel decision={decision} />
+        )}
+        {decision.all_tracks_passed && !decision.any_correction_required && (
+          <FinalResolutionPanel decision={decision} />
         )}
         </>
       )}

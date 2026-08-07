@@ -8635,7 +8635,8 @@ tbody tr.selected {
   min-width: 0;
 }
 
-.correction-resubmission-panel {
+.correction-resubmission-panel,
+.final-resolution-panel {
   padding-top: 18px;
   border-top: 1px solid #cbd6d2;
 }
