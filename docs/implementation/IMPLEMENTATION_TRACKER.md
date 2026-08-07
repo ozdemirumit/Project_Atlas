@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-090 |
 | Title | Governed operational knowledge protected content presentation foundation |
-| Status | CI In Progress |
-| Branch | `agent/governed-knowledge-content-presentation` |
+| Status | Done |
+| Branch | `main` |
 | Pull Request | [#102](https://github.com/ozdemirumit/Project_Atlas/pull/102) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-046 |
-| Last Updated | 2026-08-06 |
-| Next Action | Complete PR #102 CI, merge, and verify merged `main` |
+| Last Updated | 2026-08-07 |
+| Next Action | Select and define ATLAS-IMP-091 from the approved operational-knowledge review lifecycle |
 
 ### ATLAS-IMP-090 Scope Rationale
 
@@ -47,7 +47,11 @@
   focused exact-assignee/cross-track/expiry/concurrency/integrity/redaction/replay/failure tests,
   minimized web evidence, full suites, live desktop/mobile inspection, and GitHub CI apply.
 
-### ATLAS-IMP-090 Local Validation Evidence
+### ATLAS-IMP-090 Validation Evidence
+
+- PR #102 Continuous Integration run `31139717151` passed (backend 2m32s, frontend 3m34s),
+  merged to `main` as `3c48a1d`, and merged-main run `31139931492` passed (backend 2m31s,
+  frontend 3m37s).
 
 - ADR-046 is accepted. The implementation revalidates exact immutable draft lineage, active lease,
   exact salted assignee, browser session and track cookie, signed policy, recent hardware MFA,
@@ -66,7 +70,7 @@
   read-only acknowledgement and renders returned content only as escaped text.
 - The live backend status was healthy at `127.0.0.1:8052`. The Connectors lifecycle at
   `127.0.0.1:5208` showed Content presentation as the latest available capability without layout
-  overlap. GitHub PR, CI, merge, and merged-main evidence remain pending.
+  overlap.
 
 ### ATLAS-IMP-089 Scope Rationale
 
