@@ -74,8 +74,9 @@
   rendered `Index staging` as the latest available capability at 1280x720 and 390x844, with no
   horizontal overflow and no browser console warning or error.
 - Publication, retrieval, model context, graph, scheduling, workflow, execution, deployment, and
-  infrastructure mutation remain false and unauthorized. Draft PR #112 is open; branch CI, merge,
-  merged-main CI, and closure evidence are pending.
+  infrastructure mutation remain false and unauthorized. Draft PR #112 initial branch run
+  `31181784102` passed (backend 3m35s, frontend 3m53s); validation-record CI, final branch CI,
+  merge, merged-main CI, and closure evidence are pending.
 
 ### ATLAS-IMP-099 Scope Rationale
 
