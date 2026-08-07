@@ -10,6 +10,7 @@ export type OperationalKnowledgeEmbeddingSet = {
   materialization_id: string;
   preparation_id: string;
   resolution_id: string;
+  review_request_id: string;
   source_draft_id: string;
   knowledge_item_id: string;
   organization_id: string;
@@ -75,6 +76,7 @@ const forbiddenResponseFields = [
   "materialization_steward_subject_digest",
   "publication_steward_subject_digest",
   "browser_session_binding_digest",
+  "upstream_accountable_subject_digests",
   "request_binding_digest",
   "idempotency_digest",
 ];

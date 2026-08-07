@@ -6,13 +6,13 @@ from datetime import datetime
 
 from atlas.modules.identity.domain.models import validate_stable_identifier
 
-EMBEDDINGS_CREATED_STATE = "operational_knowledge_embeddings_created"
+INDEX_VALIDATED_STATE = "operational_knowledge_index_validated"
 _DIGEST = re.compile(r"^[a-f0-9]{64}$")
 
 
 def _ids(*values: str) -> None:
     for value in values:
-        validate_stable_identifier(value, "operational knowledge embedding identifier")
+        validate_stable_identifier(value, "operational knowledge index identifier")
 
 
 def _digests(*values: str) -> bool:
@@ -20,32 +20,31 @@ def _digests(*values: str) -> bool:
 
 
 @dataclass(frozen=True, slots=True)
-class OperationalKnowledgeEmbeddingPolicySnapshot:
+class OperationalKnowledgeIndexPolicySnapshot:
     policy_id: str
     schema_version: str
     version: int
     organization_id: str
     environment_id: str
     policy_version: str
-    required_chunk_set_schema: str
-    required_chunk_set_state: str
-    model_profile_id: str
-    model_profile_digest: str
-    model_artifact_digest: str
-    tokenizer_profile_digest: str
-    vector_dimension: int
-    normalization_profile_id: str
-    distance_metric_id: str
-    data_boundary_id: str
-    data_boundary_digest: str
-    maximum_chunks: int
-    maximum_total_tokens: int
+    required_embedding_set_schema: str
+    required_embedding_set_state: str
+    required_model_profile_digest: str
+    required_vector_dimension: int
+    required_normalization_profile_id: str
+    required_distance_metric_id: str
+    index_profile_id: str
+    index_profile_digest: str
+    staging_boundary_id: str
+    staging_boundary_digest: str
+    authorization_payload_profile_digest: str
+    maximum_points: int
     maximum_batch_size: int
     maximum_authentication_age_minutes: int
     subject_digest_salt_digest: str
     browser_binding_key_digest: str
-    required_embedder_id: str
-    model_owner_id: str
+    required_indexer_id: str
+    index_profile_owner_id: str
     signed_by: str
     issued_at: datetime
     expires_at: datetime
@@ -58,183 +57,178 @@ class OperationalKnowledgeEmbeddingPolicySnapshot:
             self.organization_id,
             self.environment_id,
             self.policy_version,
-            self.required_chunk_set_schema,
-            self.required_chunk_set_state,
-            self.model_profile_id,
-            self.normalization_profile_id,
-            self.distance_metric_id,
-            self.data_boundary_id,
-            self.required_embedder_id,
-            self.model_owner_id,
+            self.required_embedding_set_schema,
+            self.required_embedding_set_state,
+            self.required_normalization_profile_id,
+            self.required_distance_metric_id,
+            self.index_profile_id,
+            self.staging_boundary_id,
+            self.required_indexer_id,
+            self.index_profile_owner_id,
             self.signed_by,
         )
         if (
             self.version != 1
-            or not 1 <= self.vector_dimension <= 65_536
-            or not 1 <= self.maximum_chunks <= 100_000
-            or not 1 <= self.maximum_total_tokens <= 100_000_000
+            or not 1 <= self.required_vector_dimension <= 65_536
+            or not 1 <= self.maximum_points <= 100_000
             or not 1 <= self.maximum_batch_size <= 4096
             or not 1 <= self.maximum_authentication_age_minutes <= 60
             or self.issued_at.tzinfo is None
             or self.expires_at.tzinfo is None
             or not self.issued_at < self.expires_at
             or not _digests(
-                self.model_profile_digest,
-                self.model_artifact_digest,
-                self.tokenizer_profile_digest,
-                self.data_boundary_digest,
+                self.required_model_profile_digest,
+                self.index_profile_digest,
+                self.staging_boundary_digest,
+                self.authorization_payload_profile_digest,
                 self.subject_digest_salt_digest,
                 self.browser_binding_key_digest,
                 self.canonical_digest,
             )
         ):
-            raise ValueError("Operational knowledge embedding policy is invalid")
+            raise ValueError("Operational knowledge index policy is invalid")
 
 
 @dataclass(frozen=True, slots=True)
-class OperationalKnowledgeEmbeddingInstruction:
-    embedding_set_id: str
+class OperationalKnowledgeIndexInstruction:
+    index_staging_id: str
     organization_id: str
     environment_id: str
+    embedding_set_id: str
+    embedding_set_digest: str
     chunk_set_id: str
-    chunk_set_digest: str
-    materialization_id: str
-    preparation_id: str
     knowledge_item_id: str
-    protected_material_digest: str
-    ordered_chunk_manifest_digest: str
-    chunking_profile_digest: str
+    classification: str
+    access_policy_id: str
+    retention_policy_id: str
     governance_binding_digest: str
-    chunk_count: int
-    total_chunk_tokens: int
+    model_profile_digest: str
+    vector_dimension: int
+    normalization_profile_id: str
+    distance_metric_id: str
+    embedding_count: int
+    vector_manifest_digest: str
+    chunk_vector_binding_digest: str
     steward_subject_digest: str
     browser_session_binding_digest: str
     policy_id: str
     policy_digest: str
-    model_profile_id: str
-    model_profile_digest: str
-    model_artifact_digest: str
-    tokenizer_profile_digest: str
-    vector_dimension: int
-    normalization_profile_id: str
-    distance_metric_id: str
-    data_boundary_id: str
-    data_boundary_digest: str
+    index_profile_id: str
+    index_profile_digest: str
+    staging_boundary_id: str
+    staging_boundary_digest: str
+    authorization_payload_profile_digest: str
     maximum_batch_size: int
     purpose: str
     requested_at: datetime
 
     def __post_init__(self) -> None:
         _ids(
-            self.embedding_set_id,
+            self.index_staging_id,
             self.organization_id,
             self.environment_id,
+            self.embedding_set_id,
             self.chunk_set_id,
-            self.materialization_id,
-            self.preparation_id,
             self.knowledge_item_id,
-            self.policy_id,
-            self.model_profile_id,
+            self.classification,
+            self.access_policy_id,
+            self.retention_policy_id,
             self.normalization_profile_id,
             self.distance_metric_id,
-            self.data_boundary_id,
+            self.policy_id,
+            self.index_profile_id,
+            self.staging_boundary_id,
         )
         if (
             not 20 <= len(self.purpose.strip()) <= 1000
             or self.requested_at.tzinfo is None
-            or min(
-                self.chunk_count,
-                self.total_chunk_tokens,
-                self.vector_dimension,
-                self.maximum_batch_size,
-            )
-            < 1
+            or min(self.vector_dimension, self.embedding_count, self.maximum_batch_size) < 1
             or not _digests(
-                self.chunk_set_digest,
-                self.protected_material_digest,
-                self.ordered_chunk_manifest_digest,
-                self.chunking_profile_digest,
+                self.embedding_set_digest,
                 self.governance_binding_digest,
+                self.model_profile_digest,
+                self.vector_manifest_digest,
+                self.chunk_vector_binding_digest,
                 self.steward_subject_digest,
                 self.browser_session_binding_digest,
                 self.policy_digest,
-                self.model_profile_digest,
-                self.model_artifact_digest,
-                self.tokenizer_profile_digest,
-                self.data_boundary_digest,
+                self.index_profile_digest,
+                self.staging_boundary_digest,
+                self.authorization_payload_profile_digest,
             )
         ):
-            raise ValueError("Operational knowledge embedding instruction is invalid")
+            raise ValueError("Operational knowledge index instruction is invalid")
 
 
 @dataclass(frozen=True, slots=True)
-class OperationalKnowledgeEmbeddingReceipt:
-    embedding_set_id: str
+class OperationalKnowledgeIndexReceipt:
+    index_staging_id: str
     schema_version: str
     version: int
-    embedder_id: str
-    embedded_by: str
+    indexer_id: str
+    indexed_by: str
     instruction_digest: str
-    chunk_set_digest: str
-    ordered_chunk_manifest_digest: str
+    embedding_set_digest: str
     model_profile_digest: str
-    model_artifact_digest: str
-    tokenizer_profile_digest: str
     vector_dimension: int
     normalization_profile_id: str
     distance_metric_id: str
-    data_boundary_digest: str
-    embedding_count: int
-    vector_manifest_digest: str
-    chunk_vector_binding_digest: str
-    numeric_validation_digest: str
-    coverage_validation_digest: str
-    resource_evidence_digest: str
-    embedded_at: datetime
+    index_profile_digest: str
+    staging_boundary_digest: str
+    expected_point_count: int
+    staged_point_count: int
+    projection_manifest_digest: str
+    point_coverage_digest: str
+    authorization_metadata_validation_digest: str
+    model_compatibility_validation_digest: str
+    isolation_validation_digest: str
+    reconciliation_digest: str
+    projection_sealed: bool
+    validated_at: datetime
     signature_verified: bool
     canonical_digest: str
 
     def __post_init__(self) -> None:
         _ids(
-            self.embedding_set_id,
+            self.index_staging_id,
             self.schema_version,
-            self.embedder_id,
-            self.embedded_by,
+            self.indexer_id,
+            self.indexed_by,
             self.normalization_profile_id,
             self.distance_metric_id,
         )
         if (
             self.version != 1
-            or self.embedded_at.tzinfo is None
+            or self.validated_at.tzinfo is None
             or not self.signature_verified
+            or not self.projection_sealed
             or self.vector_dimension < 1
-            or self.embedding_count < 1
+            or min(self.expected_point_count, self.staged_point_count) < 1
             or not _digests(
                 self.instruction_digest,
-                self.chunk_set_digest,
-                self.ordered_chunk_manifest_digest,
+                self.embedding_set_digest,
                 self.model_profile_digest,
-                self.model_artifact_digest,
-                self.tokenizer_profile_digest,
-                self.data_boundary_digest,
-                self.vector_manifest_digest,
-                self.chunk_vector_binding_digest,
-                self.numeric_validation_digest,
-                self.coverage_validation_digest,
-                self.resource_evidence_digest,
+                self.index_profile_digest,
+                self.staging_boundary_digest,
+                self.projection_manifest_digest,
+                self.point_coverage_digest,
+                self.authorization_metadata_validation_digest,
+                self.model_compatibility_validation_digest,
+                self.isolation_validation_digest,
+                self.reconciliation_digest,
                 self.canonical_digest,
             )
         ):
-            raise ValueError("Operational knowledge embedding receipt is invalid")
+            raise ValueError("Operational knowledge index receipt is invalid")
 
 
 @dataclass(frozen=True, slots=True)
-class OperationalKnowledgeEmbeddingClaim:
+class OperationalKnowledgeIndexClaim:
     claim_id: str
     schema_version: str
     version: int
-    chunk_set_id: str
     embedding_set_id: str
+    index_staging_id: str
     claimed_by_subject_digest: str
     browser_session_binding_digest: str
     request_binding_digest: str
@@ -248,8 +242,8 @@ class OperationalKnowledgeEmbeddingClaim:
         _ids(
             self.claim_id,
             self.schema_version,
-            self.chunk_set_id,
             self.embedding_set_id,
+            self.index_staging_id,
             self.organization_id,
             self.environment_id,
         )
@@ -264,17 +258,18 @@ class OperationalKnowledgeEmbeddingClaim:
                 self.canonical_digest,
             )
         ):
-            raise ValueError("Operational knowledge embedding claim is invalid")
+            raise ValueError("Operational knowledge index claim is invalid")
 
 
 @dataclass(frozen=True, slots=True)
-class OperationalKnowledgeEmbeddingRecord:
-    embedding_set_id: str
+class OperationalKnowledgeIndexRecord:
+    index_staging_id: str
     schema_version: str
     version: int
     claim_id: str
+    embedding_set_id: str
+    embedding_set_digest: str
     chunk_set_id: str
-    chunk_set_digest: str
     materialization_id: str
     preparation_id: str
     resolution_id: str
@@ -286,36 +281,34 @@ class OperationalKnowledgeEmbeddingRecord:
     classification: str
     access_policy_id: str
     retention_policy_id: str
-    publication_steward_subject_digest: str
-    materialization_steward_subject_digest: str
-    chunking_steward_subject_digest: str
-    embedded_by_subject_digest: str
+    index_steward_subject_digest: str
     browser_session_binding_digest: str
-    embedding_policy_id: str
-    embedding_policy_digest: str
-    embedding_policy_version: str
-    model_profile_id: str
+    index_policy_id: str
+    index_policy_digest: str
+    index_policy_version: str
+    index_profile_id: str
+    index_profile_digest: str
+    staging_boundary_id: str
+    staging_boundary_digest: str
+    authorization_payload_profile_digest: str
+    indexer_id: str
+    index_receipt_digest: str
     model_profile_digest: str
-    model_artifact_digest: str
-    tokenizer_profile_digest: str
     vector_dimension: int
     normalization_profile_id: str
     distance_metric_id: str
-    data_boundary_id: str
-    data_boundary_digest: str
-    embedder_id: str
-    embedding_receipt_digest: str
-    protected_material_digest: str
-    ordered_chunk_manifest_digest: str
-    chunking_profile_digest: str
-    governance_binding_digest: str
     embedding_count: int
     vector_manifest_digest: str
     chunk_vector_binding_digest: str
-    numeric_validation_digest: str
-    coverage_validation_digest: str
-    resource_evidence_digest: str
-    embedded_at: datetime
+    governance_binding_digest: str
+    staged_point_count: int
+    projection_manifest_digest: str
+    point_coverage_digest: str
+    authorization_metadata_validation_digest: str
+    model_compatibility_validation_digest: str
+    isolation_validation_digest: str
+    reconciliation_digest: str
+    validated_at: datetime
     instance_state: str
     purpose: str
     canonical_digest: str
@@ -326,8 +319,8 @@ class OperationalKnowledgeEmbeddingRecord:
     source_materialized: bool = True
     chunks_created: bool = True
     embeddings_created: bool = True
-    index_staged: bool = False
-    index_validated: bool = False
+    index_staged: bool = True
+    index_validated: bool = True
     knowledge_published: bool = False
     retrieval_published: bool = False
     model_context_available: bool = False
@@ -341,9 +334,10 @@ class OperationalKnowledgeEmbeddingRecord:
 
     def __post_init__(self) -> None:
         _ids(
-            self.embedding_set_id,
+            self.index_staging_id,
             self.schema_version,
             self.claim_id,
+            self.embedding_set_id,
             self.chunk_set_id,
             self.materialization_id,
             self.preparation_id,
@@ -356,18 +350,16 @@ class OperationalKnowledgeEmbeddingRecord:
             self.classification,
             self.access_policy_id,
             self.retention_policy_id,
-            self.embedding_policy_id,
-            self.embedding_policy_version,
-            self.model_profile_id,
+            self.index_policy_id,
+            self.index_policy_version,
+            self.index_profile_id,
+            self.staging_boundary_id,
+            self.indexer_id,
             self.normalization_profile_id,
             self.distance_metric_id,
-            self.data_boundary_id,
-            self.embedder_id,
             self.instance_state,
         )
         later = (
-            self.index_staged,
-            self.index_validated,
             self.knowledge_published,
             self.retrieval_published,
             self.model_context_available,
@@ -380,7 +372,7 @@ class OperationalKnowledgeEmbeddingRecord:
         )
         if (
             self.version != 1
-            or self.instance_state != EMBEDDINGS_CREATED_STATE
+            or self.instance_state != INDEX_VALIDATED_STATE
             or not all(
                 (
                     self.knowledge_approved,
@@ -389,38 +381,38 @@ class OperationalKnowledgeEmbeddingRecord:
                     self.source_materialized,
                     self.chunks_created,
                     self.embeddings_created,
+                    self.index_staged,
+                    self.index_validated,
                 )
             )
             or any(later)
             or self.vector_dimension < 1
             or self.embedding_count < 1
+            or self.staged_point_count != self.embedding_count
             or not 20 <= len(self.purpose.strip()) <= 1000
-            or self.embedded_at.tzinfo is None
+            or self.validated_at.tzinfo is None
             or len(self.upstream_accountable_subject_digests) < 4
             or not _digests(
-                self.chunk_set_digest,
-                self.publication_steward_subject_digest,
-                self.materialization_steward_subject_digest,
-                self.chunking_steward_subject_digest,
-                self.embedded_by_subject_digest,
+                self.embedding_set_digest,
+                self.index_steward_subject_digest,
                 self.browser_session_binding_digest,
-                self.embedding_policy_digest,
+                self.index_policy_digest,
+                self.index_profile_digest,
+                self.staging_boundary_digest,
+                self.authorization_payload_profile_digest,
+                self.index_receipt_digest,
                 self.model_profile_digest,
-                self.model_artifact_digest,
-                self.tokenizer_profile_digest,
-                self.data_boundary_digest,
-                self.embedding_receipt_digest,
-                self.protected_material_digest,
-                self.ordered_chunk_manifest_digest,
-                self.chunking_profile_digest,
-                self.governance_binding_digest,
                 self.vector_manifest_digest,
                 self.chunk_vector_binding_digest,
-                self.numeric_validation_digest,
-                self.coverage_validation_digest,
-                self.resource_evidence_digest,
+                self.governance_binding_digest,
+                self.projection_manifest_digest,
+                self.point_coverage_digest,
+                self.authorization_metadata_validation_digest,
+                self.model_compatibility_validation_digest,
+                self.isolation_validation_digest,
+                self.reconciliation_digest,
                 self.canonical_digest,
                 *self.upstream_accountable_subject_digests,
             )
         ):
-            raise ValueError("Operational knowledge embedding record is invalid")
+            raise ValueError("Operational knowledge index record is invalid")

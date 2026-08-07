@@ -15,19 +15,19 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from atlas.core.persistence.models import (
-    OperationalKnowledgeEmbeddingClaimModel,
-    OperationalKnowledgeEmbeddingSetModel,
+    OperationalKnowledgeIndexClaimModel,
+    OperationalKnowledgeIndexStagingModel,
 )
-from atlas.modules.knowledge.application.embedding_generation import (
-    OperationalKnowledgeEmbeddingGenerationService,
+from atlas.modules.knowledge.application.index_staging_validation import (
+    OperationalKnowledgeIndexStagingValidationService,
 )
-from atlas.modules.knowledge.domain.embedding_generation import (
-    OperationalKnowledgeEmbeddingClaim,
-    OperationalKnowledgeEmbeddingRecord,
+from atlas.modules.knowledge.domain.index_staging_validation import (
+    OperationalKnowledgeIndexClaim,
+    OperationalKnowledgeIndexRecord,
 )
 
 
-class PostgreSQLOperationalKnowledgeEmbeddingRepository:
+class PostgreSQLOperationalKnowledgeIndexRepository:
     def __init__(
         self,
         *,
@@ -38,35 +38,35 @@ class PostgreSQLOperationalKnowledgeEmbeddingRepository:
         self._sessions = session_factory or async_sessionmaker(engine, expire_on_commit=False)
 
     @classmethod
-    def from_url(cls, database_url: str) -> PostgreSQLOperationalKnowledgeEmbeddingRepository:
+    def from_url(cls, database_url: str) -> PostgreSQLOperationalKnowledgeIndexRepository:
         return cls(engine=create_async_engine(database_url, pool_pre_ping=True))
 
-    async def get(self, *, embedding_set_id: str) -> OperationalKnowledgeEmbeddingRecord | None:
+    async def get(self, *, index_staging_id: str) -> OperationalKnowledgeIndexRecord | None:
         async with self._sessions() as session:
-            row = await session.get(OperationalKnowledgeEmbeddingSetModel, embedding_set_id)
+            row = await session.get(OperationalKnowledgeIndexStagingModel, index_staging_id)
             return self._record_to_domain(row.payload) if row else None
 
-    async def get_claim_by_chunk_set(
-        self, *, chunk_set_id: str
-    ) -> OperationalKnowledgeEmbeddingClaim | None:
+    async def get_claim_by_embedding_set(
+        self, *, embedding_set_id: str
+    ) -> OperationalKnowledgeIndexClaim | None:
         async with self._sessions() as session:
             row = await session.scalar(
-                select(OperationalKnowledgeEmbeddingClaimModel).where(
-                    OperationalKnowledgeEmbeddingClaimModel.chunk_set_id == chunk_set_id
+                select(OperationalKnowledgeIndexClaimModel).where(
+                    OperationalKnowledgeIndexClaimModel.embedding_set_id == embedding_set_id
                 )
             )
             return self._claim_to_domain(row.payload) if row else None
 
-    async def claim(self, claim: OperationalKnowledgeEmbeddingClaim) -> bool:
-        payload = OperationalKnowledgeEmbeddingGenerationService._normalize(asdict(claim))
+    async def claim(self, claim: OperationalKnowledgeIndexClaim) -> bool:
+        payload = OperationalKnowledgeIndexStagingValidationService._normalize(asdict(claim))
         assert isinstance(payload, dict)
         try:
             async with self._sessions() as session:
                 session.add(
-                    OperationalKnowledgeEmbeddingClaimModel(
+                    OperationalKnowledgeIndexClaimModel(
                         claim_id=claim.claim_id,
-                        chunk_set_id=claim.chunk_set_id,
                         embedding_set_id=claim.embedding_set_id,
+                        index_staging_id=claim.index_staging_id,
                         claimed_by_subject_digest=claim.claimed_by_subject_digest,
                         idempotency_digest=claim.idempotency_digest,
                         organization_id=claim.organization_id,
@@ -80,20 +80,19 @@ class PostgreSQLOperationalKnowledgeEmbeddingRepository:
         except IntegrityError:
             return False
 
-    async def add(self, record: OperationalKnowledgeEmbeddingRecord) -> bool:
-        payload = OperationalKnowledgeEmbeddingGenerationService._normalize(asdict(record))
+    async def add(self, record: OperationalKnowledgeIndexRecord) -> bool:
+        payload = OperationalKnowledgeIndexStagingValidationService._normalize(asdict(record))
         assert isinstance(payload, dict)
         try:
             async with self._sessions() as session:
                 session.add(
-                    OperationalKnowledgeEmbeddingSetModel(
-                        embedding_set_id=record.embedding_set_id,
+                    OperationalKnowledgeIndexStagingModel(
+                        index_staging_id=record.index_staging_id,
                         claim_id=record.claim_id,
+                        embedding_set_id=record.embedding_set_id,
                         chunk_set_id=record.chunk_set_id,
-                        materialization_id=record.materialization_id,
-                        preparation_id=record.preparation_id,
                         knowledge_item_id=record.knowledge_item_id,
-                        embedded_by_subject_digest=record.embedded_by_subject_digest,
+                        index_steward_subject_digest=record.index_steward_subject_digest,
                         organization_id=record.organization_id,
                         environment_id=record.environment_id,
                         canonical_digest=record.canonical_digest,
@@ -109,16 +108,16 @@ class PostgreSQLOperationalKnowledgeEmbeddingRepository:
         await self._engine.dispose()
 
     @staticmethod
-    def _claim_to_domain(raw: dict[str, Any]) -> OperationalKnowledgeEmbeddingClaim:
+    def _claim_to_domain(raw: dict[str, Any]) -> OperationalKnowledgeIndexClaim:
         payload = dict(raw)
         payload["claimed_at"] = datetime.fromisoformat(str(payload["claimed_at"]))
-        return OperationalKnowledgeEmbeddingClaim(**cast(Any, payload))
+        return OperationalKnowledgeIndexClaim(**cast(Any, payload))
 
     @staticmethod
-    def _record_to_domain(raw: dict[str, Any]) -> OperationalKnowledgeEmbeddingRecord:
+    def _record_to_domain(raw: dict[str, Any]) -> OperationalKnowledgeIndexRecord:
         payload = dict(raw)
-        payload["embedded_at"] = datetime.fromisoformat(str(payload["embedded_at"]))
+        payload["validated_at"] = datetime.fromisoformat(str(payload["validated_at"]))
         payload["upstream_accountable_subject_digests"] = tuple(
             payload["upstream_accountable_subject_digests"]
         )
-        return OperationalKnowledgeEmbeddingRecord(**cast(Any, payload))
+        return OperationalKnowledgeIndexRecord(**cast(Any, payload))

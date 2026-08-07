@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import base64
+
+import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from atlas.api.app import create_app
 from atlas.core.audit import AuditRecord
 from atlas.core.config import Settings
+from atlas.modules.identity.adapters.development import DevelopmentIdentityProvider
+from atlas.modules.identity.domain.models import AuthenticationInput
 
 
 class CollectingAuditSink:
@@ -58,6 +63,31 @@ def test_development_identity_is_authorized_with_exact_server_configuration() ->
         "atlas.identity.authentication.succeeded",
         "atlas.authorization.access.allowed",
     ]
+
+
+@pytest.mark.asyncio
+async def test_development_identity_accepts_only_exact_local_browser_credentials() -> None:
+    settings = Settings(environment="test", development_identity_enabled=True)
+    provider = DevelopmentIdentityProvider(settings)
+
+    accepted = await provider.authenticate(
+        AuthenticationInput(
+            correlation_id="cor_development_browser_login",
+            authorization_scheme="basic",
+            credential=base64.b64encode(b"atlas-demo:local-demo").decode(),
+        )
+    )
+    denied = await provider.authenticate(
+        AuthenticationInput(
+            correlation_id="cor_development_browser_login_denied",
+            authorization_scheme="basic",
+            credential=base64.b64encode(b"atlas-demo:wrong-password").decode(),
+        )
+    )
+
+    assert accepted is not None
+    assert accepted.subject_id == settings.development_subject_id
+    assert denied is None
 
 
 def test_authenticated_subject_without_assignment_receives_safe_denial() -> None:
