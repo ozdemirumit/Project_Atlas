@@ -14,6 +14,7 @@ export type ProtectedDraftAdjudicationResult = {
     adjudication_policy_id: string;
     adjudicator_id: string;
     outcome: string;
+    purpose: string;
     canonical_digest: string;
     model_invoked: true;
     protected_draft_available: true;

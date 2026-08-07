@@ -29,7 +29,11 @@ from atlas.modules.ai.domain.protected_draft_adjudication import (
     ProtectedDraftAdjudicationReport,
     ProtectedDraftAdjudicationResult,
 )
-from atlas.modules.ai.domain.protected_model_invocation import ProtectedModelInvocationRecord
+from atlas.modules.ai.domain.protected_model_invocation import (
+    ProtectedModelInvocationRecord,
+    ProtectedModelInvocationResult,
+    ProtectedModelResponseDraft,
+)
 from atlas.modules.authorization.application.bootstrap import (
     AI_PROTECTED_DRAFT_ADJUDICATION_CREATE,
     AI_PROTECTED_DRAFT_ADJUDICATION_READ,
@@ -46,6 +50,7 @@ from atlas.modules.knowledge.application.model_context_assembly import (
 from atlas.modules.knowledge.application.model_context_assembly_ports import (
     TrustedProtectedModelContextAssembler,
 )
+from atlas.modules.knowledge.domain.model_context_assembly import ProtectedModelContextPackage
 
 POLICY_SCHEMA = "atlas.protected-draft-adjudication-policy.v1"
 CLAIM_SCHEMA = "atlas.protected-draft-adjudication-claim.v1"
@@ -361,6 +366,73 @@ class GovernedProtectedDraftAdjudicationService:
 
     async def close(self) -> None:
         await self._repository.close()
+
+    async def rehydrate_for_presentation(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        adjudication_id: str,
+        browser_session_id: str,
+        correlation_id: str,
+    ) -> tuple[
+        ProtectedDraftAdjudicationResult,
+        ProtectedDraftAdjudicationReport,
+        ProtectedModelInvocationResult,
+        ProtectedModelResponseDraft,
+        ProtectedModelContextPackage,
+    ]:
+        adjudication = await self.get(
+            actor=actor,
+            adjudication_id=adjudication_id,
+            browser_session_id=browser_session_id,
+            correlation_id=correlation_id,
+        )
+        invocation, draft = await self._invocation_source.rehydrate_for_adjudication(
+            actor=actor,
+            invocation_id=adjudication.record.invocation_id,
+            browser_session_id=browser_session_id,
+            correlation_id=correlation_id,
+        )
+        context = await self._context_source.get(
+            actor=actor,
+            context_id=adjudication.record.context_id,
+            browser_session_id=browser_session_id,
+            correlation_id=correlation_id,
+        )
+        package = await self._context_vault.rehydrate(
+            record=context.record,
+            authorization_context_digest=context.record.authorization_context_digest,
+        )
+        authorization_digest = self._digest(
+            [
+                invocation.record.invocation_authorization_digest,
+                actor.role_ids,
+                adjudication.record.adjudication_policy_digest,
+            ]
+        )
+        report = await self._adjudicator.rehydrate(
+            record=adjudication.record,
+            adjudication_authorization_digest=authorization_digest,
+        )
+        if (
+            invocation.record.canonical_digest != adjudication.record.invocation_digest
+            or draft.canonical_digest != adjudication.record.draft_digest
+            or package.canonical_digest != invocation.record.context_package_digest
+            or report.canonical_digest != adjudication.record.report_digest
+            or report.outcome != adjudication.record.outcome
+        ):
+            raise ProtectedDraftAdjudicationError("protected_draft_adjudication_integrity_failed")
+        return adjudication, report, invocation, draft, package
+
+    async def get_record_for_presentation_authorization(
+        self, *, actor: AuthenticatedSubject, adjudication_id: str
+    ) -> ProtectedDraftAdjudicationRecord:
+        self._require_human(actor)
+        record = await self._repository.get(adjudication_id=adjudication_id)
+        if record is None or record.canonical_digest != self._digest(self._payload(record)):
+            raise ProtectedDraftAdjudicationError("protected_draft_adjudication_not_found")
+        self._require_scope(actor, record.organization_id, record.environment_id)
+        return record
 
     def _verify_invocation(
         self,

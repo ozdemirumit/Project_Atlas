@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-062 |
 | Last Updated | 2026-08-07 |
-| Next Action | Implement and validate the IMP-106 backend foundation |
+| Next Action | Publish the validated IMP-106 implementation for review |
 
 ### ATLAS-IMP-106 Scope Rationale
 
@@ -53,7 +53,34 @@
 - ADR-062 is accepted. IMP-105 documentation closure commit
   `22eca215045da9dafaac026a92ddf9b996289caf` passed main run `31207356927` (backend 4m04s,
   frontend 3m18s).
-- Implementation and delivery evidence are pending.
+- The governed presentation service authorizes against minimized adjudication metadata before
+  rehydrating protected content, then revalidates the exact adjudication, model invocation,
+  response schema, context package, draft, report, purpose, classification, policy, retention,
+  browser, subject, and canonical lineage before presenting content.
+- Development uses a deterministic no-network, no-model presenter. It returns only the exact
+  bounded summary, ordered authorized citation references, and explicit unknowns as inert plain
+  text. Production fails closed until approved policy, presenter, attestor, repository, and
+  protected-vault boundaries are configured.
+- PostgreSQL and in-memory persistence retain only immutable claims, digests, counts, safe labels,
+  timestamps, and no-authority flags. Summary, citation references, unknown text, protected
+  handles, and source content are absent from ordinary records, logs, audit payloads, and replay
+  storage; exact replay rehydrates and verifies the same protected snapshot.
+- Dedicated default-deny C1 create/read permissions, CSRF and browser-bound routes, strict request
+  and response schemas, no-store responses, memory/PostgreSQL parity, and Alembic revision
+  `20260807_0078` are implemented. Alembic reports one head and empty-to-head offline SQL
+  generation passed.
+- Ruff passed and strict mypy found no issues in 800 source files. The complete backend suite
+  passed `810` tests with three expected Windows symlink skips and three existing dependency
+  warnings.
+- The frontend passed ESLint, TypeScript, `46` test files with `76` tests, and the production build
+  (CSS 127.86 kB / 21.18 kB gzip; JavaScript 1,005.79 kB / 183.26 kB gzip). The existing Babel and
+  bundle-size notices remain non-blocking.
+- Live development validation used backend port 8058 and frontend port 5213. Live and ready health
+  returned 200; OpenAPI exposed 198 paths including presentation create and read. The Connector
+  lifecycle rendered `Answer presentation` as the latest capability at 1280x720 and 390x844 with
+  no horizontal overflow or incoherent overlap. No application exception occurred; the observed
+  favicon 404 and uninitialized bootstrap-preview 409 are expected unrelated responses.
+- GitHub delivery evidence is pending.
 
 ### ATLAS-IMP-105 Scope Rationale
 
