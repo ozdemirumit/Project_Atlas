@@ -9,6 +9,7 @@ import {
 } from "../../api/reviewFindings";
 import type { OperationalKnowledgeProtectedContent } from "../../api/protectedContent";
 import type { OperationalKnowledgeProtectedInspectionLease } from "../../api/protectedInspections";
+import { FindingPresentationPanel } from "./FindingPresentationPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -252,6 +253,7 @@ export function ReviewFindingPanel({
         </div>
       )}
       {record && (
+        <>
         <div className="package-signing-record">
           <div className="section-heading">
             <div>
@@ -269,10 +271,17 @@ export function ReviewFindingPanel({
             <div><span>Review decision</span><strong>not recorded</strong></div>
           </div>
           <p className="muted-copy">
-            Finding text is not returned to the browser. Decision, approval, publication,
-            workflow, and operational authority remain unavailable.
+            Finding text remains sealed until a separately governed protected presentation.
+            Decision, approval, publication, workflow, and operational authority remain
+            unavailable.
           </p>
         </div>
+        <FindingPresentationPanel
+          lease={lease}
+          contentPresentation={presentation}
+          finding={record}
+        />
+        </>
       )}
     </div>
   );

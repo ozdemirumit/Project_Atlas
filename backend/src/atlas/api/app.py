@@ -42,6 +42,7 @@ from atlas.api.routes import (
     draft_review_requests,
     evidence_drafts,
     final_validations,
+    finding_presentations,
     graph,
     health,
     health_checks,
@@ -569,6 +570,20 @@ from atlas.modules.knowledge.adapters.evidence_draft_synthetic import (
     SyntheticOperationalEvidenceKnowledgeDraftAdapter,
     UnavailableOperationalEvidenceKnowledgeDraftAdapter,
 )
+from atlas.modules.knowledge.adapters.finding_presentation_memory import (
+    InMemoryOperationalKnowledgeFindingPresentationPolicySource,
+    InMemoryOperationalKnowledgeFindingPresentationRepository,
+)
+from atlas.modules.knowledge.adapters.finding_presentation_permission import (
+    AuthorizationOperationalKnowledgeFindingPresentationPermissionAuthorizer,
+)
+from atlas.modules.knowledge.adapters.finding_presentation_postgres import (
+    PostgreSQLOperationalKnowledgeFindingPresentationRepository,
+)
+from atlas.modules.knowledge.adapters.finding_presentation_synthetic import (
+    SyntheticOperationalKnowledgeFindingPresenter,
+    UnavailableOperationalKnowledgeFindingPresenter,
+)
 from atlas.modules.knowledge.adapters.memory import InMemoryKnowledgeRetriever
 from atlas.modules.knowledge.adapters.protected_content_memory import (
     InMemoryOperationalKnowledgeProtectedContentPolicySource,
@@ -635,6 +650,10 @@ from atlas.modules.knowledge.application.evidence_draft import (
     OperationalEvidenceKnowledgeDraftService,
     build_development_operational_evidence_knowledge_draft_policy,
 )
+from atlas.modules.knowledge.application.finding_presentation import (
+    OperationalKnowledgeFindingPresentationService,
+    build_development_operational_knowledge_finding_presentation_policy,
+)
 from atlas.modules.knowledge.application.protected_content import (
     OperationalKnowledgeProtectedContentService,
     build_development_operational_knowledge_protected_content_policy,
@@ -646,6 +665,9 @@ from atlas.modules.knowledge.application.protected_inspection import (
 from atlas.modules.knowledge.application.review_finding import (
     OperationalKnowledgeReviewFindingService,
     build_development_operational_knowledge_review_finding_policy,
+)
+from atlas.modules.knowledge.application.review_finding_ports import (
+    OperationalKnowledgeReviewFindingRecorder,
 )
 from atlas.modules.knowledge.application.reviewer_assignment import (
     OperationalKnowledgeReviewerAssignmentService,
@@ -927,6 +949,9 @@ def create_app(
     ) = None,
     operational_knowledge_review_finding_service: (
         OperationalKnowledgeReviewFindingService | None
+    ) = None,
+    operational_knowledge_finding_presentation_service: (
+        OperationalKnowledgeFindingPresentationService | None
     ) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
@@ -2640,6 +2665,9 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    resolved_review_finding_recorder: SyntheticOperationalKnowledgeReviewFindingRecorder | None = (
+        None
+    )
     if operational_knowledge_review_finding_service is not None:
         resolved_operational_knowledge_review_finding_service = (
             operational_knowledge_review_finding_service
@@ -2664,6 +2692,12 @@ def create_app(
                 ),
             )
         )
+        review_finding_recorder: OperationalKnowledgeReviewFindingRecorder
+        if is_production:
+            review_finding_recorder = UnavailableOperationalKnowledgeReviewFindingRecorder()
+        else:
+            resolved_review_finding_recorder = SyntheticOperationalKnowledgeReviewFindingRecorder()
+            review_finding_recorder = resolved_review_finding_recorder
         resolved_operational_knowledge_review_finding_service = (
             OperationalKnowledgeReviewFindingService(
                 repository=review_finding_repository,
@@ -2677,11 +2711,56 @@ def create_app(
                         environment=resolved_settings.environment,
                     )
                 ),
-                recorder=(
-                    UnavailableOperationalKnowledgeReviewFindingRecorder()
-                    if is_production
-                    else SyntheticOperationalKnowledgeReviewFindingRecorder()
+                recorder=review_finding_recorder,
+                audit_sink=resolved_audit_sink,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+        )
+    if operational_knowledge_finding_presentation_service is not None:
+        resolved_operational_knowledge_finding_presentation_service = (
+            operational_knowledge_finding_presentation_service
+        )
+    else:
+        finding_presentation_repository = (
+            PostgreSQLOperationalKnowledgeFindingPresentationRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryOperationalKnowledgeFindingPresentationRepository()
+        )
+        finding_presentation_policies = (
+            ()
+            if is_production
+            else (
+                build_development_operational_knowledge_finding_presentation_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
                 ),
+            )
+        )
+        finding_presenter = (
+            UnavailableOperationalKnowledgeFindingPresenter()
+            if is_production or resolved_review_finding_recorder is None
+            else SyntheticOperationalKnowledgeFindingPresenter(
+                recorder=resolved_review_finding_recorder
+            )
+        )
+        resolved_operational_knowledge_finding_presentation_service = (
+            OperationalKnowledgeFindingPresentationService(
+                repository=finding_presentation_repository,
+                source=resolved_operational_knowledge_review_finding_service,
+                policy_source=InMemoryOperationalKnowledgeFindingPresentationPolicySource(
+                    finding_presentation_policies
+                ),
+                permission_authorizer=(
+                    AuthorizationOperationalKnowledgeFindingPresentationPermissionAuthorizer(
+                        service=resolved_authorization_service,
+                        environment=resolved_settings.environment,
+                    )
+                ),
+                presenter=finding_presenter,
                 audit_sink=resolved_audit_sink,
                 environment_id=f"environment.{resolved_settings.environment}",
             )
@@ -2911,6 +2990,9 @@ def create_app(
         app.state.operational_knowledge_review_finding_service = (
             resolved_operational_knowledge_review_finding_service
         )
+        app.state.operational_knowledge_finding_presentation_service = (
+            resolved_operational_knowledge_finding_presentation_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -2923,6 +3005,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_operational_knowledge_finding_presentation_service.close()
         await resolved_operational_knowledge_review_finding_service.close()
         await resolved_operational_knowledge_protected_content_service.close()
         await resolved_operational_knowledge_protected_inspection_service.close()
@@ -3059,6 +3142,7 @@ def create_app(
     app.include_router(protected_inspections.router, prefix="/api/v1")
     app.include_router(protected_content.router, prefix="/api/v1")
     app.include_router(review_findings.router, prefix="/api/v1")
+    app.include_router(finding_presentations.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

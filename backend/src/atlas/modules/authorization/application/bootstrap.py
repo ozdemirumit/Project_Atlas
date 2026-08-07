@@ -172,6 +172,8 @@ KNOWLEDGE_PROTECTED_CONTENT_PRESENTATION_CREATE = "knowledge.protected-content-p
 KNOWLEDGE_PROTECTED_CONTENT_PRESENTATION_READ = "knowledge.protected-content-presentations.read"
 KNOWLEDGE_REVIEW_FINDING_CREATE = "knowledge.review-findings.create"
 KNOWLEDGE_REVIEW_FINDING_READ = "knowledge.review-findings.read"
+KNOWLEDGE_FINDING_PRESENTATION_CREATE = "knowledge.finding-presentations.create"
+KNOWLEDGE_FINDING_PRESENTATION_READ = "knowledge.finding-presentations.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -981,6 +983,19 @@ def operational_knowledge_review_finding_scope(
     )
 
 
+def operational_knowledge_finding_presentation_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.knowledge",
+        resource_id="resource.knowledge.operational-finding-presentations",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -1694,6 +1709,14 @@ def build_development_authorization_service(
             permission_id=KNOWLEDGE_REVIEW_FINDING_READ,
             description="Read minimized operational knowledge finding metadata.",
         ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_FINDING_PRESENTATION_CREATE,
+            description="Present one exact sealed operational knowledge finding packet.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_FINDING_PRESENTATION_READ,
+            description="Replay one exact finding packet during its active inspection lease.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -1835,6 +1858,8 @@ def build_development_authorization_service(
                 KNOWLEDGE_PROTECTED_CONTENT_PRESENTATION_READ,
                 KNOWLEDGE_REVIEW_FINDING_CREATE,
                 KNOWLEDGE_REVIEW_FINDING_READ,
+                KNOWLEDGE_FINDING_PRESENTATION_CREATE,
+                KNOWLEDGE_FINDING_PRESENTATION_READ,
             }
         ),
     )
@@ -3095,6 +3120,18 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=operational_knowledge_review_finding_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-finding-presentation",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=operational_knowledge_finding_presentation_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C2_DIAGNOSTIC,

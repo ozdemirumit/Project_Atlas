@@ -325,6 +325,77 @@ class OperationalKnowledgeReviewFindingService:
     async def close(self) -> None:
         await self._repository.close()
 
+    async def finding_presentation_source(
+        self, *, finding_packet_id: str
+    ) -> tuple[
+        OperationalKnowledgeReviewFindingRecord,
+        OperationalKnowledgeProtectedContentRecord,
+        OperationalKnowledgeProtectedInspectionRecord,
+        OperationalKnowledgeProtectedInspectionPolicySnapshot,
+        OperationalKnowledgeReviewerAssignmentRecord,
+        OperationalKnowledgeReviewRequestRecord,
+        OperationalEvidenceKnowledgeDraftRecord,
+        OperationalKnowledgeReviewFindingPolicySnapshot,
+    ]:
+        record = await self._repository.get(finding_packet_id=finding_packet_id)
+        if record is None:
+            raise OperationalKnowledgeReviewFindingError(
+                "operational_knowledge_review_finding_record_not_found"
+            )
+        self._verify_record(record)
+        try:
+            (
+                presentation,
+                lease,
+                inspection_policy,
+                assignment,
+                review_request,
+                draft,
+            ) = await self._source.review_finding_source(
+                presentation_id=record.source_presentation_id
+            )
+        except Exception as error:
+            raise OperationalKnowledgeReviewFindingError(
+                "operational_knowledge_review_finding_lineage_invalid"
+            ) from error
+        policy = await self._policy_source.get_by_id(policy_id=record.finding_policy_id)
+        if policy is None:
+            raise OperationalKnowledgeReviewFindingError(
+                "operational_knowledge_review_finding_lineage_invalid"
+            )
+        self._verify_policy(policy)
+        if (
+            record.source_presentation_digest != presentation.canonical_digest
+            or record.source_lease_id != lease.lease_id
+            or record.source_lease_digest != lease.canonical_digest
+            or record.source_assignment_set_id != assignment.assignment_set_id
+            or record.review_request_id != review_request.review_request_id
+            or record.source_draft_id != draft.draft_id
+            or record.source_draft_digest != draft.canonical_digest
+            or record.knowledge_item_id != draft.knowledge_item_id
+            or record.draft_version_id != draft.draft_version_id
+            or record.track_code != presentation.track_code
+            or record.lease_holder_subject_digest != lease.lease_holder_subject_digest
+            or record.browser_session_binding_digest != lease.browser_session_binding_digest
+            or record.presented_content_digest != presentation.presented_content_digest
+            or record.finding_policy_digest != policy.canonical_digest
+            or record.organization_id != presentation.organization_id
+            or record.environment_id != presentation.environment_id
+        ):
+            raise OperationalKnowledgeReviewFindingError(
+                "operational_knowledge_review_finding_lineage_invalid"
+            )
+        return (
+            record,
+            presentation,
+            lease,
+            inspection_policy,
+            assignment,
+            review_request,
+            draft,
+            policy,
+        )
+
     async def _authorize(
         self,
         *,
