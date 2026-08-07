@@ -34,12 +34,12 @@ def upgrade() -> None:
         sa.UniqueConstraint(
             "source_assignment_set_id",
             "track_code",
-            name="uq_operational_knowledge_protected_inspection_claims_source_track",
+            name="uq_ok_inspect_claim_source_track",
         ),
         sa.UniqueConstraint(
             "claimed_by_subject_digest",
             "idempotency_digest",
-            name="uq_operational_knowledge_protected_inspection_claims_actor_idempotency",
+            name="uq_ok_inspect_claim_actor_idem",
         ),
     )
     for column in (
@@ -51,7 +51,7 @@ def upgrade() -> None:
         "environment_id",
     ):
         op.create_index(
-            f"ix_operational_knowledge_protected_inspection_claims_{column}",
+            op.f(f"ix_operational_knowledge_protected_inspection_claims_{column}"),
             "operational_knowledge_protected_inspection_claims",
             [column],
             unique=False,
@@ -73,7 +73,7 @@ def upgrade() -> None:
         sa.UniqueConstraint(
             "source_assignment_set_id",
             "track_code",
-            name="uq_operational_knowledge_protected_inspection_leases_source_track",
+            name="uq_ok_inspect_lease_source_track",
         ),
         sa.UniqueConstraint(
             "claim_id",
@@ -90,7 +90,7 @@ def upgrade() -> None:
         "environment_id",
     ):
         op.create_index(
-            f"ix_operational_knowledge_protected_inspection_leases_{column}",
+            op.f(f"ix_operational_knowledge_protected_inspection_leases_{column}"),
             "operational_knowledge_protected_inspection_leases",
             [column],
             unique=False,

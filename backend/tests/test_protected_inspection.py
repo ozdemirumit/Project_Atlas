@@ -40,6 +40,13 @@ from atlas.modules.knowledge.adapters.protected_inspection_postgres import (
 from atlas.modules.knowledge.adapters.protected_inspection_synthetic import (
     SyntheticOperationalKnowledgeProtectedInspectionBroker,
 )
+from atlas.modules.knowledge.adapters.review_decision_memory import (
+    InMemoryOperationalKnowledgeTrackReviewDecisionPolicySource,
+    InMemoryOperationalKnowledgeTrackReviewDecisionRepository,
+)
+from atlas.modules.knowledge.adapters.review_decision_synthetic import (
+    SyntheticOperationalKnowledgeTrackReviewDecisionAttestor,
+)
 from atlas.modules.knowledge.adapters.review_finding_memory import (
     InMemoryOperationalKnowledgeReviewFindingPolicySource,
     InMemoryOperationalKnowledgeReviewFindingRepository,
@@ -62,6 +69,10 @@ from atlas.modules.knowledge.application.protected_inspection import (
 from atlas.modules.knowledge.application.protected_inspection_ports import (
     OperationalKnowledgeProtectedInspectionError,
     OperationalKnowledgeProtectedInspectionUncertainError,
+)
+from atlas.modules.knowledge.application.review_decision import (
+    OperationalKnowledgeTrackReviewDecisionService,
+    build_development_operational_knowledge_track_review_decision_policy,
 )
 from atlas.modules.knowledge.application.review_finding import (
     OperationalKnowledgeReviewFindingService,
@@ -499,6 +510,26 @@ def test_protected_inspection_api_sets_http_only_cookie_and_returns_minimized_me
         environment_id=assignment.environment_id,
         clock=lambda: assignment.created_at,
     )
+    review_decision_policy = build_development_operational_knowledge_track_review_decision_policy(
+        organization_id=assignment.organization_id,
+        environment_id=assignment.environment_id,
+        issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+        expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+    )
+    review_decision_service = OperationalKnowledgeTrackReviewDecisionService(
+        repository=InMemoryOperationalKnowledgeTrackReviewDecisionRepository(),
+        source=finding_presentation_service,
+        policy_source=InMemoryOperationalKnowledgeTrackReviewDecisionPolicySource(
+            (review_decision_policy,)
+        ),
+        permission_authorizer=RecordingProtectedInspectionPermissionAuthorizer(),
+        attestor=SyntheticOperationalKnowledgeTrackReviewDecisionAttestor(
+            clock=lambda: assignment.created_at
+        ),
+        audit_sink=CollectingAuditSink(),
+        environment_id=assignment.environment_id,
+        clock=lambda: assignment.created_at,
+    )
     with TestClient(
         create_app(
             app_settings,
@@ -524,6 +555,7 @@ def test_protected_inspection_api_sets_http_only_cookie_and_returns_minimized_me
             operational_knowledge_protected_content_service=content_service,
             operational_knowledge_review_finding_service=finding_service,
             operational_knowledge_finding_presentation_service=(finding_presentation_service),
+            operational_knowledge_track_review_decision_service=review_decision_service,
         )
     ) as client:
         login_response = login(client)
@@ -637,6 +669,49 @@ def test_protected_inspection_api_sets_http_only_cookie_and_returns_minimized_me
             f"/findings/{finding_data['finding_packet_id']}/presentations/"
             f"{finding_presentation_data['finding_presentation_id']}"
         )
+        decision_endpoint = (
+            f"{endpoint}/{lease_id}/presentations/{content_data['presentation_id']}"
+            f"/findings/{finding_data['finding_packet_id']}/presentations/"
+            f"{finding_presentation_data['finding_presentation_id']}/decisions"
+        )
+        decision_payload = {
+            "schema_version": "atlas.operational-knowledge-track-review-decision-input.v1",
+            "source_finding_presentation_digest": finding_presentation_data["canonical_digest"],
+            "decision_policy_id": review_decision_policy.policy_id,
+            "decision_policy_digest": review_decision_policy.canonical_digest,
+            "disposition_code": "review-disposition.changes-required",
+            "basis_codes": [
+                "review-basis.technical-accuracy",
+                "review-basis.evidence-quality",
+            ],
+            "purpose": "Record the accountable domain review decision for this exact packet.",
+            "acknowledged_exact_findings_reviewed": True,
+            "acknowledged_human_track_decision": True,
+            "acknowledged_no_approval_or_operational_authority": True,
+        }
+        decision_denied = client.post(
+            decision_endpoint,
+            json=decision_payload,
+            headers={"Idempotency-Key": "review-decision-api-denied"},
+        )
+        decision_forbidden = client.post(
+            decision_endpoint,
+            json={**decision_payload, "finding_summary": "caller-selected"},
+            headers={
+                "Idempotency-Key": "review-decision-api-forbidden",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+        )
+        decision = client.post(
+            decision_endpoint,
+            json=decision_payload,
+            headers={
+                "Idempotency-Key": "review-decision-api-1",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+        )
+        decision_data = decision.json()["data"]
+        decision_replay = client.get(f"{decision_endpoint}/{decision_data['decision_id']}")
 
     assert denied.status_code == 403 and forbidden.status_code == 422
     assert read.status_code == 200
@@ -646,6 +721,10 @@ def test_protected_inspection_api_sets_http_only_cookie_and_returns_minimized_me
     assert finding_presentation_forbidden.status_code == 422
     assert finding_presentation.status_code == 201, finding_presentation.text
     assert finding_replay.status_code == 200, finding_replay.text
+    assert decision_denied.status_code == 403
+    assert decision_forbidden.status_code == 422
+    assert decision.status_code == 201, decision.text
+    assert decision_replay.status_code == 200, decision_replay.text
     assert created.headers["Cache-Control"] == read.headers["Cache-Control"] == "no-store"
     assert content.headers["Cache-Control"] == "no-store, max-age=0"
     cookie = created.headers["Set-Cookie"]
@@ -714,6 +793,29 @@ def test_protected_inspection_api_sets_http_only_cookie_and_returns_minimized_me
         "presentation_cleanup_digest",
     ):
         assert hidden not in finding_presentation_data
+    assert decision.headers["Cache-Control"] == "no-store, max-age=0"
+    assert decision.headers["Content-Security-Policy"].startswith("default-src 'none'")
+    assert decision_data["disposition_code"] == "review-disposition.changes-required"
+    assert decision_data["domain_review_completed"] is True
+    assert decision_data["domain_review_passed"] is False
+    assert decision_data["correction_required"] is True
+    assert decision_data["correction_created"] is False
+    assert decision_data["all_tracks_passed"] is False
+    assert decision_data["knowledge_approved"] is False
+    assert decision_data["retrieval_published"] is False
+    assert decision_data["execution_authorized"] is False
+    assert decision_replay.json()["data"]["canonical_digest"] == decision_data["canonical_digest"]
+    for hidden in (
+        "findings",
+        "summary",
+        "detail",
+        "decided_by_subject_digest",
+        "browser_session_binding_digest",
+        "source_finding_digest",
+        "source_lease_digest",
+        "basis_digest",
+    ):
+        assert hidden not in decision_data
     assert content_data["domain_review_completed"] is False
     assert content_data["knowledge_approved"] is False
     assert content_data["execution_authorized"] is False

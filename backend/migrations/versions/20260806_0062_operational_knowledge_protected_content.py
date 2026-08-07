@@ -37,7 +37,7 @@ def upgrade() -> None:
         sa.UniqueConstraint(
             "claimed_by_subject_digest",
             "idempotency_digest",
-            name="uq_operational_knowledge_protected_content_claims_actor_idempotency",
+            name="uq_ok_content_claim_actor_idem",
         ),
     )
     for column in (
@@ -48,7 +48,7 @@ def upgrade() -> None:
         "environment_id",
     ):
         op.create_index(
-            f"ix_operational_knowledge_protected_content_claims_{column}",
+            op.f(f"ix_operational_knowledge_protected_content_claims_{column}"),
             "operational_knowledge_protected_content_claims",
             [column],
         )
@@ -70,7 +70,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("presentation_id"),
         sa.UniqueConstraint(
             "source_lease_id",
-            name="uq_operational_knowledge_protected_content_presentations_source_lease",
+            name="uq_ok_content_present_source_lease",
         ),
         sa.UniqueConstraint(
             "claim_id",
@@ -88,7 +88,7 @@ def upgrade() -> None:
         "environment_id",
     ):
         op.create_index(
-            f"ix_operational_knowledge_protected_content_presentations_{column}",
+            op.f(f"ix_operational_knowledge_protected_content_presentations_{column}"),
             "operational_knowledge_protected_content_presentations",
             [column],
         )

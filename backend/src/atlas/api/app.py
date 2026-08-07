@@ -70,6 +70,7 @@ from atlas.api.routes import (
     registry_publications,
     release_preflight,
     reports,
+    review_decisions,
     review_findings,
     reviewer_assignments,
     runner_validations,
@@ -613,6 +614,20 @@ from atlas.modules.knowledge.adapters.protected_inspection_synthetic import (
     SyntheticOperationalKnowledgeProtectedInspectionBroker,
     UnavailableOperationalKnowledgeProtectedInspectionBroker,
 )
+from atlas.modules.knowledge.adapters.review_decision_memory import (
+    InMemoryOperationalKnowledgeTrackReviewDecisionPolicySource,
+    InMemoryOperationalKnowledgeTrackReviewDecisionRepository,
+)
+from atlas.modules.knowledge.adapters.review_decision_permission import (
+    AuthorizationOperationalKnowledgeTrackReviewDecisionPermissionAuthorizer,
+)
+from atlas.modules.knowledge.adapters.review_decision_postgres import (
+    PostgreSQLOperationalKnowledgeTrackReviewDecisionRepository,
+)
+from atlas.modules.knowledge.adapters.review_decision_synthetic import (
+    SyntheticOperationalKnowledgeTrackReviewDecisionAttestor,
+    UnavailableOperationalKnowledgeTrackReviewDecisionAttestor,
+)
 from atlas.modules.knowledge.adapters.review_finding_memory import (
     InMemoryOperationalKnowledgeReviewFindingPolicySource,
     InMemoryOperationalKnowledgeReviewFindingRepository,
@@ -661,6 +676,10 @@ from atlas.modules.knowledge.application.protected_content import (
 from atlas.modules.knowledge.application.protected_inspection import (
     OperationalKnowledgeProtectedInspectionService,
     build_development_operational_knowledge_protected_inspection_policy,
+)
+from atlas.modules.knowledge.application.review_decision import (
+    OperationalKnowledgeTrackReviewDecisionService,
+    build_development_operational_knowledge_track_review_decision_policy,
 )
 from atlas.modules.knowledge.application.review_finding import (
     OperationalKnowledgeReviewFindingService,
@@ -952,6 +971,9 @@ def create_app(
     ) = None,
     operational_knowledge_finding_presentation_service: (
         OperationalKnowledgeFindingPresentationService | None
+    ) = None,
+    operational_knowledge_track_review_decision_service: (
+        OperationalKnowledgeTrackReviewDecisionService | None
     ) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
@@ -2765,6 +2787,52 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    if operational_knowledge_track_review_decision_service is not None:
+        resolved_operational_knowledge_track_review_decision_service = (
+            operational_knowledge_track_review_decision_service
+        )
+    else:
+        track_review_decision_repository = (
+            PostgreSQLOperationalKnowledgeTrackReviewDecisionRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryOperationalKnowledgeTrackReviewDecisionRepository()
+        )
+        track_review_decision_policies = (
+            ()
+            if is_production
+            else (
+                build_development_operational_knowledge_track_review_decision_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_operational_knowledge_track_review_decision_service = (
+            OperationalKnowledgeTrackReviewDecisionService(
+                repository=track_review_decision_repository,
+                source=resolved_operational_knowledge_finding_presentation_service,
+                policy_source=InMemoryOperationalKnowledgeTrackReviewDecisionPolicySource(
+                    track_review_decision_policies
+                ),
+                permission_authorizer=(
+                    AuthorizationOperationalKnowledgeTrackReviewDecisionPermissionAuthorizer(
+                        service=resolved_authorization_service,
+                        environment=resolved_settings.environment,
+                    )
+                ),
+                attestor=(
+                    UnavailableOperationalKnowledgeTrackReviewDecisionAttestor()
+                    if is_production
+                    else SyntheticOperationalKnowledgeTrackReviewDecisionAttestor()
+                ),
+                audit_sink=resolved_audit_sink,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -2993,6 +3061,9 @@ def create_app(
         app.state.operational_knowledge_finding_presentation_service = (
             resolved_operational_knowledge_finding_presentation_service
         )
+        app.state.operational_knowledge_track_review_decision_service = (
+            resolved_operational_knowledge_track_review_decision_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -3005,6 +3076,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_operational_knowledge_track_review_decision_service.close()
         await resolved_operational_knowledge_finding_presentation_service.close()
         await resolved_operational_knowledge_review_finding_service.close()
         await resolved_operational_knowledge_protected_content_service.close()
@@ -3143,6 +3215,7 @@ def create_app(
     app.include_router(protected_content.router, prefix="/api/v1")
     app.include_router(review_findings.router, prefix="/api/v1")
     app.include_router(finding_presentations.router, prefix="/api/v1")
+    app.include_router(review_decisions.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

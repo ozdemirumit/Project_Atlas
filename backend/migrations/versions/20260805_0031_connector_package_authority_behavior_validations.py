@@ -76,7 +76,7 @@ def upgrade() -> None:
         sa.UniqueConstraint(
             "validated_by",
             "idempotency_key",
-            name="uq_connector_package_authority_behavior_validations_actor_idempotency",
+            name="uq_pkg_auth_behavior_actor_idem",
         ),
     )
     for column in (

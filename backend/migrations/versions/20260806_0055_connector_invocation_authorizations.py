@@ -50,7 +50,7 @@ def upgrade() -> None:
         "environment_id",
     ):
         op.create_index(
-            f"ix_connector_invocation_authorizations_{column}",
+            op.f(f"ix_connector_invocation_authorizations_{column}"),
             "connector_invocation_authorizations",
             [column],
             unique=False,

@@ -37,7 +37,7 @@ def upgrade() -> None:
         sa.UniqueConstraint(
             "claimed_by",
             "idempotency_digest",
-            name="uq_operational_knowledge_reviewer_assignment_claims_actor_idempotency",
+            name="uq_ok_assign_claim_actor_idem",
         ),
     )
     for column in (
@@ -48,7 +48,7 @@ def upgrade() -> None:
         "environment_id",
     ):
         op.create_index(
-            f"ix_operational_knowledge_reviewer_assignment_claims_{column}",
+            op.f(f"ix_operational_knowledge_reviewer_assignment_claims_{column}"),
             "operational_knowledge_reviewer_assignment_claims",
             [column],
             unique=False,
@@ -84,7 +84,7 @@ def upgrade() -> None:
         "environment_id",
     ):
         op.create_index(
-            f"ix_operational_knowledge_reviewer_assignments_{column}",
+            op.f(f"ix_operational_knowledge_reviewer_assignments_{column}"),
             "operational_knowledge_reviewer_assignments",
             [column],
             unique=False,

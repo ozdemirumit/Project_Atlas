@@ -77,7 +77,7 @@ def upgrade() -> None:
         sa.UniqueConstraint(
             "analyzed_by",
             "idempotency_key",
-            name="uq_connector_package_static_dependency_analyses_actor_idempotency",
+            name="uq_pkg_static_dep_actor_idem",
         ),
     )
     for column in (
