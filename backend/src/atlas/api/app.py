@@ -65,6 +65,7 @@ from atlas.api.routes import (
     platform,
     protected_content,
     protected_inspections,
+    publication_preparations,
     publisher_attestations,
     rca,
     recommendations,
@@ -644,6 +645,20 @@ from atlas.modules.knowledge.adapters.protected_inspection_synthetic import (
     SyntheticOperationalKnowledgeProtectedInspectionBroker,
     UnavailableOperationalKnowledgeProtectedInspectionBroker,
 )
+from atlas.modules.knowledge.adapters.publication_preparation_memory import (
+    InMemoryOperationalKnowledgePublicationPreparationPolicySource,
+    InMemoryOperationalKnowledgePublicationPreparationRepository,
+)
+from atlas.modules.knowledge.adapters.publication_preparation_permission import (
+    AuthorizationOperationalKnowledgePublicationPreparationPermissionAuthorizer,
+)
+from atlas.modules.knowledge.adapters.publication_preparation_postgres import (
+    PostgreSQLOperationalKnowledgePublicationPreparationRepository,
+)
+from atlas.modules.knowledge.adapters.publication_preparation_synthetic import (
+    SyntheticOperationalKnowledgePublicationPreparer,
+    UnavailableOperationalKnowledgePublicationPreparer,
+)
 from atlas.modules.knowledge.adapters.review_decision_memory import (
     InMemoryOperationalKnowledgeTrackReviewDecisionPolicySource,
     InMemoryOperationalKnowledgeTrackReviewDecisionRepository,
@@ -714,6 +729,10 @@ from atlas.modules.knowledge.application.protected_content import (
 from atlas.modules.knowledge.application.protected_inspection import (
     OperationalKnowledgeProtectedInspectionService,
     build_development_operational_knowledge_protected_inspection_policy,
+)
+from atlas.modules.knowledge.application.publication_preparation import (
+    OperationalKnowledgePublicationPreparationService,
+    build_development_operational_knowledge_publication_preparation_policy,
 )
 from atlas.modules.knowledge.application.review_decision import (
     OperationalKnowledgeTrackReviewDecisionService,
@@ -1016,6 +1035,9 @@ def create_app(
     operational_knowledge_correction_service: OperationalKnowledgeCorrectionService | None = None,
     operational_knowledge_final_resolution_service: (
         OperationalKnowledgeFinalResolutionService | None
+    ) = None,
+    operational_knowledge_publication_preparation_service: (
+        OperationalKnowledgePublicationPreparationService | None
     ) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
@@ -2964,6 +2986,52 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    if operational_knowledge_publication_preparation_service is not None:
+        resolved_operational_knowledge_publication_preparation_service = (
+            operational_knowledge_publication_preparation_service
+        )
+    else:
+        publication_preparation_repository = (
+            PostgreSQLOperationalKnowledgePublicationPreparationRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryOperationalKnowledgePublicationPreparationRepository()
+        )
+        publication_preparation_policies = (
+            ()
+            if is_production
+            else (
+                build_development_operational_knowledge_publication_preparation_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_operational_knowledge_publication_preparation_service = (
+            OperationalKnowledgePublicationPreparationService(
+                repository=publication_preparation_repository,
+                source=resolved_operational_knowledge_final_resolution_service,
+                policy_source=InMemoryOperationalKnowledgePublicationPreparationPolicySource(
+                    publication_preparation_policies
+                ),
+                permission_authorizer=(
+                    AuthorizationOperationalKnowledgePublicationPreparationPermissionAuthorizer(
+                        service=resolved_authorization_service,
+                        environment=resolved_settings.environment,
+                    )
+                ),
+                preparer=(
+                    UnavailableOperationalKnowledgePublicationPreparer()
+                    if is_production
+                    else SyntheticOperationalKnowledgePublicationPreparer()
+                ),
+                audit_sink=resolved_audit_sink,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -3201,6 +3269,9 @@ def create_app(
         app.state.operational_knowledge_final_resolution_service = (
             resolved_operational_knowledge_final_resolution_service
         )
+        app.state.operational_knowledge_publication_preparation_service = (
+            resolved_operational_knowledge_publication_preparation_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -3213,6 +3284,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_operational_knowledge_publication_preparation_service.close()
         await resolved_operational_knowledge_final_resolution_service.close()
         await resolved_operational_knowledge_correction_service.close()
         await resolved_operational_knowledge_track_review_decision_service.close()
@@ -3357,6 +3429,7 @@ def create_app(
     app.include_router(review_decisions.router, prefix="/api/v1")
     app.include_router(correction_resubmissions.router, prefix="/api/v1")
     app.include_router(final_resolutions.router, prefix="/api/v1")
+    app.include_router(publication_preparations.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

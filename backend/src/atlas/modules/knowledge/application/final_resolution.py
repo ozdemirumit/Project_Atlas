@@ -32,8 +32,12 @@ from atlas.modules.knowledge.application.final_resolution_ports import (
 )
 from atlas.modules.knowledge.domain.draft_review_request import (
     OPERATIONAL_KNOWLEDGE_REVIEW_REQUESTED,
+    OperationalKnowledgeReviewRequestRecord,
 )
-from atlas.modules.knowledge.domain.evidence_draft import DRAFT_OPERATIONAL_KNOWLEDGE_CREATED
+from atlas.modules.knowledge.domain.evidence_draft import (
+    DRAFT_OPERATIONAL_KNOWLEDGE_CREATED,
+    OperationalEvidenceKnowledgeDraftRecord,
+)
 from atlas.modules.knowledge.domain.final_resolution import (
     FINAL_APPROVED,
     FINAL_APPROVED_STATE,
@@ -48,6 +52,7 @@ from atlas.modules.knowledge.domain.final_resolution import (
 from atlas.modules.knowledge.domain.review_decision import (
     OPERATIONAL_KNOWLEDGE_TRACK_REVIEW_DECIDED,
     TRACKS,
+    OperationalKnowledgeTrackReviewDecisionRecord,
 )
 
 FINAL_RESOLUTION_POLICY_SCHEMA = "atlas.operational-knowledge-final-resolution-policy.v1"
@@ -416,6 +421,24 @@ class OperationalKnowledgeFinalResolutionService:
             permission_id=KNOWLEDGE_FINAL_RESOLUTION_READ,
         )
         return replace(record, reused=True)
+
+    async def publication_preparation_source(
+        self, *, resolution_id: str
+    ) -> tuple[
+        OperationalKnowledgeFinalResolutionRecord,
+        tuple[OperationalKnowledgeTrackReviewDecisionRecord, ...],
+        OperationalKnowledgeReviewRequestRecord,
+        OperationalEvidenceKnowledgeDraftRecord,
+    ]:
+        record = await self._repository.get(resolution_id=resolution_id)
+        if record is None:
+            raise OperationalKnowledgeFinalResolutionError(
+                "operational_knowledge_final_resolution_not_found"
+            )
+        decisions, request, draft = await self._source.final_resolution_source(
+            review_request_id=record.review_request_id
+        )
+        return record, decisions, request, draft
 
     async def close(self) -> None:
         await self._repository.close()

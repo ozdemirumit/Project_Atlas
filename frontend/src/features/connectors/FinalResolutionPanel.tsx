@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { createOperationalKnowledgeFinalResolution } from "../../api/finalResolutions";
 import type { OperationalKnowledgeTrackReviewDecision } from "../../api/reviewDecisions";
+import { PublicationPreparationPanel } from "./PublicationPreparationPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -131,15 +132,20 @@ export function FinalResolutionPanel({
         </div>
       )}
       {resolution && (
-        <div className="correction-record">
-          <strong>{resolution.knowledge_approved ? "Knowledge approved" : "Generation rejected"}</strong>
-          <code>{resolution.resolution_id}</code>
-          <p className="muted-copy">
-            {resolution.publication_ready
-              ? "Ready for a separate publication process. Nothing was published or indexed."
-              : "Rejected for this exact generation. No correction or replacement was created."}
-          </p>
-        </div>
+        <>
+          <div className="correction-record">
+            <strong>{resolution.knowledge_approved ? "Knowledge approved" : "Generation rejected"}</strong>
+            <code>{resolution.resolution_id}</code>
+            <p className="muted-copy">
+              {resolution.publication_ready
+                ? "Ready for a separate publication process. Nothing was published or indexed."
+                : "Rejected for this exact generation. No correction or replacement was created."}
+            </p>
+          </div>
+          {resolution.knowledge_approved && resolution.publication_ready && (
+            <PublicationPreparationPanel resolution={resolution} />
+          )}
+        </>
       )}
     </div>
   );
