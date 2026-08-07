@@ -8,7 +8,7 @@
 | Title | Governed protected model-context assembly foundation |
 | Status | In Progress |
 | Branch | `agent/governed-model-context-assembly` |
-| Pull Request | Pending |
+| Pull Request | [#115](https://github.com/ozdemirumit/Project_Atlas/pull/115) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-059 |
 | Last Updated | 2026-08-07 |
 | Next Action | Publish IMP-103, complete GitHub CI and merge evidence, then begin IMP-104 |
@@ -80,7 +80,7 @@
   Connector lifecycle rendered `Context assembly` as the latest of ten available stages at
   1280x720 and 390x844 with no horizontal overflow. Browser logs contained only Vite debug and
   React development information, with no warning or error.
-- Implementation commit `1b18da3` contains the application slice. Branch publication, PR, GitHub
+- Implementation commit `1b18da3` contains the application slice. Draft PR #115 is open; GitHub
   CI, merge, merged-main, and closure evidence are pending.
 
 ### ATLAS-IMP-102 Scope Rationale
