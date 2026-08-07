@@ -8628,9 +8628,64 @@ tbody tr.selected {
   overflow-wrap: anywhere;
 }
 
+.correction-resubmission-panel,
+.correction-record {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.correction-resubmission-panel {
+  padding-top: 18px;
+  border-top: 1px solid #cbd6d2;
+}
+
+.correction-resubmission-panel > label {
+  display: grid;
+  gap: 8px;
+}
+
+.correction-resubmission-panel input,
+.correction-resubmission-panel textarea {
+  min-width: 0;
+}
+
+.correction-lineage {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid #cbd6d2;
+  border-radius: 6px;
+  background: #cbd6d2;
+}
+
+.correction-lineage > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  background: #f7faf9;
+}
+
+.correction-lineage span {
+  color: #64736e;
+  font-size: 11px;
+  text-transform: capitalize;
+}
+
+.correction-lineage strong,
+.correction-record code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #293934;
+  font-size: 13px;
+  text-transform: capitalize;
+}
+
 @media (max-width: 640px) {
   .review-decision-segment,
-  .review-decision-basis {
+  .review-decision-basis,
+  .correction-lineage {
     grid-template-columns: minmax(0, 1fr);
   }
 }

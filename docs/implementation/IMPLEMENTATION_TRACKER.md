@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-094 |
 | Title | Governed operational knowledge correction and resubmission foundation |
-| Status | In Progress |
+| Status | Validation Complete |
 | Branch | `agent/governed-knowledge-correction-resubmission` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-050 |
 | Last Updated | 2026-08-07 |
-| Next Action | Implement and validate the accepted ADR-050 correction and resubmission contract |
+| Next Action | Commit the validated slice, complete PR/CI/merge, and record closure evidence |
 
 ### ATLAS-IMP-094 Scope Rationale
 
@@ -41,6 +41,37 @@
 - Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
   lineage/identity/concurrency/idempotency/adapter/audit tests, minimized UI evidence, full suites,
   live desktop/mobile validation, and GitHub CI apply.
+
+### ATLAS-IMP-094 Validation Evidence
+
+- ADR-050 is accepted. The implementation requires both exact review-track decisions for one
+  immutable request, draft, and generation, with at least one `changes-required` disposition,
+  before an atomic source-request claim can bind a trusted correction submission.
+- Only the original accountable curator in the exact tenant, with dedicated C2 permissions,
+  recent hardware MFA, browser binding, CSRF, and a current signed policy can create or read the
+  correction. The ordinary API accepts only an opaque submission ID and digest; corrected content
+  remains inside the trusted adapter boundary and production fails closed without that adapter.
+- The correction creates a new immutable draft version and unassigned review generation while
+  preserving prior records and resetting both review tracks. It grants no approval, publication,
+  indexing, retrieval, workflow, execution, deployment, or infrastructure-mutation authority.
+- Seventeen focused review-decision and correction tests cover strict lineage, original-curator
+  identity, exact idempotency, concurrency exclusion, post-claim adapter and audit failure,
+  downstream reviewer-assignment lineage, CSRF, minimized no-store API responses, and
+  metadata-only memory/PostgreSQL parity.
+- Backend Ruff passed; strict mypy passed across 779 source files; the full suite passed with 726
+  tests and three expected Windows symlink skips. Alembic reports one `20260807_0066` head, and a
+  complete PostgreSQL offline migration from an empty database through that head succeeds.
+- Frontend ESLint and TypeScript checks passed; 34 test files and 64 tests passed; the production
+  bundle built successfully. The correction form exposes only opaque submission metadata, signed
+  policy inputs, purpose, and explicit acknowledgements; no corrected content or operational
+  authority field is accepted.
+- The restarted live backend returned liveness and readiness `200`, exposed correction create and
+  replay endpoints at `127.0.0.1:8052`, and the frontend returned `200` at `127.0.0.1:5208`. The
+  authenticated LDAP demo identity showed Correction resubmission as the latest Connector
+  lifecycle capability. Desktop 1280-by-720 and mobile 390-by-844 checks found no positive
+  horizontal overflow or incoherent overlap, and the browser console contained no errors or
+  warnings.
+- GitHub PR, CI, merge, and merged-main closure evidence is pending.
 
 ### ATLAS-IMP-093 Scope Rationale
 

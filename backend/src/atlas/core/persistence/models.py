@@ -2476,3 +2476,54 @@ class OperationalKnowledgeTrackReviewDecisionModel(Base):
     environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class OperationalKnowledgeCorrectionClaimModel(Base):
+    __tablename__ = "operational_knowledge_correction_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_review_request_id",
+            name="uq_ok_correction_claim_source_request",
+        ),
+        UniqueConstraint(
+            "claimed_by_subject_digest",
+            "idempotency_digest",
+            name="uq_ok_correction_claim_actor_idem",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source_review_request_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    correction_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    claimed_by_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class OperationalKnowledgeCorrectionModel(Base):
+    __tablename__ = "operational_knowledge_corrections"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_review_request_id",
+            name="uq_ok_correction_source_request",
+        ),
+        UniqueConstraint("claim_id", name="uq_ok_correction_claim"),
+        UniqueConstraint("new_draft_id", name="uq_ok_correction_new_draft"),
+        UniqueConstraint("new_review_request_id", name="uq_ok_correction_new_request"),
+    )
+
+    correction_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    claim_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_review_request_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_draft_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    knowledge_item_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    new_draft_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    new_review_request_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    corrected_by_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

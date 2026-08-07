@@ -31,6 +31,15 @@ class OperationalKnowledgeTrackReviewDecisionInput(BaseModel):
     acknowledged_no_approval_or_operational_authority: bool
 
 
+class OperationalKnowledgeTrackDecisionBindingData(BaseModel):
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    track_code: str
+    decision_id: str
+    canonical_digest: str
+    disposition_code: str
+
+
 class OperationalKnowledgeTrackReviewDecisionData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -46,6 +55,7 @@ class OperationalKnowledgeTrackReviewDecisionData(BaseModel):
     organization_id: str
     environment_id: str
     review_request_id: str
+    source_review_request_digest: str
     source_draft_id: str
     knowledge_item_id: str
     draft_version_id: str
@@ -73,6 +83,7 @@ class OperationalKnowledgeTrackReviewDecisionData(BaseModel):
     all_tracks_decided: bool
     all_tracks_passed: bool
     any_correction_required: bool
+    track_decisions: tuple[OperationalKnowledgeTrackDecisionBindingData, ...]
     knowledge_approved: bool
     knowledge_published: bool
     retrieval_published: bool
@@ -90,12 +101,19 @@ class OperationalKnowledgeTrackReviewDecisionData(BaseModel):
         values = {
             field: getattr(grant.record, field)
             for field in cls.model_fields
-            if field not in {"all_tracks_decided", "all_tracks_passed", "any_correction_required"}
+            if field
+            not in {
+                "all_tracks_decided",
+                "all_tracks_passed",
+                "any_correction_required",
+                "track_decisions",
+            }
         }
         values.update(
             all_tracks_decided=grant.all_tracks_decided,
             all_tracks_passed=grant.all_tracks_passed,
             any_correction_required=grant.any_correction_required,
+            track_decisions=grant.track_decisions,
         )
         return cls.model_validate(values)
 
