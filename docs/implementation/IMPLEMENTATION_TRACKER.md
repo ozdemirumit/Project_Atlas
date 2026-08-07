@@ -8,7 +8,7 @@
 | Title | Governed protected knowledge retrieval-index publication foundation |
 | Status | In Progress |
 | Branch | `agent/protected-retrieval-index-publication` |
-| Pull Request | Pending |
+| Pull Request | [#113](https://github.com/ozdemirumit/Project_Atlas/pull/113) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-057 |
 | Last Updated | 2026-08-07 |
 | Next Action | Publish IMP-101, complete GitHub CI and merge evidence, then begin IMP-102 |
@@ -79,7 +79,8 @@
   horizontal overflow and no browser console warning or error.
 - Successful publication sets only knowledge and retrieval publication. Model context, graph,
   scheduling, workflow, execution, deployment, and infrastructure mutation remain false and
-  unauthorized. GitHub PR, CI, merge, merged-main, and closure evidence are pending publication.
+  unauthorized. Draft PR #113 initial branch run `31186327642` passed (backend 3m43s,
+  frontend 3m56s); validation-record CI, merge, merged-main, and closure evidence are pending.
 
 ### ATLAS-IMP-100 Scope Rationale
 
