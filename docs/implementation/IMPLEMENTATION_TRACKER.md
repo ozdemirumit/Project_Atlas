@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-094 |
 | Title | Governed operational knowledge correction and resubmission foundation |
-| Status | Validation Complete |
-| Branch | `agent/governed-knowledge-correction-resubmission` |
-| Pull Request | Pending |
+| Status | Completed |
+| Branch | `main` |
+| Pull Request | [#106](https://github.com/ozdemirumit/Project_Atlas/pull/106) (Merged) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-050 |
 | Last Updated | 2026-08-07 |
-| Next Action | Commit the validated slice, complete PR/CI/merge, and record closure evidence |
+| Next Action | Define ATLAS-IMP-095 governed final review resolution contract |
 
 ### ATLAS-IMP-094 Scope Rationale
 
@@ -71,7 +71,9 @@
   lifecycle capability. Desktop 1280-by-720 and mobile 390-by-844 checks found no positive
   horizontal overflow or incoherent overlap, and the browser console contained no errors or
   warnings.
-- GitHub PR, CI, merge, and merged-main closure evidence is pending.
+- [PR #106](https://github.com/ozdemirumit/Project_Atlas/pull/106) CI run `31157806509` passed
+  (backend 2m59s, frontend 3m43s), merged to `main` as `777caea`, and merged-main run
+  `31158090204` passed (backend 2m57s, frontend 3m50s).
 
 ### ATLAS-IMP-093 Scope Rationale
 
