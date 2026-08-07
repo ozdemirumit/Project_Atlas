@@ -146,13 +146,21 @@ async def test_invocation_is_private_bounded_and_idempotent() -> None:
         browser_session_id="session_protected_knowledge_retrieval_001",
         correlation_id="cor_protected_model_invocation_read",
     )
+    adjudication_source, protected_draft = await service.rehydrate_for_adjudication(
+        actor=actor,
+        invocation_id=result.record.invocation_id,
+        browser_session_id="session_protected_knowledge_retrieval_001",
+        correlation_id="cor_protected_model_invocation_adjudication",
+    )
     assert result.record.model_invoked and result.record.protected_draft_available
     assert not result.record.answer_generated and not result.record.execution_authorized
     assert result.manifest.citation_count == 1 and result.manifest.unknown_count == 2
     assert repeated.record.reused and replay.record.reused
+    assert adjudication_source.record.reused
+    assert protected_draft.canonical_digest == result.record.draft_digest
     assert isinstance(gateway, SyntheticTrustedProtectedModelGateway)
     assert len(gateway.calls) == 1
-    assert len(permission.calls) == 3
+    assert len(permission.calls) == 4
     raw = asdict(result.record)
     for forbidden in ("summary", "unknowns", "objective", "evidence", "endpoint_url", "secret"):
         assert forbidden not in raw
