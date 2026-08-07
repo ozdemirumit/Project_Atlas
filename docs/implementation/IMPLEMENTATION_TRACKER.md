@@ -8,7 +8,7 @@
 | Title | Governed protected knowledge embedding generation foundation |
 | Status | In Progress |
 | Branch | `agent/governed-knowledge-embedding-generation` |
-| Pull Request | Pending |
+| Pull Request | [#111](https://github.com/ozdemirumit/Project_Atlas/pull/111) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-055 |
 | Last Updated | 2026-08-07 |
 | Next Action | Publish the validated IMP-099 branch, complete PR/CI review, merge, and record closure evidence |
@@ -76,7 +76,9 @@
 - The live Connectors view exposed `Embedding generation` as the latest available capability.
   Desktop `1280x720` and mobile `390x844` inspections had zero horizontal overflow, and browser
   developer logs contained no warnings or errors.
-- GitHub PR, branch CI, merge, merged-main CI, and documentation-only closure evidence are pending.
+- Draft PR #111 Continuous Integration run `31176595564` passed (backend 3m26s, frontend
+  3m56s). Validation-record CI, final branch CI, merge, merged-main CI, and documentation-only
+  closure evidence are pending.
 
 ### ATLAS-IMP-098 Scope Rationale
 
