@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { createOperationalKnowledgeRetrieval } from "../../api/protectedRetrieval";
 import type { OperationalKnowledgeRetrievalPublication } from "../../api/retrievalIndexPublication";
+import { ModelContextAssemblyPanel } from "./ModelContextAssemblyPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -131,7 +132,8 @@ export function ProtectedKnowledgeRetrievalPanel({
         </div>
       )}
       {result && (
-        <div className="correction-record">
+        <>
+          <div className="correction-record">
           <strong>Authorized evidence package</strong>
           <code>{result.retrieval.retrieval_id}</code>
           <p className="muted-copy">{result.evidence.query}</p>
@@ -147,7 +149,9 @@ export function ProtectedKnowledgeRetrievalPanel({
           <p className="muted-copy">
             Evidence only. No model, tool, workflow, deployment, or infrastructure action ran.
           </p>
-        </div>
+          </div>
+          <ModelContextAssemblyPanel retrievalResult={result} />
+        </>
       )}
     </div>
   );

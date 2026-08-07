@@ -118,6 +118,12 @@ const lifecycleStages: readonly LifecycleStage[] = [
       { name: "Governed retrieval" },
     ],
   },
+  {
+    name: "AI context",
+    detail: "Protected assembly, citation binding, budgets",
+    state: "available",
+    capabilities: [{ name: "Context assembly" }],
+  },
 ];
 
 export function ConnectorLifecycleOverview() {
@@ -134,7 +140,7 @@ export function ConnectorLifecycleOverview() {
       </div>
       <div className="connector-lifecycle-summary" aria-label="Delivery status">
         <div>
-          <strong>9</strong>
+          <strong>10</strong>
           <span>Available stages</span>
         </div>
         <div>
@@ -142,7 +148,7 @@ export function ConnectorLifecycleOverview() {
           <span>In progress</span>
         </div>
         <div>
-          <strong>Governed retrieval</strong>
+          <strong>Context assembly</strong>
           <span>Latest available capability</span>
         </div>
       </div>
