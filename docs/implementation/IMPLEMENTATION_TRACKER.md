@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-106 |
 | Title | Governed protected answer-presentation foundation |
-| Status | Review |
-| Branch | `agent/protected-answer-presentation` |
+| Status | Complete |
+| Branch | `main` |
 | Pull Request | [#118](https://github.com/ozdemirumit/Project_Atlas/pull/118) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-062 |
 | Last Updated | 2026-08-07 |
-| Next Action | Complete PR #118 CI, merge, and merged-main validation |
+| Next Action | Define ADR-063 and begin ATLAS-IMP-107 grounded recommendation-generation foundation |
 
 ### ATLAS-IMP-106 Scope Rationale
 
@@ -80,8 +80,13 @@
   lifecycle rendered `Answer presentation` as the latest capability at 1280x720 and 390x844 with
   no horizontal overflow or incoherent overlap. No application exception occurred; the observed
   favicon 404 and uninitialized bootstrap-preview 409 are expected unrelated responses.
-- Scope commit `4905e62` and implementation commit `c300214` contain the current slice. PR #118 is
-  open; final branch, merge, and merged-main CI evidence are pending.
+- Scope commit `4905e62`, implementation commit `c300214`, validation-record commit `c49ebb2`, and
+  format correction `ce3f22f` contain the source slice. Initial run `31211072918` identified only
+  one Ruff formatting difference; the corrected final branch run `31218530362` passed (backend
+  3m39s, frontend 4m12s).
+- PR #118 was squash-merged as `02fd689b6923bb1165641d7404eaf6ebcf0bf0fb`. Merged-main run
+  `31220520233` passed (backend 4m00s, frontend 3m40s). This documentation-only closure commit is
+  the final IMP-106 evidence; its main CI will be recorded at the start of IMP-107.
 
 ### ATLAS-IMP-105 Scope Rationale
 
