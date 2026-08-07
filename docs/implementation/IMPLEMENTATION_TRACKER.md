@@ -4,14 +4,49 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-097 |
-| Title | Governed protected knowledge source materialization foundation |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#109](https://github.com/ozdemirumit/Project_Atlas/pull/109) (merged) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-053 |
+| Task ID | ATLAS-IMP-098 |
+| Title | Governed deterministic protected knowledge chunking foundation |
+| Status | In Progress |
+| Branch | `agent/governed-knowledge-deterministic-chunking` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-054 |
 | Last Updated | 2026-08-07 |
-| Next Action | Define ATLAS-IMP-098 governed deterministic protected knowledge chunking |
+| Next Action | Implement ADR-054 backend, frontend, persistence, security, and validation contracts |
+
+### ATLAS-IMP-098 Scope Rationale
+
+- IMP-097 creates one immutable protected source material but deliberately creates no chunk,
+  embedding, index, retrieval visibility, or publication authority.
+- ADR-054 permits a separate eligible human chunking steward to claim the exact materialization
+  and invoke one trusted deterministic chunker that writes an encrypted immutable chunk set.
+- Embeddings, index staging/validation, publication, retrieval, workflow, execution, deployment,
+  and infrastructure mutation remain later stages.
+
+### ATLAS-IMP-098 Acceptance Criteria
+
+- Only one exact completed source materialization with unchanged preparation, approved resolution,
+  reviews, request, draft, knowledge item, source, governance, and profile lineage can enter
+  chunking. Drifted, corrected, rejected, superseded, already processed, published, or
+  caller-shaped lineage fails.
+- Only a separate eligible enterprise human chunking steward in the exact tenant, with recent
+  hardware MFA, dedicated C2 permissions, browser binding, CSRF, and a current signed policy may
+  create or read chunk-set metadata. Every earlier accountable actor and non-human identity fails.
+- The caller supplies only exact materialization and policy bindings, bounded purpose,
+  acknowledgements, idempotency, and correlation. Content, coordinates, keys, chunk parameters,
+  tokenization, embeddings, index, retrieval, workflow, and operation fields are forbidden.
+- Intent audit and an atomic unique materialization claim precede a trusted signed metadata-only
+  deterministic chunking receipt. Exact completed replay is allowed; concurrency, conflict, or
+  post-claim failure remains claimed. Production fails closed without the trusted chunker.
+- Success sets only chunk creation while preserving approval, readiness, preparation, and source
+  materialization. Embedding, indexing, publication, retrieval, model context, graph, scheduling,
+  workflow, execution, deployment, and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  lineage/separation/concurrency/idempotency/chunker/audit tests, minimized UI evidence, full
+  suites, live desktop/mobile validation, and GitHub CI apply.
+
+### ATLAS-IMP-098 Validation Evidence
+
+- Pending implementation.
 
 ### ATLAS-IMP-097 Scope Rationale
 
