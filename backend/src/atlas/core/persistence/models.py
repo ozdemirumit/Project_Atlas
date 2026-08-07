@@ -2870,3 +2870,50 @@ class OperationalKnowledgeRetrievalModel(Base):
     )
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class ProtectedModelContextClaimModel(Base):
+    __tablename__ = "protected_model_context_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "claimed_by_subject_digest",
+            "idempotency_digest",
+            name="uq_protected_model_context_claim_actor_idem",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    context_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    retrieval_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    claimed_by_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class ProtectedModelContextModel(Base):
+    __tablename__ = "protected_model_contexts"
+    __table_args__ = (
+        UniqueConstraint("claim_id", name="uq_protected_model_context_claim"),
+        UniqueConstraint(
+            "protected_artifact_reference", name="uq_protected_model_context_artifact"
+        ),
+    )
+
+    context_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    claim_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    retrieval_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    publication_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    consumer_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    protected_artifact_reference: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

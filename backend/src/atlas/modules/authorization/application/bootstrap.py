@@ -194,6 +194,8 @@ KNOWLEDGE_RETRIEVAL_PUBLICATION_CREATE = "knowledge.retrieval-publication.create
 KNOWLEDGE_RETRIEVAL_PUBLICATION_READ = "knowledge.retrieval-publication.read"
 KNOWLEDGE_PROTECTED_RETRIEVAL_CREATE = "knowledge.protected-retrieval.create"
 KNOWLEDGE_PROTECTED_RETRIEVAL_READ = "knowledge.protected-retrieval.read"
+AI_PROTECTED_MODEL_CONTEXT_CREATE = "ai.protected-model-context.create"
+AI_PROTECTED_MODEL_CONTEXT_READ = "ai.protected-model-context.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -1146,6 +1148,19 @@ def operational_knowledge_protected_retrieval_scope(
     )
 
 
+def ai_protected_model_context_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.ai",
+        resource_id="resource.ai.protected-model-context",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -1947,6 +1962,14 @@ def build_development_authorization_service(
             permission_id=KNOWLEDGE_PROTECTED_RETRIEVAL_READ,
             description="Read one current authorized protected evidence package.",
         ),
+        PermissionDefinition(
+            permission_id=AI_PROTECTED_MODEL_CONTEXT_CREATE,
+            description="Assemble one governed protected model context without model invocation.",
+        ),
+        PermissionDefinition(
+            permission_id=AI_PROTECTED_MODEL_CONTEXT_READ,
+            description="Read minimized protected model-context assembly metadata.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -2110,6 +2133,8 @@ def build_development_authorization_service(
                 KNOWLEDGE_RETRIEVAL_PUBLICATION_READ,
                 KNOWLEDGE_PROTECTED_RETRIEVAL_CREATE,
                 KNOWLEDGE_PROTECTED_RETRIEVAL_READ,
+                AI_PROTECTED_MODEL_CONTEXT_CREATE,
+                AI_PROTECTED_MODEL_CONTEXT_READ,
             }
         ),
     )
@@ -3610,6 +3635,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=operational_knowledge_protected_retrieval_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.ai-protected-model-context-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=ai_protected_model_context_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.ai-protected-model-context-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=ai_protected_model_context_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,

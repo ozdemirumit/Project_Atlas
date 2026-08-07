@@ -61,6 +61,7 @@ from atlas.api.routes import (
     license_analyses,
     malware_analyses,
     mcp_builder,
+    model_context_assembly,
     package_approvals,
     package_installations,
     package_registrations,
@@ -665,6 +666,20 @@ from atlas.modules.knowledge.adapters.index_staging_validation_synthetic import 
     UnavailableOperationalKnowledgeIndexer,
 )
 from atlas.modules.knowledge.adapters.memory import InMemoryKnowledgeRetriever
+from atlas.modules.knowledge.adapters.model_context_assembly_memory import (
+    InMemoryProtectedModelContextPolicySource,
+    MemoryProtectedModelContextRepository,
+)
+from atlas.modules.knowledge.adapters.model_context_assembly_permission import (
+    AuthorizationProtectedModelContextPermissionAuthorizer,
+)
+from atlas.modules.knowledge.adapters.model_context_assembly_postgres import (
+    PostgreSQLProtectedModelContextRepository,
+)
+from atlas.modules.knowledge.adapters.model_context_assembly_synthetic import (
+    SyntheticTrustedProtectedModelContextAssembler,
+    UnavailableTrustedProtectedModelContextAssembler,
+)
 from atlas.modules.knowledge.adapters.protected_content_memory import (
     InMemoryOperationalKnowledgeProtectedContentPolicySource,
     InMemoryOperationalKnowledgeProtectedContentRepository,
@@ -823,6 +838,10 @@ from atlas.modules.knowledge.application.finding_presentation import (
 from atlas.modules.knowledge.application.index_staging_validation import (
     OperationalKnowledgeIndexStagingValidationService,
     build_development_operational_knowledge_index_policy,
+)
+from atlas.modules.knowledge.application.model_context_assembly import (
+    GovernedProtectedModelContextService,
+    build_development_protected_model_context_policy,
 )
 from atlas.modules.knowledge.application.protected_content import (
     OperationalKnowledgeProtectedContentService,
@@ -1171,6 +1190,7 @@ def create_app(
     operational_knowledge_protected_retrieval_service: (
         OperationalKnowledgeProtectedRetrievalService | None
     ) = None,
+    protected_model_context_service: GovernedProtectedModelContextService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -3472,6 +3492,42 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    if protected_model_context_service is not None:
+        resolved_protected_model_context_service = protected_model_context_service
+    else:
+        context_repository = (
+            PostgreSQLProtectedModelContextRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else MemoryProtectedModelContextRepository()
+        )
+        context_policies = (
+            ()
+            if is_production
+            else (
+                build_development_protected_model_context_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_protected_model_context_service = GovernedProtectedModelContextService(
+            repository=context_repository,
+            retrieval_source=resolved_operational_knowledge_protected_retrieval_service,
+            policy_source=InMemoryProtectedModelContextPolicySource(context_policies),
+            permission_authorizer=AuthorizationProtectedModelContextPermissionAuthorizer(
+                service=resolved_authorization_service,
+                environment=resolved_settings.environment,
+            ),
+            assembler=(
+                UnavailableTrustedProtectedModelContextAssembler()
+                if is_production
+                else SyntheticTrustedProtectedModelContextAssembler()
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -3730,6 +3786,7 @@ def create_app(
         app.state.operational_knowledge_protected_retrieval_service = (
             resolved_operational_knowledge_protected_retrieval_service
         )
+        app.state.protected_model_context_service = resolved_protected_model_context_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -3742,6 +3799,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_protected_model_context_service.close()
         await resolved_operational_knowledge_protected_retrieval_service.close()
         await resolved_operational_knowledge_retrieval_index_publication_service.close()
         await resolved_operational_knowledge_index_staging_validation_service.close()
@@ -3900,6 +3958,7 @@ def create_app(
     app.include_router(index_staging_validation.router, prefix="/api/v1")
     app.include_router(retrieval_index_publication.router, prefix="/api/v1")
     app.include_router(protected_retrieval.router, prefix="/api/v1")
+    app.include_router(model_context_assembly.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
