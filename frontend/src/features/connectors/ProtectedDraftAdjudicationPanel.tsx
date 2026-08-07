@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { createProtectedDraftAdjudication } from "../../api/protectedDraftAdjudication";
 import type { ProtectedModelInvocationResult } from "../../api/protectedModelInvocation";
+import { ProtectedAnswerPresentationPanel } from "./ProtectedAnswerPresentationPanel";
 
 const POLICY_DIGESTS: Record<string, string> = { "environment.development": "49e2f63008b81c15ceecbd952ab33e1eee812f5a1c369a2ddaa78cdc508f0976" };
 
@@ -26,6 +27,6 @@ export function ProtectedDraftAdjudicationPanel({ invocationResult }: { invocati
       <label className="approval-check"><input type="checkbox" checked={authorityAcknowledged} onChange={(event) => setAuthorityAcknowledged(event.target.checked)} /><span>Eligibility grants no answer, workflow, tool, or operational authority.</span></label>
       <button className="primary-button" type="button" disabled={!canSubmit} onClick={() => mutation.mutate({ invocationResult, policyId, policyDigest })}>{mutation.isPending ? <RefreshCw className="spin" size={16} /> : <Scale size={16} />}Adjudicate draft</button></>}
     {mutation.isError && <div className="workspace-message error-state" role="alert"><AlertTriangle size={20} /><div><h3>Draft adjudication unavailable</h3><p>Invocation lineage, policy, protected artifacts, and current access must remain valid.</p></div></div>}
-    {result && <div className="correction-record"><strong>{result.manifest.outcome === "adjudication-outcome.eligible" ? "Draft eligible for later presentation review" : "Draft rejected by adjudication"}</strong><code>{result.adjudication.adjudication_id}</code><p className="muted-copy">{result.manifest.check_count} deterministic checks, {result.manifest.citation_count} citation references, and {result.manifest.unknown_count} explicit unknowns.</p><p className="muted-copy">Draft content remains protected. No final answer, model retry, tool, workflow, or infrastructure action ran.</p></div>}
+    {result && <><div className="correction-record"><strong>{result.manifest.outcome === "adjudication-outcome.eligible" ? "Draft eligible for later presentation review" : "Draft rejected by adjudication"}</strong><code>{result.adjudication.adjudication_id}</code><p className="muted-copy">{result.manifest.check_count} deterministic checks, {result.manifest.citation_count} citation references, and {result.manifest.unknown_count} explicit unknowns.</p><p className="muted-copy">Draft content remains protected. No final answer, model retry, tool, workflow, or infrastructure action ran.</p></div>{result.manifest.outcome === "adjudication-outcome.eligible" && <ProtectedAnswerPresentationPanel adjudicationResult={result} />}</>}
   </div>;
 }
