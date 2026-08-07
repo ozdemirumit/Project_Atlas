@@ -4,14 +4,53 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-102 |
-| Title | Governed protected knowledge retrieval foundation |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#114](https://github.com/ozdemirumit/Project_Atlas/pull/114) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-058 |
+| Task ID | ATLAS-IMP-103 |
+| Title | Governed protected model-context assembly foundation |
+| Status | In Progress |
+| Branch | `agent/governed-model-context-assembly` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-059 |
 | Last Updated | 2026-08-07 |
-| Next Action | Define ADR-059 and begin ATLAS-IMP-103 governed model-context assembly |
+| Next Action | Implement IMP-103 backend domain, service, adapters, API, persistence, tests, and UI evidence |
+
+### ATLAS-IMP-103 Scope Rationale
+
+- IMP-102 returns one authorized citation-ready evidence package through a protected retrieval
+  boundary but deliberately creates no model context and invokes no model.
+- ADR-059 permits the same eligible human consumer to bind that exact package to a deterministic,
+  policy-budgeted, injection-resistant protected context without exposing prompt content to the
+  browser or ordinary persistence.
+- Model invocation, answer generation, graph update, scheduling, workflow, execution, deployment,
+  and infrastructure mutation remain later stages.
+
+### ATLAS-IMP-103 Acceptance Criteria
+
+- Only one exact completed unexpired retrieval with unchanged publication and complete protected
+  knowledge lineage can enter assembly. Current consumer, MFA, browser, permission, purpose,
+  source, classification, policy, lifecycle, retention, artifact, citation, and digest checks apply.
+- The caller supplies only exact retrieval and signed context-policy bindings, bounded objective and
+  purpose, three acknowledgements, idempotency, and correlation. Prompt layers, evidence selection,
+  budgets, endpoint, model, tool, workflow, operation, deployment, and mutation controls are
+  forbidden.
+- A trusted deterministic assembler separates immutable safety/task layers from quoted untrusted
+  intent and individually delimited evidence, preserves citation bindings, applies policy-derived
+  budgets, and fails closed on malformed or uncertain content.
+- Full context content remains only in a protected tenant vault. Ordinary persistence, API, audit,
+  logs, and UI retain only opaque IDs, digests, bounded counts, budget utilization, status, policy,
+  lineage, and receipt metadata.
+- Exact replay returns the same manifest only after current authorization and integrity checks.
+  Conflict never rebuilds automatically; expiry or upstream revocation makes context unavailable.
+- Success sets only protected model-context assembly. No LLM, answer, graph, schedule, workflow,
+  tool, execution, deployment, or infrastructure mutation occurs.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  lineage/access/injection/budget/replay/vault/audit tests, minimized UI evidence, full suites,
+  live desktop/mobile validation, and GitHub CI apply.
+
+### ATLAS-IMP-103 Validation Evidence
+
+- ADR-059 is accepted. IMP-102 documentation closure commit `a2fcec025daf5a94542c536f9c4df2afbf1c38b6`
+  passed main run `31193070589` (backend 3m58s, frontend 3m54s).
+- Implementation and validation evidence are pending.
 
 ### ATLAS-IMP-102 Scope Rationale
 
