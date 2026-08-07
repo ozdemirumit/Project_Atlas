@@ -103,6 +103,8 @@ from atlas.modules.authorization.application.bootstrap import (
     INVESTIGATION_CREATE,
     KNOWLEDGE_CORRECTION_RESUBMISSION_CREATE,
     KNOWLEDGE_CORRECTION_RESUBMISSION_READ,
+    KNOWLEDGE_DETERMINISTIC_CHUNKING_CREATE,
+    KNOWLEDGE_DETERMINISTIC_CHUNKING_READ,
     KNOWLEDGE_DRAFT_REVIEW_REQUEST_CREATE,
     KNOWLEDGE_DRAFT_REVIEW_REQUEST_READ,
     KNOWLEDGE_EVIDENCE_DRAFT_CREATE,
@@ -216,6 +218,7 @@ from atlas.modules.authorization.application.bootstrap import (
     mcp_builder_scope,
     operational_evidence_knowledge_draft_scope,
     operational_knowledge_correction_scope,
+    operational_knowledge_deterministic_chunking_scope,
     operational_knowledge_final_resolution_scope,
     operational_knowledge_finding_presentation_scope,
     operational_knowledge_protected_content_scope,
@@ -4438,4 +4441,62 @@ async def authorize_operational_knowledge_source_materialization_read(
         request,
         subject,
         permission_id=KNOWLEDGE_SOURCE_MATERIALIZATION_READ,
+    )
+
+
+async def _authorize_operational_knowledge_deterministic_chunking(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    capability_class = (
+        CapabilityClass.C2_DIAGNOSTIC
+        if permission_id == KNOWLEDGE_DETERMINISTIC_CHUNKING_CREATE
+        else CapabilityClass.C1_READ_ONLY
+    )
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.knowledge.operational-deterministic-chunking",
+            scope=operational_knowledge_deterministic_chunking_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The deterministic knowledge chunking operation is not authorized.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_operational_knowledge_deterministic_chunking_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_operational_knowledge_deterministic_chunking(
+        request,
+        subject,
+        permission_id=KNOWLEDGE_DETERMINISTIC_CHUNKING_CREATE,
+    )
+
+
+async def authorize_operational_knowledge_deterministic_chunking_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_operational_knowledge_deterministic_chunking(
+        request,
+        subject,
+        permission_id=KNOWLEDGE_DETERMINISTIC_CHUNKING_READ,
     )

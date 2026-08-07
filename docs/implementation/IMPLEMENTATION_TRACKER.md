@@ -4,14 +4,79 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-097 |
-| Title | Governed protected knowledge source materialization foundation |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#109](https://github.com/ozdemirumit/Project_Atlas/pull/109) (merged) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-053 |
+| Task ID | ATLAS-IMP-098 |
+| Title | Governed deterministic protected knowledge chunking foundation |
+| Status | Validation Complete |
+| Branch | `agent/governed-knowledge-deterministic-chunking` |
+| Pull Request | [#110](https://github.com/ozdemirumit/Project_Atlas/pull/110) (ready for review) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-054 |
 | Last Updated | 2026-08-07 |
-| Next Action | Define ATLAS-IMP-098 governed deterministic protected knowledge chunking |
+| Next Action | Merge PR #110 after final branch CI and complete main/closure CI |
+
+### ATLAS-IMP-098 Scope Rationale
+
+- IMP-097 creates one immutable protected source material but deliberately creates no chunk,
+  embedding, index, retrieval visibility, or publication authority.
+- ADR-054 permits a separate eligible human chunking steward to claim the exact materialization
+  and invoke one trusted deterministic chunker that writes an encrypted immutable chunk set.
+- Embeddings, index staging/validation, publication, retrieval, workflow, execution, deployment,
+  and infrastructure mutation remain later stages.
+
+### ATLAS-IMP-098 Acceptance Criteria
+
+- Only one exact completed source materialization with unchanged preparation, approved resolution,
+  reviews, request, draft, knowledge item, source, governance, and profile lineage can enter
+  chunking. Drifted, corrected, rejected, superseded, already processed, published, or
+  caller-shaped lineage fails.
+- Only a separate eligible enterprise human chunking steward in the exact tenant, with recent
+  hardware MFA, dedicated C2 permissions, browser binding, CSRF, and a current signed policy may
+  create or read chunk-set metadata. Every earlier accountable actor and non-human identity fails.
+- The caller supplies only exact materialization and policy bindings, bounded purpose,
+  acknowledgements, idempotency, and correlation. Content, coordinates, keys, chunk parameters,
+  tokenization, embeddings, index, retrieval, workflow, and operation fields are forbidden.
+- Intent audit and an atomic unique materialization claim precede a trusted signed metadata-only
+  deterministic chunking receipt. Exact completed replay is allowed; concurrency, conflict, or
+  post-claim failure remains claimed. Production fails closed without the trusted chunker.
+- Success sets only chunk creation while preserving approval, readiness, preparation, and source
+  materialization. Embedding, indexing, publication, retrieval, model context, graph, scheduling,
+  workflow, execution, deployment, and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  lineage/separation/concurrency/idempotency/chunker/audit tests, minimized UI evidence, full
+  suites, live desktop/mobile validation, and GitHub CI apply.
+
+### ATLAS-IMP-098 Validation Evidence
+
+- ADR-054 is accepted. The service revalidates the exact source materialization, publication
+  preparation, approved final resolution, both passed review tracks, request, draft, source and
+  protected-material digests, governance binding, chunking profile, exact tenant, recent hardware
+  MFA, browser binding, dedicated permissions, and a current signed policy before claim creation.
+- The caller provides only exact materialization and policy digests, bounded purpose,
+  acknowledgements, idempotency, and correlation data. Content, excerpts, coordinates, chunk
+  parameters, tokenization, embeddings, index, retrieval, workflow, execution, deployment, and
+  mutation fields are forbidden.
+- The trusted chunker returns only a signed metadata receipt binding the exact materialization,
+  protected material, preparation-bound chunking profile, algorithm profile, ordered chunk
+  manifest, structure, governance, deterministic double-pass evidence, and bounded count/size
+  evidence. The ordinary application, database, audit, API, and UI receive no chunk content,
+  coordinate, ordinal map, token stream, key, vector, or model output.
+- Seven focused backend tests cover exact idempotent replay, materialization-steward separation,
+  permission denial before claim, concurrent exclusion, drifted receipt rejection with permanent
+  claim, metadata-only PostgreSQL contracts, and strict caller schemas. The source-materialization
+  regression set also passed; the full backend suite passed with 758 tests and three expected
+  Windows symlink skips.
+- Backend Ruff formatting/lint passed across 891 files and strict mypy passed across 819 source
+  files. Alembic reports one `20260807_0070` head, and a complete PostgreSQL offline migration from
+  an empty database through that head succeeds.
+- Frontend ESLint and TypeScript checks passed; 38 test files and 68 tests passed; the production
+  bundle built successfully. The existing large-bundle warning remains non-functional.
+- The restarted live backend returned liveness and readiness `200` and exposed both deterministic
+  chunk-set endpoints among 182 OpenAPI paths at `127.0.0.1:8052`.
+- The live Connectors view exposed `Deterministic chunking` as the latest available capability.
+  Desktop `1280x720` and mobile `390x844` inspections had zero horizontal overflow, and browser
+  developer logs contained no warnings or errors.
+- Draft PR #110 Continuous Integration run `31171739384` passed (backend 2m21s, frontend 3m51s).
+  Validation-record run `31172066024` passed (backend 2m45s, frontend 4m20s). Final branch CI,
+  merge, and main closure remain pending.
 
 ### ATLAS-IMP-097 Scope Rationale
 
@@ -76,7 +141,8 @@
   Desktop `1280x720` and mobile `390x844` inspections had zero horizontal overflow, and browser
   developer logs contained no warnings or errors. PR #109 merged as
   `c062aba08f6292c0382fc1038050c2fe9d136f64`; merged-main run `31168926818` passed (backend
-  3m37s, frontend 3m50s). The documentation-only closure run follows this record.
+  3m37s, frontend 3m50s). Documentation-only closure run `31169234964` passed (backend 3m23s,
+  frontend 3m55s).
 
 ### ATLAS-IMP-096 Scope Rationale
 

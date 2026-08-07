@@ -40,6 +40,7 @@ from atlas.api.routes import (
     correction_resubmissions,
     credential_assignments,
     deployment_configuration,
+    deterministic_chunking,
     draft_review_requests,
     evidence_drafts,
     final_resolutions,
@@ -561,6 +562,20 @@ from atlas.modules.knowledge.adapters.correction_resubmission_synthetic import (
     SyntheticOperationalKnowledgeCorrectionAdapter,
     UnavailableOperationalKnowledgeCorrectionAdapter,
 )
+from atlas.modules.knowledge.adapters.deterministic_chunking_memory import (
+    InMemoryOperationalKnowledgeChunkingPolicySource,
+    InMemoryOperationalKnowledgeChunkingRepository,
+)
+from atlas.modules.knowledge.adapters.deterministic_chunking_permission import (
+    AuthorizationOperationalKnowledgeChunkingPermissionAuthorizer,
+)
+from atlas.modules.knowledge.adapters.deterministic_chunking_postgres import (
+    PostgreSQLOperationalKnowledgeChunkingRepository,
+)
+from atlas.modules.knowledge.adapters.deterministic_chunking_synthetic import (
+    SyntheticOperationalKnowledgeChunker,
+    UnavailableOperationalKnowledgeChunker,
+)
 from atlas.modules.knowledge.adapters.draft_review_request_memory import (
     InMemoryOperationalKnowledgeReviewRequestPolicySource,
     InMemoryOperationalKnowledgeReviewRequestRepository,
@@ -720,6 +735,10 @@ from atlas.modules.knowledge.adapters.synthetic import build_synthetic_knowledge
 from atlas.modules.knowledge.application.correction_resubmission import (
     OperationalKnowledgeCorrectionService,
     build_development_operational_knowledge_correction_policy,
+)
+from atlas.modules.knowledge.application.deterministic_chunking import (
+    OperationalKnowledgeDeterministicChunkingService,
+    build_development_operational_knowledge_chunking_policy,
 )
 from atlas.modules.knowledge.application.draft_review_request import (
     OperationalKnowledgeReviewRequestService,
@@ -1060,6 +1079,9 @@ def create_app(
     ) = None,
     operational_knowledge_source_materialization_service: (
         OperationalKnowledgeSourceMaterializationService | None
+    ) = None,
+    operational_knowledge_deterministic_chunking_service: (
+        OperationalKnowledgeDeterministicChunkingService | None
     ) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
@@ -3101,6 +3123,54 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    if operational_knowledge_deterministic_chunking_service is not None:
+        resolved_operational_knowledge_deterministic_chunking_service = (
+            operational_knowledge_deterministic_chunking_service
+        )
+    else:
+        chunking_repository = (
+            PostgreSQLOperationalKnowledgeChunkingRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryOperationalKnowledgeChunkingRepository()
+        )
+        chunking_policies = (
+            ()
+            if is_production
+            else (
+                build_development_operational_knowledge_chunking_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_operational_knowledge_deterministic_chunking_service = (
+            OperationalKnowledgeDeterministicChunkingService(
+                repository=chunking_repository,
+                materialization_source=(
+                    resolved_operational_knowledge_source_materialization_service
+                ),
+                preparation_source=(resolved_operational_knowledge_publication_preparation_service),
+                lineage_source=resolved_operational_knowledge_final_resolution_service,
+                policy_source=InMemoryOperationalKnowledgeChunkingPolicySource(chunking_policies),
+                permission_authorizer=(
+                    AuthorizationOperationalKnowledgeChunkingPermissionAuthorizer(
+                        service=resolved_authorization_service,
+                        environment=resolved_settings.environment,
+                    )
+                ),
+                chunker=(
+                    UnavailableOperationalKnowledgeChunker()
+                    if is_production
+                    else SyntheticOperationalKnowledgeChunker()
+                ),
+                audit_sink=resolved_audit_sink,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -3344,6 +3414,9 @@ def create_app(
         app.state.operational_knowledge_source_materialization_service = (
             resolved_operational_knowledge_source_materialization_service
         )
+        app.state.operational_knowledge_deterministic_chunking_service = (
+            resolved_operational_knowledge_deterministic_chunking_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -3356,6 +3429,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_operational_knowledge_deterministic_chunking_service.close()
         await resolved_operational_knowledge_source_materialization_service.close()
         await resolved_operational_knowledge_publication_preparation_service.close()
         await resolved_operational_knowledge_final_resolution_service.close()
@@ -3504,6 +3578,7 @@ def create_app(
     app.include_router(final_resolutions.router, prefix="/api/v1")
     app.include_router(publication_preparations.router, prefix="/api/v1")
     app.include_router(source_materializations.router, prefix="/api/v1")
+    app.include_router(deterministic_chunking.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

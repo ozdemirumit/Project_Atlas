@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { OperationalKnowledgePublicationPreparation } from "../../api/publicationPreparations";
 import { createOperationalKnowledgeSourceMaterialization } from "../../api/sourceMaterializations";
+import { DeterministicChunkingPanel } from "./DeterministicChunkingPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -118,13 +119,16 @@ export function SourceMaterializationPanel({
         </div>
       )}
       {materialization && (
-        <div className="correction-record">
-          <strong>Protected source materialized</strong>
-          <code>{materialization.materialization_id}</code>
-          <p className="muted-copy">
-            Integrity and governance are bound. No content, coordinate, chunk, vector, or index was exposed.
-          </p>
-        </div>
+        <>
+          <div className="correction-record">
+            <strong>Protected source materialized</strong>
+            <code>{materialization.materialization_id}</code>
+            <p className="muted-copy">
+              Integrity and governance are bound. No content, coordinate, chunk, vector, or index was exposed.
+            </p>
+          </div>
+          <DeterministicChunkingPanel materialization={materialization} />
+        </>
       )}
     </div>
   );
