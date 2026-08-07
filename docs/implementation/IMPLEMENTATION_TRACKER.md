@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-104 |
 | Title | Governed protected model invocation foundation |
-| Status | In Progress |
-| Branch | `agent/governed-model-invocation` |
+| Status | Complete |
+| Branch | `main` |
 | Pull Request | [#116](https://github.com/ozdemirumit/Project_Atlas/pull/116) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-060 |
 | Last Updated | 2026-08-07 |
-| Next Action | Publish IMP-104, complete GitHub CI and merge evidence, then begin IMP-105 |
+| Next Action | Define ADR-061 and begin ATLAS-IMP-105 protected draft adjudication foundation |
 
 ### ATLAS-IMP-104 Scope Rationale
 
@@ -92,8 +92,13 @@
   create and read. The Connector lifecycle rendered `Model invocation` as the latest capability
   at 1280x720 and 390x844 with no horizontal overflow. Browser logs contained only Vite debug and
   React development information, with no warning or error.
-- Scope commit `495a791` and implementation commit `6c40fc9` contain the current slice. GitHub PR,
-  branch CI, merge, merged-main, and closure evidence are pending.
+- Scope commit `495a791` and implementation commit `6c40fc9` contain the current slice. Initial PR
+  run `31201156347` exposed one missing strict return annotation in the new test fixture; fix commit
+  `6dc2f3c` passed local CI-equivalent mypy across all 879 checked files and focused tests.
+- Final branch run `31201555844` passed (backend 3m42s, frontend 4m02s). PR #116 was squash-merged
+  as `124fb146872ca4e433379333194cfaf0835e7060`; merged-main run `31201899143` passed (backend
+  3m14s, frontend 3m58s). The documentation-only closure commit is the final IMP-104 evidence; its
+  main CI is recorded at the start of IMP-105.
 
 ### ATLAS-IMP-103 Scope Rationale
 
