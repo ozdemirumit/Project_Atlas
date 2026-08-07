@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { OperationalKnowledgeIndexStage } from "../../api/indexStagingValidation";
 import { createOperationalKnowledgeRetrievalPublication } from "../../api/retrievalIndexPublication";
+import { ProtectedKnowledgeRetrievalPanel } from "./ProtectedKnowledgeRetrievalPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -123,14 +124,17 @@ export function RetrievalIndexPublicationPanel({
         </div>
       )}
       {publication && (
-        <div className="correction-record">
-          <strong>Protected retrieval index published</strong>
-          <code>{publication.publication_id}</code>
-          <p className="muted-copy">
-            Atomic policy-filtered visibility is active. No content, vector, route identity, query
-            result, model context, workflow, or operation authority was exposed.
-          </p>
-        </div>
+        <>
+          <div className="correction-record">
+            <strong>Protected retrieval index published</strong>
+            <code>{publication.publication_id}</code>
+            <p className="muted-copy">
+              Atomic policy-filtered visibility is active. No vector, route identity, model
+              context, workflow, or operation authority was exposed.
+            </p>
+          </div>
+          <ProtectedKnowledgeRetrievalPanel publication={publication} />
+        </>
       )}
     </div>
   );
