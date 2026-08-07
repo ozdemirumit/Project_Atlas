@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-092 |
 | Title | Governed operational knowledge protected finding presentation foundation |
-| Status | Review |
-| Branch | `agent/governed-knowledge-finding-presentation` |
+| Status | Done |
+| Branch | `main` |
 | Pull Request | [#104](https://github.com/ozdemirumit/Project_Atlas/pull/104) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-048 |
 | Last Updated | 2026-08-07 |
-| Next Action | Pass PR #104 CI, merge, and synchronize `main` |
+| Next Action | Select and define the next approved vertical slice after protected finding presentation |
 
 ### ATLAS-IMP-092 Scope Rationale
 
@@ -69,6 +69,9 @@
   `127.0.0.1:5208` showed Finding presentation as the latest available capability. A 1280-by-720
   desktop inspection found no page-level horizontal overflow; responsive constraints keep long
   finding text and identifiers bounded for the existing mobile shell.
+- [PR #104](https://github.com/ozdemirumit/Project_Atlas/pull/104) CI run `31147062754` passed
+  (backend 2m48s, frontend 3m50s), merged to `main` as `7b731fd`, and merged-main run
+  `31147280660` passed (backend 2m51s, frontend 3m39s).
 
 ### ATLAS-IMP-091 Scope Rationale
 
