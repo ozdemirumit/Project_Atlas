@@ -4,14 +4,43 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-093 |
-| Title | Governed operational knowledge track-specific review decision foundation |
-| Status | Done |
-| Branch | `main` |
-| Pull Request | [#105](https://github.com/ozdemirumit/Project_Atlas/pull/105) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-049 |
+| Task ID | ATLAS-IMP-094 |
+| Title | Governed operational knowledge correction and resubmission foundation |
+| Status | In Progress |
+| Branch | `agent/governed-knowledge-correction-resubmission` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-050 |
 | Last Updated | 2026-08-07 |
-| Next Action | Define the governed correction and resubmission contract for ATLAS-IMP-094 |
+| Next Action | Implement and validate the accepted ADR-050 correction and resubmission contract |
+
+### ATLAS-IMP-094 Scope Rationale
+
+- IMP-093 records immutable track decisions but deliberately creates no correction.
+- ADR-050 permits only the original accountable curator to bind a trusted correction submission to
+  one fully decided review generation and create a new immutable draft plus review generation.
+- Final approval or rejection, publication, indexing, retrieval, scheduling, workflow, execution,
+  deployment, and mutation remain later independent stages.
+
+### ATLAS-IMP-094 Acceptance Criteria
+
+- Both exact track decisions must bind one immutable request, assignment set, and draft; at least
+  one must require changes. All-passed, single-track, mixed-generation, duplicate, or caller-shaped
+  lineage fails before claim creation.
+- Only the original curator in the exact tenant, with recent hardware MFA, dedicated C2 correction
+  and lineage-read permissions, browser binding, CSRF, and a current signed policy may create or
+  read the correction. Reviewer, signer, attestor, cross-tenant, or caller-selected identity fails.
+- Corrected content remains in a trusted editor/adapter. The application accepts only an opaque
+  correction-submission ID and digest, persists metadata and integrity digests only, and production
+  fails closed without an approved adapter.
+- Intent audit and an atomic unique source-request claim precede adapter access. Exact completed
+  idempotent reuse is allowed; concurrency, conflict, or failure after claim remains claimed and
+  cannot replace the first correction.
+- The result creates a new immutable draft version and new unassigned review request generation,
+  resets both review tracks, preserves all old records, and grants no approval, publication,
+  retrieval, workflow, execution, deployment, or infrastructure mutation authority.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  lineage/identity/concurrency/idempotency/adapter/audit tests, minimized UI evidence, full suites,
+  live desktop/mobile validation, and GitHub CI apply.
 
 ### ATLAS-IMP-093 Scope Rationale
 
