@@ -104,6 +104,7 @@ const lifecycleStages: readonly LifecycleStage[] = [
       { name: "Reviewer assignment" },
       { name: "Inspection lease" },
       { name: "Content presentation" },
+      { name: "Review findings" },
       { name: "Review decisions", state: "pending" },
       { name: "Indexing", state: "pending" },
       { name: "Retrieval", state: "pending" },
@@ -133,7 +134,7 @@ export function ConnectorLifecycleOverview() {
           <span>In progress</span>
         </div>
         <div>
-          <strong>Content presentation</strong>
+          <strong>Review findings</strong>
           <span>Latest available capability</span>
         </div>
       </div>

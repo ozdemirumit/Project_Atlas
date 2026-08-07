@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-047 |
 | Last Updated | 2026-08-07 |
-| Next Action | Implement ADR-047 track-specific review finding contract |
+| Next Action | Commit the validated implementation, open its pull request, and verify GitHub CI |
 
 ### ATLAS-IMP-091 Scope Rationale
 
@@ -47,7 +47,27 @@
 
 ### ATLAS-IMP-091 Validation Evidence
 
-- ADR-047 is accepted. Implementation and validation are in progress.
+- ADR-047 is accepted. The implementation revalidates exact immutable presentation lineage,
+  active lease, exact salted assignee, browser session and track cookie, signed policy, recent
+  hardware MFA, dedicated C2 permissions, tenant scope, and absence of later authority before
+  atomically claiming one finding packet per presentation.
+- Nine focused finding tests plus the protected-inspection API integration cover track-specific
+  category policy, exact idempotent replay, wrong-cookie/assignee/expiry and permission rejection
+  before claim, concurrent claim exclusion, altered receipt rejection, non-retry after recorder
+  failure, fail-closed audit, metadata-only PostgreSQL mapping, CSRF, no-store cookie continuity,
+  and minimized responses.
+- Backend Ruff and CI-equivalent strict mypy passed across 749 files; the full suite passed with
+  703 tests and three expected Windows symlink skips. Alembic reports one `20260807_0063` head for
+  metadata-only finding claims and records.
+- Frontend ESLint and TypeScript checks passed; 31 test files and 61 tests passed; the production
+  bundle built successfully. The track-aware form supports one to twenty structured findings and
+  returns only sealed metadata with no finding text, artifact location, review decision, approval,
+  publication, workflow, or operational authority.
+- The restarted live backend returned platform status `200` and exposed the finding endpoint in
+  OpenAPI at `127.0.0.1:8052`. The Connectors lifecycle at `127.0.0.1:5208` showed Review findings
+  as the latest available capability. Desktop and 390-by-844 mobile inspection found no page-level
+  horizontal overflow or incoherent overlap.
+- GitHub pull-request and merged-main CI evidence is pending.
 
 ### ATLAS-IMP-090 Scope Rationale
 
