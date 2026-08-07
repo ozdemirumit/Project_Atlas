@@ -111,6 +111,7 @@ const lifecycleStages: readonly LifecycleStage[] = [
       { name: "Final resolution" },
       { name: "Publication preparation" },
       { name: "Source materialization" },
+      { name: "Deterministic chunking" },
       { name: "Indexing", state: "pending" },
       { name: "Retrieval", state: "pending" },
     ],
@@ -139,7 +140,7 @@ export function ConnectorLifecycleOverview() {
           <span>In progress</span>
         </div>
         <div>
-          <strong>Source materialization</strong>
+          <strong>Deterministic chunking</strong>
           <span>Latest available capability</span>
         </div>
       </div>

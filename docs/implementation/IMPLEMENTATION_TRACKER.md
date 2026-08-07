@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-098 |
 | Title | Governed deterministic protected knowledge chunking foundation |
-| Status | In Progress |
+| Status | Validation Complete |
 | Branch | `agent/governed-knowledge-deterministic-chunking` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-054 |
 | Last Updated | 2026-08-07 |
-| Next Action | Implement ADR-054 backend, frontend, persistence, security, and validation contracts |
+| Next Action | Push the implementation, open a draft PR, and complete branch CI |
 
 ### ATLAS-IMP-098 Scope Rationale
 
@@ -46,7 +46,34 @@
 
 ### ATLAS-IMP-098 Validation Evidence
 
-- Pending implementation.
+- ADR-054 is accepted. The service revalidates the exact source materialization, publication
+  preparation, approved final resolution, both passed review tracks, request, draft, source and
+  protected-material digests, governance binding, chunking profile, exact tenant, recent hardware
+  MFA, browser binding, dedicated permissions, and a current signed policy before claim creation.
+- The caller provides only exact materialization and policy digests, bounded purpose,
+  acknowledgements, idempotency, and correlation data. Content, excerpts, coordinates, chunk
+  parameters, tokenization, embeddings, index, retrieval, workflow, execution, deployment, and
+  mutation fields are forbidden.
+- The trusted chunker returns only a signed metadata receipt binding the exact materialization,
+  protected material, preparation-bound chunking profile, algorithm profile, ordered chunk
+  manifest, structure, governance, deterministic double-pass evidence, and bounded count/size
+  evidence. The ordinary application, database, audit, API, and UI receive no chunk content,
+  coordinate, ordinal map, token stream, key, vector, or model output.
+- Seven focused backend tests cover exact idempotent replay, materialization-steward separation,
+  permission denial before claim, concurrent exclusion, drifted receipt rejection with permanent
+  claim, metadata-only PostgreSQL contracts, and strict caller schemas. The source-materialization
+  regression set also passed; the full backend suite passed with 758 tests and three expected
+  Windows symlink skips.
+- Backend Ruff formatting/lint passed across 891 files and strict mypy passed across 819 source
+  files. Alembic reports one `20260807_0070` head, and a complete PostgreSQL offline migration from
+  an empty database through that head succeeds.
+- Frontend ESLint and TypeScript checks passed; 38 test files and 68 tests passed; the production
+  bundle built successfully. The existing large-bundle warning remains non-functional.
+- The restarted live backend returned liveness and readiness `200` and exposed both deterministic
+  chunk-set endpoints among 182 OpenAPI paths at `127.0.0.1:8052`.
+- The live Connectors view exposed `Deterministic chunking` as the latest available capability.
+  Desktop `1280x720` and mobile `390x844` inspections had zero horizontal overflow, and browser
+  developer logs contained no warnings or errors. GitHub PR and CI evidence remain pending.
 
 ### ATLAS-IMP-097 Scope Rationale
 
@@ -111,7 +138,8 @@
   Desktop `1280x720` and mobile `390x844` inspections had zero horizontal overflow, and browser
   developer logs contained no warnings or errors. PR #109 merged as
   `c062aba08f6292c0382fc1038050c2fe9d136f64`; merged-main run `31168926818` passed (backend
-  3m37s, frontend 3m50s). The documentation-only closure run follows this record.
+  3m37s, frontend 3m50s). Documentation-only closure run `31169234964` passed (backend 3m23s,
+  frontend 3m55s).
 
 ### ATLAS-IMP-096 Scope Rationale
 

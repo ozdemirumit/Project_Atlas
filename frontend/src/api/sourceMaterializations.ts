@@ -21,6 +21,7 @@ export type OperationalKnowledgeSourceMaterialization = {
   materialization_receipt_digest: string;
   source_artifact_digest: string;
   protected_material_digest: string;
+  chunking_profile_digest: string;
   media_type: string;
   source_bytes: number;
   canonical_bytes: number;
@@ -74,6 +75,7 @@ function isSafeMaterialization(
     record.version === 1 &&
     typeof record.materialization_id === "string" &&
     /^[a-f0-9]{64}$/.test(String(record.protected_material_digest)) &&
+    /^[a-f0-9]{64}$/.test(String(record.chunking_profile_digest)) &&
     /^[a-f0-9]{64}$/.test(String(record.materialization_receipt_digest)) &&
     record.instance_state === "operational_knowledge_source_materialized" &&
     record.knowledge_approved === true &&

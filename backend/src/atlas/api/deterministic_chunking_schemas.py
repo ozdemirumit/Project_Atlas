@@ -5,36 +5,37 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from atlas.api.schemas import ResponseMeta
-from atlas.modules.knowledge.domain.source_materialization import (
-    OperationalKnowledgeSourceMaterializationRecord,
+from atlas.modules.knowledge.domain.deterministic_chunking import (
+    OperationalKnowledgeChunkingRecord,
 )
 
 STABLE_ID = r"^[a-z][a-z0-9_.:-]{2,127}$"
 DIGEST = r"^[a-f0-9]{64}$"
 
 
-class OperationalKnowledgeSourceMaterializationInput(BaseModel):
+class OperationalKnowledgeChunkingInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: str = Field(
-        default="atlas.operational-knowledge-source-materialization-input.v1",
-        pattern=STABLE_ID,
+        default="atlas.operational-knowledge-chunking-input.v1", pattern=STABLE_ID
     )
-    publication_preparation_digest: str = Field(pattern=DIGEST)
-    materialization_policy_id: str = Field(pattern=STABLE_ID)
-    materialization_policy_digest: str = Field(pattern=DIGEST)
+    source_materialization_digest: str = Field(pattern=DIGEST)
+    chunking_policy_id: str = Field(pattern=STABLE_ID)
+    chunking_policy_digest: str = Field(pattern=DIGEST)
     purpose: str = Field(min_length=20, max_length=1000)
-    acknowledged_immutable_approved_source: bool
     acknowledged_protected_content_boundary: bool
-    acknowledged_no_chunking_or_operational_authority: bool
+    acknowledged_immutable_chunking_profile: bool
+    acknowledged_no_embedding_or_operational_authority: bool
 
 
-class OperationalKnowledgeSourceMaterializationData(BaseModel):
+class OperationalKnowledgeChunkingData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    materialization_id: str
+    chunk_set_id: str
     schema_version: str
     version: int
+    materialization_id: str
+    materialization_digest: str
     preparation_id: str
     preparation_digest: str
     resolution_id: str
@@ -48,25 +49,28 @@ class OperationalKnowledgeSourceMaterializationData(BaseModel):
     classification: str
     access_policy_id: str
     retention_policy_id: str
-    materialization_policy_id: str
-    materialization_policy_digest: str
-    materialization_policy_version: str
-    canonicalization_profile_id: str
-    canonicalization_profile_digest: str
-    source_security_profile_id: str
-    source_security_profile_digest: str
-    materializer_id: str
-    materialization_receipt_digest: str
+    chunking_policy_id: str
+    chunking_policy_digest: str
+    chunking_policy_version: str
+    algorithm_profile_id: str
+    algorithm_profile_digest: str
+    chunker_id: str
+    chunking_receipt_digest: str
     source_artifact_digest: str
     protected_material_digest: str
     chunking_profile_digest: str
-    media_type: str
-    source_bytes: int
-    canonical_bytes: int
-    canonical_characters: int
-    security_scan_evidence_digest: str
+    ordered_chunk_manifest_digest: str
+    structure_manifest_digest: str
     governance_binding_digest: str
-    materialized_at: datetime
+    determinism_evidence_digest: str
+    media_type: str
+    chunk_count: int
+    total_chunk_characters: int
+    total_chunk_tokens: int
+    minimum_chunk_characters: int
+    maximum_chunk_characters: int
+    overlap_characters: int
+    chunked_at: datetime
     instance_state: str
     purpose: str
     canonical_digest: str
@@ -91,13 +95,13 @@ class OperationalKnowledgeSourceMaterializationData(BaseModel):
 
     @classmethod
     def from_domain(
-        cls, record: OperationalKnowledgeSourceMaterializationRecord
-    ) -> OperationalKnowledgeSourceMaterializationData:
+        cls, record: OperationalKnowledgeChunkingRecord
+    ) -> OperationalKnowledgeChunkingData:
         return cls.model_validate(record, from_attributes=True)
 
 
-class OperationalKnowledgeSourceMaterializationResponse(BaseModel):
+class OperationalKnowledgeChunkingResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    data: OperationalKnowledgeSourceMaterializationData
+    data: OperationalKnowledgeChunkingData
     meta: ResponseMeta

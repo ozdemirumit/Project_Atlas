@@ -377,6 +377,7 @@ class OperationalKnowledgeSourceMaterializationService:
             materialization_receipt_digest=receipt.canonical_digest,
             source_artifact_digest=receipt.source_artifact_digest,
             protected_material_digest=receipt.protected_material_digest,
+            chunking_profile_digest=preparation.chunking_profile_digest,
             media_type=receipt.media_type,
             source_bytes=receipt.source_bytes,
             canonical_bytes=receipt.canonical_bytes,
@@ -444,6 +445,11 @@ class OperationalKnowledgeSourceMaterializationService:
             permission_id=KNOWLEDGE_SOURCE_MATERIALIZATION_READ,
         )
         return replace(record, reused=True)
+
+    async def source_for_chunking(
+        self, *, materialization_id: str
+    ) -> OperationalKnowledgeSourceMaterializationRecord | None:
+        return await self._repository.get(materialization_id=materialization_id)
 
     async def close(self) -> None:
         await self._repository.close()
