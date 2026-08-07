@@ -168,6 +168,8 @@ KNOWLEDGE_REVIEWER_ASSIGNMENT_CREATE = "knowledge.reviewer-assignments.create"
 KNOWLEDGE_REVIEWER_ASSIGNMENT_READ = "knowledge.reviewer-assignments.read"
 KNOWLEDGE_PROTECTED_INSPECTION_LEASE_CREATE = "knowledge.protected-inspections.leases.create"
 KNOWLEDGE_PROTECTED_INSPECTION_LEASE_READ = "knowledge.protected-inspections.leases.read"
+KNOWLEDGE_PROTECTED_CONTENT_PRESENTATION_CREATE = "knowledge.protected-content-presentations.create"
+KNOWLEDGE_PROTECTED_CONTENT_PRESENTATION_READ = "knowledge.protected-content-presentations.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -951,6 +953,19 @@ def operational_knowledge_protected_inspection_scope(
     )
 
 
+def operational_knowledge_protected_content_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.knowledge",
+        resource_id="resource.knowledge.operational-protected-content",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -1648,6 +1663,14 @@ def build_development_authorization_service(
             permission_id=KNOWLEDGE_PROTECTED_INSPECTION_LEASE_READ,
             description="Read minimized protected inspection lease metadata.",
         ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_PROTECTED_CONTENT_PRESENTATION_CREATE,
+            description="Present one bounded exact-assignee operational knowledge snapshot.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_PROTECTED_CONTENT_PRESENTATION_READ,
+            description="Replay one exact protected snapshot during its active lease.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -1785,6 +1808,8 @@ def build_development_authorization_service(
                 KNOWLEDGE_REVIEWER_ASSIGNMENT_READ,
                 KNOWLEDGE_PROTECTED_INSPECTION_LEASE_CREATE,
                 KNOWLEDGE_PROTECTED_INSPECTION_LEASE_READ,
+                KNOWLEDGE_PROTECTED_CONTENT_PRESENTATION_CREATE,
+                KNOWLEDGE_PROTECTED_CONTENT_PRESENTATION_READ,
             }
         ),
     )
@@ -3024,6 +3049,18 @@ def build_development_authorization_service(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-protected-content-presentation",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=operational_knowledge_protected_content_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),

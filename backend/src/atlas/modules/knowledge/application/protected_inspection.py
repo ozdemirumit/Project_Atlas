@@ -30,6 +30,10 @@ from atlas.modules.knowledge.application.protected_inspection_ports import (
     OperationalKnowledgeProtectedInspectionSource,
     OperationalKnowledgeProtectedInspectionUncertainError,
 )
+from atlas.modules.knowledge.domain.draft_review_request import (
+    OperationalKnowledgeReviewRequestRecord,
+)
+from atlas.modules.knowledge.domain.evidence_draft import OperationalEvidenceKnowledgeDraftRecord
 from atlas.modules.knowledge.domain.protected_inspection import (
     OPERATIONAL_KNOWLEDGE_PROTECTED_INSPECTION_LEASED,
     TRACKS,
@@ -323,6 +327,41 @@ class OperationalKnowledgeProtectedInspectionService:
 
     async def close(self) -> None:
         await self._repository.close()
+
+    async def protected_content_source(
+        self, *, lease_id: str
+    ) -> tuple[
+        OperationalKnowledgeProtectedInspectionRecord,
+        OperationalKnowledgeProtectedInspectionPolicySnapshot,
+        OperationalKnowledgeReviewerAssignmentRecord,
+        OperationalKnowledgeReviewRequestRecord,
+        OperationalEvidenceKnowledgeDraftRecord,
+    ]:
+        record = await self._repository.get(lease_id=lease_id)
+        if record is None:
+            raise OperationalKnowledgeProtectedInspectionError(
+                "operational_knowledge_protected_inspection_record_not_found"
+            )
+        self._verify_record(record)
+        policy = await self._policy_source.get_by_id(policy_id=record.inspection_policy_id)
+        if policy is None or policy.canonical_digest != record.inspection_policy_digest:
+            raise OperationalKnowledgeProtectedInspectionError(
+                "operational_knowledge_protected_inspection_policy_not_found"
+            )
+        self._verify_snapshot(policy)
+        assignment, review_request, draft = await self._source.protected_content_lineage(
+            assignment_set_id=record.source_assignment_set_id
+        )
+        if (
+            assignment.canonical_digest != record.source_assignment_set_digest
+            or assignment.source_review_request_id != record.review_request_id
+            or review_request.source_draft_id != record.source_draft_id
+            or review_request.source_draft_digest != record.source_draft_digest
+        ):
+            raise OperationalKnowledgeProtectedInspectionError(
+                "operational_knowledge_protected_inspection_lineage_invalid"
+            )
+        return record, policy, assignment, review_request, draft
 
     async def _reuse(
         self,

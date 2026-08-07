@@ -271,6 +271,31 @@ class OperationalKnowledgeReviewRequestService:
         draft = await self._source.review_request_source(draft_id=record.source_draft_id)
         return record, frozenset((record.requested_by, draft.curated_by))
 
+    async def protected_content_lineage(
+        self, *, review_request_id: str
+    ) -> tuple[
+        OperationalKnowledgeReviewRequestRecord,
+        OperationalEvidenceKnowledgeDraftRecord,
+    ]:
+        record = await self._repository.get(review_request_id=review_request_id)
+        if record is None:
+            raise OperationalKnowledgeReviewRequestError(
+                "operational_knowledge_review_request_record_not_found"
+            )
+        self._verify_record(record)
+        draft = await self._source.review_request_source(draft_id=record.source_draft_id)
+        if (
+            draft.draft_id != record.source_draft_id
+            or draft.canonical_digest != record.source_draft_digest
+            or draft.draft_content_digest != record.draft_content_digest
+            or draft.knowledge_item_id != record.knowledge_item_id
+            or draft.draft_version_id != record.draft_version_id
+        ):
+            raise OperationalKnowledgeReviewRequestError(
+                "operational_knowledge_review_request_lineage_invalid"
+            )
+        return record, draft
+
     async def _reuse(
         self,
         claim: OperationalKnowledgeReviewRequestClaim,

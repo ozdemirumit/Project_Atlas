@@ -34,6 +34,7 @@ from atlas.modules.knowledge.domain.draft_review_request import (
     OPERATIONAL_KNOWLEDGE_REVIEW_REQUESTED,
     OperationalKnowledgeReviewRequestRecord,
 )
+from atlas.modules.knowledge.domain.evidence_draft import OperationalEvidenceKnowledgeDraftRecord
 from atlas.modules.knowledge.domain.reviewer_assignment import (
     ASSIGNED,
     OPERATIONAL_KNOWLEDGE_REVIEWERS_ASSIGNED,
@@ -296,6 +297,30 @@ class OperationalKnowledgeReviewerAssignmentService:
             )
         self._verify_snapshot(policy)
         return record, policy
+
+    async def protected_content_lineage(
+        self, *, assignment_set_id: str
+    ) -> tuple[
+        OperationalKnowledgeReviewerAssignmentRecord,
+        OperationalKnowledgeReviewRequestRecord,
+        OperationalEvidenceKnowledgeDraftRecord,
+    ]:
+        record, _policy = await self.protected_inspection_source(
+            assignment_set_id=assignment_set_id
+        )
+        review_request, draft = await self._source.protected_content_lineage(
+            review_request_id=record.source_review_request_id
+        )
+        if (
+            review_request.review_request_id != record.source_review_request_id
+            or review_request.canonical_digest != record.source_review_request_digest
+            or review_request.source_draft_id != record.source_draft_id
+            or review_request.source_draft_digest != record.source_draft_digest
+        ):
+            raise OperationalKnowledgeReviewerAssignmentError(
+                "operational_knowledge_reviewer_assignment_lineage_invalid"
+            )
+        return record, review_request, draft
 
     async def close(self) -> None:
         await self._repository.close()
