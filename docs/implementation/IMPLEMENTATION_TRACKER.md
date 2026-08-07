@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-049 |
 | Last Updated | 2026-08-07 |
-| Next Action | Implement and validate the ADR-049 track-specific review decision slice |
+| Next Action | Publish the validated IMP-093 slice and complete PR, CI, merge, and main synchronization |
 
 ### ATLAS-IMP-093 Scope Rationale
 
@@ -43,7 +43,33 @@
 
 ### ATLAS-IMP-093 Validation Evidence
 
-- Pending implementation and validation.
+- ADR-049 is accepted. The implementation revalidates exact immutable finding-presentation,
+  finding, content-presentation, active lease, assignment, review-request, draft, reviewer,
+  tenant, track, browser, cookie, policy, and recent hardware-MFA lineage before atomically
+  claiming one decision per presented finding packet.
+- Eight focused review-decision tests plus the full protected-inspection API chain cover exact
+  idempotent replay, both-track readiness, changes-required state, wrong permission, cookie,
+  assignee and expiry rejection before claim, concurrent exclusion, attestor drift and failure,
+  audit failure after claim, CSRF, strict caller schemas, no-store/CSP headers, minimized API
+  responses, and metadata-only memory/PostgreSQL parity.
+- Only policy-approved structured disposition and basis codes enter the signed attestor boundary.
+  Persistence, audit, API metadata, logs, model context, vector stores, and indexes receive no
+  finding narrative. Production uses an unavailable attestor and fails closed.
+- Both matching track passes establish review readiness only. Correction creation, approval,
+  publication, chunks, embeddings, retrieval, model context, graph updates, scheduling, workflow,
+  execution, deployment, and infrastructure mutation remain false and no such UI control exists.
+- Backend Ruff passed; strict mypy passed across 769 source files; the full suite passed with 717
+  tests and three expected Windows symlink skips. Alembic reports one `20260807_0065` head, and a
+  complete PostgreSQL offline migration from an empty database through that head succeeds after
+  making historical generated constraint and index names PostgreSQL-safe.
+- Frontend ESLint and TypeScript checks passed; 33 test files and 63 tests passed; the production
+  bundle built successfully. The track-specific decision form uses a two-state disposition
+  control, policy-bounded basis selections, explicit acknowledgements, and no free-text finding,
+  approval, publication, execution, deployment, or mutation control.
+- The restarted live backend returned liveness and readiness `200`, exposed both create and replay
+  decision endpoints at `127.0.0.1:8052`, and the frontend returned `200` at
+  `127.0.0.1:5208`. Authenticated Connector visual validation remains the final local interactive
+  check because the preserved browser tab is currently at the explicit sign-in boundary.
 
 ### ATLAS-IMP-092 Scope Rationale
 
