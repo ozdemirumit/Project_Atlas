@@ -7,11 +7,11 @@
 | Task ID | ATLAS-IMP-093 |
 | Title | Governed operational knowledge track-specific review decision foundation |
 | Status | In Progress |
-| Branch | `agent/governed-knowledge-review-decisions` |
+| Branch | `main` |
 | Pull Request | [#105](https://github.com/ozdemirumit/Project_Atlas/pull/105) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-049 |
 | Last Updated | 2026-08-07 |
-| Next Action | Complete PR #105 CI, merge, and main synchronization |
+| Next Action | Complete the authenticated desktop/mobile Connector visual check, then close IMP-093 |
 
 ### ATLAS-IMP-093 Scope Rationale
 
@@ -70,6 +70,9 @@
   decision endpoints at `127.0.0.1:8052`, and the frontend returned `200` at
   `127.0.0.1:5208`. Authenticated Connector visual validation remains the final local interactive
   check because the preserved browser tab is currently at the explicit sign-in boundary.
+- [PR #105](https://github.com/ozdemirumit/Project_Atlas/pull/105) CI run `31151013822` passed
+  (backend 2m54s, frontend 3m47s), merged to `main` as `11a9d82`, and merged-main run
+  `31151240593` passed (backend 3m10s, frontend 3m42s).
 
 ### ATLAS-IMP-092 Scope Rationale
 
