@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-057 |
 | Last Updated | 2026-08-07 |
-| Next Action | Implement ADR-057 with atomic publication, persistence, API, RBAC, UI, and tests |
+| Next Action | Publish IMP-101, complete GitHub CI and merge evidence, then begin IMP-102 |
 
 ### ATLAS-IMP-101 Scope Rationale
 
@@ -49,7 +49,37 @@
 
 ### ATLAS-IMP-101 Validation Evidence
 
-- Pending implementation.
+- ADR-057 is implemented. The service revalidates the exact sealed inactive staging record,
+  complete protected lineage, projection and reconciliation bindings, policy digest, tenant,
+  recent hardware MFA, current signed policy, browser and CSRF bindings, and every earlier
+  accountable subject before publication claim creation.
+- A separate eligible retrieval-publication steward can submit only bounded purpose, three
+  acknowledgements, idempotency, correlation, and exact staging-record and policy digests. Strict
+  request schemas reject content, coordinates, vectors, collections, aliases, point identities,
+  payloads, filters, routing, query, model-context, workflow, operation, deployment, and
+  infrastructure-mutation controls.
+- Intent audit precedes the atomic unique staging-record claim. The trusted publisher returns a
+  signed metadata-only receipt for one atomically activated policy-filtered route; exact completed
+  replay is idempotent, conflicts and post-claim uncertainty remain claimed, and production fails
+  closed when the trusted publisher is unavailable.
+- Memory and PostgreSQL adapters, default-deny C2 create and C1 read permissions, API routes,
+  bootstrap wiring, and Alembic revision `20260807_0073` are implemented. Offline empty-to-head
+  migration SQL generation completed with one Alembic head.
+- Focused retrieval-publication and index-staging regression tests passed (`17 passed`), and API
+  application/health regression tests passed (`5 passed`). The final backend gate formatted and
+  linted 923 files, found no strict mypy issues in 923 source files, and passed `784` tests with
+  three expected Windows symlink skips and three dependency deprecation warnings.
+- The frontend focused lifecycle, index-staging, and retrieval-publication tests passed (`3` files,
+  `3` tests). The full frontend gate passed ESLint, TypeScript, `41` test files with `71` tests,
+  and the production build; only the existing bundle-size and Babel deoptimization notices remain.
+- Live development authentication succeeded with the bounded local demo identity. The running
+  backend returned healthy live and ready status and an OpenAPI document with 188 paths, including
+  the create and read retrieval-publication routes. The Connector lifecycle rendered
+  `Retrieval publication` as the latest available capability at 1280x720 and 390x844, with no
+  horizontal overflow and no browser console warning or error.
+- Successful publication sets only knowledge and retrieval publication. Model context, graph,
+  scheduling, workflow, execution, deployment, and infrastructure mutation remain false and
+  unauthorized. GitHub PR, CI, merge, merged-main, and closure evidence are pending publication.
 
 ### ATLAS-IMP-100 Scope Rationale
 
