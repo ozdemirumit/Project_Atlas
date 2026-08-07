@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-097 |
 | Title | Governed protected knowledge source materialization foundation |
-| Status | In Progress |
+| Status | Implementation Complete |
 | Branch | `agent/governed-knowledge-source-materialization` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-053 |
 | Last Updated | 2026-08-07 |
-| Next Action | Implement ADR-053 backend, persistence, RBAC, API, minimized web evidence, and tests |
+| Next Action | Complete live desktop/mobile validation, then PR/CI/merge closure |
 
 ### ATLAS-IMP-097 Scope Rationale
 
@@ -46,7 +46,30 @@
 
 ### ATLAS-IMP-097 Validation Evidence
 
-- ADR-053 is accepted. Implementation and validation are in progress.
+- ADR-053 is accepted. The implementation revalidates the exact completed preparation, approved
+  final resolution, both passed review tracks, immutable request and draft lineage, source and
+  governance digests, exact tenant, recent hardware MFA, browser binding, dedicated permissions,
+  and a current signed policy before creating an atomic unique preparation claim.
+- The caller provides only exact preparation and policy digests, bounded purpose,
+  acknowledgements, idempotency, and correlation. Content, excerpt, title, source/destination
+  coordinates, keys, scan details, identity, processing profiles, index, retrieval, workflow,
+  execution, deployment, and mutation fields are forbidden.
+- The trusted materializer returns only a signed metadata receipt binding the exact source and
+  protected-material digests, canonicalization and security profiles, media type, bounded counts,
+  scan evidence, and governance manifests. The ordinary application, database, audit, API, and UI
+  receive no protected content or artifact coordinate.
+- Seven focused backend tests cover exact idempotent replay, publication-steward separation,
+  permission denial before claim, concurrent exclusion, drifted receipt rejection with permanent
+  claim, metadata-only PostgreSQL contracts, and strict caller schemas. The full backend suite
+  passed with 751 tests and three expected Windows symlink skips.
+- Backend Ruff formatting/lint passed across 879 files and strict mypy passed across 809 source
+  files. Alembic reports one `20260807_0069` head, and a complete PostgreSQL offline migration from
+  an empty database through that head succeeds.
+- Frontend ESLint and TypeScript checks passed; 37 test files and 67 tests passed; the production
+  bundle built successfully. The existing large-bundle warning remains non-functional.
+- The restarted live backend returned liveness and readiness `200` and exposed both source
+  materialization endpoints among 180 OpenAPI paths at `127.0.0.1:8052`. Live desktop/mobile visual
+  validation and GitHub PR/CI/merge evidence remain pending.
 
 ### ATLAS-IMP-096 Scope Rationale
 

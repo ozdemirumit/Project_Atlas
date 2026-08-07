@@ -416,6 +416,11 @@ class OperationalKnowledgePublicationPreparationService:
     async def close(self) -> None:
         await self._repository.close()
 
+    async def source_materialization_preparation(
+        self, *, preparation_id: str
+    ) -> OperationalKnowledgePublicationPreparationRecord | None:
+        return await self._repository.get(preparation_id=preparation_id)
+
     async def _reuse(
         self,
         claim: OperationalKnowledgePublicationPreparationClaim,

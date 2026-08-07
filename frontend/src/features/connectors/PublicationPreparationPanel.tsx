@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { OperationalKnowledgeFinalResolution } from "../../api/finalResolutions";
 import { createOperationalKnowledgePublicationPreparation } from "../../api/publicationPreparations";
+import { SourceMaterializationPanel } from "./SourceMaterializationPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -127,13 +128,16 @@ export function PublicationPreparationPanel({
         </div>
       )}
       {preparation && (
-        <div className="correction-record">
-          <strong>Publication metadata prepared</strong>
-          <code>{preparation.preparation_id}</code>
-          <p className="muted-copy">
-            Signed profiles are bound. No content was chunked, embedded, indexed, or published.
-          </p>
-        </div>
+        <>
+          <div className="correction-record">
+            <strong>Publication metadata prepared</strong>
+            <code>{preparation.preparation_id}</code>
+            <p className="muted-copy">
+              Signed profiles are bound. No content was chunked, embedded, indexed, or published.
+            </p>
+          </div>
+          <SourceMaterializationPanel preparation={preparation} />
+        </>
       )}
     </div>
   );
