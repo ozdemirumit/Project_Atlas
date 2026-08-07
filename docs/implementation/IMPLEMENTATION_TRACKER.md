@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-091 |
 | Title | Governed operational knowledge track-specific review finding foundation |
-| Status | Review |
-| Branch | `agent/governed-knowledge-review-findings` |
+| Status | Done |
+| Branch | `main` |
 | Pull Request | [#103](https://github.com/ozdemirumit/Project_Atlas/pull/103) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-047 |
 | Last Updated | 2026-08-07 |
-| Next Action | Verify PR #103 CI, merge, and validate merged-main CI |
+| Next Action | Select and define the next approved vertical slice after review findings |
 
 ### ATLAS-IMP-091 Scope Rationale
 
@@ -67,8 +67,9 @@
   OpenAPI at `127.0.0.1:8052`. The Connectors lifecycle at `127.0.0.1:5208` showed Review findings
   as the latest available capability. Desktop and 390-by-844 mobile inspection found no page-level
   horizontal overflow or incoherent overlap.
-- [PR #103](https://github.com/ozdemirumit/Project_Atlas/pull/103) is open; pull-request and
-  merged-main CI evidence is pending.
+- [PR #103](https://github.com/ozdemirumit/Project_Atlas/pull/103) CI run `31143182797` passed
+  (backend 1m47s, frontend 3m41s), merged to `main` as `aeeb750`, and merged-main run
+  `31143404270` passed (backend 2m46s, frontend 3m37s).
 
 ### ATLAS-IMP-090 Scope Rationale
 
