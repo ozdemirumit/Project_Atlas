@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-105 |
 | Title | Governed protected model-draft adjudication foundation |
-| Status | In Progress |
-| Branch | `agent/protected-model-draft-adjudication` |
-| Pull Request | #117 |
+| Status | Complete |
+| Branch | `main` |
+| Pull Request | [#117](https://github.com/ozdemirumit/Project_Atlas/pull/117) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-061 |
 | Last Updated | 2026-08-07 |
-| Next Action | Publish IMP-105, pass GitHub CI, merge, and record closure evidence |
+| Next Action | Define ADR-062 and begin ATLAS-IMP-106 protected answer-presentation foundation |
 
 ### ATLAS-IMP-105 Scope Rationale
 
@@ -81,8 +81,10 @@
   read. The Connector lifecycle rendered `Draft adjudication` as the latest capability at 1280x720
   and 390x844 without incoherent overlap; browser logs contained no warning or error.
 - Scope commits `87c4899` and `db91677` plus implementation commit `b2146fe` contain the current
-  slice. PR #117 is open; branch CI, merge, merged-main CI, and documentation closure evidence are
-  pending.
+  slice. Final branch run `31206582208` passed (backend 4m13s, frontend 4m03s). PR #117 was
+  squash-merged as `ff61c650c2592037dd2b78d7344199886d3a5309`; merged-main run `31206958251`
+  passed (backend 4m14s, frontend 4m07s). The documentation-only closure commit is the final
+  IMP-105 evidence; its main CI is recorded at the start of IMP-106.
 
 ### ATLAS-IMP-104 Scope Rationale
 
