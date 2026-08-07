@@ -312,6 +312,46 @@ class OperationalKnowledgeProtectedContentService:
     async def close(self) -> None:
         await self._repository.close()
 
+    async def review_finding_source(
+        self, *, presentation_id: str
+    ) -> tuple[
+        OperationalKnowledgeProtectedContentRecord,
+        OperationalKnowledgeProtectedInspectionRecord,
+        OperationalKnowledgeProtectedInspectionPolicySnapshot,
+        OperationalKnowledgeReviewerAssignmentRecord,
+        OperationalKnowledgeReviewRequestRecord,
+        OperationalEvidenceKnowledgeDraftRecord,
+    ]:
+        record = await self._repository.get(presentation_id=presentation_id)
+        if record is None:
+            raise OperationalKnowledgeProtectedContentError(
+                "operational_knowledge_protected_content_record_not_found"
+            )
+        self._verify_record(record)
+        (
+            lease,
+            inspection_policy,
+            assignment,
+            review_request,
+            draft,
+        ) = await self._source.protected_content_source(lease_id=record.source_lease_id)
+        if (
+            lease.canonical_digest != record.source_lease_digest
+            or lease.source_assignment_set_id != record.source_assignment_set_id
+            or lease.track_code != record.track_code
+            or lease.lease_holder_subject_digest != record.lease_holder_subject_digest
+            or lease.browser_session_binding_digest != record.browser_session_binding_digest
+            or assignment.assignment_set_id != record.source_assignment_set_id
+            or review_request.review_request_id != record.review_request_id
+            or draft.draft_id != record.source_draft_id
+            or draft.canonical_digest != record.source_draft_digest
+            or draft.draft_content_digest != record.draft_content_digest
+        ):
+            raise OperationalKnowledgeProtectedContentError(
+                "operational_knowledge_protected_content_lineage_invalid"
+            )
+        return record, lease, inspection_policy, assignment, review_request, draft
+
     async def _authorize(
         self,
         *,

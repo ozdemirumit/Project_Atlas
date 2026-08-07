@@ -4,14 +4,71 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-090 |
-| Title | Governed operational knowledge protected content presentation foundation |
-| Status | Done |
-| Branch | `main` |
-| Pull Request | [#102](https://github.com/ozdemirumit/Project_Atlas/pull/102) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-046 |
+| Task ID | ATLAS-IMP-091 |
+| Title | Governed operational knowledge track-specific review finding foundation |
+| Status | Review |
+| Branch | `agent/governed-knowledge-review-findings` |
+| Pull Request | [#103](https://github.com/ozdemirumit/Project_Atlas/pull/103) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-047 |
 | Last Updated | 2026-08-07 |
-| Next Action | Select and define ATLAS-IMP-091 from the approved operational-knowledge review lifecycle |
+| Next Action | Verify PR #103 CI, merge, and validate merged-main CI |
+
+### ATLAS-IMP-091 Scope Rationale
+
+- IMP-090 lets one exact assigned reviewer inspect a bounded immutable snapshot but deliberately
+  records no review finding or decision.
+- ADR-047 lets that reviewer submit one immutable track-specific finding packet through a trusted
+  encrypted recorder while application persistence retains metadata only.
+- Finding presentation, domain/security decisions, correction, approval, publication, indexing,
+  retrieval, scheduling, workflow, execution, deployment, and mutation remain later independent
+  stages.
+
+### ATLAS-IMP-091 Acceptance Criteria
+
+- Only the exact current lease holder and assignee, in the exact tenant, with recent hardware MFA,
+  dedicated C2 finding and presentation/lease-read permissions, the bound browser session, and the
+  exact track cookie may create or read finding metadata. Caller-selected identity, track,
+  artifact, governance, category catalogs, decision, approval, or operational fields fail.
+- One to twenty bounded findings use only policy-allowed track categories and severities. Intent
+  audit and an atomic unique presentation claim precede recorder access. Exact idempotent replay is
+  allowed only after a completed matching record; failure after claim remains claimed.
+- The trusted recorder normalizes inert structured findings, writes one immutable encrypted
+  artifact, returns a signed minimized receipt, erases transient buffers, and closes channels.
+  Production fails closed without a trusted recorder.
+- Persistence stores no finding summary or detail and records only immutable lineage, opaque
+  artifact metadata, counts, policy/recorder identity, integrity, encryption, and cleanup digests.
+  API output omits both content and artifact location and uses strict no-store controls.
+- Recording sets finding flags only. Domain/security review completion, disposition, correction,
+  approval, publication, chunks, embeddings, retrieval, model context, graph, scheduling,
+  workflow, execution, deployment, and mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, dedicated RBAC, CSRF and cookie tests,
+  exact-assignee/cross-track/expiry/concurrency/idempotency/receipt/audit failure tests, minimized
+  web evidence, full suites, live desktop/mobile validation, and GitHub CI apply.
+
+### ATLAS-IMP-091 Validation Evidence
+
+- ADR-047 is accepted. The implementation revalidates exact immutable presentation lineage,
+  active lease, exact salted assignee, browser session and track cookie, signed policy, recent
+  hardware MFA, dedicated C2 permissions, tenant scope, and absence of later authority before
+  atomically claiming one finding packet per presentation.
+- Nine focused finding tests plus the protected-inspection API integration cover track-specific
+  category policy, exact idempotent replay, wrong-cookie/assignee/expiry and permission rejection
+  before claim, concurrent claim exclusion, altered receipt rejection, non-retry after recorder
+  failure, fail-closed audit, metadata-only PostgreSQL mapping, CSRF, no-store cookie continuity,
+  and minimized responses.
+- Backend Ruff and CI-equivalent strict mypy passed across 749 files; the full suite passed with
+  703 tests and three expected Windows symlink skips. Alembic reports one `20260807_0063` head for
+  metadata-only finding claims and records.
+- Frontend ESLint and TypeScript checks passed; 31 test files and 61 tests passed; the production
+  bundle built successfully. The track-aware form supports one to twenty structured findings and
+  returns only sealed metadata with no finding text, artifact location, review decision, approval,
+  publication, workflow, or operational authority.
+- The restarted live backend returned platform status `200` and exposed the finding endpoint in
+  OpenAPI at `127.0.0.1:8052`. The Connectors lifecycle at `127.0.0.1:5208` showed Review findings
+  as the latest available capability. Desktop and 390-by-844 mobile inspection found no page-level
+  horizontal overflow or incoherent overlap.
+- [PR #103](https://github.com/ozdemirumit/Project_Atlas/pull/103) is open; pull-request and
+  merged-main CI evidence is pending.
 
 ### ATLAS-IMP-090 Scope Rationale
 

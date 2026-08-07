@@ -33,6 +33,13 @@ from atlas.modules.knowledge.adapters.protected_inspection_postgres import (
 from atlas.modules.knowledge.adapters.protected_inspection_synthetic import (
     SyntheticOperationalKnowledgeProtectedInspectionBroker,
 )
+from atlas.modules.knowledge.adapters.review_finding_memory import (
+    InMemoryOperationalKnowledgeReviewFindingPolicySource,
+    InMemoryOperationalKnowledgeReviewFindingRepository,
+)
+from atlas.modules.knowledge.adapters.review_finding_synthetic import (
+    SyntheticOperationalKnowledgeReviewFindingRecorder,
+)
 from atlas.modules.knowledge.application.protected_content import (
     OperationalKnowledgeProtectedContentService,
     build_development_operational_knowledge_protected_content_policy,
@@ -44,6 +51,10 @@ from atlas.modules.knowledge.application.protected_inspection import (
 from atlas.modules.knowledge.application.protected_inspection_ports import (
     OperationalKnowledgeProtectedInspectionError,
     OperationalKnowledgeProtectedInspectionUncertainError,
+)
+from atlas.modules.knowledge.application.review_finding import (
+    OperationalKnowledgeReviewFindingService,
+    build_development_operational_knowledge_review_finding_policy,
 )
 from atlas.modules.knowledge.domain.protected_inspection import (
     OperationalKnowledgeProtectedInspectionBrokerGrant,
@@ -436,6 +447,24 @@ def test_protected_inspection_api_sets_http_only_cookie_and_returns_minimized_me
         environment_id=assignment.environment_id,
         clock=lambda: assignment.created_at,
     )
+    finding_policy = build_development_operational_knowledge_review_finding_policy(
+        organization_id=assignment.organization_id,
+        environment_id=assignment.environment_id,
+        issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+        expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+    )
+    finding_service = OperationalKnowledgeReviewFindingService(
+        repository=InMemoryOperationalKnowledgeReviewFindingRepository(),
+        source=content_service,
+        policy_source=InMemoryOperationalKnowledgeReviewFindingPolicySource((finding_policy,)),
+        permission_authorizer=RecordingProtectedInspectionPermissionAuthorizer(),
+        recorder=SyntheticOperationalKnowledgeReviewFindingRecorder(
+            clock=lambda: assignment.created_at
+        ),
+        audit_sink=CollectingAuditSink(),
+        environment_id=assignment.environment_id,
+        clock=lambda: assignment.created_at,
+    )
     with TestClient(
         create_app(
             app_settings,
@@ -459,6 +488,7 @@ def test_protected_inspection_api_sets_http_only_cookie_and_returns_minimized_me
             operational_knowledge_reviewer_assignment_service=assignment_service,
             operational_knowledge_protected_inspection_service=service,
             operational_knowledge_protected_content_service=content_service,
+            operational_knowledge_review_finding_service=finding_service,
         )
     ) as client:
         login_response = login(client)
@@ -501,10 +531,41 @@ def test_protected_inspection_api_sets_http_only_cookie_and_returns_minimized_me
                 "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
             },
         )
+        content_data = content.json()["data"]
+        finding = client.post(
+            f"{endpoint}/{lease_id}/presentations/{content_data['presentation_id']}/findings",
+            json={
+                "schema_version": "atlas.operational-knowledge-review-finding-input.v1",
+                "source_presentation_digest": content_data["canonical_digest"],
+                "finding_policy_id": finding_policy.policy_id,
+                "finding_policy_digest": finding_policy.canonical_digest,
+                "findings": [
+                    {
+                        "category_code": "finding-category.accuracy",
+                        "severity_code": "finding-severity.material",
+                        "summary": "The controller count conflicts with the inventory evidence.",
+                        "detail": (
+                            "The protected snapshot reports one controller while collected "
+                            "inventory evidence reports two."
+                        ),
+                    }
+                ],
+                "purpose": (
+                    "Record the domain review observation without creating a review decision."
+                ),
+                "acknowledged_evidence_was_reviewed": True,
+                "acknowledged_finding_is_not_a_review_decision": True,
+            },
+            headers={
+                "Idempotency-Key": "review-finding-api-1",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+        )
 
     assert denied.status_code == 403 and forbidden.status_code == 422
     assert read.status_code == 200
     assert content.status_code == 201, content.text
+    assert finding.status_code == 201, finding.text
     assert created.headers["Cache-Control"] == read.headers["Cache-Control"] == "no-store"
     assert content.headers["Cache-Control"] == "no-store, max-age=0"
     cookie = created.headers["Set-Cookie"]
@@ -530,10 +591,24 @@ def test_protected_inspection_api_sets_http_only_cookie_and_returns_minimized_me
         "idempotency_key",
     ):
         assert hidden not in data
-    content_data = content.json()["data"]
     assert content_data["content"].startswith("Operational knowledge review snapshot")
     assert content_data["output_media_type"] == "media-type.text-plain"
     assert content_data["redaction_applied"] is True
+    finding_data = finding.json()["data"]
+    assert finding.headers["Cache-Control"] == "no-store, max-age=0"
+    assert finding_data["finding_recorded"] is True
+    assert finding_data["domain_finding_recorded"] is True
+    assert finding_data["domain_review_completed"] is False
+    assert finding_data["knowledge_approved"] is False
+    assert finding_data["execution_authorized"] is False
+    for hidden in (
+        "summary",
+        "detail",
+        "finding_artifact_id",
+        "lease_holder_subject_digest",
+        "browser_session_binding_digest",
+    ):
+        assert hidden not in finding_data
     assert content_data["domain_review_completed"] is False
     assert content_data["knowledge_approved"] is False
     assert content_data["execution_authorized"] is False

@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { createOperationalKnowledgeProtectedContent } from "../../api/protectedContent";
 import type { OperationalKnowledgeProtectedInspectionLease } from "../../api/protectedInspections";
+import { ReviewFindingPanel } from "./ReviewFindingPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -101,6 +102,7 @@ export function ProtectedContentPanel({
         </div>
       )}
       {presentation && (
+        <>
         <div className="protected-content-record">
           <div className="section-heading">
             <div>
@@ -135,6 +137,8 @@ export function ProtectedContentPanel({
             Atlas.
           </p>
         </div>
+        <ReviewFindingPanel lease={lease} presentation={presentation} />
+        </>
       )}
     </section>
   );

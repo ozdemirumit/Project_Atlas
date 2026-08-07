@@ -109,6 +109,8 @@ from atlas.modules.authorization.application.bootstrap import (
     KNOWLEDGE_PROTECTED_CONTENT_PRESENTATION_READ,
     KNOWLEDGE_PROTECTED_INSPECTION_LEASE_CREATE,
     KNOWLEDGE_PROTECTED_INSPECTION_LEASE_READ,
+    KNOWLEDGE_REVIEW_FINDING_CREATE,
+    KNOWLEDGE_REVIEW_FINDING_READ,
     KNOWLEDGE_REVIEWER_ASSIGNMENT_CREATE,
     KNOWLEDGE_REVIEWER_ASSIGNMENT_READ,
     MCP_BUILDER_CANDIDATE_HANDOFF_CREATE,
@@ -203,6 +205,7 @@ from atlas.modules.authorization.application.bootstrap import (
     operational_evidence_knowledge_draft_scope,
     operational_knowledge_protected_content_scope,
     operational_knowledge_protected_inspection_scope,
+    operational_knowledge_review_finding_scope,
     operational_knowledge_review_request_scope,
     operational_knowledge_reviewer_assignment_scope,
     rca_scope,
@@ -4026,4 +4029,57 @@ async def authorize_operational_knowledge_protected_content_read(
         request,
         subject,
         permission_id=KNOWLEDGE_PROTECTED_CONTENT_PRESENTATION_READ,
+    )
+
+
+async def _authorize_operational_knowledge_review_finding(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.knowledge.operational-review-findings",
+            scope=operational_knowledge_review_finding_scope(
+                subject.organization_id, settings.environment, CapabilityClass.C2_DIAGNOSTIC
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail="Operational knowledge review finding access is not permitted.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_operational_knowledge_review_finding_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_operational_knowledge_review_finding(
+        request,
+        subject,
+        permission_id=KNOWLEDGE_REVIEW_FINDING_CREATE,
+    )
+
+
+async def authorize_operational_knowledge_review_finding_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_operational_knowledge_review_finding(
+        request,
+        subject,
+        permission_id=KNOWLEDGE_REVIEW_FINDING_READ,
     )

@@ -8402,6 +8402,64 @@ tbody tr.selected {
   min-width: 0;
 }
 
+.review-finding-panel {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.review-finding-panel > label,
+.review-finding-item > label {
+  display: grid;
+  gap: 8px;
+}
+
+.review-finding-panel input,
+.review-finding-panel select,
+.review-finding-panel textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.review-finding-list {
+  display: grid;
+  gap: 12px;
+}
+
+.review-finding-item {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid #cbd6d2;
+  border-radius: 6px;
+  background: #f7faf9;
+}
+
+.review-finding-item legend {
+  padding: 0 5px;
+  color: #33413d;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.review-finding-item > .icon-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.review-finding-panel strong,
+.review-finding-panel code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .protected-content-text {
   max-height: 28rem;
   margin: 0;
