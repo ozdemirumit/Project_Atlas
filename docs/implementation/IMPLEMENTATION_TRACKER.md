@@ -75,8 +75,9 @@
   horizontal overflow and no browser console warning or error.
 - Publication, retrieval, model context, graph, scheduling, workflow, execution, deployment, and
   infrastructure mutation remain false and unauthorized. Draft PR #112 initial branch run
-  `31181784102` passed (backend 3m35s, frontend 3m53s); validation-record CI, final branch CI,
-  merge, merged-main CI, and closure evidence are pending.
+  `31181784102` passed (backend 3m35s, frontend 3m53s), and validation-record run `31182132515`
+  passed (backend 2m56s, frontend 3m59s); final branch CI, merge, merged-main CI, and closure
+  evidence are pending.
 
 ### ATLAS-IMP-099 Scope Rationale
 
