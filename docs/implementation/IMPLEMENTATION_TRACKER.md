@@ -4,14 +4,51 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-098 |
-| Title | Governed deterministic protected knowledge chunking foundation |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#110](https://github.com/ozdemirumit/Project_Atlas/pull/110) (merged) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-054 |
+| Task ID | ATLAS-IMP-099 |
+| Title | Governed protected knowledge embedding generation foundation |
+| Status | In Progress |
+| Branch | `agent/governed-knowledge-embedding-generation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-055 |
 | Last Updated | 2026-08-07 |
-| Next Action | Define ATLAS-IMP-099 governed protected knowledge embedding generation |
+| Next Action | Implement ADR-055 backend, frontend, persistence, security, and validation contracts |
+
+### ATLAS-IMP-099 Scope Rationale
+
+- IMP-098 creates one immutable deterministic protected chunk set but deliberately creates no
+  embedding, vector-store point, index, retrieval visibility, or publication authority.
+- ADR-055 permits a separate eligible human embedding steward to claim the exact chunk set and
+  invoke one trusted local embedder that writes an encrypted immutable embedding set.
+- Index staging/validation, publication, retrieval, workflow, execution, deployment, and
+  infrastructure mutation remain later stages.
+
+### ATLAS-IMP-099 Acceptance Criteria
+
+- Only one exact completed chunk set with unchanged materialization, preparation, approved
+  resolution, reviews, request, draft, knowledge item, source, governance, chunking, and profile
+  lineage can enter embedding. Drifted, superseded, already processed, published, or caller-shaped
+  lineage fails.
+- Only a separate eligible enterprise human embedding steward in the exact tenant, with recent
+  hardware MFA, dedicated C2 permissions, browser binding, CSRF, and a current signed policy may
+  create or read embedding-set metadata. Every earlier accountable actor and non-human identity
+  fails.
+- The caller supplies only exact chunk-set and policy bindings, bounded purpose,
+  acknowledgements, idempotency, and correlation. Content, coordinates, vector values, model or
+  endpoint selection, batch parameters, index, retrieval, workflow, and operation fields are
+  forbidden.
+- Intent audit and an atomic unique chunk-set claim precede a trusted signed metadata-only
+  embedding receipt. Exact completed replay is allowed; concurrency, conflict, or post-claim
+  failure remains claimed. Production fails closed without the trusted embedder.
+- Success sets only embedding creation while preserving approval, readiness, preparation,
+  materialization, and chunks. Indexing, publication, retrieval, model context, graph, scheduling,
+  workflow, execution, deployment, and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  lineage/separation/concurrency/idempotency/embedder/audit tests, minimized UI evidence, full
+  suites, live desktop/mobile validation, and GitHub CI apply.
+
+### ATLAS-IMP-099 Validation Evidence
+
+- Pending implementation.
 
 ### ATLAS-IMP-098 Scope Rationale
 
@@ -79,7 +116,7 @@
   run `31172415150` passed (backend 2m18s, frontend 2m21s).
 - PR #110 merged as `0653328762ac36baa6543720662ee77ba3b1c050`; merged-main run
   `31172678099` passed (backend 3m20s, frontend 3m45s). The documentation-only closure run follows
-  this record.
+  this record. Closure run `31172976546` passed (backend 3m42s, frontend 3m47s).
 
 ### ATLAS-IMP-097 Scope Rationale
 
