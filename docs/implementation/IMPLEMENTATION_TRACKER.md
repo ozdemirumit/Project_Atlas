@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-058 |
 | Last Updated | 2026-08-07 |
-| Next Action | Implement ADR-058 with protected retrieval, vault, persistence, API, RBAC, UI, and tests |
+| Next Action | Publish IMP-102, complete GitHub CI and merge evidence, then begin IMP-103 |
 
 ### ATLAS-IMP-102 Scope Rationale
 
@@ -50,7 +50,40 @@
 
 ### ATLAS-IMP-102 Validation Evidence
 
-- Pending implementation.
+- ADR-058 is implemented. The service revalidates the exact active retrieval publication,
+  complete protected lineage, route generation, source access policy, classification, tenant,
+  current signed policy, recent hardware MFA, browser and CSRF bindings, and current authorization
+  context before trusted retrieval or rehydration.
+- An eligible human consumer can submit only an exact publication and policy binding, one bounded
+  natural-language query, purpose, three acknowledgements, idempotency, and correlation. Strict
+  request schemas reject identity, access filters, routing, ranking, result-count, model, prompt,
+  tool, workflow, operation, deployment, and infrastructure-mutation controls.
+- Mandatory authorization and lifecycle filtering precedes scoring inside the trusted retriever.
+  Citation-ready authorized evidence is stored only in the protected vault. Ordinary persistence,
+  API metadata, and audit exclude raw queries, excerpts, titles, citation locations, item/chunk
+  identities, vectors, filters, routes, credentials, and secrets.
+- Exact completed replay rehydrates the same protected artifact only after current MFA, browser,
+  permission, role, purpose, classification, access-policy, lifecycle, retention, and integrity
+  checks. Conflicting idempotency fails without rerun; production fails closed without the trusted
+  retriever and vault.
+- Memory and PostgreSQL adapters, default-deny C1 create/read permissions, API routes, bootstrap
+  wiring, and Alembic revision `20260807_0074` are implemented. Offline empty-to-head migration
+  generation completed with one Alembic head.
+- Focused retrieval and API-health tests passed (`12 passed`). The final backend gate formatted
+  934 files, passed Ruff, found no strict mypy issues in 764 source modules, and passed `791` tests
+  with three expected Windows symlink skips and three dependency deprecation warnings.
+- The frontend focused lifecycle, retrieval-publication, and protected-retrieval tests passed
+  (`3` files, `3` tests). The full frontend gate passed ESLint, TypeScript, `42` test files with
+  `72` tests, and the production build; only the existing bundle-size and Babel deoptimization
+  notices remain.
+- Live development authentication succeeded with the bounded local demo identity. The running
+  backend returned healthy live and ready status and an OpenAPI document with 190 paths, including
+  create and read protected-retrieval routes. The Connector lifecycle rendered `Governed retrieval`
+  as the latest available capability at 1280x720 and 390x844, with no horizontal overflow and no
+  browser console warning or error.
+- Successful retrieval returns authorized evidence only. Model context, LLM invocation, graph,
+  scheduling, workflow, execution, deployment, and infrastructure mutation remain false and
+  unauthorized. GitHub PR, CI, merge, merged-main, and closure evidence are pending publication.
 
 ### ATLAS-IMP-101 Scope Rationale
 

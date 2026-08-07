@@ -97,7 +97,7 @@ const lifecycleStages: readonly LifecycleStage[] = [
   {
     name: "Knowledge publication",
     detail: "Curation, indexing, retrieval",
-    state: "current",
+    state: "available",
     capabilities: [
       { name: "Draft curation" },
       { name: "Review request" },
@@ -115,7 +115,7 @@ const lifecycleStages: readonly LifecycleStage[] = [
       { name: "Embedding generation" },
       { name: "Index staging" },
       { name: "Retrieval publication" },
-      { name: "Governed retrieval", state: "pending" },
+      { name: "Governed retrieval" },
     ],
   },
 ];
@@ -134,15 +134,15 @@ export function ConnectorLifecycleOverview() {
       </div>
       <div className="connector-lifecycle-summary" aria-label="Delivery status">
         <div>
-          <strong>8</strong>
+          <strong>9</strong>
           <span>Available stages</span>
         </div>
         <div>
-          <strong>1</strong>
+          <strong>0</strong>
           <span>In progress</span>
         </div>
         <div>
-          <strong>Retrieval publication</strong>
+          <strong>Governed retrieval</strong>
           <span>Latest available capability</span>
         </div>
       </div>

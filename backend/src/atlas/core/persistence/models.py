@@ -2825,3 +2825,48 @@ class OperationalKnowledgeRetrievalPublicationModel(Base):
     environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class OperationalKnowledgeRetrievalClaimModel(Base):
+    __tablename__ = "operational_knowledge_retrieval_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "claimed_by_subject_digest",
+            "idempotency_digest",
+            name="uq_ok_retrieval_claim_actor_idem",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    retrieval_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    publication_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    claimed_by_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class OperationalKnowledgeRetrievalModel(Base):
+    __tablename__ = "operational_knowledge_retrievals"
+    __table_args__ = (
+        UniqueConstraint("claim_id", name="uq_ok_retrieval_claim"),
+        UniqueConstraint("protected_artifact_reference", name="uq_ok_retrieval_artifact"),
+    )
+
+    retrieval_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    claim_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    publication_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    knowledge_item_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    consumer_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    protected_artifact_reference: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

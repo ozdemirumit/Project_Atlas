@@ -121,6 +121,8 @@ from atlas.modules.authorization.application.bootstrap import (
     KNOWLEDGE_PROTECTED_CONTENT_PRESENTATION_READ,
     KNOWLEDGE_PROTECTED_INSPECTION_LEASE_CREATE,
     KNOWLEDGE_PROTECTED_INSPECTION_LEASE_READ,
+    KNOWLEDGE_PROTECTED_RETRIEVAL_CREATE,
+    KNOWLEDGE_PROTECTED_RETRIEVAL_READ,
     KNOWLEDGE_PUBLICATION_PREPARATION_CREATE,
     KNOWLEDGE_PUBLICATION_PREPARATION_READ,
     KNOWLEDGE_RETRIEVAL_PUBLICATION_CREATE,
@@ -231,6 +233,7 @@ from atlas.modules.authorization.application.bootstrap import (
     operational_knowledge_index_staging_scope,
     operational_knowledge_protected_content_scope,
     operational_knowledge_protected_inspection_scope,
+    operational_knowledge_protected_retrieval_scope,
     operational_knowledge_publication_preparation_scope,
     operational_knowledge_retrieval_publication_scope,
     operational_knowledge_review_finding_scope,
@@ -4681,4 +4684,58 @@ async def authorize_operational_knowledge_retrieval_publication_read(
         request,
         subject,
         permission_id=KNOWLEDGE_RETRIEVAL_PUBLICATION_READ,
+    )
+
+
+async def _authorize_operational_knowledge_protected_retrieval(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.knowledge.operational-protected-retrieval",
+            scope=operational_knowledge_protected_retrieval_scope(
+                subject.organization_id,
+                settings.environment,
+                CapabilityClass.C1_READ_ONLY,
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail="The current identity cannot retrieve protected operational knowledge.",
+        )
+    return decision
+
+
+async def authorize_operational_knowledge_protected_retrieval_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_operational_knowledge_protected_retrieval(
+        request,
+        subject,
+        permission_id=KNOWLEDGE_PROTECTED_RETRIEVAL_CREATE,
+    )
+
+
+async def authorize_operational_knowledge_protected_retrieval_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_operational_knowledge_protected_retrieval(
+        request,
+        subject,
+        permission_id=KNOWLEDGE_PROTECTED_RETRIEVAL_READ,
     )

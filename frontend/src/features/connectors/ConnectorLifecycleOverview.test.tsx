@@ -9,13 +9,14 @@ describe("ConnectorLifecycleOverview", () => {
 
     expect(screen.getByRole("heading", { name: "Connector lifecycle" })).toBeVisible();
     expect(screen.getByLabelText("Delivery status")).toHaveTextContent(
-      "8Available stages1In progressRetrieval publicationLatest available capability",
+      "9Available stages0In progressGoverned retrievalLatest available capability",
     );
-    expect(screen.getAllByText("Available")).toHaveLength(8);
+    expect(screen.getAllByText("Available")).toHaveLength(9);
     expect(screen.getByText("Evidence preservation")).toBeVisible();
     expect(screen.getByText("Knowledge publication")).toBeVisible();
-    expect(screen.getAllByText("Retrieval publication")).toHaveLength(2);
-    expect(screen.getAllByText("In progress")).toHaveLength(2);
+    expect(screen.getByText("Retrieval publication")).toBeVisible();
+    expect(screen.getAllByText("Governed retrieval")).toHaveLength(2);
+    expect(screen.getByText("In progress")).toBeVisible();
     expect(screen.queryByText("Not enabled")).not.toBeInTheDocument();
     expect(
       screen.getByText(
@@ -27,7 +28,7 @@ describe("ConnectorLifecycleOverview", () => {
     expect(within(bounded as HTMLElement).getByText("Available")).toBeVisible();
     const knowledge = screen.getByText("Knowledge publication").closest(".connector-lifecycle-row");
     expect(knowledge).not.toBeNull();
-    expect(within(knowledge as HTMLElement).getByText("In progress")).toBeVisible();
+    expect(within(knowledge as HTMLElement).getByText("Available")).toBeVisible();
     expect(
       within(knowledge as HTMLElement).getByText("Draft curation"),
     ).toHaveAttribute("data-state", "available");
@@ -83,6 +84,10 @@ describe("ConnectorLifecycleOverview", () => {
       "available",
     );
     expect(within(knowledge as HTMLElement).getByText("Index staging")).toHaveAttribute(
+      "data-state",
+      "available",
+    );
+    expect(within(knowledge as HTMLElement).getByText("Governed retrieval")).toHaveAttribute(
       "data-state",
       "available",
     );
