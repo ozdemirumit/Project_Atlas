@@ -80,8 +80,10 @@
   Connector lifecycle rendered `Context assembly` as the latest of ten available stages at
   1280x720 and 390x844 with no horizontal overflow. Browser logs contained only Vite debug and
   React development information, with no warning or error.
-- Implementation commit `1b18da3` contains the application slice. Draft PR #115 is open; GitHub
-  CI, merge, merged-main, and closure evidence are pending.
+- Implementation commit `1b18da3` contains the application slice. Draft PR #115 initial branch
+  run `31197017626` passed (backend 3m53s, frontend 3m56s), and PR-link run `31197046752`
+  passed (backend 4m05s, frontend 4m03s). Final branch CI, merge, merged-main, and closure evidence
+  are pending.
 
 ### ATLAS-IMP-102 Scope Rationale
 
