@@ -77,8 +77,8 @@
   Desktop `1280x720` and mobile `390x844` inspections had zero horizontal overflow, and browser
   developer logs contained no warnings or errors.
 - Draft PR #111 Continuous Integration run `31176595564` passed (backend 3m26s, frontend
-  3m56s). Validation-record CI, final branch CI, merge, merged-main CI, and documentation-only
-  closure evidence are pending.
+  3m56s). Validation-record run `31176924882` passed (backend 3m42s, frontend 3m49s). Final
+  branch CI, merge, merged-main CI, and documentation-only closure evidence are pending.
 
 ### ATLAS-IMP-098 Scope Rationale
 
