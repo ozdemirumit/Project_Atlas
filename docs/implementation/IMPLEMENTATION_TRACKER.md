@@ -4,14 +4,56 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-105 |
-| Title | Governed protected model-draft adjudication foundation |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#117](https://github.com/ozdemirumit/Project_Atlas/pull/117) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-061 |
+| Task ID | ATLAS-IMP-106 |
+| Title | Governed protected answer-presentation foundation |
+| Status | In Progress |
+| Branch | `agent/protected-answer-presentation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-062 |
 | Last Updated | 2026-08-07 |
-| Next Action | Define ADR-062 and begin ATLAS-IMP-106 protected answer-presentation foundation |
+| Next Action | Implement and validate the IMP-106 backend foundation |
+
+### ATLAS-IMP-106 Scope Rationale
+
+- IMP-105 deterministically adjudicates one exact protected model draft but deliberately returns
+  no draft content to the browser.
+- ADR-062 permits the same eligible human consumer to request one bounded inert presentation of
+  an exact eligible adjudication while every upstream policy, access, retention, and artifact
+  binding remains current.
+- Recommendation, impact analysis, graph update, scheduling, workflow, execution, deployment, and
+  infrastructure mutation remain later stages.
+
+### ATLAS-IMP-106 Acceptance Criteria
+
+- Only one exact eligible, completed, unexpired, integrity-valid adjudication with unchanged
+  invocation, context, retrieval, source, access, classification, purpose, policies, model,
+  endpoint, citation, unknown, safety, destination, and protected-vault lineage can be presented.
+- The caller supplies only exact adjudication and presentation-policy bindings, unchanged purpose,
+  three acknowledgements, idempotency, and correlation. Draft, answer, evidence, renderer, limits,
+  model, endpoint, recommendation, tool, workflow, operation, deployment, and mutation fields are
+  forbidden.
+- A trusted deterministic no-network, no-model presenter revalidates protected report and draft
+  integrity, eligible outcome, exact schema/count/content bindings, item/byte limits, inert UTF-8
+  rendering, prohibited output, and cleanup before returning the exact bounded snapshot.
+- API output is limited to bounded plain-text summary, ordered authorized citation reference IDs,
+  explicit ordered unknowns, safe labels, counts, digests, and no-authority flags. Content is
+  no-store, never persisted or logged, and rendered only as text.
+- An immutable unique claim prevents multiple snapshots. Exact replay reproduces the same answer
+  only after current authorization, lineage, artifact, retention, and digest checks and never
+  extends authority or invokes a model.
+- Success sets only answer presentation. It creates no recommendation, root-cause or impact
+  assertion, graph update, schedule, workflow, tool, execution, deployment, or infrastructure
+  mutation authority.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, no-store,
+  focused access/lineage/replay/content/vault/audit tests, safe UI rendering, full suites, live
+  desktop/mobile validation, and GitHub CI apply.
+
+### ATLAS-IMP-106 Validation Evidence
+
+- ADR-062 is accepted. IMP-105 documentation closure commit
+  `22eca215045da9dafaac026a92ddf9b996289caf` passed main run `31207356927` (backend 4m04s,
+  frontend 3m18s).
+- Implementation and delivery evidence are pending.
 
 ### ATLAS-IMP-105 Scope Rationale
 
