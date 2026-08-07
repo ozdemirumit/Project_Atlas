@@ -4,14 +4,50 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-099 |
-| Title | Governed protected knowledge embedding generation foundation |
-| Status | Completed |
-| Branch | `agent/governed-knowledge-embedding-generation` (merged) |
-| Pull Request | [#111](https://github.com/ozdemirumit/Project_Atlas/pull/111) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-055 |
+| Task ID | ATLAS-IMP-100 |
+| Title | Governed protected knowledge retrieval-index staging and validation foundation |
+| Status | In Progress |
+| Branch | `agent/governed-knowledge-index-staging-validation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-056 |
 | Last Updated | 2026-08-07 |
-| Next Action | Define and implement IMP-100 governed retrieval-index staging and validation |
+| Next Action | Implement ADR-056 with protected staging, reconciliation, persistence, API, UI, and tests |
+
+### ATLAS-IMP-100 Scope Rationale
+
+- IMP-099 creates one immutable model-bound protected embedding set but deliberately creates no
+  vector-store point, validated index, retrieval visibility, or publication authority.
+- ADR-056 permits a separate eligible human index steward to claim the exact embedding set and
+  invoke one trusted local indexer that creates and validates an isolated inactive projection.
+- Atomic publication, retrieval, workflow, execution, deployment, and infrastructure mutation
+  remain later stages.
+
+### ATLAS-IMP-100 Acceptance Criteria
+
+- Only one exact completed embedding set with unchanged chunking, materialization, preparation,
+  approved resolution, reviews, request, draft, knowledge item, source, governance, model, vector,
+  and policy lineage can enter staging. Drifted, superseded, already processed, published, or
+  caller-shaped lineage fails.
+- Only a separate eligible enterprise human index steward in the exact tenant, with recent
+  hardware MFA, dedicated C2 permissions, browser binding, CSRF, and a current signed policy may
+  create or read staging metadata. Every earlier accountable actor and non-human identity fails.
+- The caller supplies only exact embedding-set and policy bindings, bounded purpose,
+  acknowledgements, idempotency, and correlation. Content, coordinates, vectors, collections,
+  point identities, payloads, index parameters, retrieval, workflow, and operation fields are
+  forbidden.
+- Intent audit and an atomic unique embedding-set claim precede a trusted signed metadata-only
+  staging and validation receipt. Exact completed replay is allowed; concurrency, conflict, or
+  post-claim failure remains claimed. Production fails closed without the trusted indexer.
+- Success sets only index staging and validation while preserving all prior lifecycle evidence.
+  Publication, retrieval, model context, graph, scheduling, workflow, execution, deployment, and
+  infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  lineage/separation/concurrency/idempotency/indexer/audit tests, minimized UI evidence, full
+  suites, live desktop/mobile validation, and GitHub CI apply.
+
+### ATLAS-IMP-100 Validation Evidence
+
+- Pending implementation.
 
 ### ATLAS-IMP-099 Scope Rationale
 
@@ -81,7 +117,8 @@
   branch run `31177226973` passed (backend 3m38s, frontend 3m53s).
 - PR #111 was squash-merged as `54b32b120ef6d96f41c4cef7cc07879fc2053161`. Merged-main run
   `31177506811` passed (backend 3m38s, frontend 4m00s). This documentation-only closure commit
-  remains subject to the same required `main` CI before IMP-100 starts.
+  `fcc44e42493a2ca9c577cbba87de140c394f5b2a` passed run `31177844694` (backend 3m40s,
+  frontend 3m48s).
 
 ### ATLAS-IMP-098 Scope Rationale
 
