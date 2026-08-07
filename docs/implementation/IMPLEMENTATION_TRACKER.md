@@ -4,14 +4,51 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-096 |
-| Title | Governed operational knowledge publication preparation foundation |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#108](https://github.com/ozdemirumit/Project_Atlas/pull/108) (merged) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-052 |
+| Task ID | ATLAS-IMP-097 |
+| Title | Governed protected knowledge source materialization foundation |
+| Status | In Progress |
+| Branch | `agent/governed-knowledge-source-materialization` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-053 |
 | Last Updated | 2026-08-07 |
-| Next Action | Define ATLAS-IMP-097 governed protected knowledge source materialization |
+| Next Action | Implement ADR-053 backend, persistence, RBAC, API, minimized web evidence, and tests |
+
+### ATLAS-IMP-097 Scope Rationale
+
+- IMP-096 creates an immutable metadata-only preparation manifest but deliberately does not read,
+  normalize, copy, or expose the approved source content.
+- ADR-053 permits a separate eligible human materialization steward to claim the exact preparation
+  and invoke one trusted protected boundary that verifies and materializes the source atomically.
+- Deterministic chunking, embeddings, index staging/validation, publication, retrieval, workflow,
+  execution, deployment, and infrastructure mutation remain later stages.
+
+### ATLAS-IMP-097 Acceptance Criteria
+
+- Only one exact completed preparation with unchanged approved resolution, review, request, draft,
+  knowledge-item, source, governance, and profile lineage can enter materialization. Drifted,
+  corrected, rejected, superseded, already processed, published, or caller-shaped lineage fails.
+- Only a separate eligible enterprise human materialization steward in the exact tenant, with recent
+  hardware MFA, dedicated C2 permissions, browser binding, CSRF, and a current signed policy may
+  create or read materialization. Every earlier accountable actor and non-human identity fails.
+- The caller supplies only exact preparation and policy bindings, bounded purpose,
+  acknowledgements, idempotency, and correlation. Content, coordinates, keys, scan details,
+  processing profiles, destinations, indexes, retrieval, workflow, and operation fields are
+  forbidden.
+- Intent audit and an atomic unique preparation claim precede a trusted signed metadata-only
+  materialization receipt. Exact completed replay is allowed; concurrency, conflict, or post-claim
+  failure remains claimed. Production fails closed without the trusted materializer.
+- Success sets only protected source materialization while preserving approval, readiness, and
+  preparation. Chunking, embedding, indexing, publication, retrieval, model context, graph,
+  scheduling, workflow, execution, deployment, and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  lineage/separation/concurrency/idempotency/materializer/audit tests, minimized UI evidence, full
+  suites, live desktop/mobile validation, and GitHub CI apply.
+
+### ATLAS-IMP-097 Validation Evidence
+
+- ADR-053 is accepted. Implementation and validation are in progress.
+
+### ATLAS-IMP-096 Scope Rationale
 
 ### ATLAS-IMP-096 Scope Rationale
 
@@ -77,7 +114,8 @@
 - Draft PR #108 Continuous Integration run `31164549503` passed (backend 3m33s, frontend 3m51s),
   and final branch run `31164936949` passed (backend 3m22s, frontend 3m52s).
 - PR #108 merged to `main` as `dcd4d5a`; merged-main Continuous Integration run `31165238274`
-  passed (backend 2m36s, frontend 3m43s). Closure-record CI remains pending.
+  passed (backend 2m36s, frontend 3m43s), and closure run `31165535224` passed (backend 3m14s,
+  frontend 3m53s).
 
 ### ATLAS-IMP-095 Scope Rationale
 
