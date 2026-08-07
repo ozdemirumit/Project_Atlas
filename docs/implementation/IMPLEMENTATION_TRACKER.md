@@ -4,14 +4,50 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-090 |
-| Title | Governed operational knowledge protected content presentation foundation |
-| Status | Done |
-| Branch | `main` |
-| Pull Request | [#102](https://github.com/ozdemirumit/Project_Atlas/pull/102) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-046 |
+| Task ID | ATLAS-IMP-091 |
+| Title | Governed operational knowledge track-specific review finding foundation |
+| Status | In Progress |
+| Branch | `agent/governed-knowledge-review-findings` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-047 |
 | Last Updated | 2026-08-07 |
-| Next Action | Select and define ATLAS-IMP-091 from the approved operational-knowledge review lifecycle |
+| Next Action | Implement ADR-047 track-specific review finding contract |
+
+### ATLAS-IMP-091 Scope Rationale
+
+- IMP-090 lets one exact assigned reviewer inspect a bounded immutable snapshot but deliberately
+  records no review finding or decision.
+- ADR-047 lets that reviewer submit one immutable track-specific finding packet through a trusted
+  encrypted recorder while application persistence retains metadata only.
+- Finding presentation, domain/security decisions, correction, approval, publication, indexing,
+  retrieval, scheduling, workflow, execution, deployment, and mutation remain later independent
+  stages.
+
+### ATLAS-IMP-091 Acceptance Criteria
+
+- Only the exact current lease holder and assignee, in the exact tenant, with recent hardware MFA,
+  dedicated C2 finding and presentation/lease-read permissions, the bound browser session, and the
+  exact track cookie may create or read finding metadata. Caller-selected identity, track,
+  artifact, governance, category catalogs, decision, approval, or operational fields fail.
+- One to twenty bounded findings use only policy-allowed track categories and severities. Intent
+  audit and an atomic unique presentation claim precede recorder access. Exact idempotent replay is
+  allowed only after a completed matching record; failure after claim remains claimed.
+- The trusted recorder normalizes inert structured findings, writes one immutable encrypted
+  artifact, returns a signed minimized receipt, erases transient buffers, and closes channels.
+  Production fails closed without a trusted recorder.
+- Persistence stores no finding summary or detail and records only immutable lineage, opaque
+  artifact metadata, counts, policy/recorder identity, integrity, encryption, and cleanup digests.
+  API output omits both content and artifact location and uses strict no-store controls.
+- Recording sets finding flags only. Domain/security review completion, disposition, correction,
+  approval, publication, chunks, embeddings, retrieval, model context, graph, scheduling,
+  workflow, execution, deployment, and mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, dedicated RBAC, CSRF and cookie tests,
+  exact-assignee/cross-track/expiry/concurrency/idempotency/receipt/audit failure tests, minimized
+  web evidence, full suites, live desktop/mobile validation, and GitHub CI apply.
+
+### ATLAS-IMP-091 Validation Evidence
+
+- ADR-047 is accepted. Implementation and validation are in progress.
 
 ### ATLAS-IMP-090 Scope Rationale
 
