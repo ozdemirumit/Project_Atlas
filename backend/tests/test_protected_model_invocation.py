@@ -6,6 +6,7 @@ from datetime import timedelta
 import pytest
 from pydantic import ValidationError
 from test_model_context_assembly import context_fixture, create_context
+from test_package_acquisition import CollectingAuditSink
 
 from atlas.api.protected_model_invocation_schemas import (
     ProtectedModelInvocationInput,
@@ -59,7 +60,18 @@ class RecordingInvocationPermissionAuthorizer:
             raise ProtectedModelInvocationError("protected_model_invocation_permission_denied")
 
 
-async def invocation_fixture(*, deny: bool = False, unavailable: bool = False):
+async def invocation_fixture(
+    *, deny: bool = False, unavailable: bool = False
+) -> tuple[
+    GovernedProtectedModelInvocationService,
+    MemoryProtectedModelInvocationRepository,
+    ProtectedModelContextResult,
+    ProtectedModelInvocationPolicySnapshot,
+    AuthenticatedSubject,
+    SyntheticTrustedProtectedModelGateway | UnavailableTrustedProtectedModelGateway,
+    RecordingInvocationPermissionAuthorizer,
+    CollectingAuditSink,
+]:
     (
         context_service,
         _,
