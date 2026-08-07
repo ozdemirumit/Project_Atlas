@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-061 |
 | Last Updated | 2026-08-07 |
-| Next Action | Implement and validate the IMP-105 backend foundation |
+| Next Action | Publish IMP-105, pass GitHub CI, merge, and record closure evidence |
 
 ### ATLAS-IMP-105 Scope Rationale
 
@@ -50,7 +50,39 @@
 - ADR-061 is accepted. IMP-104 documentation closure commit
   `3bf9d26784145e2c60adc313d79e27ea77012604` passed main run `31202258016` (backend 4m07s,
   frontend 3m56s).
-- Implementation and delivery evidence are pending.
+- The governed adjudication service rehydrates the exact protected invocation, draft, model
+  context, and evidence package through their existing trusted boundaries before independently
+  checking current enterprise-human identity, hardware MFA, browser, permissions, policy,
+  retention, classification, purpose, artifact integrity, and canonical lineage.
+- Caller input is restricted to exact invocation and signed adjudication-policy bindings,
+  unchanged purpose, three acknowledgements, idempotency, and correlation. Draft, prompt,
+  evidence, model, endpoint, thresholds, tools, workflows, targets, operations, deployment, and
+  mutation controls are absent from the closed API schema.
+- Development uses a deterministic no-network, no-model protected adjudicator. It validates exact
+  schema and lineage, authorized citation membership, explicit unknown preservation, summary
+  bounds, and prohibited output; production fails closed until approved adjudicator, policy, and
+  encrypted protected-vault boundaries are configured.
+- Full adjudication reports remain in the protected in-memory vault fixture. PostgreSQL records,
+  API responses, audit, logs, and UI expose minimized identifiers, digests, check/citation/unknown
+  counts, outcomes, and timestamps only. Exact replay rehydrates the same report and never reruns
+  adjudication or invokes a model.
+- Dedicated default-deny C1 create/read permissions, CSRF/browser-bound routes, memory/PostgreSQL
+  repositories, strict schemas, and Alembic revision `20260807_0077` are implemented. Alembic
+  reports one head and empty-to-head offline SQL generation passed.
+- Ruff passed and all 889 Python files were formatted. Strict mypy found no issues in 889 source
+  files. Focused adjudication/API-health validation passed (`9 passed`); the complete backend suite
+  passed `806` tests with three expected Windows symlink skips and three existing dependency
+  warnings.
+- The frontend passed ESLint, TypeScript, `45` test files with `75` tests, and the production build
+  (CSS 127.86 kB / 21.18 kB gzip; JavaScript 1,000.26 kB / 182.49 kB gzip). The existing Babel and
+  bundle-size notices remain non-blocking.
+- Live development authentication succeeded against backend port 8057 and frontend port 5212.
+  Live and ready health returned 200; OpenAPI exposed 196 paths including adjudication create and
+  read. The Connector lifecycle rendered `Draft adjudication` as the latest capability at 1280x720
+  and 390x844 without incoherent overlap; browser logs contained no warning or error.
+- Scope commits `87c4899` and `db91677` plus implementation commit `b2146fe` contain the current
+  slice. GitHub PR, branch CI, merge, merged-main CI, and documentation closure evidence are
+  pending.
 
 ### ATLAS-IMP-104 Scope Rationale
 
