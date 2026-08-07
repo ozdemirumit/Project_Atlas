@@ -8,7 +8,7 @@
 | Title | Governed protected knowledge retrieval foundation |
 | Status | In Progress |
 | Branch | `agent/protected-knowledge-retrieval` |
-| Pull Request | Pending |
+| Pull Request | [#114](https://github.com/ozdemirumit/Project_Atlas/pull/114) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-058 |
 | Last Updated | 2026-08-07 |
 | Next Action | Publish IMP-102, complete GitHub CI and merge evidence, then begin IMP-103 |
@@ -83,7 +83,8 @@
   browser console warning or error.
 - Successful retrieval returns authorized evidence only. Model context, LLM invocation, graph,
   scheduling, workflow, execution, deployment, and infrastructure mutation remain false and
-  unauthorized. GitHub PR, CI, merge, merged-main, and closure evidence are pending publication.
+  unauthorized. Draft PR #114 initial branch run `31191561533` passed (backend 3m55s,
+  frontend 4m08s); validation-record CI, merge, merged-main, and closure evidence are pending.
 
 ### ATLAS-IMP-101 Scope Rationale
 
