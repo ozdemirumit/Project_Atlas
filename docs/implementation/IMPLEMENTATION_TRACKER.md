@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-097 |
 | Title | Governed protected knowledge source materialization foundation |
-| Status | Validation Complete |
-| Branch | `agent/governed-knowledge-source-materialization` |
-| Pull Request | [#109](https://github.com/ozdemirumit/Project_Atlas/pull/109) (draft) |
+| Status | Completed |
+| Branch | `main` |
+| Pull Request | [#109](https://github.com/ozdemirumit/Project_Atlas/pull/109) (merged) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-053 |
 | Last Updated | 2026-08-07 |
-| Next Action | Mark PR #109 ready, merge after final branch CI, and complete main/closure CI |
+| Next Action | Define ATLAS-IMP-098 governed deterministic protected knowledge chunking |
 
 ### ATLAS-IMP-097 Scope Rationale
 
@@ -70,11 +70,13 @@
 - The restarted live backend returned liveness and readiness `200` and exposed both source
   materialization endpoints among 180 OpenAPI paths at `127.0.0.1:8052`.
 - Draft PR #109 Continuous Integration run `31167881951` passed (backend 3m14s, frontend 3m56s).
-  Validation-record run `31168205200` also passed (backend 2m07s, frontend 3m42s).
+  Validation-record run `31168205200` passed (backend 2m07s, frontend 3m42s), and final branch
+  run `31168655840` passed (backend 3m21s, frontend 3m40s).
 - The live Connectors view exposed `Source materialization` as the latest available capability.
   Desktop `1280x720` and mobile `390x844` inspections had zero horizontal overflow, and browser
-  developer logs contained no warnings or errors. Final branch CI, merge, and main closure remain
-  pending.
+  developer logs contained no warnings or errors. PR #109 merged as
+  `c062aba08f6292c0382fc1038050c2fe9d136f64`; merged-main run `31168926818` passed (backend
+  3m37s, frontend 3m50s). The documentation-only closure run follows this record.
 
 ### ATLAS-IMP-096 Scope Rationale
 
