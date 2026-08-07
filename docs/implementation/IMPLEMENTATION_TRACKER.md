@@ -4,14 +4,46 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-092 |
-| Title | Governed operational knowledge protected finding presentation foundation |
-| Status | Done |
-| Branch | `main` |
-| Pull Request | [#104](https://github.com/ozdemirumit/Project_Atlas/pull/104) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-048 |
+| Task ID | ATLAS-IMP-093 |
+| Title | Governed operational knowledge track-specific review decision foundation |
+| Status | In Progress |
+| Branch | `agent/governed-knowledge-review-decisions` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-049 |
 | Last Updated | 2026-08-07 |
-| Next Action | Select and define the next approved vertical slice after protected finding presentation |
+| Next Action | Implement and validate the ADR-049 track-specific review decision slice |
+
+### ATLAS-IMP-093 Scope Rationale
+
+- IMP-092 presents the exact encrypted finding packet to the exact assigned reviewer but records
+  no accountable judgment.
+- ADR-049 binds one immutable `passed` or `changes-required` human decision to that exact
+  presentation, assignment track, lease, browser, assignee, and signed policy.
+- Correction, resubmission, final approval or rejection, publication, indexing, retrieval,
+  scheduling, workflow, execution, deployment, and mutation remain later independent stages.
+
+### ATLAS-IMP-093 Acceptance Criteria
+
+- Only the exact current lease holder and assignee, in the exact tenant, with recent hardware MFA,
+  dedicated C2 decision and lineage-read permissions, the bound browser session, and exact track
+  cookie may decide. Caller-selected identity, track, content, governance, completion, approval,
+  publication, or operational fields fail.
+- Only policy-approved `passed` or `changes-required` dispositions and track-specific structured
+  basis codes are accepted. No finding narrative or free-form decision text enters persistence,
+  API metadata, audit, logs, events, model context, vector stores, or indexes.
+- Intent audit and an atomic unique presentation claim precede a signed trusted-attestor receipt.
+  Exact completed idempotent reuse is allowed; concurrency, conflict, or failure after claim remains
+  claimed and cannot replace the first decision. Production fails closed without an attestor.
+- The immutable metadata record sets only the matching track completion/pass state and optional
+  correction requirement. Both passes are readiness evidence only; approval, publication,
+  retrieval, workflow, execution, deployment, and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, dedicated RBAC, CSRF and cookie tests,
+  focused exact-assignee/cross-track/expiry/concurrency/idempotency/policy/attestation/audit tests,
+  minimized web evidence, full suites, live desktop/mobile validation, and GitHub CI apply.
+
+### ATLAS-IMP-093 Validation Evidence
+
+- Pending implementation and validation.
 
 ### ATLAS-IMP-092 Scope Rationale
 
