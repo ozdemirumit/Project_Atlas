@@ -42,6 +42,7 @@ from atlas.api.routes import (
     deployment_configuration,
     deterministic_chunking,
     draft_review_requests,
+    embedding_generation,
     evidence_drafts,
     final_resolutions,
     final_validations,
@@ -590,6 +591,20 @@ from atlas.modules.knowledge.adapters.draft_review_request_synthetic import (
     SyntheticOperationalKnowledgeReviewRequestAdapter,
     UnavailableOperationalKnowledgeReviewRequestAdapter,
 )
+from atlas.modules.knowledge.adapters.embedding_generation_memory import (
+    InMemoryOperationalKnowledgeEmbeddingPolicySource,
+    InMemoryOperationalKnowledgeEmbeddingRepository,
+)
+from atlas.modules.knowledge.adapters.embedding_generation_permission import (
+    AuthorizationOperationalKnowledgeEmbeddingPermissionAuthorizer,
+)
+from atlas.modules.knowledge.adapters.embedding_generation_postgres import (
+    PostgreSQLOperationalKnowledgeEmbeddingRepository,
+)
+from atlas.modules.knowledge.adapters.embedding_generation_synthetic import (
+    SyntheticOperationalKnowledgeEmbedder,
+    UnavailableOperationalKnowledgeEmbedder,
+)
 from atlas.modules.knowledge.adapters.evidence_draft_memory import (
     InMemoryOperationalEvidenceKnowledgeDraftPolicySource,
     InMemoryOperationalEvidenceKnowledgeDraftRepository,
@@ -743,6 +758,10 @@ from atlas.modules.knowledge.application.deterministic_chunking import (
 from atlas.modules.knowledge.application.draft_review_request import (
     OperationalKnowledgeReviewRequestService,
     build_development_operational_knowledge_review_request_policy,
+)
+from atlas.modules.knowledge.application.embedding_generation import (
+    OperationalKnowledgeEmbeddingGenerationService,
+    build_development_operational_knowledge_embedding_policy,
 )
 from atlas.modules.knowledge.application.evidence_draft import (
     OperationalEvidenceKnowledgeDraftService,
@@ -1082,6 +1101,9 @@ def create_app(
     ) = None,
     operational_knowledge_deterministic_chunking_service: (
         OperationalKnowledgeDeterministicChunkingService | None
+    ) = None,
+    operational_knowledge_embedding_generation_service: (
+        OperationalKnowledgeEmbeddingGenerationService | None
     ) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
@@ -3171,6 +3193,50 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    if operational_knowledge_embedding_generation_service is not None:
+        resolved_operational_knowledge_embedding_generation_service = (
+            operational_knowledge_embedding_generation_service
+        )
+    else:
+        embedding_repository = (
+            PostgreSQLOperationalKnowledgeEmbeddingRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryOperationalKnowledgeEmbeddingRepository()
+        )
+        embedding_policies = (
+            ()
+            if is_production
+            else (
+                build_development_operational_knowledge_embedding_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_operational_knowledge_embedding_generation_service = (
+            OperationalKnowledgeEmbeddingGenerationService(
+                repository=embedding_repository,
+                chunk_source=resolved_operational_knowledge_deterministic_chunking_service,
+                policy_source=InMemoryOperationalKnowledgeEmbeddingPolicySource(embedding_policies),
+                permission_authorizer=(
+                    AuthorizationOperationalKnowledgeEmbeddingPermissionAuthorizer(
+                        service=resolved_authorization_service,
+                        environment=resolved_settings.environment,
+                    )
+                ),
+                embedder=(
+                    UnavailableOperationalKnowledgeEmbedder()
+                    if is_production
+                    else SyntheticOperationalKnowledgeEmbedder()
+                ),
+                audit_sink=resolved_audit_sink,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -3417,6 +3483,9 @@ def create_app(
         app.state.operational_knowledge_deterministic_chunking_service = (
             resolved_operational_knowledge_deterministic_chunking_service
         )
+        app.state.operational_knowledge_embedding_generation_service = (
+            resolved_operational_knowledge_embedding_generation_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -3429,6 +3498,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_operational_knowledge_embedding_generation_service.close()
         await resolved_operational_knowledge_deterministic_chunking_service.close()
         await resolved_operational_knowledge_source_materialization_service.close()
         await resolved_operational_knowledge_publication_preparation_service.close()
@@ -3579,6 +3649,7 @@ def create_app(
     app.include_router(publication_preparations.router, prefix="/api/v1")
     app.include_router(source_materializations.router, prefix="/api/v1")
     app.include_router(deterministic_chunking.router, prefix="/api/v1")
+    app.include_router(embedding_generation.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

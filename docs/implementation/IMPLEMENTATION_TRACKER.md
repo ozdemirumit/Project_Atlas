@@ -4,14 +4,81 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-098 |
-| Title | Governed deterministic protected knowledge chunking foundation |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#110](https://github.com/ozdemirumit/Project_Atlas/pull/110) (merged) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-054 |
+| Task ID | ATLAS-IMP-099 |
+| Title | Governed protected knowledge embedding generation foundation |
+| Status | In Progress |
+| Branch | `agent/governed-knowledge-embedding-generation` |
+| Pull Request | [#111](https://github.com/ozdemirumit/Project_Atlas/pull/111) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-055 |
 | Last Updated | 2026-08-07 |
-| Next Action | Define ATLAS-IMP-099 governed protected knowledge embedding generation |
+| Next Action | Publish the validated IMP-099 branch, complete PR/CI review, merge, and record closure evidence |
+
+### ATLAS-IMP-099 Scope Rationale
+
+- IMP-098 creates one immutable deterministic protected chunk set but deliberately creates no
+  embedding, vector-store point, index, retrieval visibility, or publication authority.
+- ADR-055 permits a separate eligible human embedding steward to claim the exact chunk set and
+  invoke one trusted local embedder that writes an encrypted immutable embedding set.
+- Index staging/validation, publication, retrieval, workflow, execution, deployment, and
+  infrastructure mutation remain later stages.
+
+### ATLAS-IMP-099 Acceptance Criteria
+
+- Only one exact completed chunk set with unchanged materialization, preparation, approved
+  resolution, reviews, request, draft, knowledge item, source, governance, chunking, and profile
+  lineage can enter embedding. Drifted, superseded, already processed, published, or caller-shaped
+  lineage fails.
+- Only a separate eligible enterprise human embedding steward in the exact tenant, with recent
+  hardware MFA, dedicated C2 permissions, browser binding, CSRF, and a current signed policy may
+  create or read embedding-set metadata. Every earlier accountable actor and non-human identity
+  fails.
+- The caller supplies only exact chunk-set and policy bindings, bounded purpose,
+  acknowledgements, idempotency, and correlation. Content, coordinates, vector values, model or
+  endpoint selection, batch parameters, index, retrieval, workflow, and operation fields are
+  forbidden.
+- Intent audit and an atomic unique chunk-set claim precede a trusted signed metadata-only
+  embedding receipt. Exact completed replay is allowed; concurrency, conflict, or post-claim
+  failure remains claimed. Production fails closed without the trusted embedder.
+- Success sets only embedding creation while preserving approval, readiness, preparation,
+  materialization, and chunks. Indexing, publication, retrieval, model context, graph, scheduling,
+  workflow, execution, deployment, and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  lineage/separation/concurrency/idempotency/embedder/audit tests, minimized UI evidence, full
+  suites, live desktop/mobile validation, and GitHub CI apply.
+
+### ATLAS-IMP-099 Validation Evidence
+
+- ADR-055 is implemented. The service revalidates the exact immutable chunk-set digest, completed
+  chunk lifecycle, protected material, ordered chunk manifest, chunking profile, governance
+  binding, count/token limits, exact tenant, recent hardware MFA, current signed policy, and every
+  prior accountable subject digest before claim creation.
+- The caller provides only exact chunk-set and policy bindings, bounded purpose,
+  acknowledgements, idempotency, and correlation data. Content, excerpts, chunk coordinates or ID
+  maps, vector values, model or endpoint selection, tokenizer/dimension/batch controls, index,
+  retrieval, workflow, execution, deployment, and mutation fields are forbidden.
+- The trusted local embedder returns a signed metadata-only receipt binding model/profile,
+  immutable model artifact and tokenizer digests, dimension, normalization, distance metric, data
+  boundary, complete chunk-to-vector coverage, numerical validation, resource evidence, and a
+  stable vector manifest. Ordinary application persistence, audit, API, and UI receive no chunk
+  content, vector value, model endpoint, key, token stream, raw identity, or model output.
+- Eight focused embedding tests plus seven deterministic-chunking regression tests cover exact
+  idempotent replay, prior-steward separation, permission denial before claim, concurrent
+  exclusion, drifted receipt rejection with permanent claim, production fail-closed behavior,
+  metadata-only PostgreSQL contracts, strict caller schemas, and minimized API responses. The full
+  backend suite passed with 766 tests and three expected Windows symlink skips.
+- Backend Ruff formatting/lint passed across 901 files and project-configured strict mypy passed
+  across 829 source files. Alembic reports one `20260807_0071` head, and a complete PostgreSQL
+  offline migration from an empty database through that head succeeds.
+- Frontend ESLint and TypeScript checks passed; 39 test files and 69 tests passed; the production
+  bundle built successfully. The existing large-bundle warning remains non-functional.
+- The restarted live backend returned liveness and readiness `200` and exposed both embedding-set
+  endpoints among 184 OpenAPI paths at `127.0.0.1:8052`.
+- The live Connectors view exposed `Embedding generation` as the latest available capability.
+  Desktop `1280x720` and mobile `390x844` inspections had zero horizontal overflow, and browser
+  developer logs contained no warnings or errors.
+- Draft PR #111 Continuous Integration run `31176595564` passed (backend 3m26s, frontend
+  3m56s). Validation-record run `31176924882` passed (backend 3m42s, frontend 3m49s). Final
+  branch CI, merge, merged-main CI, and documentation-only closure evidence are pending.
 
 ### ATLAS-IMP-098 Scope Rationale
 
@@ -79,7 +146,7 @@
   run `31172415150` passed (backend 2m18s, frontend 2m21s).
 - PR #110 merged as `0653328762ac36baa6543720662ee77ba3b1c050`; merged-main run
   `31172678099` passed (backend 3m20s, frontend 3m45s). The documentation-only closure run follows
-  this record.
+  this record. Closure run `31172976546` passed (backend 3m42s, frontend 3m47s).
 
 ### ATLAS-IMP-097 Scope Rationale
 

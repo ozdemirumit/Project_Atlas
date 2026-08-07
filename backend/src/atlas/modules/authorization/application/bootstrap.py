@@ -186,6 +186,8 @@ KNOWLEDGE_SOURCE_MATERIALIZATION_CREATE = "knowledge.source-materializations.cre
 KNOWLEDGE_SOURCE_MATERIALIZATION_READ = "knowledge.source-materializations.read"
 KNOWLEDGE_DETERMINISTIC_CHUNKING_CREATE = "knowledge.deterministic-chunking.create"
 KNOWLEDGE_DETERMINISTIC_CHUNKING_READ = "knowledge.deterministic-chunking.read"
+KNOWLEDGE_EMBEDDING_GENERATION_CREATE = "knowledge.embedding-generation.create"
+KNOWLEDGE_EMBEDDING_GENERATION_READ = "knowledge.embedding-generation.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -1086,6 +1088,19 @@ def operational_knowledge_deterministic_chunking_scope(
     )
 
 
+def operational_knowledge_embedding_generation_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.knowledge",
+        resource_id="resource.knowledge.operational-embedding-generation",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -1855,6 +1870,14 @@ def build_development_authorization_service(
             permission_id=KNOWLEDGE_DETERMINISTIC_CHUNKING_READ,
             description="Read minimized deterministic protected chunk-set metadata.",
         ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_EMBEDDING_GENERATION_CREATE,
+            description="Create one governed protected knowledge embedding set.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_EMBEDDING_GENERATION_READ,
+            description="Read minimized protected knowledge embedding-set metadata.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -2010,6 +2033,8 @@ def build_development_authorization_service(
                 KNOWLEDGE_SOURCE_MATERIALIZATION_READ,
                 KNOWLEDGE_DETERMINISTIC_CHUNKING_CREATE,
                 KNOWLEDGE_DETERMINISTIC_CHUNKING_READ,
+                KNOWLEDGE_EMBEDDING_GENERATION_CREATE,
+                KNOWLEDGE_EMBEDDING_GENERATION_READ,
             }
         ),
     )
@@ -3414,6 +3439,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=operational_knowledge_deterministic_chunking_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-embedding-generation-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=operational_knowledge_embedding_generation_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-embedding-generation-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=operational_knowledge_embedding_generation_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,

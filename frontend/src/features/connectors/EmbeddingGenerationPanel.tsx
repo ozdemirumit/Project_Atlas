@@ -1,38 +1,37 @@
 import { useMutation } from "@tanstack/react-query";
-import { AlertTriangle, Boxes, RefreshCw } from "lucide-react";
+import { AlertTriangle, BrainCircuit, RefreshCw } from "lucide-react";
 import { useState } from "react";
 
-import { createOperationalKnowledgeChunkSet } from "../../api/deterministicChunking";
-import type { OperationalKnowledgeSourceMaterialization } from "../../api/sourceMaterializations";
-import { EmbeddingGenerationPanel } from "./EmbeddingGenerationPanel";
+import type { OperationalKnowledgeChunkSet } from "../../api/deterministicChunking";
+import { createOperationalKnowledgeEmbeddingSet } from "../../api/embeddingGeneration";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
-    "7750a2e2ab5c0c50a651ee86002657ea83a51f6ff9937e9b9e5205854568255c",
+    "26dcf51c4e6e0df81b7b4ef8603c74b8c91c50c0a492e303caee3d47f156f470",
 };
 
-export function DeterministicChunkingPanel({
-  materialization,
+export function EmbeddingGenerationPanel({
+  chunkSet,
 }: {
-  materialization: OperationalKnowledgeSourceMaterialization;
+  chunkSet: OperationalKnowledgeChunkSet;
 }) {
   const [policyId, setPolicyId] = useState(
-    "operational-knowledge-chunking-policy.development",
+    "operational-knowledge-embedding-policy.development",
   );
   const [policyDigest, setPolicyDigest] = useState(
-    POLICY_DIGESTS[materialization.environment_id] ?? "",
+    POLICY_DIGESTS[chunkSet.environment_id] ?? "",
   );
   const [purpose, setPurpose] = useState(
-    "Create the deterministic protected chunk set for approved operational knowledge.",
+    "Create the governed local embedding set for approved operational knowledge.",
   );
   const [boundaryAcknowledged, setBoundaryAcknowledged] = useState(false);
   const [profileAcknowledged, setProfileAcknowledged] = useState(false);
   const [authorityAcknowledged, setAuthorityAcknowledged] = useState(false);
-  const mutation = useMutation({ mutationFn: createOperationalKnowledgeChunkSet });
-  const chunkSet = mutation.data?.data;
+  const mutation = useMutation({ mutationFn: createOperationalKnowledgeEmbeddingSet });
+  const embeddingSet = mutation.data?.data;
   const canSubmit =
-    materialization.source_materialized &&
-    !materialization.chunks_created &&
+    chunkSet.chunks_created &&
+    !chunkSet.embeddings_created &&
     boundaryAcknowledged &&
     profileAcknowledged &&
     authorityAcknowledged &&
@@ -42,19 +41,19 @@ export function DeterministicChunkingPanel({
     !mutation.isPending;
 
   return (
-    <div className="final-resolution-panel" aria-labelledby="deterministic-chunking-title">
+    <div className="final-resolution-panel" aria-labelledby="embedding-generation-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">PROTECTED SEGMENTATION</p>
-          <h3 id="deterministic-chunking-title">Create deterministic chunk set</h3>
+          <p className="eyebrow">LOCAL MODEL SPACE</p>
+          <h3 id="embedding-generation-title">Generate protected embeddings</h3>
         </div>
-        <Boxes size={24} />
+        <BrainCircuit size={24} />
       </div>
-      {!chunkSet && (
+      {!embeddingSet && (
         <>
           <div className="mcp-builder-review-fields">
             <label>
-              <span>Chunking policy ID</span>
+              <span>Embedding policy ID</span>
               <input value={policyId} onChange={(event) => setPolicyId(event.target.value)} />
             </label>
             <label>
@@ -67,7 +66,7 @@ export function DeterministicChunkingPanel({
             </label>
           </div>
           <label>
-            <span>Chunking purpose</span>
+            <span>Embedding purpose</span>
             <textarea
               value={purpose}
               rows={3}
@@ -81,7 +80,7 @@ export function DeterministicChunkingPanel({
               checked={boundaryAcknowledged}
               onChange={(event) => setBoundaryAcknowledged(event.target.checked)}
             />
-            <span>Protected content remains inside the trusted chunking boundary.</span>
+            <span>Protected chunks remain inside the trusted local embedding boundary.</span>
           </label>
           <label className="approval-check">
             <input
@@ -89,7 +88,7 @@ export function DeterministicChunkingPanel({
               checked={profileAcknowledged}
               onChange={(event) => setProfileAcknowledged(event.target.checked)}
             />
-            <span>The preparation-bound chunking profile is immutable.</span>
+            <span>The approved model and tokenizer profile is immutable.</span>
           </label>
           <label className="approval-check">
             <input
@@ -97,18 +96,20 @@ export function DeterministicChunkingPanel({
               checked={authorityAcknowledged}
               onChange={(event) => setAuthorityAcknowledged(event.target.checked)}
             />
-            <span>No embedding, indexing, retrieval, workflow, or operation is authorized.</span>
+            <span>No indexing, retrieval, workflow, or operation is authorized.</span>
           </label>
           <button
             className="primary-button"
             type="button"
             disabled={!canSubmit}
-            onClick={() =>
-              mutation.mutate({ materialization, policyId, policyDigest, purpose })
-            }
+            onClick={() => mutation.mutate({ chunkSet, policyId, policyDigest, purpose })}
           >
-            {mutation.isPending ? <RefreshCw className="spin" size={16} /> : <Boxes size={16} />}
-            Create protected chunk set
+            {mutation.isPending ? (
+              <RefreshCw className="spin" size={16} />
+            ) : (
+              <BrainCircuit size={16} />
+            )}
+            Generate protected embeddings
           </button>
         </>
       )}
@@ -116,23 +117,21 @@ export function DeterministicChunkingPanel({
         <div className="workspace-message error-state" role="alert">
           <AlertTriangle size={20} />
           <div>
-            <h3>Deterministic chunking unavailable</h3>
-            <p>Materialization lineage, steward separation, browser binding, and policy must remain valid.</p>
+            <h3>Embedding generation unavailable</h3>
+            <p>Chunk lineage, steward separation, browser binding, and policy must remain valid.</p>
           </div>
         </div>
       )}
-      {chunkSet && (
-        <>
-          <div className="correction-record">
-            <strong>Deterministic chunk set created</strong>
-            <code>{chunkSet.chunk_set_id}</code>
-            <p className="muted-copy">
-              {chunkSet.chunk_count} immutable chunks are bound by signed manifests. No content,
-              coordinate, embedding, vector, or index was exposed.
-            </p>
-          </div>
-          <EmbeddingGenerationPanel chunkSet={chunkSet} />
-        </>
+      {embeddingSet && (
+        <div className="correction-record">
+          <strong>Protected embedding set created</strong>
+          <code>{embeddingSet.embedding_set_id}</code>
+          <p className="muted-copy">
+            {embeddingSet.embedding_count} embeddings use a verified {embeddingSet.vector_dimension}
+            -dimension local model space. No chunk content, vector value, endpoint, or index was
+            exposed.
+          </p>
+        </div>
       )}
     </div>
   );

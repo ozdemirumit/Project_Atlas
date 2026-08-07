@@ -15,19 +15,19 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from atlas.core.persistence.models import (
-    OperationalKnowledgeChunkingClaimModel,
-    OperationalKnowledgeChunkSetModel,
+    OperationalKnowledgeEmbeddingClaimModel,
+    OperationalKnowledgeEmbeddingSetModel,
 )
-from atlas.modules.knowledge.application.deterministic_chunking import (
-    OperationalKnowledgeDeterministicChunkingService,
+from atlas.modules.knowledge.application.embedding_generation import (
+    OperationalKnowledgeEmbeddingGenerationService,
 )
-from atlas.modules.knowledge.domain.deterministic_chunking import (
-    OperationalKnowledgeChunkingClaim,
-    OperationalKnowledgeChunkingRecord,
+from atlas.modules.knowledge.domain.embedding_generation import (
+    OperationalKnowledgeEmbeddingClaim,
+    OperationalKnowledgeEmbeddingRecord,
 )
 
 
-class PostgreSQLOperationalKnowledgeChunkingRepository:
+class PostgreSQLOperationalKnowledgeEmbeddingRepository:
     def __init__(
         self,
         *,
@@ -38,35 +38,35 @@ class PostgreSQLOperationalKnowledgeChunkingRepository:
         self._sessions = session_factory or async_sessionmaker(engine, expire_on_commit=False)
 
     @classmethod
-    def from_url(cls, database_url: str) -> PostgreSQLOperationalKnowledgeChunkingRepository:
+    def from_url(cls, database_url: str) -> PostgreSQLOperationalKnowledgeEmbeddingRepository:
         return cls(engine=create_async_engine(database_url, pool_pre_ping=True))
 
-    async def get(self, *, chunk_set_id: str) -> OperationalKnowledgeChunkingRecord | None:
+    async def get(self, *, embedding_set_id: str) -> OperationalKnowledgeEmbeddingRecord | None:
         async with self._sessions() as session:
-            row = await session.get(OperationalKnowledgeChunkSetModel, chunk_set_id)
+            row = await session.get(OperationalKnowledgeEmbeddingSetModel, embedding_set_id)
             return self._record_to_domain(row.payload) if row else None
 
-    async def get_claim_by_materialization(
-        self, *, materialization_id: str
-    ) -> OperationalKnowledgeChunkingClaim | None:
+    async def get_claim_by_chunk_set(
+        self, *, chunk_set_id: str
+    ) -> OperationalKnowledgeEmbeddingClaim | None:
         async with self._sessions() as session:
             row = await session.scalar(
-                select(OperationalKnowledgeChunkingClaimModel).where(
-                    OperationalKnowledgeChunkingClaimModel.materialization_id == materialization_id
+                select(OperationalKnowledgeEmbeddingClaimModel).where(
+                    OperationalKnowledgeEmbeddingClaimModel.chunk_set_id == chunk_set_id
                 )
             )
             return self._claim_to_domain(row.payload) if row else None
 
-    async def claim(self, claim: OperationalKnowledgeChunkingClaim) -> bool:
-        payload = OperationalKnowledgeDeterministicChunkingService._normalize(asdict(claim))
+    async def claim(self, claim: OperationalKnowledgeEmbeddingClaim) -> bool:
+        payload = OperationalKnowledgeEmbeddingGenerationService._normalize(asdict(claim))
         assert isinstance(payload, dict)
         try:
             async with self._sessions() as session:
                 session.add(
-                    OperationalKnowledgeChunkingClaimModel(
+                    OperationalKnowledgeEmbeddingClaimModel(
                         claim_id=claim.claim_id,
-                        materialization_id=claim.materialization_id,
                         chunk_set_id=claim.chunk_set_id,
+                        embedding_set_id=claim.embedding_set_id,
                         claimed_by_subject_digest=claim.claimed_by_subject_digest,
                         idempotency_digest=claim.idempotency_digest,
                         organization_id=claim.organization_id,
@@ -80,21 +80,20 @@ class PostgreSQLOperationalKnowledgeChunkingRepository:
         except IntegrityError:
             return False
 
-    async def add(self, record: OperationalKnowledgeChunkingRecord) -> bool:
-        payload = OperationalKnowledgeDeterministicChunkingService._normalize(asdict(record))
+    async def add(self, record: OperationalKnowledgeEmbeddingRecord) -> bool:
+        payload = OperationalKnowledgeEmbeddingGenerationService._normalize(asdict(record))
         assert isinstance(payload, dict)
         try:
             async with self._sessions() as session:
                 session.add(
-                    OperationalKnowledgeChunkSetModel(
-                        chunk_set_id=record.chunk_set_id,
+                    OperationalKnowledgeEmbeddingSetModel(
+                        embedding_set_id=record.embedding_set_id,
                         claim_id=record.claim_id,
+                        chunk_set_id=record.chunk_set_id,
                         materialization_id=record.materialization_id,
                         preparation_id=record.preparation_id,
-                        resolution_id=record.resolution_id,
-                        source_draft_id=record.source_draft_id,
                         knowledge_item_id=record.knowledge_item_id,
-                        chunked_by_subject_digest=record.chunked_by_subject_digest,
+                        embedded_by_subject_digest=record.embedded_by_subject_digest,
                         organization_id=record.organization_id,
                         environment_id=record.environment_id,
                         canonical_digest=record.canonical_digest,
@@ -110,16 +109,13 @@ class PostgreSQLOperationalKnowledgeChunkingRepository:
         await self._engine.dispose()
 
     @staticmethod
-    def _claim_to_domain(raw: dict[str, Any]) -> OperationalKnowledgeChunkingClaim:
+    def _claim_to_domain(raw: dict[str, Any]) -> OperationalKnowledgeEmbeddingClaim:
         payload = dict(raw)
         payload["claimed_at"] = datetime.fromisoformat(str(payload["claimed_at"]))
-        return OperationalKnowledgeChunkingClaim(**cast(Any, payload))
+        return OperationalKnowledgeEmbeddingClaim(**cast(Any, payload))
 
     @staticmethod
-    def _record_to_domain(raw: dict[str, Any]) -> OperationalKnowledgeChunkingRecord:
+    def _record_to_domain(raw: dict[str, Any]) -> OperationalKnowledgeEmbeddingRecord:
         payload = dict(raw)
-        payload["chunked_at"] = datetime.fromisoformat(str(payload["chunked_at"]))
-        payload["upstream_accountable_subject_digests"] = tuple(
-            payload["upstream_accountable_subject_digests"]
-        )
-        return OperationalKnowledgeChunkingRecord(**cast(Any, payload))
+        payload["embedded_at"] = datetime.fromisoformat(str(payload["embedded_at"]))
+        return OperationalKnowledgeEmbeddingRecord(**cast(Any, payload))
