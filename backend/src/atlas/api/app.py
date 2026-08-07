@@ -42,6 +42,7 @@ from atlas.api.routes import (
     deployment_configuration,
     draft_review_requests,
     evidence_drafts,
+    final_resolutions,
     final_validations,
     finding_presentations,
     graph,
@@ -586,6 +587,20 @@ from atlas.modules.knowledge.adapters.evidence_draft_synthetic import (
     SyntheticOperationalEvidenceKnowledgeDraftAdapter,
     UnavailableOperationalEvidenceKnowledgeDraftAdapter,
 )
+from atlas.modules.knowledge.adapters.final_resolution_memory import (
+    InMemoryOperationalKnowledgeFinalResolutionPolicySource,
+    InMemoryOperationalKnowledgeFinalResolutionRepository,
+)
+from atlas.modules.knowledge.adapters.final_resolution_permission import (
+    AuthorizationOperationalKnowledgeFinalResolutionPermissionAuthorizer,
+)
+from atlas.modules.knowledge.adapters.final_resolution_postgres import (
+    PostgreSQLOperationalKnowledgeFinalResolutionRepository,
+)
+from atlas.modules.knowledge.adapters.final_resolution_synthetic import (
+    SyntheticOperationalKnowledgeFinalResolutionAttestor,
+    UnavailableOperationalKnowledgeFinalResolutionAttestor,
+)
 from atlas.modules.knowledge.adapters.finding_presentation_memory import (
     InMemoryOperationalKnowledgeFindingPresentationPolicySource,
     InMemoryOperationalKnowledgeFindingPresentationRepository,
@@ -683,6 +698,10 @@ from atlas.modules.knowledge.application.draft_review_request import (
 from atlas.modules.knowledge.application.evidence_draft import (
     OperationalEvidenceKnowledgeDraftService,
     build_development_operational_evidence_knowledge_draft_policy,
+)
+from atlas.modules.knowledge.application.final_resolution import (
+    OperationalKnowledgeFinalResolutionService,
+    build_development_operational_knowledge_final_resolution_policy,
 )
 from atlas.modules.knowledge.application.finding_presentation import (
     OperationalKnowledgeFindingPresentationService,
@@ -995,6 +1014,9 @@ def create_app(
         OperationalKnowledgeTrackReviewDecisionService | None
     ) = None,
     operational_knowledge_correction_service: OperationalKnowledgeCorrectionService | None = None,
+    operational_knowledge_final_resolution_service: (
+        OperationalKnowledgeFinalResolutionService | None
+    ) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -2896,6 +2918,52 @@ def create_app(
     resolved_operational_knowledge_review_request_service.set_resubmission_source(
         resolved_operational_knowledge_correction_service
     )
+    if operational_knowledge_final_resolution_service is not None:
+        resolved_operational_knowledge_final_resolution_service = (
+            operational_knowledge_final_resolution_service
+        )
+    else:
+        final_resolution_repository = (
+            PostgreSQLOperationalKnowledgeFinalResolutionRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryOperationalKnowledgeFinalResolutionRepository()
+        )
+        final_resolution_policies = (
+            ()
+            if is_production
+            else (
+                build_development_operational_knowledge_final_resolution_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_operational_knowledge_final_resolution_service = (
+            OperationalKnowledgeFinalResolutionService(
+                repository=final_resolution_repository,
+                source=resolved_operational_knowledge_track_review_decision_service,
+                policy_source=InMemoryOperationalKnowledgeFinalResolutionPolicySource(
+                    final_resolution_policies
+                ),
+                permission_authorizer=(
+                    AuthorizationOperationalKnowledgeFinalResolutionPermissionAuthorizer(
+                        service=resolved_authorization_service,
+                        environment=resolved_settings.environment,
+                    )
+                ),
+                attestor=(
+                    UnavailableOperationalKnowledgeFinalResolutionAttestor()
+                    if is_production
+                    else SyntheticOperationalKnowledgeFinalResolutionAttestor()
+                ),
+                audit_sink=resolved_audit_sink,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -3130,6 +3198,9 @@ def create_app(
         app.state.operational_knowledge_correction_service = (
             resolved_operational_knowledge_correction_service
         )
+        app.state.operational_knowledge_final_resolution_service = (
+            resolved_operational_knowledge_final_resolution_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -3142,6 +3213,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_operational_knowledge_final_resolution_service.close()
         await resolved_operational_knowledge_correction_service.close()
         await resolved_operational_knowledge_track_review_decision_service.close()
         await resolved_operational_knowledge_finding_presentation_service.close()
@@ -3284,6 +3356,7 @@ def create_app(
     app.include_router(finding_presentations.router, prefix="/api/v1")
     app.include_router(review_decisions.router, prefix="/api/v1")
     app.include_router(correction_resubmissions.router, prefix="/api/v1")
+    app.include_router(final_resolutions.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-095 |
 | Title | Governed operational knowledge final resolution foundation |
-| Status | In Progress |
+| Status | Implementation Complete |
 | Branch | `agent/governed-knowledge-final-resolution` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-051 |
 | Last Updated | 2026-08-07 |
-| Next Action | Implement and validate the accepted ADR-051 final resolution contract |
+| Next Action | Complete live desktop/mobile validation, then PR/CI/merge closure |
 
 ### ATLAS-IMP-095 Scope Rationale
 
@@ -43,6 +43,31 @@
 - Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
   lineage/separation/concurrency/idempotency/attestor/audit tests, minimized UI evidence, full
   suites, live desktop/mobile validation, and GitHub CI apply.
+
+### ATLAS-IMP-095 Validation Evidence
+
+- ADR-051 is accepted. The implementation accepts only the exact immutable review request and two
+  passed track-decision bindings, rejects mixed, missing, duplicate, corrected, or
+  `changes-required` lineage, and creates one atomic immutable final-resolution claim.
+- A separate current enterprise human approver, recent hardware MFA, exact tenant, dedicated C2
+  permissions, browser binding, CSRF, current signed policy, and trusted attestation are required.
+  Curator, reviewer, signer, attestor, service, shared, AI, and cross-tenant authority fail closed.
+- Approved results set only knowledge approval and publication readiness. Rejected results are
+  final for the exact generation. Neither path publishes, chunks, embeds, indexes, retrieves,
+  starts workflow, executes, deploys, or mutates infrastructure.
+- Eight focused final-resolution tests plus the existing review-decision tests cover approval,
+  rejection, strict caller schema, two-passed-track eligibility, curator separation, exact
+  idempotency, concurrent exclusion, metadata-only persistence, and memory/PostgreSQL contracts.
+- Backend Ruff passed; strict mypy passed across 789 source files; the full suite passed with 734
+  tests and three expected Windows symlink skips. Alembic reports one `20260807_0067` head, and a
+  complete PostgreSQL offline migration from an empty database through that head succeeds.
+- Frontend ESLint and TypeScript checks passed; 35 test files and 65 tests passed; the production
+  bundle built successfully. The final-resolution panel exposes only approve/reject, signed policy,
+  bounded purpose, and explicit acknowledgements; it has no content, publication, retrieval,
+  workflow, execution, deployment, or mutation control.
+- The restarted live backend returned liveness and readiness `200` and exposed final-resolution
+  create and replay endpoints at `127.0.0.1:8052`. Live desktop/mobile visual validation and
+  GitHub PR/CI/merge evidence remain pending.
 
 ### ATLAS-IMP-094 Scope Rationale
 

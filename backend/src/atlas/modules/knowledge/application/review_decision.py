@@ -397,6 +397,15 @@ class OperationalKnowledgeTrackReviewDecisionService:
         assert request is not None and draft is not None
         return decisions, request, draft
 
+    async def final_resolution_source(
+        self, *, review_request_id: str
+    ) -> tuple[
+        tuple[OperationalKnowledgeTrackReviewDecisionRecord, ...],
+        OperationalKnowledgeReviewRequestRecord,
+        OperationalEvidenceKnowledgeDraftRecord,
+    ]:
+        return await self.correction_resubmission_source(review_request_id=review_request_id)
+
     async def _authorize(
         self,
         *,
