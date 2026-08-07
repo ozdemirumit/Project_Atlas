@@ -4,14 +4,79 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-096 |
-| Title | Governed operational knowledge publication preparation foundation |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#108](https://github.com/ozdemirumit/Project_Atlas/pull/108) (merged) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-052 |
+| Task ID | ATLAS-IMP-097 |
+| Title | Governed protected knowledge source materialization foundation |
+| Status | Validation Complete |
+| Branch | `agent/governed-knowledge-source-materialization` |
+| Pull Request | [#109](https://github.com/ozdemirumit/Project_Atlas/pull/109) (draft) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-053 |
 | Last Updated | 2026-08-07 |
-| Next Action | Define ATLAS-IMP-097 governed protected knowledge source materialization |
+| Next Action | Mark PR #109 ready, merge after final branch CI, and complete main/closure CI |
+
+### ATLAS-IMP-097 Scope Rationale
+
+- IMP-096 creates an immutable metadata-only preparation manifest but deliberately does not read,
+  normalize, copy, or expose the approved source content.
+- ADR-053 permits a separate eligible human materialization steward to claim the exact preparation
+  and invoke one trusted protected boundary that verifies and materializes the source atomically.
+- Deterministic chunking, embeddings, index staging/validation, publication, retrieval, workflow,
+  execution, deployment, and infrastructure mutation remain later stages.
+
+### ATLAS-IMP-097 Acceptance Criteria
+
+- Only one exact completed preparation with unchanged approved resolution, review, request, draft,
+  knowledge-item, source, governance, and profile lineage can enter materialization. Drifted,
+  corrected, rejected, superseded, already processed, published, or caller-shaped lineage fails.
+- Only a separate eligible enterprise human materialization steward in the exact tenant, with recent
+  hardware MFA, dedicated C2 permissions, browser binding, CSRF, and a current signed policy may
+  create or read materialization. Every earlier accountable actor and non-human identity fails.
+- The caller supplies only exact preparation and policy bindings, bounded purpose,
+  acknowledgements, idempotency, and correlation. Content, coordinates, keys, scan details,
+  processing profiles, destinations, indexes, retrieval, workflow, and operation fields are
+  forbidden.
+- Intent audit and an atomic unique preparation claim precede a trusted signed metadata-only
+  materialization receipt. Exact completed replay is allowed; concurrency, conflict, or post-claim
+  failure remains claimed. Production fails closed without the trusted materializer.
+- Success sets only protected source materialization while preserving approval, readiness, and
+  preparation. Chunking, embedding, indexing, publication, retrieval, model context, graph,
+  scheduling, workflow, execution, deployment, and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  lineage/separation/concurrency/idempotency/materializer/audit tests, minimized UI evidence, full
+  suites, live desktop/mobile validation, and GitHub CI apply.
+
+### ATLAS-IMP-097 Validation Evidence
+
+- ADR-053 is accepted. The implementation revalidates the exact completed preparation, approved
+  final resolution, both passed review tracks, immutable request and draft lineage, source and
+  governance digests, exact tenant, recent hardware MFA, browser binding, dedicated permissions,
+  and a current signed policy before creating an atomic unique preparation claim.
+- The caller provides only exact preparation and policy digests, bounded purpose,
+  acknowledgements, idempotency, and correlation. Content, excerpt, title, source/destination
+  coordinates, keys, scan details, identity, processing profiles, index, retrieval, workflow,
+  execution, deployment, and mutation fields are forbidden.
+- The trusted materializer returns only a signed metadata receipt binding the exact source and
+  protected-material digests, canonicalization and security profiles, media type, bounded counts,
+  scan evidence, and governance manifests. The ordinary application, database, audit, API, and UI
+  receive no protected content or artifact coordinate.
+- Seven focused backend tests cover exact idempotent replay, publication-steward separation,
+  permission denial before claim, concurrent exclusion, drifted receipt rejection with permanent
+  claim, metadata-only PostgreSQL contracts, and strict caller schemas. The full backend suite
+  passed with 751 tests and three expected Windows symlink skips.
+- Backend Ruff formatting/lint passed across 879 files and strict mypy passed across 809 source
+  files. Alembic reports one `20260807_0069` head, and a complete PostgreSQL offline migration from
+  an empty database through that head succeeds.
+- Frontend ESLint and TypeScript checks passed; 37 test files and 67 tests passed; the production
+  bundle built successfully. The existing large-bundle warning remains non-functional.
+- The restarted live backend returned liveness and readiness `200` and exposed both source
+  materialization endpoints among 180 OpenAPI paths at `127.0.0.1:8052`.
+- Draft PR #109 Continuous Integration run `31167881951` passed (backend 3m14s, frontend 3m56s).
+  Validation-record run `31168205200` also passed (backend 2m07s, frontend 3m42s).
+- The live Connectors view exposed `Source materialization` as the latest available capability.
+  Desktop `1280x720` and mobile `390x844` inspections had zero horizontal overflow, and browser
+  developer logs contained no warnings or errors. Final branch CI, merge, and main closure remain
+  pending.
+
+### ATLAS-IMP-096 Scope Rationale
 
 ### ATLAS-IMP-096 Scope Rationale
 
@@ -77,7 +142,8 @@
 - Draft PR #108 Continuous Integration run `31164549503` passed (backend 3m33s, frontend 3m51s),
   and final branch run `31164936949` passed (backend 3m22s, frontend 3m52s).
 - PR #108 merged to `main` as `dcd4d5a`; merged-main Continuous Integration run `31165238274`
-  passed (backend 2m36s, frontend 3m43s). Closure-record CI remains pending.
+  passed (backend 2m36s, frontend 3m43s), and closure run `31165535224` passed (backend 3m14s,
+  frontend 3m53s).
 
 ### ATLAS-IMP-095 Scope Rationale
 

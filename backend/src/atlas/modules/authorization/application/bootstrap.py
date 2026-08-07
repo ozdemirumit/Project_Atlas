@@ -182,6 +182,8 @@ KNOWLEDGE_FINAL_RESOLUTION_CREATE = "knowledge.final-resolutions.create"
 KNOWLEDGE_FINAL_RESOLUTION_READ = "knowledge.final-resolutions.read"
 KNOWLEDGE_PUBLICATION_PREPARATION_CREATE = "knowledge.publication-preparations.create"
 KNOWLEDGE_PUBLICATION_PREPARATION_READ = "knowledge.publication-preparations.read"
+KNOWLEDGE_SOURCE_MATERIALIZATION_CREATE = "knowledge.source-materializations.create"
+KNOWLEDGE_SOURCE_MATERIALIZATION_READ = "knowledge.source-materializations.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -1056,6 +1058,19 @@ def operational_knowledge_publication_preparation_scope(
     )
 
 
+def operational_knowledge_source_materialization_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.knowledge",
+        resource_id="resource.knowledge.operational-source-materializations",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -1809,6 +1824,14 @@ def build_development_authorization_service(
             permission_id=KNOWLEDGE_PUBLICATION_PREPARATION_READ,
             description="Read minimized publication preparation metadata.",
         ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_SOURCE_MATERIALIZATION_CREATE,
+            description="Create one governed protected source materialization.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_SOURCE_MATERIALIZATION_READ,
+            description="Read minimized protected source materialization metadata.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -1960,6 +1983,8 @@ def build_development_authorization_service(
                 KNOWLEDGE_FINAL_RESOLUTION_READ,
                 KNOWLEDGE_PUBLICATION_PREPARATION_CREATE,
                 KNOWLEDGE_PUBLICATION_PREPARATION_READ,
+                KNOWLEDGE_SOURCE_MATERIALIZATION_CREATE,
+                KNOWLEDGE_SOURCE_MATERIALIZATION_READ,
             }
         ),
     )
@@ -3316,6 +3341,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=operational_knowledge_publication_preparation_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-source-materialization-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=operational_knowledge_source_materialization_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-source-materialization-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=operational_knowledge_source_materialization_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,

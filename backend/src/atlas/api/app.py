@@ -83,6 +83,7 @@ from atlas.api.routes import (
     secret_brokerage_authorizations,
     security_export,
     sessions,
+    source_materializations,
     static_dependency_analyses,
     storage,
     supply_chain_inventories,
@@ -701,6 +702,20 @@ from atlas.modules.knowledge.adapters.reviewer_assignment_synthetic import (
     SyntheticOperationalKnowledgeReviewerAssignmentAdapter,
     UnavailableOperationalKnowledgeReviewerAssignmentAdapter,
 )
+from atlas.modules.knowledge.adapters.source_materialization_memory import (
+    InMemoryOperationalKnowledgeSourceMaterializationPolicySource,
+    InMemoryOperationalKnowledgeSourceMaterializationRepository,
+)
+from atlas.modules.knowledge.adapters.source_materialization_permission import (
+    AuthorizationOperationalKnowledgeSourceMaterializationPermissionAuthorizer,
+)
+from atlas.modules.knowledge.adapters.source_materialization_postgres import (
+    PostgreSQLOperationalKnowledgeSourceMaterializationRepository,
+)
+from atlas.modules.knowledge.adapters.source_materialization_synthetic import (
+    SyntheticOperationalKnowledgeSourceMaterializer,
+    UnavailableOperationalKnowledgeSourceMaterializer,
+)
 from atlas.modules.knowledge.adapters.synthetic import build_synthetic_knowledge_chunks
 from atlas.modules.knowledge.application.correction_resubmission import (
     OperationalKnowledgeCorrectionService,
@@ -750,6 +765,10 @@ from atlas.modules.knowledge.application.reviewer_assignment import (
     build_development_operational_knowledge_reviewer_assignment_policy,
 )
 from atlas.modules.knowledge.application.service import KnowledgeRetrievalService
+from atlas.modules.knowledge.application.source_materialization import (
+    OperationalKnowledgeSourceMaterializationService,
+    build_development_operational_knowledge_source_materialization_policy,
+)
 from atlas.modules.mcp_builder.adapters.candidate_archive_filesystem import (
     FileSystemMcpBuilderCandidateArchivePublisher,
 )
@@ -1038,6 +1057,9 @@ def create_app(
     ) = None,
     operational_knowledge_publication_preparation_service: (
         OperationalKnowledgePublicationPreparationService | None
+    ) = None,
+    operational_knowledge_source_materialization_service: (
+        OperationalKnowledgeSourceMaterializationService | None
     ) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
@@ -3032,6 +3054,53 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    if operational_knowledge_source_materialization_service is not None:
+        resolved_operational_knowledge_source_materialization_service = (
+            operational_knowledge_source_materialization_service
+        )
+    else:
+        source_materialization_repository = (
+            PostgreSQLOperationalKnowledgeSourceMaterializationRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryOperationalKnowledgeSourceMaterializationRepository()
+        )
+        source_materialization_policies = (
+            ()
+            if is_production
+            else (
+                build_development_operational_knowledge_source_materialization_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_operational_knowledge_source_materialization_service = (
+            OperationalKnowledgeSourceMaterializationService(
+                repository=source_materialization_repository,
+                preparation_source=resolved_operational_knowledge_publication_preparation_service,
+                lineage_source=resolved_operational_knowledge_final_resolution_service,
+                policy_source=InMemoryOperationalKnowledgeSourceMaterializationPolicySource(
+                    source_materialization_policies
+                ),
+                permission_authorizer=(
+                    AuthorizationOperationalKnowledgeSourceMaterializationPermissionAuthorizer(
+                        service=resolved_authorization_service,
+                        environment=resolved_settings.environment,
+                    )
+                ),
+                materializer=(
+                    UnavailableOperationalKnowledgeSourceMaterializer()
+                    if is_production
+                    else SyntheticOperationalKnowledgeSourceMaterializer()
+                ),
+                audit_sink=resolved_audit_sink,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -3272,6 +3341,9 @@ def create_app(
         app.state.operational_knowledge_publication_preparation_service = (
             resolved_operational_knowledge_publication_preparation_service
         )
+        app.state.operational_knowledge_source_materialization_service = (
+            resolved_operational_knowledge_source_materialization_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -3284,6 +3356,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_operational_knowledge_source_materialization_service.close()
         await resolved_operational_knowledge_publication_preparation_service.close()
         await resolved_operational_knowledge_final_resolution_service.close()
         await resolved_operational_knowledge_correction_service.close()
@@ -3430,6 +3503,7 @@ def create_app(
     app.include_router(correction_resubmissions.router, prefix="/api/v1")
     app.include_router(final_resolutions.router, prefix="/api/v1")
     app.include_router(publication_preparations.router, prefix="/api/v1")
+    app.include_router(source_materializations.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
