@@ -4,14 +4,96 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-103 |
-| Title | Governed protected model-context assembly foundation |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#115](https://github.com/ozdemirumit/Project_Atlas/pull/115) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-059 |
+| Task ID | ATLAS-IMP-104 |
+| Title | Governed protected model invocation foundation |
+| Status | In Progress |
+| Branch | `agent/governed-model-invocation` |
+| Pull Request | [#116](https://github.com/ozdemirumit/Project_Atlas/pull/116) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-060 |
 | Last Updated | 2026-08-07 |
-| Next Action | Define ADR-060 and begin ATLAS-IMP-104 governed protected model invocation |
+| Next Action | Publish IMP-104, complete GitHub CI and merge evidence, then begin IMP-105 |
+
+### ATLAS-IMP-104 Scope Rationale
+
+- IMP-103 assembles one exact protected retrieval into an injection-resistant, citation-bound
+  context but deliberately grants no model-invocation authority.
+- ADR-060 permits the same eligible human consumer to submit that exact context to one locally
+  approved OpenAI-compatible endpoint selected exclusively by signed policy and trusted registry.
+- Model output remains a protected, untrusted draft. Answer presentation, recommendation, graph
+  update, scheduling, workflow, execution, deployment, and infrastructure mutation remain later
+  stages.
+
+### ATLAS-IMP-104 Acceptance Criteria
+
+- Only one exact assembled, unexpired, integrity-valid protected context with unchanged retrieval,
+  source, access, classification, purpose, policy, citation, safety, budget, destination, and vault
+  lineage can enter invocation. Current consumer, hardware MFA, browser, permission, retention,
+  endpoint evaluation, and secret availability checks apply.
+- The caller supplies only exact context and invocation-policy bindings, unchanged purpose, three
+  acknowledgements, idempotency, and correlation. Prompt, evidence, endpoint, model, provider,
+  secret, generation controls, tools, workflows, operations, and mutations are forbidden.
+- Signed policy and trusted registry resolve one active evaluated endpoint, exact model, task,
+  output schema, network boundary, classification ceiling, limits, timeout, and secret reference.
+  Production fails closed when any required boundary is unavailable.
+- The trusted gateway rehydrates the exact protected context, independently verifies all content
+  and lineage digests, disables streaming and tool/function calling, and performs no automatic
+  retry after an uncertain provider outcome. Development uses a deterministic no-network synthetic
+  transport.
+- Structured output validation enforces exact model identity, closed schema, authorized citations,
+  explicit unknowns, accepted finish reason, token limits, and output safety before a protected
+  draft is stored. Invalid or uncertain output creates no available draft.
+- Context and draft content remain only in protected tenant vaults. Ordinary persistence, API,
+  audit, logs, and UI expose only minimized IDs, digests, model/endpoint profile metadata, bounded
+  usage, status, timestamps, and safety evidence; endpoint URLs, secret references, and protected
+  handles are excluded.
+- Exact completed replay never reinvokes the model and only returns the same minimized manifest
+  after current authorization and integrity checks. Success sets `model_invoked` only; no answer is
+  published and no graph, schedule, workflow, tool, execution, deployment, or mutation occurs.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  access/lineage/destination/replay/schema/citation/safety/vault/audit tests, minimized UI evidence,
+  full suites, live desktop/mobile validation, and GitHub CI apply.
+
+### ATLAS-IMP-104 Validation Evidence
+
+- ADR-060 is accepted. IMP-103 documentation closure commit
+  `a12baf4190c9ec3e4de6a4ad9f49344a6d081a70` passed main run `31198243876` (backend 3m55s,
+  frontend 4m08s).
+- The governed service revalidates the exact assembled context through the existing protected
+  boundary, verifies current enterprise-human identity, hardware MFA, browser, permissions,
+  purpose, classification, policy, endpoint evaluation, destination, retention, protected
+  package, citation, safety, budget, and canonical lineage before model disclosure.
+- Caller input is limited to exact context and signed invocation-policy bindings, unchanged
+  purpose, three acknowledgements, idempotency, and correlation. Endpoint, model, provider,
+  secret, prompt, evidence, generation controls, tools, workflows, targets, and operations are
+  policy-derived or forbidden by strict API schemas.
+- Development uses a deterministic no-network synthetic protected gateway. Production uses an
+  unavailable gateway and empty policy registry, failing closed until approved endpoint registry,
+  secret resolution, transport, and encrypted result-vault boundaries are configured.
+- The gateway independently verifies the protected context package, disables streaming and tools,
+  validates exact model identity, closed output schema, authorized citation references, explicit
+  unknowns, finish reason, token limits, output safety, and protected-vault persistence. Exact
+  replay rehydrates the same draft and never invokes the model twice.
+- Full context and draft content remain in protected in-memory vault fixtures for development.
+  PostgreSQL records, API responses, audit, logs, and UI retain minimized lineage, endpoint/model
+  profile, digest, bounded token/count, outcome, and timestamp metadata only; protected handles,
+  endpoint URL, secret reference, prompt, evidence, summary, and unknown text are excluded.
+- Dedicated default-deny C1 create/read permissions, CSRF/browser-bound routes, memory/PostgreSQL
+  repositories, strict schemas, and Alembic revision `20260807_0076` are implemented. Alembic
+  reports one head and empty-to-head offline SQL generation passed.
+- Focused invocation and API-health validation passed (`9 passed`). The final backend gate found
+  879 files formatted, passed Ruff, found no strict mypy issues in 782 source modules, and passed
+  `802` tests with three expected Windows symlink skips and three existing dependency warnings.
+- The frontend passed ESLint, TypeScript, `44` test files with `74` tests, and the production build
+  (CSS 127.86 kB / 21.18 kB gzip; JavaScript 995.06 kB / 182.00 kB gzip). One existing MCP Builder
+  test timed out only during the initial backend-parallel high-load run; it passed in isolation and
+  the subsequent full frontend run passed. Existing Babel and bundle-size notices remain.
+- Live development authentication succeeded against backend port 8056 and frontend port 5211.
+  Live and ready health returned 200; OpenAPI exposed 194 paths including protected invocation
+  create and read. The Connector lifecycle rendered `Model invocation` as the latest capability
+  at 1280x720 and 390x844 with no horizontal overflow. Browser logs contained only Vite debug and
+  React development information, with no warning or error.
+- Scope commit `495a791` and implementation commit `6c40fc9` contain the current slice. GitHub PR,
+  branch CI, merge, merged-main, and closure evidence are pending.
 
 ### ATLAS-IMP-103 Scope Rationale
 

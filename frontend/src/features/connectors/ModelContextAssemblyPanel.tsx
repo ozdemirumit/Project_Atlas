@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { createProtectedModelContext } from "../../api/modelContextAssembly";
 import type { OperationalKnowledgeRetrievalResult } from "../../api/protectedRetrieval";
+import { ProtectedModelInvocationPanel } from "./ProtectedModelInvocationPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -120,19 +121,22 @@ export function ModelContextAssemblyPanel({
         </div>
       )}
       {result && (
-        <div className="correction-record">
-          <strong>Protected model context assembled</strong>
-          <code>{result.context.context_id}</code>
-          <p className="muted-copy">
-            {result.manifest.included_evidence_count} citation-bound evidence unit,{" "}
-            {result.manifest.estimated_token_count} of {result.manifest.maximum_estimated_tokens}{" "}
-            estimated tokens.
-          </p>
-          <p className="muted-copy">
-            The context body remains protected. No model, tool, workflow, deployment, or
-            infrastructure action ran.
-          </p>
-        </div>
+        <>
+          <div className="correction-record">
+            <strong>Protected model context assembled</strong>
+            <code>{result.context.context_id}</code>
+            <p className="muted-copy">
+              {result.manifest.included_evidence_count} citation-bound evidence unit,{" "}
+              {result.manifest.estimated_token_count} of {result.manifest.maximum_estimated_tokens}{" "}
+              estimated tokens.
+            </p>
+            <p className="muted-copy">
+              The context body remains protected. No model, tool, workflow, deployment, or
+              infrastructure action ran.
+            </p>
+          </div>
+          <ProtectedModelInvocationPanel contextResult={result} />
+        </>
       )}
     </div>
   );
