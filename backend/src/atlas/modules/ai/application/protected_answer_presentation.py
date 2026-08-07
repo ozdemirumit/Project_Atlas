@@ -443,9 +443,7 @@ class GovernedProtectedAnswerPresentationService:
         policy: ProtectedAnswerPresentationPolicySnapshot,
     ) -> None:
         if response_schema_version != policy.required_draft_schema:
-            raise ProtectedAnswerPresentationError(
-                "protected_answer_presentation_source_invalid"
-            )
+            raise ProtectedAnswerPresentationError("protected_answer_presentation_source_invalid")
 
     @classmethod
     def _verify_receipt(
