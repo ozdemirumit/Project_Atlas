@@ -8,7 +8,7 @@
 | Title | Governed protected knowledge retrieval-index staging and validation foundation |
 | Status | In Progress |
 | Branch | `agent/governed-knowledge-index-staging-validation` |
-| Pull Request | Pending |
+| Pull Request | [#112](https://github.com/ozdemirumit/Project_Atlas/pull/112) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-056 |
 | Last Updated | 2026-08-07 |
 | Next Action | Publish the completed ADR-056 implementation, pass GitHub CI, merge, and record main-branch closure evidence |
@@ -74,8 +74,8 @@
   rendered `Index staging` as the latest available capability at 1280x720 and 390x844, with no
   horizontal overflow and no browser console warning or error.
 - Publication, retrieval, model context, graph, scheduling, workflow, execution, deployment, and
-  infrastructure mutation remain false and unauthorized. GitHub PR, branch CI, merge, merged-main
-  CI, and closure evidence are pending.
+  infrastructure mutation remain false and unauthorized. Draft PR #112 is open; branch CI, merge,
+  merged-main CI, and closure evidence are pending.
 
 ### ATLAS-IMP-099 Scope Rationale
 
