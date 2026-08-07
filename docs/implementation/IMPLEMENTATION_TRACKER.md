@@ -4,14 +4,49 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-095 |
-| Title | Governed operational knowledge final resolution foundation |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#107](https://github.com/ozdemirumit/Project_Atlas/pull/107) (merged) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-051 |
+| Task ID | ATLAS-IMP-096 |
+| Title | Governed operational knowledge publication preparation foundation |
+| Status | In Progress |
+| Branch | `agent/governed-knowledge-publication-preparation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-052 |
 | Last Updated | 2026-08-07 |
-| Next Action | Define ATLAS-IMP-096 governed operational knowledge publication-preparation contract |
+| Next Action | Implement the accepted ADR-052 publication-preparation contract |
+
+### ATLAS-IMP-096 Scope Rationale
+
+- IMP-095 records final approval and publication readiness but deliberately creates no processing
+  artifact, chunk, embedding, index, retrieval visibility, or publication authority.
+- ADR-052 permits a separate eligible human publication steward to bind the exact approved
+  resolution to one immutable, signed, metadata-only publication-preparation manifest.
+- Protected source materialization, chunking, embedding, index staging and validation, atomic
+  publication, retrieval, workflow, execution, deployment, and mutation remain later stages.
+
+### ATLAS-IMP-096 Acceptance Criteria
+
+- Only one exact approved final resolution with unchanged passed-review lineage, publication
+  readiness, and no later lifecycle authority can enter preparation. Rejected, corrected,
+  superseded, mixed, already processed, or drifted lineage fails before claim creation.
+- Only a separate eligible enterprise human publication steward in the exact tenant, with recent
+  hardware MFA, dedicated C2 permissions, browser binding, CSRF, and current signed policy may
+  create or read preparation. Curator, reviewers, final approver, signer, preparer, service, AI,
+  shared, cross-tenant, and break-glass identities fail.
+- The caller supplies only exact resolution and policy bindings, bounded purpose, acknowledgements,
+  idempotency, and correlation. Content, identity, lifecycle authority, artifact coordinates,
+  processing profiles, destination, index, retrieval, workflow, and operation fields are forbidden.
+- Intent audit and an atomic unique final-resolution claim precede a trusted signed metadata-only
+  preparation receipt. Exact idempotent reuse is allowed; concurrency, conflict, or post-claim
+  failure remains claimed. Production fails closed without the trusted preparer.
+- Success sets only publication preparation while preserving approval/readiness. Chunking,
+  embedding, index staging, validation, publication, retrieval, model context, graph, scheduling,
+  workflow, execution, deployment, and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  lineage/separation/concurrency/idempotency/preparer/audit tests, minimized UI evidence, full
+  suites, live desktop/mobile validation, and GitHub CI apply.
+
+### ATLAS-IMP-096 Validation Evidence
+
+- ADR-052 is accepted. Implementation and validation are in progress.
 
 ### ATLAS-IMP-095 Scope Rationale
 
