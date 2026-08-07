@@ -4,14 +4,64 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-106 |
-| Title | Governed protected answer-presentation foundation |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#118](https://github.com/ozdemirumit/Project_Atlas/pull/118) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-062 |
-| Last Updated | 2026-08-07 |
-| Next Action | Define ADR-063 and begin ATLAS-IMP-107 grounded recommendation-generation foundation |
+| Task ID | ATLAS-IMP-107 |
+| Title | Governed grounded recommendation-candidate generation foundation |
+| Status | In Progress |
+| Branch | `agent/grounded-recommendation-generation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-063 |
+| Last Updated | 2026-08-08 |
+| Next Action | Implement and validate the IMP-107 backend foundation |
+
+### ATLAS-IMP-107 Scope Rationale
+
+- IMP-106 presents one exact eligible protected answer but deliberately grants no recommendation,
+  impact, preference, workflow, approval, or operational authority.
+- ADR-063 permits the same eligible human consumer to request one bounded protected candidate set
+  grounded in that exact answer and its complete upstream evidence lineage.
+- Candidate generation enriches the established recommendation domain; it does not create a second
+  `RecommendationArtifact` model or make candidates available to approval, reporting, workflow,
+  ITSM, or execution consumers.
+- Service-impact enrichment, risk and recovery completion, recommendation adjudication,
+  presentation, existing-domain promotion, review, approval, workflow, execution, deployment, and
+  infrastructure mutation remain later stages.
+
+### ATLAS-IMP-107 Acceptance Criteria
+
+- Only one exact completed, unexpired, integrity-valid answer presentation with unchanged
+  adjudication, invocation, context, retrieval, source, access, classification, purpose, policies,
+  citation, unknown, safety, destination, browser, consumer, and protected-vault lineage can enter
+  generation.
+- The caller supplies only exact presentation and signed generation-policy bindings, unchanged
+  purpose, three acknowledgements, idempotency, and correlation. Answer, candidate, option,
+  preference, risk, impact, duration, recovery, capability, model, endpoint, workflow, operation,
+  deployment, and mutation controls are forbidden.
+- A trusted deterministic no-network, no-model generator independently verifies the exact protected
+  answer and upstream artifacts, preserves citations, unknowns and conflicts, and produces a
+  bounded closed candidate set with required diagnostic, escalation, and defer/no-action diversity.
+- Candidate steps are conceptual and non-executable. Only policy-approved C0/C1 references are
+  allowed; restoration or remediation planning stays blocked when impact, recovery, redundancy,
+  maintenance-window, or policy evidence is incomplete.
+- Full candidate content and receipt remain in a tenant-isolated protected vault. Ordinary
+  persistence, API, audit, logs, events, metrics, and UI expose only minimized lineage, policy,
+  generator, category/count, capability-ceiling, digest, state, timestamp, and no-authority
+  metadata.
+- An immutable unique claim prevents multiple candidate sets. Exact replay returns only the same
+  minimized metadata after current authorization and complete source, policy, retention, vault, and
+  digest checks and never regenerates candidates.
+- Success sets only candidate generation. It creates no final recommendation artifact, preference,
+  confirmed impact, duration, interruption, recovery, readiness, presentation, approval, workflow,
+  execution, deployment, or infrastructure mutation authority.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  access/lineage/replay/diversity/capability/content/vault/audit tests, minimized UI evidence, full
+  suites, live desktop/mobile validation, and GitHub CI apply.
+
+### ATLAS-IMP-107 Validation Evidence
+
+- ADR-063 is accepted. IMP-106 documentation closure commit
+  `69bfd81755448ef13e17fb29f11036f396e3f36c` passed main run `31220880152` (backend 2m47s,
+  frontend 3m42s).
+- Implementation and delivery evidence are pending.
 
 ### ATLAS-IMP-106 Scope Rationale
 
