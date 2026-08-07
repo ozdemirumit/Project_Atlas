@@ -4,14 +4,53 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-101 |
-| Title | Governed protected knowledge retrieval-index publication foundation |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#113](https://github.com/ozdemirumit/Project_Atlas/pull/113) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-057 |
+| Task ID | ATLAS-IMP-102 |
+| Title | Governed protected knowledge retrieval foundation |
+| Status | In Progress |
+| Branch | `agent/protected-knowledge-retrieval` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-058 |
 | Last Updated | 2026-08-07 |
-| Next Action | Define ADR-058 and begin IMP-102 governed protected knowledge retrieval |
+| Next Action | Implement ADR-058 with protected retrieval, vault, persistence, API, RBAC, UI, and tests |
+
+### ATLAS-IMP-102 Scope Rationale
+
+- IMP-101 publishes one complete protected knowledge projection through an active policy-filtered
+  route but deliberately performs no query and returns no protected content.
+- ADR-058 permits one eligible human consumer to submit a bounded query to a trusted retrieval
+  boundary that filters before scoring and returns a citation-ready authorized evidence package.
+- Model-context assembly, LLM invocation, graph update, scheduling, workflow, execution,
+  deployment, and infrastructure mutation remain later stages.
+
+### ATLAS-IMP-102 Acceptance Criteria
+
+- Only one exact active publication with unchanged staging, embedding, chunking, materialization,
+  preparation, approval, review, item, source, governance, model, projection, route, and policy
+  lineage can be queried. Drifted, suspended, superseded, expired, or cross-tenant lineage fails.
+- Only an eligible enterprise human consumer in the exact tenant, with recent hardware MFA,
+  dedicated C1 retrieval and lineage-read permissions, browser binding, CSRF, current policy, and
+  current source/classification access may retrieve. Initial policy excludes supply-chain actors,
+  publisher, trusted retriever, non-human, shared, AI, and break-glass identities.
+- The caller supplies only exact publication bindings, one bounded natural-language query,
+  purpose, three acknowledgements, idempotency, and correlation. Identity, filters, routing,
+  ranking, result count, model, prompt, tool, workflow, operation, deployment, and mutation controls
+  are forbidden.
+- Authorization and lifecycle filters apply before candidate scoring. The trusted retriever
+  returns bounded citation-ready evidence, persists query and evidence only in a protected vault,
+  and returns a signed metadata receipt. Ordinary persistence and audit retain only digests and
+  minimized metadata.
+- Exact replay rehydrates the same protected artifact only after current access and integrity
+  checks. Conflicts or uncertainty never rerun automatically. Empty and insufficient results are
+  valid non-leaking outcomes.
+- Success sets only knowledge retrieval. Model context, LLM invocation, graph, scheduling,
+  workflow, execution, deployment, and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  lineage/access/filtering/replay/vault/audit tests, minimized UI evidence, full suites, live
+  desktop/mobile validation, and GitHub CI apply.
+
+### ATLAS-IMP-102 Validation Evidence
+
+- Pending implementation.
 
 ### ATLAS-IMP-101 Scope Rationale
 
@@ -83,9 +122,9 @@
   frontend 3m56s), and validation-record run `31186691030` passed (backend 2m43s,
   frontend 3m53s). Final branch run `31187060916` passed (backend 2m32s, frontend 2m56s).
 - PR #113 was squash-merged as `614b7632a15935d863532d06087e13491686b534`. Merged-main run
-  `31187364237` passed (backend 2m16s, frontend 4m00s). This documentation-only closure commit is
-  the final IMP-101 evidence update; its own main-branch CI is recorded in the next implementation
-  slice.
+  `31187364237` passed (backend 2m16s, frontend 4m00s). Documentation-only closure commit
+  `911077ee12bc149133e9dea60ee744c87373007c` passed main run `31187759658` (backend 3m53s,
+  frontend 3m59s).
 
 ### ATLAS-IMP-100 Scope Rationale
 
