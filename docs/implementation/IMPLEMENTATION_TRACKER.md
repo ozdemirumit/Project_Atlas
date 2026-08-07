@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-101 |
 | Title | Governed protected knowledge retrieval-index publication foundation |
-| Status | In Progress |
-| Branch | `agent/protected-retrieval-index-publication` |
+| Status | Complete |
+| Branch | `main` |
 | Pull Request | [#113](https://github.com/ozdemirumit/Project_Atlas/pull/113) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-057 |
 | Last Updated | 2026-08-07 |
-| Next Action | Publish IMP-101, complete GitHub CI and merge evidence, then begin IMP-102 |
+| Next Action | Define ADR-058 and begin IMP-102 governed protected knowledge retrieval |
 
 ### ATLAS-IMP-101 Scope Rationale
 
@@ -81,7 +81,11 @@
   scheduling, workflow, execution, deployment, and infrastructure mutation remain false and
   unauthorized. Draft PR #113 initial branch run `31186327642` passed (backend 3m43s,
   frontend 3m56s), and validation-record run `31186691030` passed (backend 2m43s,
-  frontend 3m53s). Final branch CI, merge, merged-main, and closure evidence are pending.
+  frontend 3m53s). Final branch run `31187060916` passed (backend 2m32s, frontend 2m56s).
+- PR #113 was squash-merged as `614b7632a15935d863532d06087e13491686b534`. Merged-main run
+  `31187364237` passed (backend 2m16s, frontend 4m00s). This documentation-only closure commit is
+  the final IMP-101 evidence update; its own main-branch CI is recorded in the next implementation
+  slice.
 
 ### ATLAS-IMP-100 Scope Rationale
 
