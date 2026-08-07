@@ -4,14 +4,46 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-091 |
-| Title | Governed operational knowledge track-specific review finding foundation |
-| Status | Done |
-| Branch | `main` |
-| Pull Request | [#103](https://github.com/ozdemirumit/Project_Atlas/pull/103) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-047 |
+| Task ID | ATLAS-IMP-092 |
+| Title | Governed operational knowledge protected finding presentation foundation |
+| Status | In Progress |
+| Branch | `agent/governed-knowledge-finding-presentation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-048 |
 | Last Updated | 2026-08-07 |
-| Next Action | Select and define the next approved vertical slice after review findings |
+| Next Action | Implement the accepted protected finding presentation contract end to end |
+
+### ATLAS-IMP-092 Scope Rationale
+
+- IMP-091 records sensitive reviewer observations in an encrypted immutable artifact while Atlas
+  persists metadata only and deliberately records no review decision.
+- ADR-048 redisplays the exact sealed finding packet through a separate trusted presenter under
+  the same active lease, exact assignee, browser binding, and track cookie.
+- Track decisions, correction, approval, publication, indexing, retrieval, scheduling, workflow,
+  execution, deployment, and mutation remain later independent stages.
+
+### ATLAS-IMP-092 Acceptance Criteria
+
+- Only the exact current lease holder and assignee, in the exact tenant, with recent hardware MFA,
+  dedicated C2 finding-presentation and lineage-read permissions, the bound browser session, and
+  the exact track cookie may present findings. Caller-selected content, identity, track, artifact,
+  policy-derived limits, decision, approval, or operational fields fail.
+- First presentation uses CSRF, exact finding and policy digests, intent audit, and an atomic
+  unique source-finding claim before artifact access. Exact completed idempotent reuse is allowed;
+  uncertainty after claim remains claimed and cannot disclose a second snapshot.
+- The trusted presenter verifies immutable finding lineage, decrypts only inside its boundary,
+  rejects active or malformed content and catalog drift, returns bounded ordered inert findings
+  plus a signed minimized receipt, erases transient buffers, and closes channels. Production
+  fails closed without a trusted presenter.
+- Persistence stores no category, severity, summary, detail, or artifact location and records only
+  immutable lineage, counts, policy/presenter identity, integrity, encryption, cleanup, and expiry
+  metadata. API output uses strict no-store controls and renders finding values only as text.
+- Replay within the same active lease revalidates all proofs and requires exact content, metadata,
+  item-count, and byte-count parity without extending authority. Presentation sets only
+  `finding_presented=true`; every decision and later lifecycle authority remains false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, dedicated RBAC, CSRF and cookie tests,
+  focused exact-assignee/cross-track/expiry/concurrency/idempotency/drift/receipt/audit failure
+  tests, minimized web evidence, full suites, live desktop/mobile validation, and GitHub CI apply.
 
 ### ATLAS-IMP-091 Scope Rationale
 
