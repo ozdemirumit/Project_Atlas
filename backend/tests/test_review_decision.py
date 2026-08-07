@@ -273,9 +273,16 @@ async def test_changes_required_is_not_correction_or_approval() -> None:
 
 @pytest.mark.asyncio
 async def test_matching_domain_and_security_passes_only_establish_review_readiness() -> None:
-    service, repository, content, finding, presentation, secret, policy, *_ = (
-        await review_decision_fixture()
-    )
+    (
+        service,
+        repository,
+        content,
+        finding,
+        presentation,
+        secret,
+        policy,
+        *_,
+    ) = await review_decision_fixture()
     domain = await decide(service, content, finding, presentation, secret, policy)
     security_basis = (
         "review-basis.access-control",
