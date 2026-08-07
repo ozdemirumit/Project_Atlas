@@ -52,6 +52,7 @@ from atlas.api.routes import (
     health_checks,
     identity,
     identity_governance,
+    index_staging_validation,
     instance_creation,
     investigations,
     invocation_authorizations,
@@ -647,6 +648,20 @@ from atlas.modules.knowledge.adapters.finding_presentation_synthetic import (
     SyntheticOperationalKnowledgeFindingPresenter,
     UnavailableOperationalKnowledgeFindingPresenter,
 )
+from atlas.modules.knowledge.adapters.index_staging_validation_memory import (
+    InMemoryOperationalKnowledgeIndexPolicySource,
+    InMemoryOperationalKnowledgeIndexRepository,
+)
+from atlas.modules.knowledge.adapters.index_staging_validation_permission import (
+    AuthorizationOperationalKnowledgeIndexPermissionAuthorizer,
+)
+from atlas.modules.knowledge.adapters.index_staging_validation_postgres import (
+    PostgreSQLOperationalKnowledgeIndexRepository,
+)
+from atlas.modules.knowledge.adapters.index_staging_validation_synthetic import (
+    SyntheticOperationalKnowledgeIndexer,
+    UnavailableOperationalKnowledgeIndexer,
+)
 from atlas.modules.knowledge.adapters.memory import InMemoryKnowledgeRetriever
 from atlas.modules.knowledge.adapters.protected_content_memory import (
     InMemoryOperationalKnowledgeProtectedContentPolicySource,
@@ -774,6 +789,10 @@ from atlas.modules.knowledge.application.final_resolution import (
 from atlas.modules.knowledge.application.finding_presentation import (
     OperationalKnowledgeFindingPresentationService,
     build_development_operational_knowledge_finding_presentation_policy,
+)
+from atlas.modules.knowledge.application.index_staging_validation import (
+    OperationalKnowledgeIndexStagingValidationService,
+    build_development_operational_knowledge_index_policy,
 )
 from atlas.modules.knowledge.application.protected_content import (
     OperationalKnowledgeProtectedContentService,
@@ -1104,6 +1123,9 @@ def create_app(
     ) = None,
     operational_knowledge_embedding_generation_service: (
         OperationalKnowledgeEmbeddingGenerationService | None
+    ) = None,
+    operational_knowledge_index_staging_validation_service: (
+        OperationalKnowledgeIndexStagingValidationService | None
     ) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
@@ -3237,6 +3259,55 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    if operational_knowledge_index_staging_validation_service is not None:
+        resolved_operational_knowledge_index_staging_validation_service = (
+            operational_knowledge_index_staging_validation_service
+        )
+    else:
+        index_repository = (
+            PostgreSQLOperationalKnowledgeIndexRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryOperationalKnowledgeIndexRepository()
+        )
+        index_embedding_policy = build_development_operational_knowledge_embedding_policy(
+            organization_id=resolved_settings.development_organization_id,
+            environment_id=f"environment.{resolved_settings.environment}",
+            issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+            expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+        )
+        index_policies = (
+            ()
+            if is_production
+            else (
+                build_development_operational_knowledge_index_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                    embedding_policy=index_embedding_policy,
+                ),
+            )
+        )
+        resolved_operational_knowledge_index_staging_validation_service = (
+            OperationalKnowledgeIndexStagingValidationService(
+                repository=index_repository,
+                embedding_source=resolved_operational_knowledge_embedding_generation_service,
+                policy_source=InMemoryOperationalKnowledgeIndexPolicySource(index_policies),
+                permission_authorizer=(
+                    AuthorizationOperationalKnowledgeIndexPermissionAuthorizer(
+                        service=resolved_authorization_service,
+                        environment=resolved_settings.environment,
+                    )
+                ),
+                indexer=(
+                    UnavailableOperationalKnowledgeIndexer()
+                    if is_production
+                    else SyntheticOperationalKnowledgeIndexer()
+                ),
+                audit_sink=resolved_audit_sink,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -3486,6 +3557,9 @@ def create_app(
         app.state.operational_knowledge_embedding_generation_service = (
             resolved_operational_knowledge_embedding_generation_service
         )
+        app.state.operational_knowledge_index_staging_validation_service = (
+            resolved_operational_knowledge_index_staging_validation_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -3498,6 +3572,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_operational_knowledge_index_staging_validation_service.close()
         await resolved_operational_knowledge_embedding_generation_service.close()
         await resolved_operational_knowledge_deterministic_chunking_service.close()
         await resolved_operational_knowledge_source_materialization_service.close()
@@ -3650,6 +3725,7 @@ def create_app(
     app.include_router(source_materializations.router, prefix="/api/v1")
     app.include_router(deterministic_chunking.router, prefix="/api/v1")
     app.include_router(embedding_generation.router, prefix="/api/v1")
+    app.include_router(index_staging_validation.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

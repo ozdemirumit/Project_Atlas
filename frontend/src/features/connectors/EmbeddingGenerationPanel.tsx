@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { OperationalKnowledgeChunkSet } from "../../api/deterministicChunking";
 import { createOperationalKnowledgeEmbeddingSet } from "../../api/embeddingGeneration";
+import { IndexStagingValidationPanel } from "./IndexStagingValidationPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -123,15 +124,18 @@ export function EmbeddingGenerationPanel({
         </div>
       )}
       {embeddingSet && (
-        <div className="correction-record">
-          <strong>Protected embedding set created</strong>
-          <code>{embeddingSet.embedding_set_id}</code>
-          <p className="muted-copy">
-            {embeddingSet.embedding_count} embeddings use a verified {embeddingSet.vector_dimension}
-            -dimension local model space. No chunk content, vector value, endpoint, or index was
-            exposed.
-          </p>
-        </div>
+        <>
+          <div className="correction-record">
+            <strong>Protected embedding set created</strong>
+            <code>{embeddingSet.embedding_set_id}</code>
+            <p className="muted-copy">
+              {embeddingSet.embedding_count} embeddings use a verified {embeddingSet.vector_dimension}
+              -dimension local model space. No chunk content, vector value, endpoint, or index was
+              exposed.
+            </p>
+          </div>
+          <IndexStagingValidationPanel embeddingSet={embeddingSet} />
+        </>
       )}
     </div>
   );

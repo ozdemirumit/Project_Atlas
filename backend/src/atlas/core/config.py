@@ -98,6 +98,10 @@ class Settings(BaseSettings):
     )
     cors_origins: tuple[AnyHttpUrl, ...] = (AnyHttpUrl("http://localhost:5173"),)
     development_identity_enabled: bool = False
+    development_username: str = Field(default="atlas-demo", min_length=3, max_length=128)
+    development_password: SecretStr = Field(
+        default=SecretStr("local-demo"), min_length=8, max_length=256
+    )
     development_subject_id: str = "subject.development.operator"
     development_display_name: str = "Local Operator"
     development_organization_id: str = "organization.development"

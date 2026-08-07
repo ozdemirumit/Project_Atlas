@@ -351,6 +351,16 @@ class OperationalKnowledgeEmbeddingGenerationService:
             instance_state=EMBEDDINGS_CREATED_STATE,
             purpose=purpose,
             canonical_digest="0" * 64,
+            upstream_accountable_subject_digests=tuple(
+                sorted(
+                    {
+                        chunk.publication_steward_subject_digest,
+                        chunk.materialization_steward_subject_digest,
+                        chunk.chunked_by_subject_digest,
+                        *chunk.upstream_accountable_subject_digests,
+                    }
+                )
+            ),
         )
         record = replace(record, canonical_digest=self._digest(self._payload(record)))
         if not await self._repository.add(record):

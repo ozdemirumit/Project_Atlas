@@ -115,6 +115,8 @@ from atlas.modules.authorization.application.bootstrap import (
     KNOWLEDGE_FINAL_RESOLUTION_READ,
     KNOWLEDGE_FINDING_PRESENTATION_CREATE,
     KNOWLEDGE_FINDING_PRESENTATION_READ,
+    KNOWLEDGE_INDEX_STAGING_CREATE,
+    KNOWLEDGE_INDEX_STAGING_READ,
     KNOWLEDGE_PROTECTED_CONTENT_PRESENTATION_CREATE,
     KNOWLEDGE_PROTECTED_CONTENT_PRESENTATION_READ,
     KNOWLEDGE_PROTECTED_INSPECTION_LEASE_CREATE,
@@ -224,6 +226,7 @@ from atlas.modules.authorization.application.bootstrap import (
     operational_knowledge_embedding_generation_scope,
     operational_knowledge_final_resolution_scope,
     operational_knowledge_finding_presentation_scope,
+    operational_knowledge_index_staging_scope,
     operational_knowledge_protected_content_scope,
     operational_knowledge_protected_inspection_scope,
     operational_knowledge_publication_preparation_scope,
@@ -4560,4 +4563,62 @@ async def authorize_operational_knowledge_embedding_generation_read(
         request,
         subject,
         permission_id=KNOWLEDGE_EMBEDDING_GENERATION_READ,
+    )
+
+
+async def _authorize_operational_knowledge_index_staging(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    capability_class = (
+        CapabilityClass.C2_DIAGNOSTIC
+        if permission_id == KNOWLEDGE_INDEX_STAGING_CREATE
+        else CapabilityClass.C1_READ_ONLY
+    )
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.knowledge.operational-index-staging",
+            scope=operational_knowledge_index_staging_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The protected knowledge index-staging operation is not authorized.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_operational_knowledge_index_staging_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_operational_knowledge_index_staging(
+        request,
+        subject,
+        permission_id=KNOWLEDGE_INDEX_STAGING_CREATE,
+    )
+
+
+async def authorize_operational_knowledge_index_staging_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_operational_knowledge_index_staging(
+        request,
+        subject,
+        permission_id=KNOWLEDGE_INDEX_STAGING_READ,
     )
