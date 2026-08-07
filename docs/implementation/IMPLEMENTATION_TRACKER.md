@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-099 |
 | Title | Governed protected knowledge embedding generation foundation |
-| Status | In Progress |
-| Branch | `agent/governed-knowledge-embedding-generation` |
+| Status | Completed |
+| Branch | `agent/governed-knowledge-embedding-generation` (merged) |
 | Pull Request | [#111](https://github.com/ozdemirumit/Project_Atlas/pull/111) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-055 |
 | Last Updated | 2026-08-07 |
-| Next Action | Publish the validated IMP-099 branch, complete PR/CI review, merge, and record closure evidence |
+| Next Action | Define and implement IMP-100 governed retrieval-index staging and validation |
 
 ### ATLAS-IMP-099 Scope Rationale
 
@@ -77,8 +77,11 @@
   Desktop `1280x720` and mobile `390x844` inspections had zero horizontal overflow, and browser
   developer logs contained no warnings or errors.
 - Draft PR #111 Continuous Integration run `31176595564` passed (backend 3m26s, frontend
-  3m56s). Validation-record run `31176924882` passed (backend 3m42s, frontend 3m49s). Final
-  branch CI, merge, merged-main CI, and documentation-only closure evidence are pending.
+  3m56s). Validation-record run `31176924882` passed (backend 3m42s, frontend 3m49s), and final
+  branch run `31177226973` passed (backend 3m38s, frontend 3m53s).
+- PR #111 was squash-merged as `54b32b120ef6d96f41c4cef7cc07879fc2053161`. Merged-main run
+  `31177506811` passed (backend 3m38s, frontend 4m00s). This documentation-only closure commit
+  remains subject to the same required `main` CI before IMP-100 starts.
 
 ### ATLAS-IMP-098 Scope Rationale
 
