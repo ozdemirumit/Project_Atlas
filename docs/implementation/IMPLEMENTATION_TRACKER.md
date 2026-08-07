@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-103 |
 | Title | Governed protected model-context assembly foundation |
-| Status | In Progress |
-| Branch | `agent/governed-model-context-assembly` |
+| Status | Complete |
+| Branch | `main` |
 | Pull Request | [#115](https://github.com/ozdemirumit/Project_Atlas/pull/115) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-059 |
 | Last Updated | 2026-08-07 |
-| Next Action | Publish IMP-103, complete GitHub CI and merge evidence, then begin IMP-104 |
+| Next Action | Define ADR-060 and begin ATLAS-IMP-104 governed protected model invocation |
 
 ### ATLAS-IMP-103 Scope Rationale
 
@@ -81,9 +81,12 @@
   1280x720 and 390x844 with no horizontal overflow. Browser logs contained only Vite debug and
   React development information, with no warning or error.
 - Implementation commit `1b18da3` contains the application slice. Draft PR #115 initial branch
-  run `31197017626` passed (backend 3m53s, frontend 3m56s), and PR-link run `31197046752`
-  passed (backend 4m05s, frontend 4m03s). Final branch CI, merge, merged-main, and closure evidence
-  are pending.
+  run `31197017626` passed (backend 3m53s, frontend 3m56s), PR-link run `31197046752`
+  passed (backend 4m05s, frontend 4m03s), and final branch run `31197420109` passed (backend
+  3m43s, frontend 3m23s).
+- PR #115 was squash-merged as `6c23d6a258f0d01214d6888f906df395bf23a609`. Merged-main run
+  `31197773154` passed (backend 3m51s, frontend 3m53s). The documentation-only closure commit is
+  the final IMP-103 evidence; its main CI is recorded at the start of IMP-104.
 
 ### ATLAS-IMP-102 Scope Rationale
 
