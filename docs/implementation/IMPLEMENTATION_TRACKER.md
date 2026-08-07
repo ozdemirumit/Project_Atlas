@@ -80,7 +80,8 @@
 - Successful publication sets only knowledge and retrieval publication. Model context, graph,
   scheduling, workflow, execution, deployment, and infrastructure mutation remain false and
   unauthorized. Draft PR #113 initial branch run `31186327642` passed (backend 3m43s,
-  frontend 3m56s); validation-record CI, merge, merged-main, and closure evidence are pending.
+  frontend 3m56s), and validation-record run `31186691030` passed (backend 2m43s,
+  frontend 3m53s). Final branch CI, merge, merged-main, and closure evidence are pending.
 
 ### ATLAS-IMP-100 Scope Rationale
 
