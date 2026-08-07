@@ -8,10 +8,10 @@
 | Title | Governed deterministic protected knowledge chunking foundation |
 | Status | Validation Complete |
 | Branch | `agent/governed-knowledge-deterministic-chunking` |
-| Pull Request | [#110](https://github.com/ozdemirumit/Project_Atlas/pull/110) (draft) |
+| Pull Request | [#110](https://github.com/ozdemirumit/Project_Atlas/pull/110) (ready for review) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-054 |
 | Last Updated | 2026-08-07 |
-| Next Action | Complete validation-record CI, mark PR #110 ready, and run final branch CI |
+| Next Action | Merge PR #110 after final branch CI and complete main/closure CI |
 
 ### ATLAS-IMP-098 Scope Rationale
 
@@ -75,7 +75,8 @@
   Desktop `1280x720` and mobile `390x844` inspections had zero horizontal overflow, and browser
   developer logs contained no warnings or errors.
 - Draft PR #110 Continuous Integration run `31171739384` passed (backend 2m21s, frontend 3m51s).
-  Validation-record CI, final branch CI, merge, and main closure remain pending.
+  Validation-record run `31172066024` passed (backend 2m45s, frontend 4m20s). Final branch CI,
+  merge, and main closure remain pending.
 
 ### ATLAS-IMP-097 Scope Rationale
 
