@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-059 |
 | Last Updated | 2026-08-07 |
-| Next Action | Implement IMP-103 backend domain, service, adapters, API, persistence, tests, and UI evidence |
+| Next Action | Publish IMP-103, complete GitHub CI and merge evidence, then begin IMP-104 |
 
 ### ATLAS-IMP-103 Scope Rationale
 
@@ -50,7 +50,38 @@
 
 - ADR-059 is accepted. IMP-102 documentation closure commit `a2fcec025daf5a94542c536f9c4df2afbf1c38b6`
   passed main run `31193070589` (backend 3m58s, frontend 3m54s).
-- Implementation and validation evidence are pending.
+- The governed service rehydrates the exact protected retrieval through its existing trusted
+  boundary, revalidates current consumer, hardware MFA, browser, permissions, purpose, source,
+  classification, lifecycle, retention, policy, artifact, and canonical lineage, and then invokes
+  a separate deterministic trusted context assembler.
+- Immutable platform-safety and task-contract layers remain separate from quoted untrusted intent
+  and individually delimited citation-bound evidence. Unsupported safety states, unsafe control
+  characters, malformed or drifted digests, over-budget evidence, and uncertain outcomes fail
+  closed. No model-assisted rewrite, model endpoint, tool, connector, workflow, or operation is
+  available in this slice.
+- Full protected context packages remain only in the tenant-isolated protected context vault.
+  PostgreSQL/memory persistence, API responses, audit, logs, and UI contain minimized metadata and
+  digests only; objective, query, evidence text, titles, citation locations, prompt layers,
+  protected handles, raw identity, endpoint, model, credential, and secret data are excluded.
+- Exact completed replay rehydrates the same protected artifact only after current authorization,
+  upstream retrieval, record, receipt, package, budget, citation, and integrity checks. Conflicting
+  idempotency never reassembles; production fails closed without the trusted assembler and vault.
+- Memory and PostgreSQL adapters, dedicated default-deny C1 create/read permissions, strict API
+  schemas, CSRF/browser-bound routes, and Alembic revision `20260807_0075` are implemented. Alembic
+  reports one head and empty-to-head offline SQL generation passed.
+- Focused model-context and API-health tests passed (`12 passed`). The final backend gate formatted
+  945 files, passed Ruff, found no strict mypy issues in 773 source modules, and passed `798` tests
+  with three expected Windows symlink skips and three existing dependency warnings.
+- The frontend passed ESLint, TypeScript, `43` test files with `73` tests, and the production build
+  (CSS 127.86 kB / 21.18 kB gzip; JavaScript 989.86 kB / 181.23 kB gzip). Only the existing Babel
+  deoptimization and bundle-size notices remain.
+- Live development authentication succeeded against the new backend on port 8055. Live and ready
+  health passed; OpenAPI exposed 192 paths including protected model-context create and read. The
+  Connector lifecycle rendered `Context assembly` as the latest of ten available stages at
+  1280x720 and 390x844 with no horizontal overflow. Browser logs contained only Vite debug and
+  React development information, with no warning or error.
+- Implementation commit `1b18da3` contains the application slice. Branch publication, PR, GitHub
+  CI, merge, merged-main, and closure evidence are pending.
 
 ### ATLAS-IMP-102 Scope Rationale
 
