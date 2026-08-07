@@ -10,6 +10,7 @@ import {
   createOperationalKnowledgeTrackReviewDecision,
   type ReviewDisposition,
 } from "../../api/reviewDecisions";
+import { CorrectionResubmissionPanel } from "./CorrectionResubmissionPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -203,6 +204,7 @@ export function ReviewDecisionPanel({
         </div>
       )}
       {decision && (
+        <>
         <div className="review-decision-record">
           <div className="section-heading">
             <div>
@@ -227,6 +229,10 @@ export function ReviewDecisionPanel({
             deployment, or infrastructure mutation authority.
           </p>
         </div>
+        {decision.all_tracks_decided && decision.any_correction_required && (
+          <CorrectionResubmissionPanel decision={decision} />
+        )}
+        </>
       )}
     </div>
   );

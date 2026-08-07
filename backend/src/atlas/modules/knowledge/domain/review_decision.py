@@ -257,6 +257,7 @@ class OperationalKnowledgeTrackReviewDecisionRecord:
     organization_id: str
     environment_id: str
     review_request_id: str
+    source_review_request_digest: str
     source_draft_id: str
     source_draft_digest: str
     knowledge_item_id: str
@@ -387,6 +388,7 @@ class OperationalKnowledgeTrackReviewDecisionRecord:
                 self.source_finding_presentation_digest,
                 self.source_finding_digest,
                 self.source_lease_digest,
+                self.source_review_request_digest,
                 self.source_draft_digest,
                 self.basis_digest,
                 self.decided_by_subject_digest,
@@ -400,12 +402,44 @@ class OperationalKnowledgeTrackReviewDecisionRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class OperationalKnowledgeTrackDecisionBinding:
+    track_code: str
+    decision_id: str
+    canonical_digest: str
+    disposition_code: str
+
+    def __post_init__(self) -> None:
+        _ids(self.track_code, self.decision_id, self.disposition_code)
+        if (
+            self.track_code not in TRACKS
+            or self.disposition_code not in DISPOSITIONS
+            or not _digests(self.canonical_digest)
+        ):
+            raise ValueError("Operational knowledge track decision binding is invalid")
+
+
+@dataclass(frozen=True, slots=True)
 class OperationalKnowledgeTrackReviewDecisionGrant:
     record: OperationalKnowledgeTrackReviewDecisionRecord
     all_tracks_decided: bool
     all_tracks_passed: bool
     any_correction_required: bool
+    track_decisions: tuple[OperationalKnowledgeTrackDecisionBinding, ...]
 
     def __post_init__(self) -> None:
-        if self.all_tracks_passed and (not self.all_tracks_decided or self.any_correction_required):
+        tracks = {item.track_code for item in self.track_decisions}
+        if (
+            len(tracks) != len(self.track_decisions)
+            or self.record.track_code not in tracks
+            or self.all_tracks_decided is not (tracks == TRACKS)
+            or self.any_correction_required
+            is not any(
+                item.disposition_code == "review-disposition.changes-required"
+                for item in self.track_decisions
+            )
+            or (
+                self.all_tracks_passed
+                and (not self.all_tracks_decided or self.any_correction_required)
+            )
+        ):
             raise ValueError("Operational knowledge review decision aggregate is invalid")

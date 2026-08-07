@@ -50,6 +50,7 @@ from atlas.modules.knowledge.domain.protected_inspection import (
 from atlas.modules.knowledge.domain.review_decision import (
     DISPOSITIONS,
     OPERATIONAL_KNOWLEDGE_TRACK_REVIEW_DECIDED,
+    OperationalKnowledgeTrackDecisionBinding,
     OperationalKnowledgeTrackReviewDecisionClaim,
     OperationalKnowledgeTrackReviewDecisionGrant,
     OperationalKnowledgeTrackReviewDecisionInstruction,
@@ -289,7 +290,7 @@ class OperationalKnowledgeTrackReviewDecisionService:
             raise OperationalKnowledgeTrackReviewDecisionUncertainError(
                 "operational_knowledge_track_review_decision_outcome_uncertain"
             ) from error
-        record = self._record(claim, presentation, policy, receipt, basis_codes, purpose)
+        record = self._record(claim, presentation, source[6], policy, receipt, basis_codes, purpose)
         await self._audit(
             actor,
             correlation_id,
@@ -359,6 +360,42 @@ class OperationalKnowledgeTrackReviewDecisionService:
 
     async def close(self) -> None:
         await self._repository.close()
+
+    async def correction_resubmission_source(
+        self, *, review_request_id: str
+    ) -> tuple[
+        tuple[OperationalKnowledgeTrackReviewDecisionRecord, ...],
+        OperationalKnowledgeReviewRequestRecord,
+        OperationalEvidenceKnowledgeDraftRecord,
+    ]:
+        decisions = await self._repository.list_by_review_request(
+            review_request_id=review_request_id
+        )
+        if not decisions:
+            raise OperationalKnowledgeTrackReviewDecisionError(
+                "operational_knowledge_track_review_decision_not_found"
+            )
+        request: OperationalKnowledgeReviewRequestRecord | None = None
+        draft: OperationalEvidenceKnowledgeDraftRecord | None = None
+        for decision in decisions:
+            self._verify_record(decision)
+            source = await self._source.review_decision_source(
+                finding_presentation_id=decision.source_finding_presentation_id
+            )
+            source_request = source[6]
+            source_draft = source[7]
+            if request is None:
+                request, draft = source_request, source_draft
+            elif (
+                source_request.canonical_digest != request.canonical_digest
+                or draft is None
+                or source_draft.canonical_digest != draft.canonical_digest
+            ):
+                raise OperationalKnowledgeTrackReviewDecisionError(
+                    "operational_knowledge_track_review_decision_lineage_invalid"
+                )
+        assert request is not None and draft is not None
+        return decisions, request, draft
 
     async def _authorize(
         self,
@@ -547,6 +584,15 @@ class OperationalKnowledgeTrackReviewDecisionService:
             all_tracks_decided=all_decided,
             all_tracks_passed=all_passed,
             any_correction_required=any_correction,
+            track_decisions=tuple(
+                OperationalKnowledgeTrackDecisionBinding(
+                    track_code=item.track_code,
+                    decision_id=item.decision_id,
+                    canonical_digest=item.canonical_digest,
+                    disposition_code=item.disposition_code,
+                )
+                for item in sorted(tracks.values(), key=lambda value: value.track_code)
+            ),
         )
 
     def _instruction(
@@ -586,6 +632,7 @@ class OperationalKnowledgeTrackReviewDecisionService:
         self,
         claim: OperationalKnowledgeTrackReviewDecisionClaim,
         presentation: OperationalKnowledgeFindingPresentationRecord,
+        review_request: OperationalKnowledgeReviewRequestRecord,
         policy: OperationalKnowledgeTrackReviewDecisionPolicySnapshot,
         receipt: OperationalKnowledgeTrackReviewDecisionReceipt,
         basis_codes: tuple[str, ...],
@@ -609,6 +656,7 @@ class OperationalKnowledgeTrackReviewDecisionService:
             organization_id=presentation.organization_id,
             environment_id=presentation.environment_id,
             review_request_id=presentation.review_request_id,
+            source_review_request_digest=review_request.canonical_digest,
             source_draft_id=presentation.source_draft_id,
             source_draft_digest=presentation.source_draft_digest,
             knowledge_item_id=presentation.knowledge_item_id,

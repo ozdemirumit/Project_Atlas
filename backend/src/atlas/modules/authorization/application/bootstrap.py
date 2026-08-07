@@ -176,6 +176,8 @@ KNOWLEDGE_FINDING_PRESENTATION_CREATE = "knowledge.finding-presentations.create"
 KNOWLEDGE_FINDING_PRESENTATION_READ = "knowledge.finding-presentations.read"
 KNOWLEDGE_TRACK_REVIEW_DECISION_CREATE = "knowledge.track-review-decisions.create"
 KNOWLEDGE_TRACK_REVIEW_DECISION_READ = "knowledge.track-review-decisions.read"
+KNOWLEDGE_CORRECTION_RESUBMISSION_CREATE = "knowledge.corrections.create"
+KNOWLEDGE_CORRECTION_RESUBMISSION_READ = "knowledge.corrections.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -1011,6 +1013,19 @@ def operational_knowledge_track_review_decision_scope(
     )
 
 
+def operational_knowledge_correction_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.knowledge",
+        resource_id="resource.knowledge.operational-corrections",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -1740,6 +1755,14 @@ def build_development_authorization_service(
             permission_id=KNOWLEDGE_TRACK_REVIEW_DECISION_READ,
             description="Read minimized track review decision metadata.",
         ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_CORRECTION_RESUBMISSION_CREATE,
+            description="Create one governed corrected draft and review generation.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_CORRECTION_RESUBMISSION_READ,
+            description="Read minimized correction and resubmission metadata.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -1885,6 +1908,8 @@ def build_development_authorization_service(
                 KNOWLEDGE_FINDING_PRESENTATION_READ,
                 KNOWLEDGE_TRACK_REVIEW_DECISION_CREATE,
                 KNOWLEDGE_TRACK_REVIEW_DECISION_READ,
+                KNOWLEDGE_CORRECTION_RESUBMISSION_CREATE,
+                KNOWLEDGE_CORRECTION_RESUBMISSION_READ,
             }
         ),
     )
@@ -3172,6 +3197,30 @@ def build_development_authorization_service(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-correction-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=operational_knowledge_correction_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-correction-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=operational_knowledge_correction_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),

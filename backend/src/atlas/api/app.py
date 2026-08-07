@@ -37,6 +37,7 @@ from atlas.api.routes import (
     connectors,
     content_policy_scans,
     contract_validations,
+    correction_resubmissions,
     credential_assignments,
     deployment_configuration,
     draft_review_requests,
@@ -543,6 +544,20 @@ from atlas.modules.identity.application.sessions import SessionService
 from atlas.modules.identity.application.workload_identities import WorkloadIdentityService
 from atlas.modules.investigations.adapters.synthetic import SyntheticInvestigationAssembler
 from atlas.modules.investigations.application.service import InvestigationService
+from atlas.modules.knowledge.adapters.correction_resubmission_memory import (
+    InMemoryOperationalKnowledgeCorrectionPolicySource,
+    InMemoryOperationalKnowledgeCorrectionRepository,
+)
+from atlas.modules.knowledge.adapters.correction_resubmission_permission import (
+    AuthorizationOperationalKnowledgeCorrectionPermissionAuthorizer,
+)
+from atlas.modules.knowledge.adapters.correction_resubmission_postgres import (
+    PostgreSQLOperationalKnowledgeCorrectionRepository,
+)
+from atlas.modules.knowledge.adapters.correction_resubmission_synthetic import (
+    SyntheticOperationalKnowledgeCorrectionAdapter,
+    UnavailableOperationalKnowledgeCorrectionAdapter,
+)
 from atlas.modules.knowledge.adapters.draft_review_request_memory import (
     InMemoryOperationalKnowledgeReviewRequestPolicySource,
     InMemoryOperationalKnowledgeReviewRequestRepository,
@@ -657,6 +672,10 @@ from atlas.modules.knowledge.adapters.reviewer_assignment_synthetic import (
     UnavailableOperationalKnowledgeReviewerAssignmentAdapter,
 )
 from atlas.modules.knowledge.adapters.synthetic import build_synthetic_knowledge_chunks
+from atlas.modules.knowledge.application.correction_resubmission import (
+    OperationalKnowledgeCorrectionService,
+    build_development_operational_knowledge_correction_policy,
+)
 from atlas.modules.knowledge.application.draft_review_request import (
     OperationalKnowledgeReviewRequestService,
     build_development_operational_knowledge_review_request_policy,
@@ -975,6 +994,7 @@ def create_app(
     operational_knowledge_track_review_decision_service: (
         OperationalKnowledgeTrackReviewDecisionService | None
     ) = None,
+    operational_knowledge_correction_service: OperationalKnowledgeCorrectionService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -2833,6 +2853,49 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    if operational_knowledge_correction_service is not None:
+        resolved_operational_knowledge_correction_service = operational_knowledge_correction_service
+    else:
+        correction_repository = (
+            PostgreSQLOperationalKnowledgeCorrectionRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryOperationalKnowledgeCorrectionRepository()
+        )
+        correction_policies = (
+            ()
+            if is_production
+            else (
+                build_development_operational_knowledge_correction_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_operational_knowledge_correction_service = OperationalKnowledgeCorrectionService(
+            repository=correction_repository,
+            source=resolved_operational_knowledge_track_review_decision_service,
+            policy_source=InMemoryOperationalKnowledgeCorrectionPolicySource(correction_policies),
+            permission_authorizer=(
+                AuthorizationOperationalKnowledgeCorrectionPermissionAuthorizer(
+                    service=resolved_authorization_service,
+                    environment=resolved_settings.environment,
+                )
+            ),
+            adapter=(
+                UnavailableOperationalKnowledgeCorrectionAdapter()
+                if is_production
+                else SyntheticOperationalKnowledgeCorrectionAdapter()
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
+    resolved_operational_knowledge_review_request_service.set_resubmission_source(
+        resolved_operational_knowledge_correction_service
+    )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -3064,6 +3127,9 @@ def create_app(
         app.state.operational_knowledge_track_review_decision_service = (
             resolved_operational_knowledge_track_review_decision_service
         )
+        app.state.operational_knowledge_correction_service = (
+            resolved_operational_knowledge_correction_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -3076,6 +3142,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_operational_knowledge_correction_service.close()
         await resolved_operational_knowledge_track_review_decision_service.close()
         await resolved_operational_knowledge_finding_presentation_service.close()
         await resolved_operational_knowledge_review_finding_service.close()
@@ -3216,6 +3283,7 @@ def create_app(
     app.include_router(review_findings.router, prefix="/api/v1")
     app.include_router(finding_presentations.router, prefix="/api/v1")
     app.include_router(review_decisions.router, prefix="/api/v1")
+    app.include_router(correction_resubmissions.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

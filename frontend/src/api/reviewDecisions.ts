@@ -21,6 +21,7 @@ export type OperationalKnowledgeTrackReviewDecision = {
   organization_id: string;
   environment_id: string;
   review_request_id: string;
+  source_review_request_digest: string;
   source_draft_id: string;
   knowledge_item_id: string;
   draft_version_id: string;
@@ -48,6 +49,12 @@ export type OperationalKnowledgeTrackReviewDecision = {
   all_tracks_decided: boolean;
   all_tracks_passed: boolean;
   any_correction_required: boolean;
+  track_decisions: Array<{
+    track_code: ReviewFindingTrack;
+    decision_id: string;
+    canonical_digest: string;
+    disposition_code: ReviewDisposition;
+  }>;
   knowledge_approved: false;
   knowledge_published: false;
   retrieval_published: false;
@@ -95,6 +102,7 @@ function isSafeDecision(
     record.basis_codes.length >= 1 &&
     record.basis_codes.length <= 4 &&
     record.basis_codes.every((item) => typeof item === "string") &&
+    /^[a-f0-9]{64}$/.test(String(record.source_review_request_digest)) &&
     /^[a-f0-9]{64}$/.test(String(record.attestation_digest)) &&
     /^[a-f0-9]{64}$/.test(String(record.canonical_digest)) &&
     record.instance_state === "operational_knowledge_track_review_decided" &&
@@ -103,6 +111,17 @@ function isSafeDecision(
     record.domain_review_passed === (domain && passed) &&
     record.security_review_passed === (!domain && passed) &&
     record.correction_required === !passed &&
+    Array.isArray(record.track_decisions) &&
+    record.track_decisions.length >= 1 &&
+    record.track_decisions.length <= 2 &&
+    record.track_decisions.every(
+      (item) =>
+        item &&
+        typeof item === "object" &&
+        (item as Record<string, unknown>).track_code !== undefined &&
+        typeof (item as Record<string, unknown>).decision_id === "string" &&
+        /^[a-f0-9]{64}$/.test(String((item as Record<string, unknown>).canonical_digest)),
+    ) &&
     record.correction_created === false &&
     record.knowledge_approved === false &&
     record.knowledge_published === false &&

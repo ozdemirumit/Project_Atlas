@@ -40,6 +40,7 @@ const responseRecord = {
   source_finding_packet_id: finding.finding_packet_id,
   source_lease_id: lease.lease_id,
   source_content_presentation_id: contentPresentation.presentation_id,
+  source_review_request_digest: "d".repeat(64),
   track_code: lease.track_code,
   disposition_code: "review-disposition.passed",
   basis_codes: ["review-basis.technical-accuracy"],
@@ -57,6 +58,14 @@ const responseRecord = {
   all_tracks_decided: false,
   all_tracks_passed: false,
   any_correction_required: false,
+  track_decisions: [
+    {
+      track_code: lease.track_code,
+      decision_id: "operational-knowledge-track-review-decision.test",
+      canonical_digest: "c".repeat(64),
+      disposition_code: "review-disposition.passed",
+    },
+  ],
   knowledge_approved: false,
   knowledge_published: false,
   retrieval_published: false,

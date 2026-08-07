@@ -30,6 +30,9 @@ from atlas.modules.knowledge.application.draft_review_request_ports import (
     OperationalKnowledgeReviewRequestSource,
     OperationalKnowledgeReviewRequestUncertainError,
 )
+from atlas.modules.knowledge.application.reviewer_assignment_ports import (
+    OperationalKnowledgeReviewerAssignmentSource,
+)
 from atlas.modules.knowledge.domain.draft_review_request import (
     AWAITING_REVIEWER,
     OPERATIONAL_KNOWLEDGE_REVIEW_REQUESTED,
@@ -70,6 +73,10 @@ class OperationalKnowledgeReviewRequestService:
         self._audit_sink = audit_sink
         self._environment_id = environment_id
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._resubmission_source: OperationalKnowledgeReviewerAssignmentSource | None = None
+
+    def set_resubmission_source(self, source: OperationalKnowledgeReviewerAssignmentSource) -> None:
+        self._resubmission_source = source
 
     async def create(
         self,
@@ -264,6 +271,10 @@ class OperationalKnowledgeReviewRequestService:
     ) -> tuple[OperationalKnowledgeReviewRequestRecord, frozenset[str]]:
         record = await self._repository.get(review_request_id=review_request_id)
         if record is None:
+            if self._resubmission_source is not None:
+                return await self._resubmission_source.reviewer_assignment_source(
+                    review_request_id=review_request_id
+                )
             raise OperationalKnowledgeReviewRequestError(
                 "operational_knowledge_review_request_record_not_found"
             )
@@ -279,6 +290,10 @@ class OperationalKnowledgeReviewRequestService:
     ]:
         record = await self._repository.get(review_request_id=review_request_id)
         if record is None:
+            if self._resubmission_source is not None:
+                return await self._resubmission_source.protected_content_lineage(
+                    review_request_id=review_request_id
+                )
             raise OperationalKnowledgeReviewRequestError(
                 "operational_knowledge_review_request_record_not_found"
             )
