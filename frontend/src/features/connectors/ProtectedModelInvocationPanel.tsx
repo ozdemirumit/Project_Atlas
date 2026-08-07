@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { ProtectedModelContextResult } from "../../api/modelContextAssembly";
 import { createProtectedModelInvocation } from "../../api/protectedModelInvocation";
+import { ProtectedDraftAdjudicationPanel } from "./ProtectedDraftAdjudicationPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -80,14 +81,15 @@ export function ProtectedModelInvocationPanel({
           <div><h3>Model invocation unavailable</h3><p>Context, access, endpoint evaluation, policy, and protected vault must remain valid.</p></div>
         </div>
       )}
-      {result && (
+      {result && (<>
         <div className="correction-record">
           <strong>Protected model invocation completed</strong>
           <code>{result.invocation.invocation_id}</code>
           <p className="muted-copy">{result.manifest.model_id} via {result.manifest.endpoint_profile_id}. {result.manifest.input_tokens} input and {result.manifest.output_tokens} output tokens.</p>
           <p className="muted-copy">{result.manifest.citation_count} validated citation reference and {result.manifest.unknown_count} explicit unknowns. Draft content remains protected and no final answer or operation was authorized.</p>
         </div>
-      )}
+        <ProtectedDraftAdjudicationPanel invocationResult={result} />
+      </>)}
     </div>
   );
 }

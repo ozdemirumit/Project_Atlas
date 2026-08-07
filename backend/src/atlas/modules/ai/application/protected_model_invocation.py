@@ -341,6 +341,39 @@ class GovernedProtectedModelInvocationService:
     async def close(self) -> None:
         await self._repository.close()
 
+    async def rehydrate_for_adjudication(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        invocation_id: str,
+        browser_session_id: str,
+        correlation_id: str,
+    ) -> tuple[ProtectedModelInvocationResult, ProtectedModelResponseDraft]:
+        """Rehydrate a draft only for a trusted downstream protected boundary."""
+        result = await self.get(
+            actor=actor,
+            invocation_id=invocation_id,
+            browser_session_id=browser_session_id,
+            correlation_id=correlation_id,
+        )
+        draft = await self._gateway.rehydrate(
+            record=result.record,
+            invocation_authorization_digest=result.record.invocation_authorization_digest,
+        )
+        if (
+            draft.canonical_digest != result.record.draft_digest
+            or draft.canonical_digest != self._digest(self._payload(draft))
+        ):
+            raise ProtectedModelInvocationError("protected_model_invocation_integrity_failed")
+        await self._audit(
+            actor,
+            correlation_id,
+            "protected_model_invocation_rehydrated_for_adjudication",
+            invocation_id,
+            permission_id=AI_PROTECTED_MODEL_INVOCATION_READ,
+        )
+        return result, draft
+
     async def _get_context(
         self,
         actor: AuthenticatedSubject,

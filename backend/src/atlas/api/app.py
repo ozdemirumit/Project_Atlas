@@ -68,6 +68,7 @@ from atlas.api.routes import (
     package_signing,
     platform,
     protected_content,
+    protected_draft_adjudication,
     protected_inspections,
     protected_model_invocation,
     protected_retrieval,
@@ -106,6 +107,20 @@ from atlas.core.classification import DataClassification
 from atlas.core.config import Settings, get_settings
 from atlas.core.persistence.database import DatabaseHealthProbe
 from atlas.modules.ai.adapters.openai_compatible import OpenAICompatibleTransport
+from atlas.modules.ai.adapters.protected_draft_adjudication_memory import (
+    InMemoryProtectedDraftAdjudicationPolicySource,
+    MemoryProtectedDraftAdjudicationRepository,
+)
+from atlas.modules.ai.adapters.protected_draft_adjudication_permission import (
+    AuthorizationProtectedDraftAdjudicationPermissionAuthorizer,
+)
+from atlas.modules.ai.adapters.protected_draft_adjudication_postgres import (
+    PostgreSQLProtectedDraftAdjudicationRepository,
+)
+from atlas.modules.ai.adapters.protected_draft_adjudication_synthetic import (
+    SyntheticTrustedProtectedDraftAdjudicator,
+    UnavailableTrustedProtectedDraftAdjudicator,
+)
 from atlas.modules.ai.adapters.protected_model_invocation_memory import (
     InMemoryProtectedModelInvocationPolicySource,
     MemoryProtectedModelInvocationRepository,
@@ -123,6 +138,10 @@ from atlas.modules.ai.adapters.protected_model_invocation_synthetic import (
 from atlas.modules.ai.adapters.synthetic import SyntheticOpenAICompatibleTransport
 from atlas.modules.ai.application.gateway import ModelGateway
 from atlas.modules.ai.application.ports import ModelTransport
+from atlas.modules.ai.application.protected_draft_adjudication import (
+    GovernedProtectedDraftAdjudicationService,
+    build_development_protected_draft_adjudication_policy,
+)
 from atlas.modules.ai.application.protected_model_invocation import (
     GovernedProtectedModelInvocationService,
     build_development_protected_model_invocation_policy,
@@ -1214,6 +1233,7 @@ def create_app(
     ) = None,
     protected_model_context_service: GovernedProtectedModelContextService | None = None,
     protected_model_invocation_service: GovernedProtectedModelInvocationService | None = None,
+    protected_draft_adjudication_service: GovernedProtectedDraftAdjudicationService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -3591,6 +3611,46 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if protected_draft_adjudication_service is not None:
+        resolved_protected_draft_adjudication_service = protected_draft_adjudication_service
+    else:
+        adjudication_repository = (
+            PostgreSQLProtectedDraftAdjudicationRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else MemoryProtectedDraftAdjudicationRepository()
+        )
+        adjudication_policies = (
+            ()
+            if is_production
+            else (
+                build_development_protected_draft_adjudication_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_protected_draft_adjudication_service = GovernedProtectedDraftAdjudicationService(
+            repository=adjudication_repository,
+            invocation_source=resolved_protected_model_invocation_service,
+            context_source=resolved_protected_model_context_service,
+            context_vault=context_assembler,
+            policy_source=InMemoryProtectedDraftAdjudicationPolicySource(adjudication_policies),
+            permission_authorizer=(
+                AuthorizationProtectedDraftAdjudicationPermissionAuthorizer(
+                    service=resolved_authorization_service,
+                    environment=resolved_settings.environment,
+                )
+            ),
+            adjudicator=(
+                UnavailableTrustedProtectedDraftAdjudicator()
+                if is_production
+                else SyntheticTrustedProtectedDraftAdjudicator()
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -3851,6 +3911,9 @@ def create_app(
         )
         app.state.protected_model_context_service = resolved_protected_model_context_service
         app.state.protected_model_invocation_service = resolved_protected_model_invocation_service
+        app.state.protected_draft_adjudication_service = (
+            resolved_protected_draft_adjudication_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -3863,6 +3926,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_protected_draft_adjudication_service.close()
         await resolved_protected_model_invocation_service.close()
         await resolved_protected_model_context_service.close()
         await resolved_operational_knowledge_protected_retrieval_service.close()
@@ -4025,6 +4089,7 @@ def create_app(
     app.include_router(protected_retrieval.router, prefix="/api/v1")
     app.include_router(model_context_assembly.router, prefix="/api/v1")
     app.include_router(protected_model_invocation.router, prefix="/api/v1")
+    app.include_router(protected_draft_adjudication.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
