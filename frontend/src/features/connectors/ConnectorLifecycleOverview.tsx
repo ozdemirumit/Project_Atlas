@@ -109,6 +109,7 @@ const lifecycleStages: readonly LifecycleStage[] = [
       { name: "Review decisions" },
       { name: "Correction resubmission" },
       { name: "Final resolution" },
+      { name: "Publication preparation" },
       { name: "Indexing", state: "pending" },
       { name: "Retrieval", state: "pending" },
     ],
@@ -137,7 +138,7 @@ export function ConnectorLifecycleOverview() {
           <span>In progress</span>
         </div>
         <div>
-          <strong>Final resolution</strong>
+          <strong>Publication preparation</strong>
           <span>Latest available capability</span>
         </div>
       </div>
