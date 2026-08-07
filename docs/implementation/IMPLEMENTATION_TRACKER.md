@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-096 |
 | Title | Governed operational knowledge publication preparation foundation |
-| Status | Validation Complete |
-| Branch | `agent/governed-knowledge-publication-preparation` |
-| Pull Request | [#108](https://github.com/ozdemirumit/Project_Atlas/pull/108) |
+| Status | Completed |
+| Branch | `main` |
+| Pull Request | [#108](https://github.com/ozdemirumit/Project_Atlas/pull/108) (merged) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-052 |
 | Last Updated | 2026-08-07 |
-| Next Action | Mark PR #108 ready, merge after final branch CI, and complete main/closure CI |
+| Next Action | Define ATLAS-IMP-097 governed protected knowledge source materialization |
 
 ### ATLAS-IMP-096 Scope Rationale
 
@@ -74,8 +74,10 @@
 - The live Connectors view exposed `Publication preparation` as the latest available capability.
   Desktop `1280x720` and mobile `390x844` inspections had zero horizontal overflow, and browser
   developer logs contained no warnings or errors.
-- Draft PR #108 Continuous Integration run `31164549503` passed (backend 3m33s, frontend 3m51s).
-  Final branch, merged-main, and closure CI evidence remain pending.
+- Draft PR #108 Continuous Integration run `31164549503` passed (backend 3m33s, frontend 3m51s),
+  and final branch run `31164936949` passed (backend 3m22s, frontend 3m52s).
+- PR #108 merged to `main` as `dcd4d5a`; merged-main Continuous Integration run `31165238274`
+  passed (backend 2m36s, frontend 3m43s). Closure-record CI remains pending.
 
 ### ATLAS-IMP-095 Scope Rationale
 
