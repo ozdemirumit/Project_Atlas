@@ -16,6 +16,13 @@ from test_target_session import target_session_operator
 
 from atlas.api.app import create_app
 from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.knowledge.adapters.finding_presentation_memory import (
+    InMemoryOperationalKnowledgeFindingPresentationPolicySource,
+    InMemoryOperationalKnowledgeFindingPresentationRepository,
+)
+from atlas.modules.knowledge.adapters.finding_presentation_synthetic import (
+    SyntheticOperationalKnowledgeFindingPresenter,
+)
 from atlas.modules.knowledge.adapters.protected_content_memory import (
     InMemoryOperationalKnowledgeProtectedContentPolicySource,
     InMemoryOperationalKnowledgeProtectedContentRepository,
@@ -39,6 +46,10 @@ from atlas.modules.knowledge.adapters.review_finding_memory import (
 )
 from atlas.modules.knowledge.adapters.review_finding_synthetic import (
     SyntheticOperationalKnowledgeReviewFindingRecorder,
+)
+from atlas.modules.knowledge.application.finding_presentation import (
+    OperationalKnowledgeFindingPresentationService,
+    build_development_operational_knowledge_finding_presentation_policy,
 )
 from atlas.modules.knowledge.application.protected_content import (
     OperationalKnowledgeProtectedContentService,
@@ -453,13 +464,36 @@ def test_protected_inspection_api_sets_http_only_cookie_and_returns_minimized_me
         issued_at=datetime(2026, 8, 1, tzinfo=UTC),
         expires_at=datetime(2030, 1, 1, tzinfo=UTC),
     )
+    finding_recorder = SyntheticOperationalKnowledgeReviewFindingRecorder(
+        clock=lambda: assignment.created_at
+    )
     finding_service = OperationalKnowledgeReviewFindingService(
         repository=InMemoryOperationalKnowledgeReviewFindingRepository(),
         source=content_service,
         policy_source=InMemoryOperationalKnowledgeReviewFindingPolicySource((finding_policy,)),
         permission_authorizer=RecordingProtectedInspectionPermissionAuthorizer(),
-        recorder=SyntheticOperationalKnowledgeReviewFindingRecorder(
-            clock=lambda: assignment.created_at
+        recorder=finding_recorder,
+        audit_sink=CollectingAuditSink(),
+        environment_id=assignment.environment_id,
+        clock=lambda: assignment.created_at,
+    )
+    finding_presentation_policy = (
+        build_development_operational_knowledge_finding_presentation_policy(
+            organization_id=assignment.organization_id,
+            environment_id=assignment.environment_id,
+            issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+            expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+        )
+    )
+    finding_presentation_service = OperationalKnowledgeFindingPresentationService(
+        repository=InMemoryOperationalKnowledgeFindingPresentationRepository(),
+        source=finding_service,
+        policy_source=InMemoryOperationalKnowledgeFindingPresentationPolicySource(
+            (finding_presentation_policy,)
+        ),
+        permission_authorizer=RecordingProtectedInspectionPermissionAuthorizer(),
+        presenter=SyntheticOperationalKnowledgeFindingPresenter(
+            recorder=finding_recorder, clock=lambda: assignment.created_at
         ),
         audit_sink=CollectingAuditSink(),
         environment_id=assignment.environment_id,
@@ -489,6 +523,7 @@ def test_protected_inspection_api_sets_http_only_cookie_and_returns_minimized_me
             operational_knowledge_protected_inspection_service=service,
             operational_knowledge_protected_content_service=content_service,
             operational_knowledge_review_finding_service=finding_service,
+            operational_knowledge_finding_presentation_service=(finding_presentation_service),
         )
     ) as client:
         login_response = login(client)
@@ -561,11 +596,56 @@ def test_protected_inspection_api_sets_http_only_cookie_and_returns_minimized_me
                 "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
             },
         )
+        finding_data = finding.json()["data"]
+        finding_presentation_endpoint = (
+            f"{endpoint}/{lease_id}/presentations/{content_data['presentation_id']}"
+            f"/findings/{finding_data['finding_packet_id']}/presentations"
+        )
+        finding_presentation_payload = {
+            "schema_version": "atlas.operational-knowledge-finding-presentation-input.v1",
+            "source_finding_digest": finding_data["canonical_digest"],
+            "presentation_policy_id": finding_presentation_policy.policy_id,
+            "presentation_policy_digest": finding_presentation_policy.canonical_digest,
+            "purpose": "Inspect the exact sealed findings before recording a domain decision.",
+            "acknowledged_findings_are_sensitive": True,
+            "acknowledged_finding_presentation_is_not_a_review_decision": True,
+        }
+        finding_presentation_denied = client.post(
+            finding_presentation_endpoint,
+            json=finding_presentation_payload,
+            headers={"Idempotency-Key": "finding-presentation-api-denied"},
+        )
+        finding_presentation_forbidden = client.post(
+            finding_presentation_endpoint,
+            json={**finding_presentation_payload, "finding_artifact_id": "caller-selected"},
+            headers={
+                "Idempotency-Key": "finding-presentation-api-forbidden",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+        )
+        finding_presentation = client.post(
+            finding_presentation_endpoint,
+            json=finding_presentation_payload,
+            headers={
+                "Idempotency-Key": "finding-presentation-api-1",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+        )
+        finding_presentation_data = finding_presentation.json()["data"]
+        finding_replay = client.get(
+            f"{endpoint}/{lease_id}/presentations/{content_data['presentation_id']}"
+            f"/findings/{finding_data['finding_packet_id']}/presentations/"
+            f"{finding_presentation_data['finding_presentation_id']}"
+        )
 
     assert denied.status_code == 403 and forbidden.status_code == 422
     assert read.status_code == 200
     assert content.status_code == 201, content.text
     assert finding.status_code == 201, finding.text
+    assert finding_presentation_denied.status_code == 403
+    assert finding_presentation_forbidden.status_code == 422
+    assert finding_presentation.status_code == 201, finding_presentation.text
+    assert finding_replay.status_code == 200, finding_replay.text
     assert created.headers["Cache-Control"] == read.headers["Cache-Control"] == "no-store"
     assert content.headers["Cache-Control"] == "no-store, max-age=0"
     cookie = created.headers["Set-Cookie"]
@@ -594,7 +674,6 @@ def test_protected_inspection_api_sets_http_only_cookie_and_returns_minimized_me
     assert content_data["content"].startswith("Operational knowledge review snapshot")
     assert content_data["output_media_type"] == "media-type.text-plain"
     assert content_data["redaction_applied"] is True
-    finding_data = finding.json()["data"]
     assert finding.headers["Cache-Control"] == "no-store, max-age=0"
     assert finding_data["finding_recorded"] is True
     assert finding_data["domain_finding_recorded"] is True
@@ -609,6 +688,32 @@ def test_protected_inspection_api_sets_http_only_cookie_and_returns_minimized_me
         "browser_session_binding_digest",
     ):
         assert hidden not in finding_data
+    assert finding_presentation.headers["Cache-Control"] == "no-store, max-age=0"
+    assert finding_presentation.headers["Content-Security-Policy"].startswith("default-src 'none'")
+    assert finding_presentation_data["finding_presented"] is True
+    assert finding_presentation_data["domain_review_completed"] is False
+    assert finding_presentation_data["knowledge_approved"] is False
+    assert finding_presentation_data["execution_authorized"] is False
+    assert finding_presentation_data["findings"] == [
+        {
+            "category_code": "finding-category.accuracy",
+            "severity_code": "finding-severity.material",
+            "summary": "The controller count conflicts with the inventory evidence.",
+            "detail": (
+                "The protected snapshot reports one controller while collected inventory "
+                "evidence reports two."
+            ),
+        }
+    ]
+    assert finding_replay.json()["data"]["findings"] == finding_presentation_data["findings"]
+    for hidden in (
+        "source_finding_artifact_id",
+        "lease_holder_subject_digest",
+        "browser_session_binding_digest",
+        "source_cleanup_digest",
+        "presentation_cleanup_digest",
+    ):
+        assert hidden not in finding_presentation_data
     assert content_data["domain_review_completed"] is False
     assert content_data["knowledge_approved"] is False
     assert content_data["execution_authorized"] is False

@@ -2357,3 +2357,62 @@ class OperationalKnowledgeReviewFindingModel(Base):
     environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class OperationalKnowledgeFindingPresentationClaimModel(Base):
+    __tablename__ = "operational_knowledge_finding_presentation_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_finding_packet_id",
+            name="uq_operational_knowledge_finding_presentation_claims_source_finding",
+        ),
+        UniqueConstraint(
+            "claimed_by_subject_digest",
+            "idempotency_digest",
+            name="uq_operational_knowledge_finding_presentation_claims_actor_idempotency",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source_finding_packet_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    finding_presentation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    track_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    claimed_by_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class OperationalKnowledgeFindingPresentationModel(Base):
+    __tablename__ = "operational_knowledge_finding_presentations"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_finding_packet_id",
+            name="uq_operational_knowledge_finding_presentations_source_finding",
+        ),
+        UniqueConstraint(
+            "claim_id",
+            name="uq_operational_knowledge_finding_presentations_claim",
+        ),
+    )
+
+    finding_presentation_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    claim_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_finding_packet_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_lease_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_content_presentation_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    source_assignment_set_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    track_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    knowledge_item_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    lease_holder_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    finding_content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    finding_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    finding_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

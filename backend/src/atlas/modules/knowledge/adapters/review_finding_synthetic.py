@@ -11,6 +11,7 @@ from atlas.modules.knowledge.application.review_finding_ports import (
 )
 from atlas.modules.knowledge.domain.review_finding import (
     OperationalKnowledgeReviewFindingInstruction,
+    OperationalKnowledgeReviewFindingItem,
     OperationalKnowledgeReviewFindingReceipt,
 )
 
@@ -37,6 +38,7 @@ class SyntheticOperationalKnowledgeReviewFindingRecorder:
     def __init__(self, *, clock: Callable[[], datetime] | None = None) -> None:
         self._clock = clock or (lambda: datetime.now(UTC))
         self.calls: list[OperationalKnowledgeReviewFindingInstruction] = []
+        self._artifacts: dict[str, tuple[OperationalKnowledgeReviewFindingItem, ...]] = {}
 
     async def record(
         self, instruction: OperationalKnowledgeReviewFindingInstruction
@@ -104,9 +106,20 @@ class SyntheticOperationalKnowledgeReviewFindingRecorder:
             signature_verified=True,
             canonical_digest="0" * 64,
         )
+        existing = self._artifacts.get(receipt.finding_artifact_id)
+        if existing is not None and existing != instruction.findings:
+            raise OperationalKnowledgeReviewFindingError(
+                "operational_knowledge_review_finding_artifact_conflict"
+            )
+        self._artifacts[receipt.finding_artifact_id] = instruction.findings
         payload = asdict(receipt)
         payload.pop("canonical_digest")
         return replace(receipt, canonical_digest=_digest(payload))
+
+    def read_artifact(
+        self, *, finding_artifact_id: str
+    ) -> tuple[OperationalKnowledgeReviewFindingItem, ...] | None:
+        return self._artifacts.get(finding_artifact_id)
 
 
 class UnavailableOperationalKnowledgeReviewFindingRecorder:

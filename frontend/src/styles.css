@@ -8460,6 +8460,79 @@ tbody tr.selected {
   overflow-wrap: anywhere;
 }
 
+.finding-presentation-panel {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.finding-presentation-panel > label {
+  display: grid;
+  gap: 8px;
+}
+
+.finding-presentation-panel input,
+.finding-presentation-panel textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.finding-presentation-record,
+.presented-finding-list {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.presented-finding {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #cbd6d2;
+  border-left: 3px solid #296a59;
+  border-radius: 6px;
+  background: #f7faf9;
+}
+
+.presented-finding-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.presented-finding-heading span,
+.presented-finding-category {
+  color: #50625d;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.presented-finding h4,
+.presented-finding p {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.presented-finding h4 {
+  color: #17231f;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.presented-finding p {
+  color: #33413d;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
 .protected-content-text {
   max-height: 28rem;
   margin: 0;
