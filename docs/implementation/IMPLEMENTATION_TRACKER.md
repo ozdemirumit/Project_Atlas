@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-109 |
 | Title | Governed protected candidate risk, interruption, duration, and recovery completion foundation |
-| Status | In Progress |
-| Branch | `agent/protected-candidate-risk-recovery-completion` |
-| Pull Request | Pending |
+| Status | Complete |
+| Branch | `main` |
+| Pull Request | [#121](https://github.com/ozdemirumit/Project_Atlas/pull/121) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-065 |
 | Last Updated | 2026-08-08 |
-| Next Action | Publish the validated IMP-109 slice and complete PR, CI, merge, and main closure |
+| Next Action | Define ADR-066 and ATLAS-IMP-110 for deterministic protected recommendation adjudication |
 
 ### ATLAS-IMP-109 Scope Rationale
 
@@ -89,8 +89,11 @@
   The Connector lifecycle rendered `Risk/recovery completion` as the latest capability at both
   1280 px desktop and 390 px mobile widths with no horizontal overflow. Browser logs contained
   only expected Vite connection and React development information, with no warning or error.
-- Scope commit `385f98b` contains the accepted contract and task packet. Implementation, PR, CI,
-  merge, and main closure evidence follow this validated branch state.
+- Scope commit `385f98b` and implementation commit `72e5a1f` contain the authored slice. PR #121
+  branch run `31275230805` passed (backend 4m24s, frontend 4m01s, total 4m33s). The PR was
+  squash-merged as `7e56a947f19eba5efef63de42451400b0b2919e7`; merged-main run `31275444492`
+  passed (backend 4m39s, frontend 4m01s, total 4m42s). IMP-109 is complete and the
+  documentation-only closure run follows this commit.
 
 ### ATLAS-IMP-108 Scope Rationale
 
