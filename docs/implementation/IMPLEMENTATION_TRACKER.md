@@ -4,14 +4,60 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-109 |
-| Title | Governed protected candidate risk, interruption, duration, and recovery completion foundation |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#121](https://github.com/ozdemirumit/Project_Atlas/pull/121) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-065 |
+| Task ID | ATLAS-IMP-110 |
+| Title | Governed deterministic protected recommendation adjudication foundation |
+| Status | In Progress |
+| Branch | `agent/protected-recommendation-adjudication` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-066 |
 | Last Updated | 2026-08-08 |
-| Next Action | Define ADR-066 and ATLAS-IMP-110 for deterministic protected recommendation adjudication |
+| Next Action | Implement ADR-066 protected adjudication backend boundary and focused tests |
+
+### ATLAS-IMP-110 Scope Rationale
+
+- IMP-109 completes candidate risk, duration, interruption and recovery but deliberately does not
+  compare candidates, establish preference or create a recommendation.
+- ADR-066 permits the same eligible human consumer to run one deterministic, policy-bound,
+  no-network, no-model adjudication over the exact protected candidate, impact, completion and
+  evidence lineage.
+- Adjudication may internally establish one supportable preference, preserve a tie or record that
+  no candidate is supportable. Candidate identity, comparison values, exclusions and rationale
+  remain protected until a later accountable presentation stage.
+- Existing-domain recommendation promotion, presentation, review readiness, approval, workflow,
+  execution, deployment and infrastructure mutation remain later stages.
+
+### ATLAS-IMP-110 Acceptance Criteria
+
+- Only one exact completed, unexpired, integrity-valid risk-recovery result with unchanged
+  candidate, impact, graph, presentation, answer, invocation, context, retrieval, source, policy,
+  evidence, purpose, browser, consumer and protected-vault lineage can enter adjudication.
+- The caller supplies only exact completion and signed adjudication-policy bindings, unchanged
+  purpose, three acknowledgements, idempotency and correlation. Candidate content, scoring,
+  criteria, eligibility, exclusion, preference, target, workflow, operation and mutation controls
+  are forbidden.
+- One signed immutable policy defines explicit ordered dimensions, non-overridable eligibility,
+  conservative unknown handling, category/capability limits, tie/no-support behavior and bounded
+  output without one opaque model-generated score.
+- A trusted deterministic no-network, no-model adjudicator covers every candidate exactly once,
+  produces protected eligibility, comparison and preference outcomes, and selects at most one
+  preferred candidate while preserving valid ties and no-support outcomes.
+- Full candidate-level adjudication and receipt remain in a tenant-isolated protected vault.
+  Ordinary persistence, API, audit, logs, metrics and UI expose only aggregate counts, outcome
+  booleans, digests, lineage, timestamps and fixed no-authority flags.
+- An immutable unique claim prevents multiple adjudications. Exact replay verifies and returns the
+  same protected result after current authorization and complete source, policy, retention, vault
+  and digest checks and never readjudicates against newer inputs.
+- Success sets recommendation completion only. Presentation, review readiness, approval, existing
+  domain promotion, workflow, execution, deployment and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  access/lineage/replay/policy/tie/no-support/privacy/vault/audit tests, minimized UI evidence, full
+  suites, live desktop/mobile validation and GitHub CI apply.
+
+### ATLAS-IMP-110 Validation Evidence
+
+- ADR-066 is accepted. IMP-109 merged as `7e56a947f19eba5efef63de42451400b0b2919e7` after PR #121
+  branch run `31275230805` and merged-main run `31275444492` passed. Documentation closure commit
+  `22022c0` passed main run `31276249700` (backend 4m36s, frontend 4m11s, total 4m39s).
 
 ### ATLAS-IMP-109 Scope Rationale
 
