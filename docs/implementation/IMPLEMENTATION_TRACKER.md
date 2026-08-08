@@ -4,14 +4,59 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-108 |
-| Title | Governed protected recommendation-candidate service-impact enrichment foundation |
-| Status | Done |
-| Branch | `main` |
-| Pull Request | [#120](https://github.com/ozdemirumit/Project_Atlas/pull/120) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-064 |
+| Task ID | ATLAS-IMP-109 |
+| Title | Governed protected candidate risk, interruption, duration, and recovery completion foundation |
+| Status | In Progress |
+| Branch | `agent/protected-candidate-risk-recovery-completion` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-065 |
 | Last Updated | 2026-08-08 |
-| Next Action | Select the next vertical slice from ADR-064 follow-up boundaries |
+| Next Action | Implement ADR-065 backend protected completion boundary and focused tests |
+
+### ATLAS-IMP-109 Scope Rationale
+
+- IMP-108 establishes modeled service reachability but deliberately does not establish outage,
+  risk, duration, interruption or recovery.
+- ADR-065 permits the same eligible human consumer to complete those dimensions against one exact
+  policy-selected immutable operational-evidence snapshot through a deterministic trusted assessor.
+- Completion is evidence-bounded and conservative. Unknown, stale, conflicting or incomplete
+  evidence cannot lower risk and remains explicit in the protected result.
+- Preference, final recommendation, candidate presentation, existing-domain promotion, review,
+  approval, workflow, execution, deployment and infrastructure mutation remain later stages.
+
+### ATLAS-IMP-109 Acceptance Criteria
+
+- Only one exact completed, unexpired, integrity-valid impact analysis with unchanged candidate,
+  graph, presentation, answer, adjudication, invocation, context, retrieval, source, policy,
+  purpose, browser, consumer and protected-vault lineage can enter completion.
+- The caller supplies only exact impact-analysis and signed completion-policy bindings, unchanged
+  purpose, three acknowledgements, idempotency and correlation. Candidate content, evidence,
+  risk, duration, interruption, recovery, preference, workflow, operation, deployment and mutation
+  controls are forbidden.
+- One policy-selected immutable evidence snapshot contains typed capability, runtime, redundancy,
+  vendor, historical-duration, service-criticality, data-protection and recovery evidence with
+  provenance, freshness, coverage, conflicts, gaps and unknowns.
+- A trusted deterministic no-network, no-model assessor covers every candidate exactly once and
+  produces typed risk dimensions, conservative overall risk, bounded work/interruption/recovery
+  ranges, recovery feasibility and retained uncertainty without ranking candidates.
+- Full candidate-level assessment and receipt remain in a tenant-isolated protected vault.
+  Ordinary persistence, API, audit, logs, metrics and UI expose only aggregate minimized counts,
+  labels, ranges, lineage, digests, freshness/completeness and fixed no-authority flags.
+- An immutable unique claim prevents multiple completions. Exact replay verifies and returns the
+  same protected result after current authorization and complete source, evidence, policy,
+  retention, vault and digest checks and never reassesses against newer evidence.
+- Success sets impact, risk, duration, interruption and recovery completion only. Outage
+  confirmation, recommendation completion, preference, presentation, readiness, approval,
+  workflow, execution, deployment and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  access/lineage/replay/evidence/risk/privacy/vault/audit tests, minimized UI evidence, full suites,
+  live desktop/mobile validation and GitHub CI apply.
+
+### ATLAS-IMP-109 Validation Evidence
+
+- ADR-065 is accepted. IMP-108 merged as `2b21ff1ba59ae8339f348420fb1ca6a8a0f204c2` after PR #120
+  branch run `31271242679` and merged-main run `31271470554` passed. Documentation closure commit
+  `fdb76ec61cbfc60fe15f5da922da08416d31cd4f` is under main run `31271740938`.
 
 ### ATLAS-IMP-108 Scope Rationale
 
