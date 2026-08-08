@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-108 |
 | Title | Governed protected recommendation-candidate service-impact enrichment foundation |
-| Status | In Progress |
-| Branch | `agent/protected-candidate-impact-enrichment` |
+| Status | Done |
+| Branch | `main` |
 | Pull Request | [#120](https://github.com/ozdemirumit/Project_Atlas/pull/120) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-064 |
 | Last Updated | 2026-08-08 |
-| Next Action | Complete PR #120 branch CI, merge, merged-main CI, and documentation closure |
+| Next Action | Select the next vertical slice from ADR-064 follow-up boundaries |
 
 ### ATLAS-IMP-108 Scope Rationale
 
@@ -88,9 +88,12 @@
   the current lifecycle/impact-panel modules were served. Headless Edge rendered nonblank
   1280x720 and 390x844 application shells; focused component tests verified the complete minimized
   impact interaction without protected entity, path, service, evidence, candidate, or command data.
-- Scope commit `723ea07`, implementation commit `59ca2fe`, and local validation commit `6f76b35`
-  contain the current slice. PR #120 is open; branch CI, merge, merged-main CI, closure commit, and
-  closure CI evidence will be recorded before this slice is marked Done.
+- Scope commit `723ea07`, implementation commit `59ca2fe`, local validation commit `6f76b35`, and
+  PR-link commit `a51806e` contain the authored slice. PR #120 branch run `31271242679` passed
+  (backend 4m22s, frontend 3m56s) after formatter correction `7dde6f3`. The PR was squash-merged as
+  `2b21ff1ba59ae8339f348420fb1ca6a8a0f204c2`; merged-main run `31271470554` passed (backend
+  4m18s, frontend 4m07s). IMP-108 is complete and the documentation-only closure run follows this
+  commit.
 
 ### ATLAS-IMP-107 Scope Rationale
 
