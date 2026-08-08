@@ -60,9 +60,7 @@ def upgrade() -> None:
         sa.Column("payload", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.PrimaryKeyConstraint("impact_analysis_id"),
         sa.UniqueConstraint("claim_id", name="uq_protected_candidate_impact_claim"),
-        sa.UniqueConstraint(
-            "candidate_set_id", name="uq_protected_candidate_impact_candidate_set"
-        ),
+        sa.UniqueConstraint("candidate_set_id", name="uq_protected_candidate_impact_candidate_set"),
     )
     for name, column in {
         "ix_protected_candidate_impact_claim": "claim_id",
