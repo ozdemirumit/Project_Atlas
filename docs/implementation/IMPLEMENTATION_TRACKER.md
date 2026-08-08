@@ -58,8 +58,39 @@
 - ADR-064 is accepted. IMP-107 documentation closure commit
   `c8bc2d347ec15b361f4b33e99851778bd85797f8` passed main run `31249179526` (backend 4m10s,
   frontend 4m01s).
-- Implementation, verification, live validation, PR, CI, merge, and main synchronization evidence
-  will be recorded before this slice is closed.
+- The governed enrichment service requires the same enterprise human, hardware-backed MFA,
+  browser, tenant, environment, purpose, source lineage, and current C1 candidate/graph/impact
+  permissions. Intent audit precedes one immutable candidate-set claim; exact replay verifies the
+  same candidate set, signed policy, graph snapshot, protected report, and receipt without
+  reanalysis.
+- The deterministic no-network, no-model analyzer binds all three candidates to policy-selected
+  snapshot `snapshot.graph.lab.001` at depth five. It preserves five authorized paths, six modeled
+  entities, one technical service, one business service, three graph gaps, and two unknowns while
+  leaving outage, interruption, duration, risk, recovery, recommendation, workflow, execution,
+  deployment, and mutation authority false.
+- Full candidate-to-path entries, entity and service IDs, evidence references, gaps, unknown text,
+  and receipt remain in the protected analyzer vault. PostgreSQL, memory records, API, audit, logs,
+  and UI expose only minimized lineage, snapshot/policy/analyzer bindings, counts, digests,
+  freshness/completeness labels, timestamps, and the fixed no-authority safety notice.
+- Dedicated default-deny C1 create/read permissions, CSRF and browser-bound no-store routes,
+  strict request/response schemas, memory/PostgreSQL parity, production fail-closed adapters, and
+  Alembic revision `20260808_0080` are implemented. Alembic reports one head and empty-to-head
+  PostgreSQL offline SQL generation passed.
+- Ruff passed across `919` Python files and strict mypy found no issues in `818` source files.
+  Focused impact/candidate/API regression validation passed `21` tests. The complete backend suite
+  passed `826` tests with three expected Windows symlink skips and three existing dependency
+  warnings.
+- The frontend passed ESLint, TypeScript, `48` test files with `78` tests, and the production build
+  (CSS 127.86 kB / 21.18 kB gzip; JavaScript 1,017.89 kB / 185.26 kB gzip). The existing
+  bundle-size notice remains non-blocking.
+- Live validation used backend port `8060` and frontend port `5214`. Live and ready health, frontend
+  proxy identity, and `202` OpenAPI paths returned successfully; both impact create/read routes and
+  the current lifecycle/impact-panel modules were served. Headless Edge rendered nonblank
+  1280x720 and 390x844 application shells; focused component tests verified the complete minimized
+  impact interaction without protected entity, path, service, evidence, candidate, or command data.
+- Scope commit `723ea07` and implementation commit `59ca2fe` contain the current slice. PR, branch
+  CI, merge, merged-main CI, closure commit, and closure CI evidence will be recorded before this
+  slice is marked Done.
 
 ### ATLAS-IMP-107 Scope Rationale
 
