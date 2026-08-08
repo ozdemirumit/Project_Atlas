@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-065 |
 | Last Updated | 2026-08-08 |
-| Next Action | Implement ADR-065 backend protected completion boundary and focused tests |
+| Next Action | Publish the validated IMP-109 slice and complete PR, CI, merge, and main closure |
 
 ### ATLAS-IMP-109 Scope Rationale
 
@@ -56,7 +56,41 @@
 
 - ADR-065 is accepted. IMP-108 merged as `2b21ff1ba59ae8339f348420fb1ca6a8a0f204c2` after PR #120
   branch run `31271242679` and merged-main run `31271470554` passed. Documentation closure commit
-  `fdb76ec61cbfc60fe15f5da922da08416d31cd4f` is under main run `31271740938`.
+  `fdb76ec61cbfc60fe15f5da922da08416d31cd4f` passed main run `31271740938` (backend 4m21s,
+  frontend 3m20s).
+- The governed completion service rehydrates one exact protected impact report and candidate set,
+  verifies current C1 authorization and complete subject, browser, tenant, purpose, policy,
+  evidence, retention, vault, and digest lineage, then acquires one immutable completion claim.
+  Exact replay verifies and returns the same completion without reassessment.
+- Development uses one policy-selected deterministic no-network, no-model operational evidence
+  snapshot with eight typed evidence items. The trusted assessor covers all three protected
+  candidates, preserves unknowns conservatively, records candidate-level risk, work,
+  interruption, and recovery details only in the protected vault, and exposes a moderate aggregate
+  maximum, a 0-240 minute work range, a 0-0 minute interruption range, and a 0-5 minute recovery
+  range without ranking or selecting a candidate.
+- Success marks impact, risk, duration, interruption, and recovery complete while outage,
+  recommendation, preference, presentation, readiness, approval, workflow, execution, deployment,
+  and infrastructure mutation remain false. Production has no synthetic policy, evidence, or
+  assessor fallback and therefore fails closed.
+- Dedicated default-deny C1 create/read permissions, CSRF and browser-bound no-store routes,
+  strict minimized request/response schemas, memory/PostgreSQL parity, protected vault retention,
+  and Alembic revision `20260808_0081` are implemented. Alembic reports one head and empty-to-head
+  PostgreSQL offline SQL generation passed.
+- Ruff formatting and lint passed across `1011` Python files, strict mypy found no issues in `827`
+  source files, focused protected completion/impact/API validation passed `20` tests, and the
+  complete backend suite passed `833` tests with three expected Windows symlink skips and three
+  existing dependency warnings.
+- The frontend passed ESLint, TypeScript, `49` test files with `79` tests, and the production build
+  (CSS 127.86 kB / 21.18 kB gzip; JavaScript 1,025.11 kB / 186.18 kB gzip). The existing
+  bundle-size notice remains non-blocking. Component tests verify that only acknowledgements and
+  exact policy/impact bindings are submitted and only aggregate completion metadata is rendered.
+- Live validation used backend port `8070` and frontend port `5220`. Live and ready health,
+  frontend proxy identity, `204` OpenAPI paths, and the risk/recovery route returned successfully.
+  The Connector lifecycle rendered `Risk/recovery completion` as the latest capability at both
+  1280 px desktop and 390 px mobile widths with no horizontal overflow. Browser logs contained
+  only expected Vite connection and React development information, with no warning or error.
+- Scope commit `385f98b` contains the accepted contract and task packet. Implementation, PR, CI,
+  merge, and main closure evidence follow this validated branch state.
 
 ### ATLAS-IMP-108 Scope Rationale
 

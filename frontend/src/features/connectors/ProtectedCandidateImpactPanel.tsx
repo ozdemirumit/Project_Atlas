@@ -7,6 +7,7 @@ import {
   type ProtectedCandidateImpactResult,
 } from "../../api/protectedCandidateImpacts";
 import type { ProtectedRecommendationCandidateResult } from "../../api/protectedRecommendationCandidates";
+import { ProtectedCandidateRiskRecoveryPanel } from "./ProtectedCandidateRiskRecoveryPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -108,28 +109,31 @@ export function ProtectedCandidateImpactPanel({
         </div>
       )}
       {result && (
-        <div className="correction-record">
-          <strong>Service reachability analyzed</strong>
-          <code>{result.impact_analysis.impact_analysis_id}</code>
-          <p className="muted-copy">
-            {result.manifest.candidate_count} candidates, {result.manifest.path_count} dependency
-            paths, {result.manifest.modeled_entity_count} modeled entities, and {" "}
-            {result.manifest.technical_service_count + result.manifest.business_service_count}
-            service mappings were evaluated.
-          </p>
-          <div className="connector-capability-list" aria-label="Graph analysis status">
-            <span className="connector-capability" data-state="available">
-              {result.manifest.graph_freshness}
-            </span>
-            <span className="connector-capability" data-state="available">
-              {result.manifest.graph_completeness}
-            </span>
-            <span className="connector-capability" data-state="available">
-              {result.manifest.gap_count} graph gaps
-            </span>
+        <>
+          <div className="correction-record">
+            <strong>Service reachability analyzed</strong>
+            <code>{result.impact_analysis.impact_analysis_id}</code>
+            <p className="muted-copy">
+              {result.manifest.candidate_count} candidates, {result.manifest.path_count} dependency
+              paths, {result.manifest.modeled_entity_count} modeled entities, and {" "}
+              {result.manifest.technical_service_count + result.manifest.business_service_count}
+              service mappings were evaluated.
+            </p>
+            <div className="connector-capability-list" aria-label="Graph analysis status">
+              <span className="connector-capability" data-state="available">
+                {result.manifest.graph_freshness}
+              </span>
+              <span className="connector-capability" data-state="available">
+                {result.manifest.graph_completeness}
+              </span>
+              <span className="connector-capability" data-state="available">
+                {result.manifest.gap_count} graph gaps
+              </span>
+            </div>
+            <p className="muted-copy">{result.manifest.safety_notice}</p>
           </div>
-          <p className="muted-copy">{result.manifest.safety_notice}</p>
-        </div>
+          <ProtectedCandidateRiskRecoveryPanel impactResult={result} />
+        </>
       )}
     </div>
   );

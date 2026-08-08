@@ -69,6 +69,7 @@ from atlas.api.routes import (
     platform,
     protected_answer_presentations,
     protected_candidate_impacts,
+    protected_candidate_risk_recovery,
     protected_content,
     protected_draft_adjudication,
     protected_inspections,
@@ -138,6 +139,22 @@ from atlas.modules.ai.adapters.protected_candidate_impact_synthetic import (
     SyntheticTrustedProtectedCandidateImpactAnalyzer,
     UnavailableTrustedProtectedCandidateImpactAnalyzer,
 )
+from atlas.modules.ai.adapters.protected_candidate_risk_recovery_memory import (
+    InMemoryProtectedCandidateRiskRecoveryPolicySource,
+    InMemoryProtectedOperationalEvidenceSource,
+    MemoryProtectedCandidateRiskRecoveryRepository,
+)
+from atlas.modules.ai.adapters.protected_candidate_risk_recovery_permission import (
+    AuthorizationProtectedCandidateRiskRecoveryPermissionAuthorizer,
+)
+from atlas.modules.ai.adapters.protected_candidate_risk_recovery_postgres import (
+    PostgreSQLProtectedCandidateRiskRecoveryRepository,
+)
+from atlas.modules.ai.adapters.protected_candidate_risk_recovery_synthetic import (
+    SyntheticTrustedProtectedCandidateRiskRecoveryAssessor,
+    UnavailableTrustedProtectedCandidateRiskRecoveryAssessor,
+    build_development_operational_evidence_snapshot,
+)
 from atlas.modules.ai.adapters.protected_draft_adjudication_memory import (
     InMemoryProtectedDraftAdjudicationPolicySource,
     MemoryProtectedDraftAdjudicationRepository,
@@ -190,6 +207,10 @@ from atlas.modules.ai.application.protected_answer_presentation import (
 from atlas.modules.ai.application.protected_candidate_impact_enrichment import (
     GovernedProtectedCandidateImpactService,
     build_development_protected_candidate_impact_policy,
+)
+from atlas.modules.ai.application.protected_candidate_risk_recovery_completion import (
+    GovernedProtectedCandidateRiskRecoveryService,
+    build_development_protected_candidate_risk_recovery_policy,
 )
 from atlas.modules.ai.application.protected_draft_adjudication import (
     GovernedProtectedDraftAdjudicationService,
@@ -1296,6 +1317,9 @@ def create_app(
         GovernedProtectedRecommendationCandidateService | None
     ) = None,
     protected_candidate_impact_service: GovernedProtectedCandidateImpactService | None = None,
+    protected_candidate_risk_recovery_service: (
+        GovernedProtectedCandidateRiskRecoveryService | None
+    ) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -3842,6 +3866,65 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if protected_candidate_risk_recovery_service is not None:
+        resolved_protected_candidate_risk_recovery_service = (
+            protected_candidate_risk_recovery_service
+        )
+    else:
+        completion_repository = (
+            PostgreSQLProtectedCandidateRiskRecoveryRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else MemoryProtectedCandidateRiskRecoveryRepository()
+        )
+        completion_policies = (
+            ()
+            if is_production
+            else (
+                build_development_protected_candidate_risk_recovery_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        evidence_snapshots = (
+            ()
+            if is_production
+            else (
+                build_development_operational_evidence_snapshot(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    generated_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_protected_candidate_risk_recovery_service = (
+            GovernedProtectedCandidateRiskRecoveryService(
+                repository=completion_repository,
+                impact_source=resolved_protected_candidate_impact_service,
+                policy_source=InMemoryProtectedCandidateRiskRecoveryPolicySource(
+                    completion_policies
+                ),
+                evidence_source=InMemoryProtectedOperationalEvidenceSource(evidence_snapshots),
+                permission_authorizer=(
+                    AuthorizationProtectedCandidateRiskRecoveryPermissionAuthorizer(
+                        service=resolved_authorization_service,
+                        environment=resolved_settings.environment,
+                    )
+                ),
+                assessor=(
+                    UnavailableTrustedProtectedCandidateRiskRecoveryAssessor()
+                    if is_production
+                    else SyntheticTrustedProtectedCandidateRiskRecoveryAssessor()
+                ),
+                audit_sink=resolved_audit_sink,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -4107,6 +4190,9 @@ def create_app(
             resolved_protected_recommendation_candidate_service
         )
         app.state.protected_candidate_impact_service = resolved_protected_candidate_impact_service
+        app.state.protected_candidate_risk_recovery_service = (
+            resolved_protected_candidate_risk_recovery_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -4119,6 +4205,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_protected_candidate_risk_recovery_service.close()
         await resolved_protected_candidate_impact_service.close()
         await resolved_protected_recommendation_candidate_service.close()
         await resolved_protected_answer_presentation_service.close()
@@ -4289,6 +4376,7 @@ def create_app(
     app.include_router(protected_answer_presentations.router, prefix="/api/v1")
     app.include_router(protected_recommendation_candidates.router, prefix="/api/v1")
     app.include_router(protected_candidate_impacts.router, prefix="/api/v1")
+    app.include_router(protected_candidate_risk_recovery.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

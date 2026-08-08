@@ -16,6 +16,8 @@ from atlas.modules.authorization.application.bootstrap import (
     AI_PROTECTED_ANSWER_PRESENTATION_READ,
     AI_PROTECTED_CANDIDATE_IMPACT_CREATE,
     AI_PROTECTED_CANDIDATE_IMPACT_READ,
+    AI_PROTECTED_CANDIDATE_RISK_RECOVERY_CREATE,
+    AI_PROTECTED_CANDIDATE_RISK_RECOVERY_READ,
     AI_PROTECTED_DRAFT_ADJUDICATION_CREATE,
     AI_PROTECTED_DRAFT_ADJUDICATION_READ,
     AI_PROTECTED_MODEL_CONTEXT_CREATE,
@@ -192,6 +194,7 @@ from atlas.modules.authorization.application.bootstrap import (
     ai_grounded_query_scope,
     ai_protected_answer_presentation_scope,
     ai_protected_candidate_impact_scope,
+    ai_protected_candidate_risk_recovery_scope,
     ai_protected_draft_adjudication_scope,
     ai_protected_model_context_scope,
     ai_protected_model_invocation_scope,
@@ -5056,4 +5059,58 @@ async def authorize_protected_candidate_impact_read(
 ) -> AuthorizationDecision:
     return await _authorize_protected_candidate_impact(
         request, subject, permission_id=AI_PROTECTED_CANDIDATE_IMPACT_READ
+    )
+
+
+async def _authorize_protected_candidate_risk_recovery(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.ai.protected-candidate-risk-recovery-completion",
+            scope=ai_protected_candidate_risk_recovery_scope(
+                subject.organization_id,
+                settings.environment,
+                CapabilityClass.C1_READ_ONLY,
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail=("The current identity cannot complete protected candidate risk and recovery."),
+        )
+    return decision
+
+
+async def authorize_protected_candidate_risk_recovery_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_protected_candidate_risk_recovery(
+        request,
+        subject,
+        permission_id=AI_PROTECTED_CANDIDATE_RISK_RECOVERY_CREATE,
+    )
+
+
+async def authorize_protected_candidate_risk_recovery_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_protected_candidate_risk_recovery(
+        request,
+        subject,
+        permission_id=AI_PROTECTED_CANDIDATE_RISK_RECOVERY_READ,
     )
