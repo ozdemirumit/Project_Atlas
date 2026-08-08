@@ -7,6 +7,7 @@ import {
   type ProtectedRecommendationCandidateResult,
 } from "../../api/protectedRecommendationCandidates";
 import type { ProtectedAnswerPresentationResult } from "../../api/protectedAnswerPresentation";
+import { ProtectedCandidateImpactPanel } from "./ProtectedCandidateImpactPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -120,25 +121,28 @@ export function ProtectedRecommendationCandidatePanel({
         </div>
       )}
       {result && (
-        <div className="correction-record">
-          <strong>Grounded candidate set generated</strong>
-          <code>{result.candidate_set.candidate_set_id}</code>
-          <p className="muted-copy">
-            {result.manifest.candidate_count} candidates across {result.manifest.step_count} bounded,
-            non-executable steps. Maximum capability class: {result.manifest.maximum_capability_class}.
-          </p>
-          <div className="connector-capability-list" aria-label="Candidate categories">
-            {result.manifest.candidate_categories.map((category) => (
-              <span className="connector-capability" data-state="available" key={category}>
-                {CATEGORY_LABELS[category] ?? category}
-              </span>
-            ))}
+        <>
+          <div className="correction-record">
+            <strong>Grounded candidate set generated</strong>
+            <code>{result.candidate_set.candidate_set_id}</code>
+            <p className="muted-copy">
+              {result.manifest.candidate_count} candidates across {result.manifest.step_count} bounded,
+              non-executable steps. Maximum capability class: {result.manifest.maximum_capability_class}.
+            </p>
+            <div className="connector-capability-list" aria-label="Candidate categories">
+              {result.manifest.candidate_categories.map((category) => (
+                <span className="connector-capability" data-state="available" key={category}>
+                  {CATEGORY_LABELS[category] ?? category}
+                </span>
+              ))}
+            </div>
+            <p className="muted-copy">
+              Candidate content remains protected. No impact analysis, preference, recommendation,
+              workflow, tool, or infrastructure action ran.
+            </p>
           </div>
-          <p className="muted-copy">
-            Candidate content remains protected. No impact analysis, preference, recommendation,
-            workflow, tool, or infrastructure action ran.
-          </p>
-        </div>
+          <ProtectedCandidateImpactPanel candidateResult={result} />
+        </>
       )}
     </div>
   );

@@ -468,6 +468,117 @@ class GovernedProtectedRecommendationCandidateService:
             record=reused, manifest=self._manifest(record)
         )
 
+    async def rehydrate_for_impact(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        candidate_set_id: str,
+        browser_session_id: str,
+        correlation_id: str,
+    ) -> tuple[ProtectedRecommendationCandidateRecord, ProtectedRecommendationCandidateSet]:
+        """Rehydrate one exact set for the independently governed impact boundary."""
+        self._require_human(actor)
+        record = await self._repository.get(candidate_set_id=candidate_set_id)
+        if record is None:
+            raise ProtectedRecommendationCandidateError(
+                "protected_recommendation_candidate_not_found"
+            )
+        self._require_scope(actor, record.organization_id, record.environment_id)
+        policy = await self._policy_source.get_by_id(policy_id=record.generation_policy_id)
+        if policy is None:
+            raise ProtectedRecommendationCandidateError(
+                "protected_recommendation_candidate_not_found"
+            )
+        browser_digest = self._digest([policy.browser_binding_key_digest, browser_session_id])
+        now = self._clock()
+        if (
+            record.browser_session_binding_digest != browser_digest
+            or record.canonical_digest != self._digest(self._payload(record))
+            or now >= record.expires_at
+            or policy.canonical_digest != record.generation_policy_digest
+            or policy.canonical_digest != self._digest(self._payload(policy))
+            or not policy.issued_at <= now < policy.expires_at
+            or not record.recommendation_candidates_generated
+            or record.service_impact_analyzed
+            or record.recommendation_complete
+            or record.recommendation_presented
+            or record.recommendation_ready_for_review
+            or record.recommendation_approved
+            or record.workflow_created
+            or record.execution_authorized
+            or record.deployment_authorized
+            or record.infrastructure_mutated
+        ):
+            raise ProtectedRecommendationCandidateError(
+                "protected_recommendation_candidate_not_found"
+            )
+        await self._permission_authorizer.authorize(
+            actor=actor,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+            correlation_id=correlation_id,
+        )
+        try:
+            (
+                presented,
+                adjudication,
+                report,
+                invocation,
+                draft,
+                context,
+            ) = await self._presentation_source.rehydrate_for_recommendation(
+                actor=actor,
+                presentation_id=record.presentation_id,
+                browser_session_id=browser_session_id,
+                correlation_id=correlation_id,
+            )
+        except Exception as error:
+            raise ProtectedRecommendationCandidateError(
+                "protected_recommendation_candidate_not_found"
+            ) from error
+        self._verify_presentation(
+            presented.record,
+            policy,
+            record.presentation_digest,
+            record.generation_policy_digest,
+            record.purpose,
+            now,
+        )
+        self._verify_source_lineage(
+            presented.record,
+            adjudication.record.canonical_digest,
+            invocation.record.context_package_digest,
+            draft.canonical_digest,
+            report.canonical_digest,
+            presented.answer.canonical_digest,
+        )
+        authorization_digest = self._digest(
+            [
+                presented.record.presentation_authorization_digest,
+                actor.role_ids,
+                policy.canonical_digest,
+            ]
+        )
+        receipt, candidate_set = await self._generator.rehydrate(
+            record=record,
+            generation_authorization_digest=authorization_digest,
+            answer=presented.answer,
+            report=report,
+            draft=draft,
+            context=context,
+        )
+        instruction = self._instruction_from_record(record, policy)
+        self._verify_receipt(receipt, candidate_set, instruction, policy)
+        self._verify_record(record, candidate_set, presented.record)
+        await self._audit(
+            actor,
+            correlation_id,
+            "protected_recommendation_candidate_impact_source_read",
+            candidate_set_id,
+            permission_id=AI_PROTECTED_RECOMMENDATION_CANDIDATE_READ,
+        )
+        return record, candidate_set
+
     async def close(self) -> None:
         await self._repository.close()
 
