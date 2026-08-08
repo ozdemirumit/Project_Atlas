@@ -206,6 +206,8 @@ AI_PROTECTED_RECOMMENDATION_CANDIDATE_CREATE = "ai.protected-recommendation-cand
 AI_PROTECTED_RECOMMENDATION_CANDIDATE_READ = "ai.protected-recommendation-candidate.read"
 AI_PROTECTED_CANDIDATE_IMPACT_CREATE = "ai.protected-candidate-impact.create"
 AI_PROTECTED_CANDIDATE_IMPACT_READ = "ai.protected-candidate-impact.read"
+AI_PROTECTED_CANDIDATE_RISK_RECOVERY_CREATE = "ai.protected-candidate-risk-recovery.create"
+AI_PROTECTED_CANDIDATE_RISK_RECOVERY_READ = "ai.protected-candidate-risk-recovery.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -1236,6 +1238,19 @@ def ai_protected_candidate_impact_scope(
     )
 
 
+def ai_protected_candidate_risk_recovery_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.ai",
+        resource_id="resource.ai.protected-candidate-risk-recovery-completion",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -2087,6 +2102,16 @@ def build_development_authorization_service(
             permission_id=AI_PROTECTED_CANDIDATE_IMPACT_READ,
             description="Read minimized protected candidate-impact metadata.",
         ),
+        PermissionDefinition(
+            permission_id=AI_PROTECTED_CANDIDATE_RISK_RECOVERY_CREATE,
+            description=(
+                "Complete protected candidate risk, duration, interruption, and recovery evidence."
+            ),
+        ),
+        PermissionDefinition(
+            permission_id=AI_PROTECTED_CANDIDATE_RISK_RECOVERY_READ,
+            description="Read minimized protected candidate risk-recovery metadata.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -2262,6 +2287,8 @@ def build_development_authorization_service(
                 AI_PROTECTED_RECOMMENDATION_CANDIDATE_READ,
                 AI_PROTECTED_CANDIDATE_IMPACT_CREATE,
                 AI_PROTECTED_CANDIDATE_IMPACT_READ,
+                AI_PROTECTED_CANDIDATE_RISK_RECOVERY_CREATE,
+                AI_PROTECTED_CANDIDATE_RISK_RECOVERY_READ,
             }
         ),
     )
@@ -3908,6 +3935,32 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=ai_protected_candidate_impact_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id=(
+                    "assignment.development.ai-protected-candidate-risk-recovery-create"
+                ),
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=ai_protected_candidate_risk_recovery_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id=("assignment.development.ai-protected-candidate-risk-recovery-read"),
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=ai_protected_candidate_risk_recovery_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,

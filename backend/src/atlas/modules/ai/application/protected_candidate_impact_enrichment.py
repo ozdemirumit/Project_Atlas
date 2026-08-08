@@ -379,6 +379,94 @@ class GovernedProtectedCandidateImpactService:
         reused = replace(record, reused=True)
         return ProtectedCandidateImpactResult(record=reused, manifest=self._manifest(record))
 
+    async def rehydrate_for_risk_recovery(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        impact_analysis_id: str,
+        browser_session_id: str,
+        correlation_id: str,
+    ) -> tuple[
+        ProtectedCandidateImpactRecord,
+        ProtectedRecommendationCandidateSet,
+        ProtectedCandidateImpactReport,
+    ]:
+        self._require_human(actor)
+        record = await self._repository.get(impact_analysis_id=impact_analysis_id)
+        if record is None:
+            raise ProtectedCandidateImpactError("protected_candidate_impact_not_found")
+        self._require_scope(actor, record.organization_id, record.environment_id)
+        policy = await self._policy_source.get_by_id(policy_id=record.impact_policy_id)
+        now = self._clock()
+        if (
+            policy is None
+            or record.browser_session_binding_digest
+            != self._digest([policy.browser_binding_key_digest, browser_session_id])
+            or record.canonical_digest != self._digest(self._payload(record))
+            or now >= record.expires_at
+            or policy.canonical_digest != record.impact_policy_digest
+            or policy.canonical_digest != self._digest(self._payload(policy))
+            or not policy.issued_at <= now < policy.expires_at
+        ):
+            raise ProtectedCandidateImpactError("protected_candidate_impact_not_found")
+        await self._permission_authorizer.authorize(
+            actor=actor,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+            correlation_id=correlation_id,
+        )
+        try:
+            source_record, candidate_set = await self._candidate_source.rehydrate_for_impact(
+                actor=actor,
+                candidate_set_id=record.candidate_set_id,
+                browser_session_id=browser_session_id,
+                correlation_id=correlation_id,
+            )
+            self._verify_candidate_source(
+                source_record,
+                candidate_set,
+                record.candidate_set_digest,
+                record.purpose,
+                policy,
+                now,
+            )
+            graph_result = self._analyze_graph(actor, source_record, policy)
+            self._verify_graph(graph_result, record.graph_snapshot_digest, policy)
+            authorization_digest = self._digest(
+                [
+                    source_record.consumer_subject_digest,
+                    actor.role_ids,
+                    policy.canonical_digest,
+                    record.graph_snapshot_digest,
+                ]
+            )
+            receipt, report = await self._analyzer.rehydrate(
+                record=record,
+                impact_authorization_digest=authorization_digest,
+                candidate_set=candidate_set,
+                graph_result=graph_result,
+            )
+            self._verify_receipt(
+                receipt,
+                report,
+                self._instruction_from_record(record, policy),
+                policy,
+                candidate_set,
+            )
+            self._verify_record(record, receipt, report, source_record)
+        except ProtectedCandidateImpactError:
+            raise
+        except Exception as error:
+            raise ProtectedCandidateImpactError("protected_candidate_impact_not_found") from error
+        await self._audit(
+            actor,
+            correlation_id,
+            "protected_candidate_impact_rehydrated_for_risk_recovery",
+            impact_analysis_id,
+            permission_id=AI_PROTECTED_CANDIDATE_IMPACT_READ,
+        )
+        return record, candidate_set, report
+
     async def close(self) -> None:
         await self._repository.close()
 
