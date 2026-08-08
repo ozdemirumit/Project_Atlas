@@ -202,6 +202,8 @@ AI_PROTECTED_DRAFT_ADJUDICATION_CREATE = "ai.protected-draft-adjudication.create
 AI_PROTECTED_DRAFT_ADJUDICATION_READ = "ai.protected-draft-adjudication.read"
 AI_PROTECTED_ANSWER_PRESENTATION_CREATE = "ai.protected-answer-presentation.create"
 AI_PROTECTED_ANSWER_PRESENTATION_READ = "ai.protected-answer-presentation.read"
+AI_PROTECTED_RECOMMENDATION_CANDIDATE_CREATE = "ai.protected-recommendation-candidate.create"
+AI_PROTECTED_RECOMMENDATION_CANDIDATE_READ = "ai.protected-recommendation-candidate.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -1206,6 +1208,19 @@ def ai_protected_answer_presentation_scope(
     )
 
 
+def ai_protected_recommendation_candidate_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.ai",
+        resource_id="resource.ai.protected-recommendation-candidate-set",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -2039,6 +2054,16 @@ def build_development_authorization_service(
             permission_id=AI_PROTECTED_ANSWER_PRESENTATION_READ,
             description="Read one exact protected answer presentation.",
         ),
+        PermissionDefinition(
+            permission_id=AI_PROTECTED_RECOMMENDATION_CANDIDATE_CREATE,
+            description=(
+                "Generate one protected grounded candidate set without recommendation authority."
+            ),
+        ),
+        PermissionDefinition(
+            permission_id=AI_PROTECTED_RECOMMENDATION_CANDIDATE_READ,
+            description="Read minimized protected recommendation-candidate metadata.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -2210,6 +2235,8 @@ def build_development_authorization_service(
                 AI_PROTECTED_DRAFT_ADJUDICATION_READ,
                 AI_PROTECTED_ANSWER_PRESENTATION_CREATE,
                 AI_PROTECTED_ANSWER_PRESENTATION_READ,
+                AI_PROTECTED_RECOMMENDATION_CANDIDATE_CREATE,
+                AI_PROTECTED_RECOMMENDATION_CANDIDATE_READ,
             }
         ),
     )
@@ -3806,6 +3833,32 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=ai_protected_answer_presentation_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id=(
+                    "assignment.development.ai-protected-recommendation-candidate-create"
+                ),
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=ai_protected_recommendation_candidate_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id=("assignment.development.ai-protected-recommendation-candidate-read"),
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=ai_protected_recommendation_candidate_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,

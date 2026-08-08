@@ -20,6 +20,8 @@ from atlas.modules.authorization.application.bootstrap import (
     AI_PROTECTED_MODEL_CONTEXT_READ,
     AI_PROTECTED_MODEL_INVOCATION_CREATE,
     AI_PROTECTED_MODEL_INVOCATION_READ,
+    AI_PROTECTED_RECOMMENDATION_CANDIDATE_CREATE,
+    AI_PROTECTED_RECOMMENDATION_CANDIDATE_READ,
     API_CREDENTIAL_ADMIN_REVOKE,
     API_CREDENTIAL_SELF_CREATE,
     API_CREDENTIAL_SELF_READ,
@@ -190,6 +192,7 @@ from atlas.modules.authorization.application.bootstrap import (
     ai_protected_draft_adjudication_scope,
     ai_protected_model_context_scope,
     ai_protected_model_invocation_scope,
+    ai_protected_recommendation_candidate_scope,
     api_credential_self_scope,
     approval_scope,
     audit_export_scope,
@@ -4954,4 +4957,52 @@ async def authorize_protected_answer_presentation_read(
 ) -> AuthorizationDecision:
     return await _authorize_protected_answer_presentation(
         request, subject, permission_id=AI_PROTECTED_ANSWER_PRESENTATION_READ
+    )
+
+
+async def _authorize_protected_recommendation_candidate(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.ai.protected-recommendation-candidate-set",
+            scope=ai_protected_recommendation_candidate_scope(
+                subject.organization_id, settings.environment, CapabilityClass.C1_READ_ONLY
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail="The current identity cannot generate protected recommendation candidates.",
+        )
+    return decision
+
+
+async def authorize_protected_recommendation_candidate_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_protected_recommendation_candidate(
+        request, subject, permission_id=AI_PROTECTED_RECOMMENDATION_CANDIDATE_CREATE
+    )
+
+
+async def authorize_protected_recommendation_candidate_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_protected_recommendation_candidate(
+        request, subject, permission_id=AI_PROTECTED_RECOMMENDATION_CANDIDATE_READ
     )

@@ -34,6 +34,12 @@ from atlas.modules.ai.domain.protected_answer_presentation import (
 )
 from atlas.modules.ai.domain.protected_draft_adjudication import (
     ProtectedDraftAdjudicationRecord,
+    ProtectedDraftAdjudicationReport,
+    ProtectedDraftAdjudicationResult,
+)
+from atlas.modules.ai.domain.protected_model_invocation import (
+    ProtectedModelInvocationResult,
+    ProtectedModelResponseDraft,
 )
 from atlas.modules.authorization.application.bootstrap import (
     AI_PROTECTED_ANSWER_PRESENTATION_CREATE,
@@ -45,6 +51,16 @@ from atlas.modules.identity.domain.models import (
     AuthenticationMethod,
     SubjectKind,
 )
+from atlas.modules.knowledge.domain.model_context_assembly import ProtectedModelContextPackage
+
+ProtectedAnswerPresentationSourceBundle = tuple[
+    ProtectedAnswerPresentationResult,
+    ProtectedDraftAdjudicationResult,
+    ProtectedDraftAdjudicationReport,
+    ProtectedModelInvocationResult,
+    ProtectedModelResponseDraft,
+    ProtectedModelContextPackage,
+]
 
 POLICY_SCHEMA = "atlas.protected-answer-presentation-policy.v1"
 CLAIM_SCHEMA = "atlas.protected-answer-presentation-claim.v1"
@@ -329,6 +345,30 @@ class GovernedProtectedAnswerPresentationService:
         browser_session_id: str,
         correlation_id: str,
     ) -> ProtectedAnswerPresentationResult:
+        bundle = await self.rehydrate_for_recommendation(
+            actor=actor,
+            presentation_id=presentation_id,
+            browser_session_id=browser_session_id,
+            correlation_id=correlation_id,
+        )
+        result = bundle[0]
+        await self._audit(
+            actor,
+            correlation_id,
+            "protected_answer_presentation_read",
+            presentation_id,
+            permission_id=AI_PROTECTED_ANSWER_PRESENTATION_READ,
+        )
+        return result
+
+    async def rehydrate_for_recommendation(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        presentation_id: str,
+        browser_session_id: str,
+        correlation_id: str,
+    ) -> ProtectedAnswerPresentationSourceBundle:
         self._require_human(actor)
         record = await self._repository.get(presentation_id=presentation_id)
         if record is None:
@@ -391,18 +431,40 @@ class GovernedProtectedAnswerPresentationService:
             context=context,
         )
         self._verify_answer(record, answer)
-        await self._audit(
-            actor,
-            correlation_id,
-            "protected_answer_presentation_read",
-            presentation_id,
-            permission_id=AI_PROTECTED_ANSWER_PRESENTATION_READ,
-        )
-        return ProtectedAnswerPresentationResult(
+        result = ProtectedAnswerPresentationResult(
             record=replace(record, reused=True),
             manifest=self._manifest(record),
             answer=answer,
         )
+        return result, adjudication, report, invocation, draft, context
+
+    async def get_record_for_recommendation_authorization(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        presentation_id: str,
+        browser_session_id: str,
+    ) -> ProtectedAnswerPresentationRecord:
+        self._require_human(actor)
+        record = await self._repository.get(presentation_id=presentation_id)
+        if record is None:
+            raise ProtectedAnswerPresentationError("protected_answer_presentation_not_found")
+        self._require_scope(actor, record.organization_id, record.environment_id)
+        policy = await self._policy_source.get_by_id(policy_id=record.presentation_policy_id)
+        if policy is None:
+            raise ProtectedAnswerPresentationError("protected_answer_presentation_not_found")
+        browser_digest = self._digest([policy.browser_binding_key_digest, browser_session_id])
+        now = self._clock()
+        if (
+            record.browser_session_binding_digest != browser_digest
+            or record.canonical_digest != self._digest(self._payload(record))
+            or now >= record.expires_at
+            or policy.canonical_digest != record.presentation_policy_digest
+            or policy.canonical_digest != self._digest(self._payload(policy))
+            or not policy.issued_at <= now < policy.expires_at
+        ):
+            raise ProtectedAnswerPresentationError("protected_answer_presentation_not_found")
+        return record
 
     async def close(self) -> None:
         await self._repository.close()

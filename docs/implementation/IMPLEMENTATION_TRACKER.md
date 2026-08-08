@@ -4,14 +4,93 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-106 |
-| Title | Governed protected answer-presentation foundation |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#118](https://github.com/ozdemirumit/Project_Atlas/pull/118) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-062 |
-| Last Updated | 2026-08-07 |
-| Next Action | Define ADR-063 and begin ATLAS-IMP-107 grounded recommendation-generation foundation |
+| Task ID | ATLAS-IMP-107 |
+| Title | Governed grounded recommendation-candidate generation foundation |
+| Status | Ready for Pull Request |
+| Branch | `agent/grounded-recommendation-generation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-063 |
+| Last Updated | 2026-08-08 |
+| Next Action | Push the validated slice, open its pull request, and complete CI and merge evidence |
+
+### ATLAS-IMP-107 Scope Rationale
+
+- IMP-106 presents one exact eligible protected answer but deliberately grants no recommendation,
+  impact, preference, workflow, approval, or operational authority.
+- ADR-063 permits the same eligible human consumer to request one bounded protected candidate set
+  grounded in that exact answer and its complete upstream evidence lineage.
+- Candidate generation enriches the established recommendation domain; it does not create a second
+  `RecommendationArtifact` model or make candidates available to approval, reporting, workflow,
+  ITSM, or execution consumers.
+- Service-impact enrichment, risk and recovery completion, recommendation adjudication,
+  presentation, existing-domain promotion, review, approval, workflow, execution, deployment, and
+  infrastructure mutation remain later stages.
+
+### ATLAS-IMP-107 Acceptance Criteria
+
+- Only one exact completed, unexpired, integrity-valid answer presentation with unchanged
+  adjudication, invocation, context, retrieval, source, access, classification, purpose, policies,
+  citation, unknown, safety, destination, browser, consumer, and protected-vault lineage can enter
+  generation.
+- The caller supplies only exact presentation and signed generation-policy bindings, unchanged
+  purpose, three acknowledgements, idempotency, and correlation. Answer, candidate, option,
+  preference, risk, impact, duration, recovery, capability, model, endpoint, workflow, operation,
+  deployment, and mutation controls are forbidden.
+- A trusted deterministic no-network, no-model generator independently verifies the exact protected
+  answer and upstream artifacts, preserves citations, unknowns and conflicts, and produces a
+  bounded closed candidate set with required diagnostic, escalation, and defer/no-action diversity.
+- Candidate steps are conceptual and non-executable. Only policy-approved C0/C1 references are
+  allowed; restoration or remediation planning stays blocked when impact, recovery, redundancy,
+  maintenance-window, or policy evidence is incomplete.
+- Full candidate content and receipt remain in a tenant-isolated protected vault. Ordinary
+  persistence, API, audit, logs, events, metrics, and UI expose only minimized lineage, policy,
+  generator, category/count, capability-ceiling, digest, state, timestamp, and no-authority
+  metadata.
+- An immutable unique claim prevents multiple candidate sets. Exact replay returns only the same
+  minimized metadata after current authorization and complete source, policy, retention, vault, and
+  digest checks and never regenerates candidates.
+- Success sets only candidate generation. It creates no final recommendation artifact, preference,
+  confirmed impact, duration, interruption, recovery, readiness, presentation, approval, workflow,
+  execution, deployment, or infrastructure mutation authority.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  access/lineage/replay/diversity/capability/content/vault/audit tests, minimized UI evidence, full
+  suites, live desktop/mobile validation, and GitHub CI apply.
+
+### ATLAS-IMP-107 Validation Evidence
+
+- ADR-063 is accepted. IMP-106 documentation closure commit
+  `69bfd81755448ef13e17fb29f11036f396e3f36c` passed main run `31220880152` (backend 2m47s,
+  frontend 3m42s).
+- The governed candidate service authorizes against minimized presentation metadata before
+  rehydrating protected content, then verifies the exact presentation, adjudication, invocation,
+  context package, draft, report, answer, purpose, classification, policy, retention, browser,
+  subject, authorization, and canonical lineage before generation or replay.
+- Development uses a deterministic no-network, no-model trusted generator. It produces exactly
+  one investigative, one escalation, and one defer/no-action candidate with policy-approved C0/C1
+  conceptual steps. Production fails closed until approved policy, generator, attestor,
+  repository, and protected-vault boundaries are configured.
+- Full candidate and receipt content remains in the tenant-bound protected vault. PostgreSQL,
+  memory records, API responses, audit, logs, and UI expose only minimized lineage, digests,
+  categories, counts, capability ceiling, timestamps, and explicit no-authority state. Exact
+  replay rehydrates and verifies the same protected set without regeneration.
+- Dedicated default-deny C1 create/read permissions, CSRF and browser-bound no-store routes,
+  strict request/response schemas, memory/PostgreSQL parity, and Alembic revision
+  `20260808_0079` are implemented. Alembic reports one head and empty-to-head PostgreSQL offline
+  SQL generation passed.
+- Ruff passed across 909 Python files and strict mypy found no issues in 809 source files. Focused
+  candidate tests passed `8` tests; the protected-AI/API regression set passed `21` tests. The
+  complete backend suite passed `818` tests with three expected Windows symlink skips and three
+  existing dependency warnings.
+- The frontend passed ESLint, TypeScript, `47` test files with `77` tests, and the production build
+  (CSS 127.86 kB / 21.18 kB gzip; JavaScript 1,011.85 kB / 184.38 kB gzip). The existing
+  bundle-size notice remains non-blocking.
+- Live development validation used backend port 8000 and frontend port 5212 with the proxy pinned
+  to the correct backend after detecting a stale host-level port-8027 override. Current identity
+  and platform status returned healthy data. The Connector lifecycle rendered
+  `Recommendation candidates` as the latest capability and retained `Answer presentation` as the
+  prior capability without application console errors.
+- Scope commit `c0e407b` and implementation commit `1615d91` contain the current slice. Pull
+  request, branch CI, merge, merged-main CI, and closure evidence are pending.
 
 ### ATLAS-IMP-106 Scope Rationale
 

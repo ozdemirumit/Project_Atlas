@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { createProtectedAnswerPresentation } from "../../api/protectedAnswerPresentation";
 import type { ProtectedDraftAdjudicationResult } from "../../api/protectedDraftAdjudication";
+import { ProtectedRecommendationCandidatePanel } from "./ProtectedRecommendationCandidatePanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -110,23 +111,26 @@ export function ProtectedAnswerPresentationPanel({
         </div>
       )}
       {result && (
-        <div className="correction-record">
-          <strong>Adjudicated answer</strong>
-          <p>{result.answer.summary}</p>
-          <h4>Citation references</h4>
-          <ul>
-            {result.answer.citation_references.map((reference) => (
-              <li key={reference}><code>{reference}</code></li>
-            ))}
-          </ul>
-          <h4>Explicit unknowns</h4>
-          <ul>
-            {result.answer.unknowns.map((unknown) => <li key={unknown}>{unknown}</li>)}
-          </ul>
-          <p className="muted-copy">
-            Decision support only. No recommendation, workflow, tool, or infrastructure action ran.
-          </p>
-        </div>
+        <>
+          <div className="correction-record">
+            <strong>Adjudicated answer</strong>
+            <p>{result.answer.summary}</p>
+            <h4>Citation references</h4>
+            <ul>
+              {result.answer.citation_references.map((reference) => (
+                <li key={reference}><code>{reference}</code></li>
+              ))}
+            </ul>
+            <h4>Explicit unknowns</h4>
+            <ul>
+              {result.answer.unknowns.map((unknown) => <li key={unknown}>{unknown}</li>)}
+            </ul>
+            <p className="muted-copy">
+              Decision support only. No recommendation, workflow, tool, or infrastructure action ran.
+            </p>
+          </div>
+          <ProtectedRecommendationCandidatePanel presentationResult={result} />
+        </>
       )}
     </div>
   );
