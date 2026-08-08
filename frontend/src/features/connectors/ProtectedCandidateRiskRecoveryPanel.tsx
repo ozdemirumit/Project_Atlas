@@ -7,6 +7,7 @@ import {
   type ProtectedCandidateRiskRecoveryResult,
 } from "../../api/protectedCandidateRiskRecovery";
 import type { ProtectedCandidateImpactResult } from "../../api/protectedCandidateImpacts";
+import { ProtectedRecommendationAdjudicationPanel } from "./ProtectedRecommendationAdjudicationPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -114,44 +115,47 @@ export function ProtectedCandidateRiskRecoveryPanel({
         </div>
       )}
       {result && (
-        <div className="correction-record">
-          <strong>Risk and recovery assessment completed</strong>
-          <code>{result.completion.completion_id}</code>
-          <p className="muted-copy">
-            Maximum risk: {result.manifest.maximum_risk}. Evidence is {result.manifest.evidence_freshness}
-            {" "}and {result.manifest.evidence_completeness}.
-          </p>
-          <div className="connector-capability-list" aria-label="Risk assessment summary">
-            <span className="connector-capability" data-state="available">
-              {result.manifest.low_risk_count} low
-            </span>
-            <span className="connector-capability" data-state="available">
-              {result.manifest.moderate_risk_count} moderate
-            </span>
-            <span className="connector-capability" data-state="available">
-              {result.manifest.high_risk_count} high
-            </span>
-            <span className="connector-capability" data-state="available">
-              {result.manifest.critical_risk_count} critical
-            </span>
-            <span className="connector-capability" data-state="available">
-              {result.manifest.unknown_risk_count} unknown
-            </span>
+        <>
+          <div className="correction-record">
+            <strong>Risk and recovery assessment completed</strong>
+            <code>{result.completion.completion_id}</code>
+            <p className="muted-copy">
+              Maximum risk: {result.manifest.maximum_risk}. Evidence is {result.manifest.evidence_freshness}
+              {" "}and {result.manifest.evidence_completeness}.
+            </p>
+            <div className="connector-capability-list" aria-label="Risk assessment summary">
+              <span className="connector-capability" data-state="available">
+                {result.manifest.low_risk_count} low
+              </span>
+              <span className="connector-capability" data-state="available">
+                {result.manifest.moderate_risk_count} moderate
+              </span>
+              <span className="connector-capability" data-state="available">
+                {result.manifest.high_risk_count} high
+              </span>
+              <span className="connector-capability" data-state="available">
+                {result.manifest.critical_risk_count} critical
+              </span>
+              <span className="connector-capability" data-state="available">
+                {result.manifest.unknown_risk_count} unknown
+              </span>
+            </div>
+            <p className="muted-copy">
+              Work estimate: {result.manifest.work_minimum_minutes}-{result.manifest.work_maximum_minutes}
+              {" "}minutes. Interruption estimate: {result.manifest.interruption_minimum_minutes}-
+              {result.manifest.interruption_maximum_minutes} minutes across {result.manifest.interruption_possible_count}
+              {" "}candidates.
+            </p>
+            <p className="muted-copy">
+              Recovery: {result.manifest.recovery_feasible_count} feasible, {result.manifest.recovery_unknown_count}
+              {" "}unknown, {result.manifest.recovery_blocked_count} blocked; estimated {result.manifest.recovery_minimum_minutes}-
+              {result.manifest.recovery_maximum_minutes} minutes. Evidence contains {result.manifest.gap_count}
+              {" "}gaps and {result.manifest.unknown_count} unknowns.
+            </p>
+            <p className="muted-copy">{result.manifest.safety_notice}</p>
           </div>
-          <p className="muted-copy">
-            Work estimate: {result.manifest.work_minimum_minutes}-{result.manifest.work_maximum_minutes}
-            {" "}minutes. Interruption estimate: {result.manifest.interruption_minimum_minutes}-
-            {result.manifest.interruption_maximum_minutes} minutes across {result.manifest.interruption_possible_count}
-            {" "}candidates.
-          </p>
-          <p className="muted-copy">
-            Recovery: {result.manifest.recovery_feasible_count} feasible, {result.manifest.recovery_unknown_count}
-            {" "}unknown, {result.manifest.recovery_blocked_count} blocked; estimated {result.manifest.recovery_minimum_minutes}-
-            {result.manifest.recovery_maximum_minutes} minutes. Evidence contains {result.manifest.gap_count}
-            {" "}gaps and {result.manifest.unknown_count} unknowns.
-          </p>
-          <p className="muted-copy">{result.manifest.safety_notice}</p>
-        </div>
+          <ProtectedRecommendationAdjudicationPanel completionResult={result} />
+        </>
       )}
     </div>
   );

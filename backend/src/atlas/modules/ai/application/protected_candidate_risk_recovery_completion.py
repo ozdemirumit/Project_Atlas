@@ -422,6 +422,80 @@ class GovernedProtectedCandidateRiskRecoveryService:
             manifest=self._manifest(record),
         )
 
+    async def rehydrate_for_adjudication(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        completion_id: str,
+        browser_session_id: str,
+        correlation_id: str,
+    ) -> tuple[
+        ProtectedCandidateRiskRecoveryRecord,
+        ProtectedRecommendationCandidateSet,
+        ProtectedCandidateImpactReport,
+        ProtectedCandidateRiskRecoveryReport,
+        ProtectedOperationalEvidenceSnapshot,
+    ]:
+        await self.get(
+            actor=actor,
+            completion_id=completion_id,
+            browser_session_id=browser_session_id,
+            correlation_id=correlation_id,
+        )
+        record = await self._repository.get(completion_id=completion_id)
+        if record is None:
+            raise ProtectedCandidateRiskRecoveryError("protected_candidate_risk_recovery_not_found")
+        policy = await self._policy_source.get_by_id(policy_id=record.completion_policy_id)
+        if policy is None:
+            raise ProtectedCandidateRiskRecoveryError("protected_candidate_risk_recovery_not_found")
+        (
+            impact_record,
+            candidate_set,
+            impact_report,
+        ) = await self._impact_source.rehydrate_for_risk_recovery(
+            actor=actor,
+            impact_analysis_id=record.impact_analysis_id,
+            browser_session_id=browser_session_id,
+            correlation_id=correlation_id,
+        )
+        evidence = await self._evidence_source.get_by_id(snapshot_id=record.evidence_snapshot_id)
+        self._verify_evidence(evidence, impact_record, policy, self._clock())
+        assert evidence is not None
+        authorization_digest = self._digest(
+            [
+                impact_record.consumer_subject_digest,
+                actor.role_ids,
+                policy.canonical_digest,
+                impact_record.canonical_digest,
+                evidence.canonical_digest,
+            ]
+        )
+        receipt, report = await self._assessor.rehydrate(
+            record=record,
+            completion_authorization_digest=authorization_digest,
+            candidate_set=candidate_set,
+            impact_report=impact_report,
+            evidence_snapshot=evidence,
+        )
+        self._verify_receipt(
+            receipt,
+            report,
+            self._instruction_from_record(record, policy, impact_report),
+            policy,
+            candidate_set,
+            impact_report,
+            evidence,
+        )
+        self._verify_record(record, receipt, report, impact_record, evidence)
+        await self._audit(
+            actor,
+            correlation_id,
+            "protected_candidate_risk_recovery_rehydrated_for_adjudication",
+            completion_id,
+            permission_id=AI_PROTECTED_CANDIDATE_RISK_RECOVERY_READ,
+        )
+        return record, candidate_set, impact_report, report, evidence
+
     async def close(self) -> None:
         await self._repository.close()
 

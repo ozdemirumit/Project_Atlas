@@ -3176,3 +3176,49 @@ class ProtectedCandidateRiskRecoveryModel(Base):
     )
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class ProtectedRecommendationAdjudicationClaimModel(Base):
+    __tablename__ = "protected_recommendation_adjudication_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "claimed_by_subject_digest",
+            "idempotency_digest",
+            name="uq_protected_recommendation_adjudication_claim_actor_idem",
+        ),
+        UniqueConstraint(
+            "completion_id",
+            name="uq_protected_recommendation_adjudication_claim_completion",
+        ),
+    )
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    adjudication_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    completion_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    claimed_by_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class ProtectedRecommendationAdjudicationModel(Base):
+    __tablename__ = "protected_recommendation_adjudications"
+    __table_args__ = (
+        UniqueConstraint("claim_id", name="uq_protected_recommendation_adjudication_claim"),
+        UniqueConstraint(
+            "completion_id", name="uq_protected_recommendation_adjudication_completion"
+        ),
+    )
+    adjudication_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    claim_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    completion_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    candidate_set_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    consumer_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
