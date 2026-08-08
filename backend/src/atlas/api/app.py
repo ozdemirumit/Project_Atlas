@@ -68,6 +68,7 @@ from atlas.api.routes import (
     package_signing,
     platform,
     protected_answer_presentations,
+    protected_candidate_impacts,
     protected_content,
     protected_draft_adjudication,
     protected_inspections,
@@ -123,6 +124,20 @@ from atlas.modules.ai.adapters.protected_answer_presentation_synthetic import (
     SyntheticTrustedProtectedAnswerPresenter,
     UnavailableTrustedProtectedAnswerPresenter,
 )
+from atlas.modules.ai.adapters.protected_candidate_impact_memory import (
+    InMemoryProtectedCandidateImpactPolicySource,
+    MemoryProtectedCandidateImpactRepository,
+)
+from atlas.modules.ai.adapters.protected_candidate_impact_permission import (
+    AuthorizationProtectedCandidateImpactPermissionAuthorizer,
+)
+from atlas.modules.ai.adapters.protected_candidate_impact_postgres import (
+    PostgreSQLProtectedCandidateImpactRepository,
+)
+from atlas.modules.ai.adapters.protected_candidate_impact_synthetic import (
+    SyntheticTrustedProtectedCandidateImpactAnalyzer,
+    UnavailableTrustedProtectedCandidateImpactAnalyzer,
+)
 from atlas.modules.ai.adapters.protected_draft_adjudication_memory import (
     InMemoryProtectedDraftAdjudicationPolicySource,
     MemoryProtectedDraftAdjudicationRepository,
@@ -171,6 +186,10 @@ from atlas.modules.ai.application.ports import ModelTransport
 from atlas.modules.ai.application.protected_answer_presentation import (
     GovernedProtectedAnswerPresentationService,
     build_development_protected_answer_presentation_policy,
+)
+from atlas.modules.ai.application.protected_candidate_impact_enrichment import (
+    GovernedProtectedCandidateImpactService,
+    build_development_protected_candidate_impact_policy,
 )
 from atlas.modules.ai.application.protected_draft_adjudication import (
     GovernedProtectedDraftAdjudicationService,
@@ -1276,6 +1295,7 @@ def create_app(
     protected_recommendation_candidate_service: (
         GovernedProtectedRecommendationCandidateService | None
     ) = None,
+    protected_candidate_impact_service: GovernedProtectedCandidateImpactService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -3777,6 +3797,51 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    resolved_graph_analyzer = InMemoryGraphImpactAnalyzer(
+        snapshot=build_synthetic_graph_snapshot(
+            organization_id=resolved_settings.development_organization_id,
+            environment=resolved_settings.environment,
+        )
+    )
+    if protected_candidate_impact_service is not None:
+        resolved_protected_candidate_impact_service = protected_candidate_impact_service
+    else:
+        impact_repository = (
+            PostgreSQLProtectedCandidateImpactRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else MemoryProtectedCandidateImpactRepository()
+        )
+        impact_policies = (
+            ()
+            if is_production
+            else (
+                build_development_protected_candidate_impact_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_protected_candidate_impact_service = GovernedProtectedCandidateImpactService(
+            repository=impact_repository,
+            candidate_source=resolved_protected_recommendation_candidate_service,
+            policy_source=InMemoryProtectedCandidateImpactPolicySource(impact_policies),
+            permission_authorizer=(
+                AuthorizationProtectedCandidateImpactPermissionAuthorizer(
+                    service=resolved_authorization_service,
+                    environment=resolved_settings.environment,
+                )
+            ),
+            graph_analyzer=resolved_graph_analyzer,
+            analyzer=(
+                UnavailableTrustedProtectedCandidateImpactAnalyzer()
+                if is_production
+                else SyntheticTrustedProtectedCandidateImpactAnalyzer()
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -3792,12 +3857,7 @@ def create_app(
         audit_sink=resolved_audit_sink,
     )
     resolved_graph_impact_service = graph_impact_service or GraphImpactService(
-        analyzer=InMemoryGraphImpactAnalyzer(
-            snapshot=build_synthetic_graph_snapshot(
-                organization_id=resolved_settings.development_organization_id,
-                environment=resolved_settings.environment,
-            )
-        ),
+        analyzer=resolved_graph_analyzer,
         audit_sink=resolved_audit_sink,
     )
     health_check_definitions = build_synthetic_health_check_definitions(
@@ -4046,6 +4106,7 @@ def create_app(
         app.state.protected_recommendation_candidate_service = (
             resolved_protected_recommendation_candidate_service
         )
+        app.state.protected_candidate_impact_service = resolved_protected_candidate_impact_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -4058,6 +4119,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_protected_candidate_impact_service.close()
         await resolved_protected_recommendation_candidate_service.close()
         await resolved_protected_answer_presentation_service.close()
         await resolved_protected_draft_adjudication_service.close()
@@ -4226,6 +4288,7 @@ def create_app(
     app.include_router(protected_draft_adjudication.router, prefix="/api/v1")
     app.include_router(protected_answer_presentations.router, prefix="/api/v1")
     app.include_router(protected_recommendation_candidates.router, prefix="/api/v1")
+    app.include_router(protected_candidate_impacts.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
