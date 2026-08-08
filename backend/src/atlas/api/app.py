@@ -74,6 +74,7 @@ from atlas.api.routes import (
     protected_draft_adjudication,
     protected_inspections,
     protected_model_invocation,
+    protected_recommendation_adjudications,
     protected_recommendation_candidates,
     protected_retrieval,
     publication_preparations,
@@ -183,6 +184,20 @@ from atlas.modules.ai.adapters.protected_model_invocation_synthetic import (
     SyntheticTrustedProtectedModelGateway,
     UnavailableTrustedProtectedModelGateway,
 )
+from atlas.modules.ai.adapters.protected_recommendation_adjudication_memory import (
+    InMemoryProtectedRecommendationAdjudicationPolicySource,
+    MemoryProtectedRecommendationAdjudicationRepository,
+)
+from atlas.modules.ai.adapters.protected_recommendation_adjudication_permission import (
+    AuthorizationProtectedRecommendationAdjudicationPermissionAuthorizer,
+)
+from atlas.modules.ai.adapters.protected_recommendation_adjudication_postgres import (
+    PostgreSQLProtectedRecommendationAdjudicationRepository,
+)
+from atlas.modules.ai.adapters.protected_recommendation_adjudication_synthetic import (
+    SyntheticTrustedProtectedRecommendationAdjudicator,
+    UnavailableTrustedProtectedRecommendationAdjudicator,
+)
 from atlas.modules.ai.adapters.protected_recommendation_candidate_memory import (
     InMemoryProtectedRecommendationCandidatePolicySource,
     MemoryProtectedRecommendationCandidateRepository,
@@ -219,6 +234,10 @@ from atlas.modules.ai.application.protected_draft_adjudication import (
 from atlas.modules.ai.application.protected_model_invocation import (
     GovernedProtectedModelInvocationService,
     build_development_protected_model_invocation_policy,
+)
+from atlas.modules.ai.application.protected_recommendation_adjudication import (
+    GovernedProtectedRecommendationAdjudicationService,
+    build_development_protected_recommendation_adjudication_policy,
 )
 from atlas.modules.ai.application.protected_recommendation_candidate_generation import (
     GovernedProtectedRecommendationCandidateService,
@@ -1319,6 +1338,9 @@ def create_app(
     protected_candidate_impact_service: GovernedProtectedCandidateImpactService | None = None,
     protected_candidate_risk_recovery_service: (
         GovernedProtectedCandidateRiskRecoveryService | None
+    ) = None,
+    protected_recommendation_adjudication_service: (
+        GovernedProtectedRecommendationAdjudicationService | None
     ) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
@@ -3925,6 +3947,52 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    if protected_recommendation_adjudication_service is not None:
+        resolved_protected_recommendation_adjudication_service = (
+            protected_recommendation_adjudication_service
+        )
+    else:
+        recommendation_adjudication_repository = (
+            PostgreSQLProtectedRecommendationAdjudicationRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else MemoryProtectedRecommendationAdjudicationRepository()
+        )
+        recommendation_adjudication_policies = (
+            ()
+            if is_production
+            else (
+                build_development_protected_recommendation_adjudication_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_protected_recommendation_adjudication_service = (
+            GovernedProtectedRecommendationAdjudicationService(
+                repository=recommendation_adjudication_repository,
+                completion_source=resolved_protected_candidate_risk_recovery_service,
+                policy_source=InMemoryProtectedRecommendationAdjudicationPolicySource(
+                    recommendation_adjudication_policies
+                ),
+                permission_authorizer=(
+                    AuthorizationProtectedRecommendationAdjudicationPermissionAuthorizer(
+                        service=resolved_authorization_service,
+                        environment=resolved_settings.environment,
+                    )
+                ),
+                adjudicator=(
+                    UnavailableTrustedProtectedRecommendationAdjudicator()
+                    if is_production
+                    else SyntheticTrustedProtectedRecommendationAdjudicator()
+                ),
+                audit_sink=resolved_audit_sink,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -4193,6 +4261,9 @@ def create_app(
         app.state.protected_candidate_risk_recovery_service = (
             resolved_protected_candidate_risk_recovery_service
         )
+        app.state.protected_recommendation_adjudication_service = (
+            resolved_protected_recommendation_adjudication_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -4205,6 +4276,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_protected_recommendation_adjudication_service.close()
         await resolved_protected_candidate_risk_recovery_service.close()
         await resolved_protected_candidate_impact_service.close()
         await resolved_protected_recommendation_candidate_service.close()
@@ -4377,6 +4449,7 @@ def create_app(
     app.include_router(protected_recommendation_candidates.router, prefix="/api/v1")
     app.include_router(protected_candidate_impacts.router, prefix="/api/v1")
     app.include_router(protected_candidate_risk_recovery.router, prefix="/api/v1")
+    app.include_router(protected_recommendation_adjudications.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

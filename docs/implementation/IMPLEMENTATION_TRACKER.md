@@ -10,8 +10,8 @@
 | Branch | `agent/protected-recommendation-adjudication` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-066 |
-| Last Updated | 2026-08-08 |
-| Next Action | Implement ADR-066 protected adjudication backend boundary and focused tests |
+| Last Updated | 2026-08-09 |
+| Next Action | Commit the validated IMP-110 implementation and complete PR/CI/merge closure |
 
 ### ATLAS-IMP-110 Scope Rationale
 
@@ -58,6 +58,37 @@
 - ADR-066 is accepted. IMP-109 merged as `7e56a947f19eba5efef63de42451400b0b2919e7` after PR #121
   branch run `31275230805` and merged-main run `31275444492` passed. Documentation closure commit
   `22022c0` passed main run `31276249700` (backend 4m36s, frontend 4m11s, total 4m39s).
+- The governed adjudication service rehydrates one exact protected risk-recovery result and its
+  complete candidate, impact, graph, answer, invocation, context, retrieval, policy, operational
+  evidence, purpose, tenant, consumer and browser lineage. It acquires one immutable completion
+  claim; exact replay verifies the same protected report and receipt without readjudication.
+- Development uses one signed, explicit nine-dimension lexicographic policy and a deterministic
+  no-network, no-model adjudicator. All three protected candidates are eligible, exactly one
+  protected preference is established, and two alternatives remain. Candidate identity,
+  categories, comparison values, exclusions and preference rationale remain only in the protected
+  vault; the ordinary record exposes aggregate counts and digests.
+- Success marks recommendation completion while presentation, review readiness, approval,
+  existing-domain promotion, workflow, execution, deployment and infrastructure mutation remain
+  false. Tie and no-support outcomes remain valid policy results. Production has no synthetic
+  policy or adjudicator fallback and therefore fails closed.
+- Dedicated default-deny C1 create/read permissions, hardware-backed enterprise-human checks,
+  CSRF and browser-bound no-store routes, strict minimized schemas, memory/PostgreSQL parity and
+  Alembic revision `20260808_0082` are implemented. Alembic reports one head and empty-to-head
+  PostgreSQL offline SQL generation passed.
+- Ruff formatting and lint passed across `1022` Python files, strict mypy found no issues in `836`
+  source files, focused adjudication/risk-recovery/API validation passed `19` tests, and the
+  complete backend suite passed `840` tests with three expected Windows symlink skips and three
+  existing dependency warnings.
+- The frontend passed ESLint, TypeScript, `50` test files with `80` tests, and the production build
+  (CSS 127.86 kB / 21.18 kB gzip; JavaScript 1,031.67 kB / 186.83 kB gzip). The existing
+  bundle-size notice remains non-blocking. Component tests verify that callers cannot submit
+  candidate choice, score, ranking, workflow or command fields and that only minimized aggregate
+  adjudication evidence is rendered.
+- Live validation used backend port `8071` and frontend port `5230`. Live health, frontend proxy
+  identity, `206` OpenAPI paths and both adjudication routes returned successfully. The Connector
+  lifecycle rendered `Recommendation adjudication` as the latest capability at 1280 px desktop
+  and 390 px mobile widths without horizontal overflow. Current-port browser logs contained only
+  expected Vite connection and React development information, with no warning or error.
 
 ### ATLAS-IMP-109 Scope Rationale
 
