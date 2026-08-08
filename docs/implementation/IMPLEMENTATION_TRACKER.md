@@ -4,14 +4,62 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-107 |
-| Title | Governed grounded recommendation-candidate generation foundation |
-| Status | Done |
-| Branch | `main` |
-| Pull Request | [#119](https://github.com/ozdemirumit/Project_Atlas/pull/119) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-063 |
+| Task ID | ATLAS-IMP-108 |
+| Title | Governed protected recommendation-candidate service-impact enrichment foundation |
+| Status | In Progress |
+| Branch | `agent/protected-candidate-impact-enrichment` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-064 |
 | Last Updated | 2026-08-08 |
-| Next Action | Select and define the next vertical slice from ADR-063 follow-up boundaries |
+| Next Action | Implement and validate the protected candidate service-impact enrichment boundary |
+
+### ATLAS-IMP-108 Scope Rationale
+
+- IMP-107 generates one exact protected candidate set but deliberately establishes no service
+  impact, risk, duration, interruption, recovery, preference, readiness, or operational authority.
+- ADR-064 permits the same eligible human consumer to bind every candidate to one exact
+  policy-selected infrastructure-graph snapshot through a deterministic protected analyzer.
+- Enrichment records modeled dependency reachability, graph freshness, coverage, gaps, and
+  unknowns. Reachability does not confirm an outage or that a conceptual candidate action would
+  interrupt a service.
+- Risk, duration, interruption, recovery, deterministic recommendation adjudication,
+  presentation, existing-domain promotion, review, approval, workflow, execution, deployment, and
+  infrastructure mutation remain later stages.
+
+### ATLAS-IMP-108 Acceptance Criteria
+
+- Only one exact completed, unexpired, integrity-valid candidate set with unchanged presentation,
+  answer, adjudication, invocation, context, retrieval, source, citation, unknown, safety, policy,
+  purpose, browser, consumer, and protected-vault lineage can enter impact enrichment.
+- The caller supplies only exact candidate-set and signed impact-policy bindings, unchanged
+  purpose, three acknowledgements, idempotency, and correlation. Candidate content, selection,
+  target, graph, traversal, impact, risk, duration, recovery, preference, workflow, operation,
+  deployment, and mutation controls are forbidden.
+- A trusted deterministic no-network, no-model analyzer independently verifies the protected set
+  and one policy-selected immutable authorized graph snapshot, then produces one protected impact
+  entry per candidate with bounded dependency paths, service reachability, freshness, coverage,
+  gaps, unknowns, and no-authority flags.
+- Full paths, candidate-to-impact mappings, entity and service IDs, evidence references, unknown
+  text, and receipt remain in a tenant-isolated protected vault. Ordinary persistence, API, audit,
+  logs, metrics, and UI expose only minimized lineage, graph/policy/analyzer bindings, counts,
+  digests, timestamps, freshness/completeness labels, and fixed safety flags.
+- An immutable unique claim prevents multiple analyses. Exact replay rehydrates and verifies the
+  same protected report after current authorization and complete source, graph, policy, retention,
+  vault, and digest checks and never reanalyzes against a newer graph.
+- Success sets only service-impact analysis. Outage, risk, duration, interruption, recovery,
+  recommendation completion, presentation, readiness, approval, workflow, execution, deployment,
+  and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  access/lineage/replay/graph/privacy/vault/audit tests, minimized UI evidence, full suites, live
+  desktop/mobile validation, and GitHub CI apply.
+
+### ATLAS-IMP-108 Validation Evidence
+
+- ADR-064 is accepted. IMP-107 documentation closure commit
+  `c8bc2d347ec15b361f4b33e99851778bd85797f8` passed main run `31249179526` (backend 4m10s,
+  frontend 4m01s).
+- Implementation, verification, live validation, PR, CI, merge, and main synchronization evidence
+  will be recorded before this slice is closed.
 
 ### ATLAS-IMP-107 Scope Rationale
 
