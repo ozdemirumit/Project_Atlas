@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-107 |
 | Title | Governed grounded recommendation-candidate generation foundation |
-| Status | In Progress |
+| Status | Ready for Pull Request |
 | Branch | `agent/grounded-recommendation-generation` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-063 |
 | Last Updated | 2026-08-08 |
-| Next Action | Implement and validate the IMP-107 backend foundation |
+| Next Action | Push the validated slice, open its pull request, and complete CI and merge evidence |
 
 ### ATLAS-IMP-107 Scope Rationale
 
@@ -61,7 +61,36 @@
 - ADR-063 is accepted. IMP-106 documentation closure commit
   `69bfd81755448ef13e17fb29f11036f396e3f36c` passed main run `31220880152` (backend 2m47s,
   frontend 3m42s).
-- Implementation and delivery evidence are pending.
+- The governed candidate service authorizes against minimized presentation metadata before
+  rehydrating protected content, then verifies the exact presentation, adjudication, invocation,
+  context package, draft, report, answer, purpose, classification, policy, retention, browser,
+  subject, authorization, and canonical lineage before generation or replay.
+- Development uses a deterministic no-network, no-model trusted generator. It produces exactly
+  one investigative, one escalation, and one defer/no-action candidate with policy-approved C0/C1
+  conceptual steps. Production fails closed until approved policy, generator, attestor,
+  repository, and protected-vault boundaries are configured.
+- Full candidate and receipt content remains in the tenant-bound protected vault. PostgreSQL,
+  memory records, API responses, audit, logs, and UI expose only minimized lineage, digests,
+  categories, counts, capability ceiling, timestamps, and explicit no-authority state. Exact
+  replay rehydrates and verifies the same protected set without regeneration.
+- Dedicated default-deny C1 create/read permissions, CSRF and browser-bound no-store routes,
+  strict request/response schemas, memory/PostgreSQL parity, and Alembic revision
+  `20260808_0079` are implemented. Alembic reports one head and empty-to-head PostgreSQL offline
+  SQL generation passed.
+- Ruff passed across 909 Python files and strict mypy found no issues in 809 source files. Focused
+  candidate tests passed `8` tests; the protected-AI/API regression set passed `21` tests. The
+  complete backend suite passed `818` tests with three expected Windows symlink skips and three
+  existing dependency warnings.
+- The frontend passed ESLint, TypeScript, `47` test files with `77` tests, and the production build
+  (CSS 127.86 kB / 21.18 kB gzip; JavaScript 1,011.85 kB / 184.38 kB gzip). The existing
+  bundle-size notice remains non-blocking.
+- Live development validation used backend port 8000 and frontend port 5212 with the proxy pinned
+  to the correct backend after detecting a stale host-level port-8027 override. Current identity
+  and platform status returned healthy data. The Connector lifecycle rendered
+  `Recommendation candidates` as the latest capability and retained `Answer presentation` as the
+  prior capability without application console errors.
+- Scope commit `c0e407b` and implementation commit `1615d91` contain the current slice. Pull
+  request, branch CI, merge, merged-main CI, and closure evidence are pending.
 
 ### ATLAS-IMP-106 Scope Rationale
 
