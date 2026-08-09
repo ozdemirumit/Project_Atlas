@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-116 |
 | Title | Governed recommendation protected-inspection lease foundation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/recommendation-protected-inspection` |
-| Pull Request | Pending |
+| Pull Request | [#128](https://github.com/ozdemirumit/Project_Atlas/pull/128) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-072 |
 | Last Updated | 2026-08-10 |
-| Next Action | Implement the assignee-bound protected-inspection lease and browser-cookie boundary |
+| Next Action | Complete PR #128 CI, merge, and merged-main verification |
 
 ### ATLAS-IMP-116 Scope Rationale
 
