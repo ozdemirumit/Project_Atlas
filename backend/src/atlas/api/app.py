@@ -83,6 +83,7 @@ from atlas.api.routes import (
     rca,
     recommendation_promotions,
     recommendation_readiness,
+    recommendation_review_requests,
     recommendations,
     recovery,
     registry_publications,
@@ -1218,6 +1219,20 @@ from atlas.modules.recommendations.adapters.readiness_synthetic import (
     SyntheticTrustedRecommendationReadinessEvaluator,
     UnavailableTrustedRecommendationReadinessEvaluator,
 )
+from atlas.modules.recommendations.adapters.review_request_memory import (
+    InMemoryRecommendationReviewRequestPolicySource,
+    MemoryRecommendationReviewRequestRepository,
+)
+from atlas.modules.recommendations.adapters.review_request_permission import (
+    AuthorizationRecommendationReviewRequestPermissionAuthorizer,
+)
+from atlas.modules.recommendations.adapters.review_request_postgres import (
+    PostgreSQLRecommendationReviewRequestRepository,
+)
+from atlas.modules.recommendations.adapters.review_request_synthetic import (
+    SyntheticTrustedRecommendationReviewRequestOrchestrator,
+    UnavailableTrustedRecommendationReviewRequestOrchestrator,
+)
 from atlas.modules.recommendations.adapters.synthetic import (
     SyntheticStorageRecommendationAssembler,
 )
@@ -1228,6 +1243,10 @@ from atlas.modules.recommendations.application.promotion import (
 from atlas.modules.recommendations.application.readiness import (
     GovernedRecommendationReadinessService,
     build_development_recommendation_readiness_policy,
+)
+from atlas.modules.recommendations.application.review_request import (
+    GovernedRecommendationReviewRequestService,
+    build_development_recommendation_review_request_policy,
 )
 from atlas.modules.recommendations.application.service import RecommendationService
 from atlas.modules.recovery.adapters.filesystem import FilesystemBackupArchiveStore
@@ -1404,6 +1423,9 @@ def create_app(
     ) = None,
     recommendation_promotion_service: GovernedRecommendationPromotionService | None = None,
     recommendation_readiness_service: GovernedRecommendationReadinessService | None = None,
+    recommendation_review_request_service: (
+        GovernedRecommendationReviewRequestService | None
+    ) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -4179,6 +4201,46 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if recommendation_review_request_service is not None:
+        resolved_recommendation_review_request_service = recommendation_review_request_service
+    else:
+        recommendation_review_request_repository = (
+            PostgreSQLRecommendationReviewRequestRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else MemoryRecommendationReviewRequestRepository()
+        )
+        recommendation_review_request_policies = (
+            ()
+            if is_production
+            else (
+                build_development_recommendation_review_request_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_recommendation_review_request_service = GovernedRecommendationReviewRequestService(
+            repository=recommendation_review_request_repository,
+            readiness_source=resolved_recommendation_readiness_service,
+            policy_source=InMemoryRecommendationReviewRequestPolicySource(
+                recommendation_review_request_policies
+            ),
+            permission_authorizer=(
+                AuthorizationRecommendationReviewRequestPermissionAuthorizer(
+                    service=resolved_authorization_service,
+                    environment=resolved_settings.environment,
+                )
+            ),
+            orchestrator=(
+                UnavailableTrustedRecommendationReviewRequestOrchestrator()
+                if is_production
+                else SyntheticTrustedRecommendationReviewRequestOrchestrator()
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -4455,6 +4517,9 @@ def create_app(
         )
         app.state.recommendation_promotion_service = resolved_recommendation_promotion_service
         app.state.recommendation_readiness_service = resolved_recommendation_readiness_service
+        app.state.recommendation_review_request_service = (
+            resolved_recommendation_review_request_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -4467,6 +4532,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_recommendation_review_request_service.close()
         await resolved_recommendation_readiness_service.close()
         await resolved_recommendation_promotion_service.close()
         await resolved_protected_recommendation_presentation_service.close()
@@ -4647,6 +4713,7 @@ def create_app(
     app.include_router(protected_recommendation_presentations.router, prefix="/api/v1")
     app.include_router(recommendation_promotions.router, prefix="/api/v1")
     app.include_router(recommendation_readiness.router, prefix="/api/v1")
+    app.include_router(recommendation_review_requests.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

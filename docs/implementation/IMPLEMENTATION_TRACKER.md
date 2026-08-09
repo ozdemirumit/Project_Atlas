@@ -10,8 +10,8 @@
 | Branch | `agent/recommendation-human-review-request` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-070 |
-| Last Updated | 2026-08-09 |
-| Next Action | Implement and validate the governed recommendation human-review request boundary |
+| Last Updated | 2026-08-10 |
+| Next Action | Publish the validated governed recommendation human-review request boundary for review |
 
 ### ATLAS-IMP-114 Scope Rationale
 
@@ -46,6 +46,30 @@
   after PR #125 branch run `31334435702` and merged-main run `31334674111` passed.
   Documentation closure commit `edce46d` passed main run `31334919919` (frontend 4m11s,
   backend 5m21s, total 5m21s).
+- The governed request service rehydrates one exact `ready_for_review` assessment and verifies its
+  recommendation, promotion, presentation, protected evidence, policy, tenant, requester, browser,
+  purpose, retention, receipt and digest lineage before creating one immutable claim. Exact replay
+  reauthorizes and returns the same request after current source, policy and claim verification.
+- The trusted deterministic orchestrator makes no model or network call. Signed policy alone
+  selects `review-track.technical` and `review-track.service-impact` with opaque queues; both begin
+  as `awaiting_reviewer`. Success records only `review_requested=true`. Reviewer assignment,
+  inspection, decision, approval, workflow, ITSM, execution, deployment and mutation remain false.
+- Dedicated default-deny C1 create/read permissions, enterprise-human hardware-MFA checks, CSRF,
+  browser binding, no-store routes, strict minimized schemas, memory/PostgreSQL parity and Alembic
+  revision `20260809_0086` are implemented. Alembic reports one head; empty-to-head PostgreSQL
+  offline SQL produced `212738` bytes and included both review-request tables and revision `0086`.
+- Ruff formatting and lint passed across `1066` Python files; strict mypy found no issues in `979`
+  source files. The focused package passed `12` source, replay, denial, unavailable-orchestrator,
+  tamper, redaction, PostgreSQL, bounded-input and OpenAPI tests. The complete backend suite passed
+  `887` tests with three expected Windows symlink skips and three existing dependency warnings.
+- The frontend passed ESLint, TypeScript, `52` test files with `84` tests and the production build
+  (CSS 128.59 kB / 21.34 kB gzip; JavaScript 1,057.61 kB / 190.21 kB gzip). Component tests prove
+  the three acknowledgements, policy-owned routing, awaiting-reviewer state and absence of reviewer,
+  approval and execution controls. The existing bundle-size notice remains non-blocking.
+- Live validation used backend port `8075` and frontend port `5234`. Liveness and readiness passed,
+  OpenAPI exposed `214` paths and both human-review-request routes, and Local Operator reached the
+  healthy Connector lifecycle. `Recommendation human-review request` rendered as the latest
+  capability at desktop and 390 px mobile sizes with no horizontal overflow or browser warnings.
 
 ### ATLAS-IMP-113 Scope Rationale
 

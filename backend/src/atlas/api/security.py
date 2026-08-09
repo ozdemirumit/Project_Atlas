@@ -176,6 +176,8 @@ from atlas.modules.authorization.application.bootstrap import (
     RECOMMENDATION_PROMOTION_READ,
     RECOMMENDATION_READINESS_CREATE,
     RECOMMENDATION_READINESS_READ,
+    RECOMMENDATION_REVIEW_REQUEST_CREATE,
+    RECOMMENDATION_REVIEW_REQUEST_READ,
     RELEASE_PREFLIGHT_READ,
     REPORT_CREATE,
     SECURITY_EXPORT_OVERVIEW_READ,
@@ -275,6 +277,7 @@ from atlas.modules.authorization.application.bootstrap import (
     rca_scope,
     recommendation_promotion_scope,
     recommendation_readiness_scope,
+    recommendation_review_request_scope,
     recommendation_scope,
     release_preflight_scope,
     report_scope,
@@ -5333,4 +5336,54 @@ async def authorize_recommendation_readiness_read(
 ) -> AuthorizationDecision:
     return await _authorize_recommendation_readiness(
         request, subject, permission_id=RECOMMENDATION_READINESS_READ
+    )
+
+
+async def _authorize_recommendation_review_request(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.recommendation.human-review-request",
+            scope=recommendation_review_request_scope(
+                subject.organization_id,
+                settings.environment,
+                CapabilityClass.C1_READ_ONLY,
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail=("The current identity cannot request recommendation human review."),
+        )
+    return decision
+
+
+async def authorize_recommendation_review_request_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_recommendation_review_request(
+        request, subject, permission_id=RECOMMENDATION_REVIEW_REQUEST_CREATE
+    )
+
+
+async def authorize_recommendation_review_request_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_recommendation_review_request(
+        request, subject, permission_id=RECOMMENDATION_REVIEW_REQUEST_READ
     )

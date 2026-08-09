@@ -7,6 +7,7 @@ import {
   type RecommendationReadinessResult,
 } from "../../api/recommendationReadiness";
 import type { RecommendationPromotionResult } from "../../api/recommendationPromotions";
+import { RecommendationReviewRequestPanel } from "./RecommendationReviewRequestPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -112,35 +113,43 @@ export function RecommendationReadinessPanel({
         </div>
       )}
       {result && (
-        <div className="correction-record" data-testid="recommendation-readiness-result">
-          <div className="section-heading compact-heading">
-            <div>
-              <p className="eyebrow">{result.assessment.evaluation_outcome.toUpperCase()}</p>
-              <strong>
-                {result.assessment.recommendation_ready_for_review
-                  ? "Ready for human review"
-                  : "Blocked before human review"}
-              </strong>
+        <>
+          <div className="correction-record" data-testid="recommendation-readiness-result">
+            <div className="section-heading compact-heading">
+              <div>
+                <p className="eyebrow">{result.assessment.evaluation_outcome.toUpperCase()}</p>
+                <strong>
+                  {result.assessment.recommendation_ready_for_review
+                    ? "Ready for human review"
+                    : "Blocked before human review"}
+                </strong>
+              </div>
+              <span className="state-badge neutral">
+                <ShieldCheck size={14} /> {result.assessment.state.replaceAll("_", " ")}
+              </span>
             </div>
-            <span className="state-badge neutral">
-              <ShieldCheck size={14} /> {result.assessment.state.replaceAll("_", " ")}
-            </span>
+            <div className="connector-capability-list" aria-label="Readiness summary">
+              <span className="connector-capability" data-state="available">
+                {result.manifest.passed_check_count}/{result.manifest.check_count} checks
+              </span>
+              <span className="connector-capability" data-state="available">
+                {result.manifest.option_count} options
+              </span>
+              <span className="connector-capability" data-state="available">
+                no operational authority
+              </span>
+            </div>
+            {result.manifest.reason_codes.length > 0 && (
+              <p className="muted-copy">{result.manifest.reason_codes.join(", ")}</p>
+            )}
           </div>
-          <div className="connector-capability-list" aria-label="Readiness summary">
-            <span className="connector-capability" data-state="available">
-              {result.manifest.passed_check_count}/{result.manifest.check_count} checks
-            </span>
-            <span className="connector-capability" data-state="available">
-              {result.manifest.option_count} options
-            </span>
-            <span className="connector-capability" data-state="available">
-              no operational authority
-            </span>
-          </div>
-          {result.manifest.reason_codes.length > 0 && (
-            <p className="muted-copy">{result.manifest.reason_codes.join(", ")}</p>
+          {result.assessment.recommendation_ready_for_review && (
+            <RecommendationReviewRequestPanel
+              readinessResult={result}
+              recommendationDigest={recommendation.canonical_digest}
+            />
           )}
-        </div>
+        </>
       )}
     </div>
   );
