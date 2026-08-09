@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-112 |
 | Title | Governed recommendation domain promotion foundation |
-| Status | In Progress |
-| Branch | `agent/governed-recommendation-promotion` |
+| Status | Done |
+| Branch | `main` |
 | Pull Request | [#124](https://github.com/ozdemirumit/Project_Atlas/pull/124) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-068 |
 | Last Updated | 2026-08-09 |
-| Next Action | Complete PR #124 branch CI and merge validation |
+| Next Action | Define the next governed recommendation lifecycle boundary |
 
 ### ATLAS-IMP-112 Scope Rationale
 
@@ -79,9 +79,14 @@
   authentication reached the Connector lifecycle. `Recommendation draft promotion` rendered as
   the latest capability at 1280 px with no horizontal overflow; current-port browser logs contained
   only Vite connection and React development information with no warning or error.
-- Scope commit `2be5fce` defines the governed boundary and implementation commit `29277ec`
-  contains the validated slice. PR #124 branch CI, merge and merged-main evidence will be appended
-  after publication.
+- Scope commit `2be5fce`, implementation commit `29277ec`, PR-link commit `f4c8e1e` and CI type-fix
+  commit `b033985` contain the authored slice. The first exact branch run `31331751953` caught a
+  dynamically typed tamper-test replacement before tests; the explicit-field fix then passed the
+  same complete local mypy scope of `959` files.
+- PR #124 branch run `31332036745` passed (frontend 4m07s, backend 4m42s). The PR was squash-merged
+  as `363dea349aba0c8858a6ccbc0c51a339aa4a5643`; merged-main run `31332273529` passed (frontend
+  4m01s, backend 4m37s, total 4m37s). IMP-112 is complete and the documentation-only closure run
+  follows this commit.
 
 ### ATLAS-IMP-111 Scope Rationale
 
