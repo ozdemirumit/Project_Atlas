@@ -4,14 +4,48 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-113 |
-| Title | Governed recommendation review-readiness foundation |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#125](https://github.com/ozdemirumit/Project_Atlas/pull/125) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-069 |
+| Task ID | ATLAS-IMP-114 |
+| Title | Governed recommendation human-review request foundation |
+| Status | In Progress |
+| Branch | `agent/recommendation-human-review-request` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-070 |
 | Last Updated | 2026-08-09 |
-| Next Action | Define the next governed recommendation lifecycle boundary |
+| Next Action | Implement and validate the governed recommendation human-review request boundary |
+
+### ATLAS-IMP-114 Scope Rationale
+
+- IMP-113 proves one exact promoted recommendation draft is structurally ready for accountable
+  human review but deliberately creates no review work item, routing or assignment.
+- ADR-070 permits the same eligible enterprise human consumer to request policy-owned review
+  routing for that exact ready version without selecting a reviewer or recording a decision.
+- Review request creation is local immutable orchestration only. Assignment, inspection, decision,
+  correction, approval, workflow, ITSM and all operational authority remain later stages.
+
+### ATLAS-IMP-114 Acceptance Criteria
+
+- Only one exact unexpired, integrity-valid `ready_for_review` assessment with unchanged
+  recommendation, promotion and complete protected lineage can enter request orchestration.
+- The caller supplies only exact recommendation, assessment and signed review-request policy
+  bindings, unchanged purpose, three no-authority acknowledgements, idempotency and correlation.
+  Track, queue, reviewer, assignment, priority, decision, approval, workflow, command and mutation
+  controls are forbidden.
+- A trusted deterministic no-network, no-model adapter derives required review tracks and opaque
+  queues from signed policy and emits one immutable minimized manifest and receipt.
+- One immutable claim prevents duplicate review requests. Exact replay reauthorizes and verifies
+  claim, policy, source, browser, routing, retention and digest lineage.
+- Success sets `review_requested=true` only. Reviewer assignment, content inspection, human review,
+  approval, workflow, ITSM, execution, deployment and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  source/outcome/routing/replay/tamper/redaction/audit tests, bounded UI, full suites, live
+  desktop/mobile validation and GitHub CI apply.
+
+### ATLAS-IMP-114 Validation Evidence
+
+- ADR-070 is accepted. IMP-113 merged as `c1e14c3035cbdd270572669d30a16fa16e4f0109`
+  after PR #125 branch run `31334435702` and merged-main run `31334674111` passed.
+  Documentation closure commit `edce46d` passed main run `31334919919` (frontend 4m11s,
+  backend 5m21s, total 5m21s).
 
 ### ATLAS-IMP-113 Scope Rationale
 
