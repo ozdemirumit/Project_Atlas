@@ -172,6 +172,8 @@ from atlas.modules.authorization.application.bootstrap import (
     MCP_BUILDER_VALIDATION_READ,
     RCA_CREATE,
     RECOMMENDATION_CREATE,
+    RECOMMENDATION_PROMOTION_CREATE,
+    RECOMMENDATION_PROMOTION_READ,
     RELEASE_PREFLIGHT_READ,
     REPORT_CREATE,
     SECURITY_EXPORT_OVERVIEW_READ,
@@ -269,6 +271,7 @@ from atlas.modules.authorization.application.bootstrap import (
     operational_knowledge_source_materialization_scope,
     operational_knowledge_track_review_decision_scope,
     rca_scope,
+    recommendation_promotion_scope,
     recommendation_scope,
     release_preflight_scope,
     report_scope,
@@ -5227,4 +5230,54 @@ async def authorize_protected_recommendation_presentation_read(
         request,
         subject,
         permission_id=AI_PROTECTED_RECOMMENDATION_PRESENTATION_READ,
+    )
+
+
+async def _authorize_recommendation_promotion(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.recommendation.promotion",
+            scope=recommendation_promotion_scope(
+                subject.organization_id,
+                settings.environment,
+                CapabilityClass.C1_READ_ONLY,
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail="The current identity cannot promote protected recommendations.",
+        )
+    return decision
+
+
+async def authorize_recommendation_promotion_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_recommendation_promotion(
+        request, subject, permission_id=RECOMMENDATION_PROMOTION_CREATE
+    )
+
+
+async def authorize_recommendation_promotion_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_recommendation_promotion(
+        request, subject, permission_id=RECOMMENDATION_PROMOTION_READ
     )

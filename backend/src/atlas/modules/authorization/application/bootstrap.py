@@ -212,6 +212,8 @@ AI_PROTECTED_RECOMMENDATION_ADJUDICATION_CREATE = "ai.protected-recommendation-a
 AI_PROTECTED_RECOMMENDATION_ADJUDICATION_READ = "ai.protected-recommendation-adjudication.read"
 AI_PROTECTED_RECOMMENDATION_PRESENTATION_CREATE = "ai.protected-recommendation-presentation.create"
 AI_PROTECTED_RECOMMENDATION_PRESENTATION_READ = "ai.protected-recommendation-presentation.read"
+RECOMMENDATION_PROMOTION_CREATE = "recommendation.promotion.create"
+RECOMMENDATION_PROMOTION_READ = "recommendation.promotion.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -1281,6 +1283,19 @@ def ai_protected_recommendation_presentation_scope(
     )
 
 
+def recommendation_promotion_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.recommendation",
+        resource_id="resource.recommendation.promotion",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -2158,6 +2173,14 @@ def build_development_authorization_service(
             permission_id=AI_PROTECTED_RECOMMENDATION_PRESENTATION_READ,
             description="Read a protected inert recommendation presentation.",
         ),
+        PermissionDefinition(
+            permission_id=RECOMMENDATION_PROMOTION_CREATE,
+            description="Promote one exact protected presentation into a recommendation draft.",
+        ),
+        PermissionDefinition(
+            permission_id=RECOMMENDATION_PROMOTION_READ,
+            description="Read a minimized promoted recommendation draft.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -2339,6 +2362,8 @@ def build_development_authorization_service(
                 AI_PROTECTED_RECOMMENDATION_ADJUDICATION_READ,
                 AI_PROTECTED_RECOMMENDATION_PRESENTATION_CREATE,
                 AI_PROTECTED_RECOMMENDATION_PRESENTATION_READ,
+                RECOMMENDATION_PROMOTION_CREATE,
+                RECOMMENDATION_PROMOTION_READ,
             }
         ),
     )

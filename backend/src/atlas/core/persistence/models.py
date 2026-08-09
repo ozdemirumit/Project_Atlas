@@ -3267,3 +3267,48 @@ class ProtectedRecommendationPresentationModel(Base):
     )
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class RecommendationPromotionClaimModel(Base):
+    __tablename__ = "recommendation_promotion_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "claimed_by_subject_digest",
+            "idempotency_digest",
+            name="uq_recommendation_promotion_claim_actor_idem",
+        ),
+        UniqueConstraint("presentation_id", name="uq_recommendation_promotion_claim_presentation"),
+    )
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    promotion_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    recommendation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    presentation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    claimed_by_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class PromotedRecommendationArtifactModel(Base):
+    __tablename__ = "promoted_recommendation_artifacts"
+    __table_args__ = (
+        UniqueConstraint("claim_id", name="uq_promoted_recommendation_artifact_claim"),
+        UniqueConstraint(
+            "presentation_id", name="uq_promoted_recommendation_artifact_presentation"
+        ),
+        UniqueConstraint("promotion_id", name="uq_promoted_recommendation_artifact_promotion"),
+    )
+    recommendation_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    promotion_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    claim_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    presentation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    consumer_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

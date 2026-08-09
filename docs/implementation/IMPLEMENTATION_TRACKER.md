@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-068 |
 | Last Updated | 2026-08-09 |
-| Next Action | Implement and validate the governed promotion boundary |
+| Next Action | Publish the validated implementation for GitHub review and CI |
 
 ### ATLAS-IMP-112 Scope Rationale
 
@@ -52,8 +52,35 @@
   branch runs `31326867157` and `31327121585` and merged-main run `31327578625` passed.
   Documentation closure commit `784321e` passed main run `31327861901` (frontend 3m59s, backend
   5m05s, total 5m15s).
-
-### ATLAS-IMP-111 Scope Rationale
+- The governed promotion service rehydrates one exact protected recommendation presentation and
+  verifies its presentation, adjudication, candidate, impact, risk-recovery, evidence, graph,
+  answer, model, retrieval, policy, tenant, consumer, browser, purpose, retention and vault
+  lineage before creating one immutable claim. Exact replay reauthorizes and returns the same
+  recommendation-domain artifact without reranking or regeneration.
+- The trusted deterministic promoter preserves preferred, tie and no-support outcomes and copies
+  only safe presented options into an immutable `draft`. Promotion alone leaves review readiness,
+  human review, approval, workflow, ITSM, execution, deployment and infrastructure mutation false.
+  Production has no development policy or synthetic promoter fallback and therefore fails closed.
+- Dedicated default-deny C1 create/read permissions, enterprise-human hardware-MFA checks, CSRF,
+  browser binding, no-store routes, strict request/response schemas, memory/PostgreSQL parity and
+  Alembic revision `20260809_0084` are implemented. Alembic reports one head; empty-to-head
+  PostgreSQL offline SQL generation produced `205317` bytes and reached revision `20260809_0084`.
+- Ruff formatting and lint passed across `1044` Python files, strict mypy found no issues in `854`
+  source files, focused promotion/presentation/API validation passed `28` tests, and the complete
+  backend suite passed `863` tests with three expected Windows symlink skips and three existing
+  dependency warnings. Tamper tests cover receipt/source cross-binding and exact-replay claim
+  integrity in addition to preferred, tie and no-support outcome invariants.
+- The frontend passed ESLint, TypeScript, `51` test files with `82` tests, and the production build
+  (CSS 128.59 kB / 21.34 kB gzip; JavaScript 1,045.86 kB / 188.81 kB gzip). The existing bundle-size
+  notice remains non-blocking. Component tests verify all three no-authority acknowledgements,
+  safe draft-only output and the absence of review, approval or execution controls.
+- Live validation used backend port `8073` and frontend port `5232`. Live and ready health passed,
+  OpenAPI registered `210` paths and both recommendation-promotion routes, and Local Operator
+  authentication reached the Connector lifecycle. `Recommendation draft promotion` rendered as
+  the latest capability at 1280 px with no horizontal overflow; current-port browser logs contained
+  only Vite connection and React development information with no warning or error.
+- Scope commit `2be5fce` defines the governed boundary. Implementation, PR, branch CI, merge and
+  merged-main evidence will be appended after publication.
 
 ### ATLAS-IMP-111 Scope Rationale
 
