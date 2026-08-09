@@ -7,6 +7,7 @@ import {
   createRecommendationReviewRequest,
   type RecommendationReviewRequestResult,
 } from "../../api/recommendationReviewRequests";
+import { RecommendationReviewerAssignmentPanel } from "./RecommendationReviewerAssignmentPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -116,27 +117,30 @@ export function RecommendationReviewRequestPanel({
         </div>
       )}
       {result && (
-        <div className="correction-record" data-testid="recommendation-review-request-result">
-          <div className="section-heading compact-heading">
-            <div>
-              <p className="eyebrow">REVIEW REQUESTED</p>
-              <strong>Awaiting accountable reviewers</strong>
-            </div>
-            <span className="state-badge neutral">
-              <ShieldCheck size={14} /> no authority granted
-            </span>
-          </div>
-          <div className="connector-capability-list" aria-label="Review request summary">
-            {result.manifest.track_statuses.map(([track, status]) => (
-              <span className="connector-capability" data-state="available" key={track}>
-                {track.replace("review-track.", "").replaceAll("-", " ")}: {status.replaceAll("_", " ")}
+        <>
+          <div className="correction-record" data-testid="recommendation-review-request-result">
+            <div className="section-heading compact-heading">
+              <div>
+                <p className="eyebrow">REVIEW REQUESTED</p>
+                <strong>Awaiting accountable reviewers</strong>
+              </div>
+              <span className="state-badge neutral">
+                <ShieldCheck size={14} /> no authority granted
               </span>
-            ))}
-            <span className="connector-capability" data-state="available">
-              no reviewer assigned
-            </span>
+            </div>
+            <div className="connector-capability-list" aria-label="Review request summary">
+              {result.manifest.track_statuses.map(([track, status]) => (
+                <span className="connector-capability" data-state="available" key={track}>
+                  {track.replace("review-track.", "").replaceAll("-", " ")}: {status.replaceAll("_", " ")}
+                </span>
+              ))}
+              <span className="connector-capability" data-state="available">
+                no reviewer assigned
+              </span>
+            </div>
           </div>
-        </div>
+          <RecommendationReviewerAssignmentPanel reviewRequestResult={result} />
+        </>
       )}
     </div>
   );

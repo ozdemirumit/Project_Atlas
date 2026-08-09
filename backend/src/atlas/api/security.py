@@ -178,6 +178,8 @@ from atlas.modules.authorization.application.bootstrap import (
     RECOMMENDATION_READINESS_READ,
     RECOMMENDATION_REVIEW_REQUEST_CREATE,
     RECOMMENDATION_REVIEW_REQUEST_READ,
+    RECOMMENDATION_REVIEWER_ASSIGNMENT_CREATE,
+    RECOMMENDATION_REVIEWER_ASSIGNMENT_READ,
     RELEASE_PREFLIGHT_READ,
     REPORT_CREATE,
     SECURITY_EXPORT_OVERVIEW_READ,
@@ -278,6 +280,7 @@ from atlas.modules.authorization.application.bootstrap import (
     recommendation_promotion_scope,
     recommendation_readiness_scope,
     recommendation_review_request_scope,
+    recommendation_reviewer_assignment_scope,
     recommendation_scope,
     release_preflight_scope,
     report_scope,
@@ -5386,4 +5389,61 @@ async def authorize_recommendation_review_request_read(
 ) -> AuthorizationDecision:
     return await _authorize_recommendation_review_request(
         request, subject, permission_id=RECOMMENDATION_REVIEW_REQUEST_READ
+    )
+
+
+async def _authorize_recommendation_reviewer_assignment(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.recommendation.reviewer-assignment",
+            scope=recommendation_reviewer_assignment_scope(
+                subject.organization_id,
+                settings.environment,
+                capability_class,
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail="The current identity cannot manage recommendation reviewer assignments.",
+        )
+    return decision
+
+
+async def authorize_recommendation_reviewer_assignment_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_recommendation_reviewer_assignment(
+        request,
+        subject,
+        permission_id=RECOMMENDATION_REVIEWER_ASSIGNMENT_CREATE,
+        capability_class=CapabilityClass.C3_CONTROLLED_CHANGE,
+    )
+
+
+async def authorize_recommendation_reviewer_assignment_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_recommendation_reviewer_assignment(
+        request,
+        subject,
+        permission_id=RECOMMENDATION_REVIEWER_ASSIGNMENT_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
     )

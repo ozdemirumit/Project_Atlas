@@ -4,14 +4,84 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-114 |
-| Title | Governed recommendation human-review request foundation |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#126](https://github.com/ozdemirumit/Project_Atlas/pull/126) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-070 |
+| Task ID | ATLAS-IMP-115 |
+| Title | Governed recommendation reviewer-assignment foundation |
+| Status | Review |
+| Branch | `agent/recommendation-reviewer-assignment` |
+| Pull Request | [#127](https://github.com/ozdemirumit/Project_Atlas/pull/127) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-071 |
 | Last Updated | 2026-08-10 |
-| Next Action | Define the next governed recommendation human-review lifecycle boundary |
+| Next Action | Complete PR #127 CI, merge, and synchronize main |
+
+### ATLAS-IMP-115 Scope Rationale
+
+- IMP-114 creates one exact immutable review request with technical and service-impact tracks in
+  `awaiting_reviewer` but deliberately assigns no identity and opens no protected content.
+- ADR-071 permits a trusted policy-owned directory boundary to assign distinct eligible enterprise
+  humans to those exact tracks without caller selection or raw identity disclosure.
+- Assignment changes only local accountability state. Inspection, findings, decision, correction,
+  approval, workflow, ITSM and all operational authority remain later stages.
+
+### ATLAS-IMP-115 Acceptance Criteria
+
+- Only one exact unexpired, integrity-valid `review_requested` record with unchanged readiness,
+  recommendation and complete protected lineage can enter assignment orchestration.
+- The caller supplies only exact request and signed assignment-policy bindings, unchanged purpose,
+  three no-authority acknowledgements, idempotency and correlation. Reviewer, identity, directory,
+  track, queue, eligibility, priority, decision, approval, workflow and operation controls are
+  forbidden.
+- A trusted deterministic adapter applies current policy-owned eligibility and exclusion rules,
+  assigns distinct technical and service-impact humans and returns only salted subject digests,
+  opaque assignment IDs and signed proof. Development uses no network or model.
+- One immutable claim prevents duplicate assignment. Exact replay reauthorizes and verifies claim,
+  policy, source, browser, routing, eligibility, separation, retention and complete digest lineage.
+- Success sets `reviewer_assigned=true` only. Content inspection, review, approval, workflow, ITSM,
+  execution, deployment and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny C3 create/C1 read RBAC,
+  CSRF, focused source/eligibility/separation/replay/tamper/redaction/audit tests, bounded UI, full
+  suites, live desktop/mobile validation and GitHub CI apply.
+
+### ATLAS-IMP-115 Validation Evidence
+
+- ADR-071 is accepted. IMP-114 merged as `bdb3e0f93d264d4d4ce90fcb69efa3d087790495`
+  after PR #126 branch run `31337141476` and merged-main run `31337408781` passed.
+  Documentation closure commit `21fadd6` passed main run `31337653366` (frontend 3m22s,
+  backend 5m10s).
+- The governed assignment service rehydrates one exact unexpired `review_requested` record and
+  verifies its recommendation path, readiness, promotion, request, browser, purpose, policy,
+  routing and digest lineage before acquiring one immutable claim. Exact replay reauthorizes with
+  C1 read permission and verifies current source, policy, browser and claim bindings.
+- Signed policy alone owns the two tracks, opaque queues, eligibility profiles, directory source,
+  separation rules and exclusion set. The deterministic development adapter makes no model or
+  network call and assigns distinct technical and service-impact reviewer digests without
+  disclosing raw identity. Production has no synthetic fallback and fails closed.
+- Success records only `reviewer_assigned=true` and immutable assignment metadata. Content
+  inspection, findings, human decisions, recommendation approval, workflow, ITSM, execution,
+  deployment and infrastructure mutation remain false. The API forbids caller-selected reviewer,
+  track, queue, directory query, decision and command fields.
+- Dedicated default-deny C3 create and C1 read permissions, enterprise-human hardware-MFA checks,
+  CSRF, browser binding, no-store routes, strict minimized schemas, memory/PostgreSQL parity and
+  Alembic revision `20260810_0087` are implemented. Alembic reports one head and empty-to-head
+  PostgreSQL offline SQL includes both reviewer-assignment tables and revision `0087`.
+- Ruff formatting and lint passed across `1077` Python files; strict mypy found no issues in `881`
+  source files. The complete backend suite passed `899` tests with three expected Windows symlink
+  skips before final path-binding hardening; the final focused source, replay, denial,
+  unavailable-adapter, separation, tamper, redaction, PostgreSQL, bounded-input, path-binding and
+  OpenAPI package passed `30` tests.
+- The frontend passed ESLint, TypeScript, `53` test files with `85` tests and the production build
+  (CSS 128.59 kB / 21.34 kB gzip; JavaScript 1,064.63 kB / 191.37 kB gzip). Component tests prove
+  three explicit acknowledgements, two policy-owned distinct review tracks, salted reviewer
+  presentation and absence of inspect, review, approval and execution controls. The existing
+  bundle-size notice remains non-blocking.
+- Live validation used backend port `8076` and frontend port `5235`. Liveness passed, OpenAPI
+  exposed `216` paths and both reviewer-assignment routes, and Local Operator reached the healthy
+  Connector lifecycle. `Recommendation reviewer assignment` rendered as the latest capability at
+  the available `1280x720` browser viewport with no horizontal overflow or browser warnings. The
+  in-app browser did not apply its requested 390 px viewport override, so no mobile-live claim is
+  made for this slice; the feature adds no new layout CSS and remains covered by the existing
+  responsive shell plus component tests.
+- Scope commit `dac9aa5` and implementation commit `d6d8ee0` contain the authored slice. PR #127
+  is open and its backend and frontend GitHub CI jobs are in progress.
 
 ### ATLAS-IMP-114 Scope Rationale
 
