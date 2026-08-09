@@ -182,7 +182,10 @@ describe("RecommendationReviewerAssignmentPanel", () => {
     expect(within(summary).getByText("technical")).toBeVisible();
     expect(within(summary).getByText("service impact")).toBeVisible();
     expect(within(summary).getAllByText("assigned")).toHaveLength(2);
-    expect(screen.queryByRole("button", { name: /inspect|review|approve|execute/i })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Open assigned inspection lease" }),
+    ).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /review|approve|execute/i })).toBeNull();
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     const request = fetchMock.mock.calls[0]?.[1];

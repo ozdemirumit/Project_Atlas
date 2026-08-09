@@ -82,6 +82,7 @@ from atlas.api.routes import (
     publisher_attestations,
     rca,
     recommendation_promotions,
+    recommendation_protected_inspections,
     recommendation_readiness,
     recommendation_review_requests,
     recommendation_reviewer_assignments,
@@ -1206,6 +1207,20 @@ from atlas.modules.recommendations.adapters.promotion_synthetic import (
     SyntheticTrustedRecommendationPromoter,
     UnavailableTrustedRecommendationPromoter,
 )
+from atlas.modules.recommendations.adapters.protected_inspection_memory import (
+    InMemoryRecommendationProtectedInspectionPolicySource,
+    InMemoryRecommendationProtectedInspectionRepository,
+)
+from atlas.modules.recommendations.adapters.protected_inspection_permission import (
+    AuthorizationRecommendationProtectedInspectionPermissionAuthorizer,
+)
+from atlas.modules.recommendations.adapters.protected_inspection_postgres import (
+    PostgreSQLRecommendationProtectedInspectionRepository,
+)
+from atlas.modules.recommendations.adapters.protected_inspection_synthetic import (
+    SyntheticRecommendationProtectedInspectionBroker,
+    UnavailableRecommendationProtectedInspectionBroker,
+)
 from atlas.modules.recommendations.adapters.readiness_memory import (
     InMemoryRecommendationReadinessPolicySource,
     MemoryRecommendationReadinessRepository,
@@ -1254,6 +1269,10 @@ from atlas.modules.recommendations.adapters.synthetic import (
 from atlas.modules.recommendations.application.promotion import (
     GovernedRecommendationPromotionService,
     build_development_recommendation_promotion_policy,
+)
+from atlas.modules.recommendations.application.protected_inspection import (
+    RecommendationProtectedInspectionService,
+    build_development_recommendation_protected_inspection_policy,
 )
 from atlas.modules.recommendations.application.readiness import (
     GovernedRecommendationReadinessService,
@@ -1447,6 +1466,9 @@ def create_app(
     ) = None,
     recommendation_reviewer_assignment_service: (
         GovernedRecommendationReviewerAssignmentService | None
+    ) = None,
+    recommendation_protected_inspection_service: (
+        RecommendationProtectedInspectionService | None
     ) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
@@ -4309,6 +4331,52 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    if recommendation_protected_inspection_service is not None:
+        resolved_recommendation_protected_inspection_service = (
+            recommendation_protected_inspection_service
+        )
+    else:
+        recommendation_protected_inspection_repository = (
+            PostgreSQLRecommendationProtectedInspectionRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryRecommendationProtectedInspectionRepository()
+        )
+        recommendation_protected_inspection_policies = (
+            ()
+            if is_production
+            else (
+                build_development_recommendation_protected_inspection_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_recommendation_protected_inspection_service = (
+            RecommendationProtectedInspectionService(
+                repository=recommendation_protected_inspection_repository,
+                source=resolved_recommendation_reviewer_assignment_service,
+                policy_source=InMemoryRecommendationProtectedInspectionPolicySource(
+                    recommendation_protected_inspection_policies
+                ),
+                permission_authorizer=(
+                    AuthorizationRecommendationProtectedInspectionPermissionAuthorizer(
+                        service=resolved_authorization_service,
+                        environment=resolved_settings.environment,
+                    )
+                ),
+                broker=(
+                    UnavailableRecommendationProtectedInspectionBroker()
+                    if is_production
+                    else SyntheticRecommendationProtectedInspectionBroker()
+                ),
+                audit_sink=resolved_audit_sink,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -4591,6 +4659,9 @@ def create_app(
         app.state.recommendation_reviewer_assignment_service = (
             resolved_recommendation_reviewer_assignment_service
         )
+        app.state.recommendation_protected_inspection_service = (
+            resolved_recommendation_protected_inspection_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -4603,6 +4674,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_recommendation_protected_inspection_service.close()
         await resolved_recommendation_reviewer_assignment_service.close()
         await resolved_recommendation_review_request_service.close()
         await resolved_recommendation_readiness_service.close()
@@ -4787,6 +4859,7 @@ def create_app(
     app.include_router(recommendation_readiness.router, prefix="/api/v1")
     app.include_router(recommendation_review_requests.router, prefix="/api/v1")
     app.include_router(recommendation_reviewer_assignments.router, prefix="/api/v1")
+    app.include_router(recommendation_protected_inspections.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

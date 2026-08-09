@@ -3456,3 +3456,54 @@ class RecommendationReviewerAssignmentRecordModel(Base):
     )
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class RecommendationProtectedInspectionClaimModel(Base):
+    __tablename__ = "recommendation_protected_inspection_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_assignment_set_id",
+            "track_code",
+            name="uq_recommendation_inspection_claim_source_track",
+        ),
+        UniqueConstraint(
+            "claimed_by_subject_digest",
+            "idempotency_digest",
+            name="uq_recommendation_inspection_claim_actor_idem",
+        ),
+    )
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source_assignment_set_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    track_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    lease_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    claimed_by_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class RecommendationProtectedInspectionRecordModel(Base):
+    __tablename__ = "recommendation_protected_inspection_leases"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_assignment_set_id",
+            "track_code",
+            name="uq_recommendation_inspection_lease_source_track",
+        ),
+        UniqueConstraint("claim_id", name="uq_recommendation_inspection_lease_claim"),
+    )
+    lease_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    claim_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_assignment_set_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    recommendation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    track_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    lease_holder_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
