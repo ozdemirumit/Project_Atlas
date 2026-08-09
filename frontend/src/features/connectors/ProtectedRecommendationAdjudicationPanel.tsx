@@ -7,6 +7,7 @@ import {
   type ProtectedRecommendationAdjudicationResult,
 } from "../../api/protectedRecommendationAdjudications";
 import type { ProtectedCandidateRiskRecoveryResult } from "../../api/protectedCandidateRiskRecovery";
+import { ProtectedRecommendationPresentationPanel } from "./ProtectedRecommendationPresentationPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -116,34 +117,37 @@ export function ProtectedRecommendationAdjudicationPanel({
         </div>
       )}
       {result && (
-        <div className="correction-record">
-          <strong>{outcome}</strong>
-          <code>{result.adjudication.adjudication_id}</code>
-          <div className="connector-capability-list" aria-label="Adjudication summary">
-            <span className="connector-capability" data-state="available">
-              {result.manifest.eligible_count} eligible
-            </span>
-            <span className="connector-capability" data-state="available">
-              {result.manifest.excluded_count} excluded
-            </span>
-            <span className="connector-capability" data-state="available">
-              {result.manifest.preferred_count} preferred
-            </span>
-            <span className="connector-capability" data-state="available">
-              {result.manifest.alternative_count} alternatives
-            </span>
+        <>
+          <div className="correction-record">
+            <strong>{outcome}</strong>
+            <code>{result.adjudication.adjudication_id}</code>
+            <div className="connector-capability-list" aria-label="Adjudication summary">
+              <span className="connector-capability" data-state="available">
+                {result.manifest.eligible_count} eligible
+              </span>
+              <span className="connector-capability" data-state="available">
+                {result.manifest.excluded_count} excluded
+              </span>
+              <span className="connector-capability" data-state="available">
+                {result.manifest.preferred_count} preferred
+              </span>
+              <span className="connector-capability" data-state="available">
+                {result.manifest.alternative_count} alternatives
+              </span>
+            </div>
+            <p className="muted-copy">
+              {result.manifest.candidate_count} candidates were evaluated across{" "}
+              {result.manifest.dimension_count} ordered policy dimensions. Maximum risk remains{" "}
+              {result.manifest.maximum_risk}.
+            </p>
+            <p className="muted-copy">
+              Evidence contains {result.manifest.gap_count} gaps and {result.manifest.unknown_count}{" "}
+              unknowns. No candidate identity or protected comparison content is presented here.
+            </p>
+            <p className="muted-copy">{result.manifest.safety_notice}</p>
           </div>
-          <p className="muted-copy">
-            {result.manifest.candidate_count} candidates were evaluated across{" "}
-            {result.manifest.dimension_count} ordered policy dimensions. Maximum risk remains{" "}
-            {result.manifest.maximum_risk}.
-          </p>
-          <p className="muted-copy">
-            Evidence contains {result.manifest.gap_count} gaps and {result.manifest.unknown_count}{" "}
-            unknowns. No candidate identity or protected comparison content is presented here.
-          </p>
-          <p className="muted-copy">{result.manifest.safety_notice}</p>
-        </div>
+          <ProtectedRecommendationPresentationPanel adjudicationResult={result} />
+        </>
       )}
     </div>
   );

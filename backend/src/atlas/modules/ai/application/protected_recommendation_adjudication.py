@@ -24,9 +24,13 @@ from atlas.modules.ai.application.protected_recommendation_adjudication_ports im
     ProtectedRecommendationAdjudicationUncertainError,
     TrustedProtectedRecommendationAdjudicator,
 )
+from atlas.modules.ai.domain.protected_candidate_impact_enrichment import (
+    ProtectedCandidateImpactReport,
+)
 from atlas.modules.ai.domain.protected_candidate_risk_recovery_completion import (
     ProtectedCandidateRiskRecoveryRecord,
     ProtectedCandidateRiskRecoveryReport,
+    ProtectedOperationalEvidenceSnapshot,
 )
 from atlas.modules.ai.domain.protected_recommendation_adjudication import (
     ProtectedRecommendationAdjudicationClaim,
@@ -37,6 +41,9 @@ from atlas.modules.ai.domain.protected_recommendation_adjudication import (
     ProtectedRecommendationAdjudicationRecord,
     ProtectedRecommendationAdjudicationReport,
     ProtectedRecommendationAdjudicationResult,
+)
+from atlas.modules.ai.domain.protected_recommendation_candidate_generation import (
+    ProtectedRecommendationCandidateSet,
 )
 from atlas.modules.authorization.application.bootstrap import (
     AI_PROTECTED_RECOMMENDATION_ADJUDICATION_CREATE,
@@ -400,6 +407,144 @@ class GovernedProtectedRecommendationAdjudicationService:
 
     async def close(self) -> None:
         await self._repository.close()
+
+    async def rehydrate_for_presentation(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        adjudication_id: str,
+        browser_session_id: str,
+        correlation_id: str,
+    ) -> tuple[
+        ProtectedRecommendationAdjudicationResult,
+        ProtectedRecommendationAdjudicationReport,
+        ProtectedCandidateRiskRecoveryRecord,
+        ProtectedRecommendationCandidateSet,
+        ProtectedCandidateImpactReport,
+        ProtectedCandidateRiskRecoveryReport,
+        ProtectedOperationalEvidenceSnapshot,
+    ]:
+        self._require_human(actor)
+        record = await self._repository.get(adjudication_id=adjudication_id)
+        if record is None:
+            raise ProtectedRecommendationAdjudicationError(
+                "protected_recommendation_adjudication_not_found"
+            )
+        self._require_scope(actor, record.organization_id, record.environment_id)
+        policy = await self._policy_source.get_by_id(policy_id=record.adjudication_policy_id)
+        now = self._clock()
+        if (
+            policy is None
+            or record.browser_session_binding_digest
+            != self._digest([policy.browser_binding_key_digest, browser_session_id])
+            or record.canonical_digest != self._digest(self._payload(record))
+            or now >= record.expires_at
+            or policy.canonical_digest != record.adjudication_policy_digest
+            or policy.canonical_digest != self._digest(self._payload(policy))
+            or not policy.issued_at <= now < policy.expires_at
+        ):
+            raise ProtectedRecommendationAdjudicationError(
+                "protected_recommendation_adjudication_not_found"
+            )
+        await self._permission_authorizer.authorize(
+            actor=actor,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+            correlation_id=correlation_id,
+        )
+        try:
+            (
+                completion,
+                candidates,
+                impact_report,
+                completion_report,
+                evidence,
+            ) = await self._completion_source.rehydrate_for_adjudication(
+                actor=actor,
+                completion_id=record.completion_id,
+                browser_session_id=browser_session_id,
+                correlation_id=correlation_id,
+            )
+            self._verify_source(
+                completion,
+                completion_report,
+                record.completion_digest,
+                record.purpose,
+                policy,
+                now,
+            )
+            authorization_digest = self._digest(
+                [
+                    completion.consumer_subject_digest,
+                    actor.role_ids,
+                    policy.canonical_digest,
+                    completion.canonical_digest,
+                    completion_report.canonical_digest,
+                ]
+            )
+            receipt, report = await self._adjudicator.rehydrate(
+                record=record,
+                adjudication_authorization_digest=authorization_digest,
+                candidate_set=candidates,
+                completion_report=completion_report,
+            )
+            self._verify_receipt(
+                receipt,
+                report,
+                self._instruction_from_record(record, policy, completion_report),
+                policy,
+            )
+            self._verify_record(record, receipt, report, completion)
+        except ProtectedRecommendationAdjudicationError:
+            raise
+        except Exception as error:
+            raise ProtectedRecommendationAdjudicationError(
+                "protected_recommendation_adjudication_not_found"
+            ) from error
+        result = ProtectedRecommendationAdjudicationResult(
+            record=replace(record, reused=True),
+            manifest=self._manifest(record),
+        )
+        return (
+            result,
+            report,
+            completion,
+            candidates,
+            impact_report,
+            completion_report,
+            evidence,
+        )
+
+    async def get_record_for_presentation_authorization(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        adjudication_id: str,
+        browser_session_id: str,
+    ) -> ProtectedRecommendationAdjudicationRecord:
+        self._require_human(actor)
+        record = await self._repository.get(adjudication_id=adjudication_id)
+        if record is None:
+            raise ProtectedRecommendationAdjudicationError(
+                "protected_recommendation_adjudication_not_found"
+            )
+        self._require_scope(actor, record.organization_id, record.environment_id)
+        policy = await self._policy_source.get_by_id(policy_id=record.adjudication_policy_id)
+        now = self._clock()
+        if (
+            policy is None
+            or record.browser_session_binding_digest
+            != self._digest([policy.browser_binding_key_digest, browser_session_id])
+            or record.canonical_digest != self._digest(self._payload(record))
+            or now >= record.expires_at
+            or policy.canonical_digest != record.adjudication_policy_digest
+            or policy.canonical_digest != self._digest(self._payload(policy))
+            or not policy.issued_at <= now < policy.expires_at
+        ):
+            raise ProtectedRecommendationAdjudicationError(
+                "protected_recommendation_adjudication_not_found"
+            )
+        return record
 
     @classmethod
     def _verify_source(

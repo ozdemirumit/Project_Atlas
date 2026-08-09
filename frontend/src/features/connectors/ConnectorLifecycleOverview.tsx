@@ -120,7 +120,7 @@ const lifecycleStages: readonly LifecycleStage[] = [
   },
   {
     name: "AI context",
-    detail: "Protected assembly, invocation, candidates, impact, risk, and recommendation adjudication",
+    detail: "Protected assembly, invocation, candidates, impact, risk, adjudication, and presentation",
     state: "available",
     capabilities: [
       { name: "Context assembly" },
@@ -131,6 +131,7 @@ const lifecycleStages: readonly LifecycleStage[] = [
       { name: "Service-impact enrichment" },
       { name: "Risk/recovery completion" },
       { name: "Recommendation adjudication" },
+      { name: "Recommendation presentation" },
     ],
   },
 ];
@@ -157,7 +158,7 @@ export function ConnectorLifecycleOverview() {
           <span>In progress</span>
         </div>
         <div>
-          <strong>Recommendation adjudication</strong>
+          <strong>Recommendation presentation</strong>
           <span>Latest available capability</span>
         </div>
       </div>

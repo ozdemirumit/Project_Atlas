@@ -4,14 +4,91 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-110 |
-| Title | Governed deterministic protected recommendation adjudication foundation |
-| Status | Done |
-| Branch | `main` |
-| Pull Request | [#122](https://github.com/ozdemirumit/Project_Atlas/pull/122) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-066 |
+| Task ID | ATLAS-IMP-111 |
+| Title | Governed protected recommendation presentation foundation |
+| Status | In Progress |
+| Branch | `agent/protected-recommendation-presentation` |
+| Pull Request | [#123](https://github.com/ozdemirumit/Project_Atlas/pull/123) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-067 |
 | Last Updated | 2026-08-09 |
-| Next Action | Define ADR-067 and IMP-111 governed protected recommendation presentation scope |
+| Next Action | Publish the completed IMP-111 slice and verify branch and merged-main CI |
+
+### ATLAS-IMP-111 Scope Rationale
+
+- IMP-110 establishes an exact protected preference, tie or no-support outcome but deliberately
+  exposes only aggregate counts and digests.
+- ADR-067 permits the same eligible human consumer to cross one accountable deterministic
+  presentation boundary and receive inert, bounded, evidence-linked decision support.
+- A preferred result may present one exact candidate, alternatives, impact, estimated work and
+  interruption, recovery, gaps and unknowns. Tie and no-support outcomes must be presented without
+  inventing a selection.
+- Existing-domain promotion, review readiness, approval, workflow, ITSM, execution, deployment and
+  infrastructure mutation remain later stages.
+
+### ATLAS-IMP-111 Acceptance Criteria
+
+- Only one exact completed, unexpired, integrity-valid adjudication with unchanged candidate,
+  impact, completion, evidence, graph, answer, invocation, context, retrieval, source, policy,
+  purpose, browser, consumer and protected-vault lineage can enter presentation.
+- The caller supplies only exact adjudication and signed presentation-policy bindings, unchanged
+  purpose, three acknowledgements, idempotency and correlation. Candidate, outcome, content,
+  ordering, impact, risk, duration, recovery, target, workflow, operation and mutation controls are
+  forbidden.
+- One signed immutable policy defines allowed fields, outcome preservation, inert rendering,
+  redaction, classification, count, character, byte and retention limits.
+- A trusted deterministic no-network, no-model presenter preserves preferred, tie and no-support
+  outcomes exactly and emits bounded source-derived content with conservative impact, risk,
+  duration, recovery, gaps and unknowns.
+- Raw candidates, graph paths, comparison values, protected reports, evidence payloads and receipt
+  remain in a tenant-isolated vault. Ordinary persistence/API/UI receive only redacted presented
+  content and minimized lineage, outcome, counts, digests, timestamps and safety flags.
+- One immutable claim prevents multiple presentations. Exact replay verifies and returns the same
+  content after current authorization and complete source, policy, retention, vault and digest
+  checks and never re-renders changed inputs.
+- Success sets recommendation presentation only. Existing-domain promotion, review readiness,
+  approval, workflow, ITSM, execution, deployment and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  preferred/tie/no-support/lineage/replay/redaction/privacy/vault/audit tests, bounded UI, full
+  suites, live desktop/mobile validation and GitHub CI apply.
+
+### ATLAS-IMP-111 Validation Evidence
+
+- ADR-067 is accepted. IMP-110 merged as `b3476b993d44483f2d75440d42b7059f87d04747` after PR #122
+  branch run `31278944030` and merged-main run `31279159008` passed. Documentation closure commit
+  `fec34fa` passed main run `31279392711` (frontend 4m00s, backend 4m14s, total 4m17s).
+- The governed presentation service rehydrates one exact protected recommendation adjudication and
+  its complete candidate, impact, risk-recovery, evidence, policy, tenant, consumer, browser and
+  purpose lineage. It acquires one immutable adjudication claim; exact replay reauthorizes and
+  reconstructs the same source-derived presentation without a model or network call.
+- The trusted deterministic presenter preserves all three outcomes. A preferred result exposes the
+  preferred and eligible alternatives; a tie exposes only equally supported options and selects
+  none; no-support exposes bounded support reasons and evidence needs. Output is inert `text/plain`
+  containing conceptual C0/C1 steps, conservative risk, work/interruption/recovery ranges, service
+  counts, evidence references, assumptions, gaps and unknowns without candidate, capability,
+  entity, graph-path, command, endpoint, tool-call or authorization identifiers.
+- Success marks recommendation presentation only. Review readiness, approval, existing-domain
+  promotion, workflow, ITSM, execution, deployment and infrastructure mutation remain false.
+  Production has no development policy or synthetic presenter fallback and therefore fails closed.
+- Dedicated default-deny C1 create/read permissions, enterprise-human hardware-MFA checks, CSRF,
+  browser binding, no-store routes, strict request/response schemas, memory/PostgreSQL parity and
+  Alembic revision `20260809_0083` are implemented. Alembic reports one head; empty-to-head
+  PostgreSQL offline SQL generation produced `405086` bytes and reached revision `20260809_0083`.
+- Ruff formatting and lint passed across `1033` Python files, strict mypy found no issues in `845`
+  source files, focused presentation/adjudication/API validation passed `23` tests, and the complete
+  backend suite passed `851` tests with three expected Windows symlink skips and three existing
+  dependency warnings.
+- The frontend passed ESLint, TypeScript, `51` test files with `81` tests, and the production build
+  (CSS 128.59 kB / 21.34 kB gzip; JavaScript 1,039.81 kB / 188.12 kB gzip). The existing bundle-size
+  notice remains non-blocking. Component tests verify acknowledgement-only requests, safe preferred
+  and alternative details, and the absence of approval or execution controls.
+- Live validation used backend port `8072` and frontend port `5231`. Health returned successfully,
+  OpenAPI registered `208` paths and both recommendation-presentation routes, and the Connector
+  lifecycle rendered `Recommendation presentation` as the latest capability. Desktop at 1280 px
+  and mobile at 390 px had no horizontal overflow; current-port browser logs contained only Vite
+  connection and React development information with no warning or error.
+- Scope commit `b7804cd` and implementation commit `5ff39d8` contain the authored slice. PR #123
+  branch run `31326867157` passed (frontend 3m26s, backend 4m51s, total 4m51s). Merge and
+  merged-main verification follow the PR-link documentation commit.
 
 ### ATLAS-IMP-110 Scope Rationale
 
