@@ -4,14 +4,52 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-112 |
-| Title | Governed recommendation domain promotion foundation |
-| Status | Done |
-| Branch | `main` |
-| Pull Request | [#124](https://github.com/ozdemirumit/Project_Atlas/pull/124) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-068 |
+| Task ID | ATLAS-IMP-113 |
+| Title | Governed recommendation review-readiness foundation |
+| Status | In Progress |
+| Branch | `agent/recommendation-review-readiness` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-069 |
 | Last Updated | 2026-08-09 |
-| Next Action | Define the next governed recommendation lifecycle boundary |
+| Next Action | Implement and validate the governed review-readiness boundary |
+
+### ATLAS-IMP-113 Scope Rationale
+
+- IMP-112 creates one exact immutable recommendation-domain artifact in `draft` but deliberately
+  does not establish review completeness or freshness.
+- ADR-069 permits a trusted deterministic policy gate to assess that exact draft as `ready` or
+  `blocked` without rewriting, repairing, reranking or expanding it.
+- A ready assessment permits only a later independent human-review request. It is not a human
+  decision, approval, workflow, ITSM handoff or operational authority.
+
+### ATLAS-IMP-113 Acceptance Criteria
+
+- Only one exact unexpired, integrity-valid promoted draft with unchanged promotion,
+  presentation, adjudication, candidate, impact, risk-recovery, evidence, graph, answer, model,
+  retrieval, policy, purpose, consumer, browser and vault lineage can enter evaluation.
+- The caller supplies only exact recommendation and signed readiness-policy bindings, unchanged
+  purpose, three no-authority acknowledgements, idempotency and correlation. Outcome, option,
+  readiness result, reason, reviewer, decision, approval, workflow, command and mutation controls
+  are forbidden.
+- A trusted deterministic no-network, no-model evaluator preserves preferred, tie and no-support
+  and emits `ready` or `blocked` from explicit completeness, consistency, freshness and safety
+  policy gates. It never repairs source content.
+- One immutable minimized assessment records bounded reason codes and aggregate counts. Ordinary
+  persistence and API/UI omit protected content, claim, receipt, authorization, browser and vault
+  details.
+- One immutable claim prevents duplicate assessment. Exact replay reauthorizes and verifies the
+  same claim, policy, source, retention, browser, vault and digest lineage.
+- Ready sets review readiness only. Human review, approval, workflow, ITSM, execution, deployment
+  and infrastructure mutation remain false; blocked leaves all authority flags false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  ready/blocked/outcome/lineage/replay/tamper/redaction/audit tests, bounded UI, full suites, live
+  desktop validation and GitHub CI apply.
+
+### ATLAS-IMP-113 Validation Evidence
+
+- ADR-069 is accepted. IMP-112 merged as `363dea349aba0c8858a6ccbc0c51a339aa4a5643` after PR #124
+  branch run `31332036745` and merged-main run `31332273529` passed. Documentation closure commit
+  `166cacb` passed main run `31332516571` (frontend 4m08s, backend 5m11s, total 5m11s).
 
 ### ATLAS-IMP-112 Scope Rationale
 
