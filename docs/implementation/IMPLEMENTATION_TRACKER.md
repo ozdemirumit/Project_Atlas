@@ -8,7 +8,7 @@
 | Title | Governed recommendation human-review request foundation |
 | Status | In Progress |
 | Branch | `agent/recommendation-human-review-request` |
-| Pull Request | Pending |
+| Pull Request | [#126](https://github.com/ozdemirumit/Project_Atlas/pull/126) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-070 |
 | Last Updated | 2026-08-10 |
 | Next Action | Publish the validated governed recommendation human-review request boundary for review |
