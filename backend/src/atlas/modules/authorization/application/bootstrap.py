@@ -210,6 +210,8 @@ AI_PROTECTED_CANDIDATE_RISK_RECOVERY_CREATE = "ai.protected-candidate-risk-recov
 AI_PROTECTED_CANDIDATE_RISK_RECOVERY_READ = "ai.protected-candidate-risk-recovery.read"
 AI_PROTECTED_RECOMMENDATION_ADJUDICATION_CREATE = "ai.protected-recommendation-adjudication.create"
 AI_PROTECTED_RECOMMENDATION_ADJUDICATION_READ = "ai.protected-recommendation-adjudication.read"
+AI_PROTECTED_RECOMMENDATION_PRESENTATION_CREATE = "ai.protected-recommendation-presentation.create"
+AI_PROTECTED_RECOMMENDATION_PRESENTATION_READ = "ai.protected-recommendation-presentation.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -1266,6 +1268,19 @@ def ai_protected_recommendation_adjudication_scope(
     )
 
 
+def ai_protected_recommendation_presentation_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.ai",
+        resource_id="resource.ai.protected-recommendation-presentation",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -2135,6 +2150,14 @@ def build_development_authorization_service(
             permission_id=AI_PROTECTED_RECOMMENDATION_ADJUDICATION_READ,
             description="Read minimized protected recommendation adjudication metadata.",
         ),
+        PermissionDefinition(
+            permission_id=AI_PROTECTED_RECOMMENDATION_PRESENTATION_CREATE,
+            description="Present one exact protected recommendation adjudication safely.",
+        ),
+        PermissionDefinition(
+            permission_id=AI_PROTECTED_RECOMMENDATION_PRESENTATION_READ,
+            description="Read a protected inert recommendation presentation.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -2314,6 +2337,8 @@ def build_development_authorization_service(
                 AI_PROTECTED_CANDIDATE_RISK_RECOVERY_READ,
                 AI_PROTECTED_RECOMMENDATION_ADJUDICATION_CREATE,
                 AI_PROTECTED_RECOMMENDATION_ADJUDICATION_READ,
+                AI_PROTECTED_RECOMMENDATION_PRESENTATION_CREATE,
+                AI_PROTECTED_RECOMMENDATION_PRESENTATION_READ,
             }
         ),
     )

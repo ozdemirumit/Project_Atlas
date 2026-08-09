@@ -28,6 +28,8 @@ from atlas.modules.authorization.application.bootstrap import (
     AI_PROTECTED_RECOMMENDATION_ADJUDICATION_READ,
     AI_PROTECTED_RECOMMENDATION_CANDIDATE_CREATE,
     AI_PROTECTED_RECOMMENDATION_CANDIDATE_READ,
+    AI_PROTECTED_RECOMMENDATION_PRESENTATION_CREATE,
+    AI_PROTECTED_RECOMMENDATION_PRESENTATION_READ,
     API_CREDENTIAL_ADMIN_REVOKE,
     API_CREDENTIAL_SELF_CREATE,
     API_CREDENTIAL_SELF_READ,
@@ -202,6 +204,7 @@ from atlas.modules.authorization.application.bootstrap import (
     ai_protected_model_invocation_scope,
     ai_protected_recommendation_adjudication_scope,
     ai_protected_recommendation_candidate_scope,
+    ai_protected_recommendation_presentation_scope,
     api_credential_self_scope,
     approval_scope,
     audit_export_scope,
@@ -5170,4 +5173,58 @@ async def authorize_protected_recommendation_adjudication_read(
         request,
         subject,
         permission_id=AI_PROTECTED_RECOMMENDATION_ADJUDICATION_READ,
+    )
+
+
+async def _authorize_protected_recommendation_presentation(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.ai.protected-recommendation-presentation",
+            scope=ai_protected_recommendation_presentation_scope(
+                subject.organization_id,
+                settings.environment,
+                CapabilityClass.C1_READ_ONLY,
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail="The current identity cannot present protected recommendations.",
+        )
+    return decision
+
+
+async def authorize_protected_recommendation_presentation_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_protected_recommendation_presentation(
+        request,
+        subject,
+        permission_id=AI_PROTECTED_RECOMMENDATION_PRESENTATION_CREATE,
+    )
+
+
+async def authorize_protected_recommendation_presentation_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_protected_recommendation_presentation(
+        request,
+        subject,
+        permission_id=AI_PROTECTED_RECOMMENDATION_PRESENTATION_READ,
     )

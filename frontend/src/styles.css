@@ -8797,3 +8797,60 @@ tbody tr.selected {
     max-width: 78vw;
   }
 }
+.recommendation-presentation-result {
+  display: grid;
+  gap: 16px;
+}
+
+.recommendation-presentation-option {
+  display: grid;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid #dce4e1;
+}
+
+.recommendation-presentation-option h4 {
+  margin: 0;
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+
+.compact-heading {
+  align-items: flex-start;
+}
+
+.recommendation-step-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 24px;
+}
+
+.recommendation-step-list li {
+  padding-left: 4px;
+}
+
+.recommendation-step-list li > * {
+  display: block;
+}
+
+.recommendation-step-list small {
+  margin-top: 3px;
+  color: #61716d;
+}
+
+.recommendation-evidence-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 0;
+  color: var(--warning-text, #7a4b00);
+}
+
+.recommendation-evidence-notice svg {
+  flex: 0 0 auto;
+}
+
+.recommendation-evidence-notice p {
+  margin: 0 0 4px;
+}
