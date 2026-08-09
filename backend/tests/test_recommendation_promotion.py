@@ -71,7 +71,10 @@ class TamperingPromotionPromoter(SyntheticTrustedRecommendationPromoter):
 
     async def promote(self, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
         receipt, artifact = await super().promote(*args, **kwargs)  # type: ignore[arg-type]
-        artifact = replace(artifact, **{self._field: "e" * 64})
+        if self._field == "promotion_receipt_digest":
+            artifact = replace(artifact, promotion_receipt_digest="e" * 64)
+        else:
+            artifact = replace(artifact, source_binding_digest="e" * 64)
         artifact = replace(
             artifact,
             canonical_digest=GovernedRecommendationPromotionService._artifact_digest(artifact),

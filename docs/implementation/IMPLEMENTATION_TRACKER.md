@@ -65,7 +65,7 @@
   browser binding, no-store routes, strict request/response schemas, memory/PostgreSQL parity and
   Alembic revision `20260809_0084` are implemented. Alembic reports one head; empty-to-head
   PostgreSQL offline SQL generation produced `205317` bytes and reached revision `20260809_0084`.
-- Ruff formatting and lint passed across `1044` Python files, strict mypy found no issues in `854`
+- Ruff formatting and lint passed across `1044` Python files, strict mypy found no issues in `959`
   source files, focused promotion/presentation/API validation passed `28` tests, and the complete
   backend suite passed `863` tests with three expected Windows symlink skips and three existing
   dependency warnings. Tamper tests cover receipt/source cross-binding and exact-replay claim
