@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-115 |
 | Title | Governed recommendation reviewer-assignment foundation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/recommendation-reviewer-assignment` |
-| Pull Request | Pending |
+| Pull Request | [#127](https://github.com/ozdemirumit/Project_Atlas/pull/127) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-071 |
 | Last Updated | 2026-08-10 |
-| Next Action | Publish the validated implementation branch and complete GitHub review and CI |
+| Next Action | Complete PR #127 CI, merge, and synchronize main |
 
 ### ATLAS-IMP-115 Scope Rationale
 
@@ -80,6 +80,8 @@
   in-app browser did not apply its requested 390 px viewport override, so no mobile-live claim is
   made for this slice; the feature adds no new layout CSS and remains covered by the existing
   responsive shell plus component tests.
+- Scope commit `dac9aa5` and implementation commit `d6d8ee0` contain the authored slice. PR #127
+  is open and its backend and frontend GitHub CI jobs are in progress.
 
 ### ATLAS-IMP-114 Scope Rationale
 
