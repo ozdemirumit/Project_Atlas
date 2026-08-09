@@ -8,7 +8,7 @@
 | Title | Governed recommendation review-readiness foundation |
 | Status | In Review |
 | Branch | `agent/recommendation-review-readiness` |
-| Pull Request | Pending |
+| Pull Request | [#125](https://github.com/ozdemirumit/Project_Atlas/pull/125) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-069 |
 | Last Updated | 2026-08-09 |
 | Next Action | Publish the implementation branch, pass CI, merge, and close IMP-113 |
