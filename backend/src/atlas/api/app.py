@@ -84,6 +84,7 @@ from atlas.api.routes import (
     recommendation_promotions,
     recommendation_readiness,
     recommendation_review_requests,
+    recommendation_reviewer_assignments,
     recommendations,
     recovery,
     registry_publications,
@@ -1233,6 +1234,20 @@ from atlas.modules.recommendations.adapters.review_request_synthetic import (
     SyntheticTrustedRecommendationReviewRequestOrchestrator,
     UnavailableTrustedRecommendationReviewRequestOrchestrator,
 )
+from atlas.modules.recommendations.adapters.reviewer_assignment_memory import (
+    InMemoryRecommendationReviewerAssignmentPolicySource,
+    MemoryRecommendationReviewerAssignmentRepository,
+)
+from atlas.modules.recommendations.adapters.reviewer_assignment_permission import (
+    AuthorizationRecommendationReviewerAssignmentPermissionAuthorizer,
+)
+from atlas.modules.recommendations.adapters.reviewer_assignment_postgres import (
+    PostgreSQLRecommendationReviewerAssignmentRepository,
+)
+from atlas.modules.recommendations.adapters.reviewer_assignment_synthetic import (
+    SyntheticTrustedRecommendationReviewerAssignmentAdapter,
+    UnavailableTrustedRecommendationReviewerAssignmentAdapter,
+)
 from atlas.modules.recommendations.adapters.synthetic import (
     SyntheticStorageRecommendationAssembler,
 )
@@ -1247,6 +1262,10 @@ from atlas.modules.recommendations.application.readiness import (
 from atlas.modules.recommendations.application.review_request import (
     GovernedRecommendationReviewRequestService,
     build_development_recommendation_review_request_policy,
+)
+from atlas.modules.recommendations.application.reviewer_assignment import (
+    GovernedRecommendationReviewerAssignmentService,
+    build_development_recommendation_reviewer_assignment_policy,
 )
 from atlas.modules.recommendations.application.service import RecommendationService
 from atlas.modules.recovery.adapters.filesystem import FilesystemBackupArchiveStore
@@ -1425,6 +1444,9 @@ def create_app(
     recommendation_readiness_service: GovernedRecommendationReadinessService | None = None,
     recommendation_review_request_service: (
         GovernedRecommendationReviewRequestService | None
+    ) = None,
+    recommendation_reviewer_assignment_service: (
+        GovernedRecommendationReviewerAssignmentService | None
     ) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
@@ -4241,6 +4263,52 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if recommendation_reviewer_assignment_service is not None:
+        resolved_recommendation_reviewer_assignment_service = (
+            recommendation_reviewer_assignment_service
+        )
+    else:
+        recommendation_reviewer_assignment_repository = (
+            PostgreSQLRecommendationReviewerAssignmentRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else MemoryRecommendationReviewerAssignmentRepository()
+        )
+        recommendation_reviewer_assignment_policies = (
+            ()
+            if is_production
+            else (
+                build_development_recommendation_reviewer_assignment_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_recommendation_reviewer_assignment_service = (
+            GovernedRecommendationReviewerAssignmentService(
+                repository=recommendation_reviewer_assignment_repository,
+                review_request_source=resolved_recommendation_review_request_service,
+                policy_source=InMemoryRecommendationReviewerAssignmentPolicySource(
+                    recommendation_reviewer_assignment_policies
+                ),
+                permission_authorizer=(
+                    AuthorizationRecommendationReviewerAssignmentPermissionAuthorizer(
+                        service=resolved_authorization_service,
+                        environment=resolved_settings.environment,
+                    )
+                ),
+                adapter=(
+                    UnavailableTrustedRecommendationReviewerAssignmentAdapter()
+                    if is_production
+                    else SyntheticTrustedRecommendationReviewerAssignmentAdapter()
+                ),
+                audit_sink=resolved_audit_sink,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -4520,6 +4588,9 @@ def create_app(
         app.state.recommendation_review_request_service = (
             resolved_recommendation_review_request_service
         )
+        app.state.recommendation_reviewer_assignment_service = (
+            resolved_recommendation_reviewer_assignment_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -4532,6 +4603,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_recommendation_reviewer_assignment_service.close()
         await resolved_recommendation_review_request_service.close()
         await resolved_recommendation_readiness_service.close()
         await resolved_recommendation_promotion_service.close()
@@ -4714,6 +4786,7 @@ def create_app(
     app.include_router(recommendation_promotions.router, prefix="/api/v1")
     app.include_router(recommendation_readiness.router, prefix="/api/v1")
     app.include_router(recommendation_review_requests.router, prefix="/api/v1")
+    app.include_router(recommendation_reviewer_assignments.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

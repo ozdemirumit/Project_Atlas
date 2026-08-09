@@ -218,6 +218,8 @@ RECOMMENDATION_READINESS_CREATE = "recommendation.review-readiness.create"
 RECOMMENDATION_READINESS_READ = "recommendation.review-readiness.read"
 RECOMMENDATION_REVIEW_REQUEST_CREATE = "recommendation.human-review-request.create"
 RECOMMENDATION_REVIEW_REQUEST_READ = "recommendation.human-review-request.read"
+RECOMMENDATION_REVIEWER_ASSIGNMENT_CREATE = "recommendation.reviewer-assignment.create"
+RECOMMENDATION_REVIEWER_ASSIGNMENT_READ = "recommendation.reviewer-assignment.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -1326,6 +1328,19 @@ def recommendation_review_request_scope(
     )
 
 
+def recommendation_reviewer_assignment_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.recommendation",
+        resource_id="resource.recommendation.reviewer-assignment",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -2227,6 +2242,14 @@ def build_development_authorization_service(
             permission_id=RECOMMENDATION_REVIEW_REQUEST_READ,
             description="Read a minimized recommendation human-review request.",
         ),
+        PermissionDefinition(
+            permission_id=RECOMMENDATION_REVIEWER_ASSIGNMENT_CREATE,
+            description="Request policy-controlled recommendation reviewer assignment.",
+        ),
+        PermissionDefinition(
+            permission_id=RECOMMENDATION_REVIEWER_ASSIGNMENT_READ,
+            description="Read minimized recommendation reviewer assignment metadata.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -2414,6 +2437,8 @@ def build_development_authorization_service(
                 RECOMMENDATION_READINESS_READ,
                 RECOMMENDATION_REVIEW_REQUEST_CREATE,
                 RECOMMENDATION_REVIEW_REQUEST_READ,
+                RECOMMENDATION_REVIEWER_ASSIGNMENT_CREATE,
+                RECOMMENDATION_REVIEWER_ASSIGNMENT_READ,
             }
         ),
     )

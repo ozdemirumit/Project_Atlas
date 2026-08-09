@@ -247,7 +247,8 @@ describe("RecommendationReadinessPanel", () => {
     expect(within(summary).getByText("technical: awaiting reviewer")).toBeVisible();
     expect(within(summary).getByText("service impact: awaiting reviewer")).toBeVisible();
     expect(within(summary).getByText("no reviewer assigned")).toBeVisible();
-    expect(screen.queryByRole("button", { name: /assign|approve|execute/i })).toBeNull();
+    expect(screen.getByRole("button", { name: "Assign accountable reviewers" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /approve|execute/i })).toBeNull();
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     const request = fetchMock.mock.calls[1]?.[1];
