@@ -168,4 +168,103 @@ describe("RecommendationReadinessPanel", () => {
     for (const forbidden of ["evaluation_outcome", "reviewer_id", "approve", "command"])
       expect(body).not.toHaveProperty(forbidden);
   });
+
+  it("requests policy-routed human review without reviewer or action authority", async () => {
+    document.cookie = "atlas_csrf=test-csrf; path=/";
+    const reviewRequestResult = {
+      request: {
+        schema_version: "atlas.recommendation-review-request.v1",
+        state: "review_requested",
+        review_requested: true,
+        reviewer_assigned: false,
+        content_inspection_opened: false,
+        human_review_completed: false,
+        recommendation_approved: false,
+        workflow_created: false,
+        itsm_record_created: false,
+        execution_authorized: false,
+        deployment_authorized: false,
+        infrastructure_mutated: false,
+      },
+      manifest: {
+        track_statuses: [
+          ["review-track.technical", "awaiting_reviewer"],
+          ["review-track.service-impact", "awaiting_reviewer"],
+        ],
+      },
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: readinessResult }), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: reviewRequestResult }), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <RecommendationReadinessPanel promotionResult={promotionResult} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByLabelText("Readiness is not human review or approval."));
+    fireEvent.click(
+      screen.getByLabelText("A blocked assessment requires a new recommendation version."),
+    );
+    fireEvent.click(
+      screen.getByLabelText(
+        "No workflow, ITSM, execution, deployment, or mutation authority is created.",
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Assess readiness" }));
+
+    const requestReview = await screen.findByRole("button", { name: "Request human review" });
+    expect(requestReview).toBeDisabled();
+    fireEvent.click(
+      screen.getByLabelText("Request creation is not reviewer assignment or human review."),
+    );
+    fireEvent.click(
+      screen.getByLabelText("Review tracks and queues are selected only by signed policy."),
+    );
+    fireEvent.click(
+      screen.getByLabelText(
+        "No approval, workflow, ITSM, execution, deployment, or mutation authority is created.",
+      ),
+    );
+    expect(requestReview).toBeEnabled();
+    fireEvent.click(requestReview);
+
+    expect(await screen.findByText("Awaiting accountable reviewers")).toBeVisible();
+    const summary = screen.getByLabelText("Review request summary");
+    expect(within(summary).getByText("technical: awaiting reviewer")).toBeVisible();
+    expect(within(summary).getByText("service impact: awaiting reviewer")).toBeVisible();
+    expect(within(summary).getByText("no reviewer assigned")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /assign|approve|execute/i })).toBeNull();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const request = fetchMock.mock.calls[1]?.[1];
+    const body = JSON.parse(typeof request?.body === "string" ? request.body : "{}") as Record<
+      string,
+      unknown
+    >;
+    expect(body).toMatchObject({
+      schema_version: "atlas.recommendation-review-request-input.v1",
+      recommendation_digest: promotionResult.recommendation.canonical_digest,
+      readiness_assessment_id: readinessResult.assessment.assessment_id,
+      readiness_assessment_digest: readinessResult.assessment.canonical_digest,
+      acknowledged_request_is_not_assignment_or_review: true,
+      acknowledged_routing_is_policy_owned: true,
+      acknowledged_no_approval_or_operational_authority: true,
+    });
+    for (const forbidden of ["track_codes", "queue_id", "reviewer_id", "decision", "command"])
+      expect(body).not.toHaveProperty(forbidden);
+  });
 });

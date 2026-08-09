@@ -216,6 +216,8 @@ RECOMMENDATION_PROMOTION_CREATE = "recommendation.promotion.create"
 RECOMMENDATION_PROMOTION_READ = "recommendation.promotion.read"
 RECOMMENDATION_READINESS_CREATE = "recommendation.review-readiness.create"
 RECOMMENDATION_READINESS_READ = "recommendation.review-readiness.read"
+RECOMMENDATION_REVIEW_REQUEST_CREATE = "recommendation.human-review-request.create"
+RECOMMENDATION_REVIEW_REQUEST_READ = "recommendation.human-review-request.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -1311,6 +1313,19 @@ def recommendation_readiness_scope(
     )
 
 
+def recommendation_review_request_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.recommendation",
+        resource_id="resource.recommendation.human-review-request",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -2204,6 +2219,14 @@ def build_development_authorization_service(
             permission_id=RECOMMENDATION_READINESS_READ,
             description="Read a minimized recommendation review-readiness assessment.",
         ),
+        PermissionDefinition(
+            permission_id=RECOMMENDATION_REVIEW_REQUEST_CREATE,
+            description="Request policy-owned human review for one exact ready recommendation.",
+        ),
+        PermissionDefinition(
+            permission_id=RECOMMENDATION_REVIEW_REQUEST_READ,
+            description="Read a minimized recommendation human-review request.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -2389,6 +2412,8 @@ def build_development_authorization_service(
                 RECOMMENDATION_PROMOTION_READ,
                 RECOMMENDATION_READINESS_CREATE,
                 RECOMMENDATION_READINESS_READ,
+                RECOMMENDATION_REVIEW_REQUEST_CREATE,
+                RECOMMENDATION_REVIEW_REQUEST_READ,
             }
         ),
     )
