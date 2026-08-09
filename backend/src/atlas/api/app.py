@@ -81,6 +81,7 @@ from atlas.api.routes import (
     publication_preparations,
     publisher_attestations,
     rca,
+    recommendation_promotions,
     recommendations,
     recovery,
     registry_publications,
@@ -1188,8 +1189,26 @@ from atlas.modules.platform.application.release_preflight import ReleasePrefligh
 from atlas.modules.platform.application.service import PlatformStatusService
 from atlas.modules.rca.adapters.synthetic import SyntheticStorageRcaAssembler
 from atlas.modules.rca.application.service import RcaService
+from atlas.modules.recommendations.adapters.promotion_memory import (
+    InMemoryRecommendationPromotionPolicySource,
+    MemoryRecommendationPromotionRepository,
+)
+from atlas.modules.recommendations.adapters.promotion_permission import (
+    AuthorizationRecommendationPromotionPermissionAuthorizer,
+)
+from atlas.modules.recommendations.adapters.promotion_postgres import (
+    PostgreSQLRecommendationPromotionRepository,
+)
+from atlas.modules.recommendations.adapters.promotion_synthetic import (
+    SyntheticTrustedRecommendationPromoter,
+    UnavailableTrustedRecommendationPromoter,
+)
 from atlas.modules.recommendations.adapters.synthetic import (
     SyntheticStorageRecommendationAssembler,
+)
+from atlas.modules.recommendations.application.promotion import (
+    GovernedRecommendationPromotionService,
+    build_development_recommendation_promotion_policy,
 )
 from atlas.modules.recommendations.application.service import RecommendationService
 from atlas.modules.recovery.adapters.filesystem import FilesystemBackupArchiveStore
@@ -1364,6 +1383,7 @@ def create_app(
     protected_recommendation_presentation_service: (
         GovernedProtectedRecommendationPresentationService | None
     ) = None,
+    recommendation_promotion_service: GovernedRecommendationPromotionService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -4061,6 +4081,44 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    if recommendation_promotion_service is not None:
+        resolved_recommendation_promotion_service = recommendation_promotion_service
+    else:
+        recommendation_promotion_repository = (
+            PostgreSQLRecommendationPromotionRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else MemoryRecommendationPromotionRepository()
+        )
+        recommendation_promotion_policies = (
+            ()
+            if is_production
+            else (
+                build_development_recommendation_promotion_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_recommendation_promotion_service = GovernedRecommendationPromotionService(
+            repository=recommendation_promotion_repository,
+            presentation_source=resolved_protected_recommendation_presentation_service,
+            policy_source=InMemoryRecommendationPromotionPolicySource(
+                recommendation_promotion_policies
+            ),
+            permission_authorizer=AuthorizationRecommendationPromotionPermissionAuthorizer(
+                service=resolved_authorization_service,
+                environment=resolved_settings.environment,
+            ),
+            promoter=(
+                UnavailableTrustedRecommendationPromoter()
+                if is_production
+                else SyntheticTrustedRecommendationPromoter()
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -4335,6 +4393,7 @@ def create_app(
         app.state.protected_recommendation_presentation_service = (
             resolved_protected_recommendation_presentation_service
         )
+        app.state.recommendation_promotion_service = resolved_recommendation_promotion_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -4347,6 +4406,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_recommendation_promotion_service.close()
         await resolved_protected_recommendation_presentation_service.close()
         await resolved_protected_recommendation_adjudication_service.close()
         await resolved_protected_candidate_risk_recovery_service.close()
@@ -4523,6 +4583,7 @@ def create_app(
     app.include_router(protected_candidate_risk_recovery.router, prefix="/api/v1")
     app.include_router(protected_recommendation_adjudications.router, prefix="/api/v1")
     app.include_router(protected_recommendation_presentations.router, prefix="/api/v1")
+    app.include_router(recommendation_promotions.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

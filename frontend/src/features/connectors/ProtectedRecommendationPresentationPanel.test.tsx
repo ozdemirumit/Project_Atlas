@@ -1,9 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ProtectedRecommendationAdjudicationResult } from "../../api/protectedRecommendationAdjudications";
+import type { ProtectedRecommendationPresentationResult } from "../../api/protectedRecommendationPresentations";
 import { ProtectedRecommendationPresentationPanel } from "./ProtectedRecommendationPresentationPanel";
+import { RecommendationPromotionPanel } from "./RecommendationPromotionPanel";
 
 const adjudicationResult = {
   adjudication: {
@@ -22,6 +24,11 @@ const presentationResult = {
   presentation: {
     presentation_id: "protected-recommendation-presentation.test",
     schema_version: "atlas.protected-recommendation-presentation.v1",
+    adjudication_id: "protected-recommendation-adjudication.test",
+    organization_id: "organization.development",
+    environment_id: "environment.development",
+    purpose: "Present the exact protected recommendation as inert decision support.",
+    canonical_digest: "d".repeat(64),
     recommendation_presented: true,
     recommendation_ready_for_review: false,
     recommendation_approved: false,
@@ -126,9 +133,63 @@ const presentationResult = {
     expires_at: "2026-08-09T10:10:00Z",
     canonical_digest: "b".repeat(64),
   },
+} as unknown as ProtectedRecommendationPresentationResult;
+
+const promotionResult = {
+  recommendation: {
+    promotion_id: "recommendation-promotion.test",
+    recommendation_id: "recommendation.promoted.test",
+    schema_version: "atlas.promoted-recommendation-artifact.v1",
+    version: 1,
+    presentation_id: presentationResult.presentation.presentation_id,
+    adjudication_id: presentationResult.presentation.adjudication_id,
+    organization_id: presentationResult.presentation.organization_id,
+    environment_id: presentationResult.presentation.environment_id,
+    classification: "internal",
+    promotion_policy_id: "recommendation-promotion-policy.development",
+    promotion_policy_version: "policy-version.recommendation-promotion-development-v1",
+    promoter_id: "recommendation-promoter.synthetic",
+    outcome: "preferred",
+    headline: presentationResult.recommendation.headline,
+    safety_notice: "Decision support draft only. No review or operational authority.",
+    options: presentationResult.recommendation.options,
+    evidence_needs: [],
+    state: "draft",
+    promoted_at: "2026-08-09T10:00:00Z",
+    expires_at: "2026-08-09T10:10:00Z",
+    purpose: presentationResult.presentation.purpose,
+    byte_count: presentationResult.recommendation.byte_count,
+    canonical_digest: "c".repeat(64),
+    recommendation_promoted: true,
+    recommendation_ready_for_review: false,
+    human_review_completed: false,
+    recommendation_approved: false,
+    workflow_created: false,
+    itsm_record_created: false,
+    execution_authorized: false,
+    deployment_authorized: false,
+    infrastructure_mutated: false,
+    reused: false,
+  },
+  manifest: {
+    promotion_id: "recommendation-promotion.test",
+    recommendation_id: "recommendation.promoted.test",
+    presentation_id: presentationResult.presentation.presentation_id,
+    adjudication_id: presentationResult.presentation.adjudication_id,
+    outcome: "preferred",
+    option_count: 2,
+    preferred_count: 1,
+    state: "draft",
+    promoted_at: "2026-08-09T10:00:00Z",
+    expires_at: "2026-08-09T10:10:00Z",
+    safety_notice: "Decision support draft only. No review or operational authority.",
+  },
 };
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("ProtectedRecommendationPresentationPanel", () => {
   it("submits acknowledgements and renders safe recommendation details", async () => {
@@ -186,6 +247,56 @@ describe("ProtectedRecommendationPresentationPanel", () => {
       acknowledged_no_operational_authority: true,
     });
     for (const forbidden of ["candidate_id", "capability_id", "command", "endpoint", "preferred"])
+      expect(body).not.toHaveProperty(forbidden);
+  });
+
+  it("promotes only an acknowledged presentation into a non-authoritative draft", async () => {
+    document.cookie = "atlas_csrf=test-csrf; path=/";
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ data: promotionResult }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <RecommendationPromotionPanel presentationResult={presentationResult} />
+      </QueryClientProvider>,
+    );
+
+    const submit = screen.getByRole("button", { name: "Promote to draft" });
+    expect(submit).toBeDisabled();
+    fireEvent.click(screen.getByLabelText("Promotion creates an immutable draft only."));
+    fireEvent.click(
+      screen.getByLabelText("The draft is not ready for review and is not approved."),
+    );
+    fireEvent.click(
+      screen.getByLabelText(
+        "No workflow, ITSM, execution, deployment, or mutation authority is created.",
+      ),
+    );
+    expect(submit).toBeEnabled();
+    fireEvent.click(submit);
+
+    expect(await screen.findByTestId("recommendation-promotion-result")).toBeVisible();
+    expect(screen.getByText("draft")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /execute|approve|review/i })).not.toBeInTheDocument();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const request = fetchMock.mock.calls[0]?.[1];
+    const body = JSON.parse(typeof request?.body === "string" ? request.body : "{}") as Record<
+      string,
+      unknown
+    >;
+    expect(body).toMatchObject({
+      schema_version: "atlas.recommendation-promotion-input.v1",
+      presentation_digest: presentationResult.presentation.canonical_digest,
+      acknowledged_draft_only: true,
+      acknowledged_no_review_or_approval: true,
+      acknowledged_no_operational_authority: true,
+    });
+    for (const forbidden of ["outcome", "candidate_id", "command", "approve", "workflow"])
       expect(body).not.toHaveProperty(forbidden);
   });
 });

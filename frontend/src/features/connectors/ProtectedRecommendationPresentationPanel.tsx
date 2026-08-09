@@ -8,6 +8,7 @@ import {
   type ProtectedRecommendationPresentationResult,
 } from "../../api/protectedRecommendationPresentations";
 import type { ProtectedRecommendationAdjudicationResult } from "../../api/protectedRecommendationAdjudications";
+import { RecommendationPromotionPanel } from "./RecommendationPromotionPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -195,6 +196,7 @@ export function ProtectedRecommendationPresentationPanel({
           {result.recommendation.options.map((option) => (
             <RecommendationOption key={`${option.role}-${option.title}`} option={option} />
           ))}
+          <RecommendationPromotionPanel presentationResult={result} />
         </div>
       )}
     </div>
