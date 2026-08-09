@@ -7,6 +7,7 @@ import {
   type RecommendationPromotionResult,
 } from "../../api/recommendationPromotions";
 import type { ProtectedRecommendationPresentationResult } from "../../api/protectedRecommendationPresentations";
+import { RecommendationReadinessPanel } from "./RecommendationReadinessPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -108,29 +109,35 @@ export function RecommendationPromotionPanel({
         </div>
       )}
       {result && (
-        <div className="correction-record" data-testid="recommendation-promotion-result">
-          <div className="section-heading compact-heading">
-            <div>
-              <p className="eyebrow">DRAFT</p>
-              <strong>{result.recommendation.headline}</strong>
+        <>
+          <div className="correction-record" data-testid="recommendation-promotion-result">
+            <div className="section-heading compact-heading">
+              <div>
+                <p className="eyebrow">DRAFT</p>
+                <strong>{result.recommendation.headline}</strong>
+              </div>
+              <span className="state-badge neutral">
+                <ShieldCheck size={14} /> {result.recommendation.state}
+              </span>
             </div>
-            <span className="state-badge neutral">
-              <ShieldCheck size={14} /> {result.recommendation.state}
-            </span>
+            <div
+              className="connector-capability-list"
+              aria-label="Promoted recommendation summary"
+            >
+              <span className="connector-capability" data-state="available">
+                {result.manifest.option_count} options
+              </span>
+              <span className="connector-capability" data-state="available">
+                {result.manifest.preferred_count} preferred
+              </span>
+              <span className="connector-capability" data-state="available">
+                {result.recommendation.outcome.replace("_", " ")}
+              </span>
+            </div>
+            <p className="muted-copy">{result.recommendation.safety_notice}</p>
           </div>
-          <div className="connector-capability-list" aria-label="Promoted recommendation summary">
-            <span className="connector-capability" data-state="available">
-              {result.manifest.option_count} options
-            </span>
-            <span className="connector-capability" data-state="available">
-              {result.manifest.preferred_count} preferred
-            </span>
-            <span className="connector-capability" data-state="available">
-              {result.recommendation.outcome.replace("_", " ")}
-            </span>
-          </div>
-          <p className="muted-copy">{result.recommendation.safety_notice}</p>
-        </div>
+          <RecommendationReadinessPanel promotionResult={result} />
+        </>
       )}
     </div>
   );

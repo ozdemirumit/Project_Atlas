@@ -4,14 +4,79 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-112 |
-| Title | Governed recommendation domain promotion foundation |
-| Status | Done |
-| Branch | `main` |
-| Pull Request | [#124](https://github.com/ozdemirumit/Project_Atlas/pull/124) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-068 |
+| Task ID | ATLAS-IMP-113 |
+| Title | Governed recommendation review-readiness foundation |
+| Status | In Review |
+| Branch | `agent/recommendation-review-readiness` |
+| Pull Request | [#125](https://github.com/ozdemirumit/Project_Atlas/pull/125) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-069 |
 | Last Updated | 2026-08-09 |
-| Next Action | Define the next governed recommendation lifecycle boundary |
+| Next Action | Publish the implementation branch, pass CI, merge, and close IMP-113 |
+
+### ATLAS-IMP-113 Scope Rationale
+
+- IMP-112 creates one exact immutable recommendation-domain artifact in `draft` but deliberately
+  does not establish review completeness or freshness.
+- ADR-069 permits a trusted deterministic policy gate to assess that exact draft as `ready` or
+  `blocked` without rewriting, repairing, reranking or expanding it.
+- A ready assessment permits only a later independent human-review request. It is not a human
+  decision, approval, workflow, ITSM handoff or operational authority.
+
+### ATLAS-IMP-113 Acceptance Criteria
+
+- Only one exact unexpired, integrity-valid promoted draft with unchanged promotion,
+  presentation, adjudication, candidate, impact, risk-recovery, evidence, graph, answer, model,
+  retrieval, policy, purpose, consumer, browser and vault lineage can enter evaluation.
+- The caller supplies only exact recommendation and signed readiness-policy bindings, unchanged
+  purpose, three no-authority acknowledgements, idempotency and correlation. Outcome, option,
+  readiness result, reason, reviewer, decision, approval, workflow, command and mutation controls
+  are forbidden.
+- A trusted deterministic no-network, no-model evaluator preserves preferred, tie and no-support
+  and emits `ready` or `blocked` from explicit completeness, consistency, freshness and safety
+  policy gates. It never repairs source content.
+- One immutable minimized assessment records bounded reason codes and aggregate counts. Ordinary
+  persistence and API/UI omit protected content, claim, receipt, authorization, browser and vault
+  details.
+- One immutable claim prevents duplicate assessment. Exact replay reauthorizes and verifies the
+  same claim, policy, source, retention, browser, vault and digest lineage.
+- Ready sets review readiness only. Human review, approval, workflow, ITSM, execution, deployment
+  and infrastructure mutation remain false; blocked leaves all authority flags false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  ready/blocked/outcome/lineage/replay/tamper/redaction/audit tests, bounded UI, full suites, live
+  desktop validation and GitHub CI apply.
+
+### ATLAS-IMP-113 Validation Evidence
+
+- ADR-069 is accepted. IMP-112 merged as `363dea349aba0c8858a6ccbc0c51a339aa4a5643` after PR #124
+  branch run `31332036745` and merged-main run `31332273529` passed. Documentation closure commit
+  `166cacb` passed main run `31332516571` (frontend 4m08s, backend 5m11s, total 5m11s).
+- The governed readiness service rehydrates one exact promoted recommendation draft and verifies
+  its promotion, presentation, protected candidate, impact, risk-recovery, evidence, graph,
+  model, retrieval, tenant, consumer, browser, purpose, policy, receipt and digest lineage before
+  acquiring one immutable claim. Exact replay reauthorizes and returns the same assessment.
+- The trusted evaluator performs no model or network call. Seven deterministic checks preserve
+  preferred, tie and no-support semantics and emit only `ready` or `blocked`; success sets
+  `recommendation_ready_for_review=true` while human review, approval, workflow, ITSM, execution,
+  deployment and infrastructure mutation remain false. Production has no development policy or
+  synthetic evaluator fallback and therefore fails closed.
+- Dedicated default-deny C1 create/read permissions, enterprise-human hardware-MFA checks, CSRF,
+  browser binding, no-store routes, strict minimized schemas, memory/PostgreSQL parity and Alembic
+  revision `20260809_0085` are implemented. Alembic reports one head; empty-to-head PostgreSQL
+  offline SQL generation produced `197004` bytes and included both readiness tables and revision
+  `20260809_0085`.
+- Ruff formatting and lint passed across `1055` Python files; strict mypy found no issues in `969`
+  source files. The focused readiness package passed `12` tests, including replay, denial,
+  unavailable evaluator, safe response, PostgreSQL round trip, bounded input and cross-binding
+  tamper cases. The complete backend suite passed `875` tests with three expected Windows symlink
+  skips and three existing dependency warnings.
+- The frontend passed ESLint, TypeScript, `52` test files with `83` tests and the production build
+  (CSS 128.59 kB / 21.34 kB gzip; JavaScript 1,051.67 kB / 189.44 kB gzip). The existing bundle-size
+  notice remains non-blocking. Component tests verify the three explicit acknowledgements, safe
+  readiness metadata and absence of review, approval and execution controls.
+- Live validation used backend port `8074` and frontend port `5233`. OpenAPI exposed both
+  review-readiness routes, Local Operator reached a healthy application, and Connector lifecycle
+  rendered `Recommendation review readiness` as the latest available capability. Desktop and
+  390 px mobile checks had no horizontal overflow or browser-console errors.
 
 ### ATLAS-IMP-112 Scope Rationale
 

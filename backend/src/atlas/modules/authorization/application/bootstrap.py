@@ -214,6 +214,8 @@ AI_PROTECTED_RECOMMENDATION_PRESENTATION_CREATE = "ai.protected-recommendation-p
 AI_PROTECTED_RECOMMENDATION_PRESENTATION_READ = "ai.protected-recommendation-presentation.read"
 RECOMMENDATION_PROMOTION_CREATE = "recommendation.promotion.create"
 RECOMMENDATION_PROMOTION_READ = "recommendation.promotion.read"
+RECOMMENDATION_READINESS_CREATE = "recommendation.review-readiness.create"
+RECOMMENDATION_READINESS_READ = "recommendation.review-readiness.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -1296,6 +1298,19 @@ def recommendation_promotion_scope(
     )
 
 
+def recommendation_readiness_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.recommendation",
+        resource_id="resource.recommendation.review-readiness",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -2181,6 +2196,14 @@ def build_development_authorization_service(
             permission_id=RECOMMENDATION_PROMOTION_READ,
             description="Read a minimized promoted recommendation draft.",
         ),
+        PermissionDefinition(
+            permission_id=RECOMMENDATION_READINESS_CREATE,
+            description="Assess one exact recommendation draft for human review readiness.",
+        ),
+        PermissionDefinition(
+            permission_id=RECOMMENDATION_READINESS_READ,
+            description="Read a minimized recommendation review-readiness assessment.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -2364,6 +2387,8 @@ def build_development_authorization_service(
                 AI_PROTECTED_RECOMMENDATION_PRESENTATION_READ,
                 RECOMMENDATION_PROMOTION_CREATE,
                 RECOMMENDATION_PROMOTION_READ,
+                RECOMMENDATION_READINESS_CREATE,
+                RECOMMENDATION_READINESS_READ,
             }
         ),
     )

@@ -82,6 +82,7 @@ from atlas.api.routes import (
     publisher_attestations,
     rca,
     recommendation_promotions,
+    recommendation_readiness,
     recommendations,
     recovery,
     registry_publications,
@@ -1203,12 +1204,30 @@ from atlas.modules.recommendations.adapters.promotion_synthetic import (
     SyntheticTrustedRecommendationPromoter,
     UnavailableTrustedRecommendationPromoter,
 )
+from atlas.modules.recommendations.adapters.readiness_memory import (
+    InMemoryRecommendationReadinessPolicySource,
+    MemoryRecommendationReadinessRepository,
+)
+from atlas.modules.recommendations.adapters.readiness_permission import (
+    AuthorizationRecommendationReadinessPermissionAuthorizer,
+)
+from atlas.modules.recommendations.adapters.readiness_postgres import (
+    PostgreSQLRecommendationReadinessRepository,
+)
+from atlas.modules.recommendations.adapters.readiness_synthetic import (
+    SyntheticTrustedRecommendationReadinessEvaluator,
+    UnavailableTrustedRecommendationReadinessEvaluator,
+)
 from atlas.modules.recommendations.adapters.synthetic import (
     SyntheticStorageRecommendationAssembler,
 )
 from atlas.modules.recommendations.application.promotion import (
     GovernedRecommendationPromotionService,
     build_development_recommendation_promotion_policy,
+)
+from atlas.modules.recommendations.application.readiness import (
+    GovernedRecommendationReadinessService,
+    build_development_recommendation_readiness_policy,
 )
 from atlas.modules.recommendations.application.service import RecommendationService
 from atlas.modules.recovery.adapters.filesystem import FilesystemBackupArchiveStore
@@ -1384,6 +1403,7 @@ def create_app(
         GovernedProtectedRecommendationPresentationService | None
     ) = None,
     recommendation_promotion_service: GovernedRecommendationPromotionService | None = None,
+    recommendation_readiness_service: GovernedRecommendationReadinessService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -4119,6 +4139,46 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if recommendation_readiness_service is not None:
+        resolved_recommendation_readiness_service = recommendation_readiness_service
+    else:
+        recommendation_readiness_repository = (
+            PostgreSQLRecommendationReadinessRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else MemoryRecommendationReadinessRepository()
+        )
+        recommendation_readiness_policies = (
+            ()
+            if is_production
+            else (
+                build_development_recommendation_readiness_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_recommendation_readiness_service = GovernedRecommendationReadinessService(
+            repository=recommendation_readiness_repository,
+            promotion_source=resolved_recommendation_promotion_service,
+            policy_source=InMemoryRecommendationReadinessPolicySource(
+                recommendation_readiness_policies
+            ),
+            permission_authorizer=(
+                AuthorizationRecommendationReadinessPermissionAuthorizer(
+                    service=resolved_authorization_service,
+                    environment=resolved_settings.environment,
+                )
+            ),
+            evaluator=(
+                UnavailableTrustedRecommendationReadinessEvaluator()
+                if is_production
+                else SyntheticTrustedRecommendationReadinessEvaluator()
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -4394,6 +4454,7 @@ def create_app(
             resolved_protected_recommendation_presentation_service
         )
         app.state.recommendation_promotion_service = resolved_recommendation_promotion_service
+        app.state.recommendation_readiness_service = resolved_recommendation_readiness_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -4406,6 +4467,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_recommendation_readiness_service.close()
         await resolved_recommendation_promotion_service.close()
         await resolved_protected_recommendation_presentation_service.close()
         await resolved_protected_recommendation_adjudication_service.close()
@@ -4584,6 +4646,7 @@ def create_app(
     app.include_router(protected_recommendation_adjudications.router, prefix="/api/v1")
     app.include_router(protected_recommendation_presentations.router, prefix="/api/v1")
     app.include_router(recommendation_promotions.router, prefix="/api/v1")
+    app.include_router(recommendation_readiness.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
