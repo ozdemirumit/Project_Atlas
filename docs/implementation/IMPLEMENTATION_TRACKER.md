@@ -4,14 +4,56 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-111 |
-| Title | Governed protected recommendation presentation foundation |
-| Status | Done |
-| Branch | `agent/protected-recommendation-presentation` |
-| Pull Request | [#123](https://github.com/ozdemirumit/Project_Atlas/pull/123) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-067 |
+| Task ID | ATLAS-IMP-112 |
+| Title | Governed recommendation domain promotion foundation |
+| Status | In Progress |
+| Branch | `agent/governed-recommendation-promotion` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-068 |
 | Last Updated | 2026-08-09 |
-| Next Action | Define the next governed recommendation lifecycle slice |
+| Next Action | Implement and validate the governed promotion boundary |
+
+### ATLAS-IMP-112 Scope Rationale
+
+- IMP-111 presents an exact protected recommendation outcome to one eligible enterprise human but
+  deliberately does not create an artifact in the existing recommendation domain.
+- ADR-068 permits a trusted deterministic promotion boundary to preserve that exact preferred,
+  tie or no-support outcome as one immutable minimized recommendation-domain draft.
+- Promotion must preserve protected lineage and safe displayed content without reranking,
+  regenerating, expanding authority or copying raw protected artifacts into ordinary persistence.
+- Review readiness, human review, approval, workflow, ITSM, execution, deployment and
+  infrastructure mutation remain later stages.
+
+### ATLAS-IMP-112 Acceptance Criteria
+
+- Only one exact completed, unexpired, integrity-valid presentation with unchanged protected
+  adjudication, candidate, impact, risk-recovery, evidence, graph, answer, model, retrieval, source,
+  policy, purpose, consumer, browser and vault lineage can enter promotion.
+- The caller supplies only exact presentation and signed promotion-policy bindings, unchanged
+  purpose, three no-authority acknowledgements, idempotency and correlation. Outcome, option,
+  content, plan, target, capability, review, approval, workflow, command and mutation controls are
+  forbidden.
+- A trusted deterministic no-network, no-model promoter preserves preferred, tie and no-support
+  outcomes exactly and creates a bounded immutable recommendation-domain artifact in `draft`.
+- Ordinary persistence and API/UI expose only safe presented content and minimized lineage. Raw
+  candidates, graph paths, comparison values, evidence payloads, receipts, command material and
+  authorization details remain protected.
+- One immutable claim prevents duplicate promotion. Exact replay reauthorizes and returns the same
+  artifact after complete source, policy, retention, vault and digest checks.
+- Success sets domain promotion only. Review readiness, human review, approval, workflow, ITSM,
+  execution, deployment and infrastructure mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny RBAC, CSRF, focused
+  outcome/lineage/replay/redaction/privacy/vault/audit tests, bounded UI, full suites, live
+  desktop/mobile validation and GitHub CI apply.
+
+### ATLAS-IMP-112 Validation Evidence
+
+- ADR-068 is accepted. IMP-111 merged as `33e2f1e2a29a86bc5be6bd2b979d47f075568c44` after PR #123
+  branch runs `31326867157` and `31327121585` and merged-main run `31327578625` passed.
+  Documentation closure commit `784321e` passed main run `31327861901` (frontend 3m59s, backend
+  5m05s, total 5m15s).
+
+### ATLAS-IMP-111 Scope Rationale
 
 ### ATLAS-IMP-111 Scope Rationale
 
