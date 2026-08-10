@@ -220,6 +220,10 @@ RECOMMENDATION_REVIEW_REQUEST_CREATE = "recommendation.human-review-request.crea
 RECOMMENDATION_REVIEW_REQUEST_READ = "recommendation.human-review-request.read"
 RECOMMENDATION_REVIEWER_ASSIGNMENT_CREATE = "recommendation.reviewer-assignment.create"
 RECOMMENDATION_REVIEWER_ASSIGNMENT_READ = "recommendation.reviewer-assignment.read"
+RECOMMENDATION_PROTECTED_INSPECTION_LEASE_CREATE = (
+    "recommendation.protected-inspection.leases.create"
+)
+RECOMMENDATION_PROTECTED_INSPECTION_LEASE_READ = "recommendation.protected-inspection.leases.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -1341,6 +1345,19 @@ def recommendation_reviewer_assignment_scope(
     )
 
 
+def recommendation_protected_inspection_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.recommendation",
+        resource_id="resource.recommendation.protected-inspection",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -2250,6 +2267,14 @@ def build_development_authorization_service(
             permission_id=RECOMMENDATION_REVIEWER_ASSIGNMENT_READ,
             description="Read minimized recommendation reviewer assignment metadata.",
         ),
+        PermissionDefinition(
+            permission_id=RECOMMENDATION_PROTECTED_INSPECTION_LEASE_CREATE,
+            description="Request an exact-assignee recommendation inspection lease.",
+        ),
+        PermissionDefinition(
+            permission_id=RECOMMENDATION_PROTECTED_INSPECTION_LEASE_READ,
+            description="Read minimized recommendation inspection lease metadata.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -2439,6 +2464,8 @@ def build_development_authorization_service(
                 RECOMMENDATION_REVIEW_REQUEST_READ,
                 RECOMMENDATION_REVIEWER_ASSIGNMENT_CREATE,
                 RECOMMENDATION_REVIEWER_ASSIGNMENT_READ,
+                RECOMMENDATION_PROTECTED_INSPECTION_LEASE_CREATE,
+                RECOMMENDATION_PROTECTED_INSPECTION_LEASE_READ,
             }
         ),
     )

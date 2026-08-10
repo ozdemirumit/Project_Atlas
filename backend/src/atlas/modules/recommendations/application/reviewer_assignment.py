@@ -358,6 +358,32 @@ class GovernedRecommendationReviewerAssignmentService:
     async def close(self) -> None:
         await self._repository.close()
 
+    async def protected_inspection_source(
+        self, *, assignment_set_id: str
+    ) -> tuple[
+        RecommendationReviewerAssignmentRecord,
+        RecommendationReviewerAssignmentPolicySnapshot,
+    ]:
+        record = await self._repository.get(assignment_set_id=assignment_set_id)
+        if record is None:
+            raise RecommendationReviewerAssignmentError(
+                "recommendation_reviewer_assignment_not_found"
+            )
+        if record.canonical_digest != self._record_digest(record):
+            raise RecommendationReviewerAssignmentError(
+                "recommendation_reviewer_assignment_integrity_failed"
+            )
+        policy = await self._policy_source.get_by_id(policy_id=record.assignment_policy_id)
+        if (
+            policy is None
+            or policy.canonical_digest != record.assignment_policy_digest
+            or policy.canonical_digest != self._digest(self._payload(policy))
+        ):
+            raise RecommendationReviewerAssignmentError(
+                "recommendation_reviewer_assignment_policy_invalid"
+            )
+        return record, policy
+
     async def _read_source(
         self,
         actor: AuthenticatedSubject,

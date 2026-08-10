@@ -174,6 +174,8 @@ from atlas.modules.authorization.application.bootstrap import (
     RECOMMENDATION_CREATE,
     RECOMMENDATION_PROMOTION_CREATE,
     RECOMMENDATION_PROMOTION_READ,
+    RECOMMENDATION_PROTECTED_INSPECTION_LEASE_CREATE,
+    RECOMMENDATION_PROTECTED_INSPECTION_LEASE_READ,
     RECOMMENDATION_READINESS_CREATE,
     RECOMMENDATION_READINESS_READ,
     RECOMMENDATION_REVIEW_REQUEST_CREATE,
@@ -278,6 +280,7 @@ from atlas.modules.authorization.application.bootstrap import (
     operational_knowledge_track_review_decision_scope,
     rca_scope,
     recommendation_promotion_scope,
+    recommendation_protected_inspection_scope,
     recommendation_readiness_scope,
     recommendation_review_request_scope,
     recommendation_reviewer_assignment_scope,
@@ -5445,5 +5448,62 @@ async def authorize_recommendation_reviewer_assignment_read(
         request,
         subject,
         permission_id=RECOMMENDATION_REVIEWER_ASSIGNMENT_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def _authorize_recommendation_protected_inspection(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.recommendation.protected-inspection",
+            scope=recommendation_protected_inspection_scope(
+                subject.organization_id,
+                settings.environment,
+                capability_class,
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail="The current identity cannot access recommendation inspection leases.",
+        )
+    return decision
+
+
+async def authorize_recommendation_protected_inspection_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_recommendation_protected_inspection(
+        request,
+        subject,
+        permission_id=RECOMMENDATION_PROTECTED_INSPECTION_LEASE_CREATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_recommendation_protected_inspection_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_recommendation_protected_inspection(
+        request,
+        subject,
+        permission_id=RECOMMENDATION_PROTECTED_INSPECTION_LEASE_READ,
         capability_class=CapabilityClass.C1_READ_ONLY,
     )

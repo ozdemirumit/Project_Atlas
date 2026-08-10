@@ -4,14 +4,82 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-115 |
-| Title | Governed recommendation reviewer-assignment foundation |
-| Status | Done |
-| Branch | `agent/recommendation-reviewer-assignment` |
-| Pull Request | [#127](https://github.com/ozdemirumit/Project_Atlas/pull/127) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-071 |
+| Task ID | ATLAS-IMP-116 |
+| Title | Governed recommendation protected-inspection lease foundation |
+| Status | Review |
+| Branch | `agent/recommendation-protected-inspection` |
+| Pull Request | [#128](https://github.com/ozdemirumit/Project_Atlas/pull/128) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-072 |
 | Last Updated | 2026-08-10 |
-| Next Action | Select and begin the next approved recommendation-review vertical slice |
+| Next Action | Complete PR #128 CI, merge, and merged-main verification |
+
+### ATLAS-IMP-116 Scope Rationale
+
+- IMP-115 binds distinct accountable humans to technical and service-impact review tracks but
+  deliberately opens no protected content and returns no access handle.
+- ADR-072 permits only the exact assigned reviewer to claim a short-lived browser-bound lease for
+  their own track without returning content or a bearer secret through JSON.
+- Lease creation changes only local inspection-access state. Disclosure, findings, decisions,
+  correction, approval, workflow, ITSM and all operational authority remain later stages.
+
+### ATLAS-IMP-116 Acceptance Criteria
+
+- Only one exact unexpired, integrity-valid `reviewers_assigned` record and selected assigned track
+  with complete recommendation lineage can enter lease orchestration.
+- Caller controls for identity, digest, queue, duration, secret, content, finding, decision,
+  approval, workflow, command and mutation are forbidden.
+- Current hardware-MFA enterprise identity must match the selected assignment's reviewer digest
+  under the signed assignment subject-digest profile; cross-track claims fail closed.
+- A unique assignment-set-plus-track claim produces at most one non-refreshable, browser-bound
+  lease with maximum ten-minute TTL. Exact replay reauthorizes but never reissues a secret.
+- The secret appears only in a path-scoped `HttpOnly`, `SameSite=Strict` cookie and is `Secure`
+  outside local development; JSON, persistence, logs and frontend state contain only digests.
+- Success sets `content_inspection_opened=true`, `content_disclosed=false` and zero returned bytes.
+  Findings, decisions, approval, workflow, ITSM, execution, deployment and mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny C2 create/C1 read RBAC,
+  CSRF, focused source/assignee/cross-track/replay/expiry/tamper/redaction/audit tests, bounded UI,
+  full suites, live desktop validation and GitHub CI apply.
+
+### ATLAS-IMP-116 Initial Evidence
+
+- IMP-115 merged through PR #127 as `b23bfde8cc1944d066df0e7bcb4717da603dca74` after branch
+  run `31339863831` and merged-main run `31340062662` passed.
+- Documentation closure commit `3e90bea7cadb80253c96b5cd0e828872761d216b` passed main
+  run `31340340434` (frontend 4m09s, backend 5m18s).
+- ADR-072 is accepted and this branch owns the implementation slice.
+
+### ATLAS-IMP-116 Validation Evidence
+
+- The service rehydrates one exact unexpired `reviewers_assigned` record, verifies its canonical
+  digest and signed assignment policy, rejects a mismatched recommendation path or opaque
+  assignment ID before claim, and derives the current identity digest under the exact assignment
+  salt profile. A technical reviewer cannot claim the service-impact track and vice versa.
+- One immutable assignment-set-plus-track claim permits a single non-refreshable lease. Exact
+  replay reauthorizes and returns no secret. Expired or future-dated source/authentication state,
+  permission denial, unavailable broker, changed idempotency input and uncertain persistence fail
+  closed without protected content or operational authority.
+- The trusted development broker uses no network or model. Plaintext lease material crosses the
+  HTTP boundary once into a path-scoped `HttpOnly`, `SameSite=Strict` cookie that is `Secure`
+  outside development. JSON, ordinary persistence, logs and frontend state expose no secret or
+  browser-binding digest.
+- Success records only `content_inspection_opened=true`, `content_disclosed=false` and
+  `protected_content_bytes_returned=0`. Human findings, review completion, approval, workflow,
+  ITSM, execution, deployment and infrastructure mutation remain false.
+- Dedicated default-deny C2 create and C1 read permissions, recent hardware-MFA checks, CSRF,
+  strict minimized schemas, memory/PostgreSQL parity and Alembic revision `20260810_0088` are
+  implemented. Alembic reports one head; empty-to-head PostgreSQL SQL contains both new tables.
+- Ruff formatting and lint passed across `1088` Python files. Strict mypy found no issues in `890`
+  source files. The complete backend suite passed `908` tests with three expected Windows symlink
+  skips; focused recommendation inspection, assignment and health coverage passed `26` tests.
+- Frontend ESLint and TypeScript passed. Vitest passed `54` files with `86` tests and the production
+  build completed (CSS 128.59 kB / 21.34 kB gzip; JavaScript 1,072.09 kB / 192.60 kB gzip). The
+  existing bundle-size notice remains non-blocking.
+- Live validation used backend port `8081` and frontend port `5240`. Liveness passed, OpenAPI
+  exposed `218` paths and both new routes, and the Local Operator reached the healthy Connector
+  lifecycle. `Recommendation inspection lease` rendered as the latest capability at `1280x720`
+  with body/document width exactly `1280` and no horizontal overflow. The Local Operator is
+  intentionally excluded from reviewer assignment, so no live lease was minted with that identity;
+  exact-assignee issuance and cookie attributes are covered by the HTTP integration test.
 
 ### ATLAS-IMP-115 Scope Rationale
 

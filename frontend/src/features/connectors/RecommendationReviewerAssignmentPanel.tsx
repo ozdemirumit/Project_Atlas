@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { RecommendationReviewRequestResult } from "../../api/recommendationReviewRequests";
 import { createRecommendationReviewerAssignment } from "../../api/recommendationReviewerAssignments";
+import { RecommendationProtectedInspectionPanel } from "./RecommendationProtectedInspectionPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -117,6 +118,7 @@ export function RecommendationReviewerAssignmentPanel({
         </div>
       )}
       {result && (
+        <>
         <div className="package-signing-record" data-testid="recommendation-reviewer-assignment">
           <div className="section-heading compact-heading">
             <div>
@@ -143,6 +145,8 @@ export function RecommendationReviewerAssignmentPanel({
             findings, decisions, approvals, and operations remain separate governed stages.
           </p>
         </div>
+        <RecommendationProtectedInspectionPanel assignmentResult={result} />
+        </>
       )}
     </section>
   );
