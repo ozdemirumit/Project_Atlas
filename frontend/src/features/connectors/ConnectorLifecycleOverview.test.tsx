@@ -9,7 +9,7 @@ describe("ConnectorLifecycleOverview", () => {
 
     expect(screen.getByRole("heading", { name: "Connector lifecycle" })).toBeVisible();
     expect(screen.getByLabelText("Delivery status")).toHaveTextContent(
-      "11Available stages0In progressRecommendation correction resubmissionLatest available capability",
+      "12Available stages0In progressFinal recommendation dispositionLatest available capability",
     );
     expect(screen.getAllByText("Available")).toHaveLength(10);
     expect(screen.getByText("Evidence preservation")).toBeVisible();
@@ -34,7 +34,8 @@ describe("ConnectorLifecycleOverview", () => {
     expect(screen.getByText("Recommendation human review findings")).toBeVisible();
     expect(screen.getByText("Recommendation protected finding presentation")).toBeVisible();
     expect(screen.getByText("Recommendation track review decision")).toBeVisible();
-    expect(screen.getAllByText("Recommendation correction resubmission")).toHaveLength(2);
+    expect(screen.getByText("Recommendation correction resubmission")).toBeVisible();
+    expect(screen.getAllByText("Final recommendation disposition")).toHaveLength(2);
     expect(screen.getByText("AI context")).toBeVisible();
     expect(screen.getByText("In progress")).toBeVisible();
     expect(screen.queryByText("Not enabled")).not.toBeInTheDocument();

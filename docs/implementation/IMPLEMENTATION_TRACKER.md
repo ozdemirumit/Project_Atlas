@@ -4,14 +4,92 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-121 |
-| Title | Governed recommendation correction and resubmission |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#133](https://github.com/ozdemirumit/Project_Atlas/pull/133) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-077 |
+| Task ID | ATLAS-IMP-122 |
+| Title | Governed final recommendation disposition |
+| Status | Review |
+| Branch | `agent/recommendation-final-disposition` |
+| Pull Request | [#134](https://github.com/ozdemirumit/Project_Atlas/pull/134) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-078 |
 | Last Updated | 2026-08-10 |
-| Next Action | Define the next architecture-approved implementation slice |
+| Next Action | Complete PR #134 GitHub CI, merge and verify merged-main CI |
+
+### ATLAS-IMP-122 Scope Rationale
+
+- IMP-120 records exact immutable technical and service-impact decisions; two passes are readiness
+  evidence but deliberately create no final recommendation acceptance.
+- IMP-121 creates a fresh immutable recommendation generation when either track requires changes,
+  so only an unchanged generation whose two exact tracks passed is eligible for final disposition.
+- ADR-078 binds one independent accountable human's accepted or rejected disposition to that exact
+  generation without creating workflow, ITSM, change approval or operational authority.
+
+### ATLAS-IMP-122 Acceptance Criteria
+
+- Both exact track decisions must bind one review request, assignment set, readiness assessment,
+  promoted recommendation version and policy generation; both are passed and no correction or
+  prior disposition exists. Missing, mixed, duplicate, changes-required or drifted input fails
+  closed.
+- Only a distinct enterprise human in the exact tenant with recent hardware MFA, normal browser
+  session, dedicated C2 create/C1 read and separation from the recommendation consumer, both
+  reviewers, signer and attestor may decide.
+- Caller input contains exact lineage, one policy-approved accepted/rejected disposition, compatible
+  structured basis codes, signed policy, purpose and acknowledgements only. No content, finding,
+  narrative, artifact coordinate, identity or authority field enters API, persistence or audit.
+- Intent audit and an atomic unique review-request claim precede a trusted attestor. Exact
+  idempotent reuse is permitted; concurrency or uncertainty after claim remains claimed. Production
+  fails closed without an approved attestor.
+- Accepted sets final disposition, recommendation approval and handoff eligibility evidence only;
+  rejected records a final rejection. Neither creates correction, workflow, ITSM, change approval,
+  execution, deployment or infrastructure mutation.
+- Memory/PostgreSQL parity, one Alembic head, strict minimized schemas, default-deny RBAC, CSRF,
+  focused lineage/separation/disposition/idempotency/concurrency/privacy tests, bounded UI, full
+  suites, live validation and GitHub CI apply.
+
+### ATLAS-IMP-122 Initial Evidence
+
+- IMP-121 merged through PR #133 as `c3915a88001960ad157b0229505339679ee35400`; PR run
+  `31364819067` and merged-main run `31365390166` passed both frontend and backend jobs.
+- IMP-121 closure commit `ec9c7bb40e3e95fd627ee65eec040ecf08b963fd` passed main run
+  `31365813313` with both frontend and backend jobs successful.
+- ADR-078 is accepted and this branch owns the implementation slice.
+
+### ATLAS-IMP-122 Validation Evidence
+
+- The final-disposition service reconstructs the exact technical and service-impact review
+  generation, requires two distinct passed track decisions under one policy generation and rejects
+  missing, mixed, corrected, drifted or later-authority source state before claim creation.
+- A current enterprise human with recent hardware-backed MFA and exact tenant scope is required.
+  The approver is cryptographically separated from the original recommendation consumer, both
+  reviewers, policy signer, attestor and non-human identities.
+- Strict request and response schemas accept exact identifiers and digests, one policy-compatible
+  accepted/rejected code, structured basis codes, purpose and acknowledgements only. Content,
+  findings, free-form rationale, artifact coordinates, raw identities, credentials, commands and
+  caller-selected lifecycle or authority fields are rejected by backend and frontend validators.
+- Required intent audit and an atomic unique review-request claim precede trusted attestation.
+  Exact idempotent replay returns the first immutable record; conflicting replay, an in-flight
+  concurrent request and uncertainty after claim all fail closed without replacing the claim.
+- Accepted disposition creates only recommendation approval and later handoff eligibility
+  evidence. Rejected disposition creates neither. Both leave correction, workflow, ITSM, change
+  approval, execution, deployment and infrastructure mutation false.
+- Memory and PostgreSQL metadata repositories are covered. Migration `20260810_0094` creates only
+  final-disposition claim and immutable metadata tables and leaves one Alembic head. Its 63-line
+  PostgreSQL offline SQL produced zero forbidden content, narrative, artifact-coordinate, secret,
+  command, cookie, raw-identity or model-output matches. Production has no synthetic policy or
+  trusted attestor and therefore fails closed.
+- Dedicated default-deny create/read permissions and an exact C2/C1 final-disposition scope are
+  registered. Mutating API requests retain browser-session, CSRF and no-store response boundaries.
+- Backend Ruff formatting/lint and strict mypy passed across 1,155 files and 945 source files. The
+  current full backend suite passed 953 tests with three Windows-only symlink skips, including all
+  ten focused lineage, separation, disposition, idempotency, concurrency, uncertainty, privacy
+  and persistence scenarios.
+- Frontend ESLint, TypeScript and production build passed. The full frontend suite passed 100 tests
+  across 60 files, including exact unordered decision-binding comparison and rejection of content,
+  sensitive identity or later operational authority in the transport response.
+- The bounded UI advertises `Final recommendation disposition` in lifecycle coverage and as the
+  latest available capability. No final-approver action is placed in either reviewer-bound panel.
+- Live development validation through `http://127.0.0.1:5252/` showed 12 available stages, zero in
+  progress and the new capability in both expected locations. Desktop client/scroll width was
+  1,440 pixels; the 390-pixel mobile override reported a 375-pixel client and scroll width, kept
+  the complete AI-context capability list readable and produced no browser warning or error logs.
 
 ### ATLAS-IMP-121 Scope Rationale
 
