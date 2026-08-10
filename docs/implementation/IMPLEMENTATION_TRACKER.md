@@ -4,14 +4,76 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-129 |
-| Title | Security Export presentation extraction |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#141](https://github.com/ozdemirumit/Project_Atlas/pull/141) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-020, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-034, ATLAS-035, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085 |
+| Task ID | ATLAS-IMP-130 |
+| Title | Release Preflight presentation extraction |
+| Status | In Progress |
+| Branch | `agent/release-preflight-presentation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ATLAS-059, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086 |
 | Last Updated | 2026-08-10 |
-| Next Action | Define the release/bootstrap presentation ownership and authority boundary |
+| Next Action | Publish IMP-130, verify PR and merged-main CI, then close the task |
+
+### ATLAS-IMP-130 Scope Rationale
+
+- IMP-129 closed with a separate 3.92 KB Security Export chunk and reduced the transitional
+  operational chunk from 830.62 KB to 828.09 KB.
+- Release/bootstrap combines small immutable readiness panels with a much larger lease-bound,
+  phase-changing workflow. Moving both together would blur evidence and deployment authority.
+- ADR-086 accepts the approximately 75-line Release Preflight presentation as the first bounded
+  slice while query, identity, selection state and downstream bootstrap composition remain parent
+  responsibilities.
+
+### ATLAS-IMP-130 Acceptance Criteria
+
+- Authorized release/build identity, mode/profile controls, manifest checks, evidence, remediation
+  and no-execution notice move into one independently tested lazy feature.
+- Parent mode/profile state and authorized query remain unchanged and delegate through controlled
+  typed callbacks.
+- Forbidden or absent reports remain absent; Connector routes do not download, evaluate or mount
+  the feature.
+- A passed preflight never claims release approval, change approval, installation, deployment,
+  bootstrap lease, phase execution or infrastructure-mutation authority.
+- No API, query cache, identity, RBAC, release artifact, signature, deployment or bootstrap authority
+  moves into presentation.
+- ESLint, TypeScript, full frontend tests and production build pass with a separate feature chunk.
+- Live desktop/mobile validation covers mode/profile selection, evidence, route isolation, overflow
+  and final application warning/error state.
+
+### ATLAS-IMP-130 Initial Evidence
+
+- IMP-129 merged through PR #141 as `9c8e2702181104b76f0f2dc8d451ac2cb3ac67ab`; PR run
+  `31409424204` and merged-main run `31410165766` passed frontend and backend jobs.
+- IMP-129 closure commit `4cce27f31c58665ba4b9681f29baf8774840bc7a` passed independent main
+  CI run `31410859756` with both jobs successful.
+- Security Export is a separate 3.92 KB feature chunk. The production entry is 247.63 KB and the
+  deferred operational chunk is 828.09 KB.
+
+### ATLAS-IMP-130 Validation Evidence
+
+- `ReleasePreflightWorkspace.tsx` owns authorized report identity, mode/profile controls, checks,
+  evidence, remediation and no-execution presentation only; query, identity, selected inputs and
+  downstream bootstrap composition remain in `App.tsx`.
+- Three focused component tests cover immutable evidence, controlled mode/profile callbacks,
+  remediation and no-authority language. Existing application integration tests preserve refetch
+  behavior and forbidden-report absence; focused validation passed five tests across two files.
+- ESLint and no-write TypeScript passed. The full frontend suite passed 72 files and 138 tests.
+- Production build transformed 1,989 modules and emitted a separate 2.53 KB Release Preflight chunk.
+  The transitional operational chunk decreased from 828.09 KB to 826.14 KB.
+- Initial desktop measurement found the four-column controls surface expanding a 653 px workspace
+  to 696 px. The grid now uses zero-minimum flexible tracks and bounded selects; repeat measurement
+  passed with document 1280/1280 px and workspace/controls/check grid each 653/653 px.
+- Live desktop mode/profile selection changed the authorized query inputs to `mirrored` and
+  `developer`, preserved check evidence and the no-execution notice, and left the application log
+  empty.
+- A fresh direct Connector route rendered its own governed analysis workspace, did not render or
+  load the Release Preflight workspace and had no application warning/error log.
+- Mobile validation passed at a 375 CSS-pixel viewport: the document remained 375/375 px and the
+  workspace, controls and check grid remained 349/349 px. The isolated validation iframe emitted
+  only the known Browser instrumentation `MutationObserver` error; direct Atlas pages were clean.
+- Post-CSS focused lint, no-write TypeScript and five integration/component tests passed. The final
+  production build retained the 2.53 KB feature chunk and 826.14 KB transitional operational chunk.
+- GitHub publication remains pending.
+
 
 ### ATLAS-IMP-129 Scope Rationale
 
