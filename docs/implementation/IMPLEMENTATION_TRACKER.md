@@ -6,9 +6,9 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-118 |
 | Title | Governed recommendation human review findings |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/recommendation-review-findings` |
-| Pull Request | Pending |
+| Pull Request | [#130](https://github.com/ozdemirumit/Project_Atlas/pull/130) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-074 |
 | Last Updated | 2026-08-10 |
 | Next Action | Open the implementation pull request and complete GitHub CI review |
@@ -49,6 +49,7 @@
 - IMP-117 closure commit `1d162412e28c60123e7c81651a6ecc39d90c9105` passed main run
   `31346965647` (frontend 4m21s, backend 6m13s).
 - ADR-074 is accepted and this branch owns the implementation slice.
+- Implementation commit `e158a8b` is under review in PR #130.
 
 ### ATLAS-IMP-118 Validation Evidence
 
