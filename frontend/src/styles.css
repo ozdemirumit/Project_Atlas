@@ -4490,6 +4490,57 @@ textarea:focus-visible {
   background: #f7f9f8;
 }
 
+.workspace-route-state {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 32px;
+  color: #33413d;
+  background: #f7f9f8;
+  text-align: left;
+}
+
+.workspace-route-cache[hidden] {
+  display: none !important;
+}
+
+.workspace-route-state h1,
+.workspace-route-state p {
+  margin: 0;
+}
+
+.workspace-route-state h1 {
+  color: #1f2d2a;
+  font-size: 18px;
+}
+
+.workspace-route-state p {
+  margin-top: 5px;
+  color: #687570;
+  font-size: 12px;
+}
+
+.workspace-route-spinner {
+  color: #36739a;
+  animation: workspace-route-spin 900ms linear infinite;
+}
+
+.workspace-route-error > svg {
+  color: #9b532e;
+}
+
+.workspace-route-error .secondary-button {
+  margin-top: 16px;
+}
+
+@keyframes workspace-route-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .workspace-overview-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

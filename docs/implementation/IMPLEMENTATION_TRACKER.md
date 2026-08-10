@@ -4,14 +4,80 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-123 |
-| Title | Operational workspace information architecture and application-shell consolidation |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#135](https://github.com/ozdemirumit/Project_Atlas/pull/135) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-001 through ADR-079 |
+| Task ID | ATLAS-IMP-124 |
+| Title | Health workspace loading boundary and route-level code splitting |
+| Status | In Progress |
+| Branch | `agent/health-workspace-code-splitting` |
+| Pull Request | [#136](https://github.com/ozdemirumit/Project_Atlas/pull/136) |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080 |
 | Last Updated | 2026-08-10 |
-| Next Action | Define and implement the Health workspace extraction and route-level code-splitting slice |
+| Next Action | Validate PR #136 in CI, merge it, verify merged-main CI and close IMP-124 |
+
+### ATLAS-IMP-124 Scope Rationale
+
+- ADR-079 established truthful workspace navigation, but the frontend entry module still owns
+  approximately 14,236 lines and imports every Health, governance, release and Connector operation.
+- The baseline production JavaScript entry is 1,111,840 bytes and triggers Vite's 500 KB chunk
+  warning even when the normal authenticated entry route is Workspace.
+- ADR-080 accepts a small route coordinator, an authenticated Workspace landing and a lazy
+  operational module as the next bounded extraction step.
+
+### ATLAS-IMP-124 Acceptance Criteria
+
+- The frontend entry module owns route selection and loading only; operational queries, mutations,
+  sign-in and domain state move to a separately loaded module without behavior changes.
+- Authenticated Workspace renders without loading the operational module. Health, Connectors,
+  approval deep links and unauthenticated sign-in load it through a static lazy import.
+- Workspace navigation, direct links, refresh, browser history and unknown-route fallback remain
+  deterministic and do not duplicate authority state.
+- Loading and chunk-failure states are explicit, accessible, retryable and do not invent platform,
+  identity, health or permission state.
+- Existing sign-in, sign-out, Health, Connector, approval, composer and inspector behavior remains
+  covered and green; no backend contract changes.
+- ESLint, TypeScript, full frontend tests and production build pass. Build output proves a smaller
+  entry chunk and a separate operational chunk.
+- Live desktop and 390-pixel mobile checks cover Workspace and direct Health/Connectors routes,
+  responsive navigation, overflow, loading behavior and final console errors.
+
+### ATLAS-IMP-124 Initial Evidence
+
+- IMP-123 merged through PR #135 as `af7dd22b06febed5d9acd08d0c6e8d9fa8780ff6`;
+  PR run `31379702921` and merged-main run `31380299733` passed backend and frontend jobs.
+- IMP-123 closure commit `acc2ef0ddaec2c0e9764635a61da96c800dd4e11` passed independent main
+  CI run `31380818214` with both jobs successful.
+- The baseline production JavaScript entry is 1,111,840 bytes and no route-level operational chunk
+  exists. ADR-080 is accepted and this branch owns the loading-boundary slice.
+
+### ATLAS-IMP-124 Validation Evidence
+
+- `ApplicationCoordinator.tsx` is a 149-line, 5,067-byte route and identity coordinator. The
+  existing `App.tsx` operational behavior is exposed through a controlled lazy
+  `OperationalApplication` boundary whose active Health/Connectors workspace is supplied by the
+  coordinator; URL state is no longer owned by domain code.
+- Authenticated Workspace renders its 13 capabilities without evaluating the operational module.
+  Health, Connectors and unauthenticated sign-in load the static local module through React lazy and
+  Suspense. Explicit loading, identity-failure and chunk-failure states fail closed and expose no
+  inferred health, identity, permission or authority.
+- Once loaded, the operational application remains mounted but hidden while Workspace is active.
+  Live Health-to-Workspace-to-Health validation preserved the closed inspector state, proving that
+  navigation does not discard in-progress operational context.
+- Unknown hashes canonicalize to `#/workspace`; direct `#/health`, `#/connectors`, browser-history
+  and `approval_request_id` routes remain covered. Health content, its composer and inspector remain
+  absent from Connectors, and the Workspace landing does not present operational state.
+- Full frontend ESLint and TypeScript passed with explicit successful exit codes. The full Vitest
+  suite passed 116 tests across 66 files. Production build passed after transforming 1,983 modules.
+- The production entry JavaScript decreased from 1,111,840 bytes to 246,766 bytes, a 77.8 percent
+  reduction. Vite emits a separate 870,352-byte `OperationalApplication` chunk. The remaining
+  greater-than-500-KB warning applies only to that deferred chunk and is the explicit input to later
+  Health/Connector domain extraction slices.
+- Live validation used `http://127.0.0.1:5266`. A fresh Workspace load requested the coordinator graph but no
+  `OperationalApplication` resource; Health navigation then requested the operational module.
+  Direct Connectors loaded its own workspace without Health or composer leakage.
+- Desktop Workspace and Health measured equal 1,280-pixel client and scroll widths. A clean
+  390-by-844 viewport reported a 375-pixel client and scroll width, all 13 capabilities, no clipped
+  capability rows, a functional modal sidebar and a successful Health transition. The viewport was
+  reset; the final desktop Workspace had equal client/scroll width and an empty browser warning and
+  error log.
 
 ### ATLAS-IMP-123 Scope Rationale
 
