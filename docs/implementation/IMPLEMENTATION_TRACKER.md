@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-128 |
 | Title | Health scheduled-checks presentation extraction |
-| Status | In Progress |
-| Branch | `agent/health-scheduled-checks-presentation` |
-| Pull Request | Pending |
+| Status | Complete |
+| Branch | `main` |
+| Pull Request | [#140](https://github.com/ozdemirumit/Project_Atlas/pull/140) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-040, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084 |
 | Last Updated | 2026-08-10 |
-| Next Action | Publish IMP-128, verify PR and merged-main CI, then close the task |
+| Next Action | Define and implement the Security Export presentation extraction slice |
 
 ### ATLAS-IMP-128 Scope Rationale
 
@@ -64,7 +64,10 @@
   workspace remained 349/349 px. Tabs and observation table scrolled within their own 349/455 px
   and 319/500 px containers without widening the document. The isolated validation iframe emitted
   only the known Browser instrumentation `MutationObserver` error; direct Atlas pages were clean.
-- GitHub publication remains pending.
+- PR #140 passed Continuous Integration run `31405170482` with successful frontend and backend
+  jobs, then squash-merged as `4f8a1361c3e9f039b0f3242770d9fda6e64782a8`.
+- The merged `main` commit passed independent push CI run `31405919185` with successful frontend and
+  backend jobs.
 
 ### ATLAS-IMP-127 Scope Rationale
 
