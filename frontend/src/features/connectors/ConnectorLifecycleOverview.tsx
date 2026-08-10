@@ -139,6 +139,7 @@ const lifecycleStages: readonly LifecycleStage[] = [
       { name: "Recommendation inspection lease" },
       { name: "Recommendation content presentation" },
       { name: "Recommendation human review findings" },
+      { name: "Recommendation protected finding presentation" },
     ],
   },
 ];
@@ -165,7 +166,7 @@ export function ConnectorLifecycleOverview() {
           <span>In progress</span>
         </div>
         <div>
-          <strong>Recommendation human review findings</strong>
+          <strong>Recommendation protected finding presentation</strong>
           <span>Latest available capability</span>
         </div>
       </div>

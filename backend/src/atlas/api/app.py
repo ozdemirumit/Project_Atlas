@@ -81,6 +81,7 @@ from atlas.api.routes import (
     publication_preparations,
     publisher_attestations,
     rca,
+    recommendation_finding_presentations,
     recommendation_human_review_findings,
     recommendation_promotions,
     recommendation_protected_contents,
@@ -1195,6 +1196,20 @@ from atlas.modules.platform.application.release_preflight import ReleasePrefligh
 from atlas.modules.platform.application.service import PlatformStatusService
 from atlas.modules.rca.adapters.synthetic import SyntheticStorageRcaAssembler
 from atlas.modules.rca.application.service import RcaService
+from atlas.modules.recommendations.adapters.finding_presentation_memory import (
+    InMemoryRecommendationFindingPresentationPolicySource,
+    InMemoryRecommendationFindingPresentationRepository,
+)
+from atlas.modules.recommendations.adapters.finding_presentation_permission import (
+    AuthorizationRecommendationFindingPresentationPermissionAuthorizer,
+)
+from atlas.modules.recommendations.adapters.finding_presentation_postgres import (
+    PostgreSQLRecommendationFindingPresentationRepository,
+)
+from atlas.modules.recommendations.adapters.finding_presentation_synthetic import (
+    SyntheticRecommendationFindingPresenter,
+    UnavailableRecommendationFindingPresenter,
+)
 from atlas.modules.recommendations.adapters.human_review_finding_memory import (
     InMemoryRecommendationHumanReviewFindingPolicySource,
     InMemoryRecommendationHumanReviewFindingRepository,
@@ -1295,6 +1310,13 @@ from atlas.modules.recommendations.adapters.reviewer_assignment_synthetic import
 )
 from atlas.modules.recommendations.adapters.synthetic import (
     SyntheticStorageRecommendationAssembler,
+)
+from atlas.modules.recommendations.application.finding_presentation import (
+    RecommendationFindingPresentationService,
+    build_development_recommendation_finding_presentation_policy,
+)
+from atlas.modules.recommendations.application.finding_presentation_ports import (
+    RecommendationFindingPresenter,
 )
 from atlas.modules.recommendations.application.human_review_finding import (
     RecommendationHumanReviewFindingService,
@@ -1514,6 +1536,9 @@ def create_app(
     recommendation_protected_content_service: RecommendationProtectedContentService | None = None,
     recommendation_human_review_finding_service: (
         RecommendationHumanReviewFindingService | None
+    ) = None,
+    recommendation_finding_presentation_service: (
+        RecommendationFindingPresentationService | None
     ) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
@@ -4464,6 +4489,9 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    recommendation_human_review_finding_recorder: (
+        RecommendationHumanReviewFindingRecorder | None
+    ) = None
     if recommendation_human_review_finding_service is not None:
         resolved_recommendation_human_review_finding_service = (
             recommendation_human_review_finding_service
@@ -4488,7 +4516,7 @@ def create_app(
                 ),
             )
         )
-        recommendation_human_review_finding_recorder: RecommendationHumanReviewFindingRecorder = (
+        recommendation_human_review_finding_recorder = (
             UnavailableRecommendationHumanReviewFindingRecorder()
             if is_production
             else SyntheticRecommendationHumanReviewFindingRecorder()
@@ -4507,6 +4535,58 @@ def create_app(
                     )
                 ),
                 recorder=recommendation_human_review_finding_recorder,
+                audit_sink=resolved_audit_sink,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+        )
+    if recommendation_finding_presentation_service is not None:
+        resolved_recommendation_finding_presentation_service = (
+            recommendation_finding_presentation_service
+        )
+    else:
+        recommendation_finding_presentation_repository = (
+            PostgreSQLRecommendationFindingPresentationRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryRecommendationFindingPresentationRepository()
+        )
+        recommendation_finding_presentation_policies = (
+            ()
+            if is_production
+            else (
+                build_development_recommendation_finding_presentation_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        recommendation_finding_presenter: RecommendationFindingPresenter = (
+            SyntheticRecommendationFindingPresenter(
+                recorder=recommendation_human_review_finding_recorder
+            )
+            if isinstance(
+                recommendation_human_review_finding_recorder,
+                SyntheticRecommendationHumanReviewFindingRecorder,
+            )
+            else UnavailableRecommendationFindingPresenter()
+        )
+        resolved_recommendation_finding_presentation_service = (
+            RecommendationFindingPresentationService(
+                repository=recommendation_finding_presentation_repository,
+                source=resolved_recommendation_human_review_finding_service,
+                policy_source=InMemoryRecommendationFindingPresentationPolicySource(
+                    recommendation_finding_presentation_policies
+                ),
+                permission_authorizer=(
+                    AuthorizationRecommendationFindingPresentationPermissionAuthorizer(
+                        service=resolved_authorization_service,
+                        environment=resolved_settings.environment,
+                    )
+                ),
+                presenter=recommendation_finding_presenter,
                 audit_sink=resolved_audit_sink,
                 environment_id=f"environment.{resolved_settings.environment}",
             )
@@ -4802,6 +4882,9 @@ def create_app(
         app.state.recommendation_human_review_finding_service = (
             resolved_recommendation_human_review_finding_service
         )
+        app.state.recommendation_finding_presentation_service = (
+            resolved_recommendation_finding_presentation_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -4814,6 +4897,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_recommendation_finding_presentation_service.close()
         await resolved_recommendation_human_review_finding_service.close()
         await resolved_recommendation_protected_content_service.close()
         await resolved_recommendation_protected_inspection_service.close()
@@ -5004,6 +5088,7 @@ def create_app(
     app.include_router(recommendation_protected_inspections.router, prefix="/api/v1")
     app.include_router(recommendation_protected_contents.router, prefix="/api/v1")
     app.include_router(recommendation_human_review_findings.router, prefix="/api/v1")
+    app.include_router(recommendation_finding_presentations.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
