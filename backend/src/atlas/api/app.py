@@ -81,6 +81,7 @@ from atlas.api.routes import (
     publication_preparations,
     publisher_attestations,
     rca,
+    recommendation_correction_resubmissions,
     recommendation_finding_presentations,
     recommendation_human_review_findings,
     recommendation_promotions,
@@ -1197,6 +1198,20 @@ from atlas.modules.platform.application.release_preflight import ReleasePrefligh
 from atlas.modules.platform.application.service import PlatformStatusService
 from atlas.modules.rca.adapters.synthetic import SyntheticStorageRcaAssembler
 from atlas.modules.rca.application.service import RcaService
+from atlas.modules.recommendations.adapters.correction_resubmission_memory import (
+    InMemoryRecommendationCorrectionPolicySource,
+    InMemoryRecommendationCorrectionRepository,
+)
+from atlas.modules.recommendations.adapters.correction_resubmission_permission import (
+    AuthorizationRecommendationCorrectionPermissionAuthorizer,
+)
+from atlas.modules.recommendations.adapters.correction_resubmission_postgres import (
+    PostgreSQLRecommendationCorrectionRepository,
+)
+from atlas.modules.recommendations.adapters.correction_resubmission_synthetic import (
+    SyntheticRecommendationCorrectionAdapter,
+    UnavailableRecommendationCorrectionAdapter,
+)
 from atlas.modules.recommendations.adapters.finding_presentation_memory import (
     InMemoryRecommendationFindingPresentationPolicySource,
     InMemoryRecommendationFindingPresentationRepository,
@@ -1277,6 +1292,9 @@ from atlas.modules.recommendations.adapters.readiness_permission import (
 from atlas.modules.recommendations.adapters.readiness_postgres import (
     PostgreSQLRecommendationReadinessRepository,
 )
+from atlas.modules.recommendations.adapters.readiness_promotion_source import (
+    RecommendationReadinessPromotionSourceRouter,
+)
 from atlas.modules.recommendations.adapters.readiness_synthetic import (
     SyntheticTrustedRecommendationReadinessEvaluator,
     UnavailableTrustedRecommendationReadinessEvaluator,
@@ -1325,6 +1343,10 @@ from atlas.modules.recommendations.adapters.reviewer_assignment_synthetic import
 )
 from atlas.modules.recommendations.adapters.synthetic import (
     SyntheticStorageRecommendationAssembler,
+)
+from atlas.modules.recommendations.application.correction_resubmission import (
+    RecommendationCorrectionService,
+    build_development_recommendation_correction_policy,
 )
 from atlas.modules.recommendations.application.finding_presentation import (
     RecommendationFindingPresentationService,
@@ -1565,6 +1587,7 @@ def create_app(
     recommendation_track_review_decision_service: (
         RecommendationTrackReviewDecisionService | None
     ) = None,
+    recommendation_correction_service: RecommendationCorrectionService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -4300,6 +4323,9 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    recommendation_readiness_promotion_source = RecommendationReadinessPromotionSourceRouter(
+        primary=resolved_recommendation_promotion_service
+    )
     if recommendation_readiness_service is not None:
         resolved_recommendation_readiness_service = recommendation_readiness_service
     else:
@@ -4322,7 +4348,7 @@ def create_app(
         )
         resolved_recommendation_readiness_service = GovernedRecommendationReadinessService(
             repository=recommendation_readiness_repository,
-            promotion_source=resolved_recommendation_promotion_service,
+            promotion_source=recommendation_readiness_promotion_source,
             policy_source=InMemoryRecommendationReadinessPolicySource(
                 recommendation_readiness_policies
             ),
@@ -4663,6 +4689,48 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    if recommendation_correction_service is not None:
+        resolved_recommendation_correction_service = recommendation_correction_service
+    else:
+        recommendation_correction_policies = (
+            ()
+            if is_production
+            else (
+                build_development_recommendation_correction_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_recommendation_correction_service = RecommendationCorrectionService(
+            repository=(
+                PostgreSQLRecommendationCorrectionRepository.from_url(
+                    resolved_settings.database_url
+                )
+                if resolved_settings.database_url
+                else InMemoryRecommendationCorrectionRepository()
+            ),
+            source=resolved_recommendation_track_review_decision_service,
+            policy_source=InMemoryRecommendationCorrectionPolicySource(
+                recommendation_correction_policies
+            ),
+            permission_authorizer=AuthorizationRecommendationCorrectionPermissionAuthorizer(
+                service=resolved_authorization_service,
+                environment=resolved_settings.environment,
+            ),
+            adapter=(
+                UnavailableRecommendationCorrectionAdapter()
+                if is_production
+                else SyntheticRecommendationCorrectionAdapter()
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
+    recommendation_readiness_promotion_source.register_correction_source(
+        resolved_recommendation_correction_service
+    )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -4960,6 +5028,7 @@ def create_app(
         app.state.recommendation_track_review_decision_service = (
             resolved_recommendation_track_review_decision_service
         )
+        app.state.recommendation_correction_service = resolved_recommendation_correction_service
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -4972,6 +5041,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_recommendation_correction_service.close()
         await resolved_recommendation_track_review_decision_service.close()
         await resolved_recommendation_finding_presentation_service.close()
         await resolved_recommendation_human_review_finding_service.close()
@@ -5166,6 +5236,7 @@ def create_app(
     app.include_router(recommendation_human_review_findings.router, prefix="/api/v1")
     app.include_router(recommendation_finding_presentations.router, prefix="/api/v1")
     app.include_router(recommendation_review_decisions.router, prefix="/api/v1")
+    app.include_router(recommendation_correction_resubmissions.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

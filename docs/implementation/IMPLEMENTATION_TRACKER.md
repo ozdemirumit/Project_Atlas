@@ -4,14 +4,93 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-120 |
-| Title | Governed recommendation track review decision |
-| Status | Done |
-| Branch | `main` |
-| Pull Request | [#132](https://github.com/ozdemirumit/Project_Atlas/pull/132) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-076 |
+| Task ID | ATLAS-IMP-121 |
+| Title | Governed recommendation correction and resubmission |
+| Status | In Progress |
+| Branch | `agent/recommendation-correction-resubmission` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-077 |
 | Last Updated | 2026-08-10 |
-| Next Action | Define the next independent governed recommendation lifecycle contract after track decisions |
+| Next Action | Publish the validated vertical slice, pass GitHub CI, merge, and close the tracker on main |
+
+### ATLAS-IMP-121 Scope Rationale
+
+- IMP-120 records exact immutable technical and service-impact decisions but deliberately creates
+  no correction when either track requires changes.
+- ADR-077 binds one opaque trusted correction submission to the completed generation and creates a
+  new immutable promoted recommendation version without accepting corrected content in the API.
+- The new version returns to deterministic readiness assessment. It inherits no readiness, review,
+  assignment, findings, track pass, final disposition, approval or operational authority.
+
+### ATLAS-IMP-121 Acceptance Criteria
+
+- Both exact track decisions must bind one review request, assignment set, readiness assessment,
+  promoted recommendation version and policy generation; both are decided and at least one is
+  `changes-required`. Single-track, mixed-generation, duplicate or all-passed input fails closed.
+- Only the original accountable recommendation consumer, in the exact tenant, with recent hardware
+  MFA, normal browser session, dedicated C2 create/C1 read and separation from both reviewers may
+  correct. Reviewer cookies and caller-selected identity, track, content or lifecycle fields are
+  never accepted.
+- Caller input contains exact lineage and decision digests, opaque correction-submission binding,
+  signed policy, purpose and acknowledgements only. No finding, corrected content, patch,
+  recommendation option or artifact coordinate enters API, persistence, audit, logs or telemetry.
+- Intent audit and an atomic unique source-request claim precede a trusted correction adapter. Exact
+  idempotent reuse is permitted; concurrency or uncertainty after claim remains claimed. Production
+  fails closed without the adapter and protected corrected-artifact provider.
+- The result creates one new immutable recommendation/promotion version and exposes it to the
+  existing readiness service through a verified correction-aware source. All review and authority
+  state resets; no readiness result, request, approval, workflow, ITSM, execution, deployment or
+  infrastructure mutation is created.
+- Memory/PostgreSQL parity, one Alembic head, strict minimized schemas, default-deny RBAC, CSRF,
+  focused lineage/separation/idempotency/concurrency/privacy/artifact tests, bounded UI, full suites,
+  live validation and GitHub CI apply.
+
+### ATLAS-IMP-121 Initial Evidence
+
+- IMP-120 merged through PR #132 as `3f1c1cdde1704c793698cabc4501f424edc1373e`; PR run
+  `31358137259` and merged-main run `31358531453` passed both frontend and backend jobs.
+- IMP-120 closure commit `06b010039ff6c333557cc54a90de82c8d6a7498c` passed main run
+  `31358911715` with both frontend and backend jobs successful.
+- ADR-077 is accepted and this branch owns the implementation slice.
+
+### ATLAS-IMP-121 Validation Evidence
+
+- The correction service reconstructs and verifies the exact two-track review lineage, requires
+  both decisions and at least one `changes-required` result, and permits only the original
+  accountable recommendation consumer with recent hardware MFA and separation from both reviewers.
+- Strict request and response schemas accept opaque submission binding, exact identifiers and
+  digests, signed policy metadata, purpose and acknowledgements only. Corrected content, findings,
+  options, reviewer identity, artifact coordinates and every caller-selected authority field are
+  rejected by backend and frontend validators.
+- Intent audit and an atomic source-review-request claim precede the trusted adapter. Exact
+  idempotent reuse returns the first result; concurrency and uncertain adapter outcomes remain
+  claimed. Production uses fail-closed unavailable adapter/provider boundaries until durable
+  enterprise integrations are configured.
+- The trusted development adapter creates a new immutable promoted recommendation version. The
+  correction-aware readiness source verifies it while preserving the existing readiness service;
+  no prior readiness, request, review, approval, workflow, ITSM, execution, deployment or mutation
+  state is inherited.
+- Memory and PostgreSQL metadata repositories are covered. Migration `20260810_0093` creates only
+  correction claim and metadata tables, leaves one Alembic head, and its offline SQL contains no
+  corrected content, finding, option, reviewer identity or artifact-coordinate field.
+- Dedicated default-deny create/read permissions and exact correction scope are registered. The
+  development identity is explicitly rejected by the owner-authority boundary even though local
+  lifecycle discovery remains visible.
+- Backend Ruff and strict mypy passed. The full backend suite passed 943 tests with three
+  Windows-only symlink tests skipped and three existing dependency deprecation warnings.
+- Frontend ESLint, TypeScript and production build passed. The full frontend suite passed 96 tests
+  across 59 files, including strict correction transport validation and lifecycle coverage. The
+  existing 21-stage MCP Builder test received a test-local 60-second ceiling after completing in
+  28.48 seconds and narrowly exceeding its prior 30-second default under repeated Windows runs.
+- The bounded UI advertises `Recommendation correction resubmission` in lifecycle coverage and as
+  the latest available capability. No correction action is placed in the reviewer-bound surface;
+  the future accountable-owner surface must preserve separation from both review tracks.
+- Live development validation through `http://127.0.0.1:5250/` showed 11 available stages, zero in
+  progress and the new capability in both expected locations. Desktop width was 1,280 of 1,280;
+  the mobile override reported a 375-pixel client and scroll width, retained the capability summary
+  and produced no browser warning or error logs. The temporary viewport override was reset.
+- Live evidence remained synthetic and local. No vendor endpoint, real credential, external model,
+  workflow, ITSM system, execution target, deployment process or infrastructure mutation was used.
 
 ### ATLAS-IMP-120 Scope Rationale
 

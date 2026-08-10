@@ -171,6 +171,8 @@ from atlas.modules.authorization.application.bootstrap import (
     MCP_BUILDER_VALIDATION_CREATE,
     MCP_BUILDER_VALIDATION_READ,
     RCA_CREATE,
+    RECOMMENDATION_CORRECTION_RESUBMISSION_CREATE,
+    RECOMMENDATION_CORRECTION_RESUBMISSION_READ,
     RECOMMENDATION_CREATE,
     RECOMMENDATION_FINDING_PRESENTATION_CREATE,
     RECOMMENDATION_FINDING_PRESENTATION_READ,
@@ -287,6 +289,7 @@ from atlas.modules.authorization.application.bootstrap import (
     operational_knowledge_source_materialization_scope,
     operational_knowledge_track_review_decision_scope,
     rca_scope,
+    recommendation_correction_resubmission_scope,
     recommendation_finding_presentation_scope,
     recommendation_human_review_finding_scope,
     recommendation_promotion_scope,
@@ -5739,5 +5742,60 @@ async def authorize_recommendation_track_review_decision_read(
         request,
         subject,
         permission_id=RECOMMENDATION_TRACK_REVIEW_DECISION_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def _authorize_recommendation_correction_resubmission(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.recommendation.correction-resubmissions",
+            scope=recommendation_correction_resubmission_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail="The current identity cannot correct recommendation versions.",
+        )
+    return decision
+
+
+async def authorize_recommendation_correction_resubmission_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_recommendation_correction_resubmission(
+        request,
+        subject,
+        permission_id=RECOMMENDATION_CORRECTION_RESUBMISSION_CREATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_recommendation_correction_resubmission_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_recommendation_correction_resubmission(
+        request,
+        subject,
+        permission_id=RECOMMENDATION_CORRECTION_RESUBMISSION_READ,
         capability_class=CapabilityClass.C1_READ_ONLY,
     )
