@@ -4,14 +4,70 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-131 |
-| Title | Deployment Configuration presentation extraction |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#143](https://github.com/ozdemirumit/Project_Atlas/pull/143) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ATLAS-057, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087 |
+| Task ID | ATLAS-IMP-132 |
+| Title | Bootstrap Plan presentation extraction |
+| Status | In Progress |
+| Branch | `agent/bootstrap-plan-presentation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-025, ATLAS-026, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ATLAS-057, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088 |
 | Last Updated | 2026-08-10 |
-| Next Action | Define and implement Bootstrap Plan presentation extraction |
+| Next Action | Extract Bootstrap Plan presentation behind a Health-only lazy boundary and validate it |
+
+### ATLAS-IMP-132 Scope Rationale
+
+- IMP-131 closed with a separate 2.78 KB Deployment Configuration chunk and reduced the
+  transitional operational chunk from 826.14 KB to 824.09 KB.
+- Bootstrap Plan is a contiguous approximately 45-line read-only presentation of exact-input plan
+  identity, ordered phases, dependencies, readiness and stop guidance.
+- ADR-088 accepts presentation-first extraction while query, identity scope, checkpoint,
+  invalidation, rebase, lease and phase execution remain parent/server responsibilities.
+
+### ATLAS-IMP-132 Acceptance Criteria
+
+- Plan state/digest/resume identity, ordered phase evidence, dependencies, stop guidance and the
+  no-execution notice move into one independently tested lazy feature.
+- Parent authorized query, release/configuration lineage and every downstream stateful bootstrap
+  composition remain unchanged.
+- Forbidden, malformed or absent plans remain absent; Connector routes do not download, evaluate
+  or mount the feature.
+- Server phase order and dependencies render without client inference or mutation.
+- No API, query cache, identity, RBAC, tenant, checkpoint, rebase, lease, phase, rollback,
+  deployment or infrastructure authority moves into presentation.
+- ESLint, TypeScript, full frontend tests and production build pass with a separate feature chunk.
+- Live desktop/mobile validation covers plan evidence, route isolation, overflow and final
+  application warning/error state.
+
+### ATLAS-IMP-132 Initial Evidence
+
+- IMP-131 merged through PR #143 as `9afead6caed5acd16dafbe947b03dc5bfbc37346`; PR run
+  `31416071298` and merged-main run `31416782075` passed frontend and backend jobs.
+- IMP-131 closure commit `9d5653ff2b9da8eb6fb762e1d24e832253c5b5dd` passed independent main
+  CI run `31417699482` with both jobs successful.
+- Deployment Configuration is a separate 2.78 KB feature chunk. The production entry is 247.66 KB
+  and the deferred operational chunk is 824.09 KB.
+
+### ATLAS-IMP-132 Validation Evidence
+
+- `BootstrapPlanWorkspace.tsx` owns plan identity, ordered phase, dependency, readiness, stop
+  guidance and planning-only safety presentation; query, identity, checkpoint, invalidation, rebase,
+  lease and phase execution remain outside it.
+- Three focused component tests cover immutable identity, blocked evidence, exact server phase order,
+  dependencies, stop guidance and no-authority language. Existing configuration/bootstrap
+  integration coverage preserved exact-input composition and downstream behavior; focused
+  validation passed 24 tests across two files.
+- ESLint and no-write TypeScript passed. The full frontend suite passed 74 files and 144 tests.
+- Production build transformed 1,991 modules and emitted a separate 1.85 KB Bootstrap Plan chunk.
+  The transitional operational chunk decreased from 824.09 KB to 822.91 KB.
+- Live desktop validation passed at 1280 px: one ready plan rendered nine ordered phases with plan
+  and resume identity, dependencies, stop guidance and no-authority language. No operational control
+  appeared, the document/workspace/identity/phase list had no horizontal overflow, and the final
+  application warning/error log was empty.
+- A fresh direct Connector route rendered its governed analysis workspace, did not render or load
+  the Bootstrap Plan feature, and had no application warning/error log.
+- Mobile validation passed at a 375 CSS-pixel viewport: the document remained 375/375 px, the
+  workspace remained 349/349 px, and identity/phase evidence remained within its containers. The
+  isolated iframe emitted only the known Browser instrumentation `MutationObserver` error; direct
+  Atlas pages were clean. GitHub publication remains pending.
 
 ### ATLAS-IMP-131 Scope Rationale
 

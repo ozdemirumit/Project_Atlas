@@ -27,7 +27,6 @@ import {
   LockKeyhole,
   Trash2,
   Scale,
-  Workflow,
   UserCheck,
   UserX,
   X,
@@ -223,6 +222,9 @@ const ReleasePreflightWorkspace = lazy(
 );
 const DeploymentConfigurationWorkspace = lazy(
   () => import("./features/health/DeploymentConfigurationWorkspace"),
+);
+const BootstrapPlanWorkspace = lazy(
+  () => import("./features/health/BootstrapPlanWorkspace"),
 );
 
 function statusLabel(status: string | undefined): string {
@@ -8894,44 +8896,26 @@ export function OperationalApplication({
                 </WorkspaceLoadBoundary>
               )}
 
-              {bootstrapPlan && (
-                <section className="workspace-section bootstrap-plan-section">
-                  <div className="section-heading bootstrap-plan-heading">
-                    <div>
-                      <p className="eyebrow">BOOTSTRAP PLAN</p>
-                      <h2>Ordered deployment phases</h2>
-                      <p>Exact-input readiness and resume boundaries without execution.</p>
-                    </div>
-                    <span className={`state-badge ${bootstrapPlan.state}`}>
-                      <Workflow size={14} /> {bootstrapPlan.state}
-                    </span>
-                  </div>
-                  <div className="bootstrap-plan-identity">
-                    <div><span>Plan digest</span><code>{bootstrapPlan.plan_digest.slice(0, 20)}...</code></div>
-                    <div><span>Resume key</span><code>{bootstrapPlan.resume_key}</code></div>
-                    <div><span>Phases</span><strong>{bootstrapPlan.phases.length}</strong></div>
-                  </div>
-                  <ol className="bootstrap-phase-list">
-                    {bootstrapPlan.phases.map((phase) => (
-                      <li key={phase.phase_id}>
-                        <span className="bootstrap-phase-number">{phase.sequence}</span>
+              {activeNavigation === "Health" && bootstrapPlan && (
+                <WorkspaceLoadBoundary
+                  compact
+                  resetKey={bootstrapPlan.plan_id}
+                  workspace="Health"
+                >
+                  <Suspense
+                    fallback={
+                      <div className="workspace-message" aria-live="polite" aria-busy="true">
+                        <Clock3 size={22} />
                         <div>
-                          <div className="bootstrap-phase-title">
-                            <strong>{phase.title}</strong>
-                            <span className={`state-badge ${phase.state}`}>{phase.state}</span>
-                          </div>
-                          <code>{phase.phase_id}</code>
-                          <p>{phase.dependencies.length ? `After ${phase.dependencies.join(", ")}` : "No phase dependency"}</p>
-                          <small>{phase.stop_guidance}</small>
+                          <h2>Loading Bootstrap Plan</h2>
+                          <p>Preparing authorized ordered phase evidence.</p>
                         </div>
-                      </li>
-                    ))}
-                  </ol>
-                  <div className="safety-notice">
-                    <ShieldCheck size={16} />
-                    <span>Planning evidence only. No phase, command, rollback, or infrastructure mutation is authorized.</span>
-                  </div>
-                </section>
+                      </div>
+                    }
+                  >
+                    <BootstrapPlanWorkspace plan={bootstrapPlan} />
+                  </Suspense>
+                </WorkspaceLoadBoundary>
               )}
 
               {bootstrapState && (
