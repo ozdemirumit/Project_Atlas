@@ -4,14 +4,65 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-124 |
-| Title | Health workspace loading boundary and route-level code splitting |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#136](https://github.com/ozdemirumit/Project_Atlas/pull/136) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080 |
+| Task ID | ATLAS-IMP-125 |
+| Title | Health inventory and evidence workspace extraction |
+| Status | In Progress |
+| Branch | `agent/health-inventory-evidence-workspace` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-020, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-040, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081 |
 | Last Updated | 2026-08-10 |
-| Next Action | Define and implement the Health inventory and evidence workspace extraction slice |
+| Next Action | Validate the extracted Health inventory and evidence workspace live on desktop and mobile |
+
+### ATLAS-IMP-125 Scope Rationale
+
+- IMP-124 established the lazy operational boundary, but its deferred chunk remains 870,352 bytes.
+- Health currently places upgrade, audit, deployment and administration before its core storage
+  inventory, findings, evidence, impact and assessment content.
+- ADR-081 accepts a presentation-first extraction that changes no API, query, mutation, permission
+  or infrastructure authority.
+
+### ATLAS-IMP-125 Acceptance Criteria
+
+- Health summary, inventory, findings, provisional investigation, selected-system evidence,
+  dependency impact and assessment report move to one independently tested feature module.
+- The core Health module renders before enterprise secondary operations and loads only for Health.
+- Asset selection preserves the existing reset behavior and evidence remains filtered by exact
+  selected-asset references.
+- Loading and failure states are explicit and fail closed without inferred operational state.
+- No backend, RBAC, audit, approval, execution, deployment or infrastructure-mutation behavior
+  changes.
+- ESLint, TypeScript, full frontend tests and production build pass with a separate Health chunk.
+- Live desktop and mobile validation covers content order, selection, evidence, overflow and an
+  empty final browser warning/error log.
+
+### ATLAS-IMP-125 Initial Evidence
+
+- IMP-124 merged through PR #136 as `31a28b0e5d32d8f9f58b456c5d648e88a0f88d04`;
+  PR run `31385758259` and merged-main run `31386382840` passed frontend and backend jobs.
+- IMP-124 closure commit `e2d9f3cbd969f89c20cb8c416f544cd06820980d` passed independent main
+  CI run `31387061423` with both jobs successful.
+- The production entry is 246,766 bytes and the deferred operational chunk is 870,352 bytes. ADR-081
+  is accepted and this branch owns the first Health domain presentation extraction.
+
+### ATLAS-IMP-125 Validation Evidence
+
+- `HealthInventoryEvidenceWorkspace.tsx` is a 251-line, 11,717-byte presentation owner with no API,
+  query, mutation, cache, permission or execution client. `App.tsx` decreased from 14,331 to 14,030
+  lines while retaining identity, selection and operational state authority.
+- Health summary, inventory, findings, provisional investigation, exact selected-system evidence,
+  dependency impact and assessment report now render through one static lazy boundary before
+  assigned upgrade reviews and other enterprise secondary operations.
+- Asset selection delegates to the existing parent reset behavior. Focused component, compact
+  chunk-failure and route tests passed 12 tests across three files; the application integration test
+  proves inventory precedes review operations in DOM order.
+- Full ESLint passed. A no-write TypeScript check passed after the local security policy denied
+  incremental metadata writes under `node_modules`; source types are clean.
+- The full frontend suite passed 119 tests across 67 files. Production build passed after 1,984
+  modules and emitted a separate 11.18 KB `HealthInventoryEvidenceWorkspace` chunk.
+- The deferred `OperationalApplication` chunk decreased from 870.35 KB to 860.45 KB. The remaining
+  greater-than-500-KB warning is confined to the transitional operational module and remains input
+  to the accepted investigation, governance, release and Connector extraction sequence.
+- Live desktop/mobile validation is pending.
 
 ### ATLAS-IMP-124 Scope Rationale
 

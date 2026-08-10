@@ -17,6 +17,7 @@ export function WorkspaceRouteLoading({ workspace }: { workspace: WorkspaceId })
 
 interface WorkspaceLoadBoundaryProps {
   children: ReactNode;
+  compact?: boolean;
   onReload?: () => void;
   resetKey: string;
   workspace: WorkspaceId;
@@ -48,6 +49,25 @@ export class WorkspaceLoadBoundary extends Component<
 
   render() {
     if (!this.state.failed) return this.props.children;
+
+    if (this.props.compact) {
+      return (
+        <div className="workspace-message error-state" role="alert">
+          <AlertTriangle size={24} aria-hidden="true" />
+          <div>
+            <h2>{this.props.workspace} inventory could not be loaded</h2>
+            <p>No operational state or authority was inferred.</p>
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={this.props.onReload ?? (() => window.location.reload())}
+            >
+              <RefreshCw size={16} /> Reload application
+            </button>
+          </div>
+        </div>
+      );
+    }
 
     return (
       <main className="workspace-route-state workspace-route-error" role="alert">

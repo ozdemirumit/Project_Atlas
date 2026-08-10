@@ -1,7 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { WorkspaceLoadBoundary, WorkspaceRouteLoading } from "./WorkspaceLoadBoundary";
+
+afterEach(cleanup);
 
 function BrokenWorkspace(): never {
   throw new Error("chunk details must remain private");
@@ -28,5 +30,18 @@ describe("WorkspaceLoadBoundary", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("No operational state or authority");
     fireEvent.click(screen.getByRole("button", { name: "Reload application" }));
     expect(reload).toHaveBeenCalledOnce();
+  });
+
+  it("supports a bounded in-workspace failure state", () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    render(
+      <WorkspaceLoadBoundary compact resetKey="health-inventory" workspace="Health">
+        <BrokenWorkspace />
+      </WorkspaceLoadBoundary>,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Health inventory could not be loaded");
+    expect(screen.queryByRole("main")).toBeNull();
   });
 });
