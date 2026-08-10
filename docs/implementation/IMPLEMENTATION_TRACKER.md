@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-123 |
 | Title | Operational workspace information architecture and application-shell consolidation |
-| Status | In Progress |
-| Branch | `agent/ui-information-architecture` |
+| Status | Complete |
+| Branch | `main` |
 | Pull Request | [#135](https://github.com/ozdemirumit/Project_Atlas/pull/135) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-001 through ADR-079 |
 | Last Updated | 2026-08-10 |
-| Next Action | Complete PR #135 CI, review and merge validation |
+| Next Action | Define and implement the Health workspace extraction and route-level code-splitting slice |
 
 ### ATLAS-IMP-123 Scope Rationale
 
@@ -50,6 +50,9 @@
 
 ### ATLAS-IMP-123 Validation Evidence
 
+- PR #135 passed Continuous Integration run `31379702921` with successful backend and frontend
+  jobs, then merged to `main` as `af7dd22b06febed5d9acd08d0c6e8d9fa8780ff6`. The merged
+  commit independently passed main CI run `31380299733` with both jobs successful.
 - The sidebar and topbar now live behind dedicated shell components. Primary navigation exposes
   only Workspace, Health and Connectors; inactive Infrastructure, Topology, Reports, Governance,
   Settings, search, notification and help controls no longer pretend to be functional.
