@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-130 |
 | Title | Release Preflight presentation extraction |
-| Status | In Progress |
-| Branch | `agent/release-preflight-presentation` |
-| Pull Request | Pending |
+| Status | Complete |
+| Branch | `main` |
+| Pull Request | [#142](https://github.com/ozdemirumit/Project_Atlas/pull/142) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ATLAS-059, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086 |
 | Last Updated | 2026-08-10 |
-| Next Action | Publish IMP-130, verify PR and merged-main CI, then close the task |
+| Next Action | Define and implement Deployment Configuration presentation extraction |
 
 ### ATLAS-IMP-130 Scope Rationale
 
@@ -72,7 +72,10 @@
   only the known Browser instrumentation `MutationObserver` error; direct Atlas pages were clean.
 - Post-CSS focused lint, no-write TypeScript and five integration/component tests passed. The final
   production build retained the 2.53 KB feature chunk and 826.14 KB transitional operational chunk.
-- GitHub publication remains pending.
+- PR #142 passed Continuous Integration run `31412961978` with successful frontend and backend
+  jobs, then squash-merged as `8130b7957a758581c1ed499fb0614f4aeb3c9443`.
+- The merged `main` commit passed independent push CI run `31413513978` with successful frontend and
+  backend jobs.
 
 
 ### ATLAS-IMP-129 Scope Rationale
