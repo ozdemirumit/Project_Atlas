@@ -329,6 +329,7 @@ async def test_accepted_disposition_is_minimized_immutable_and_idempotent() -> N
         assert forbidden not in asdict(record)
         assert forbidden not in public
     assert len(permission.calls) == 3
+    assert isinstance(audit, CollectingAuditSink)
     assert [item.result_code for item in audit.records] == [
         "final_recommendation_disposition_intent_recorded",
         "final_recommendation_disposition_claimed",
