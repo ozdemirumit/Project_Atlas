@@ -2124,7 +2124,7 @@ textarea:focus-visible {
 
 .release-preflight-controls {
   display: grid;
-  grid-template-columns: minmax(150px, 0.8fr) minmax(150px, 0.8fr) repeat(2, minmax(180px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin: 18px 0;
 }
@@ -2149,6 +2149,11 @@ textarea:focus-visible {
   border: 1px solid #dbe3e0;
   background: #fbfcfc;
   padding: 8px 10px;
+}
+
+.release-preflight-controls select {
+  width: 100%;
+  min-width: 0;
 }
 
 .release-identity code {
