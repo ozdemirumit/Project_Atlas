@@ -23,7 +23,6 @@ import {
   Search,
   Send,
   Server,
-  Settings,
   ShieldCheck,
   LockKeyhole,
   Trash2,
@@ -221,6 +220,9 @@ const SecurityExportWorkspace = lazy(
 );
 const ReleasePreflightWorkspace = lazy(
   () => import("./features/health/ReleasePreflightWorkspace"),
+);
+const DeploymentConfigurationWorkspace = lazy(
+  () => import("./features/health/DeploymentConfigurationWorkspace"),
 );
 
 function statusLabel(status: string | undefined): string {
@@ -8870,73 +8872,26 @@ export function OperationalApplication({
                 </WorkspaceLoadBoundary>
               )}
 
-              {deploymentConfiguration && (
-                <section className="workspace-section deployment-configuration-section">
-                  <div className="section-heading deployment-configuration-heading">
-                    <div>
-                      <p className="eyebrow">CONFIGURATION CONTRACT</p>
-                      <h2>Versioned deployment preview</h2>
-                      <p>Deterministic, redacted settings resolved before any host mutation.</p>
-                    </div>
-                    <span className={`state-badge ${deploymentConfiguration.state}`}>
-                      <Settings size={14} /> {deploymentConfiguration.state}
-                    </span>
-                  </div>
-                  <div className="configuration-identity-strip">
-                    <div>
-                      <span>Profile</span>
-                      <strong>{deploymentConfiguration.profile.replace("_", " ")}</strong>
-                    </div>
-                    <div>
-                      <span>Environment</span>
-                      <strong>{deploymentConfiguration.environment_id}</strong>
-                    </div>
-                    <div>
-                      <span>Schema</span>
-                      <code>{deploymentConfiguration.schema_version}</code>
-                    </div>
-                    <div>
-                      <span>Digest</span>
-                      <code>{deploymentConfiguration.configuration_digest.slice(0, 20)}...</code>
-                    </div>
-                  </div>
-                  <div className="configuration-preview-grid">
-                    <div className="configuration-field-list">
-                      <h3>Effective fields</h3>
-                      {deploymentConfiguration.fields.map((field) => (
-                        <div className="configuration-field" key={field.path}>
-                          <div>
-                            <code>{field.path}</code>
-                            <span>{field.source.replace("_", " ")}</span>
-                          </div>
-                          <strong>{field.display_value}</strong>
+              {activeNavigation === "Health" && deploymentConfiguration && (
+                <WorkspaceLoadBoundary
+                  compact
+                  resetKey={deploymentConfiguration.preview_id}
+                  workspace="Health"
+                >
+                  <Suspense
+                    fallback={
+                      <div className="workspace-message" aria-live="polite" aria-busy="true">
+                        <Clock3 size={22} />
+                        <div>
+                          <h2>Loading Deployment Configuration</h2>
+                          <p>Preparing authorized redacted configuration evidence.</p>
                         </div>
-                      ))}
-                    </div>
-                    <div className="configuration-validation-list">
-                      <h3>Validation gates</h3>
-                      {deploymentConfiguration.validations.map((validation) => (
-                        <div className="configuration-validation" key={validation.code}>
-                          <span className={`state-badge ${validation.state}`}>
-                            {validation.state}
-                          </span>
-                          <div>
-                            <code>{validation.code}</code>
-                            <strong>{validation.summary}</strong>
-                            {validation.remediation && <small>{validation.remediation}</small>}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="safety-notice">
-                    <ShieldCheck size={16} />
-                    <span>
-                      Preview only. No file write, secret provisioning, port change, installation, or
-                      service execution is authorized.
-                    </span>
-                  </div>
-                </section>
+                      </div>
+                    }
+                  >
+                    <DeploymentConfigurationWorkspace preview={deploymentConfiguration} />
+                  </Suspense>
+                </WorkspaceLoadBoundary>
               )}
 
               {bootstrapPlan && (
