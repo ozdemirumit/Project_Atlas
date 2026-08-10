@@ -4,14 +4,53 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-121 |
-| Title | Governed recommendation correction and resubmission |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#133](https://github.com/ozdemirumit/Project_Atlas/pull/133) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-077 |
+| Task ID | ATLAS-IMP-122 |
+| Title | Governed final recommendation disposition |
+| Status | In Progress |
+| Branch | `agent/recommendation-final-disposition` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-078 |
 | Last Updated | 2026-08-10 |
-| Next Action | Define the next architecture-approved implementation slice |
+| Next Action | Implement and validate the governed final recommendation disposition vertical slice |
+
+### ATLAS-IMP-122 Scope Rationale
+
+- IMP-120 records exact immutable technical and service-impact decisions; two passes are readiness
+  evidence but deliberately create no final recommendation acceptance.
+- IMP-121 creates a fresh immutable recommendation generation when either track requires changes,
+  so only an unchanged generation whose two exact tracks passed is eligible for final disposition.
+- ADR-078 binds one independent accountable human's accepted or rejected disposition to that exact
+  generation without creating workflow, ITSM, change approval or operational authority.
+
+### ATLAS-IMP-122 Acceptance Criteria
+
+- Both exact track decisions must bind one review request, assignment set, readiness assessment,
+  promoted recommendation version and policy generation; both are passed and no correction or
+  prior disposition exists. Missing, mixed, duplicate, changes-required or drifted input fails
+  closed.
+- Only a distinct enterprise human in the exact tenant with recent hardware MFA, normal browser
+  session, dedicated C2 create/C1 read and separation from the recommendation consumer, both
+  reviewers, signer and attestor may decide.
+- Caller input contains exact lineage, one policy-approved accepted/rejected disposition, compatible
+  structured basis codes, signed policy, purpose and acknowledgements only. No content, finding,
+  narrative, artifact coordinate, identity or authority field enters API, persistence or audit.
+- Intent audit and an atomic unique review-request claim precede a trusted attestor. Exact
+  idempotent reuse is permitted; concurrency or uncertainty after claim remains claimed. Production
+  fails closed without an approved attestor.
+- Accepted sets final disposition, recommendation approval and handoff eligibility evidence only;
+  rejected records a final rejection. Neither creates correction, workflow, ITSM, change approval,
+  execution, deployment or infrastructure mutation.
+- Memory/PostgreSQL parity, one Alembic head, strict minimized schemas, default-deny RBAC, CSRF,
+  focused lineage/separation/disposition/idempotency/concurrency/privacy tests, bounded UI, full
+  suites, live validation and GitHub CI apply.
+
+### ATLAS-IMP-122 Initial Evidence
+
+- IMP-121 merged through PR #133 as `c3915a88001960ad157b0229505339679ee35400`; PR run
+  `31364819067` and merged-main run `31365390166` passed both frontend and backend jobs.
+- IMP-121 closure commit `ec9c7bb40e3e95fd627ee65eec040ecf08b963fd` passed main run
+  `31365813313` with both frontend and backend jobs successful.
+- ADR-078 is accepted and this branch owns the implementation slice.
 
 ### ATLAS-IMP-121 Scope Rationale
 
