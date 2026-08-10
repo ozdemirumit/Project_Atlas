@@ -35,6 +35,7 @@ from atlas.modules.recommendations.application.correction_resubmission_ports imp
 )
 from atlas.modules.recommendations.domain.correction_resubmission import (
     RecommendationCorrectionPolicySnapshot,
+    RecommendationCorrectionRecord,
 )
 from atlas.modules.recommendations.domain.promotion import PromotedRecommendationArtifact
 from atlas.modules.recommendations.domain.review_decision import (
@@ -161,7 +162,7 @@ async def correct(
     actor: AuthenticatedSubject,
     *,
     idempotency_key: str = "recommendation-correction-001",
-):
+) -> RecommendationCorrectionRecord:
     source = decisions[0]
     return await service.create(
         actor=actor,
