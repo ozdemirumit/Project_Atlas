@@ -4,14 +4,67 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-127 |
-| Title | Health governance and report presentation extraction |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#139](https://github.com/ozdemirumit/Project_Atlas/pull/139) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-037, ATLAS-040, ATLAS-043, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083 |
+| Task ID | ATLAS-IMP-128 |
+| Title | Health scheduled-checks presentation extraction |
+| Status | In Progress |
+| Branch | `agent/health-scheduled-checks-presentation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-040, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084 |
 | Last Updated | 2026-08-10 |
-| Next Action | Define the remaining Health secondary operational presentation extraction slice |
+| Next Action | Publish IMP-128, verify PR and merged-main CI, then close the task |
+
+### ATLAS-IMP-128 Scope Rationale
+
+- IMP-127 closed with a separate 12.77 KB governance/report chunk and reduced the transitional
+  operational chunk from 845.35 KB to 834.15 KB.
+- Scheduled health checks are a contiguous approximately 170-line read-only presentation with
+  explicit definition, schedule, latest-run, selection and bounded-run inputs.
+- ADR-084 accepts presentation-first extraction while query, cache invalidation, identity scope,
+  mutation, connector policy, audit and execution authority remain unchanged.
+
+### ATLAS-IMP-128 Acceptance Criteria
+
+- Definition tabs, deterministic schedule, latest run, observations, findings, limits, unknowns and
+  safety notice move into one independently tested Health-only lazy feature.
+- Parent query, selected-definition state, mutation and cache invalidation remain unchanged and are
+  invoked only through bounded callbacks.
+- Workspace and direct Connector routes do not mount the scheduled-check feature.
+- Loading, unavailable, empty, run-pending and run-failure states remain explicit and fail closed.
+- Disabled definitions cannot request a run; no credential, connector, RBAC, audit or infrastructure
+  authority moves into presentation.
+- ESLint, TypeScript, full frontend tests and production build pass with a separate feature chunk.
+- Live desktop/mobile validation covers definition selection, one read-only run, overflow and final
+  application warning/error state.
+
+### ATLAS-IMP-128 Initial Evidence
+
+- IMP-127 merged through PR #139 as `fc7740bcba3b3a639ebbb89b6527eb0b0b6fb001`; PR run
+  `31400863505` and merged-main run `31401668590` passed frontend and backend jobs.
+- IMP-127 closure commit `f7be792217342abb59ef5c814bff31194c2094f9` passed independent main
+  CI run `31402540218` with both jobs successful.
+- The production entry is 247.61 KB; inventory/evidence, governance/report and decision-support are
+  11.22 KB, 12.77 KB and 16.73 KB. The deferred operational chunk is 834.15 KB.
+
+### ATLAS-IMP-128 Validation Evidence
+
+- `HealthScheduledChecksWorkspace.tsx` owns scheduled-check presentation only; query, selected-state,
+  mutation and cache invalidation remain in `App.tsx` and delegate through bounded callbacks.
+- Four focused tests cover explicit empty/loading/failure states, definition selection, bounded run
+  delegation, disabled/pending gates, observations, findings, limits and no-authority language.
+- ESLint and no-write TypeScript passed. The full frontend suite passed 70 files and 131 tests.
+- Production build transformed 1,987 modules and emitted a separate 5.12 KB scheduled-check chunk.
+  The transitional operational chunk decreased from 834.15 KB to 830.62 KB.
+- Live desktop validation passed at 1280 px: both definitions changed selection correctly, one
+  authorized read-only run rendered two current observations and its bounded warning/unknowns, and
+  the application log remained empty. The document, 653 px workspace and 653 px tab list had no
+  horizontal overflow; the 372 px table wrapper contained its intentional 500 px scroll surface.
+- A fresh direct Connector route rendered its own governed analysis workspace, did not render the
+  scheduled-check workspace and had no matching feature script or application warning/error log.
+- Mobile validation passed at a 375 CSS-pixel viewport: the document remained 375/375 px and the
+  workspace remained 349/349 px. Tabs and observation table scrolled within their own 349/455 px
+  and 319/500 px containers without widening the document. The isolated validation iframe emitted
+  only the known Browser instrumentation `MutationObserver` error; direct Atlas pages were clean.
+- GitHub publication remains pending.
 
 ### ATLAS-IMP-127 Scope Rationale
 

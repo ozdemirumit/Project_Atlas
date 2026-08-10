@@ -1,10 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity,
   AlertTriangle,
   Archive,
   CheckCircle2,
-  CircleHelp,
   Clock3,
   Copy,
   Database,
@@ -214,6 +212,9 @@ const HealthDecisionSupportWorkspace = lazy(
 );
 const HealthGovernanceReportWorkspace = lazy(
   () => import("./features/health/HealthGovernanceReportWorkspace"),
+);
+const HealthScheduledChecksWorkspace = lazy(
+  () => import("./features/health/HealthScheduledChecksWorkspace"),
 );
 
 function statusLabel(status: string | undefined): string {
@@ -12738,178 +12739,50 @@ export function OperationalApplication({
                     )}
                   </section>
 
-                  <section className="workspace-section health-checks-section">
-                    <div className="section-heading health-check-heading">
-                      <div>
-                        <p className="eyebrow">SCHEDULED HEALTH CHECKS</p>
-                        <h2>Governed read-only checks</h2>
-                      </div>
-                      <span className="data-profile">
-                        <Clock3 size={14} /> Deterministic schedule
-                      </span>
-                    </div>
-
-                    {healthChecksQuery.isLoading && (
-                      <p className="context-empty">Loading authorized health checks...</p>
-                    )}
-                    {healthChecksQuery.isError && (
-                      <p className="inline-alert">Authorized health-check context is unavailable.</p>
-                    )}
-                    {healthChecks && selectedHealthCheck && selectedHealthSchedule && (
-                      <>
-                        <div className="health-check-tabs" role="tablist" aria-label="Health checks">
-                          {healthChecks.definitions.map((definition) => (
-                            <button
-                              key={definition.definition_id}
-                              type="button"
-                              role="tab"
-                              aria-selected={
-                                definition.definition_id === selectedHealthCheck.definition_id
-                              }
-                              className={
-                                definition.definition_id === selectedHealthCheck.definition_id
-                                  ? "active"
-                                  : ""
-                              }
-                              onClick={() => setSelectedHealthCheckId(definition.definition_id)}
-                            >
-                              <Activity size={16} />
-                              <span>{definition.title}</span>
-                              <small>v{definition.version}</small>
-                            </button>
-                          ))}
-                        </div>
-
-                        <div className="health-check-toolbar">
-                          <div>
-                            <strong>{selectedHealthCheck.title}</strong>
-                            <span>{selectedHealthCheck.capability_id}</span>
-                          </div>
-                          <button
-                            className="run-check-button"
-                            type="button"
-                            disabled={
-                              !selectedHealthCheck.enabled || runHealthCheckMutation.isPending
-                            }
-                            onClick={() =>
-                              runHealthCheckMutation.mutate(selectedHealthCheck.definition_id)
-                            }
+                  {activeNavigation === "Health" && (
+                    <WorkspaceLoadBoundary
+                      compact
+                      resetKey={
+                        healthChecks?.generated_at ??
+                        selectedHealthCheck?.definition_id ??
+                        overview.snapshot_id
+                      }
+                      workspace="Health"
+                    >
+                      <Suspense
+                        fallback={
+                          <div
+                            className="workspace-message"
+                            aria-live="polite"
+                            aria-busy="true"
                           >
-                            {runHealthCheckMutation.isPending ? (
-                              <RefreshCw className="spin" size={16} />
-                            ) : (
-                              <Play size={16} />
-                            )}
-                            {runHealthCheckMutation.isPending ? "Running" : "Run check"}
-                          </button>
-                        </div>
-
-                        <div className="health-check-summary">
-                          <div>
-                            <span>Schedule</span>
-                            <strong>Every {selectedHealthSchedule.interval_minutes} min</strong>
-                            <small>Next {formatTimestamp(selectedHealthSchedule.next_due_at)}</small>
-                          </div>
-                          <div>
-                            <span>Latest run</span>
-                            <strong className={`run-state ${selectedHealthRun?.state ?? "unknown"}`}>
-                              {selectedHealthRun?.state.replaceAll("_", " ") ?? "No run"}
-                            </strong>
-                            <small>{formatTimestamp(selectedHealthRun?.completed_at)}</small>
-                          </div>
-                          <div>
-                            <span>Boundary</span>
-                            <strong>{selectedHealthCheck.capability_class} read-only</strong>
-                            <small>{selectedHealthCheck.limits.timeout_seconds}s timeout</small>
-                          </div>
-                          <div>
-                            <span>Evidence</span>
-                            <strong>{selectedHealthRun?.evidence.length ?? 0} records</strong>
-                            <small>{selectedHealthRun?.step_count ?? 0} bounded steps</small>
-                          </div>
-                        </div>
-
-                        {selectedHealthRun && (
-                          <div className="health-check-detail-grid">
-                            <div className="health-observations">
-                              <h3>Latest observations</h3>
-                              <div className="table-wrap">
-                                <table>
-                                  <thead>
-                                    <tr>
-                                      <th>Component</th>
-                                      <th>Metric</th>
-                                      <th>Value</th>
-                                      <th>State</th>
-                                      <th>Freshness</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {selectedHealthRun.observations.map((observation) => (
-                                      <tr key={observation.observation_id}>
-                                        <td>{observation.component}</td>
-                                        <td className="mono-cell">{observation.metric}</td>
-                                        <td>
-                                          {observation.value}
-                                          {observation.unit ? ` ${observation.unit}` : ""}
-                                        </td>
-                                        <td>
-                                          <span className={`observation-state ${observation.state}`}>
-                                            {observation.state === "normal" ? (
-                                              <CheckCircle2 size={14} />
-                                            ) : (
-                                              <AlertTriangle size={14} />
-                                            )}
-                                            {observation.state}
-                                          </span>
-                                        </td>
-                                        <td>
-                                          <span className={`freshness ${observation.freshness}`}>
-                                            {observation.freshness}
-                                          </span>
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </div>
-
-                            <div className="health-check-findings">
-                              <h3>Findings and limits</h3>
-                              {selectedHealthRun.findings.map((finding) => (
-                                <article key={finding.finding_id}>
-                                  <span className={`severity-badge ${finding.severity}`}>
-                                    {finding.severity}
-                                  </span>
-                                  <strong>{finding.title}</strong>
-                                  <p>{finding.summary}</p>
-                                </article>
-                              ))}
-                              {selectedHealthRun.partial_reasons.map((reason) => (
-                                <p className="health-limit-note" key={reason}>
-                                  <CircleHelp size={15} /> {reason}
-                                </p>
-                              ))}
-                              {selectedHealthRun.unknowns.map((unknown) => (
-                                <p className="health-unknown" key={unknown}>
-                                  {unknown}
-                                </p>
-                              ))}
+                            <Clock3 size={22} />
+                            <div>
+                              <h2>Loading scheduled health checks</h2>
+                              <p>Preparing authorized read-only check presentation.</p>
                             </div>
                           </div>
-                        )}
-
-                        {runHealthCheckMutation.isError && (
-                          <p className="inline-alert">The read-only health check could not run.</p>
-                        )}
-                        <div className="health-check-safety">
-                          <ShieldCheck size={16} />
-                          <span>{healthChecks.safety_notice}</span>
-                        </div>
-                      </>
-                    )}
-                  </section>
+                        }
+                      >
+                        <HealthScheduledChecksWorkspace
+                          error={healthChecksQuery.isError}
+                          loading={healthChecksQuery.isLoading}
+                          onRunCheck={() => {
+                            if (selectedHealthCheck) {
+                              runHealthCheckMutation.mutate(selectedHealthCheck.definition_id);
+                            }
+                          }}
+                          onSelectDefinition={setSelectedHealthCheckId}
+                          overview={healthChecks}
+                          runError={runHealthCheckMutation.isError}
+                          runPending={runHealthCheckMutation.isPending}
+                          selectedDefinition={selectedHealthCheck}
+                          selectedRun={selectedHealthRun}
+                          selectedSchedule={selectedHealthSchedule}
+                        />
+                      </Suspense>
+                    </WorkspaceLoadBoundary>
+                  )}
 
                   {activeNavigation === "Health" && (
                     <WorkspaceLoadBoundary
