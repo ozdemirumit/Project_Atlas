@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-132 |
 | Title | Bootstrap Plan presentation extraction |
-| Status | In Progress |
-| Branch | `agent/bootstrap-plan-presentation` |
-| Pull Request | Pending |
+| Status | Complete |
+| Branch | `main` |
+| Pull Request | [#144](https://github.com/ozdemirumit/Project_Atlas/pull/144) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-025, ATLAS-026, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ATLAS-057, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088 |
 | Last Updated | 2026-08-10 |
-| Next Action | Extract Bootstrap Plan presentation behind a Health-only lazy boundary and validate it |
+| Next Action | Define and implement Bootstrap Checkpoint presentation extraction |
 
 ### ATLAS-IMP-132 Scope Rationale
 
@@ -67,7 +67,12 @@
 - Mobile validation passed at a 375 CSS-pixel viewport: the document remained 375/375 px, the
   workspace remained 349/349 px, and identity/phase evidence remained within its containers. The
   isolated iframe emitted only the known Browser instrumentation `MutationObserver` error; direct
-  Atlas pages were clean. GitHub publication remains pending.
+  Atlas pages were clean.
+- PR #144 passed Continuous Integration run `31420458893` with successful frontend and backend
+  jobs after the test DOM type was made explicit, then squash-merged as
+  `52f86fde3bcc44898247d533f90d691fad6777fe`.
+- The merged `main` commit passed independent push CI run `31421180164` with successful frontend and
+  backend jobs.
 
 ### ATLAS-IMP-131 Scope Rationale
 
