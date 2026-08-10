@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-124 |
 | Title | Health workspace loading boundary and route-level code splitting |
-| Status | In Progress |
-| Branch | `agent/health-workspace-code-splitting` |
+| Status | Complete |
+| Branch | `main` |
 | Pull Request | [#136](https://github.com/ozdemirumit/Project_Atlas/pull/136) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080 |
 | Last Updated | 2026-08-10 |
-| Next Action | Validate PR #136 in CI, merge it, verify merged-main CI and close IMP-124 |
+| Next Action | Define and implement the Health inventory and evidence workspace extraction slice |
 
 ### ATLAS-IMP-124 Scope Rationale
 
@@ -70,14 +70,18 @@
   reduction. Vite emits a separate 870,352-byte `OperationalApplication` chunk. The remaining
   greater-than-500-KB warning applies only to that deferred chunk and is the explicit input to later
   Health/Connector domain extraction slices.
-- Live validation used `http://127.0.0.1:5266`. A fresh Workspace load requested the coordinator graph but no
-  `OperationalApplication` resource; Health navigation then requested the operational module.
+- Live validation used `http://127.0.0.1:5266`. A fresh Workspace load requested the coordinator
+  graph but no `OperationalApplication` resource; Health navigation then requested the operational module.
   Direct Connectors loaded its own workspace without Health or composer leakage.
 - Desktop Workspace and Health measured equal 1,280-pixel client and scroll widths. A clean
   390-by-844 viewport reported a 375-pixel client and scroll width, all 13 capabilities, no clipped
   capability rows, a functional modal sidebar and a successful Health transition. The viewport was
   reset; the final desktop Workspace had equal client/scroll width and an empty browser warning and
   error log.
+- PR #136 CI run `31385758259` passed both frontend and backend jobs at head
+  `91ce1258ebd98f7cf9163e5ba3b1c57c5aa58e2d`.
+- PR #136 was squash-merged as `31a28b0e5d32d8f9f58b456c5d648e88a0f88d04`; merged-main CI run
+  `31386382840` passed both frontend and backend jobs.
 
 ### ATLAS-IMP-123 Scope Rationale
 
