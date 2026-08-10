@@ -1317,6 +1317,11 @@ describe("Atlas application shell", () => {
       inventoryHeading.compareDocumentPosition(reviewHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).not.toBe(0);
     expect(screen.getByLabelText("Health inventory and evidence")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^Connectors$/ }));
+    expect(await screen.findByRole("heading", { name: "Governed connector analysis" })).toBeVisible();
+    expect(screen.queryByLabelText("Health inventory and evidence")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Health$/ }));
+    expect(await screen.findByLabelText("Health inventory and evidence")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Open context panel" }));
     expect(await screen.findByText("test")).toBeVisible();
     expect(await screen.findByText("Local Operator")).toBeVisible();

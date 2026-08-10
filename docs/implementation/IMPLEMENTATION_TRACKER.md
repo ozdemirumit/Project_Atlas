@@ -59,10 +59,25 @@
   incremental metadata writes under `node_modules`; source types are clean.
 - The full frontend suite passed 119 tests across 67 files. Production build passed after 1,984
   modules and emitted a separate 11.18 KB `HealthInventoryEvidenceWorkspace` chunk.
-- The deferred `OperationalApplication` chunk decreased from 870.35 KB to 860.45 KB. The remaining
+- The deferred `OperationalApplication` chunk decreased from 870.35 KB to 860.46 KB. The remaining
   greater-than-500-KB warning is confined to the transitional operational module and remains input
   to the accepted investigation, governance, release and Connector extraction sequence.
-- Live desktop/mobile validation is pending.
+- Live validation used `http://127.0.0.1:5266`. Health rendered its authorized summary, inventory,
+  findings, selected-system evidence, dependency path and assessment report before assigned upgrade
+  reviews. Selecting VSP G400 changed the selected row, evidence heading and linked evidence from
+  the warning fixture to the exact healthy hardware fixture.
+- A fresh direct Connector load showed `Governed connector analysis` with no Health inventory DOM;
+  Health therefore owns the lazy presentation mount rather than a hidden Connector subtree.
+- Desktop document width was equal at 1,280 pixels before the browser surface narrowed. Live
+  inspection found an inherited 14-pixel operation-panel overflow from release preflight; the
+  bounded fix now reports equal 697-pixel operation client/scroll width while the long dependency
+  path remains in its own `overflow-x: auto` scroller.
+- A same-origin 390-by-844 validation frame produced a 375-pixel application client and scroll
+  width, equal 375-pixel operation client/scroll width, two inventory rows and two exact evidence
+  records. Inventory and dependency paths retained their own bounded horizontal scrollers. The
+  mobile navigation drawer and scrim opened successfully without overlapping the fixed viewport.
+- Final desktop, direct Connector and mobile browser logs contained no warning or error entries.
+  The temporary fixed-viewport validation artifact was removed before commit.
 
 ### ATLAS-IMP-124 Scope Rationale
 

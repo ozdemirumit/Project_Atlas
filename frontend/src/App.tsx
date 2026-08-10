@@ -8328,7 +8328,7 @@ export function OperationalApplication({
                 </div>
               )}
 
-              {overview && (
+              {activeNavigation === "Health" && overview && (
                 <WorkspaceLoadBoundary compact resetKey={overview.snapshot_id} workspace="Health">
                   <Suspense
                     fallback={
