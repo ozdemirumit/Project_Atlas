@@ -34,6 +34,8 @@ from atlas.modules.recommendations.application.reviewer_assignment_ports import 
     RecommendationReviewerAssignmentUncertainError,
     TrustedRecommendationReviewerAssignmentAdapter,
 )
+from atlas.modules.recommendations.domain.promotion import PromotedRecommendationArtifact
+from atlas.modules.recommendations.domain.readiness import RecommendationReadinessAssessment
 from atlas.modules.recommendations.domain.review_request import (
     RecommendationReviewRequestRecord,
     RecommendationReviewRequestResult,
@@ -383,6 +385,35 @@ class GovernedRecommendationReviewerAssignmentService:
                 "recommendation_reviewer_assignment_policy_invalid"
             )
         return record, policy
+
+    async def protected_content_source(
+        self, *, assignment_set_id: str
+    ) -> tuple[
+        RecommendationReviewerAssignmentRecord,
+        RecommendationReviewerAssignmentPolicySnapshot,
+        RecommendationReviewRequestRecord,
+        RecommendationReadinessAssessment,
+        PromotedRecommendationArtifact,
+    ]:
+        record, policy = await self.protected_inspection_source(assignment_set_id=assignment_set_id)
+        (
+            review_request,
+            assessment,
+            artifact,
+        ) = await self._review_request_source.protected_content_source(
+            review_request_id=record.review_request_id
+        )
+        if (
+            review_request.canonical_digest != record.source_review_request_digest
+            or review_request.recommendation_id != record.recommendation_id
+            or review_request.readiness_assessment_id != record.readiness_assessment_id
+            or review_request.promotion_id != record.promotion_id
+            or artifact.canonical_digest != review_request.source_recommendation_digest
+        ):
+            raise RecommendationReviewerAssignmentError(
+                "recommendation_reviewer_assignment_integrity_failed"
+            )
+        return record, policy, review_request, assessment, artifact
 
     async def _read_source(
         self,

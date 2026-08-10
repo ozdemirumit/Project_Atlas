@@ -34,6 +34,7 @@ from atlas.modules.recommendations.application.review_request_ports import (
     RecommendationReviewRequestUncertainError,
     TrustedRecommendationReviewRequestOrchestrator,
 )
+from atlas.modules.recommendations.domain.promotion import PromotedRecommendationArtifact
 from atlas.modules.recommendations.domain.readiness import (
     RecommendationReadinessAssessment,
     RecommendationReadinessResult,
@@ -356,6 +357,37 @@ class GovernedRecommendationReviewRequestService:
 
     async def close(self) -> None:
         await self._repository.close()
+
+    async def protected_content_source(
+        self, *, review_request_id: str
+    ) -> tuple[
+        RecommendationReviewRequestRecord,
+        RecommendationReadinessAssessment,
+        PromotedRecommendationArtifact,
+    ]:
+        record = await self._repository.get(review_request_id=review_request_id)
+        if record is None or record.canonical_digest != self._record_digest(record):
+            raise RecommendationReviewRequestError("recommendation_review_request_not_found")
+        policy = await self._policy_source.get_by_id(policy_id=record.review_request_policy_id)
+        if (
+            policy is None
+            or policy.canonical_digest != record.review_request_policy_digest
+            or policy.canonical_digest != self._digest(self._payload(policy))
+        ):
+            raise RecommendationReviewRequestError("recommendation_review_request_not_found")
+        assessment, artifact = await self._readiness_source.protected_content_source(
+            assessment_id=record.readiness_assessment_id
+        )
+        if (
+            assessment.canonical_digest != record.source_assessment_digest
+            or assessment.recommendation_id != record.recommendation_id
+            or artifact.canonical_digest != record.source_recommendation_digest
+            or artifact.promotion_id != record.promotion_id
+            or artifact.outcome != record.source_outcome
+            or len(artifact.options) != record.option_count
+        ):
+            raise RecommendationReviewRequestError("recommendation_review_request_integrity_failed")
+        return record, assessment, artifact
 
     async def _read_source(
         self,

@@ -82,6 +82,7 @@ from atlas.api.routes import (
     publisher_attestations,
     rca,
     recommendation_promotions,
+    recommendation_protected_contents,
     recommendation_protected_inspections,
     recommendation_readiness,
     recommendation_review_requests,
@@ -1207,6 +1208,20 @@ from atlas.modules.recommendations.adapters.promotion_synthetic import (
     SyntheticTrustedRecommendationPromoter,
     UnavailableTrustedRecommendationPromoter,
 )
+from atlas.modules.recommendations.adapters.protected_content_memory import (
+    InMemoryRecommendationProtectedContentPolicySource,
+    InMemoryRecommendationProtectedContentRepository,
+)
+from atlas.modules.recommendations.adapters.protected_content_permission import (
+    AuthorizationRecommendationProtectedContentPermissionAuthorizer,
+)
+from atlas.modules.recommendations.adapters.protected_content_postgres import (
+    PostgreSQLRecommendationProtectedContentRepository,
+)
+from atlas.modules.recommendations.adapters.protected_content_synthetic import (
+    SyntheticRecommendationProtectedContentPresenter,
+    UnavailableRecommendationProtectedContentPresenter,
+)
 from atlas.modules.recommendations.adapters.protected_inspection_memory import (
     InMemoryRecommendationProtectedInspectionPolicySource,
     InMemoryRecommendationProtectedInspectionRepository,
@@ -1269,6 +1284,10 @@ from atlas.modules.recommendations.adapters.synthetic import (
 from atlas.modules.recommendations.application.promotion import (
     GovernedRecommendationPromotionService,
     build_development_recommendation_promotion_policy,
+)
+from atlas.modules.recommendations.application.protected_content import (
+    RecommendationProtectedContentService,
+    build_development_recommendation_protected_content_policy,
 )
 from atlas.modules.recommendations.application.protected_inspection import (
     RecommendationProtectedInspectionService,
@@ -1470,6 +1489,7 @@ def create_app(
     recommendation_protected_inspection_service: (
         RecommendationProtectedInspectionService | None
     ) = None,
+    recommendation_protected_content_service: RecommendationProtectedContentService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -4377,6 +4397,48 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    if recommendation_protected_content_service is not None:
+        resolved_recommendation_protected_content_service = recommendation_protected_content_service
+    else:
+        recommendation_protected_content_repository = (
+            PostgreSQLRecommendationProtectedContentRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryRecommendationProtectedContentRepository()
+        )
+        recommendation_protected_content_policies = (
+            ()
+            if is_production
+            else (
+                build_development_recommendation_protected_content_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_recommendation_protected_content_service = RecommendationProtectedContentService(
+            repository=recommendation_protected_content_repository,
+            source=resolved_recommendation_protected_inspection_service,
+            policy_source=InMemoryRecommendationProtectedContentPolicySource(
+                recommendation_protected_content_policies
+            ),
+            permission_authorizer=(
+                AuthorizationRecommendationProtectedContentPermissionAuthorizer(
+                    service=resolved_authorization_service,
+                    environment=resolved_settings.environment,
+                )
+            ),
+            presenter=(
+                UnavailableRecommendationProtectedContentPresenter()
+                if is_production
+                else SyntheticRecommendationProtectedContentPresenter()
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -4662,6 +4724,9 @@ def create_app(
         app.state.recommendation_protected_inspection_service = (
             resolved_recommendation_protected_inspection_service
         )
+        app.state.recommendation_protected_content_service = (
+            resolved_recommendation_protected_content_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -4674,6 +4739,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_recommendation_protected_content_service.close()
         await resolved_recommendation_protected_inspection_service.close()
         await resolved_recommendation_reviewer_assignment_service.close()
         await resolved_recommendation_review_request_service.close()
@@ -4860,6 +4926,7 @@ def create_app(
     app.include_router(recommendation_review_requests.router, prefix="/api/v1")
     app.include_router(recommendation_reviewer_assignments.router, prefix="/api/v1")
     app.include_router(recommendation_protected_inspections.router, prefix="/api/v1")
+    app.include_router(recommendation_protected_contents.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

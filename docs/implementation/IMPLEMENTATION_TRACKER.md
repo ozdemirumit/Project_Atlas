@@ -4,14 +4,90 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-116 |
-| Title | Governed recommendation protected-inspection lease foundation |
-| Status | Done |
-| Branch | `agent/recommendation-protected-inspection` |
-| Pull Request | [#128](https://github.com/ozdemirumit/Project_Atlas/pull/128) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-072 |
+| Task ID | ATLAS-IMP-117 |
+| Title | Governed recommendation protected-content presentation |
+| Status | Pull Request Open; CI Running |
+| Branch | `agent/recommendation-protected-content` |
+| Pull Request | [#129](https://github.com/ozdemirumit/Project_Atlas/pull/129) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-073 |
 | Last Updated | 2026-08-10 |
-| Next Action | Select and begin the next approved recommendation-review vertical slice |
+| Next Action | Publish IMP-117, pass CI, merge, and define the governed recommendation findings boundary |
+
+### ATLAS-IMP-117 Scope Rationale
+
+- IMP-116 creates one short-lived, browser-bound lease for the exact assigned reviewer and track
+  but deliberately returns no recommendation content.
+- ADR-073 permits one bounded, redacted, plain-text snapshot of the exact promoted recommendation
+  through a trusted presenter while that lease and all lineage remain current.
+- Presentation records disclosure only. Findings, decisions, correction, approval, workflow,
+  ITSM and every operational capability remain later independent stages.
+
+### ATLAS-IMP-117 Acceptance Criteria
+
+- Only an active integrity-valid lease with unchanged promotion, readiness, request, assignment and
+  exact recommendation lineage may enter content presentation.
+- Current hardware-MFA enterprise identity, salted assignee digest, browser binding and selected
+  track cookie must all match before content access.
+- Caller-selected identity, track, content, options, ranges, presenter, redaction, byte limit,
+  finding, decision, approval, workflow, command and mutation fields are forbidden.
+- One immutable claim exists per lease. Exact completed replay reproduces only the same digest and
+  byte count before lease expiry; drift and uncertainty fail closed without partial content.
+- Production uses an unavailable presenter and fails closed. Development uses deterministic
+  synthetic plain text without network, model, connector, workflow or infrastructure access.
+- Plaintext appears only in the no-store HTTP response and rendered text node, never persistence,
+  cookie, audit, logs, event payloads or browser storage.
+- Success sets content disclosure only and leaves findings, review decisions, approval, workflow,
+  ITSM, execution, deployment and mutation false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny C2 create/C1 read RBAC,
+  CSRF, focused lineage/cookie/replay/drift/redaction/audit tests, bounded UI, full suites, live
+  desktop validation and GitHub CI apply.
+
+### ATLAS-IMP-117 Initial Evidence
+
+- IMP-116 merged through PR #128 as `6e3778c1a0dfb222542b832432acd2c7705d5336`; PR run
+  `31343219452` and merged-main run `31343473028` passed both frontend and backend jobs.
+- IMP-116 closure commit `d8784c974b15256a14be0b2cff82a76c13048810` passed main run
+  `31343769317` (frontend and backend successful).
+- ADR-073 is accepted and this branch owns the implementation slice.
+
+### ATLAS-IMP-117 Validation Evidence
+
+- The service rehydrates and verifies the exact promotion, readiness assessment, review request,
+  reviewer assignment and active browser-bound inspection lease before presenting content. It
+  rejects changed recommendation paths, cross-track cookies, expired state, future-dated
+  authentication, permission denial and unavailable production presenters before disclosure.
+- One immutable lease claim permits one bounded presentation. Exact replay reauthorizes the
+  current human, browser and lease, regenerates only the same snapshot and rejects changed content
+  digest or byte count as replay drift. Mandatory intent-audit failure prevents claim creation;
+  claimed presenter uncertainty remains closed without a presentation record.
+- The development presenter is deterministic, local and plain-text-only. It normalizes active
+  markup, applies the signed redaction/byte policy and returns content only in a no-store HTTP
+  grant. PostgreSQL and memory records, schemas, audit metadata, cookies and browser storage carry
+  digests and byte counts but no plaintext recommendation content.
+- Success records disclosure only. Human findings, review completion, recommendation approval,
+  workflow, ITSM, execution, deployment and infrastructure mutation remain false. The frontend
+  renders content through an escaped `pre` text node and offers no later-stage action.
+- Default-deny C2 create and C1 read permissions, recent hardware-MFA checks, CSRF, exact salted
+  assignee/browser/track proof, strict minimized schemas, memory/PostgreSQL parity and Alembic
+  revision `20260810_0089` are implemented. Alembic reports one head and the incremental
+  PostgreSQL SQL creates both claim and presentation tables with unique lease constraints.
+- Ruff formatting and lint passed across `1099` Python files. Strict mypy found no issues in `899`
+  source files. Focused protected-content, inspection and API health coverage passed `23` tests.
+  The complete backend suite passed `918` tests with three expected Windows symlink skips and
+  three existing dependency warnings.
+- Frontend ESLint and TypeScript passed. Vitest passed `55` files with `88` tests and the production
+  build completed (CSS 128.59 kB / 21.34 kB gzip; JavaScript 1,079.52 kB / 193.65 kB gzip). The
+  existing bundle-size notice remains non-blocking. Tests prove exact request binding, unsafe
+  response rejection, escaped rendering and absence of browser-storage writes or later authority.
+- Live validation used backend port `8081` and frontend port `5241`. Liveness passed and OpenAPI
+  exposed both presentation routes. The healthy Connector lifecycle rendered `Recommendation
+  content presentation` as the latest capability at `1280x720` and a 375 CSS-pixel mobile
+  viewport with document width equal to client width and no horizontal overflow; console
+  error/warning logs were empty. Local Operator is intentionally not an assigned reviewer, so the
+  sensitive live presentation was not attempted with that identity; the exact-assignee HTTPS
+  lease-cookie and presentation flow is covered by the integration test.
+- Implementation commit `711a00f22ecec6d9d1383c5457e0a9b2d044ad25` is published through PR
+  #129. Continuous Integration is running for the final tracker-linked branch head.
 
 ### ATLAS-IMP-116 Scope Rationale
 

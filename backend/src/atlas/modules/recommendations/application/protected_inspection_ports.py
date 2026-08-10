@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.recommendations.domain.promotion import PromotedRecommendationArtifact
 from atlas.modules.recommendations.domain.protected_inspection import (
     RecommendationProtectedInspectionBrokerGrant,
     RecommendationProtectedInspectionClaim,
@@ -10,6 +11,8 @@ from atlas.modules.recommendations.domain.protected_inspection import (
     RecommendationProtectedInspectionPolicySnapshot,
     RecommendationProtectedInspectionRecord,
 )
+from atlas.modules.recommendations.domain.readiness import RecommendationReadinessAssessment
+from atlas.modules.recommendations.domain.review_request import RecommendationReviewRequestRecord
 from atlas.modules.recommendations.domain.reviewer_assignment import (
     RecommendationReviewerAssignmentPolicySnapshot,
     RecommendationReviewerAssignmentRecord,
@@ -30,6 +33,16 @@ class RecommendationProtectedInspectionSource(Protocol):
     ) -> tuple[
         RecommendationReviewerAssignmentRecord,
         RecommendationReviewerAssignmentPolicySnapshot,
+    ]: ...
+
+    async def protected_content_source(
+        self, *, assignment_set_id: str
+    ) -> tuple[
+        RecommendationReviewerAssignmentRecord,
+        RecommendationReviewerAssignmentPolicySnapshot,
+        RecommendationReviewRequestRecord,
+        RecommendationReadinessAssessment,
+        PromotedRecommendationArtifact,
     ]: ...
 
 

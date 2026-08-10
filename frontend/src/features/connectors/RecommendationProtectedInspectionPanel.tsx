@@ -7,6 +7,7 @@ import {
   type RecommendationInspectionTrack,
 } from "../../api/recommendationProtectedInspections";
 import type { RecommendationReviewerAssignmentResult } from "../../api/recommendationReviewerAssignments";
+import { RecommendationProtectedContentPanel } from "./RecommendationProtectedContentPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -137,6 +138,7 @@ export function RecommendationProtectedInspectionPanel({
         </div>
       )}
       {lease && (
+        <>
         <div className="package-signing-record" data-testid="recommendation-inspection-lease">
           <div className="section-heading compact-heading">
             <div>
@@ -170,6 +172,8 @@ export function RecommendationProtectedInspectionPanel({
             Content retrieval and reviewer findings remain separate governed stages.
           </p>
         </div>
+        <RecommendationProtectedContentPanel lease={lease} />
+        </>
       )}
     </section>
   );

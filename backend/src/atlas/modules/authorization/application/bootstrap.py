@@ -224,6 +224,12 @@ RECOMMENDATION_PROTECTED_INSPECTION_LEASE_CREATE = (
     "recommendation.protected-inspection.leases.create"
 )
 RECOMMENDATION_PROTECTED_INSPECTION_LEASE_READ = "recommendation.protected-inspection.leases.read"
+RECOMMENDATION_PROTECTED_CONTENT_PRESENTATION_CREATE = (
+    "recommendation.protected-content.presentations.create"
+)
+RECOMMENDATION_PROTECTED_CONTENT_PRESENTATION_READ = (
+    "recommendation.protected-content.presentations.read"
+)
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -1358,6 +1364,19 @@ def recommendation_protected_inspection_scope(
     )
 
 
+def recommendation_protected_content_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.recommendation",
+        resource_id="resource.recommendation.protected-content",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -2275,6 +2294,14 @@ def build_development_authorization_service(
             permission_id=RECOMMENDATION_PROTECTED_INSPECTION_LEASE_READ,
             description="Read minimized recommendation inspection lease metadata.",
         ),
+        PermissionDefinition(
+            permission_id=RECOMMENDATION_PROTECTED_CONTENT_PRESENTATION_CREATE,
+            description="Present exact-assignee protected recommendation content.",
+        ),
+        PermissionDefinition(
+            permission_id=RECOMMENDATION_PROTECTED_CONTENT_PRESENTATION_READ,
+            description="Read an existing protected recommendation presentation.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -2466,6 +2493,8 @@ def build_development_authorization_service(
                 RECOMMENDATION_REVIEWER_ASSIGNMENT_READ,
                 RECOMMENDATION_PROTECTED_INSPECTION_LEASE_CREATE,
                 RECOMMENDATION_PROTECTED_INSPECTION_LEASE_READ,
+                RECOMMENDATION_PROTECTED_CONTENT_PRESENTATION_CREATE,
+                RECOMMENDATION_PROTECTED_CONTENT_PRESENTATION_READ,
             }
         ),
     )
