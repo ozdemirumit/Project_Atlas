@@ -4,14 +4,83 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-119 |
-| Title | Governed recommendation protected finding presentation |
-| Status | Done |
-| Branch | `main` |
-| Pull Request | [#131](https://github.com/ozdemirumit/Project_Atlas/pull/131) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-075 |
+| Task ID | ATLAS-IMP-120 |
+| Title | Governed recommendation track review decision |
+| Status | Review |
+| Branch | `agent/recommendation-track-review-decision` |
+| Pull Request | [#132](https://github.com/ozdemirumit/Project_Atlas/pull/132) |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-076 |
 | Last Updated | 2026-08-10 |
-| Next Action | Select and record the ATLAS-IMP-120 vertical slice |
+| Next Action | Complete PR #132 CI and merge the validated governed recommendation track review decision slice |
+
+### ATLAS-IMP-120 Scope Rationale
+
+- IMP-119 presents one exact sealed technical or service-impact finding packet but deliberately
+  records no accountable judgment.
+- ADR-076 binds one immutable `passed` or `changes-required` human decision to that exact
+  presentation, assignment track, lease, browser, assignee and signed policy.
+- Correction, final recommendation disposition, approval, workflow, ITSM, execution, deployment
+  and mutation remain independent later stages.
+
+### ATLAS-IMP-120 Acceptance Criteria
+
+- Only the exact current lease holder and assignee, in the exact tenant, with recent hardware MFA,
+  dedicated C2 decision and lineage-read permissions, the bound browser session and exact track
+  cookie may decide. Caller-selected identity, track, content, lifecycle or authority fields fail.
+- Only policy-approved `passed` or `changes-required` dispositions and track-specific structured
+  basis codes are accepted. No recommendation or finding narrative, free-form rationale, category,
+  severity or artifact coordinate enters persistence, audit, logs, events or model context.
+- Intent audit and an atomic unique presentation claim precede a signed trusted-attestor receipt.
+  Exact completed idempotent reuse is allowed; concurrency, conflict or failure after claim remains
+  claimed and cannot replace the first decision. Production fails closed without an attestor.
+- The immutable metadata record sets only the matching technical or service-impact completion/pass
+  state and optional correction requirement. Both passes are readiness evidence only; final
+  recommendation disposition, approval, workflow, ITSM, execution, deployment and infrastructure
+  mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny C2 create/C1 read RBAC,
+  CSRF, focused lineage/track/idempotency/concurrency/privacy/audit tests, bounded UI, full suites,
+  live validation and GitHub CI apply.
+
+### ATLAS-IMP-120 Initial Evidence
+
+- IMP-119 merged through PR #131 as `d5da3a87c2bafa09b6ce9b0caecac522d0b30f22`; PR run
+  `31354504832` and merged-main run `31354936046` passed both frontend and backend jobs.
+- IMP-119 closure commit `c3d168635e2641436649b874ae4ac2b18ff2aa98` passed main run
+  `31355385945` with both frontend and backend jobs successful.
+- ADR-076 is accepted and this branch owns the implementation slice.
+
+### ATLAS-IMP-120 Validation Evidence
+
+- The decision service rehydrates and verifies the exact finding presentation, finding packet,
+  protected content, lease, reviewer assignment, review request, readiness assessment, promotion,
+  signed policies and complete recommendation lineage. Only the exact current hardware-MFA assignee,
+  browser binding and selected-track lease secret can claim one immutable decision.
+- Technical and service-impact tracks accept only policy-owned structured basis codes and
+  `passed` or `changes-required`. The immutable claim, attestor receipt, audit-before-persist flow,
+  idempotent reuse, concurrency rejection and fail-closed production attestor preserve the first
+  accountable judgment without recording finding text, categories, severities, free-form rationale
+  or artifact coordinates.
+- A single-track record marks only its matching completion/pass state. `changes-required` sets a
+  correction requirement but creates no correction; two matching passed tracks establish readiness
+  evidence only. Recommendation approval, workflow, ITSM, execution, deployment and infrastructure
+  mutation remain explicitly false.
+- Default-deny C2 create and C1 read permissions, exact tenant scope, CSRF, browser cookies, strict
+  request/response schemas, no-store response headers, memory/PostgreSQL parity and metadata-only
+  persistence are wired through the application. Alembic has the single head `20260810_0092`; the
+  isolated `0091` to `0092` offline SQL created the two expected tables across 85 statements and
+  contained no finding summary, detail or artifact column.
+- Backend formatting and lint covered 1,132 files, strict mypy passed 926 source files, and the full
+  backend suite passed 940 tests with the three existing Windows symlink skips and three dependency
+  deprecation warnings. The focused decision and API-health set passed 13 tests.
+- Frontend ESLint, TypeScript and production build passed. The full frontend suite passed 94 tests
+  across 58 files, including exact endpoint lineage, unsafe authority-bearing response rejection,
+  presentation-to-decision composition and lifecycle coverage.
+- Live development validation through `http://127.0.0.1:5245/` showed the new capability in both
+  expected locations with `11` available stages and `0` in progress. Desktop width was 1,280 of
+  1,280; the mobile override reported a 375-pixel client and scroll width, retained both capability
+  labels and produced no browser warning or error logs. The temporary viewport override was reset.
+- Live evidence remained synthetic and local. No vendor endpoint, real credential, external model,
+  workflow, ITSM system, execution target, deployment process or infrastructure mutation was used.
 
 ### ATLAS-IMP-119 Scope Rationale
 

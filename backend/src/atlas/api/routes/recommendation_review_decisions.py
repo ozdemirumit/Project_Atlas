@@ -1,0 +1,196 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import Annotated, NoReturn
+
+from fastapi import APIRouter, Depends, Header, Path, Request, Response
+
+from atlas.api.errors import AtlasError
+from atlas.api.recommendation_review_decision_schemas import (
+    RecommendationTrackReviewDecisionData,
+    RecommendationTrackReviewDecisionInput,
+    RecommendationTrackReviewDecisionResponse,
+)
+from atlas.api.schemas import ResponseMeta
+from atlas.api.security import (
+    authorize_recommendation_track_review_decision_create,
+    authorize_recommendation_track_review_decision_read,
+    browser_session_subject,
+)
+from atlas.modules.authorization.domain.models import AuthorizationDecision
+from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.recommendations.application.review_decision import (
+    RecommendationTrackReviewDecisionService,
+)
+from atlas.modules.recommendations.application.review_decision_ports import (
+    RecommendationTrackReviewDecisionError,
+    RecommendationTrackReviewDecisionUncertainError,
+)
+from atlas.modules.recommendations.domain.review_decision import (
+    RecommendationTrackReviewDecisionGrant,
+)
+
+router = APIRouter(prefix="/recommendations", tags=["recommendations"])
+IDEMPOTENCY = Header(
+    alias="Idempotency-Key", min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$"
+)
+SAFE_ID = Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")
+
+
+def _raise(error: RecommendationTrackReviewDecisionError) -> NoReturn:
+    code = str(error)
+    if isinstance(error, RecommendationTrackReviewDecisionUncertainError):
+        status = 503
+    elif code.endswith(("required", "denied", "mfa_required")):
+        status = 403
+    elif code.endswith("not_found"):
+        status = 404
+    elif code.endswith(("invalid", "integrity_failed")):
+        status = 422
+    else:
+        status = 409
+    raise AtlasError(
+        status=status,
+        code=code,
+        title="Recommendation track review decision unavailable",
+        detail=(
+            "No finding content, correction, approval, workflow, ITSM, or "
+            "operational authority was returned. Claimed uncertain decisions are not retried."
+        ),
+    ) from error
+
+
+def _lease_secrets(request: Request) -> dict[str, str]:
+    secrets: dict[str, str] = {}
+    technical = request.cookies.get("atlas_recommendation_inspection_technical")
+    service_impact = request.cookies.get("atlas_recommendation_inspection_service_impact")
+    if technical:
+        secrets["review-track.technical"] = technical
+    if service_impact:
+        secrets["review-track.service-impact"] = service_impact
+    return secrets
+
+
+def _browser_session_id(request: Request) -> str:
+    value = getattr(request.state, "authenticated_session_id", None)
+    if not isinstance(value, str):
+        raise AtlasError(
+            status=401,
+            code="authentication_required",
+            title="Authentication required",
+            detail="A browser-bound authenticated identity is required.",
+        )
+    return value
+
+
+def _response(
+    grant: RecommendationTrackReviewDecisionGrant,
+    request: Request,
+    response: Response,
+) -> RecommendationTrackReviewDecisionResponse:
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+    return RecommendationTrackReviewDecisionResponse(
+        data=RecommendationTrackReviewDecisionData.from_grant(grant),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.post(
+    "/{recommendation_id}/protected-inspections/leases/{lease_id}/presentations/{content_presentation_id}/findings/{finding_packet_id}"
+    "/presentations/{finding_presentation_id}/decisions",
+    response_model=RecommendationTrackReviewDecisionResponse,
+    status_code=201,
+)
+async def create_recommendation_track_review_decision(
+    recommendation_id: Annotated[str, SAFE_ID],
+    lease_id: Annotated[str, SAFE_ID],
+    content_presentation_id: Annotated[str, SAFE_ID],
+    finding_packet_id: Annotated[str, SAFE_ID],
+    finding_presentation_id: Annotated[str, SAFE_ID],
+    payload: RecommendationTrackReviewDecisionInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_recommendation_track_review_decision_create),
+    ],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> RecommendationTrackReviewDecisionResponse:
+    service: RecommendationTrackReviewDecisionService = (
+        request.app.state.recommendation_track_review_decision_service
+    )
+    try:
+        grant = await service.create(
+            actor=subject,
+            recommendation_id=recommendation_id,
+            source_lease_id=lease_id,
+            source_content_presentation_id=content_presentation_id,
+            source_finding_packet_id=finding_packet_id,
+            source_finding_presentation_id=finding_presentation_id,
+            source_finding_presentation_digest=payload.source_finding_presentation_digest,
+            decision_policy_id=payload.decision_policy_id,
+            decision_policy_digest=payload.decision_policy_digest,
+            disposition_code=payload.disposition_code,
+            basis_codes=payload.basis_codes,
+            purpose=payload.purpose,
+            exact_findings_reviewed_acknowledged=(payload.acknowledged_exact_findings_reviewed),
+            human_track_decision_acknowledged=payload.acknowledged_human_track_decision,
+            no_approval_or_operational_authority_acknowledged=(
+                payload.acknowledged_no_approval_or_operational_authority
+            ),
+            browser_session_id=_browser_session_id(request),
+            lease_secrets=_lease_secrets(request),
+            idempotency_key=idempotency_key,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except RecommendationTrackReviewDecisionError as error:
+        _raise(error)
+    return _response(grant, request, response)
+
+
+@router.get(
+    "/{recommendation_id}/protected-inspections/leases/{lease_id}/presentations/{content_presentation_id}/findings/{finding_packet_id}"
+    "/presentations/{finding_presentation_id}/decisions/{decision_id}",
+    response_model=RecommendationTrackReviewDecisionResponse,
+)
+async def get_recommendation_track_review_decision(
+    recommendation_id: Annotated[str, SAFE_ID],
+    lease_id: Annotated[str, SAFE_ID],
+    content_presentation_id: Annotated[str, SAFE_ID],
+    finding_packet_id: Annotated[str, SAFE_ID],
+    finding_presentation_id: Annotated[str, SAFE_ID],
+    decision_id: Annotated[str, SAFE_ID],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_recommendation_track_review_decision_read),
+    ],
+) -> RecommendationTrackReviewDecisionResponse:
+    service: RecommendationTrackReviewDecisionService = (
+        request.app.state.recommendation_track_review_decision_service
+    )
+    try:
+        grant = await service.get(
+            actor=subject,
+            recommendation_id=recommendation_id,
+            source_lease_id=lease_id,
+            source_content_presentation_id=content_presentation_id,
+            source_finding_packet_id=finding_packet_id,
+            source_finding_presentation_id=finding_presentation_id,
+            decision_id=decision_id,
+            browser_session_id=_browser_session_id(request),
+            lease_secrets=_lease_secrets(request),
+            correlation_id=str(request.state.correlation_id),
+        )
+    except RecommendationTrackReviewDecisionError as error:
+        _raise(error)
+    return _response(grant, request, response)
