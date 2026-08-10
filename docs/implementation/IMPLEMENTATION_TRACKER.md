@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-129 |
 | Title | Security Export presentation extraction |
-| Status | In Progress |
-| Branch | `agent/security-export-presentation` |
-| Pull Request | Pending |
+| Status | Complete |
+| Branch | `main` |
+| Pull Request | [#141](https://github.com/ozdemirumit/Project_Atlas/pull/141) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-020, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-034, ATLAS-035, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085 |
 | Last Updated | 2026-08-10 |
-| Next Action | Publish IMP-129, verify PR and merged-main CI, then close the task |
+| Next Action | Define the release/bootstrap presentation ownership and authority boundary |
 
 ### ATLAS-IMP-129 Scope Rationale
 
@@ -67,7 +67,10 @@
   workspace/grid/detail remained 349/349 px and the RFC 5424 payload remained 304/304 px. The
   isolated validation iframe emitted only the known Browser instrumentation `MutationObserver`
   error; direct Atlas pages were clean.
-- GitHub publication remains pending.
+- PR #141 passed Continuous Integration run `31409424204` with successful frontend and backend
+  jobs, then squash-merged as `9c8e2702181104b76f0f2dc8d451ac2cb3ac67ab`.
+- The merged `main` commit passed independent push CI run `31410165766` with successful frontend and
+  backend jobs.
 
 ### ATLAS-IMP-128 Scope Rationale
 
