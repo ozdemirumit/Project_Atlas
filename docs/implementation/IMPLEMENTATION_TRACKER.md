@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-126 |
 | Title | Health decision-support presentation extraction |
-| Status | In Progress |
-| Branch | `agent/health-decision-support-presentation` |
-| Pull Request | Pending |
+| Status | Complete |
+| Branch | `main` |
+| Pull Request | [#138](https://github.com/ozdemirumit/Project_Atlas/pull/138) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-020, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082 |
 | Last Updated | 2026-08-10 |
-| Next Action | Complete live desktop/mobile validation, then publish the PR and verify CI |
+| Next Action | Define the Health approval and technical-report presentation extraction slice |
 
 ### ATLAS-IMP-126 Scope Rationale
 
@@ -59,7 +59,23 @@
 - Production build passed after 1,985 modules and emitted a separate 16.65 KB
   `HealthDecisionSupportWorkspace` chunk. The deferred `OperationalApplication` chunk decreased
   from 860.46 KB to 845.35 KB; the remaining warning is confined to that transitional module.
-- Live desktop/mobile validation and GitHub PR/CI evidence remain pending.
+- Live validation used `http://127.0.0.1:5252`. The authenticated desktop flow progressed from a
+  bounded investigation through provisional RCA to compared recommendation options. The preferred
+  option, blocked change option, policy constraints and explicit `No execution authority` boundary
+  remained visible; approval and report controls became available without executing infrastructure.
+- At 1,280 pixels, document width remained 1,280/1,280 and the decision-support workspace remained
+  655/655 client/scroll width. The 1,027-pixel option-comparison table stayed inside its own
+  623-pixel horizontal scroller rather than widening the document.
+- A same-origin 390-by-844 validation frame produced a 375/375 application width and 351/351
+  decision-support width. Mobile navigation opened successfully and the empty-state action gates
+  remained explicit. The temporary validation artifacts were removed before commit.
+- The final authenticated application warning/error log was empty. The isolated validation harness
+  emitted one browser-instrumentation `MutationObserver` error outside the application frame; it was
+  not attributed to Atlas and was excluded from application evidence.
+- PR #138 CI run `31395540185` passed frontend and backend jobs at head
+  `0c68195175f4d5ef3e695f73ef172ceac4cdd7e7`.
+- PR #138 was squash-merged as `c9f1bef0d1a1a08e3b2bee79b55b76f2ac0d734b`; merged-main CI run
+  `31396751729` passed frontend and backend jobs.
 
 ### ATLAS-IMP-125 Scope Rationale
 
