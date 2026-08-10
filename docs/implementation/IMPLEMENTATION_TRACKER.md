@@ -69,7 +69,6 @@
   error; direct Atlas pages were clean.
 - GitHub publication remains pending.
 
-
 ### ATLAS-IMP-128 Scope Rationale
 
 - IMP-127 closed with a separate 12.77 KB governance/report chunk and reduced the transitional
