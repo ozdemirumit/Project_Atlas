@@ -3,13 +3,9 @@ import {
   Activity,
   AlertTriangle,
   Archive,
-  Bell,
   BrainCircuit,
   Building2,
-  Blocks,
-  Box,
   CheckCircle2,
-  ChevronDown,
   CircleHelp,
   Clock3,
   Copy,
@@ -25,13 +21,9 @@ import {
   Layers3,
   KeyRound,
   LogIn,
-  LogOut,
-  Menu,
-  MessageSquareText,
   Monitor,
   PackageCheck,
   Network,
-  PanelRightClose,
   Play,
   RefreshCw,
   ScanSearch,
@@ -48,7 +40,7 @@ import {
   UserX,
   X,
 } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
 import {
   createApiCredential,
@@ -114,6 +106,17 @@ import {
 import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
 import { ConnectorLifecycleOverview } from "./features/connectors/ConnectorLifecycleOverview";
+import {
+  ApplicationSidebar,
+  ApplicationTopbar,
+} from "./features/shell/ApplicationShell";
+import {
+  isKnownWorkspaceHash,
+  type WorkspaceId,
+  workspaceFromHash,
+  workspaceHash,
+} from "./features/shell/workspace";
+import { WorkspaceOverview } from "./features/workspace/WorkspaceOverview";
 import { PackageApprovalPanel } from "./features/connectors/PackageApprovalPanel";
 import {
   acquireConnectorPackage,
@@ -213,15 +216,6 @@ import {
   type UpgradeSimulation,
 } from "./api/upgrades";
 
-const navigation = [
-  { label: "Workspace", icon: MessageSquareText },
-  { label: "Infrastructure", icon: Server },
-  { label: "Topology", icon: GitBranch },
-  { label: "Health", icon: Activity, active: true },
-  { label: "Connectors", icon: Blocks },
-  { label: "Reports", icon: FileChartColumn },
-];
-
 function statusLabel(status: string | undefined): string {
   if (!status) return "Connecting";
   return status.charAt(0).toUpperCase() + status.slice(1);
@@ -239,13 +233,9 @@ function shouldOpenInspector(): boolean {
   );
 }
 
-function initials(displayName: string | undefined): string {
-  if (!displayName) return "--";
-  return displayName
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join("");
+function workspaceFromLocation(): WorkspaceId {
+  if (new URLSearchParams(window.location.search).has("approval_request_id")) return "Health";
+  return workspaceFromHash(window.location.hash);
 }
 
 function formatTimestamp(timestamp: string | undefined): string {
@@ -337,7 +327,7 @@ const MCP_BUILDER_SECURITY_CONTROLS: Array<{
 
 export function App() {
   const queryClient = useQueryClient();
-  const [activeNavigation, setActiveNavigation] = useState("Health");
+  const [activeNavigation, setActiveNavigation] = useState<WorkspaceId>(workspaceFromLocation);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(shouldOpenInspector);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
@@ -561,6 +551,44 @@ export function App() {
   const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
     Record<string, McpBuilderDesignDecision>
   >({});
+
+  useEffect(() => {
+    const syncWorkspace = () => {
+      const workspace = workspaceFromLocation();
+      setActiveNavigation(workspace);
+      if (workspace !== "Health") setInspectorOpen(false);
+
+      if (window.location.hash && !isKnownWorkspaceHash(window.location.hash)) {
+        window.history.replaceState(
+          null,
+          "",
+          `${window.location.pathname}${window.location.search}#/workspace`,
+        );
+      }
+    };
+
+    window.addEventListener("hashchange", syncWorkspace);
+    window.addEventListener("popstate", syncWorkspace);
+    return () => {
+      window.removeEventListener("hashchange", syncWorkspace);
+      window.removeEventListener("popstate", syncWorkspace);
+    };
+  }, []);
+
+  const navigateToWorkspace = (workspace: WorkspaceId) => {
+    setActiveNavigation(workspace);
+    setSidebarOpen(false);
+    if (workspace !== "Health") setInspectorOpen(false);
+    const nextHash = workspaceHash(workspace);
+    if (window.location.hash !== nextHash) {
+      window.history.pushState(
+        null,
+        "",
+        `${window.location.pathname}${window.location.search}${nextHash}`,
+      );
+    }
+  };
+
   const statusQuery = useQuery({
     queryKey: ["platform-status"],
     queryFn: getPlatformStatus,
@@ -2333,154 +2361,66 @@ export function App() {
 
   return (
     <div className="app-frame">
-      <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
-        <div className="brand-row">
-          <div className="brand-mark" aria-hidden="true">
-            A
-          </div>
-          <div>
-            <strong>ATLAS</strong>
-            <span>Operations</span>
-          </div>
-          <button
-            className="icon-button sidebar-close"
-            onClick={() => setSidebarOpen(false)}
-            aria-label="Close navigation"
-            type="button"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        <nav aria-label="Primary navigation">
-          <p className="nav-heading">OPERATE</p>
-          {navigation.map(({ label, icon: Icon }) => (
-            <button
-              className={`nav-item ${activeNavigation === label ? "active" : ""}`}
-              type="button"
-              key={label}
-              onClick={() => {
-                setActiveNavigation(label);
-                if (label === "Connectors") setInspectorOpen(false);
-                setSidebarOpen(false);
-              }}
-            >
-              <Icon size={18} strokeWidth={1.8} />
-              <span>{label}</span>
-            </button>
-          ))}
-          <p className="nav-heading nav-heading-admin">ADMINISTER</p>
-          <button className="nav-item" type="button">
-            <ShieldCheck size={18} strokeWidth={1.8} />
-            <span>Governance</span>
-          </button>
-          <button className="nav-item" type="button">
-            <Settings size={18} strokeWidth={1.8} />
-            <span>Settings</span>
-          </button>
-        </nav>
-
-        <div className="sidebar-footer">
-          <div className="sidebar-status">
-            <span className={`status-dot ${state ?? "loading"}`} />
-            <div>
-              <strong>{statusLabel(state)}</strong>
-              <span>Platform status</span>
-            </div>
-          </div>
-          <div className="user-row">
-            <div className="avatar">{initials(identity?.display_name)}</div>
-            <div>
-              <strong>{identity?.display_name ?? "Not authenticated"}</strong>
-              <span>
-                {identity
-                  ? `${identity.authentication.method} identity`
-                  : "Sign-in required"}
-              </span>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      {sidebarOpen && (
-        <button
-          className="scrim"
-          aria-label="Close navigation"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+      <ApplicationSidebar
+        activeWorkspace={activeNavigation}
+        authenticationMethod={identity?.authentication.method}
+        displayName={identity?.display_name}
+        onClose={() => setSidebarOpen(false)}
+        onNavigate={navigateToWorkspace}
+        open={sidebarOpen}
+        platformState={state}
+      />
 
       <main className="main-area">
-        <header className="topbar">
-          <button
-            className="icon-button mobile-menu"
-            onClick={() => setSidebarOpen(true)}
-            aria-label="Open navigation"
-            type="button"
-          >
-            <Menu size={20} />
-          </button>
-          <button className="scope-select" type="button">
-            <Box size={17} />
-            <span>Enterprise estate</span>
-            <ChevronDown size={15} />
-          </button>
-          <div className="topbar-actions">
-            <button className="search-button" type="button">
-              <Search size={17} />
-              <span>Search infrastructure</span>
-            </button>
-            <button className="icon-button" type="button" aria-label="Notifications">
-              <Bell size={19} />
-            </button>
-            <button className="icon-button" type="button" aria-label="Help">
-              <CircleHelp size={19} />
-            </button>
-            {identity?.authentication.method !== "development" && (
-              <button
-                className="icon-button"
-                type="button"
-                aria-label="Sign out"
-                title="Sign out"
-                disabled={logoutMutation.isPending}
-                onClick={() => logoutMutation.mutate()}
-              >
-                <LogOut size={19} />
-              </button>
-            )}
-            <button
-              className="icon-button"
-              type="button"
-              aria-label={inspectorOpen ? "Close context panel" : "Open context panel"}
-              onClick={() => setInspectorOpen((open) => !open)}
-            >
-              <PanelRightClose size={19} />
-            </button>
-          </div>
-        </header>
+        <ApplicationTopbar
+          inspectorOpen={inspectorOpen}
+          logoutPending={logoutMutation.isPending}
+          onLogout={() => logoutMutation.mutate()}
+          onOpenNavigation={() => setSidebarOpen(true)}
+          onToggleInspector={() => setInspectorOpen((open) => !open)}
+          showInspector={activeNavigation === "Health"}
+          showLogout={Boolean(identity && identity.authentication.method !== "development")}
+        />
 
-        <div className={`workspace-grid ${inspectorOpen ? "with-inspector" : ""}`}>
-          <section className="conversation" aria-label="Storage health workspace">
+        <div
+          className={`workspace-grid ${inspectorOpen && activeNavigation === "Health" ? "with-inspector" : ""}`}
+        >
+          <section className="conversation" aria-label={`${activeNavigation} workspace`}>
             <div className="conversation-heading">
               <div>
                 <p className="eyebrow">
-                  {activeNavigation === "Connectors" ? "MCP BUILDER" : "STORAGE HEALTH"}
+                  {activeNavigation === "Workspace"
+                    ? "OPERATIONS WORKSPACE"
+                    : activeNavigation === "Connectors"
+                      ? "MCP BUILDER"
+                      : "STORAGE HEALTH"}
                 </p>
                 <h1>
-                  {activeNavigation === "Connectors"
-                    ? "Governed connector analysis"
-                    : "Storage estate assessment"}
+                  {activeNavigation === "Workspace"
+                    ? "Enterprise operations"
+                    : activeNavigation === "Connectors"
+                      ? "Governed connector analysis"
+                      : "Storage estate assessment"}
                 </h1>
                 <p>
-                  {activeNavigation === "Connectors"
-                    ? "Quarantined OpenAPI evidence review for read-only connector candidates."
-                    : "Evidence-linked inventory, findings, and provisional analysis."}
+                  {activeNavigation === "Workspace"
+                    ? "Available operational capabilities by control domain."
+                    : activeNavigation === "Connectors"
+                      ? "Quarantined OpenAPI evidence review for read-only connector candidates."
+                      : "Evidence-linked inventory, findings, and provisional analysis."}
                 </p>
               </div>
               <span className="decision-badge">
-                <ShieldCheck size={15} /> Human decision required
+                <ShieldCheck size={15} />
+                {activeNavigation === "Workspace"
+                  ? "Human-controlled operations"
+                  : "Human decision required"}
               </span>
             </div>
+
+            {activeNavigation === "Workspace" && (
+              <WorkspaceOverview onNavigate={navigateToWorkspace} />
+            )}
 
             {activeNavigation === "Connectors" && (
             <div className="mcp-builder-workspace">
@@ -8430,7 +8370,7 @@ export function App() {
 
             <div
               className="operations-workspace"
-              hidden={activeNavigation === "Connectors"}
+              hidden={activeNavigation !== "Health"}
             >
               {!identityQuery.isLoading && !identity && (
                 <div className="workspace-message error-state">
@@ -14259,7 +14199,7 @@ export function App() {
               )}
             </div>
 
-            {activeNavigation !== "Connectors" && <div className="composer-wrap">
+            {activeNavigation === "Health" && <div className="composer-wrap">
               <form
                 className="composer"
                 onSubmit={(event) => {
@@ -14300,7 +14240,7 @@ export function App() {
             </div>}
           </section>
 
-          {inspectorOpen && activeNavigation !== "Connectors" && (
+          {inspectorOpen && activeNavigation === "Health" && (
             <aside className="inspector" aria-label="Current context">
               <div className="inspector-header">
                 <div>
