@@ -232,6 +232,8 @@ RECOMMENDATION_PROTECTED_CONTENT_PRESENTATION_READ = (
 )
 RECOMMENDATION_HUMAN_REVIEW_FINDING_CREATE = "recommendation.human-review-findings.create"
 RECOMMENDATION_HUMAN_REVIEW_FINDING_READ = "recommendation.human-review-findings.read"
+RECOMMENDATION_FINDING_PRESENTATION_CREATE = "recommendation.finding-presentations.create"
+RECOMMENDATION_FINDING_PRESENTATION_READ = "recommendation.finding-presentations.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -1392,6 +1394,19 @@ def recommendation_human_review_finding_scope(
     )
 
 
+def recommendation_finding_presentation_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.recommendation",
+        resource_id="resource.recommendation.finding-presentations",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -2325,6 +2340,14 @@ def build_development_authorization_service(
             permission_id=RECOMMENDATION_HUMAN_REVIEW_FINDING_READ,
             description="Read minimized recommendation review finding metadata.",
         ),
+        PermissionDefinition(
+            permission_id=RECOMMENDATION_FINDING_PRESENTATION_CREATE,
+            description="Present sealed recommendation review findings to the exact assignee.",
+        ),
+        PermissionDefinition(
+            permission_id=RECOMMENDATION_FINDING_PRESENTATION_READ,
+            description="Read an existing protected recommendation finding presentation.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -2520,6 +2543,8 @@ def build_development_authorization_service(
                 RECOMMENDATION_PROTECTED_CONTENT_PRESENTATION_READ,
                 RECOMMENDATION_HUMAN_REVIEW_FINDING_CREATE,
                 RECOMMENDATION_HUMAN_REVIEW_FINDING_READ,
+                RECOMMENDATION_FINDING_PRESENTATION_CREATE,
+                RECOMMENDATION_FINDING_PRESENTATION_READ,
             }
         ),
     )

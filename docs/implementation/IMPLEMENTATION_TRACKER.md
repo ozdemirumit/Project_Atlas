@@ -4,14 +4,86 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-118 |
-| Title | Governed recommendation human review findings |
-| Status | Done |
-| Branch | `main` |
-| Pull Request | [#130](https://github.com/ozdemirumit/Project_Atlas/pull/130) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-074 |
+| Task ID | ATLAS-IMP-119 |
+| Title | Governed recommendation protected finding presentation |
+| Status | In Review |
+| Branch | `agent/recommendation-finding-presentation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-075 |
 | Last Updated | 2026-08-10 |
-| Next Action | Select and record the ATLAS-IMP-119 vertical slice |
+| Next Action | Commit the validated implementation, open the pull request and complete GitHub CI review |
+
+### ATLAS-IMP-119 Scope Rationale
+
+- IMP-118 records one encrypted immutable technical or service-impact finding packet but exposes
+  metadata only and deliberately grants no review decision authority.
+- ADR-075 requires the exact reviewer to redisplay that sealed packet through a distinct trusted
+  presenter while the original assignment, browser binding, selected-track cookie and lease remain
+  current.
+- Presentation is evidence access only. Decisions, correction, recommendation approval, workflow,
+  ITSM and every operational capability remain independent later stages.
+
+### ATLAS-IMP-119 Acceptance Criteria
+
+- Only an active integrity-valid finding packet with unchanged complete recommendation lineage may
+  enter presentation; exact hardware-MFA assignee, browser binding and track cookie remain mandatory.
+- The caller supplies only exact finding/policy digests, purpose, no-decision acknowledgement and
+  request identifiers. Identity, track, content, artifact controls and every authority field are
+  forbidden.
+- One immutable claim exists per finding packet. A trusted presenter returns exact ordered inert
+  findings plus a signed receipt; production fails closed without that presenter.
+- Plaintext findings never enter PostgreSQL, audit, logs, cookies, browser storage, model context,
+  retrieval or graph state. The API returns them only in a minimized no-store presentation response.
+- Audited replay reproduces the exact snapshot only while all original proofs remain current;
+  drift, expiry, changed authority or cleanup uncertainty fails closed without partial content.
+- Success records presentation only and leaves review completion, disposition, correction,
+  recommendation approval, workflow, ITSM, execution, deployment and mutation false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny C2 create/C1 read RBAC,
+  CSRF, focused lineage/replay/privacy/audit tests, bounded UI, full suites, live validation and
+  GitHub CI apply.
+
+### ATLAS-IMP-119 Initial Evidence
+
+- IMP-118 merged through PR #130 as `8d13187a12e91706bb86310dd5cceecf7b5ebf60`; PR run
+  `31350896832` and merged-main run `31351222388` passed both frontend and backend jobs.
+- IMP-118 closure commit `ec3b27e72ad0aa73ea7de642f0ffb44169abfd22` passed main run
+  `31351565351` (frontend 3m27s, backend 5m40s).
+- ADR-075 is accepted and this branch owns the implementation slice.
+
+### ATLAS-IMP-119 Validation Evidence
+
+- The service rehydrates and verifies the exact finding packet, protected content presentation,
+  inspection lease, reviewer assignment, review request, readiness assessment, promotion and
+  recommendation lineage before presenting content. Wrong lineage, changed policy, expired
+  authority, permission denial, required intent-audit failure and unavailable presenter state fail
+  closed.
+- One immutable presentation claim is permitted per exact finding packet. The synthetic development
+  presenter reads the exact encrypted IMP-118 artifact and returns inert ordered findings only in a
+  minimized `no-store` response; production uses an unavailable presenter. PostgreSQL, audit,
+  cookies, browser storage and application records contain metadata and digests but no finding
+  summary or detail.
+- Exact replay is available only to the same hardware-MFA reviewer while the assignment, lease,
+  browser binding, selected track and policy proofs remain current. Success records presentation
+  only; decision, correction, recommendation approval, workflow, ITSM, execution, deployment and
+  infrastructure mutation flags remain false.
+- The HTTPS API flow passed login, lease-cookie binding, protected content, metadata-only finding
+  recording, presentation CSRF denial, successful plaintext presentation and exact replay. Response
+  headers enforce `no-store` and restrictive CSP, while strict request schemas reject caller-owned
+  identity, authority and plaintext fields.
+- Alembic revision `20260810_0091` is the single head. Offline PostgreSQL SQL creates separate
+  immutable presentation-claim and presentation-metadata tables with bounded index names, unique
+  source and idempotency constraints, and no plaintext or encrypted-artifact columns.
+- Ruff formatting and lint passed across `1121` Python files. Strict mypy found no issues in `1029`
+  source and test files. The complete backend suite passed `932` tests with three expected Windows
+  symlink skips and three existing dependency warnings.
+- Frontend TypeScript and ESLint passed. The complete Vitest suite passed `92` tests across `57`
+  files and the production bundle built successfully. Focused presentation and lifecycle coverage
+  passed `5` tests.
+- Live API and web processes ran on `127.0.0.1:8083` and `127.0.0.1:5244`. Desktop inspection at
+  1280 pixels showed the new capability in both expected locations with `10` available stages and
+  `0` in progress. The mobile viewport produced a 375-pixel client width, retained both capability
+  labels, wrapped the long title within its containers and reported no page-level horizontal
+  overflow.
 
 ### ATLAS-IMP-118 Scope Rationale
 

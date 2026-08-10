@@ -9,6 +9,7 @@ import {
 } from "../../api/recommendationReviewFindings";
 import type { RecommendationProtectedContent } from "../../api/recommendationProtectedContent";
 import type { RecommendationProtectedInspection } from "../../api/recommendationProtectedInspections";
+import { RecommendationFindingPresentationPanel } from "./RecommendationFindingPresentationPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -257,39 +258,48 @@ export function RecommendationReviewFindingPanel({
         </div>
       )}
       {record && (
-        <div className="package-signing-record" data-testid="recommendation-review-finding-record">
-          <div className="section-heading">
-            <div>
-              <strong>Recommendation finding packet sealed</strong>
-              <code>{record.finding_packet_id}</code>
+        <>
+          <div className="package-signing-record" data-testid="recommendation-review-finding-record">
+            <div className="section-heading">
+              <div>
+                <strong>Recommendation finding packet sealed</strong>
+                <code>{record.finding_packet_id}</code>
+              </div>
+              <span className="state-badge approved">
+                <BadgeCheck size={14} /> immutable
+              </span>
             </div>
-            <span className="state-badge approved">
-              <BadgeCheck size={14} /> immutable
-            </span>
+            <div className="mcp-builder-facts">
+              <div>
+                <span>Track</span>
+                <strong>
+                  {record.track_code.replace("review-track.", "").replaceAll("-", " ")}
+                </strong>
+              </div>
+              <div>
+                <span>Findings</span>
+                <strong>{record.finding_count}</strong>
+              </div>
+              <div>
+                <span>Storage</span>
+                <strong>encrypted</strong>
+              </div>
+              <div>
+                <span>Review decision</span>
+                <strong>not recorded</strong>
+              </div>
+            </div>
+            <p className="muted-copy">
+              Finding plaintext is sealed outside the application record. Human review completion,
+              recommendation approval, workflow, ITSM, and operational authority remain unavailable.
+            </p>
           </div>
-          <div className="mcp-builder-facts">
-            <div>
-              <span>Track</span>
-              <strong>{record.track_code.replace("review-track.", "").replaceAll("-", " ")}</strong>
-            </div>
-            <div>
-              <span>Findings</span>
-              <strong>{record.finding_count}</strong>
-            </div>
-            <div>
-              <span>Storage</span>
-              <strong>encrypted</strong>
-            </div>
-            <div>
-              <span>Review decision</span>
-              <strong>not recorded</strong>
-            </div>
-          </div>
-          <p className="muted-copy">
-            Finding plaintext is sealed outside the application record. Human review completion,
-            recommendation approval, workflow, ITSM, and operational authority remain unavailable.
-          </p>
-        </div>
+          <RecommendationFindingPresentationPanel
+            lease={lease}
+            presentation={presentation}
+            finding={record}
+          />
+        </>
       )}
     </div>
   );
