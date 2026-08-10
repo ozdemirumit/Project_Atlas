@@ -1311,6 +1311,17 @@ describe("Atlas application shell", () => {
     ).toBeVisible();
     expect(window.location.hash).toBe("#/health");
     expect(screen.getByText("Human decision required")).toBeVisible();
+    const inventoryHeading = await screen.findByRole("heading", { name: "Storage systems" });
+    const reviewHeading = await screen.findByRole("heading", { name: "Assigned upgrade reviews" });
+    expect(
+      inventoryHeading.compareDocumentPosition(reviewHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+    expect(screen.getByLabelText("Health inventory and evidence")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^Connectors$/ }));
+    expect(await screen.findByRole("heading", { name: "Governed connector analysis" })).toBeVisible();
+    expect(screen.queryByLabelText("Health inventory and evidence")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Health$/ }));
+    expect(await screen.findByLabelText("Health inventory and evidence")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Open context panel" }));
     expect(await screen.findByText("test")).toBeVisible();
     expect(await screen.findByText("Local Operator")).toBeVisible();

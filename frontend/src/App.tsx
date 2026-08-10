@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   Archive,
   BrainCircuit,
-  Building2,
   CheckCircle2,
   CircleHelp,
   Clock3,
@@ -17,8 +16,6 @@ import {
   FileText,
   FlaskConical,
   GitBranch,
-  HardDrive,
-  Layers3,
   KeyRound,
   LogIn,
   Monitor,
@@ -40,7 +37,7 @@ import {
   UserX,
   X,
 } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { lazy, Suspense, type FormEvent, useState } from "react";
 
 import {
   createApiCredential,
@@ -97,7 +94,7 @@ import {
   type BootstrapTrustProvisioningResult,
 } from "./api/bootstrapTrust";
 import { previewDeploymentConfiguration } from "./api/deploymentConfiguration";
-import { getStorageImpact, type GraphEntity } from "./api/graph";
+import { getStorageImpact } from "./api/graph";
 import {
   createApprovalRequest,
   decideApprovalRequest,
@@ -110,6 +107,7 @@ import {
   ApplicationSidebar,
   ApplicationTopbar,
 } from "./features/shell/ApplicationShell";
+import { WorkspaceLoadBoundary } from "./features/shell/WorkspaceLoadBoundary";
 import type { WorkspaceId } from "./features/shell/workspace";
 import { PackageApprovalPanel } from "./features/connectors/PackageApprovalPanel";
 import {
@@ -210,6 +208,10 @@ import {
   type UpgradeSimulation,
 } from "./api/upgrades";
 
+const HealthInventoryEvidenceWorkspace = lazy(
+  () => import("./features/health/HealthInventoryEvidenceWorkspace"),
+);
+
 function statusLabel(status: string | undefined): string {
   if (!status) return "Connecting";
   return status.charAt(0).toUpperCase() + status.slice(1);
@@ -239,10 +241,6 @@ function healthLabel(health: StorageAsset["health"]): string {
   return health.charAt(0).toUpperCase() + health.slice(1);
 }
 
-function entityTypeLabel(entityType: GraphEntity["entity_type"]): string {
-  return entityType.replaceAll("_", " ");
-}
-
 function apiGrantLabel(permissionId: string): string {
   return (
     {
@@ -268,27 +266,6 @@ type PendingWorkloadAction =
   | { kind: "create" }
   | { kind: "rotate"; identityId: string; version: number }
   | { kind: "revoke"; credentialId: string; version: number };
-
-function relationshipLabel(relationshipType: string | undefined): string {
-  return (
-    {
-      backed_by: "backs",
-      uses: "supports",
-      runs_on: "hosts",
-      depends_on: "supports",
-    }[relationshipType ?? ""] ?? "relates to"
-  );
-}
-
-function graphEntityIcon(entityType: GraphEntity["entity_type"]) {
-  const props = { size: 18, strokeWidth: 1.8 };
-  if (entityType === "storage_system") return <HardDrive {...props} />;
-  if (entityType === "volume") return <Layers3 {...props} />;
-  if (entityType === "datastore") return <Database {...props} />;
-  if (entityType === "virtual_machine") return <Monitor {...props} />;
-  if (entityType === "technical_service") return <Workflow {...props} />;
-  return <Building2 {...props} />;
-}
 
 function downloadMarkdown(filename: string, content: string): void {
   const url = URL.createObjectURL(new Blob([content], { type: "text/markdown;charset=utf-8" }));
@@ -2266,9 +2243,6 @@ export function OperationalApplication({
     overview?.evidence.filter((item) =>
       selectedAsset?.evidence_references.includes(item.reference),
     ) ?? [];
-  const healthyCount =
-    overview?.assets.filter((asset) => asset.health === "healthy").length ?? 0;
-
   if (!identityQuery.isLoading && identityQuery.data === null) {
     const submitLogin = (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
@@ -8354,6 +8328,38 @@ export function OperationalApplication({
                 </div>
               )}
 
+              {activeNavigation === "Health" && overview && (
+                <WorkspaceLoadBoundary compact resetKey={overview.snapshot_id} workspace="Health">
+                  <Suspense
+                    fallback={
+                      <div className="workspace-message" aria-live="polite" aria-busy="true">
+                        <Clock3 size={22} />
+                        <div>
+                          <h2>Loading Health inventory</h2>
+                          <p>Preparing authorized inventory and evidence presentation.</p>
+                        </div>
+                      </div>
+                    }
+                  >
+                    <HealthInventoryEvidenceWorkspace
+                      impact={impact}
+                      impactError={impactQuery.isError}
+                      impactLoading={impactQuery.isLoading}
+                      onSelectAsset={(assetId) => {
+                        setSelectedAssetId(assetId);
+                        investigationMutation.reset();
+                        rcaMutation.reset();
+                        recommendationMutation.reset();
+                        reportMutation.reset();
+                      }}
+                      overview={overview}
+                      selectedAsset={selectedAsset}
+                      selectedEvidence={selectedEvidence}
+                    />
+                  </Suspense>
+                </WorkspaceLoadBoundary>
+              )}
+
               {identity && (
                 <section className="workspace-section review-inbox-section">
                   <div className="section-heading review-inbox-heading">
@@ -11619,29 +11625,6 @@ export function OperationalApplication({
 
               {overview && (
                 <>
-                  <section className="summary-strip" aria-label="Storage summary">
-                    <div>
-                      <span>Arrays</span>
-                      <strong>{overview.assets.length}</strong>
-                    </div>
-                    <div>
-                      <span>Healthy</span>
-                      <strong className="healthy-text">{healthyCount}</strong>
-                    </div>
-                    <div>
-                      <span>Open findings</span>
-                      <strong className="warning-text">{overview.findings.length}</strong>
-                    </div>
-                    <div>
-                      <span>Investigation</span>
-                      <strong className="state-text">{overview.investigation.state}</strong>
-                    </div>
-                    <div>
-                      <span>Evidence</span>
-                      <strong>{overview.evidence.length}</strong>
-                    </div>
-                  </section>
-
                   {identity && identity.authentication.method !== "development" && (
                     <section className="workspace-section session-section">
                       <div className="section-heading">
@@ -12750,136 +12733,6 @@ export function OperationalApplication({
                       </>
                     )}
                   </section>
-
-                  <section className="workspace-section inventory-section">
-                    <div className="section-heading">
-                      <div>
-                        <p className="eyebrow">INVENTORY</p>
-                        <h2>Storage systems</h2>
-                      </div>
-                      <span className="data-profile">
-                        <FlaskConical size={14} /> Synthetic lab
-                      </span>
-                    </div>
-                    <div className="table-wrap">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>System</th>
-                            <th>Serial</th>
-                            <th>Device ID</th>
-                            <th>Health</th>
-                            <th>Observed</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {overview.assets.map((asset) => (
-                            <tr
-                              key={asset.asset_id}
-                              className={selectedAsset?.asset_id === asset.asset_id ? "selected" : ""}
-                            >
-                              <td>
-                                <button
-                                  className="asset-select"
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedAssetId(asset.asset_id);
-                                    investigationMutation.reset();
-                                    rcaMutation.reset();
-                                    recommendationMutation.reset();
-                                    reportMutation.reset();
-                                  }}
-                                >
-                                  <Database size={17} />
-                                  <span>
-                                    <strong>{asset.model}</strong>
-                                    <small>{asset.vendor}</small>
-                                  </span>
-                                </button>
-                              </td>
-                              <td>{asset.serial_number}</td>
-                              <td className="mono-cell">{asset.storage_device_id}</td>
-                              <td>
-                                <span className={`health-state ${asset.health}`}>
-                                  {asset.health === "healthy" ? (
-                                    <CheckCircle2 size={14} />
-                                  ) : (
-                                    <AlertTriangle size={14} />
-                                  )}
-                                  {healthLabel(asset.health)}
-                                </span>
-                              </td>
-                              <td>{formatTimestamp(asset.observed_at)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </section>
-
-                  <div className="analysis-grid">
-                    <section className="workspace-section finding-section">
-                      <div className="section-heading">
-                        <div>
-                          <p className="eyebrow">ACTIVE FINDING</p>
-                          <h2>Health observation</h2>
-                        </div>
-                        <span className="severity-badge warning">Warning</span>
-                      </div>
-                      {overview.findings.map((finding) => (
-                        <div className="finding-body" key={finding.finding_id}>
-                          <div className="finding-component">
-                            <AlertTriangle size={19} />
-                            <div>
-                              <strong>{finding.component}</strong>
-                              <span>{finding.status}</span>
-                            </div>
-                          </div>
-                          <p>{finding.summary}</p>
-                          <span className="evidence-count">
-                            {finding.evidence_references.length} evidence reference
-                          </span>
-                        </div>
-                      ))}
-                    </section>
-
-                    <section className="workspace-section investigation-section">
-                      <div className="section-heading">
-                        <div>
-                          <p className="eyebrow">INVESTIGATION</p>
-                          <h2>{overview.investigation.title}</h2>
-                        </div>
-                        <span className="state-badge">{overview.investigation.state}</span>
-                      </div>
-                      <p className="investigation-summary">{overview.investigation.summary}</p>
-                      {overview.investigation.hypotheses.map((hypothesis) => (
-                        <div className="hypothesis" key={hypothesis.hypothesis_id}>
-                          <span>Possible hypothesis</span>
-                          <strong>{hypothesis.title}</strong>
-                          <p>{hypothesis.rationale}</p>
-                          <small>{hypothesis.confidence_basis}</small>
-                        </div>
-                      ))}
-                      <div className="investigation-columns">
-                        <div>
-                          <h3>Unknowns</h3>
-                          <ul>
-                            {overview.investigation.unknowns.map((unknown) => (
-                              <li key={unknown}>{unknown}</li>
-                            ))}
-                          </ul>
-                        </div>
-                        <div>
-                          <h3>Next read-only checks</h3>
-                          <ol>
-                            {overview.investigation.next_checks.map((check) => (
-                              <li key={check}>{check}</li>
-                            ))}
-                          </ol>
-                        </div>
-                      </div>
-                    </section>
-                  </div>
 
                   <section className="workspace-section health-checks-section">
                     <div className="section-heading health-check-heading">
@@ -14006,147 +13859,6 @@ export function OperationalApplication({
                     )}
                   </section>
 
-                  <section className="workspace-section impact-section">
-                    <div className="section-heading">
-                      <div>
-                        <p className="eyebrow">DEPENDENCY IMPACT</p>
-                        <h2>Evidence-linked service path</h2>
-                      </div>
-                      {impact && (
-                        <span className="impact-maturity">
-                          <Network size={14} /> {impact.digital_twin_maturity}
-                        </span>
-                      )}
-                    </div>
-
-                    {impactQuery.isLoading && (
-                      <div className="impact-message">
-                        <Clock3 size={18} /> Evaluating authorized dependency paths
-                      </div>
-                    )}
-                    {impactQuery.isError && (
-                      <div className="impact-message impact-error">
-                        <AlertTriangle size={18} /> Dependency impact is unavailable; no service
-                        impact is inferred.
-                      </div>
-                    )}
-                    {impact && longestImpactPath && (
-                      <>
-                        <div className="impact-summary" aria-label="Dependency impact summary">
-                          <div>
-                            <span>Direct dependencies</span>
-                            <strong>{impact.direct_entity_ids.length}</strong>
-                          </div>
-                          <div>
-                            <span>Possibly affected</span>
-                            <strong>{impact.possible_entity_ids.length}</strong>
-                          </div>
-                          <div>
-                            <span>Technical services</span>
-                            <strong>{impact.technical_service_ids.length}</strong>
-                          </div>
-                          <div>
-                            <span>Business services</span>
-                            <strong>{impact.business_service_ids.length}</strong>
-                          </div>
-                        </div>
-
-                        <div className="dependency-path" aria-label="Authorized dependency path">
-                          {longestImpactPath.entity_ids.map((entityId, index) => {
-                            const entity = impact.entities.find(
-                              (candidate) => candidate.entity_id === entityId,
-                            );
-                            const relationship = impact.relationships.find(
-                              (candidate) =>
-                                candidate.relationship_id ===
-                                longestImpactPath.relationship_ids[index],
-                            );
-                            if (!entity) return null;
-                            return (
-                              <div className="dependency-step" key={entity.entity_id}>
-                                <div className={`dependency-node ${entity.entity_type}`}>
-                                  {graphEntityIcon(entity.entity_type)}
-                                  <span>
-                                    <small>{entityTypeLabel(entity.entity_type)}</small>
-                                    <strong>{entity.display_name}</strong>
-                                  </span>
-                                </div>
-                                {relationship && (
-                                  <div className="dependency-link">
-                                    <span>{relationshipLabel(relationship.relationship_type)}</span>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-
-                        <div className="impact-detail-grid">
-                          <div>
-                            <h3>Known gaps</h3>
-                            <ul>
-                              {impact.known_gaps.map((gap) => (
-                                <li key={gap}>{gap}</li>
-                              ))}
-                            </ul>
-                          </div>
-                          <div>
-                            <h3>Impact boundary</h3>
-                            <ul>
-                              {impact.unknowns.map((unknown) => (
-                                <li key={unknown}>{unknown}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        </div>
-                        <div className="impact-safety">
-                          <ShieldCheck size={16} />
-                          <span>{impact.safety_notice}</span>
-                        </div>
-                      </>
-                    )}
-                  </section>
-
-                  <section className="workspace-section report-section">
-                    <div className="section-heading">
-                      <div>
-                        <p className="eyebrow">ASSESSMENT REPORT</p>
-                        <h2>{overview.report.title}</h2>
-                      </div>
-                      <FileText size={19} />
-                    </div>
-                    <p className="report-summary">{overview.report.executive_summary}</p>
-                    <div className="report-columns">
-                      <div>
-                        <h3>Confirmed facts</h3>
-                        <ul>
-                          {overview.report.confirmed_facts.map((fact) => (
-                            <li key={fact}>{fact}</li>
-                          ))}
-                        </ul>
-                      </div>
-                      <div>
-                        <h3>Provisional findings</h3>
-                        <ul>
-                          {overview.report.provisional_findings.map((finding) => (
-                            <li key={finding}>{finding}</li>
-                          ))}
-                        </ul>
-                      </div>
-                      <div>
-                        <h3>Unknowns</h3>
-                        <ul>
-                          {overview.report.unknowns.map((unknown) => (
-                            <li key={unknown}>{unknown}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-                    <div className="safety-notice">
-                      <ShieldCheck size={16} />
-                      <span>{overview.report.safety_notice}</span>
-                    </div>
-                  </section>
                 </>
               )}
             </div>
@@ -14309,19 +14021,6 @@ export function OperationalApplication({
                 )}
               </section>
 
-              <section className="inspector-section evidence-section">
-                <h3>Evidence</h3>
-                {selectedEvidence.map((item) => (
-                  <div className="evidence-record" key={item.reference}>
-                    <div>
-                      <span className={`freshness ${item.freshness}`}>{item.freshness}</span>
-                      <strong>{item.source}</strong>
-                    </div>
-                    <p>{item.trust_basis}</p>
-                    <small>{item.source_version}</small>
-                  </div>
-                ))}
-              </section>
             </aside>
           )}
         </div>
