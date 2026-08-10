@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-116 |
 | Title | Governed recommendation protected-inspection lease foundation |
-| Status | Review |
+| Status | Done |
 | Branch | `agent/recommendation-protected-inspection` |
 | Pull Request | [#128](https://github.com/ozdemirumit/Project_Atlas/pull/128) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-072 |
 | Last Updated | 2026-08-10 |
-| Next Action | Complete PR #128 CI, merge, and merged-main verification |
+| Next Action | Select and begin the next approved recommendation-review vertical slice |
 
 ### ATLAS-IMP-116 Scope Rationale
 
@@ -80,6 +80,11 @@
   with body/document width exactly `1280` and no horizontal overflow. The Local Operator is
   intentionally excluded from reviewer assignment, so no live lease was minted with that identity;
   exact-assignee issuance and cookie attributes are covered by the HTTP integration test.
+- Implementation commit `03e61e81fbd2eaeccd7a898ef2ebca181dcb6974` and tracker-link commit
+  `957bc637c167b402b16d988580ff41e7b7aec589` passed PR #128 Continuous Integration run
+  `31343219452` (frontend and backend successful).
+- PR #128 was squash-merged to `main` as `6e3778c1a0dfb222542b832432acd2c7705d5336`.
+  Merged-main Continuous Integration run `31343473028` passed both frontend and backend jobs.
 
 ### ATLAS-IMP-115 Scope Rationale
 
