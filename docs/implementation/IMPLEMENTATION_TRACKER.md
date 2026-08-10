@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-127 |
 | Title | Health governance and report presentation extraction |
-| Status | In Progress |
-| Branch | `agent/health-governance-report-presentation` |
-| Pull Request | Pending |
+| Status | Complete |
+| Branch | `main` |
+| Pull Request | [#139](https://github.com/ozdemirumit/Project_Atlas/pull/139) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-037, ATLAS-040, ATLAS-043, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083 |
 | Last Updated | 2026-08-10 |
-| Next Action | Implement the accepted lazy Health governance/report presentation boundary |
+| Next Action | Define the remaining Health secondary operational presentation extraction slice |
 
 ### ATLAS-IMP-127 Scope Rationale
 
@@ -75,6 +75,10 @@
   iframe reported one Browser instrumentation `MutationObserver` error without an application URL;
   it is outside Atlas and was not attributed to the application. The ignored local harness was
   restored after validation.
+- PR #139 CI run `31400863505` passed frontend and backend jobs at head
+  `655c4133d5ebf6c7e864325bca9c61aa456989cf`.
+- PR #139 was squash-merged as `fc7740bcba3b3a639ebbb89b6527eb0b0b6fb001`; merged-main CI run
+  `31401668590` passed frontend and backend jobs.
 
 ### ATLAS-IMP-126 Scope Rationale
 
