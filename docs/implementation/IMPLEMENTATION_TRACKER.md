@@ -8,10 +8,10 @@
 | Title | Health workspace loading boundary and route-level code splitting |
 | Status | In Progress |
 | Branch | `agent/health-workspace-code-splitting` |
-| Pull Request | Pending |
+| Pull Request | [#136](https://github.com/ozdemirumit/Project_Atlas/pull/136) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080 |
 | Last Updated | 2026-08-10 |
-| Next Action | Implement the accepted workspace coordinator and lazy operational loading boundary |
+| Next Action | Validate PR #136 in CI, merge it, verify merged-main CI and close IMP-124 |
 
 ### ATLAS-IMP-124 Scope Rationale
 
@@ -70,7 +70,7 @@
   reduction. Vite emits a separate 870,352-byte `OperationalApplication` chunk. The remaining
   greater-than-500-KB warning applies only to that deferred chunk and is the explicit input to later
   Health/Connector domain extraction slices.
-- Live validation used `http://127.0.0.1:5266`. A fresh Workspace load requested `App.tsx` but no
+- Live validation used `http://127.0.0.1:5266`. A fresh Workspace load requested the coordinator graph but no
   `OperationalApplication` resource; Health navigation then requested the operational module.
   Direct Connectors loaded its own workspace without Health or composer leakage.
 - Desktop Workspace and Health measured equal 1,280-pixel client and scroll widths. A clean
