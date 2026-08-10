@@ -9,6 +9,7 @@ import {
 import type { RecommendationHumanReviewFinding } from "../../api/recommendationReviewFindings";
 import type { RecommendationProtectedContent } from "../../api/recommendationProtectedContent";
 import type { RecommendationProtectedInspection } from "../../api/recommendationProtectedInspections";
+import { RecommendationReviewDecisionPanel } from "./RecommendationReviewDecisionPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -162,6 +163,12 @@ export function RecommendationFindingPresentationPanel({
               />
             ))}
           </div>
+          <RecommendationReviewDecisionPanel
+            lease={lease}
+            contentPresentation={presentation}
+            finding={finding}
+            findingPresentation={result}
+          />
         </div>
       )}
     </div>

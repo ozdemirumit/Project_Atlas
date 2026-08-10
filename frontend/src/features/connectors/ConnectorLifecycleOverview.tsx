@@ -140,6 +140,7 @@ const lifecycleStages: readonly LifecycleStage[] = [
       { name: "Recommendation content presentation" },
       { name: "Recommendation human review findings" },
       { name: "Recommendation protected finding presentation" },
+      { name: "Recommendation track review decision" },
     ],
   },
 ];
@@ -158,7 +159,7 @@ export function ConnectorLifecycleOverview() {
       </div>
       <div className="connector-lifecycle-summary" aria-label="Delivery status">
         <div>
-          <strong>10</strong>
+          <strong>11</strong>
           <span>Available stages</span>
         </div>
         <div>
@@ -166,7 +167,7 @@ export function ConnectorLifecycleOverview() {
           <span>In progress</span>
         </div>
         <div>
-          <strong>Recommendation protected finding presentation</strong>
+          <strong>Recommendation track review decision</strong>
           <span>Latest available capability</span>
         </div>
       </div>

@@ -3650,3 +3650,60 @@ class RecommendationFindingPresentationModel(Base):
     environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class RecommendationTrackReviewDecisionClaimModel(Base):
+    __tablename__ = "recommendation_track_review_decision_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_finding_presentation_id",
+            name="uq_rec_track_dec_claim_source",
+        ),
+        UniqueConstraint(
+            "claimed_by_subject_digest",
+            "idempotency_digest",
+            name="uq_rec_track_dec_claim_actor_idem",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source_finding_presentation_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    decision_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    track_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    disposition_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    claimed_by_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class RecommendationTrackReviewDecisionModel(Base):
+    __tablename__ = "recommendation_track_review_decisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_finding_presentation_id",
+            name="uq_rec_track_dec_source",
+        ),
+        UniqueConstraint("claim_id", name="uq_rec_track_dec_claim"),
+    )
+
+    decision_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    claim_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_finding_presentation_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    source_lease_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_assignment_set_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    review_request_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    track_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    disposition_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    recommendation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    decided_by_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

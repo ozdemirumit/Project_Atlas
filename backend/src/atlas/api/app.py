@@ -87,6 +87,7 @@ from atlas.api.routes import (
     recommendation_protected_contents,
     recommendation_protected_inspections,
     recommendation_readiness,
+    recommendation_review_decisions,
     recommendation_review_requests,
     recommendation_reviewer_assignments,
     recommendations,
@@ -1280,6 +1281,20 @@ from atlas.modules.recommendations.adapters.readiness_synthetic import (
     SyntheticTrustedRecommendationReadinessEvaluator,
     UnavailableTrustedRecommendationReadinessEvaluator,
 )
+from atlas.modules.recommendations.adapters.review_decision_memory import (
+    InMemoryRecommendationTrackReviewDecisionPolicySource,
+    InMemoryRecommendationTrackReviewDecisionRepository,
+)
+from atlas.modules.recommendations.adapters.review_decision_permission import (
+    AuthorizationRecommendationTrackReviewDecisionPermissionAuthorizer,
+)
+from atlas.modules.recommendations.adapters.review_decision_postgres import (
+    PostgreSQLRecommendationTrackReviewDecisionRepository,
+)
+from atlas.modules.recommendations.adapters.review_decision_synthetic import (
+    SyntheticRecommendationTrackReviewDecisionAttestor,
+    UnavailableRecommendationTrackReviewDecisionAttestor,
+)
 from atlas.modules.recommendations.adapters.review_request_memory import (
     InMemoryRecommendationReviewRequestPolicySource,
     MemoryRecommendationReviewRequestRepository,
@@ -1340,6 +1355,13 @@ from atlas.modules.recommendations.application.protected_inspection import (
 from atlas.modules.recommendations.application.readiness import (
     GovernedRecommendationReadinessService,
     build_development_recommendation_readiness_policy,
+)
+from atlas.modules.recommendations.application.review_decision import (
+    RecommendationTrackReviewDecisionService,
+    build_development_recommendation_track_review_decision_policy,
+)
+from atlas.modules.recommendations.application.review_decision_ports import (
+    RecommendationTrackReviewDecisionAttestor,
 )
 from atlas.modules.recommendations.application.review_request import (
     GovernedRecommendationReviewRequestService,
@@ -1539,6 +1561,9 @@ def create_app(
     ) = None,
     recommendation_finding_presentation_service: (
         RecommendationFindingPresentationService | None
+    ) = None,
+    recommendation_track_review_decision_service: (
+        RecommendationTrackReviewDecisionService | None
     ) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
@@ -4591,6 +4616,53 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    if recommendation_track_review_decision_service is not None:
+        resolved_recommendation_track_review_decision_service = (
+            recommendation_track_review_decision_service
+        )
+    else:
+        recommendation_track_review_decision_repository = (
+            PostgreSQLRecommendationTrackReviewDecisionRepository.from_url(
+                resolved_settings.database_url
+            )
+            if resolved_settings.database_url
+            else InMemoryRecommendationTrackReviewDecisionRepository()
+        )
+        recommendation_track_review_decision_policies = (
+            ()
+            if is_production
+            else (
+                build_development_recommendation_track_review_decision_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        recommendation_track_review_decision_attestor: RecommendationTrackReviewDecisionAttestor = (
+            UnavailableRecommendationTrackReviewDecisionAttestor()
+            if is_production
+            else SyntheticRecommendationTrackReviewDecisionAttestor()
+        )
+        resolved_recommendation_track_review_decision_service = (
+            RecommendationTrackReviewDecisionService(
+                repository=recommendation_track_review_decision_repository,
+                source=resolved_recommendation_finding_presentation_service,
+                policy_source=InMemoryRecommendationTrackReviewDecisionPolicySource(
+                    recommendation_track_review_decision_policies
+                ),
+                permission_authorizer=(
+                    AuthorizationRecommendationTrackReviewDecisionPermissionAuthorizer(
+                        service=resolved_authorization_service,
+                        environment=resolved_settings.environment,
+                    )
+                ),
+                attestor=recommendation_track_review_decision_attestor,
+                audit_sink=resolved_audit_sink,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -4885,6 +4957,9 @@ def create_app(
         app.state.recommendation_finding_presentation_service = (
             resolved_recommendation_finding_presentation_service
         )
+        app.state.recommendation_track_review_decision_service = (
+            resolved_recommendation_track_review_decision_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -4897,6 +4972,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
+        await resolved_recommendation_track_review_decision_service.close()
         await resolved_recommendation_finding_presentation_service.close()
         await resolved_recommendation_human_review_finding_service.close()
         await resolved_recommendation_protected_content_service.close()
@@ -5089,6 +5165,7 @@ def create_app(
     app.include_router(recommendation_protected_contents.router, prefix="/api/v1")
     app.include_router(recommendation_human_review_findings.router, prefix="/api/v1")
     app.include_router(recommendation_finding_presentations.router, prefix="/api/v1")
+    app.include_router(recommendation_review_decisions.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
