@@ -53,7 +53,7 @@ describe("BootstrapPlanWorkspace", () => {
     expect(screen.getAllByText("blocked")).toHaveLength(2);
     expect(screen.getByText(`${"c".repeat(20)}...`)).toBeVisible();
     expect(screen.getByText("resume.bootstrap.test")).toBeVisible();
-    const identity = container.querySelector(".bootstrap-plan-identity");
+    const identity = container.querySelector<HTMLElement>(".bootstrap-plan-identity");
     expect(identity).not.toBeNull();
     expect(within(identity!).getByText("2")).toBeVisible();
   });
