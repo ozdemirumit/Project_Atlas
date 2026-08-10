@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-125 |
 | Title | Health inventory and evidence workspace extraction |
-| Status | In Progress |
-| Branch | `agent/health-inventory-evidence-workspace` |
+| Status | Complete |
+| Branch | `main` |
 | Pull Request | [#137](https://github.com/ozdemirumit/Project_Atlas/pull/137) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-020, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-040, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081 |
 | Last Updated | 2026-08-10 |
-| Next Action | Validate PR #137 in CI, merge it, verify merged-main CI and close IMP-125 |
+| Next Action | Define and implement the Health investigation, RCA and recommendation presentation extraction slice |
 
 ### ATLAS-IMP-125 Scope Rationale
 
@@ -78,6 +78,10 @@
   mobile navigation drawer and scrim opened successfully without overlapping the fixed viewport.
 - Final desktop, direct Connector and mobile browser logs contained no warning or error entries.
   The temporary fixed-viewport validation artifact was removed before commit.
+- PR #137 CI run `31391010898` passed both frontend and backend jobs at head
+  `8b31edcffba48282547c0d63be9e8549c4c70ba8`.
+- PR #137 was squash-merged as `11f3cca62e5aaca5c45cd960c4cd72e5daaa6955`; merged-main CI run
+  `31391676998` passed both frontend and backend jobs.
 
 ### ATLAS-IMP-124 Scope Rationale
 
