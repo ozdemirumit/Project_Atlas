@@ -316,6 +316,71 @@ class RecommendationProtectedContentService:
     async def close(self) -> None:
         await self._repository.close()
 
+    async def human_review_finding_source(
+        self, *, presentation_id: str
+    ) -> tuple[
+        RecommendationProtectedContentRecord,
+        RecommendationProtectedInspectionRecord,
+        RecommendationProtectedInspectionPolicySnapshot,
+        RecommendationReviewerAssignmentRecord,
+        RecommendationReviewRequestRecord,
+        RecommendationReadinessAssessment,
+        PromotedRecommendationArtifact,
+        RecommendationProtectedContentPolicySnapshot,
+    ]:
+        record = await self._repository.get(presentation_id=presentation_id)
+        if record is None:
+            raise RecommendationProtectedContentError(
+                "recommendation_protected_content_record_not_found"
+            )
+        self._verify_record(record)
+        try:
+            (
+                lease,
+                inspection_policy,
+                assignment,
+                _assignment_policy,
+                request,
+                assessment,
+                artifact,
+            ) = await self._source.protected_content_source(lease_id=record.source_lease_id)
+        except Exception as error:
+            raise RecommendationProtectedContentError(
+                "recommendation_protected_content_lineage_invalid"
+            ) from error
+        policy = await self._policy_source.get_by_id(policy_id=record.presentation_policy_id)
+        if policy is None:
+            raise RecommendationProtectedContentError(
+                "recommendation_protected_content_lineage_invalid"
+            )
+        self._verify_policy(policy)
+        if (
+            record.source_lease_digest != lease.canonical_digest
+            or record.source_assignment_set_id != assignment.assignment_set_id
+            or record.recommendation_id != artifact.recommendation_id
+            or record.review_request_id != request.review_request_id
+            or record.readiness_assessment_id != assessment.assessment_id
+            or record.promotion_id != artifact.promotion_id
+            or record.recommendation_artifact_digest != artifact.canonical_digest
+            or record.presentation_policy_digest != policy.canonical_digest
+            or record.track_code != lease.track_code
+            or record.organization_id != artifact.organization_id
+            or record.environment_id != artifact.environment_id
+        ):
+            raise RecommendationProtectedContentError(
+                "recommendation_protected_content_lineage_invalid"
+            )
+        return (
+            record,
+            lease,
+            inspection_policy,
+            assignment,
+            request,
+            assessment,
+            artifact,
+            policy,
+        )
+
     async def _authorize(
         self,
         *,

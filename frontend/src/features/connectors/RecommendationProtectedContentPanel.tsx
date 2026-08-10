@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { createRecommendationProtectedContent } from "../../api/recommendationProtectedContent";
 import type { RecommendationProtectedInspection } from "../../api/recommendationProtectedInspections";
+import { RecommendationReviewFindingPanel } from "./RecommendationReviewFindingPanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
   "environment.development":
@@ -114,40 +115,45 @@ export function RecommendationProtectedContentPanel({
         </div>
       )}
       {presentation && (
-        <div className="protected-content-record" data-testid="recommendation-protected-content">
-          <div className="section-heading">
-            <div>
-              <strong>Governed recommendation snapshot</strong>
-              <code>{presentation.presentation_id}</code>
+        <>
+          <div className="protected-content-record" data-testid="recommendation-protected-content">
+            <div className="section-heading">
+              <div>
+                <strong>Governed recommendation snapshot</strong>
+                <code>{presentation.presentation_id}</code>
+              </div>
+              <span className="state-badge approved">
+                <ShieldCheck size={14} /> read-only
+              </span>
             </div>
-            <span className="state-badge approved">
-              <ShieldCheck size={14} /> read-only
-            </span>
+            <div className="mcp-builder-facts" aria-label="Protected recommendation summary">
+              <div>
+                <span>Track</span>
+                <strong>
+                  {presentation.track_code.replace("review-track.", "").replaceAll("-", " ")}
+                </strong>
+              </div>
+              <div>
+                <span>Redaction</span>
+                <strong>applied</strong>
+              </div>
+              <div>
+                <span>Content</span>
+                <strong>{presentation.protected_content_bytes_returned} bytes</strong>
+              </div>
+              <div>
+                <span>Review authority</span>
+                <strong>not granted</strong>
+              </div>
+            </div>
+            <pre className="protected-content-text">{presentation.content}</pre>
+            <p className="muted-copy">
+              Content remains only in this page memory. Atlas renders it as text and does not
+              persist plaintext in the presentation record.
+            </p>
           </div>
-          <div className="mcp-builder-facts" aria-label="Protected recommendation summary">
-            <div>
-              <span>Track</span>
-              <strong>{presentation.track_code.replace("review-track.", "").replaceAll("-", " ")}</strong>
-            </div>
-            <div>
-              <span>Redaction</span>
-              <strong>applied</strong>
-            </div>
-            <div>
-              <span>Content</span>
-              <strong>{presentation.protected_content_bytes_returned} bytes</strong>
-            </div>
-            <div>
-              <span>Review authority</span>
-              <strong>not granted</strong>
-            </div>
-          </div>
-          <pre className="protected-content-text">{presentation.content}</pre>
-          <p className="muted-copy">
-            Content remains only in this page memory. Atlas renders it as text and does not persist
-            plaintext in the presentation record.
-          </p>
-        </div>
+          <RecommendationReviewFindingPanel lease={lease} presentation={presentation} />
+        </>
       )}
     </section>
   );

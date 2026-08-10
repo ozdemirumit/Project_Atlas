@@ -172,6 +172,8 @@ from atlas.modules.authorization.application.bootstrap import (
     MCP_BUILDER_VALIDATION_READ,
     RCA_CREATE,
     RECOMMENDATION_CREATE,
+    RECOMMENDATION_HUMAN_REVIEW_FINDING_CREATE,
+    RECOMMENDATION_HUMAN_REVIEW_FINDING_READ,
     RECOMMENDATION_PROMOTION_CREATE,
     RECOMMENDATION_PROMOTION_READ,
     RECOMMENDATION_PROTECTED_CONTENT_PRESENTATION_CREATE,
@@ -281,6 +283,7 @@ from atlas.modules.authorization.application.bootstrap import (
     operational_knowledge_source_materialization_scope,
     operational_knowledge_track_review_decision_scope,
     rca_scope,
+    recommendation_human_review_finding_scope,
     recommendation_promotion_scope,
     recommendation_protected_content_scope,
     recommendation_protected_inspection_scope,
@@ -5565,5 +5568,60 @@ async def authorize_recommendation_protected_content_read(
         request,
         subject,
         permission_id=RECOMMENDATION_PROTECTED_CONTENT_PRESENTATION_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def _authorize_recommendation_human_review_finding(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.recommendation.human-review-findings",
+            scope=recommendation_human_review_finding_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail="The current identity cannot record recommendation review findings.",
+        )
+    return decision
+
+
+async def authorize_recommendation_human_review_finding_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_recommendation_human_review_finding(
+        request,
+        subject,
+        permission_id=RECOMMENDATION_HUMAN_REVIEW_FINDING_CREATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_recommendation_human_review_finding_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_recommendation_human_review_finding(
+        request,
+        subject,
+        permission_id=RECOMMENDATION_HUMAN_REVIEW_FINDING_READ,
         capability_class=CapabilityClass.C1_READ_ONLY,
     )

@@ -168,7 +168,8 @@ describe("RecommendationProtectedContentPanel", () => {
     expect(screen.getByLabelText("Protected recommendation summary")).toHaveTextContent(
       "Review authoritynot granted",
     );
-    expect(screen.queryByRole("button", { name: /finding|decide|approve|execute|deploy/i })).toBeNull();
+    expect(screen.getByRole("button", { name: "Record recommendation findings" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /decide|approve|execute|deploy/i })).toBeNull();
     expect(storageWrite).not.toHaveBeenCalled();
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
