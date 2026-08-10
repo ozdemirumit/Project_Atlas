@@ -4,14 +4,77 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-126 |
-| Title | Health decision-support presentation extraction |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#138](https://github.com/ozdemirumit/Project_Atlas/pull/138) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-020, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082 |
+| Task ID | ATLAS-IMP-127 |
+| Title | Health governance and report presentation extraction |
+| Status | In Progress |
+| Branch | `agent/health-governance-report-presentation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-037, ATLAS-040, ATLAS-043, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083 |
 | Last Updated | 2026-08-10 |
-| Next Action | Define the Health approval and technical-report presentation extraction slice |
+| Next Action | Implement the accepted lazy Health governance/report presentation boundary |
+
+### ATLAS-IMP-127 Scope Rationale
+
+- IMP-126 closed with a separate 16.65 KB decision-support chunk, while the transitional
+  operational chunk remains 845.35 KB.
+- Approval and technical-report presentation is one contiguous governance sequence of approximately
+  360 lines with a controlled artifact/callback boundary.
+- ADR-083 accepts presentation-first extraction while approval URL/query, reviewer eligibility,
+  mutations, rationale state, report generation, download and external-system authority remain
+  unchanged.
+
+### ATLAS-IMP-127 Acceptance Criteria
+
+- Immutable approval packet, reviewer boundary, decision history, technical report, source lineage
+  and review-only ITSM draft move into one independently tested Health-only lazy feature.
+- Parent approval/report mutations, reset behavior, URL state, eligibility and controlled rationale
+  remain unchanged and are invoked through bounded callbacks.
+- Workspace and direct Connector routes do not mount the governance/report feature.
+- Empty, pending, failure and populated states remain explicit and fail closed.
+- Markdown download remains an explicit user command; ITSM dispatch, external mutation, RBAC,
+  audit and infrastructure execution authority does not move or change.
+- ESLint, TypeScript, full frontend tests and production build pass with a separate feature chunk.
+- Live desktop/mobile validation covers progression, decision controls, report boundaries, overflow
+  and final application warning/error state.
+
+### ATLAS-IMP-127 Initial Evidence
+
+- IMP-126 merged through PR #138 as `c9f1bef0d1a1a08e3b2bee79b55b76f2ac0d734b`;
+  PR run `31395540185` and merged-main run `31396751729` passed frontend and backend jobs.
+- IMP-126 closure commit `4e19f04e095b7994e37276780674609494602759` passed independent main
+  CI run `31397471670` with both jobs successful.
+- The production entry is 247.53 KB, inventory/evidence chunk is 11.22 KB, decision-support chunk is
+  16.65 KB and deferred operational chunk is 845.35 KB. ADR-083 is accepted and this branch owns
+  the next Health extraction.
+
+### ATLAS-IMP-127 Validation Evidence
+
+- `HealthGovernanceReportWorkspace.tsx` is a 542-line, 18,647-byte presentation owner with no API,
+  React Query, URL, identity, permission, approval, report, download or external-system client.
+  `App.tsx` removed 342 lines and retains approval creation/query/deep-link state, reviewer
+  eligibility, controlled rationale, decision mutation, report generation and Markdown download.
+- The static Health-only boundary preserves empty, pending, failed and populated approval/report
+  states. Four focused tests cover fail-closed presentation, controlled callbacks, decision history,
+  immutable lineage, review-only ITSM draft and explicit no-authority boundaries.
+- A duplicate React key exposed by the live blocked-option fixture was corrected with source-scoped
+  indexed keys. A fresh investigation -> RCA -> option-comparison run then produced no application
+  warning or error logs.
+- ESLint and no-write TypeScript checks passed. The final frontend suite passed 69 files and 127
+  tests. The production build transformed 1,986 modules and emitted separate inventory/evidence
+  (11.22 KB), governance/report (12.77 KB) and decision-support (16.73 KB) chunks; the transitional
+  operational chunk decreased from 845.35 KB to 834.15 KB.
+- Authenticated desktop validation completed investigation -> provisional RCA -> recommendation ->
+  immutable approval packet -> source-bound technical report. The separated-reviewer boundary,
+  canonical digest, lineage, review-only ITSM draft, explicit download and no execution/external
+  mutation claims remained visible; no infrastructure or external-system action was invoked.
+- Desktop layout measured document `1280/1280`, governance workspace `655/655`, approval `653/653`
+  and report `654/654` client/scroll widths. The isolated 390x844 mobile harness measured document
+  `375/375`, workspace `351/351`, approval `349/349` and report `349/349`, with mobile navigation
+  available and no horizontal overflow.
+- The authenticated desktop application log was empty after the final flow. The isolated mobile
+  iframe reported one Browser instrumentation `MutationObserver` error without an application URL;
+  it is outside Atlas and was not attributed to the application. The ignored local harness was
+  restored after validation.
 
 ### ATLAS-IMP-126 Scope Rationale
 
