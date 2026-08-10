@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-077 |
 | Last Updated | 2026-08-10 |
-| Next Action | Implement and validate the governed recommendation correction and resubmission vertical slice |
+| Next Action | Publish the validated vertical slice, pass GitHub CI, merge, and close the tracker on main |
 
 ### ATLAS-IMP-121 Scope Rationale
 
@@ -52,6 +52,45 @@
 - IMP-120 closure commit `06b010039ff6c333557cc54a90de82c8d6a7498c` passed main run
   `31358911715` with both frontend and backend jobs successful.
 - ADR-077 is accepted and this branch owns the implementation slice.
+
+### ATLAS-IMP-121 Validation Evidence
+
+- The correction service reconstructs and verifies the exact two-track review lineage, requires
+  both decisions and at least one `changes-required` result, and permits only the original
+  accountable recommendation consumer with recent hardware MFA and separation from both reviewers.
+- Strict request and response schemas accept opaque submission binding, exact identifiers and
+  digests, signed policy metadata, purpose and acknowledgements only. Corrected content, findings,
+  options, reviewer identity, artifact coordinates and every caller-selected authority field are
+  rejected by backend and frontend validators.
+- Intent audit and an atomic source-review-request claim precede the trusted adapter. Exact
+  idempotent reuse returns the first result; concurrency and uncertain adapter outcomes remain
+  claimed. Production uses fail-closed unavailable adapter/provider boundaries until durable
+  enterprise integrations are configured.
+- The trusted development adapter creates a new immutable promoted recommendation version. The
+  correction-aware readiness source verifies it while preserving the existing readiness service;
+  no prior readiness, request, review, approval, workflow, ITSM, execution, deployment or mutation
+  state is inherited.
+- Memory and PostgreSQL metadata repositories are covered. Migration `20260810_0093` creates only
+  correction claim and metadata tables, leaves one Alembic head, and its offline SQL contains no
+  corrected content, finding, option, reviewer identity or artifact-coordinate field.
+- Dedicated default-deny create/read permissions and exact correction scope are registered. The
+  development identity is explicitly rejected by the owner-authority boundary even though local
+  lifecycle discovery remains visible.
+- Backend Ruff and strict mypy passed. The full backend suite passed 943 tests with three
+  Windows-only symlink tests skipped and three existing dependency deprecation warnings.
+- Frontend ESLint, TypeScript and production build passed. The full frontend suite passed 96 tests
+  across 59 files, including strict correction transport validation and lifecycle coverage. The
+  existing 21-stage MCP Builder test received a test-local 60-second ceiling after completing in
+  28.48 seconds and narrowly exceeding its prior 30-second default under repeated Windows runs.
+- The bounded UI advertises `Recommendation correction resubmission` in lifecycle coverage and as
+  the latest available capability. No correction action is placed in the reviewer-bound surface;
+  the future accountable-owner surface must preserve separation from both review tracks.
+- Live development validation through `http://127.0.0.1:5250/` showed 11 available stages, zero in
+  progress and the new capability in both expected locations. Desktop width was 1,280 of 1,280;
+  the mobile override reported a 375-pixel client and scroll width, retained the capability summary
+  and produced no browser warning or error logs. The temporary viewport override was reset.
+- Live evidence remained synthetic and local. No vendor endpoint, real credential, external model,
+  workflow, ITSM system, execution target, deployment process or infrastructure mutation was used.
 
 ### ATLAS-IMP-120 Scope Rationale
 

@@ -236,6 +236,8 @@ RECOMMENDATION_FINDING_PRESENTATION_CREATE = "recommendation.finding-presentatio
 RECOMMENDATION_FINDING_PRESENTATION_READ = "recommendation.finding-presentations.read"
 RECOMMENDATION_TRACK_REVIEW_DECISION_CREATE = "recommendation.track-review-decisions.create"
 RECOMMENDATION_TRACK_REVIEW_DECISION_READ = "recommendation.track-review-decisions.read"
+RECOMMENDATION_CORRECTION_RESUBMISSION_CREATE = "recommendation.correction-resubmissions.create"
+RECOMMENDATION_CORRECTION_RESUBMISSION_READ = "recommendation.correction-resubmissions.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -1422,6 +1424,19 @@ def recommendation_track_review_decision_scope(
     )
 
 
+def recommendation_correction_resubmission_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.recommendation",
+        resource_id="resource.recommendation.correction-resubmissions",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -2371,6 +2386,14 @@ def build_development_authorization_service(
             permission_id=RECOMMENDATION_TRACK_REVIEW_DECISION_READ,
             description="Read minimized recommendation track decision metadata.",
         ),
+        PermissionDefinition(
+            permission_id=RECOMMENDATION_CORRECTION_RESUBMISSION_CREATE,
+            description="Create one governed corrected recommendation version.",
+        ),
+        PermissionDefinition(
+            permission_id=RECOMMENDATION_CORRECTION_RESUBMISSION_READ,
+            description="Read minimized recommendation correction metadata.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -2570,6 +2593,8 @@ def build_development_authorization_service(
                 RECOMMENDATION_FINDING_PRESENTATION_READ,
                 RECOMMENDATION_TRACK_REVIEW_DECISION_CREATE,
                 RECOMMENDATION_TRACK_REVIEW_DECISION_READ,
+                RECOMMENDATION_CORRECTION_RESUBMISSION_CREATE,
+                RECOMMENDATION_CORRECTION_RESUBMISSION_READ,
             }
         ),
     )

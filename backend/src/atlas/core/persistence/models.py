@@ -3707,3 +3707,46 @@ class RecommendationTrackReviewDecisionModel(Base):
     environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class RecommendationCorrectionClaimModel(Base):
+    __tablename__ = "recommendation_correction_claims"
+    __table_args__ = (
+        UniqueConstraint("source_review_request_id", name="uq_rec_corr_claim_source"),
+        UniqueConstraint(
+            "claimed_by_subject_digest",
+            "idempotency_digest",
+            name="uq_rec_corr_claim_actor_idem",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source_review_request_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    correction_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    claimed_by_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class RecommendationCorrectionModel(Base):
+    __tablename__ = "recommendation_corrections"
+    __table_args__ = (
+        UniqueConstraint("source_review_request_id", name="uq_rec_corr_source"),
+        UniqueConstraint("claim_id", name="uq_rec_corr_claim"),
+        UniqueConstraint("new_recommendation_id", name="uq_rec_corr_new_rec"),
+    )
+
+    correction_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    claim_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_review_request_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_recommendation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    new_recommendation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    new_promotion_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    corrected_by_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

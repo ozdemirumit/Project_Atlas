@@ -3,7 +3,10 @@ from __future__ import annotations
 from typing import Protocol
 
 from atlas.modules.identity.domain.models import AuthenticatedSubject
-from atlas.modules.recommendations.domain.promotion import PromotedRecommendationArtifact
+from atlas.modules.recommendations.domain.promotion import (
+    PromotedRecommendationArtifact,
+    RecommendationPromotionResult,
+)
 from atlas.modules.recommendations.domain.readiness import (
     RecommendationReadinessAssessment,
     RecommendationReadinessClaim,
@@ -19,6 +22,21 @@ class RecommendationReadinessError(RuntimeError):
 
 class RecommendationReadinessUncertainError(RecommendationReadinessError):
     pass
+
+
+class RecommendationReadinessPromotionSource(Protocol):
+    async def get(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        recommendation_id: str,
+        browser_session_id: str,
+        correlation_id: str,
+    ) -> RecommendationPromotionResult: ...
+
+    async def protected_content_source(
+        self, *, recommendation_id: str
+    ) -> PromotedRecommendationArtifact: ...
 
 
 class RecommendationReadinessRepository(Protocol):

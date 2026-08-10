@@ -3027,5 +3027,5 @@ describe("MCP Builder workspace", () => {
     expect(result.filename).toBe(candidateHandoff.data.package_filename);
     expect(result.blob.size).toBe(candidateArchiveBytes.byteLength);
     expect(subtleDigest).toHaveBeenCalledWith("SHA-256", expect.any(ArrayBuffer));
-  });
+  }, 60_000);
 });

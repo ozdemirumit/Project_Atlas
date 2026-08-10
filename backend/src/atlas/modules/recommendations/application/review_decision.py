@@ -368,6 +368,67 @@ class RecommendationTrackReviewDecisionService:
     async def close(self) -> None:
         await self._repository.close()
 
+    async def correction_resubmission_source(
+        self, *, review_request_id: str
+    ) -> tuple[
+        tuple[RecommendationTrackReviewDecisionRecord, ...],
+        RecommendationReviewRequestRecord,
+        RecommendationReadinessAssessment,
+        PromotedRecommendationArtifact,
+    ]:
+        records = await self._repository.list_by_review_request(review_request_id=review_request_id)
+        if len(records) != 2 or {record.track_code for record in records} != {
+            "review-track.technical",
+            "review-track.service-impact",
+        }:
+            raise RecommendationTrackReviewDecisionError(
+                "recommendation_track_review_decision_source_not_found"
+            )
+        ordered = tuple(sorted(records, key=lambda record: record.track_code))
+        anchor = records[0]
+        for record in ordered:
+            self._verify_record(record)
+            if (
+                record.review_request_id != anchor.review_request_id
+                or record.source_review_request_digest != anchor.source_review_request_digest
+                or record.source_assignment_set_id != anchor.source_assignment_set_id
+                or record.recommendation_id != anchor.recommendation_id
+                or record.readiness_assessment_id != anchor.readiness_assessment_id
+                or record.promotion_id != anchor.promotion_id
+                or record.recommendation_artifact_digest != anchor.recommendation_artifact_digest
+                or record.decision_policy_id != anchor.decision_policy_id
+                or record.decision_policy_digest != anchor.decision_policy_digest
+                or record.decision_policy_version != anchor.decision_policy_version
+            ):
+                raise RecommendationTrackReviewDecisionError(
+                    "recommendation_track_review_decision_aggregate_integrity_failed"
+                )
+        try:
+            source = await self._source.review_decision_source(
+                finding_presentation_id=anchor.source_finding_presentation_id
+            )
+        except Exception as error:
+            raise RecommendationTrackReviewDecisionError(
+                "recommendation_track_review_decision_source_not_found"
+            ) from error
+        assignment = source[5]
+        request = source[6]
+        readiness = source[7]
+        artifact = source[8]
+        if (
+            request.review_request_id != anchor.review_request_id
+            or request.canonical_digest != anchor.source_review_request_digest
+            or assignment.assignment_set_id != anchor.source_assignment_set_id
+            or readiness.assessment_id != anchor.readiness_assessment_id
+            or artifact.recommendation_id != anchor.recommendation_id
+            or artifact.promotion_id != anchor.promotion_id
+            or artifact.canonical_digest != anchor.recommendation_artifact_digest
+        ):
+            raise RecommendationTrackReviewDecisionError(
+                "recommendation_track_review_decision_source_invalid"
+            )
+        return ordered, request, readiness, artifact
+
     async def _authorize(
         self,
         *,
