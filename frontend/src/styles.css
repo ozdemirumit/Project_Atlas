@@ -4856,6 +4856,12 @@ textarea:focus-visible {
   border: 1px solid #dce3e0;
 }
 
+.health-decision-support-workspace {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
 .security-export-state {
   display: inline-flex;
   min-height: 27px;

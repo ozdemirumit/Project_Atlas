@@ -4,14 +4,62 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-125 |
-| Title | Health inventory and evidence workspace extraction |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#137](https://github.com/ozdemirumit/Project_Atlas/pull/137) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-020, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-040, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081 |
+| Task ID | ATLAS-IMP-126 |
+| Title | Health decision-support presentation extraction |
+| Status | In Progress |
+| Branch | `agent/health-decision-support-presentation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-020, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082 |
 | Last Updated | 2026-08-10 |
-| Next Action | Define and implement the Health investigation, RCA and recommendation presentation extraction slice |
+| Next Action | Complete live desktop/mobile validation, then publish the PR and verify CI |
+
+### ATLAS-IMP-126 Scope Rationale
+
+- IMP-125 closed with a separate 11.18 KB inventory/evidence chunk, while the transitional
+  operational chunk remains 860.46 KB.
+- Investigation, RCA and recommendation presentation is one contiguous decision-support sequence
+  of approximately 590 lines with a clear artifact/callback boundary.
+- ADR-082 accepts presentation-first extraction while parent mutation, approval URL and report
+  authority remains unchanged.
+
+### ATLAS-IMP-126 Acceptance Criteria
+
+- Reasoning artifact, provisional RCA and compared recommendation option presentation moves into
+  one independently tested Health-only lazy feature.
+- Parent mutations and reset behavior remain unchanged and are invoked through bounded callbacks.
+- Workspace and direct Connector routes do not mount the decision-support feature.
+- Empty, pending, failure and populated states remain explicit and fail closed.
+- Approval, technical report, ITSM, RBAC, audit, execution and infrastructure authority does not
+  move or change.
+- ESLint, TypeScript, full frontend tests and production build pass with a separate feature chunk.
+- Live desktop/mobile validation covers progression, action controls, overflow and final console
+  warning/error state.
+
+### ATLAS-IMP-126 Initial Evidence
+
+- IMP-125 merged through PR #137 as `11f3cca62e5aaca5c45cd960c4cd72e5daaa6955`;
+  PR run `31391010898` and merged-main run `31391676998` passed frontend and backend jobs.
+- IMP-125 closure commit `0ce923c05ab253478c2d442419d72b1d4b1a8dc5` passed independent main
+  CI run `31392419239` with both jobs successful.
+- The production entry is 247.47 KB, inventory/evidence chunk is 11.18 KB and deferred operational
+  chunk is 860.46 KB. ADR-082 is accepted and this branch owns the next Health extraction.
+
+### ATLAS-IMP-126 Validation Evidence
+
+- `HealthDecisionSupportWorkspace.tsx` is a 263-line, 16,821-byte presentation owner with no API,
+  React Query, URL, identity, permission, approval, report or execution client. `App.tsx` removed
+  591 lines and retains all mutation, reset, URL, approval and report authority.
+- Reasoning, provisional RCA and recommendation comparison now render through one static Health-only
+  lazy boundary. Empty, pending and failed states remain explicit and fail closed.
+- Four focused tests cover fail-closed empty state, parent-controlled callbacks, pending/failure
+  presentation, epistemic evidence, provisional language, preferred and blocked options and the
+  absence of execution authority or action controls.
+- Full ESLint and no-write TypeScript passed. The final frontend suite passed 123 tests across 68
+  files, including all four focused decision-support presentation tests.
+- Production build passed after 1,985 modules and emitted a separate 16.65 KB
+  `HealthDecisionSupportWorkspace` chunk. The deferred `OperationalApplication` chunk decreased
+  from 860.46 KB to 845.35 KB; the remaining warning is confined to that transitional module.
+- Live desktop/mobile validation and GitHub PR/CI evidence remain pending.
 
 ### ATLAS-IMP-125 Scope Rationale
 
