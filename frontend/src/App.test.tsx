@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { App } from "./App";
+import { App } from "./ApplicationCoordinator";
 
 const platformResponse = {
   data: {
@@ -1297,12 +1297,18 @@ describe("Atlas application shell", () => {
       </QueryClientProvider>,
     );
 
-    expect(screen.getByRole("heading", { name: "Storage estate assessment" })).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: "Storage estate assessment" }),
+    ).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /^Workspace$/ }));
-    expect(screen.getByRole("heading", { name: "Enterprise operations" })).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: "Enterprise operations" }),
+    ).toBeVisible();
     expect(window.location.hash).toBe("#/workspace");
     fireEvent.click(screen.getByRole("button", { name: /^Health$/ }));
-    expect(screen.getByRole("heading", { name: "Storage estate assessment" })).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: "Storage estate assessment" }),
+    ).toBeVisible();
     expect(window.location.hash).toBe("#/health");
     expect(screen.getByText("Human decision required")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Open context panel" }));

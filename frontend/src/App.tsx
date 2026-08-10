@@ -40,7 +40,7 @@ import {
   UserX,
   X,
 } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useState } from "react";
 
 import {
   createApiCredential,
@@ -110,13 +110,7 @@ import {
   ApplicationSidebar,
   ApplicationTopbar,
 } from "./features/shell/ApplicationShell";
-import {
-  isKnownWorkspaceHash,
-  type WorkspaceId,
-  workspaceFromHash,
-  workspaceHash,
-} from "./features/shell/workspace";
-import { WorkspaceOverview } from "./features/workspace/WorkspaceOverview";
+import type { WorkspaceId } from "./features/shell/workspace";
 import { PackageApprovalPanel } from "./features/connectors/PackageApprovalPanel";
 import {
   acquireConnectorPackage,
@@ -233,11 +227,6 @@ function shouldOpenInspector(): boolean {
   );
 }
 
-function workspaceFromLocation(): WorkspaceId {
-  if (new URLSearchParams(window.location.search).has("approval_request_id")) return "Health";
-  return workspaceFromHash(window.location.hash);
-}
-
 function formatTimestamp(timestamp: string | undefined): string {
   if (!timestamp) return "Unknown";
   return new Intl.DateTimeFormat("en", {
@@ -325,9 +314,17 @@ const MCP_BUILDER_SECURITY_CONTROLS: Array<{
   { id: "capability_governance", label: "Capability governance" },
 ];
 
-export function App() {
+interface OperationalApplicationProps {
+  activeWorkspace: Exclude<WorkspaceId, "Workspace">;
+  onNavigate: (workspace: WorkspaceId) => void;
+}
+
+export function OperationalApplication({
+  activeWorkspace,
+  onNavigate,
+}: OperationalApplicationProps) {
   const queryClient = useQueryClient();
-  const [activeNavigation, setActiveNavigation] = useState<WorkspaceId>(workspaceFromLocation);
+  const activeNavigation = activeWorkspace;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(shouldOpenInspector);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
@@ -552,41 +549,10 @@ export function App() {
     Record<string, McpBuilderDesignDecision>
   >({});
 
-  useEffect(() => {
-    const syncWorkspace = () => {
-      const workspace = workspaceFromLocation();
-      setActiveNavigation(workspace);
-      if (workspace !== "Health") setInspectorOpen(false);
-
-      if (window.location.hash && !isKnownWorkspaceHash(window.location.hash)) {
-        window.history.replaceState(
-          null,
-          "",
-          `${window.location.pathname}${window.location.search}#/workspace`,
-        );
-      }
-    };
-
-    window.addEventListener("hashchange", syncWorkspace);
-    window.addEventListener("popstate", syncWorkspace);
-    return () => {
-      window.removeEventListener("hashchange", syncWorkspace);
-      window.removeEventListener("popstate", syncWorkspace);
-    };
-  }, []);
-
   const navigateToWorkspace = (workspace: WorkspaceId) => {
-    setActiveNavigation(workspace);
     setSidebarOpen(false);
     if (workspace !== "Health") setInspectorOpen(false);
-    const nextHash = workspaceHash(workspace);
-    if (window.location.hash !== nextHash) {
-      window.history.pushState(
-        null,
-        "",
-        `${window.location.pathname}${window.location.search}${nextHash}`,
-      );
-    }
+    onNavigate(workspace);
   };
 
   const statusQuery = useQuery({
@@ -2389,38 +2355,24 @@ export function App() {
             <div className="conversation-heading">
               <div>
                 <p className="eyebrow">
-                  {activeNavigation === "Workspace"
-                    ? "OPERATIONS WORKSPACE"
-                    : activeNavigation === "Connectors"
-                      ? "MCP BUILDER"
-                      : "STORAGE HEALTH"}
+                  {activeNavigation === "Connectors" ? "MCP BUILDER" : "STORAGE HEALTH"}
                 </p>
                 <h1>
-                  {activeNavigation === "Workspace"
-                    ? "Enterprise operations"
-                    : activeNavigation === "Connectors"
-                      ? "Governed connector analysis"
-                      : "Storage estate assessment"}
+                  {activeNavigation === "Connectors"
+                    ? "Governed connector analysis"
+                    : "Storage estate assessment"}
                 </h1>
                 <p>
-                  {activeNavigation === "Workspace"
-                    ? "Available operational capabilities by control domain."
-                    : activeNavigation === "Connectors"
-                      ? "Quarantined OpenAPI evidence review for read-only connector candidates."
-                      : "Evidence-linked inventory, findings, and provisional analysis."}
+                  {activeNavigation === "Connectors"
+                    ? "Quarantined OpenAPI evidence review for read-only connector candidates."
+                    : "Evidence-linked inventory, findings, and provisional analysis."}
                 </p>
               </div>
               <span className="decision-badge">
                 <ShieldCheck size={15} />
-                {activeNavigation === "Workspace"
-                  ? "Human-controlled operations"
-                  : "Human decision required"}
+                Human decision required
               </span>
             </div>
-
-            {activeNavigation === "Workspace" && (
-              <WorkspaceOverview onNavigate={navigateToWorkspace} />
-            )}
 
             {activeNavigation === "Connectors" && (
             <div className="mcp-builder-workspace">

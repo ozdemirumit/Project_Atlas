@@ -1,0 +1,1 @@
+export { OperationalApplication } from "./App";
