@@ -4,14 +4,70 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-130 |
-| Title | Release Preflight presentation extraction |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#142](https://github.com/ozdemirumit/Project_Atlas/pull/142) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ATLAS-059, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086 |
+| Task ID | ATLAS-IMP-131 |
+| Title | Deployment Configuration presentation extraction |
+| Status | In Progress |
+| Branch | `agent/deployment-configuration-presentation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ATLAS-057, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087 |
 | Last Updated | 2026-08-10 |
-| Next Action | Define and implement Deployment Configuration presentation extraction |
+| Next Action | Publish IMP-131, complete PR/merged-main CI, then close the tracker on `main` |
+
+### ATLAS-IMP-131 Scope Rationale
+
+- IMP-130 closed with a separate 2.53 KB Release Preflight chunk and reduced the transitional
+  operational chunk from 828.09 KB to 826.14 KB.
+- Deployment Configuration is a contiguous approximately 70-line read-only presentation of
+  deterministic redacted fields, source attribution and validation evidence.
+- ADR-087 accepts presentation-first extraction while query, identity scope, selected profile,
+  secret resolution and downstream bootstrap composition remain parent/server responsibilities.
+
+### ATLAS-IMP-131 Acceptance Criteria
+
+- Profile/environment/schema/digest identity, redacted field display, source labels, validation,
+  remediation and no-write notice move into one independently tested lazy feature.
+- Parent authorized query, identity scope, selected profile and downstream plan composition remain
+  unchanged.
+- Forbidden, malformed or absent previews remain absent; Connector routes do not download,
+  evaluate or mount the feature.
+- Sensitive fields render only server-produced redacted `display_value`; no secret reference is
+  resolved and no plaintext is requested or inferred.
+- No API, query cache, identity, RBAC, overlay, secret, file, network, deployment or bootstrap
+  authority moves into presentation.
+- ESLint, TypeScript, full frontend tests and production build pass with a separate feature chunk.
+- Live desktop/mobile validation covers redacted evidence, route isolation, overflow and final
+  application warning/error state.
+
+### ATLAS-IMP-131 Initial Evidence
+
+- IMP-130 merged through PR #142 as `8130b7957a758581c1ed499fb0614f4aeb3c9443`; PR run
+  `31412961978` and merged-main run `31413513978` passed frontend and backend jobs.
+- IMP-130 closure commit `c5ec465b2459af5e85260a904bda1e0b8781490b` passed independent main
+  CI run `31414169921` with both jobs successful.
+- Release Preflight is a separate 2.53 KB feature chunk. The production entry is 247.66 KB and the
+  deferred operational chunk is 826.14 KB.
+
+### ATLAS-IMP-131 Validation Evidence
+
+- `DeploymentConfigurationWorkspace.tsx` owns configuration identity, server-redacted effective
+  fields, source labels, validation, remediation and no-write presentation only; query, identity,
+  selected profile, secret resolution and downstream bootstrap composition remain outside it.
+- Three focused component tests cover immutable configuration evidence, redacted sensitive display,
+  validation remediation and no-authority language. Existing configuration/bootstrap integration
+  coverage preserved forbidden/malformed absence and downstream composition; focused validation
+  passed 24 tests across two files.
+- ESLint and no-write TypeScript passed. The full frontend suite passed 73 files and 141 tests.
+- Production build transformed 1,990 modules and emitted a separate 2.78 KB Deployment
+  Configuration chunk. The transitional operational chunk decreased from 826.14 KB to 824.09 KB.
+- Live desktop validation passed at 1280 px: the redacted sensitive value and no-authority notice
+  rendered, plaintext sentinel values were absent, the document and all configuration panels had no
+  horizontal overflow, and the final application warning/error log was empty.
+- A fresh direct Connector route rendered its governed analysis workspace, did not render or load
+  the Deployment Configuration feature, and had no application warning/error log.
+- Mobile validation passed at a 375 CSS-pixel viewport: the document remained 375/375 px and the
+  workspace, identity, preview, field and validation panels remained within their containers. The
+  isolated iframe emitted only the known Browser instrumentation `MutationObserver` error; direct
+  Atlas pages were clean. GitHub publication remains pending.
 
 ### ATLAS-IMP-130 Scope Rationale
 
