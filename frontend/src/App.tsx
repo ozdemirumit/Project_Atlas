@@ -219,6 +219,9 @@ const HealthScheduledChecksWorkspace = lazy(
 const SecurityExportWorkspace = lazy(
   () => import("./features/health/SecurityExportWorkspace"),
 );
+const ReleasePreflightWorkspace = lazy(
+  () => import("./features/health/ReleasePreflightWorkspace"),
+);
 
 function statusLabel(status: string | undefined): string {
   if (!status) return "Connecting";
@@ -8839,78 +8842,32 @@ export function OperationalApplication({
                 </section>
               )}
 
-              {releasePreflight && (
-                <section className="workspace-section release-preflight-section">
-                  <div className="section-heading release-preflight-heading">
-                    <div>
-                      <p className="eyebrow">RELEASE READINESS</p>
-                      <h2>Read-only deployment preflight</h2>
-                      <p>Immutable artifact and host checks before any installation activity.</p>
-                    </div>
-                    <span className={`state-badge ${releasePreflight.state}`}>
-                      <PackageCheck size={14} /> {releasePreflight.state}
-                    </span>
-                  </div>
-                  <div className="release-preflight-controls">
-                    <label>
-                      <span>Acquisition mode</span>
-                      <select
-                        aria-label="Release acquisition mode"
-                        value={releaseMode}
-                        onChange={(event) =>
-                          setReleaseMode(event.target.value as ReleasePreflightMode)
-                        }
-                      >
-                        <option value="connected">Connected</option>
-                        <option value="mirrored">Mirrored</option>
-                        <option value="offline">Offline</option>
-                      </select>
-                    </label>
-                    <label>
-                      <span>Deployment profile</span>
-                      <select
-                        aria-label="Release deployment profile"
-                        value={releaseProfile}
-                        onChange={(event) =>
-                          setReleaseProfile(event.target.value as ReleasePreflightProfile)
-                        }
-                      >
-                        <option value="developer">Developer</option>
-                        <option value="linux_lab">Linux lab</option>
-                      </select>
-                    </label>
-                    <div className="release-identity">
-                      <span>Release</span>
-                      <strong>{releasePreflight.release_version}</strong>
-                      <code>{releasePreflight.build_id}</code>
-                    </div>
-                    <div className="release-identity">
-                      <span>Manifest</span>
-                      <strong>{releasePreflight.checks.length} checks</strong>
-                      <code>{releasePreflight.manifest_digest.slice(0, 16)}...</code>
-                    </div>
-                  </div>
-                  <div className="release-check-grid">
-                    {releasePreflight.checks.map((check) => (
-                      <article className="release-check" key={check.code}>
+              {activeNavigation === "Health" && releasePreflight && (
+                <WorkspaceLoadBoundary
+                  compact
+                  resetKey={releasePreflight.report_id}
+                  workspace="Health"
+                >
+                  <Suspense
+                    fallback={
+                      <div className="workspace-message" aria-live="polite" aria-busy="true">
+                        <Clock3 size={22} />
                         <div>
-                          <span className={`state-badge ${check.state}`}>{check.state}</span>
-                          <code>{check.code}</code>
+                          <h2>Loading Release Preflight</h2>
+                          <p>Preparing authorized immutable release evidence.</p>
                         </div>
-                        <strong>{check.summary}</strong>
-                        <p>{check.evidence}</p>
-                        {check.remediation && <small>{check.remediation}</small>}
-                      </article>
-                    ))}
-                  </div>
-                  <div className="safety-notice">
-                    <ShieldCheck size={16} />
-                    <span>
-                      Read-only evidence only. No installation, mutation, deployment, or execution
-                      is authorized.
-                    </span>
-                  </div>
-                </section>
+                      </div>
+                    }
+                  >
+                    <ReleasePreflightWorkspace
+                      mode={releaseMode}
+                      onModeChange={setReleaseMode}
+                      onProfileChange={setReleaseProfile}
+                      preflight={releasePreflight}
+                      profile={releaseProfile}
+                    />
+                  </Suspense>
+                </WorkspaceLoadBoundary>
               )}
 
               {deploymentConfiguration && (
