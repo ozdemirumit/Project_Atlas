@@ -6,9 +6,9 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-117 |
 | Title | Governed recommendation protected-content presentation |
-| Status | Ready for Pull Request |
+| Status | Pull Request Open; CI Running |
 | Branch | `agent/recommendation-protected-content` |
-| Pull Request | Pending |
+| Pull Request | [#129](https://github.com/ozdemirumit/Project_Atlas/pull/129) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-073 |
 | Last Updated | 2026-08-10 |
 | Next Action | Publish IMP-117, pass CI, merge, and define the governed recommendation findings boundary |
@@ -86,6 +86,8 @@
   error/warning logs were empty. Local Operator is intentionally not an assigned reviewer, so the
   sensitive live presentation was not attempted with that identity; the exact-assignee HTTPS
   lease-cookie and presentation flow is covered by the integration test.
+- Implementation commit `711a00f22ecec6d9d1383c5457e0a9b2d044ad25` is published through PR
+  #129. Continuous Integration is running for the final tracker-linked branch head.
 
 ### ATLAS-IMP-116 Scope Rationale
 
