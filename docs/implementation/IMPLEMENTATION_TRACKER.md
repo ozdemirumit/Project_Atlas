@@ -4,14 +4,54 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-120 |
-| Title | Governed recommendation track review decision |
-| Status | Done |
-| Branch | `main` |
-| Pull Request | [#132](https://github.com/ozdemirumit/Project_Atlas/pull/132) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-076 |
+| Task ID | ATLAS-IMP-121 |
+| Title | Governed recommendation correction and resubmission |
+| Status | In Progress |
+| Branch | `agent/recommendation-correction-resubmission` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-077 |
 | Last Updated | 2026-08-10 |
-| Next Action | Define the next independent governed recommendation lifecycle contract after track decisions |
+| Next Action | Implement and validate the governed recommendation correction and resubmission vertical slice |
+
+### ATLAS-IMP-121 Scope Rationale
+
+- IMP-120 records exact immutable technical and service-impact decisions but deliberately creates
+  no correction when either track requires changes.
+- ADR-077 binds one opaque trusted correction submission to the completed generation and creates a
+  new immutable promoted recommendation version without accepting corrected content in the API.
+- The new version returns to deterministic readiness assessment. It inherits no readiness, review,
+  assignment, findings, track pass, final disposition, approval or operational authority.
+
+### ATLAS-IMP-121 Acceptance Criteria
+
+- Both exact track decisions must bind one review request, assignment set, readiness assessment,
+  promoted recommendation version and policy generation; both are decided and at least one is
+  `changes-required`. Single-track, mixed-generation, duplicate or all-passed input fails closed.
+- Only the original accountable recommendation consumer, in the exact tenant, with recent hardware
+  MFA, normal browser session, dedicated C2 create/C1 read and separation from both reviewers may
+  correct. Reviewer cookies and caller-selected identity, track, content or lifecycle fields are
+  never accepted.
+- Caller input contains exact lineage and decision digests, opaque correction-submission binding,
+  signed policy, purpose and acknowledgements only. No finding, corrected content, patch,
+  recommendation option or artifact coordinate enters API, persistence, audit, logs or telemetry.
+- Intent audit and an atomic unique source-request claim precede a trusted correction adapter. Exact
+  idempotent reuse is permitted; concurrency or uncertainty after claim remains claimed. Production
+  fails closed without the adapter and protected corrected-artifact provider.
+- The result creates one new immutable recommendation/promotion version and exposes it to the
+  existing readiness service through a verified correction-aware source. All review and authority
+  state resets; no readiness result, request, approval, workflow, ITSM, execution, deployment or
+  infrastructure mutation is created.
+- Memory/PostgreSQL parity, one Alembic head, strict minimized schemas, default-deny RBAC, CSRF,
+  focused lineage/separation/idempotency/concurrency/privacy/artifact tests, bounded UI, full suites,
+  live validation and GitHub CI apply.
+
+### ATLAS-IMP-121 Initial Evidence
+
+- IMP-120 merged through PR #132 as `3f1c1cdde1704c793698cabc4501f424edc1373e`; PR run
+  `31358137259` and merged-main run `31358531453` passed both frontend and backend jobs.
+- IMP-120 closure commit `06b010039ff6c333557cc54a90de82c8d6a7498c` passed main run
+  `31358911715` with both frontend and backend jobs successful.
+- ADR-077 is accepted and this branch owns the implementation slice.
 
 ### ATLAS-IMP-120 Scope Rationale
 
