@@ -8,10 +8,10 @@
 | Title | Operational workspace information architecture and application-shell consolidation |
 | Status | In Progress |
 | Branch | `agent/ui-information-architecture` |
-| Pull Request | Pending |
+| Pull Request | [#135](https://github.com/ozdemirumit/Project_Atlas/pull/135) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-001 through ADR-079 |
 | Last Updated | 2026-08-10 |
-| Next Action | Implement the accepted workspace directory, truthful navigation and application-shell boundary |
+| Next Action | Complete PR #135 CI, review and merge validation |
 
 ### ATLAS-IMP-123 Scope Rationale
 
