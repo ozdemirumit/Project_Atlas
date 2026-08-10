@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-119 |
 | Title | Governed recommendation protected finding presentation |
-| Status | In Review |
-| Branch | `agent/recommendation-finding-presentation` |
+| Status | Done |
+| Branch | `main` |
 | Pull Request | [#131](https://github.com/ozdemirumit/Project_Atlas/pull/131) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-075 |
 | Last Updated | 2026-08-10 |
-| Next Action | Complete PR #131 GitHub CI review and merge the validated implementation |
+| Next Action | Select and record the ATLAS-IMP-120 vertical slice |
 
 ### ATLAS-IMP-119 Scope Rationale
 
@@ -85,6 +85,9 @@
   `0` in progress. The mobile viewport produced a 375-pixel client width, retained both capability
   labels, wrapped the long title within its containers and reported no page-level horizontal
   overflow.
+- PR run `31354504832` passed all frontend and backend jobs. PR #131 merged the implementation and
+  tracker commits into `main` as `d5da3a87c2bafa09b6ce9b0caecac522d0b30f22`.
+- Merged-main run `31354936046` independently passed all frontend and backend jobs.
 
 ### ATLAS-IMP-118 Scope Rationale
 
