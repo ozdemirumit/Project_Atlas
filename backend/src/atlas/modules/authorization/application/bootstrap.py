@@ -238,6 +238,8 @@ RECOMMENDATION_TRACK_REVIEW_DECISION_CREATE = "recommendation.track-review-decis
 RECOMMENDATION_TRACK_REVIEW_DECISION_READ = "recommendation.track-review-decisions.read"
 RECOMMENDATION_CORRECTION_RESUBMISSION_CREATE = "recommendation.correction-resubmissions.create"
 RECOMMENDATION_CORRECTION_RESUBMISSION_READ = "recommendation.correction-resubmissions.read"
+RECOMMENDATION_FINAL_DISPOSITION_CREATE = "recommendation.final-dispositions.create"
+RECOMMENDATION_FINAL_DISPOSITION_READ = "recommendation.final-dispositions.read"
 STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
@@ -1437,6 +1439,19 @@ def recommendation_correction_resubmission_scope(
     )
 
 
+def recommendation_final_disposition_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.recommendation",
+        resource_id="resource.recommendation.final-dispositions",
+        capability_class=capability_class,
+    )
+
+
 def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -2394,6 +2409,14 @@ def build_development_authorization_service(
             permission_id=RECOMMENDATION_CORRECTION_RESUBMISSION_READ,
             description="Read minimized recommendation correction metadata.",
         ),
+        PermissionDefinition(
+            permission_id=RECOMMENDATION_FINAL_DISPOSITION_CREATE,
+            description="Record one governed final recommendation disposition.",
+        ),
+        PermissionDefinition(
+            permission_id=RECOMMENDATION_FINAL_DISPOSITION_READ,
+            description="Read minimized final recommendation disposition metadata.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -2595,6 +2618,8 @@ def build_development_authorization_service(
                 RECOMMENDATION_TRACK_REVIEW_DECISION_READ,
                 RECOMMENDATION_CORRECTION_RESUBMISSION_CREATE,
                 RECOMMENDATION_CORRECTION_RESUBMISSION_READ,
+                RECOMMENDATION_FINAL_DISPOSITION_CREATE,
+                RECOMMENDATION_FINAL_DISPOSITION_READ,
             }
         ),
     )

@@ -44,6 +44,7 @@ from atlas.api.routes import (
     draft_review_requests,
     embedding_generation,
     evidence_drafts,
+    final_recommendation_dispositions,
     final_resolutions,
     final_validations,
     finding_presentations,
@@ -1212,6 +1213,20 @@ from atlas.modules.recommendations.adapters.correction_resubmission_synthetic im
     SyntheticRecommendationCorrectionAdapter,
     UnavailableRecommendationCorrectionAdapter,
 )
+from atlas.modules.recommendations.adapters.final_disposition_memory import (
+    InMemoryFinalRecommendationDispositionPolicySource,
+    InMemoryFinalRecommendationDispositionRepository,
+)
+from atlas.modules.recommendations.adapters.final_disposition_permission import (
+    AuthorizationFinalRecommendationDispositionPermissionAuthorizer,
+)
+from atlas.modules.recommendations.adapters.final_disposition_postgres import (
+    PostgreSQLFinalRecommendationDispositionRepository,
+)
+from atlas.modules.recommendations.adapters.final_disposition_synthetic import (
+    SyntheticFinalRecommendationDispositionAttestor,
+    UnavailableFinalRecommendationDispositionAttestor,
+)
 from atlas.modules.recommendations.adapters.finding_presentation_memory import (
     InMemoryRecommendationFindingPresentationPolicySource,
     InMemoryRecommendationFindingPresentationRepository,
@@ -1347,6 +1362,10 @@ from atlas.modules.recommendations.adapters.synthetic import (
 from atlas.modules.recommendations.application.correction_resubmission import (
     RecommendationCorrectionService,
     build_development_recommendation_correction_policy,
+)
+from atlas.modules.recommendations.application.final_disposition import (
+    FinalRecommendationDispositionService,
+    build_development_final_recommendation_disposition_policy,
 )
 from atlas.modules.recommendations.application.finding_presentation import (
     RecommendationFindingPresentationService,
@@ -1588,6 +1607,7 @@ def create_app(
         RecommendationTrackReviewDecisionService | None
     ) = None,
     recommendation_correction_service: RecommendationCorrectionService | None = None,
+    final_recommendation_disposition_service: (FinalRecommendationDispositionService | None) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
@@ -4731,6 +4751,47 @@ def create_app(
     recommendation_readiness_promotion_source.register_correction_source(
         resolved_recommendation_correction_service
     )
+    if final_recommendation_disposition_service is not None:
+        resolved_final_recommendation_disposition_service = final_recommendation_disposition_service
+    else:
+        final_recommendation_disposition_policies = (
+            ()
+            if is_production
+            else (
+                build_development_final_recommendation_disposition_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_final_recommendation_disposition_service = FinalRecommendationDispositionService(
+            repository=(
+                PostgreSQLFinalRecommendationDispositionRepository.from_url(
+                    resolved_settings.database_url
+                )
+                if resolved_settings.database_url
+                else InMemoryFinalRecommendationDispositionRepository()
+            ),
+            source=resolved_recommendation_track_review_decision_service,
+            policy_source=InMemoryFinalRecommendationDispositionPolicySource(
+                final_recommendation_disposition_policies
+            ),
+            permission_authorizer=(
+                AuthorizationFinalRecommendationDispositionPermissionAuthorizer(
+                    service=resolved_authorization_service,
+                    environment=resolved_settings.environment,
+                )
+            ),
+            attestor=(
+                UnavailableFinalRecommendationDispositionAttestor()
+                if is_production
+                else SyntheticFinalRecommendationDispositionAttestor()
+            ),
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
     database_probe = DatabaseHealthProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
@@ -5029,6 +5090,9 @@ def create_app(
             resolved_recommendation_track_review_decision_service
         )
         app.state.recommendation_correction_service = resolved_recommendation_correction_service
+        app.state.final_recommendation_disposition_service = (
+            resolved_final_recommendation_disposition_service
+        )
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
@@ -5042,6 +5106,7 @@ def create_app(
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
         await resolved_recommendation_correction_service.close()
+        await resolved_final_recommendation_disposition_service.close()
         await resolved_recommendation_track_review_decision_service.close()
         await resolved_recommendation_finding_presentation_service.close()
         await resolved_recommendation_human_review_finding_service.close()
@@ -5237,6 +5302,7 @@ def create_app(
     app.include_router(recommendation_finding_presentations.router, prefix="/api/v1")
     app.include_router(recommendation_review_decisions.router, prefix="/api/v1")
     app.include_router(recommendation_correction_resubmissions.router, prefix="/api/v1")
+    app.include_router(final_recommendation_dispositions.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")

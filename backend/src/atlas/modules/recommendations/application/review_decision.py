@@ -429,6 +429,16 @@ class RecommendationTrackReviewDecisionService:
             )
         return ordered, request, readiness, artifact
 
+    async def final_disposition_source(
+        self, *, review_request_id: str
+    ) -> tuple[
+        tuple[RecommendationTrackReviewDecisionRecord, ...],
+        RecommendationReviewRequestRecord,
+        RecommendationReadinessAssessment,
+        PromotedRecommendationArtifact,
+    ]:
+        return await self.correction_resubmission_source(review_request_id=review_request_id)
+
     async def _authorize(
         self,
         *,
