@@ -1298,7 +1298,14 @@ describe("Atlas application shell", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Storage estate assessment" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^Workspace$/ }));
+    expect(screen.getByRole("heading", { name: "Enterprise operations" })).toBeVisible();
+    expect(window.location.hash).toBe("#/workspace");
+    fireEvent.click(screen.getByRole("button", { name: /^Health$/ }));
+    expect(screen.getByRole("heading", { name: "Storage estate assessment" })).toBeVisible();
+    expect(window.location.hash).toBe("#/health");
     expect(screen.getByText("Human decision required")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Open context panel" }));
     expect(await screen.findByText("test")).toBeVisible();
     expect(await screen.findByText("Local Operator")).toBeVisible();
     expect(await screen.findByText("Syslog and SIEM delivery")).toBeVisible();

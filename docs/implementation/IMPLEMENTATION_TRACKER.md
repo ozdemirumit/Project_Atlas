@@ -4,14 +4,76 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-122 |
-| Title | Governed final recommendation disposition |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#134](https://github.com/ozdemirumit/Project_Atlas/pull/134) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-078 |
+| Task ID | ATLAS-IMP-123 |
+| Title | Operational workspace information architecture and application-shell consolidation |
+| Status | In Progress |
+| Branch | `agent/ui-information-architecture` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-001 through ADR-079 |
 | Last Updated | 2026-08-10 |
-| Next Action | Define and implement the UI information-architecture, capability-visibility and application-shell consolidation slice |
+| Next Action | Implement the accepted workspace directory, truthful navigation and application-shell boundary |
+
+### ATLAS-IMP-123 Scope Rationale
+
+- The current web application has six visible primary destinations but only Connector and
+  non-Connector render paths, so multiple controls misleadingly open the same workspace.
+- Completed operations, connector, AI decision-support and governance capabilities are difficult
+  to discover from the current default screen.
+- `App.tsx` is approximately 926 KB and 14,298 lines, so layout and navigation must begin moving
+  behind a bounded shell without a high-risk full rewrite.
+- ADR-079 accepts an incremental, truthful Workspace/Health/Connectors information architecture.
+
+### ATLAS-IMP-123 Acceptance Criteria
+
+- Workspace, Health and Connectors are the only primary destinations until other pages have
+  distinct tested content; every visible navigation control changes to the expected workspace.
+- Workspace groups implemented capabilities by user intent and links to the owning workspace
+  without claiming dynamic health, approval or operational authority.
+- Health and Connectors retain their current functions while domain content, composer and
+  inspector surfaces do not leak into the wrong workspace.
+- Active workspace state survives direct links, refresh and browser history; unknown state resolves
+  safely to Workspace.
+- A dedicated application-shell boundary owns responsive sidebar/topbar layout and accessible
+  navigation, while domain queries and mutations remain in their existing ownership boundary.
+- Existing frontend tests remain green; focused shell/navigation tests, lint, typecheck, production
+  build, desktop/mobile screenshots, overflow checks and console inspection pass.
+- No backend permission, audit, persistence, workflow, ITSM, change, execution, deployment or
+  infrastructure-mutation behavior changes.
+
+### ATLAS-IMP-123 Initial Evidence
+
+- IMP-122 merged through PR #134 as `ee17a2d7cc5bf35769c9d2fd463cbba4706f8686`;
+  PR run `31374769024` and merged-main run `31375373657` passed frontend and backend jobs.
+- IMP-122 closure commit `e84750776dbd3feff674ce726f269a4880d49645` passed independent main
+  CI run `31376030732` with both frontend and backend jobs successful.
+- ADR-079 is accepted and this branch owns the first UI consolidation slice.
+
+### ATLAS-IMP-123 Validation Evidence
+
+- The sidebar and topbar now live behind dedicated shell components. Primary navigation exposes
+  only Workspace, Health and Connectors; inactive Infrastructure, Topology, Reports, Governance,
+  Settings, search, notification and help controls no longer pretend to be functional.
+- Workspace is the normal entry view and presents 13 implemented capabilities across
+  infrastructure operations, connector lifecycle, AI decision support and enterprise controls.
+  Each capability links to its owning Health or Connectors workspace without claiming dynamic
+  runtime state or operational authority.
+- URL-backed `#/workspace`, `#/health` and `#/connectors` destinations support direct links.
+  Unknown hashes fail back to Workspace. Existing `approval_request_id` deep links continue to
+  open Health, and navigation uses push-state plus pop-state/hash synchronization.
+- Health domain content, investigation composer and context inspector render only in Health.
+  Connector lifecycle and MCP Builder content render only in Connectors. Entering another
+  workspace closes the inspector rather than leaking prior operational context.
+- Frontend ESLint and TypeScript passed. The full suite passed 105 tests across 63 files, including
+  shell controls, exact Workspace/Health App transitions, URL parsing, unknown-route fallback,
+  capability grouping and preservation of all existing App workflows. Production build passed.
+- Live validation used the isolated `http://127.0.0.1:5261/#/workspace` development server. The
+  1,280-pixel desktop viewport reported equal client and scroll width, all 13 capabilities and no
+  clipped capability rows. The 390-pixel override reported a 375-pixel client and scroll width,
+  a functional modal sidebar, all 13 capabilities and no horizontal overflow. The override was
+  reset and the final desktop browser warning/error log was empty.
+- `App.tsx` and the main production chunk remain larger than 500 KB. This accepted slice starts the
+  shell boundary but deliberately avoids a high-risk full rewrite; domain workspace extraction and
+  route-level code splitting remain explicit follow-up UI slices.
 
 ### ATLAS-IMP-122 Scope Rationale
 
