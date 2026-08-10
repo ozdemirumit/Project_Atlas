@@ -233,7 +233,7 @@ function RecommendationPanel({
                 <strong>{option.title}</strong><p>{option.intended_outcome}</p>
                 <div className="recommendation-option-metrics"><span>Evidence <strong>{option.confidence}</strong></span><span>Duration <strong>{option.duration.minimum_minutes}-{option.duration.maximum_minutes} min</strong></span><span>Interruption <strong>{option.interruption.expected_mode}</strong></span></div>
                 <div className="recommendation-plan">{option.plan_steps.map((step) => <div key={step.step_id}><span>{step.order}</span><p>{step.conceptual_action}</p><small>{step.capability_class} | {step.capability_id ?? "human procedure"}</small></div>)}</div>
-                {option.state === "blocked" ? <div className="recommendation-exclusions"><strong>Blocked by policy and readiness</strong><ul>{option.exclusion_reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></div> : <div className="recommendation-readiness"><span>Rollback {option.recovery.rollback_feasible ? "credible" : "not established"}</span><span>{option.policy_outcome.replaceAll("_", " ")}</span></div>}
+                {option.state === "blocked" ? <div className="recommendation-exclusions"><strong>Blocked by policy and readiness</strong><ul>{option.exclusion_reasons.map((reason, index) => <li key={`${option.option_id}-${index}-${reason}`}>{reason}</li>)}</ul></div> : <div className="recommendation-readiness"><span>Rollback {option.recovery.rollback_feasible ? "credible" : "not established"}</span><span>{option.policy_outcome.replaceAll("_", " ")}</span></div>}
               </article>
             ))}</div>
           </div>

@@ -4862,6 +4862,12 @@ textarea:focus-visible {
   min-width: 0;
 }
 
+.health-governance-report-workspace {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
 .security-export-state {
   display: inline-flex;
   min-height: 27px;

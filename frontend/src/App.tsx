@@ -9,7 +9,6 @@ import {
   Copy,
   Database,
   Download,
-  FileChartColumn,
   FileCheck2,
   FileCode2,
   FileText,
@@ -212,6 +211,9 @@ const HealthInventoryEvidenceWorkspace = lazy(
 );
 const HealthDecisionSupportWorkspace = lazy(
   () => import("./features/health/HealthDecisionSupportWorkspace"),
+);
+const HealthGovernanceReportWorkspace = lazy(
+  () => import("./features/health/HealthGovernanceReportWorkspace"),
 );
 
 function statusLabel(status: string | undefined): string {
@@ -12982,161 +12984,66 @@ export function OperationalApplication({
                     </WorkspaceLoadBoundary>
                   )}
 
-                  <section className="workspace-section approval-section" aria-live="polite">
-                    <div className="section-heading approval-heading">
-                      <div>
-                        <p className="eyebrow">HUMAN GOVERNANCE</p>
-                        <h2>Immutable approval review</h2>
-                      </div>
-                      <button
-                        className="run-check-button approval-submit"
-                        type="button"
-                        disabled={
-                          !recommendation?.preferred_option_id || approvalCreateMutation.isPending
-                          || Boolean(approval)
-                        }
-                        onClick={() => {
-                          if (recommendation?.preferred_option_id) {
-                            approvalCreateMutation.mutate({
-                              targetId: recommendation.target_id,
-                              recommendationId: recommendation.recommendation_id,
-                              recommendationVersion: recommendation.version,
-                              optionId: recommendation.preferred_option_id,
-                            });
-                          }
-                        }}
-                      >
-                        {approvalCreateMutation.isPending ? (
-                          <RefreshCw className="spin" size={14} />
-                        ) : (
-                          <UserCheck size={14} />
-                        )}
-                        Submit for human review
-                      </button>
-                    </div>
-
-                    {!approval &&
-                      !approvalQuery.isLoading &&
-                      !approvalCreateMutation.isPending &&
-                      !approvalQuery.isError &&
-                      !approvalCreateMutation.isError && (
-                        <div className="reasoning-empty">
-                          <UserCheck size={21} />
-                          <div>
-                            <strong>Governed recommendation required</strong>
-                            <p>An exact option is bound to an immutable packet before human review.</p>
-                          </div>
-                        </div>
-                      )}
-                    {(approvalQuery.isLoading || approvalCreateMutation.isPending) && (
-                      <div className="reasoning-empty">
-                        <Clock3 size={20} />
-                        <div><strong>Building immutable packet</strong><p>Source versions, evidence, risk, impact, recovery, and expiry are being bound.</p></div>
-                      </div>
-                    )}
-                    {(approvalQuery.isError || approvalCreateMutation.isError) && (
-                      <div className="reasoning-empty reasoning-error">
-                        <AlertTriangle size={20} />
-                        <div><strong>Approval unavailable</strong><p>No review controls are shown when packet validation fails.</p></div>
-                      </div>
-                    )}
-
-                    {approval && (
-                      <>
-                        <div className="approval-summary-grid">
-                          <div><span>State</span><strong>{approval.state.replaceAll("_", " ")}</strong><small>Version {approval.version}</small></div>
-                          <div><span>Requester</span><strong>{approval.packet.requested_by}</strong><small>{approval.packet.purpose}</small></div>
-                          <div><span>Risk</span><strong>{approval.packet.overall_risk}</strong><small>{approval.packet.option_confidence} confidence</small></div>
-                          <div><span>Expires</span><strong>{formatTimestamp(approval.packet.expires_at)}</strong><small>{approval.packet.canonicalization_version}</small></div>
-                        </div>
-
-                        <div className="approval-digest">
-                          <ShieldCheck size={17} />
-                          <div><span>Canonical packet digest</span><strong>{approval.packet.canonical_digest}</strong></div>
-                        </div>
-
-                        <div className="approval-focus">
-                          <div><span>Exact option</span><strong>{approval.packet.option_title}</strong><p>{approval.packet.confidence_rationale}</p></div>
-                          <div><span>Impact boundary</span><strong>{approval.packet.blast_radius}</strong><p>{approval.packet.impact_confirmed ? "Impact confirmed" : "Impact remains unconfirmed"} · {approval.packet.graph_maturity}</p></div>
-                          <div><span>Interruption</span><strong>{approval.packet.interruption_expected_mode}</strong><p>Worst credible: {approval.packet.interruption_worst_credible_mode}</p></div>
-                          <div><span>Recovery</span><strong>{approval.packet.rollback_feasible ? "Rollback described" : "Rollback not established"}</strong><p>{approval.packet.recovery_strategy}</p></div>
-                        </div>
-
-                        <div className="approval-evidence-grid">
-                          <div><h3>Evidence and assumptions</h3><ul>{approval.packet.evidence_summaries.map((item) => <li key={item}>{item}</li>)}{approval.packet.assumptions.map((item) => <li key={item}>Assumption: {item}</li>)}</ul></div>
-                          <div><h3>Unknowns and gaps</h3><ul>{[...approval.packet.unknowns, ...approval.packet.impact_gaps, ...approval.packet.recovery_gaps].map((item) => <li key={item}>{item}</li>)}</ul></div>
-                        </div>
-
-                        <div className="approval-plan">
-                          <h3>Bound ordered plan</h3>
-                          {approval.packet.plan_steps.map((step) => (
-                            <div key={step.step_id}><span>{step.order}</span><p>{step.conceptual_action}</p><small>{step.capability_class} · {step.stop_condition}</small></div>
-                          ))}
-                        </div>
-
-                        <div className="approval-review-boundary">
-                          <div><strong>{approval.execution_authorized ? "Execution authority present" : "No execution authority"}</strong><p>An approval records a human decision only. It grants no RBAC, connector, or runtime permission.</p></div>
-                          {approval.decisions.length > 0 && (
-                            <div className="approval-history"><span>Decision history</span>{approval.decisions.map((item) => <p key={item.decision_id}><strong>{item.outcome.replaceAll("_", " ")}</strong> by {item.reviewer_id}: {item.rationale}</p>)}</div>
-                          )}
-                        </div>
-
-                        {approval.state === "pending" && !canReviewApproval && (
-                          <div className="approval-ineligible"><LockKeyhole size={17} /><div><strong>Separated reviewer required</strong><p>The requester, a non-human identity, or development assurance cannot decide this packet.</p></div></div>
-                        )}
-                        {canReviewApproval && (
-                          <div className="approval-controls">
-                            <label htmlFor="approval-rationale">Decision rationale</label>
-                            <textarea id="approval-rationale" value={approvalRationale} onChange={(event) => setApprovalRationale(event.target.value)} maxLength={1000} placeholder="Record the evidence-based reason for this decision..." />
+                  {activeNavigation === "Health" && (
+                    <WorkspaceLoadBoundary
+                      compact
+                      resetKey={
+                        technicalReport?.report_id ??
+                        approval?.request_id ??
+                        recommendation?.recommendation_id ??
+                        overview.snapshot_id
+                      }
+                      workspace="Health"
+                    >
+                      <Suspense
+                        fallback={
+                          <div
+                            className="workspace-message"
+                            aria-live="polite"
+                            aria-busy="true"
+                          >
+                            <Clock3 size={22} />
                             <div>
-                              {([
-                                ["approve", "Approve", CheckCircle2],
-                                ["reject", "Reject", X],
-                                ["needs_evidence", "Needs evidence", CircleHelp],
-                                ["defer", "Defer", Clock3],
-                              ] as const).map(([outcome, label, Icon]) => (
-                                <button key={outcome} type="button" disabled={approvalRationale.trim().length < 5 || approvalDecisionMutation.isPending} onClick={() => approvalDecisionMutation.mutate({ requestId: approval.request_id, version: approval.version, outcome, rationale: approvalRationale.trim() })}><Icon size={14} />{label}</button>
-                              ))}
+                              <h2>Loading Health governance</h2>
+                              <p>Preparing approval and technical report presentation.</p>
                             </div>
                           </div>
-                        )}
-                        {approvalDecisionMutation.isError && <div className="impact-message impact-error"><AlertTriangle size={18} /> Decision was not recorded; reload the immutable packet before retrying.</div>}
-                      </>
-                    )}
-                  </section>
-
-                  <section className="workspace-section report-section" aria-live="polite">
-                    <div className="section-heading report-heading">
-                      <div>
-                        <p className="eyebrow">TECHNICAL REPORT</p>
-                        <h2>Decision report and ITSM handoff</h2>
-                      </div>
-                      <div className="report-heading-actions">
-                        {technicalReport && (
-                          <button
-                            className="icon-button report-download"
-                            type="button"
-                            aria-label="Download technical report"
-                            title="Download Markdown report"
-                            onClick={() =>
+                        }
+                      >
+                        <HealthGovernanceReportWorkspace
+                          approval={approval}
+                          approvalDecisionError={approvalDecisionMutation.isError}
+                          approvalDecisionPending={approvalDecisionMutation.isPending}
+                          approvalError={
+                            approvalQuery.isError || approvalCreateMutation.isError
+                          }
+                          approvalLoading={
+                            approvalQuery.isLoading || approvalCreateMutation.isPending
+                          }
+                          approvalRationale={approvalRationale}
+                          canGenerateReport={Boolean(recommendation && incidentReference)}
+                          canReviewApproval={canReviewApproval}
+                          canSubmitApproval={Boolean(recommendation?.preferred_option_id)}
+                          onApprovalRationaleChange={setApprovalRationale}
+                          onDecideApproval={(outcome) => {
+                            if (approval) {
+                              approvalDecisionMutation.mutate({
+                                requestId: approval.request_id,
+                                version: approval.version,
+                                outcome,
+                                rationale: approvalRationale.trim(),
+                              });
+                            }
+                          }}
+                          onDownloadReport={() => {
+                            if (technicalReport) {
                               downloadMarkdown(
                                 `atlas-${technicalReport.target_id.split(".").at(-1) ?? "storage"}-decision-report-v${technicalReport.version}.md`,
                                 technicalReport.rendered_markdown,
-                              )
+                              );
                             }
-                          >
-                            <Download size={15} />
-                          </button>
-                        )}
-                        <button
-                          className="run-check-button report-button"
-                          type="button"
-                          disabled={
-                            !recommendation ||
-                            !incidentReference ||
-                            reportMutation.isPending
-                          }
-                          onClick={() => {
+                          }}
+                          onGenerateReport={() => {
                             if (recommendation && incidentReference) {
                               reportMutation.mutate({
                                 targetId: recommendation.target_id,
@@ -13146,199 +13053,23 @@ export function OperationalApplication({
                               });
                             }
                           }}
-                        >
-                          {reportMutation.isPending ? (
-                            <RefreshCw className="spin" size={14} />
-                          ) : (
-                            <FileChartColumn size={14} />
-                          )}
-                          Generate report
-                        </button>
-                      </div>
-                    </div>
-
-                    {!technicalReport &&
-                      !reportMutation.isPending &&
-                      !reportMutation.isError && (
-                        <div className="reasoning-empty">
-                          <FileChartColumn size={21} />
-                          <div>
-                            <strong>Governed recommendation required</strong>
-                            <p>
-                              Generate a source-bound technical report and a review-only ITSM
-                              handoff draft after the option comparison is available.
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    {reportMutation.isPending && (
-                      <div className="reasoning-empty">
-                        <Clock3 size={20} />
-                        <div>
-                          <strong>Validating report source and evidence</strong>
-                          <p>Lineage, classification, redaction, integrity, and audit are being checked.</p>
-                        </div>
-                      </div>
-                    )}
-                    {reportMutation.isError && (
-                      <div className="reasoning-empty reasoning-error">
-                        <AlertTriangle size={20} />
-                        <div>
-                          <strong>Technical report unavailable</strong>
-                          <p>No partial report or ITSM draft is disclosed after a validation failure.</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {technicalReport && (
-                      <>
-                        <div className="report-summary-grid">
-                          <div>
-                            <span>Report</span>
-                            <strong>Version {technicalReport.version}</strong>
-                            <small>{technicalReport.state.replaceAll("_", " ")}</small>
-                          </div>
-                          <div>
-                            <span>Audience</span>
-                            <strong>{technicalReport.audience.replaceAll("_", " ")}</strong>
-                            <small>{technicalReport.classification}</small>
-                          </div>
-                          <div>
-                            <span>Human review</span>
-                            <strong>{technicalReport.review.status}</strong>
-                            <small>{technicalReport.owner}</small>
-                          </div>
-                          <div>
-                            <span>Redaction</span>
-                            <strong>{technicalReport.redaction_state}</strong>
-                            <small>Expires {formatTimestamp(technicalReport.expires_at)}</small>
-                          </div>
-                        </div>
-
-                        <div className="report-lineage">
-                          <FileText size={18} />
-                          <div>
-                            <span>Immutable source lineage</span>
-                            <strong>
-                              Recommendation v{technicalReport.source.recommendation_version} · RCA v
-                              {technicalReport.source.rca_case_version}
-                            </strong>
-                            <p>
-                              {technicalReport.source.evidence_ids.length} authorized evidence references ·
-                              digest {technicalReport.content_digest.slice(0, 16)}…
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="report-sections">
-                          <h3>Structured report sections</h3>
-                          <div>
-                            {technicalReport.sections.map((section) => (
-                              <article key={section.section_id} className={section.state}>
-                                <div className="report-section-head">
-                                  <strong>{section.title}</strong>
-                                  <span>{section.state}</span>
-                                </div>
-                                <ul>
-                                  {section.statements.map((statement) => (
-                                    <li key={statement}>{statement}</li>
-                                  ))}
-                                </ul>
-                                {section.evidence_references.length > 0 && (
-                                  <div className="report-evidence">
-                                    <span>Evidence</span>
-                                    {section.evidence_references.map((reference) => (
-                                      <code key={reference}>{reference}</code>
-                                    ))}
-                                  </div>
-                                )}
-                                {section.limitations.length > 0 && (
-                                  <div className="report-limitations">
-                                    <strong>Limitations</strong>
-                                    <ul>
-                                      {section.limitations.map((limitation) => (
-                                        <li key={limitation}>{limitation}</li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                )}
-                              </article>
-                            ))}
-                          </div>
-                        </div>
-
-                        {technicalReport.itsm_handoff && (
-                          <div className="itsm-handoff">
-                            <div>
-                              <span>ITSM HANDOFF DRAFT</span>
-                              <h3>{technicalReport.itsm_handoff.incident_reference}</h3>
-                              <p>{technicalReport.itsm_handoff.generated_content_label}</p>
-                            </div>
-                            <dl>
-                              <div>
-                                <dt>Status</dt>
-                                <dd>{technicalReport.itsm_handoff.state.replaceAll("_", " ")}</dd>
-                              </div>
-                              <div>
-                                <dt>Operation</dt>
-                                <dd>{technicalReport.itsm_handoff.operation.replaceAll("_", " ")}</dd>
-                              </div>
-                              <div>
-                                <dt>External dispatch</dt>
-                                <dd>
-                                  {technicalReport.itsm_handoff.dispatch_authorized
-                                    ? "Authorized"
-                                    : "Not authorized"}
-                                </dd>
-                              </div>
-                              <div>
-                                <dt>Record mutation</dt>
-                                <dd>
-                                  {technicalReport.itsm_handoff.external_record_mutated
-                                    ? "Recorded"
-                                    : "None"}
-                                </dd>
-                              </div>
-                            </dl>
-                            <div className="itsm-fields">
-                              {technicalReport.itsm_handoff.field_mappings.map((mapping) => (
-                                <div key={mapping.field}>
-                                  <span>{mapping.field.replaceAll("_", " ")}</span>
-                                  <strong>{mapping.value}</strong>
-                                </div>
-                              ))}
-                            </div>
-                            <p className="itsm-idempotency">
-                              Idempotency {technicalReport.itsm_handoff.idempotency_key.slice(0, 20)}…
-                            </p>
-                          </div>
-                        )}
-
-                        <div className="report-boundary-grid">
-                          <div>
-                            <h3>Execution boundary</h3>
-                            <strong>
-                              {technicalReport.execution_authorized
-                                ? "Execution authority present"
-                                : "No execution authority"}
-                            </strong>
-                          </div>
-                          <div>
-                            <h3>External-system boundary</h3>
-                            <strong>
-                              {technicalReport.external_mutation_authorized
-                                ? "External mutation authority present"
-                                : "No external mutation authority"}
-                            </strong>
-                          </div>
-                        </div>
-                        <div className="safety-notice">
-                          <ShieldCheck size={16} />
-                          <span>{technicalReport.safety_notice}</span>
-                        </div>
-                      </>
-                    )}
-                  </section>
+                          onSubmitApproval={() => {
+                            if (recommendation?.preferred_option_id) {
+                              approvalCreateMutation.mutate({
+                                targetId: recommendation.target_id,
+                                recommendationId: recommendation.recommendation_id,
+                                recommendationVersion: recommendation.version,
+                                optionId: recommendation.preferred_option_id,
+                              });
+                            }
+                          }}
+                          reportError={reportMutation.isError}
+                          reportPending={reportMutation.isPending}
+                          technicalReport={technicalReport}
+                        />
+                      </Suspense>
+                    </WorkspaceLoadBoundary>
+                  )}
 
                 </>
               )}
