@@ -4,14 +4,70 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-128 |
-| Title | Health scheduled-checks presentation extraction |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#140](https://github.com/ozdemirumit/Project_Atlas/pull/140) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-040, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084 |
+| Task ID | ATLAS-IMP-129 |
+| Title | Security Export presentation extraction |
+| Status | In Progress |
+| Branch | `agent/security-export-presentation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-020, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-034, ATLAS-035, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085 |
 | Last Updated | 2026-08-10 |
-| Next Action | Define and implement the Security Export presentation extraction slice |
+| Next Action | Publish IMP-129, verify PR and merged-main CI, then close the task |
+
+### ATLAS-IMP-129 Scope Rationale
+
+- IMP-128 closed with a separate 5.12 KB scheduled-check chunk and reduced the transitional
+  operational chunk from 834.15 KB to 830.62 KB.
+- Security Export is a contiguous approximately 110-line presentation for one authorized
+  Syslog/SIEM destination, transport evidence, RFC 5424 preview and bounded test-event request.
+- ADR-085 accepts presentation-first extraction while query, mutation, cache invalidation, identity,
+  TLS trust, audit and external-delivery authority remain unchanged.
+
+### ATLAS-IMP-129 Acceptance Criteria
+
+- Destination, transport, certificate, queue, handoff, preview, limitation and safety presentation
+  moves into one independently tested lazy feature.
+- Parent query, test-event mutation and cache invalidation remain unchanged and delegate through one
+  bounded callback.
+- Connector routes do not download, evaluate or mount the Security Export feature.
+- Loading, unavailable, incomplete, pending, failed and successful states remain explicit and fail
+  closed; transport handoff never claims SIEM ingestion confirmation.
+- No identity, credential, TLS, RBAC, audit, mapping, retry, collector or external-system authority
+  moves into presentation.
+- ESLint, TypeScript, full frontend tests and production build pass with a separate feature chunk.
+- Live desktop/mobile validation covers one test event, route isolation, overflow and final
+  application warning/error state.
+
+### ATLAS-IMP-129 Initial Evidence
+
+- IMP-128 merged through PR #140 as `4f8a1361c3e9f039b0f3242770d9fda6e64782a8`; PR run
+  `31405170482` and merged-main run `31405919185` passed frontend and backend jobs.
+- IMP-128 closure commit `6ce6eae3518cd9d8d87efe8072cccd85ffb09551` passed independent main
+  CI run `31407085783` with both jobs successful.
+- The production entry is 247.63 KB; scheduled checks, inventory/evidence, governance/report and
+  decision-support are 5.12 KB, 11.24 KB, 12.80 KB and 16.76 KB. The deferred operational chunk is
+  830.62 KB.
+
+### ATLAS-IMP-129 Validation Evidence
+
+- `SecurityExportWorkspace.tsx` owns destination, transport, certificate, queue, handoff, RFC 5424
+  preview, limitations and safety presentation only; query, mutation and cache invalidation remain
+  in `App.tsx` and delegate through one bounded callback.
+- Four focused tests cover explicit loading/unavailable/incomplete states, bounded transport
+  evidence, SIEM-ingestion uncertainty, callback delegation, pending/success/failure states and
+  no-authority language.
+- ESLint and no-write TypeScript passed. The full frontend suite passed 71 files and 135 tests.
+- Production build transformed 1,988 modules and emitted a separate 3.92 KB Security Export chunk.
+  The transitional operational chunk decreased from 830.62 KB to 828.09 KB.
+- Live desktop validation passed at 1280 px: one authorized test event recorded only a transport
+  handoff, SIEM ingestion remained explicitly unconfirmed, and the final application log was empty.
+  The document, 653 px workspace, delivery grid and detail panel had no horizontal overflow.
+- A fresh direct Connector route rendered its own governed analysis workspace, did not render or
+  load the Security Export workspace and had no application warning/error log.
+- Mobile validation passed at a 375 CSS-pixel viewport: the document remained 375/375 px, the
+  workspace/grid/detail remained 349/349 px and the RFC 5424 payload remained 304/304 px. The
+  isolated validation iframe emitted only the known Browser instrumentation `MutationObserver`
+  error; direct Atlas pages were clean.
+- GitHub publication remains pending.
 
 ### ATLAS-IMP-128 Scope Rationale
 
