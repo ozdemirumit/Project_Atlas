@@ -4,14 +4,50 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-119 |
-| Title | Governed recommendation protected finding presentation |
-| Status | Done |
-| Branch | `main` |
-| Pull Request | [#131](https://github.com/ozdemirumit/Project_Atlas/pull/131) |
-| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-075 |
+| Task ID | ATLAS-IMP-120 |
+| Title | Governed recommendation track review decision |
+| Status | In Progress |
+| Branch | `agent/recommendation-track-review-decision` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-076 |
 | Last Updated | 2026-08-10 |
-| Next Action | Select and record the ATLAS-IMP-120 vertical slice |
+| Next Action | Implement and validate the governed recommendation track review decision vertical slice |
+
+### ATLAS-IMP-120 Scope Rationale
+
+- IMP-119 presents one exact sealed technical or service-impact finding packet but deliberately
+  records no accountable judgment.
+- ADR-076 binds one immutable `passed` or `changes-required` human decision to that exact
+  presentation, assignment track, lease, browser, assignee and signed policy.
+- Correction, final recommendation disposition, approval, workflow, ITSM, execution, deployment
+  and mutation remain independent later stages.
+
+### ATLAS-IMP-120 Acceptance Criteria
+
+- Only the exact current lease holder and assignee, in the exact tenant, with recent hardware MFA,
+  dedicated C2 decision and lineage-read permissions, the bound browser session and exact track
+  cookie may decide. Caller-selected identity, track, content, lifecycle or authority fields fail.
+- Only policy-approved `passed` or `changes-required` dispositions and track-specific structured
+  basis codes are accepted. No recommendation or finding narrative, free-form rationale, category,
+  severity or artifact coordinate enters persistence, audit, logs, events or model context.
+- Intent audit and an atomic unique presentation claim precede a signed trusted-attestor receipt.
+  Exact completed idempotent reuse is allowed; concurrency, conflict or failure after claim remains
+  claimed and cannot replace the first decision. Production fails closed without an attestor.
+- The immutable metadata record sets only the matching technical or service-impact completion/pass
+  state and optional correction requirement. Both passes are readiness evidence only; final
+  recommendation disposition, approval, workflow, ITSM, execution, deployment and infrastructure
+  mutation remain false.
+- Memory/PostgreSQL parity, one Alembic head, strict schemas, default-deny C2 create/C1 read RBAC,
+  CSRF, focused lineage/track/idempotency/concurrency/privacy/audit tests, bounded UI, full suites,
+  live validation and GitHub CI apply.
+
+### ATLAS-IMP-120 Initial Evidence
+
+- IMP-119 merged through PR #131 as `d5da3a87c2bafa09b6ce9b0caecac522d0b30f22`; PR run
+  `31354504832` and merged-main run `31354936046` passed both frontend and backend jobs.
+- IMP-119 closure commit `c3d168635e2641436649b874ae4ac2b18ff2aa98` passed main run
+  `31355385945` with both frontend and backend jobs successful.
+- ADR-076 is accepted and this branch owns the implementation slice.
 
 ### ATLAS-IMP-119 Scope Rationale
 
