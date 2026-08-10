@@ -305,6 +305,21 @@ class GovernedRecommendationPromotionService:
     async def close(self) -> None:
         await self._repository.close()
 
+    async def protected_content_source(
+        self, *, recommendation_id: str
+    ) -> PromotedRecommendationArtifact:
+        artifact = await self._repository.get(recommendation_id=recommendation_id)
+        if artifact is None or artifact.canonical_digest != self._artifact_digest(artifact):
+            raise RecommendationPromotionError("recommendation_promotion_not_found")
+        policy = await self._policy_source.get_by_id(policy_id=artifact.promotion_policy_id)
+        if (
+            policy is None
+            or policy.canonical_digest != artifact.promotion_policy_digest
+            or policy.canonical_digest != self._digest(self._payload(policy))
+        ):
+            raise RecommendationPromotionError("recommendation_promotion_not_found")
+        return artifact
+
     async def _read_source(
         self,
         actor: AuthenticatedSubject,

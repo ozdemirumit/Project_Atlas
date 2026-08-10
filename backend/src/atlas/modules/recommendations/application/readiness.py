@@ -317,6 +317,31 @@ class GovernedRecommendationReadinessService:
     async def close(self) -> None:
         await self._repository.close()
 
+    async def protected_content_source(
+        self, *, assessment_id: str
+    ) -> tuple[RecommendationReadinessAssessment, PromotedRecommendationArtifact]:
+        assessment = await self._repository.get(assessment_id=assessment_id)
+        if assessment is None or assessment.canonical_digest != self._assessment_digest(assessment):
+            raise RecommendationReadinessError("recommendation_readiness_not_found")
+        policy = await self._policy_source.get_by_id(policy_id=assessment.readiness_policy_id)
+        if (
+            policy is None
+            or policy.canonical_digest != assessment.readiness_policy_digest
+            or policy.canonical_digest != self._digest(self._payload(policy))
+        ):
+            raise RecommendationReadinessError("recommendation_readiness_not_found")
+        artifact = await self._promotion_source.protected_content_source(
+            recommendation_id=assessment.recommendation_id
+        )
+        if (
+            artifact.promotion_id != assessment.promotion_id
+            or artifact.canonical_digest != assessment.source_artifact_digest
+            or artifact.outcome != assessment.source_outcome
+            or len(artifact.options) != assessment.option_count
+        ):
+            raise RecommendationReadinessError("recommendation_readiness_integrity_failed")
+        return assessment, artifact
+
     async def _read_source(
         self,
         actor: AuthenticatedSubject,

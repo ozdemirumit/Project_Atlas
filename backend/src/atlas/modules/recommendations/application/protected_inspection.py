@@ -30,6 +30,7 @@ from atlas.modules.recommendations.application.protected_inspection_ports import
     RecommendationProtectedInspectionSource,
     RecommendationProtectedInspectionUncertainError,
 )
+from atlas.modules.recommendations.domain.promotion import PromotedRecommendationArtifact
 from atlas.modules.recommendations.domain.protected_inspection import (
     RECOMMENDATION_PROTECTED_INSPECTION_LEASED,
     TRACKS,
@@ -40,6 +41,8 @@ from atlas.modules.recommendations.domain.protected_inspection import (
     RecommendationProtectedInspectionReceipt,
     RecommendationProtectedInspectionRecord,
 )
+from atlas.modules.recommendations.domain.readiness import RecommendationReadinessAssessment
+from atlas.modules.recommendations.domain.review_request import RecommendationReviewRequestRecord
 from atlas.modules.recommendations.domain.reviewer_assignment import (
     RecommendationReviewerAssignmentPolicySnapshot,
     RecommendationReviewerAssignmentRecord,
@@ -333,6 +336,51 @@ class RecommendationProtectedInspectionService:
 
     async def close(self) -> None:
         await self._repository.close()
+
+    async def protected_content_source(
+        self, *, lease_id: str
+    ) -> tuple[
+        RecommendationProtectedInspectionRecord,
+        RecommendationProtectedInspectionPolicySnapshot,
+        RecommendationReviewerAssignmentRecord,
+        RecommendationReviewerAssignmentPolicySnapshot,
+        RecommendationReviewRequestRecord,
+        RecommendationReadinessAssessment,
+        PromotedRecommendationArtifact,
+    ]:
+        record = await self._repository.get(lease_id=lease_id)
+        if record is None:
+            raise RecommendationProtectedInspectionError(
+                "recommendation_protected_inspection_record_not_found"
+            )
+        self._verify_record(record)
+        policy = await self._policy_source.get_by_id(policy_id=record.inspection_policy_id)
+        if policy is None or policy.canonical_digest != record.inspection_policy_digest:
+            raise RecommendationProtectedInspectionError(
+                "recommendation_protected_inspection_policy_invalid"
+            )
+        self._verify_snapshot(policy)
+        (
+            assignment,
+            assignment_policy,
+            request,
+            assessment,
+            artifact,
+        ) = await self._source.protected_content_source(
+            assignment_set_id=record.source_assignment_set_id
+        )
+        if (
+            assignment.canonical_digest != record.source_assignment_set_digest
+            or assignment.recommendation_id != record.recommendation_id
+            or assignment.review_request_id != record.review_request_id
+            or request.readiness_assessment_id != record.readiness_assessment_id
+            or artifact.promotion_id != record.promotion_id
+            or record.track_code not in {item[0] for item in assignment.track_assignments}
+        ):
+            raise RecommendationProtectedInspectionError(
+                "recommendation_protected_inspection_lineage_invalid"
+            )
+        return record, policy, assignment, assignment_policy, request, assessment, artifact
 
     async def _reuse(
         self,
