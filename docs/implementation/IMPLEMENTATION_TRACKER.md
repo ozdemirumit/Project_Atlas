@@ -8,10 +8,10 @@
 | Title | Governed recommendation protected finding presentation |
 | Status | In Review |
 | Branch | `agent/recommendation-finding-presentation` |
-| Pull Request | Pending |
+| Pull Request | [#131](https://github.com/ozdemirumit/Project_Atlas/pull/131) |
 | Governing Documents | ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-014, ATLAS-015, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-075 |
 | Last Updated | 2026-08-10 |
-| Next Action | Commit the validated implementation, open the pull request and complete GitHub CI review |
+| Next Action | Complete PR #131 GitHub CI review and merge the validated implementation |
 
 ### ATLAS-IMP-119 Scope Rationale
 
@@ -49,6 +49,7 @@
 - IMP-118 closure commit `ec3b27e72ad0aa73ea7de642f0ffb44169abfd22` passed main run
   `31351565351` (frontend 3m27s, backend 5m40s).
 - ADR-075 is accepted and this branch owns the implementation slice.
+- Implementation commit `1055b40` is under review in PR #131.
 
 ### ATLAS-IMP-119 Validation Evidence
 
