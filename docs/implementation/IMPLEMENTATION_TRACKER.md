@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-135 |
 | Title | Bootstrap Lease workflow ownership extraction |
-| Status | In Progress |
-| Branch | `agent/bootstrap-lease-workflow` |
-| Pull Request | Pending |
+| Status | Complete |
+| Branch | `main` |
+| Pull Request | [#147](https://github.com/ozdemirumit/Project_Atlas/pull/147) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-028, ATLAS-029, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ATLAS-057, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090, ADR-091 |
 | Last Updated | 2026-08-11 |
-| Next Action | Extract the exact-input Bootstrap lease workflow into one governed Health owner |
+| Next Action | Define the next bounded Bootstrap phase workflow owner |
 
 ### ATLAS-IMP-135 Scope Rationale
 
@@ -82,6 +82,10 @@
   The embedded document and Health workspace remained 360/360 px; the lease action remained
   332/332 px. The temporary harness was removed after validation. It emitted only the known Browser
   iframe-instrumentation `MutationObserver` error; both direct Atlas pages were clean.
+- PR #147 passed Continuous Integration run `31473432506` with successful frontend and backend
+  jobs, then squash-merged as `fd23a59dfab090b04ec7f99271e4f170308694b5`.
+- The merged `main` commit passed independent push CI run `31474149310` with successful frontend and
+  backend jobs.
 
 ### ATLAS-IMP-134 Scope Rationale
 
