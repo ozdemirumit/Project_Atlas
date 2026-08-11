@@ -4,14 +4,70 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-146 |
-| Title | Connector upgrade readiness |
-| Status | Complete |
-| Branch | `agent/mcp-upgrade-readiness` (merged) |
-| Pull Request | [#158](https://github.com/ozdemirumit/Project_Atlas/pull/158) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-100, ADR-102 |
+| Task ID | ATLAS-IMP-147 |
+| Title | Governed connector upgrade plan |
+| Status | In Progress |
+| Branch | `agent/mcp-upgrade-plan` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-100, ADR-102, ADR-103 |
 | Last Updated | 2026-08-12 |
-| Next Action | Audit the next incomplete product workflow and open ATLAS-IMP-147 |
+| Next Action | Deliver the exact implementation through PR, CI and merged-main verification |
+
+### ATLAS-IMP-147 Scope Rationale
+
+- IMP-146 identifies exact newer packages and declaration risk, but connector reviewers still lack
+  ordered prerequisites, interruption evidence, validation, stop conditions and rollback steps.
+- The existing Atlas platform-upgrade plan is bound to bootstrap releases and database recovery
+  evidence and cannot safely represent an independently versioned connector package.
+- ADR-103 adds a deterministic, non-executable connector plan and refuses to invent current
+  service impact or downtime for target-configured instances.
+
+### ATLAS-IMP-147 Acceptance Criteria
+
+- An authorized operator can generate a plan for one exact upgrade-readiness candidate, bound to
+  current instance, receipt, readiness and candidate digests.
+- The plan includes approval and policy prerequisites, seven ordered phases, post-validation,
+  stop conditions, rollback steps/window, blockers, unknowns and evidence-supported interruption.
+- Unconfigured instances report zero interruption. Target-configured instances expose target/site/
+  product metadata but remain blocked until current impact, sessions and maintenance evidence are
+  established; no synthetic downtime is returned.
+- Repeated generation over identical evidence is deterministic. Candidate absence or source/target
+  drift fails closed.
+- The endpoint is read-only, no-store and audited; no package, configuration, runtime, target,
+  credential or infrastructure mutation occurs.
+- The update modal exposes Review plan and complete plan evidence without install, apply, execute
+  or approval mutation controls.
+- Backend/frontend focused and full gates, production build and live desktop/mobile validation pass.
+
+### ATLAS-IMP-147 Initial Evidence
+
+- IMP-146 merged through PR #158 as `2812b4a88515a8f135192648e2487bbe6e8b6ef1`;
+  exact-head CI run `31535005713` and merged-main run `31535674770` passed.
+- IMP-146 tracker closure `9a6612879ebbb923594875e1d81abc739d510c58` passed independent
+  main CI run `31536210219` before IMP-147 branched.
+- Upgrade readiness exposes risk and rollback anchors but no connector-specific ordered change plan.
+
+### ATLAS-IMP-147 Validation Evidence
+
+- Plan generation is deterministically bound to the exact active instance, current installation
+  receipt, selected candidate receipt, upgrade-readiness result and their canonical digests. Source,
+  target or candidate drift fails closed.
+- The plan exposes prerequisites, seven ordered phases, post-validation checks, stop conditions,
+  rollback steps/window, blockers and unknowns. It remains decision support only, always requires
+  human approval and cannot authorize execution or mutate package, configuration, runtime, target,
+  credential or infrastructure state.
+- Unconfigured instances report an evidence-supported `0-0` minute interruption range. A configured
+  target exposes only governed target/site/product identifiers, reports interruption as unknown and
+  remains blocked until current impact and maintenance evidence exists.
+- The read-only, no-store API and responsive update-review modal expose the complete plan without
+  install, apply or execute controls. Audit evidence records readiness and plan generation.
+- Backend format, lint and type gates passed across 1,175 formatted and 1,077 typed source files;
+  the full backend suite passed with 966 tests and 3 environment-specific Windows symlink skips.
+- Frontend lint and type gates passed; all 211 tests in 87 files and the 2,007-module production build
+  passed. The existing large-chunk advisory remains limited to `OperationalApplication`.
+- Live Playwright validation passed at 1280 px and 390 px with no horizontal overflow, a full-viewport
+  mobile dialog, visible update and retirement actions, zero install/apply/execute buttons and no
+  page-level JavaScript errors. Deliberate fixture denials produced only expected 403 console entries.
 
 ### ATLAS-IMP-146 Scope Rationale
 

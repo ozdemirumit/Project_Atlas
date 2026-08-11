@@ -10,7 +10,9 @@ import {
   type ConnectorInstanceCreationPolicy,
 } from "../../api/connectorInstances";
 import {
+  getConnectorUpgradePlan,
   getConnectorUpgradeReadiness,
+  type ConnectorUpgradePlan,
   type ConnectorUpgradeReadiness,
 } from "../../api/connectorUpgradeReadiness";
 import { getConnectorPackageInstallations } from "../../api/packageInstallations";
@@ -84,6 +86,54 @@ const upgradeReadiness: ConnectorUpgradeReadiness = {
   infrastructure_mutation_performed: false,
 };
 
+const upgradePlan: ConnectorUpgradePlan = {
+  plan_id: "connector-upgrade-plan.test",
+  schema_version: "atlas.connector-upgrade-plan.v1",
+  source_record_id: instance.record_id,
+  source_record_version: instance.version,
+  instance_id: instance.instance_id,
+  connector_id: instance.connector_id,
+  current_release_version: instance.release_version,
+  current_receipt_id: instance.source_installation_receipt_id,
+  current_receipt_digest: instance.source_installation_receipt_digest,
+  candidate_release_version: "version.2.0.0",
+  candidate_receipt_id: upgradeReadiness.candidates[0]!.receipt_id,
+  candidate_receipt_digest: upgradeReadiness.candidates[0]!.receipt_digest,
+  readiness_digest: upgradeReadiness.canonical_digest,
+  candidate_digest: upgradeReadiness.candidates[0]!.canonical_digest,
+  risk_level: "high",
+  target_configured: false,
+  target_id: null,
+  site_id: null,
+  target_product: null,
+  plan_state: "ready_for_human_review",
+  plan_eligible: true,
+  prerequisite_ids: ["connector.upgrade.prerequisite.human-approval"],
+  steps: ["approval", "precheck", "quiescence", "package_binding", "configuration", "verification", "rollback_gate"].map((phase, index) => ({
+    step_id: `connector.upgrade.step.${phase.replaceAll("_", "-")}`,
+    sequence: index + 1,
+    phase: phase as ConnectorUpgradePlan["steps"][number]["phase"],
+    expected_minutes: index === 0 ? 0 : 2,
+    requires_service_interruption: false,
+    rollback_boundary: index >= 2,
+  })),
+  validation_check_ids: ["connector.upgrade.verify.runtime-health"],
+  stop_condition_ids: ["connector.upgrade.stop.source-drift"],
+  rollback_step_ids: ["connector.upgrade.rollback.restore-package-binding"],
+  blockers: [],
+  unknowns: [],
+  estimated_interruption_min_minutes: 0,
+  estimated_interruption_max_minutes: 0,
+  rollback_window_minutes: 60,
+  generated_at: "2026-08-12T00:00:00Z",
+  expires_at: "2026-08-12T01:00:00Z",
+  canonical_digest: "9".repeat(64),
+  approval_required: true,
+  decision_support_only: true,
+  execution_authorized: false,
+  infrastructure_mutation_performed: false,
+};
+
 vi.mock("../../api/connectorInstances", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorInstances")>();
   return {
@@ -102,7 +152,11 @@ vi.mock("../../api/packageInstallations", async (importOriginal) => {
 
 vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorUpgradeReadiness")>();
-  return { ...original, getConnectorUpgradeReadiness: vi.fn() };
+  return {
+    ...original,
+    getConnectorUpgradeReadiness: vi.fn(),
+    getConnectorUpgradePlan: vi.fn(),
+  };
 });
 
 function renderWorkspace() {
@@ -121,6 +175,7 @@ beforeEach(() => {
   vi.mocked(getConnectorInstanceCreationPolicies).mockResolvedValue([policy]);
   vi.mocked(getConnectorInstances).mockResolvedValue([instance]);
   vi.mocked(getConnectorUpgradeReadiness).mockResolvedValue(upgradeReadiness);
+  vi.mocked(getConnectorUpgradePlan).mockResolvedValue(upgradePlan);
   vi.mocked(createConnectorInstance).mockResolvedValue({ data: instance });
   vi.mocked(retireConnectorInstance).mockResolvedValue({
     ...instance,
@@ -164,6 +219,17 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(getConnectorUpgradeReadiness).toHaveBeenCalledWith(instance.record_id);
     expect(screen.queryByRole("button", { name: /install|apply|execute/i })).toBeNull();
     expect(screen.getByRole("button", { name: "Close review" })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Review plan for version.2.0.0" }));
+    expect(await screen.findByRole("heading", { name: "version.1.0.0 to version.2.0.0" })).toBeVisible();
+    expect(screen.getByText("ready for human review")).toBeVisible();
+    expect(screen.getByText("0-0 minutes")).toBeVisible();
+    expect(screen.getByText(/does not rebind a package/i)).toBeVisible();
+    expect(getConnectorUpgradePlan).toHaveBeenCalledWith(
+      instance.record_id,
+      upgradePlan.candidate_receipt_id,
+    );
+    expect(screen.queryByRole("button", { name: /install|apply|execute/i })).toBeNull();
   });
 
   it("adds only an acknowledged disabled instance from a governed installed package", async () => {
