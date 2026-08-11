@@ -2454,6 +2454,15 @@ textarea:focus-visible {
   color: #fff;
 }
 
+.artifact-acquisition-confirm-actions button:disabled,
+.configuration-rendering-confirm-actions button:disabled,
+.trust-provisioning-confirm-actions button:disabled,
+.data-initialization-confirm-actions button:disabled,
+.bootstrap-claim-confirm-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .artifact-acquisition-result {
   display: grid;
   border-color: #b9c5c1;
