@@ -4,14 +4,85 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-135 |
-| Title | Bootstrap Lease workflow ownership extraction |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#147](https://github.com/ozdemirumit/Project_Atlas/pull/147) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-028, ATLAS-029, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ATLAS-057, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090, ADR-091 |
+| Task ID | ATLAS-IMP-136 |
+| Title | Bootstrap Artifact Acquisition workflow ownership extraction |
+| Status | In Progress |
+| Branch | `agent/bootstrap-artifact-acquisition-workflow` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-028, ATLAS-029, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ATLAS-057, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090, ADR-091, ADR-092 |
 | Last Updated | 2026-08-11 |
-| Next Action | Define the next bounded Bootstrap phase workflow owner |
+| Next Action | Implement and validate the bounded Artifact Acquisition workflow owner |
+
+### ATLAS-IMP-136 Scope Rationale
+
+- IMP-135 closed with a separate 4.97 KB Bootstrap Lease chunk and reduced the transitional
+  operational chunk from 819.78 KB to 803.42 KB.
+- Artifact Acquisition is the first state-changing Bootstrap phase and has exact run revision,
+  lease, plan, preflight, warning acknowledgement, idempotency and recovery responsibilities.
+- ADR-092 assigns the complete acquisition review/mutation/recovery lifecycle to one lazy Health
+  feature while authorized parent queries and every later phase remain outside it.
+
+### ATLAS-IMP-136 Acceptance Criteria
+
+- Eligibility, exact-input review intent, justification, conditional warning acknowledgement,
+  confirmation, mutation, error/result presentation and state/invalidation cache recovery move
+  into one independently tested lazy feature.
+- Review intent binds run identity/revision/state/phase, lease ownership, plan/release/profile,
+  preflight report/manifest/mode/state, execution state and organization/environment/site scope;
+  changed inputs require a new review.
+- Submission retains version-bound idempotency and exact API input. Warning preflight requires an
+  explicit current-review acknowledgement.
+- Failure performs no automatic retry, clears stale intent, refreshes authoritative evidence and
+  requires a new review.
+- Failed, unchecked, mismatched, absent, malformed, running, unleased and non-acquire states expose
+  no workflow. Cancel performs no request.
+- Result presentation preserves bounded artifact evidence and false configuration/service/
+  infrastructure/AI authority. Parent queries and every subsequent Bootstrap workflow remain
+  unchanged.
+- Full ESLint, both TypeScript project references, full frontend tests and production build pass
+  with a separate feature chunk.
+- Live desktop/mobile validation covers review/cancel, route isolation, overflow and final direct
+  application warning/error state without executing an acquisition.
+
+### ATLAS-IMP-136 Initial Evidence
+
+- IMP-135 merged through PR #147 as `fd23a59dfab090b04ec7f99271e4f170308694b5`; PR run
+  `31473432506` and merged-main run `31474149310` passed frontend and backend jobs.
+- IMP-135 closure commit `a92e6f9d1596f709cbaf94dabb227db6f53fe7ff` passed independent main
+  CI run `31474787010` with both jobs successful.
+- Bootstrap Lease is a separate 4.97 KB feature chunk. The production entry is 247.78 KB and the
+  deferred operational chunk is 803.42 KB.
+
+### ATLAS-IMP-136 Validation Evidence
+
+- `BootstrapArtifactAcquisitionWorkspace.tsx` owns exact-input eligibility, review fingerprint,
+  justification, conditional preflight-warning acknowledgement, confirmation, version-bound
+  mutation, bounded error/result state and authoritative Bootstrap state/invalidation recovery.
+  Parent query composition and every later deployment phase remain outside it.
+- Five focused component tests cover exact passed-preflight request/idempotency/evidence, warning
+  acknowledgement and replay, preflight/lease drift invalidation, conflict recovery with a new
+  review requirement, unavailable gates, cancel/no-call behavior and absence of downstream
+  authority. Existing configuration/bootstrap integration coverage remained green; focused
+  validation passed 26 tests across two files.
+- Full ESLint and both no-write TypeScript project references passed. The complete frontend suite
+  passed 78 files and 162 tests.
+- Production build transformed 1,995 modules and emitted a separate 8.05 KB Bootstrap Artifact
+  Acquisition chunk. The transitional operational chunk decreased from 803.42 KB to 797.81 KB;
+  the production entry remains 247.78 KB.
+- Live desktop validation used the real feature with bounded synthetic run evidence: review opened
+  with confirmation disabled, a bounded justification plus required warning acknowledgement
+  enabled confirmation, and cancel restored one review action without acquisition result. The
+  clean direct feature page produced no warning/error log.
+- Mobile validation passed in a temporary 375 CSS-pixel same-origin harness. The embedded document
+  remained 375/375 px and the confirmation surface remained 343/343 px; confirmation began
+  disabled and cancel left one review action with no dialog, alert or result. The harness emitted
+  only the known Browser iframe-instrumentation `MutationObserver` error and was removed after
+  validation.
+- A fresh direct Health route retained the server-produced empty checkpoint/lease-before-phase
+  behavior at 1280/1280 px with no warning/error log. A fresh Connector route rendered no
+  acquisition action, loaded no acquisition feature asset, remained 1280/1280 px and produced no
+  warning/error log. Direct feature asset inventory observed the acquisition module only in the
+  bounded feature harness.
 
 ### ATLAS-IMP-135 Scope Rationale
 
