@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-147 |
 | Title | Governed connector upgrade plan |
-| Status | In Progress |
-| Branch | `agent/mcp-upgrade-plan` |
-| Pull Request | Pending |
+| Status | Complete |
+| Branch | `agent/mcp-upgrade-plan` (merged) |
+| Pull Request | [#159](https://github.com/ozdemirumit/Project_Atlas/pull/159) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-100, ADR-102, ADR-103 |
 | Last Updated | 2026-08-12 |
-| Next Action | Deliver the exact implementation through PR, CI and merged-main verification |
+| Next Action | Audit the next incomplete product workflow and open ATLAS-IMP-148 |
 
 ### ATLAS-IMP-147 Scope Rationale
 
@@ -68,6 +68,15 @@
 - Live Playwright validation passed at 1280 px and 390 px with no horizontal overflow, a full-viewport
   mobile dialog, visible update and retirement actions, zero install/apply/execute buttons and no
   page-level JavaScript errors. Deliberate fixture denials produced only expected 403 console entries.
+
+### ATLAS-IMP-147 Delivery Evidence
+
+- Implementation commit `9e0c8622d518bd632d6ea2bc9d87abf056181ab9` passed exact-head
+  pull-request CI run `31539350398` with successful backend and frontend jobs.
+- PR [#159](https://github.com/ozdemirumit/Project_Atlas/pull/159) was squash-merged to `main` as
+  `86d0f97f37cd6555c6628a4617eaeea3826392ff`.
+- The exact merged `main` commit passed independent push CI run `31539902405`; backend completed in
+  7m48s and frontend completed in 4m50s with every required step successful.
 
 ### ATLAS-IMP-146 Scope Rationale
 
