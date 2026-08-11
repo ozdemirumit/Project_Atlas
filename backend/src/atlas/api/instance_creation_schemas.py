@@ -9,6 +9,11 @@ from atlas.modules.connectors.domain.instance_creation import (
     ConnectorInstanceCreationPolicySnapshot,
     ConnectorInstanceRecord,
 )
+from atlas.modules.connectors.domain.upgrade_readiness import (
+    ConnectorCapabilityChange,
+    ConnectorUpgradeCandidate,
+    ConnectorUpgradeReadiness,
+)
 
 STABLE_ID = r"^[a-z][a-z0-9_.:-]{2,127}$"
 DIGEST = r"^[a-f0-9]{64}$"
@@ -135,4 +140,107 @@ class ConnectorInstanceCreationPolicyListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: tuple[ConnectorInstanceCreationPolicyData, ...]
+    meta: ResponseMeta
+
+
+class ConnectorCapabilityChangeData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    capability_id: str
+    change_type: str
+    current_class: str | None
+    candidate_class: str | None
+    current_permission: str | None
+    candidate_permission: str | None
+
+    @classmethod
+    def from_domain(cls, change: ConnectorCapabilityChange) -> ConnectorCapabilityChangeData:
+        return cls(**{field: getattr(change, field) for field in cls.model_fields})
+
+
+class ConnectorUpgradeCandidateData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    receipt_id: str
+    receipt_digest: str
+    package_digest: str
+    manifest_digest: str
+    release_version: str
+    publisher_id: str
+    sdk_profile: str
+    installed_at: datetime
+    upgrade_class: str
+    risk_level: str
+    capability_changes: tuple[ConnectorCapabilityChangeData, ...]
+    target_products_added: tuple[str, ...]
+    target_products_removed: tuple[str, ...]
+    network_destinations_added: tuple[str, ...]
+    network_destinations_removed: tuple[str, ...]
+    configuration_key_delta: int
+    secret_reference_delta: int
+    policy_review_required: bool
+    configuration_migration_required: bool
+    rollback_receipt_id: str
+    rollback_receipt_digest: str
+    review_eligible: bool
+    blockers: tuple[str, ...]
+    canonical_digest: str
+    execution_authorized: bool
+    infrastructure_mutation_performed: bool
+
+    @classmethod
+    def from_domain(cls, candidate: ConnectorUpgradeCandidate) -> ConnectorUpgradeCandidateData:
+        return cls(
+            **{
+                field: getattr(candidate, field)
+                for field in cls.model_fields
+                if field != "capability_changes"
+            },
+            capability_changes=tuple(
+                ConnectorCapabilityChangeData.from_domain(item)
+                for item in candidate.capability_changes
+            ),
+        )
+
+
+class ConnectorUpgradeReadinessData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str
+    source_record_id: str
+    source_record_version: int
+    instance_id: str
+    instance_key: str
+    connector_id: str
+    current_release_version: str
+    current_package_digest: str
+    current_manifest_digest: str
+    current_receipt_id: str
+    current_receipt_digest: str
+    target_configured: bool
+    candidates: tuple[ConnectorUpgradeCandidateData, ...]
+    generated_at: datetime
+    canonical_digest: str
+    decision_support_only: bool
+    execution_authorized: bool
+    infrastructure_mutation_performed: bool
+
+    @classmethod
+    def from_domain(cls, readiness: ConnectorUpgradeReadiness) -> ConnectorUpgradeReadinessData:
+        return cls(
+            **{
+                field: getattr(readiness, field)
+                for field in cls.model_fields
+                if field != "candidates"
+            },
+            candidates=tuple(
+                ConnectorUpgradeCandidateData.from_domain(item) for item in readiness.candidates
+            ),
+        )
+
+
+class ConnectorUpgradeReadinessResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ConnectorUpgradeReadinessData
     meta: ResponseMeta

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Archive,
+  ArrowUpCircle,
   Boxes,
   PackagePlus,
   RefreshCw,
@@ -11,6 +12,10 @@ import {
 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
+import {
+  getConnectorUpgradeReadiness,
+  type ConnectorUpgradeCandidate,
+} from "../../api/connectorUpgradeReadiness";
 import {
   createConnectorInstance,
   getConnectorInstanceCreationPolicies,
@@ -200,12 +205,83 @@ function RetireMcpDialog({
   );
 }
 
+function UpgradeCandidateCard({ candidate }: { candidate: ConnectorUpgradeCandidate }) {
+  const changes = [
+    ...candidate.capability_changes.map(
+      (item) => `${item.change_type}: ${item.capability_id}`,
+    ),
+    ...candidate.target_products_added.map((item) => `target added: ${item}`),
+    ...candidate.target_products_removed.map((item) => `target removed: ${item}`),
+    ...candidate.network_destinations_added.map((item) => `network added: ${item}`),
+    ...candidate.network_destinations_removed.map((item) => `network removed: ${item}`),
+  ];
+  return (
+    <article className="installed-mcp-upgrade-candidate">
+      <header>
+        <div><strong>{candidate.release_version}</strong><span>{candidate.upgrade_class} update</span></div>
+        <span className={`installed-mcp-risk ${candidate.risk_level}`}>{candidate.risk_level} risk</span>
+      </header>
+      <dl className="installed-mcp-upgrade-facts">
+        <div><dt>Publisher</dt><dd>{candidate.publisher_id}</dd></div>
+        <div><dt>SDK profile</dt><dd>{candidate.sdk_profile}</dd></div>
+        <div><dt>Policy review</dt><dd>{candidate.policy_review_required ? "Required" : "Not required"}</dd></div>
+        <div><dt>Configuration migration</dt><dd>{candidate.configuration_migration_required ? "Required" : "Not required"}</dd></div>
+      </dl>
+      <div className="installed-mcp-upgrade-changes">
+        <strong>Manifest changes</strong>
+        {changes.length ? <ul>{changes.map((item) => <li key={item}>{item}</li>)}</ul> : <span>No capability, target or network changes.</span>}
+        <span>Configuration keys {candidate.configuration_key_delta >= 0 ? "+" : ""}{candidate.configuration_key_delta}; secret references {candidate.secret_reference_delta >= 0 ? "+" : ""}{candidate.secret_reference_delta}</span>
+      </div>
+      <div className="installed-mcp-rollback"><Archive size={15} /><span>Rollback anchor <code>{candidate.rollback_receipt_id}</code></span></div>
+      {!candidate.review_eligible && <div className="installed-mcp-status error-state"><AlertTriangle size={17} /><span>Review blocked: {candidate.blockers.join(", ")}</span></div>}
+    </article>
+  );
+}
+
+function UpgradeReadinessDialog({
+  instance,
+  onCancel,
+}: {
+  instance: ConnectorInstanceRecord;
+  onCancel: () => void;
+}) {
+  const query = useQuery({
+    queryKey: ["connector-upgrade-readiness", instance.record_id],
+    queryFn: () => getConnectorUpgradeReadiness(instance.record_id),
+  });
+  return (
+    <div className="installed-mcp-dialog-backdrop" role="presentation">
+      <section className="installed-mcp-dialog upgrade-review" role="dialog" aria-modal="true" aria-labelledby="upgrade-mcp-title">
+        <header>
+          <div><p className="eyebrow">DECISION SUPPORT ONLY</p><h3 id="upgrade-mcp-title">Review update for {instance.display_name}</h3></div>
+          <button className="icon-button" type="button" aria-label="Close update review" onClick={onCancel}><X size={17} /></button>
+        </header>
+        <div className="installed-mcp-upgrade-boundary"><ShieldCheck size={18} /><p>This review compares governed package evidence only. It does not install an update, change configuration, contact infrastructure or authorize execution.</p></div>
+        {query.isLoading && <div className="installed-mcp-status"><RefreshCw className="spin" size={18} /><span>Comparing exact package and manifest lineage...</span></div>}
+        {query.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={18} /><span>Update readiness is unavailable for this MCP.</span></div>}
+        {query.data && (
+          <>
+            <div className="installed-mcp-upgrade-current"><span>Current governed release</span><strong>{query.data.current_release_version}</strong><code>{query.data.current_package_digest.slice(0, 16)}</code></div>
+            {query.data.candidates.length ? (
+              <div className="installed-mcp-upgrade-list">{query.data.candidates.map((candidate) => <UpgradeCandidateCard candidate={candidate} key={candidate.receipt_id} />)}</div>
+            ) : (
+              <div className="installed-mcp-empty compact"><ArrowUpCircle size={20} /><div><strong>No newer governed package is installed</strong><span>Complete package assurance and installation in MCP Builder before reviewing an update.</span></div></div>
+            )}
+          </>
+        )}
+        <footer><button type="button" className="secondary-button" onClick={onCancel}>Close review</button></footer>
+      </section>
+    </div>
+  );
+}
+
 export default function InstalledMcpManagementWorkspace() {
   const queryClient = useQueryClient();
   const [lifecycle, setLifecycle] = useState<LifecycleFilter>("active");
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
   const [retiring, setRetiring] = useState<ConnectorInstanceRecord | null>(null);
+  const [reviewing, setReviewing] = useState<ConnectorInstanceRecord | null>(null);
   const packageQuery = useQuery({
     queryKey: ["connector-package-installations"],
     queryFn: getConnectorPackageInstallations,
@@ -290,7 +366,7 @@ export default function InstalledMcpManagementWorkspace() {
                     </span>
                     {new Date(instance.retired_at ?? instance.created_at).toLocaleString()}
                   </td>
-                  <td>{instance.instance_state === "disabled_unconfigured" && <button className="icon-button" type="button" title="Retire MCP" aria-label={`Retire ${instance.display_name}`} onClick={() => { retireMutation.reset(); setRetiring(instance); }}><Archive size={16} /></button>}</td>
+                  <td>{instance.instance_state === "disabled_unconfigured" && <div className="installed-mcp-row-actions"><button className="icon-button" type="button" title="Review update" aria-label={`Review update for ${instance.display_name}`} onClick={() => setReviewing(instance)}><ArrowUpCircle size={16} /></button><button className="icon-button" type="button" title="Retire MCP" aria-label={`Retire ${instance.display_name}`} onClick={() => { retireMutation.reset(); setRetiring(instance); }}><Archive size={16} /></button></div>}</td>
                 </tr>
               ))}
             </tbody>
@@ -300,6 +376,7 @@ export default function InstalledMcpManagementWorkspace() {
       <div className="installed-mcp-footnote"><span>{activeCount} active in this result</span><span>Packages and lifecycle history are preserved.</span></div>
       {adding && <AddMcpDialog packages={packages} policies={policies} pending={createMutation.isPending} onCancel={() => setAdding(false)} onSubmit={(input) => createMutation.mutate(input)} />}
       {retiring && <RetireMcpDialog instance={retiring} pending={retireMutation.isPending} onCancel={() => setRetiring(null)} onSubmit={(reason) => retireMutation.mutate({ instance: retiring, reason })} />}
+      {reviewing && <UpgradeReadinessDialog instance={reviewing} onCancel={() => setReviewing(null)} />}
     </section>
   );
 }

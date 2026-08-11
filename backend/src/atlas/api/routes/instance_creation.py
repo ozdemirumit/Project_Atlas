@@ -14,6 +14,8 @@ from atlas.api.instance_creation_schemas import (
     ConnectorInstanceListResponse,
     ConnectorInstanceRecordData,
     ConnectorInstanceRetirementInput,
+    ConnectorUpgradeReadinessData,
+    ConnectorUpgradeReadinessResponse,
 )
 from atlas.api.schemas import ResponseMeta
 from atlas.api.security import (
@@ -31,6 +33,9 @@ from atlas.modules.connectors.application.instance_creation_ports import (
 )
 from atlas.modules.connectors.application.instance_lifecycle import (
     ConnectorInstanceLifecycleService,
+)
+from atlas.modules.connectors.application.upgrade_readiness import (
+    ConnectorUpgradeReadinessService,
 )
 from atlas.modules.connectors.domain.instance_creation import ConnectorInstanceRecord
 from atlas.modules.identity.domain.models import AuthenticatedSubject
@@ -200,3 +205,34 @@ async def retire_connector_instance(
     except ConnectorInstanceCreationError as error:
         _raise(error)
     return _response(record, request, response)
+
+
+@router.get(
+    "/{record_id}/upgrade-readiness",
+    response_model=ConnectorUpgradeReadinessResponse,
+)
+async def get_connector_upgrade_readiness(
+    record_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_connector_instance_read)],
+) -> ConnectorUpgradeReadinessResponse:
+    service: ConnectorUpgradeReadinessService = (
+        request.app.state.connector_upgrade_readiness_service
+    )
+    try:
+        readiness = await service.evaluate(
+            actor=subject,
+            record_id=record_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorInstanceCreationError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorUpgradeReadinessResponse(
+        data=ConnectorUpgradeReadinessData.from_domain(readiness),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
