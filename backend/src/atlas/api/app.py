@@ -691,6 +691,10 @@ from atlas.modules.connectors.application.target_session import (
     ConnectorTargetSessionService,
     build_development_connector_target_session_policy,
 )
+from atlas.modules.connectors.application.upgrade_readiness import (
+    ConnectorUpgradeReadinessService,
+    PackageInstallationUpgradeSource,
+)
 from atlas.modules.connectors.application.validation_intake import PackageValidationService
 from atlas.modules.connectors.application.vulnerability_analysis import (
     PackageVulnerabilityAnalysisService,
@@ -2753,6 +2757,13 @@ def create_app(
     resolved_connector_instance_lifecycle_service = ConnectorInstanceLifecycleService(
         repository=resolved_connector_instance_creation_service.repository,
         target_repository=resolved_target_configuration_service.repository,
+        audit_sink=resolved_audit_sink,
+        environment_id=resolved_connector_instance_creation_service.environment_id,
+    )
+    resolved_connector_upgrade_readiness_service = ConnectorUpgradeReadinessService(
+        instance_repository=resolved_connector_instance_creation_service.repository,
+        target_repository=resolved_target_configuration_service.repository,
+        package_source=PackageInstallationUpgradeSource(resolved_package_installation_service),
         audit_sink=resolved_audit_sink,
         environment_id=resolved_connector_instance_creation_service.environment_id,
     )
@@ -5009,6 +5020,7 @@ def create_app(
         app.state.connector_instance_lifecycle_service = (
             resolved_connector_instance_lifecycle_service
         )
+        app.state.connector_upgrade_readiness_service = resolved_connector_upgrade_readiness_service
         app.state.target_configuration_service = resolved_target_configuration_service
         app.state.credential_assignment_service = resolved_credential_assignment_service
         app.state.configuration_validation_service = resolved_configuration_validation_service

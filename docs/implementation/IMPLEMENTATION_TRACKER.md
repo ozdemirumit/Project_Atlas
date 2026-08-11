@@ -4,14 +4,74 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-145 |
-| Title | Capability-aware workspace navigation |
-| Status | Complete |
-| Branch | `agent/capability-deep-link-navigation` (merged) |
-| Pull Request | [#157](https://github.com/ozdemirumit/Project_Atlas/pull/157) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-031, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-101 |
+| Task ID | ATLAS-IMP-146 |
+| Title | Connector upgrade readiness |
+| Status | In Progress |
+| Branch | `agent/mcp-upgrade-readiness` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-100, ADR-102 |
 | Last Updated | 2026-08-11 |
-| Next Action | Audit the next incomplete product workflow and open ATLAS-IMP-146 |
+| Next Action | Complete regression and live validation, then deliver through PR and CI |
+
+### ATLAS-IMP-146 Scope Rationale
+
+- Product audit confirmed that installed MCP rows expose add and retirement lifecycle controls but
+  cannot show whether a newer governed package is available or what declaration changes it brings.
+- ATLAS-002 FR-002 requires independently versioned MCP upgrade and rollback, while ADR-100 keeps
+  package rebinding and active execution outside the initial lifecycle-management boundary.
+- ADR-102 introduces evidence-based, read-only upgrade readiness before any future migration,
+  approval or execution workflow.
+
+### ATLAS-IMP-146 Acceptance Criteria
+
+- An authorized operator can evaluate one active MCP against strictly newer installed package
+  receipts for the same connector and scope.
+- Current and candidate receipt, registration and manifest lineage are verified exactly and
+  inconsistent, cross-scope or retired sources fail closed.
+- The result explains semantic upgrade class, conservative risk, capabilities and permissions,
+  target products, network destinations, configuration and secret-reference deltas, review and
+  migration requirements, blockers and an exact rollback receipt.
+- The endpoint is read-only, no-store, audited and omits target endpoints, secret values,
+  credentials, artifact custody, fingerprints and idempotency metadata.
+- Installed MCP rows visibly expose Review update. The review presents current release and all
+  candidates or governed empty/error guidance without install, apply or execute controls.
+- Backend and frontend focused/full quality gates, production build and live desktop/mobile
+  validation pass.
+
+### ATLAS-IMP-146 Initial Evidence
+
+- IMP-145 merged through PR #157 as `ff40e2f9f22ddb191c9d606dd78d33878d870a2b`;
+  exact-head CI run `31527553525` and merged-main run `31528047624` passed.
+- IMP-145 tracker closure `d921fa4b2e3bd9cb5b8d3dd61c0af5c379c9882e` passed independent
+  main CI run `31528693075` before IMP-146 branched.
+- Existing installed MCP management supports exact package-backed creation and reversible
+  pre-configuration retirement. No API or UI compares installed package versions for an instance.
+
+### ATLAS-IMP-146 Validation Evidence
+
+- Upgrade readiness verifies exact instance, installation receipt, package registration and
+  manifest lineage; discovers only strictly newer same-connector packages; and reports semantic
+  upgrade class, conservative risk, declaration deltas, migration requirements, blockers and an
+  immutable rollback receipt.
+- Publisher and SDK-profile changes are critical blockers. Cross-scope, retired, malformed or
+  inconsistent records fail closed. The endpoint requires enterprise human MFA and existing read
+  authorization, is no-store and audit recorded, and grants no execution or infrastructure
+  mutation authority.
+- Four focused backend tests cover candidate comparison, rollback evidence, scope isolation,
+  SDK blocking, inconsistent lineage, safe API fields and the no-authority boundary.
+- Backend Ruff format and lint passed 1,175 files, mypy passed 1,077 source files, and the full
+  suite passed 964 tests with three existing Windows symlink skips.
+- Five focused MCP management component tests cover visible review and retirement actions,
+  candidate evidence, the decision-support boundary and absence of install/apply/execute actions.
+  Full frontend ESLint and both TypeScript projects passed; the complete suite passed 87 files and
+  211 tests.
+- Production build transformed 2,007 modules. The entry is 250.11 KB, the Installed MCP
+  management chunk is 19.81 KB and the known transitional operational chunk is 755.27 KB.
+- Live Edge/Playwright validation confirmed visible review and retirement actions, high-risk
+  candidate evidence, exact rollback display and no update execution control. Desktop measured
+  1,280/1,280 px and mobile measured 390/390 px document/viewport width; the mobile review dialog
+  measured 390 x 844 px with no horizontal overflow or page-level JavaScript error. Expected 403
+  console responses came only from unrelated workspaces intentionally excluded by the fixture.
 
 ### ATLAS-IMP-145 Scope Rationale
 

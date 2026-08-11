@@ -9,6 +9,10 @@ import {
   retireConnectorInstance,
   type ConnectorInstanceCreationPolicy,
 } from "../../api/connectorInstances";
+import {
+  getConnectorUpgradeReadiness,
+  type ConnectorUpgradeReadiness,
+} from "../../api/connectorUpgradeReadiness";
 import { getConnectorPackageInstallations } from "../../api/packageInstallations";
 import InstalledMcpManagementWorkspace from "./InstalledMcpManagementWorkspace";
 import { connectorInstanceRecord as instance } from "./testInstanceFixture";
@@ -30,6 +34,56 @@ const policy: ConnectorInstanceCreationPolicy = {
   canonical_digest: "f".repeat(64),
 };
 
+const upgradeReadiness: ConnectorUpgradeReadiness = {
+  schema_version: "atlas.connector-upgrade-readiness.v1",
+  source_record_id: instance.record_id,
+  source_record_version: instance.version,
+  instance_id: instance.instance_id,
+  instance_key: instance.instance_key,
+  connector_id: instance.connector_id,
+  current_release_version: instance.release_version,
+  current_package_digest: instance.package_digest,
+  current_manifest_digest: instance.manifest_digest,
+  current_receipt_id: instance.source_installation_receipt_id,
+  current_receipt_digest: instance.source_installation_receipt_digest,
+  target_configured: false,
+  candidates: [
+    {
+      receipt_id: "connector-package-installation-receipt.storage-v2",
+      receipt_digest: "a".repeat(64),
+      package_digest: "b".repeat(64),
+      manifest_digest: "c".repeat(64),
+      release_version: "version.2.0.0",
+      publisher_id: installation.publisher_id,
+      sdk_profile: installation.sdk_profile,
+      installed_at: "2026-08-11T18:00:00Z",
+      upgrade_class: "major",
+      risk_level: "high",
+      capability_changes: [{ capability_id: "storage.capacity.read", change_type: "added", current_class: null, candidate_class: "C1", current_permission: null, candidate_permission: "connectors.storage.capacity.read" }],
+      target_products_added: [],
+      target_products_removed: [],
+      network_destinations_added: ["telemetry.storage.example"],
+      network_destinations_removed: [],
+      configuration_key_delta: 1,
+      secret_reference_delta: 1,
+      policy_review_required: true,
+      configuration_migration_required: true,
+      rollback_receipt_id: instance.source_installation_receipt_id,
+      rollback_receipt_digest: instance.source_installation_receipt_digest,
+      review_eligible: true,
+      blockers: [],
+      canonical_digest: "d".repeat(64),
+      execution_authorized: false,
+      infrastructure_mutation_performed: false,
+    },
+  ],
+  generated_at: "2026-08-11T19:00:00Z",
+  canonical_digest: "e".repeat(64),
+  decision_support_only: true,
+  execution_authorized: false,
+  infrastructure_mutation_performed: false,
+};
+
 vi.mock("../../api/connectorInstances", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorInstances")>();
   return {
@@ -44,6 +98,11 @@ vi.mock("../../api/connectorInstances", async (importOriginal) => {
 vi.mock("../../api/packageInstallations", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/packageInstallations")>();
   return { ...original, getConnectorPackageInstallations: vi.fn() };
+});
+
+vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/connectorUpgradeReadiness")>();
+  return { ...original, getConnectorUpgradeReadiness: vi.fn() };
 });
 
 function renderWorkspace() {
@@ -61,6 +120,7 @@ beforeEach(() => {
   vi.mocked(getConnectorPackageInstallations).mockResolvedValue([installation]);
   vi.mocked(getConnectorInstanceCreationPolicies).mockResolvedValue([policy]);
   vi.mocked(getConnectorInstances).mockResolvedValue([instance]);
+  vi.mocked(getConnectorUpgradeReadiness).mockResolvedValue(upgradeReadiness);
   vi.mocked(createConnectorInstance).mockResolvedValue({ data: instance });
   vi.mocked(retireConnectorInstance).mockResolvedValue({
     ...instance,
@@ -86,7 +146,24 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(await screen.findByText("Storage East")).toBeVisible();
     expect(screen.getByRole("button", { name: "Add MCP" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Retire Storage East" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Review update for Storage East" })).toBeVisible();
     expect(screen.queryByRole("button", { name: /delete/i })).toBeNull();
+  });
+
+  it("shows evidence-based upgrade readiness without exposing an update action", async () => {
+    renderWorkspace();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Review update for Storage East" }),
+    );
+
+    expect(await screen.findByRole("heading", { name: "Review update for Storage East" })).toBeVisible();
+    expect(await screen.findByText("version.2.0.0")).toBeVisible();
+    expect(screen.getByText("high risk")).toBeVisible();
+    expect(screen.getByText("added: storage.capacity.read")).toBeVisible();
+    expect(screen.getByText(/does not install an update/i)).toBeVisible();
+    expect(getConnectorUpgradeReadiness).toHaveBeenCalledWith(instance.record_id);
+    expect(screen.queryByRole("button", { name: /install|apply|execute/i })).toBeNull();
+    expect(screen.getByRole("button", { name: "Close review" })).toBeVisible();
   });
 
   it("adds only an acknowledged disabled instance from a governed installed package", async () => {
