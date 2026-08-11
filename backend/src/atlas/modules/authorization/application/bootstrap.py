@@ -144,6 +144,7 @@ CONNECTOR_INSTANCE_READ = "connectors.instances.read"
 CONNECTOR_INSTANCE_RETIRE = "connectors.instances.retire"
 CONNECTOR_UPGRADE_APPROVAL_CREATE = "connectors.upgrade-approval-requests.create"
 CONNECTOR_UPGRADE_APPROVAL_READ = "connectors.upgrade-approval-requests.read"
+CONNECTOR_UPGRADE_APPROVAL_DECIDE = "connectors.upgrade-approval-decisions.create"
 CONNECTOR_TARGET_CONFIGURATION_CREATE = "connectors.target-configuration-bindings.create"
 CONNECTOR_TARGET_CONFIGURATION_READ = "connectors.target-configuration-bindings.read"
 CONNECTOR_CREDENTIAL_ASSIGNMENT_CREATE = "connectors.credential-assignments.create"
@@ -2079,6 +2080,10 @@ def build_development_authorization_service(
             description="Read one minimized connector upgrade approval request.",
         ),
         PermissionDefinition(
+            permission_id=CONNECTOR_UPGRADE_APPROVAL_DECIDE,
+            description="Record one independent decision for an exact connector upgrade plan.",
+        ),
+        PermissionDefinition(
             permission_id=CONNECTOR_TARGET_CONFIGURATION_CREATE,
             description="Bind a disabled connector instance to governed target configuration.",
         ),
@@ -2582,6 +2587,7 @@ def build_development_authorization_service(
                 CONNECTOR_INSTANCE_RETIRE,
                 CONNECTOR_UPGRADE_APPROVAL_CREATE,
                 CONNECTOR_UPGRADE_APPROVAL_READ,
+                CONNECTOR_UPGRADE_APPROVAL_DECIDE,
                 CONNECTOR_TARGET_CONFIGURATION_CREATE,
                 CONNECTOR_TARGET_CONFIGURATION_READ,
                 CONNECTOR_CREDENTIAL_ASSIGNMENT_CREATE,

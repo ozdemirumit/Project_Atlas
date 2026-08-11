@@ -4,14 +4,73 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-148 |
-| Title | Connector upgrade approval request |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#160](https://github.com/ozdemirumit/Project_Atlas/pull/160) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-102, ADR-103, ADR-104 |
+| Task ID | ATLAS-IMP-149 |
+| Title | Connector upgrade approval decision |
+| Status | In Progress |
+| Branch | `agent/mcp-upgrade-approval-decision` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-102, ADR-103, ADR-104, ADR-105 |
 | Last Updated | 2026-08-12 |
-| Next Action | Audit the next approved implementation slice from the governing backlog |
+| Next Action | Implement exact connector upgrade approval decisions and independent-review UI |
+
+### ATLAS-IMP-149 Scope Rationale
+
+- IMP-148 creates a durable pending request but a separate authorized human cannot recover the
+  request after a session transition or record a decision.
+- Package approval cannot represent instance, current/candidate receipt, readiness and upgrade-plan
+  lineage; the storage-oriented general approval service is also not a valid substitute.
+- ADR-105 adds a connector-specific decision while keeping execution, package rebinding and any
+  infrastructure mutation outside this implementation slice.
+
+### ATLAS-IMP-149 Acceptance Criteria
+
+- A separately authorized enterprise human with MFA can record approve, reject, needs-evidence or
+  defer against one exact pending request; the requester and non-human identities fail closed.
+- Expected request version/digest, current signed policy and a freshly regenerated exact plan are
+  verified at decision time. Expiry, drift, stale state and policy mismatch fail closed.
+- The durable repository permits one immutable decision per request and safe exact idempotent replay
+  while rejecting conflicting or concurrent decisions.
+- Decision and plan-bound read endpoints are no-store, audited, CSRF protected where applicable and
+  omit fingerprints, idempotency, credentials, endpoints and artifact-custody metadata.
+- The UI restores an existing request, distinguishes requester from independent approver, presents
+  all outcomes without a preferred default and records a bounded rationale and acknowledgement.
+- Approved state grants no package installation, rebinding, runtime, execution or infrastructure
+  mutation authority; no apply, install or execute control is exposed.
+- Focused and full backend/frontend gates, migration checks, production build and live responsive
+  validation pass.
+
+### ATLAS-IMP-149 Initial Evidence
+
+- IMP-148 merged through PR #160 as `547000c854f1a06c1c261def3d28e4f2e9ac0019`;
+  exact-head CI run `31543997666` and merged-main run `31544502338` passed.
+- IMP-148 tracker closure `3fb561debc24e98e28df1e196d62558802001aa6` passed independent
+  main CI run `31545052424` before IMP-149 branched.
+- ATLAS-037 makes request, decision and execution distinct states and requires current eligibility,
+  separation of duties, optimistic concurrency, expiry and immutable decision history.
+
+### ATLAS-IMP-149 Validation Evidence
+
+- Decision creation verifies an enterprise human with MFA, independent identity, expected request
+  version/digest, request expiry, the exact current signed policy and a freshly regenerated matching
+  record, candidate, readiness and plan lineage. Drift and stale state fail closed.
+- Approve, reject, needs-evidence and defer are immutable first-class outcomes. One decision is
+  allowed per request; exact actor-idempotent replay is safe and conflicting or concurrent decisions
+  are rejected. Approved state still grants no package, configuration, target, runtime, execution or
+  infrastructure authority.
+- The plan-bound read and decision endpoints are no-store and audit recorded. Safe projections omit
+  request and decision fingerprints, idempotency keys, credentials, endpoints and artifact-custody
+  metadata. Browser decisions remain CSRF protected.
+- Backend formatting and lint passed 1,183 files, mypy passed 1,083 source files, and the complete
+  backend suite passed 974 tests with three environment-specific Windows symlink skips. Alembic
+  reports the single linear `20260812_0098` head.
+- Frontend ESLint and both TypeScript projects passed; all 213 tests in 87 files passed. The
+  2,007-module production build completed; the existing large-chunk advisory remains limited to the
+  transitional `OperationalApplication` chunk.
+- Live Playwright validation restored a pending request for a distinct approver, recorded the exact
+  approved decision and displayed accountable actor, rationale, time and no-authority boundary at
+  1,280 px and 390 px. Both widths had zero horizontal overflow, the mobile dialog measured 390 x
+  844 px, and no install, apply or execute control existed. Deliberately unmocked unrelated
+  workspaces produced only expected 403 resource entries.
 
 ### ATLAS-IMP-148 Scope Rationale
 

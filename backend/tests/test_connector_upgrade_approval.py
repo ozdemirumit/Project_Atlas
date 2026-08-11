@@ -45,6 +45,10 @@ from atlas.modules.connectors.domain.instance_creation import ConnectorInstanceR
 from atlas.modules.connectors.domain.package_installation import (
     ConnectorPackageInstallationReceipt,
 )
+from atlas.modules.connectors.domain.upgrade_approval import (
+    ConnectorUpgradeApprovalOutcome,
+    ConnectorUpgradeApprovalState,
+)
 
 
 async def approval_fixture() -> tuple[
@@ -305,4 +309,189 @@ def test_upgrade_approval_api_is_no_store_and_hides_custody_metadata(tmp_path: P
     assert data["approval_granted"] is False and data["execution_authorized"] is False
     rendered = response.text.lower()
     for hidden in ("request_fingerprint", "idempotency_key", "credential", "target_endpoint"):
+        assert hidden not in rendered
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("outcome", "state", "valid"),
+    (
+        (ConnectorUpgradeApprovalOutcome.APPROVE, ConnectorUpgradeApprovalState.APPROVED, True),
+        (ConnectorUpgradeApprovalOutcome.REJECT, ConnectorUpgradeApprovalState.REJECTED, False),
+        (
+            ConnectorUpgradeApprovalOutcome.NEEDS_EVIDENCE,
+            ConnectorUpgradeApprovalState.NEEDS_EVIDENCE,
+            False,
+        ),
+        (ConnectorUpgradeApprovalOutcome.DEFER, ConnectorUpgradeApprovalState.DEFERRED, False),
+    ),
+)
+async def test_upgrade_approval_decision_is_separated_exact_and_non_executable(
+    outcome: ConnectorUpgradeApprovalOutcome,
+    state: ConnectorUpgradeApprovalState,
+    valid: bool,
+) -> None:
+    service, upgrade_service, _, _, _, _, sources, audit = await approval_fixture()
+    instance, candidate_receipt = sources
+    requester = instance_operator()
+    approver = instance_operator("subject.connector-upgrade-independent-approver")
+    plan = await upgrade_service.plan(
+        actor=requester,
+        record_id=instance.record_id,
+        candidate_receipt_id=candidate_receipt.receipt_id,
+        correlation_id="correlation.connector-upgrade-decision-plan",
+    )
+    request = await service.create(
+        actor=requester,
+        record_id=instance.record_id,
+        candidate_receipt_id=candidate_receipt.receipt_id,
+        source_plan_digest=plan.canonical_digest,
+        purpose="Submit this exact connector upgrade plan for independent human review.",
+        acknowledged_request_is_not_approval_and_grants_no_execution_authority=True,
+        idempotency_key=f"connector-upgrade-request-{outcome.value}",
+        correlation_id="correlation.connector-upgrade-decision-request",
+    )
+    with pytest.raises(ConnectorUpgradeApprovalError, match="separation_required"):
+        await service.decide(
+            actor=requester,
+            record_id=instance.record_id,
+            request_id=request.request_id,
+            expected_request_version=request.version,
+            expected_request_digest=request.canonical_digest,
+            outcome=outcome,
+            rationale="Record an accountable decision after reviewing the exact immutable plan.",
+            acknowledged_decision_grants_no_execution_authority=True,
+            idempotency_key=f"connector-upgrade-decision-self-{outcome.value}",
+            correlation_id="correlation.connector-upgrade-decision-self",
+        )
+
+    record = await service.decide(
+        actor=approver,
+        record_id=instance.record_id,
+        request_id=request.request_id,
+        expected_request_version=request.version,
+        expected_request_digest=request.canonical_digest,
+        outcome=outcome,
+        rationale="Record an accountable decision after reviewing the exact immutable plan.",
+        acknowledged_decision_grants_no_execution_authority=True,
+        idempotency_key=f"connector-upgrade-decision-{outcome.value}",
+        correlation_id="correlation.connector-upgrade-decision",
+    )
+    replay = await service.decide(
+        actor=approver,
+        record_id=instance.record_id,
+        request_id=request.request_id,
+        expected_request_version=request.version,
+        expected_request_digest=request.canonical_digest,
+        outcome=outcome,
+        rationale="Record an accountable decision after reviewing the exact immutable plan.",
+        acknowledged_decision_grants_no_execution_authority=True,
+        idempotency_key=f"connector-upgrade-decision-{outcome.value}",
+        correlation_id="correlation.connector-upgrade-decision-replay",
+    )
+
+    assert record.state is state and record.approval_valid is valid
+    assert record.approval_granted is valid and record.decision_recorded
+    assert record.decision is not None and record.decision.decided_by == approver.subject_id
+    assert not record.execution_authorized and not record.infrastructure_mutation_performed
+    assert replay.decision is not None and replay.decision.reused
+    restored = PostgreSQLConnectorUpgradeApprovalRepository._decision_to_domain(
+        cast(
+            dict[str, object],
+            ConnectorUpgradeApprovalService._normalize(asdict(record.decision)),
+        )
+    )
+    assert restored == record.decision
+    assert [item.result_code for item in audit.records].count(
+        f"connector_upgrade_approval_{outcome.value}"
+    ) == 1
+
+
+def test_upgrade_approval_decision_api_restores_plan_record_and_hides_authority(
+    tmp_path: Path,
+) -> None:
+    (
+        approval_service,
+        upgrade_service,
+        instance_service,
+        package_service,
+        registration_service,
+        publication_service,
+        sources,
+        _,
+    ) = asyncio.run(approval_fixture())
+    instance, candidate_receipt = sources
+    requester = instance_operator()
+    approver = instance_operator("subject.connector-upgrade-independent-approver")
+    plan = asyncio.run(
+        upgrade_service.plan(
+            actor=requester,
+            record_id=instance.record_id,
+            candidate_receipt_id=candidate_receipt.receipt_id,
+            correlation_id="correlation.connector-upgrade-decision-api-plan",
+        )
+    )
+    approval_request = asyncio.run(
+        approval_service.create(
+            actor=requester,
+            record_id=instance.record_id,
+            candidate_receipt_id=candidate_receipt.receipt_id,
+            source_plan_digest=plan.canonical_digest,
+            purpose="Submit this exact connector upgrade plan for independent human review.",
+            acknowledged_request_is_not_approval_and_grants_no_execution_authority=True,
+            idempotency_key="connector-upgrade-decision-api-request",
+            correlation_id="correlation.connector-upgrade-decision-api-request",
+        )
+    )
+    app = create_app(
+        settings(
+            development_subject_id=approver.subject_id,
+            mcp_builder_generation_root=tmp_path / "mcp-builder-generations",
+        ),
+        identity_provider=BasicTestIdentityProvider(approver),
+        registry_publication_service=publication_service,
+        package_registration_service=registration_service,
+        package_installation_service=package_service,
+        connector_instance_creation_service=instance_service,
+        connector_upgrade_approval_service=approval_service,
+    )
+    with TestClient(app) as client:
+        app.state.connector_upgrade_readiness_service = upgrade_service
+        login_response = login(client)
+        read_response = client.get(
+            f"/api/v1/connectors/instances/{instance.record_id}/upgrade-plans/"
+            f"{candidate_receipt.receipt_id}/approval-record"
+        )
+        response = client.post(
+            f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
+            f"{approval_request.request_id}/decisions",
+            headers={
+                "Idempotency-Key": "connector-upgrade-decision-api",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+            json={
+                "schema_version": "atlas.connector-upgrade-approval-decision-input.v1",
+                "expected_request_version": approval_request.version,
+                "expected_request_digest": approval_request.canonical_digest,
+                "outcome": "approve",
+                "rationale": "Approve the exact immutable plan after independent evidence review.",
+                "acknowledged_decision_grants_no_execution_authority": True,
+            },
+        )
+
+    assert read_response.status_code == 200
+    assert read_response.json()["data"]["state"] == "pending"
+    assert response.status_code == 200, response.text
+    assert response.headers["Cache-Control"] == "no-store"
+    data = response.json()["data"]
+    assert data["state"] == "approved" and data["approval_valid"] is True
+    assert data["execution_authorized"] is False
+    rendered = response.text.lower()
+    for hidden in (
+        "request_fingerprint",
+        "decision_fingerprint",
+        "idempotency_key",
+        "credential",
+        "target_endpoint",
+    ):
         assert hidden not in rendered
