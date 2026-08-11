@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-143 |
 | Title | Inventory Device Registry management |
-| Status | In Progress |
-| Branch | `agent/inventory-device-registry-management` |
-| Pull Request | Pending |
+| Status | Complete |
+| Branch | `main` |
+| Pull Request | [#155](https://github.com/ozdemirumit/Project_Atlas/pull/155) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-016, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-099 |
 | Last Updated | 2026-08-11 |
-| Next Action | Complete live validation, PR/CI/merge, then implement MCP Lifecycle management |
+| Next Action | Implement MCP Lifecycle management |
 
 ### ATLAS-IMP-143 Scope Rationale
 
@@ -78,7 +78,11 @@
 
 ### ATLAS-IMP-143 Delivery Evidence
 
-- Live validation is complete. GitHub delivery is pending.
+- Exact PR head `9e53591ddf659bd474cbd753fbe8fff4f9d4f2a5` passed Continuous Integration
+  run `31513123179`, including frontend and backend jobs.
+- PR #155 was squash-merged to `main` as `17d34e0f05e950ed69d71999fdff933106df7b83`.
+  Merged-main Continuous Integration run `31513836605` passed frontend and backend jobs, and
+  local `main` was fast-forwarded to the same verified commit before this tracker closure.
 
 ### ATLAS-IMP-142 Scope Rationale
 
