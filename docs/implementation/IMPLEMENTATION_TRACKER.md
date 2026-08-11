@@ -4,14 +4,78 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-141 |
-| Title | Bootstrap Service Deployment workflow ownership extraction |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#153](https://github.com/ozdemirumit/Project_Atlas/pull/153) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090, ADR-091, ADR-092, ADR-093, ADR-094, ADR-095, ADR-096, ADR-097 |
+| Task ID | ATLAS-IMP-142 |
+| Title | Bootstrap Identity Handoff workflow ownership extraction |
+| Status | In Review |
+| Branch | `agent/bootstrap-identity-handoff-workflow` |
+| Pull Request | [#154](https://github.com/ozdemirumit/Project_Atlas/pull/154) |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090, ADR-091, ADR-092, ADR-093, ADR-094, ADR-095, ADR-096, ADR-097, ADR-098 |
 | Last Updated | 2026-08-11 |
-| Next Action | Define and implement Bootstrap Identity Handoff workflow ownership extraction |
+| Next Action | Wait for exact-head CI, then squash-merge PR #154 |
+
+### ATLAS-IMP-142 Scope Rationale
+
+- IMP-141 extracted Service Deployment and named Identity Handoff as the next state-changing
+  Bootstrap ownership boundary.
+- Identity Handoff already has exact run, lease, plan, target, idempotency and no-real-identity
+  mutation contracts, but its interaction lifecycle remains in `App.tsx`.
+- ADR-098 assigns that lifecycle to one lazy Health feature without changing backend contracts,
+  query ownership, plan generation, real identity systems or later-phase authority.
+
+### ATLAS-IMP-142 Acceptance Criteria
+
+- Eligibility, exact-input review, justification, confirmation, mutation, failure/result
+  presentation and authoritative cache recovery move into one independently tested lazy feature.
+- Review binds run, lease, completed Service Deployment, configuration, trust, data, service and
+  exact identity plan, target, mapping and organization scope; drift requires a new review.
+- Submission retains version-bound idempotency and exact API input. Failure performs no automatic
+  retry, refreshes state, invalidation and identity-plan evidence, and requires a new review.
+- Missing, stale, failed, malformed, mismatched, unleased, incompletely probed and non-identity
+  evidence exposes no action. Cancel performs no request.
+- Results exclude credentials, verifier values, directory/account/provider mutation, session/token
+  operations, infrastructure and AI authority. Integration Validation and later workflows stay
+  unchanged.
+- Full ESLint, both TypeScript projects, full frontend tests and production build pass with a
+  separate feature chunk.
+- Live desktop/mobile validation covers review/cancel, disabled confirmation, responsive fit and
+  clean behavior without executing Identity Handoff.
+
+### ATLAS-IMP-142 Initial Evidence
+
+- IMP-141 merged through PR #153 as `a8cea65175df9683d495c5d37a353135e3e73d9b`; exact-head CI run
+  `31502981156` and merged-main run `31503645439` passed frontend and backend jobs.
+- IMP-141 tracker closure is `3a6f536325f1b5bb58cdd198691d1c398f75e7a6`; independent main CI run
+  `31504417285` passed frontend and backend jobs. IMP-142 starts from that verified commit.
+- The production entry is 248.73 KB and the transitional operational chunk is 768.43 KB before
+  this extraction.
+
+### ATLAS-IMP-142 Validation Evidence
+
+- `BootstrapIdentityHandoffWorkspace` owns exact-input fingerprinting, fail-closed eligibility,
+  review/cancel/confirmation state, mutation, stale-review rejection, success/failure cache
+  recovery and bounded replay/result presentation. `App.tsx` supplies only current state,
+  configuration, trust, data, service and identity plans, and authenticated scope.
+- Availability binds every completed Service Deployment service and passed probe to the exact
+  service plan, and requires unique secret-free identity mappings, LDAPS metadata and false
+  credential, directory, account, provider, session/token, infrastructure and AI authority.
+- Six direct tests cover exact request/idempotency, replay and sanitized evidence, cancel without
+  request, changed-plan review invalidation, lease and incomplete-probe fail-closed gates,
+  sensitive/later-control exclusion and failure refresh requiring a new review. Existing
+  integration and the new suite passed 27 tests across two files.
+- Focused ESLint passed with zero warnings. Both no-write TypeScript projects passed.
+- Full ESLint passed with zero warnings. The complete frontend suite passed 84 files and 197 tests.
+- Production build transformed 2,002 modules and emitted a separate 12.78 KB Identity Handoff
+  chunk plus a shared 4.51 KB identity API chunk. The production entry is 248.81 KB and the
+  transitional operational chunk decreased from 768.43 KB to 758.58 KB.
+- The real component and production CSS were rendered without submitting handoff. Desktop at
+  1280 x 720 measured 1280/1280 px document width, a 1,280 px bounded dialog and a 1,250 px input;
+  confirmation began disabled and sensitive material was absent.
+- Exact 390 x 844 mobile validation measured 390/390 px document width, a 390 px dialog, 360 px
+  input and 360 px action buttons. Confirmation began disabled, sensitive material was absent and
+  cancel removed the dialog and restored the review action without a request.
+- Direct Health Overview at mobile width and Connectors at 1280 x 720 exposed no Identity Handoff
+  action and emitted no warning/error logs. Health remained within its 375 px content width and
+  Connectors retained 1280/1280 px document width. Temporary validation files were removed.
 
 ### ATLAS-IMP-141 Scope Rationale
 
@@ -84,6 +148,8 @@
 - PR #153 was squash-merged to `main` as `a8cea65175df9683d495c5d37a353135e3e73d9b`.
   Merged-main Continuous Integration run `31503645439` passed frontend and backend jobs, and
   local `main` was fast-forwarded to the same verified commit before this tracker closure.
+- Tracker closure commit `3a6f536325f1b5bb58cdd198691d1c398f75e7a6` passed independent main CI
+  run `31504417285`, including frontend and backend jobs.
 
 ### ATLAS-IMP-140 Scope Rationale
 
