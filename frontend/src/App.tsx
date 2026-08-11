@@ -97,7 +97,9 @@ import {
   ApplicationTopbar,
 } from "./features/shell/ApplicationShell";
 import { WorkspaceLoadBoundary } from "./features/shell/WorkspaceLoadBoundary";
-import type { WorkspaceId } from "./features/shell/workspace";
+import type { HealthViewId, WorkspaceId } from "./features/shell/workspace";
+import { HealthWorkspaceNavigation } from "./features/health/HealthWorkspaceNavigation";
+import { healthViewDescriptor } from "./features/health/healthWorkspace";
 import { PackageApprovalPanel } from "./features/connectors/PackageApprovalPanel";
 import {
   acquireConnectorPackage,
@@ -314,16 +316,21 @@ const MCP_BUILDER_SECURITY_CONTROLS: Array<{
 ];
 
 interface OperationalApplicationProps {
+  activeHealthView: HealthViewId;
   activeWorkspace: Exclude<WorkspaceId, "Workspace">;
+  onNavigateHealthView: (view: HealthViewId) => void;
   onNavigate: (workspace: WorkspaceId) => void;
 }
 
 export function OperationalApplication({
+  activeHealthView,
   activeWorkspace,
+  onNavigateHealthView,
   onNavigate,
 }: OperationalApplicationProps) {
   const queryClient = useQueryClient();
   const activeNavigation = activeWorkspace;
+  const activeHealthViewDescriptor = healthViewDescriptor(activeHealthView);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(shouldOpenInspector);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
@@ -2278,12 +2285,12 @@ export function OperationalApplication({
                 <h1>
                   {activeNavigation === "Connectors"
                     ? "Governed connector analysis"
-                    : "Storage estate assessment"}
+                    : activeHealthViewDescriptor.title}
                 </h1>
                 <p>
                   {activeNavigation === "Connectors"
                     ? "Quarantined OpenAPI evidence review for read-only connector candidates."
-                    : "Evidence-linked inventory, findings, and provisional analysis."}
+                    : activeHealthViewDescriptor.description}
                 </p>
               </div>
               <span className="decision-badge">
@@ -8242,6 +8249,10 @@ export function OperationalApplication({
               className="operations-workspace"
               hidden={activeNavigation !== "Health"}
             >
+              <HealthWorkspaceNavigation
+                activeView={activeHealthView}
+                onNavigate={onNavigateHealthView}
+              />
               {!identityQuery.isLoading && !identity && (
                 <div className="workspace-message error-state">
                   <ShieldCheck size={22} />
@@ -8272,7 +8283,7 @@ export function OperationalApplication({
                 </div>
               )}
 
-              {activeNavigation === "Health" && overview && (
+              {activeNavigation === "Health" && activeHealthView === "overview" && overview && (
                 <WorkspaceLoadBoundary compact resetKey={overview.snapshot_id} workspace="Health">
                   <Suspense
                     fallback={
@@ -8304,7 +8315,7 @@ export function OperationalApplication({
                 </WorkspaceLoadBoundary>
               )}
 
-              {identity && (
+              {activeHealthView === "governance" && identity && (
                 <section className="workspace-section review-inbox-section">
                   <div className="section-heading review-inbox-heading">
                     <div>
@@ -8610,7 +8621,7 @@ export function OperationalApplication({
                 </section>
               )}
 
-              {auditExport && auditHealth && (
+              {activeHealthView === "governance" && auditExport && auditHealth && (
                 <section className="workspace-section audit-export-section">
                   <div className="section-heading audit-export-heading">
                     <div>
@@ -8777,7 +8788,9 @@ export function OperationalApplication({
                 </section>
               )}
 
-              {activeNavigation === "Health" && releasePreflight && (
+              {activeNavigation === "Health" &&
+                activeHealthView === "deployments" &&
+                releasePreflight && (
                 <WorkspaceLoadBoundary
                   compact
                   resetKey={releasePreflight.report_id}
@@ -8805,7 +8818,9 @@ export function OperationalApplication({
                 </WorkspaceLoadBoundary>
               )}
 
-              {activeNavigation === "Health" && deploymentConfiguration && (
+              {activeNavigation === "Health" &&
+                activeHealthView === "deployments" &&
+                deploymentConfiguration && (
                 <WorkspaceLoadBoundary
                   compact
                   resetKey={deploymentConfiguration.preview_id}
@@ -8827,7 +8842,9 @@ export function OperationalApplication({
                 </WorkspaceLoadBoundary>
               )}
 
-              {activeNavigation === "Health" && bootstrapPlan && (
+              {activeNavigation === "Health" &&
+                activeHealthView === "deployments" &&
+                bootstrapPlan && (
                 <WorkspaceLoadBoundary
                   compact
                   resetKey={bootstrapPlan.plan_id}
@@ -8849,7 +8866,9 @@ export function OperationalApplication({
                 </WorkspaceLoadBoundary>
               )}
 
-              {activeNavigation === "Health" && bootstrapState && (
+              {activeNavigation === "Health" &&
+                activeHealthView === "deployments" &&
+                bootstrapState && (
                 <WorkspaceLoadBoundary
                   compact
                   resetKey={
@@ -11008,7 +11027,9 @@ export function OperationalApplication({
                 </WorkspaceLoadBoundary>
               )}
 
-              {activeNavigation === "Health" && bootstrapInvalidation && (
+              {activeNavigation === "Health" &&
+                activeHealthView === "deployments" &&
+                bootstrapInvalidation && (
                 <WorkspaceLoadBoundary
                   compact
                   resetKey={bootstrapInvalidation.preview_id}
@@ -11139,7 +11160,9 @@ export function OperationalApplication({
 
               {overview && (
                 <>
-                  {identity && identity.authentication.method !== "development" && (
+                  {activeHealthView === "governance" &&
+                    identity &&
+                    identity.authentication.method !== "development" && (
                     <section className="workspace-section session-section">
                       <div className="section-heading">
                         <div>
@@ -11203,7 +11226,9 @@ export function OperationalApplication({
                     </section>
                   )}
 
-                  {identity && identity.authentication.method !== "development" && (
+                  {activeHealthView === "governance" &&
+                    identity &&
+                    identity.authentication.method !== "development" && (
                     <section className="workspace-section api-credential-section">
                       <div className="section-heading">
                         <div>
@@ -11404,7 +11429,7 @@ export function OperationalApplication({
                     </section>
                   )}
 
-                  {identityGovernance && (
+                  {activeHealthView === "governance" && identityGovernance && (
                     <section className="workspace-section identity-governance-section">
                       <div className="section-heading governance-heading">
                         <div>
@@ -11717,7 +11742,7 @@ export function OperationalApplication({
                     </section>
                   )}
 
-                  {workloadInventory && (
+                  {activeHealthView === "governance" && workloadInventory && (
                     <section className="workspace-section workload-identity-section">
                       <div className="section-heading governance-heading">
                         <div>
@@ -12133,8 +12158,7 @@ export function OperationalApplication({
                       </div>
                     </section>
                   )}
-
-                  {activeNavigation === "Health" && (
+                  {activeNavigation === "Health" && activeHealthView === "governance" && (
                     <WorkspaceLoadBoundary
                       compact
                       resetKey={securityExport?.generated_at ?? overview.snapshot_id}
@@ -12164,7 +12188,7 @@ export function OperationalApplication({
                     </WorkspaceLoadBoundary>
                   )}
 
-                  {activeNavigation === "Health" && (
+                  {activeNavigation === "Health" && activeHealthView === "overview" && (
                     <WorkspaceLoadBoundary
                       compact
                       resetKey={
@@ -12209,7 +12233,7 @@ export function OperationalApplication({
                     </WorkspaceLoadBoundary>
                   )}
 
-                  {activeNavigation === "Health" && (
+                  {activeNavigation === "Health" && activeHealthView === "investigate" && (
                     <WorkspaceLoadBoundary
                       compact
                       resetKey={
@@ -12282,7 +12306,7 @@ export function OperationalApplication({
                     </WorkspaceLoadBoundary>
                   )}
 
-                  {activeNavigation === "Health" && (
+                  {activeNavigation === "Health" && activeHealthView === "investigate" && (
                     <WorkspaceLoadBoundary
                       compact
                       resetKey={
@@ -12373,7 +12397,8 @@ export function OperationalApplication({
               )}
             </div>
 
-            {activeNavigation === "Health" && <div className="composer-wrap">
+            {activeNavigation === "Health" && activeHealthView === "investigate" && (
+              <div className="composer-wrap">
               <form
                 className="composer"
                 onSubmit={(event) => {
@@ -12411,7 +12436,8 @@ export function OperationalApplication({
                   </button>
                 </div>
               </form>
-            </div>}
+              </div>
+            )}
           </section>
 
           {inspectorOpen && activeNavigation === "Health" && (

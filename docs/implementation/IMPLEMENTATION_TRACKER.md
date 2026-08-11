@@ -4,14 +4,94 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-136 |
-| Title | Bootstrap Artifact Acquisition workflow ownership extraction |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#148](https://github.com/ozdemirumit/Project_Atlas/pull/148) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-028, ATLAS-029, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ATLAS-057, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090, ADR-091, ADR-092 |
+| Task ID | ATLAS-IMP-137 |
+| Title | Health workspace task-view consolidation |
+| Status | In Progress |
+| Branch | `agent/health-workspace-task-views` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090, ADR-091, ADR-092, ADR-093 |
 | Last Updated | 2026-08-11 |
-| Next Action | Define and implement the bounded Health UI consolidation slice |
+| Next Action | Complete validation, live review and delivery of the Health task views |
+
+### ATLAS-IMP-137 Scope Rationale
+
+- ADR-079 created a truthful three-destination application shell, but Health still presented every
+  implemented operational, deployment and governance surface in one long scroll.
+- IMP-136 completed the first state-changing Bootstrap workflow extraction and explicitly named
+  Health UI consolidation as the next bounded slice.
+- ADR-093 partitions presentation by operator intent while preserving every existing server,
+  feature, query, mutation, audit and no-authority boundary.
+
+### ATLAS-IMP-137 Acceptance Criteria
+
+- Health exposes Overview, Investigate, Deployments and Governance task views with selected state,
+  responsive fit and accessible keyboard behavior.
+- Each view renders only its owned task surfaces. Authentication and unavailable states remain
+  truthful; composer appears only in Investigate and context inspection remains available across
+  Health.
+- View selection is represented by canonical `#/health/<view>` URLs. Primary Health navigation,
+  refresh, direct links, approval deep links, unknown routes and browser history behave
+  deterministically.
+- Existing API calls, request inputs, idempotency, review fingerprints, cache recovery, CSRF,
+  authorization, audit and false-authority behavior remain unchanged.
+- Focused route/navigation tests and existing deployment, governance and integrated Health tests
+  validate the new partition.
+- Full ESLint, both TypeScript project references, complete frontend tests and production build
+  pass.
+- Live desktop/mobile validation covers all four views, URL/history, overflow, task isolation and
+  clean application logs before PR, CI, merge and main synchronization.
+
+### ATLAS-IMP-137 Initial Evidence
+
+- IMP-136 merged through PR #148 as `131e308e9a5568e0a10be4d9ec6b2cd31d7e23d0`; PR run
+  `31477895719` and merged-main run `31478423328` passed frontend and backend jobs.
+- The full IMP-136 tracker restoration is `bb5608191d90e1ef54cfc64fa26b547a3f98735b`; independent
+  main run `31479522684` passed both jobs.
+- The transitional operational chunk is 797.81 KB and the production entry is 247.78 KB before
+  this presentation consolidation.
+
+### ATLAS-IMP-137 Validation Evidence
+
+- `HealthWorkspaceNavigation` exposes four stable task tabs with selected state, icon/text labels,
+  click navigation and Left/Right/Home/End keyboard traversal. Heading metadata and route parsing
+  are typed from the same bounded Health view model.
+- `ApplicationCoordinator` preserves canonical `#/health/<view>` direct links and browser history,
+  opens primary Health navigation at Overview, routes approval deep links to Investigate and fails
+  unknown nested Health routes back to Workspace.
+- Existing Health content is partitioned without request changes: inventory/checks are Overview;
+  composer/decision support/report-review are Investigate; release/Bootstrap are Deployments; and
+  human review/access/audit/security delivery are Governance. The context inspector remains shared.
+- Focused route, parser and navigation validation passed 14 tests across three files after the
+  final fail-closed route correction. Existing deployment, application, workload and preflight
+  regression validation passed 32 tests across four files.
+- Full ESLint passed with zero warnings. Both TypeScript project references passed no-write strict
+  checks. The complete frontend suite passed 79 files and 166 tests.
+- Production Vite build transformed 1,997 modules. The entry is 248.58 KB and the transitional
+  operational chunk is 799.62 KB; existing lazy Health feature chunks remain separate. Local
+  `tsc -b` emission could not write two `node_modules/.tmp` build-info files because Windows denied
+  access, while the equivalent no-write project checks passed; CI remains the authoritative
+  clean-run emission check.
+- The running development server at `http://127.0.0.1:5252/` serves the new Health navigation
+  module.
+- Live desktop validation passed at a 1280 x 720 viewport. Overview, Investigate, Deployments and
+  Governance each selected the correct tab, heading, URL and owned task surface; unrelated task
+  surfaces and the Investigate-only composer remained absent. Document and Health workspace widths
+  remained 1280/1280 px and 711/711 px. Browser Back restored Deployments and Forward restored
+  Governance with matching selected tabs and headings. `Home` moved focus and selection from
+  Governance to Overview.
+- Live mobile validation passed with a 390 x 844 viewport and 375 CSS-pixel content width. Document,
+  heading and Health workspace widths remained 375/375 px. The bounded 410 px tab strip scrolled
+  inside its 375 px navigation container without document overflow; all tab controls remained
+  103 x 44 px and every selected tab was visible. All four views retained their canonical URLs and
+  headings, with composer visibility limited to Investigate. The context overlay and closed-context
+  workspace both remained within the viewport without incoherent overlap.
+- Connector live isolation retained only the governed connector workspace; Health navigation and
+  operations content were not visible, composer and inspector were absent, and the document
+  remained 375/375 px. Direct `#/health/unknown` failed to `#/workspace` and presented the truthful
+  Workspace directory with no visible Health task navigation.
+- Application warning/error logs remained empty after desktop navigation, mobile navigation,
+  history, keyboard, Connector isolation and unknown-route validation. The temporary viewport was
+  reset and the deliverable browser tab was left at the clean 1280 px `#/health/overview` route.
 
 ### ATLAS-IMP-136 Scope Rationale
 

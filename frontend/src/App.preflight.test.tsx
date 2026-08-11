@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./ApplicationCoordinator";
 
@@ -70,6 +70,10 @@ function preflight(mode = "offline", profile = "linux_lab") {
     },
   };
 }
+
+beforeEach(() => {
+  window.history.replaceState({}, "", "/#/health/deployments");
+});
 
 afterEach(() => {
   cleanup();

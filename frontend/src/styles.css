@@ -4757,6 +4757,70 @@ textarea:focus-visible {
   background: #f7f9f8;
 }
 
+.health-workspace-navigation {
+  position: sticky;
+  z-index: 8;
+  top: -18px;
+  margin: -18px -28px 18px;
+  padding: 0 28px;
+  overflow-x: auto;
+  background: #ffffff;
+  border-bottom: 1px solid #dce3e0;
+  box-shadow: 0 4px 10px rgb(28 45 40 / 4%);
+}
+
+.health-workspace-tabs {
+  display: grid;
+  min-width: 520px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.health-workspace-tabs button {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  color: #63706c;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.health-workspace-tabs button::after {
+  position: absolute;
+  right: 12px;
+  bottom: 0;
+  left: 12px;
+  height: 2px;
+  background: transparent;
+  content: "";
+}
+
+.health-workspace-tabs button:hover {
+  color: #283b36;
+  background: #f7f9f8;
+}
+
+.health-workspace-tabs button[aria-selected="true"] {
+  color: #176f5b;
+}
+
+.health-workspace-tabs button[aria-selected="true"]::after {
+  background: #23836c;
+}
+
+.health-workspace-tabs button:focus-visible {
+  outline: 2px solid #23836c;
+  outline-offset: -3px;
+}
+
 .health-core-workspace {
   display: grid;
   gap: 16px;
@@ -8170,6 +8234,22 @@ tbody tr.selected {
 
   .operations-workspace {
     padding: 12px;
+  }
+
+  .health-workspace-navigation {
+    top: -12px;
+    margin: -12px -12px 12px;
+    padding: 0;
+  }
+
+  .health-workspace-tabs {
+    min-width: 410px;
+  }
+
+  .health-workspace-tabs button {
+    min-height: 44px;
+    padding: 0 8px;
+    font-size: 10px;
   }
 
   .summary-strip {

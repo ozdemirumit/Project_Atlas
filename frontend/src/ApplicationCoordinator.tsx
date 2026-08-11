@@ -7,6 +7,9 @@ import {
   WorkspaceRouteLoading,
 } from "./features/shell/WorkspaceLoadBoundary";
 import {
+  healthViewFromHash,
+  healthViewHash,
+  type HealthViewId,
   isKnownWorkspaceHash,
   type WorkspaceId,
   workspaceFromHash,
@@ -29,8 +32,19 @@ function workspaceFromLocation(): WorkspaceId {
       "",
       `${window.location.pathname}${window.location.search}#/workspace`,
     );
+    return "Workspace";
   }
   return workspace;
+}
+
+function healthViewFromLocation(): HealthViewId {
+  if (window.location.hash.toLowerCase().startsWith("#/health/")) {
+    return healthViewFromHash(window.location.hash);
+  }
+  if (new URLSearchParams(window.location.search).has("approval_request_id")) {
+    return "investigate";
+  }
+  return healthViewFromHash(window.location.hash);
 }
 
 function operationalWorkspace(
@@ -55,6 +69,7 @@ function IdentityVerificationFailure({ onRetry }: { onRetry: () => void }) {
 
 export function App() {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId>(workspaceFromLocation);
+  const [activeHealthView, setActiveHealthView] = useState<HealthViewId>(healthViewFromLocation);
   const [lastOperationalWorkspace, setLastOperationalWorkspace] = useState<
     Exclude<WorkspaceId, "Workspace">
   >(() => operationalWorkspace(workspaceFromLocation()));
@@ -70,6 +85,7 @@ export function App() {
   useEffect(() => {
     const syncWorkspace = () => {
       const workspace = workspaceFromLocation();
+      setActiveHealthView(healthViewFromLocation());
       if (workspace !== "Workspace") {
         setLastOperationalWorkspace(workspace);
         setOperationalActivated(true);
@@ -91,7 +107,23 @@ export function App() {
       setOperationalActivated(true);
     }
     setActiveWorkspace(workspace);
+    if (workspace === "Health") setActiveHealthView("overview");
     const nextHash = workspaceHash(workspace);
+    if (window.location.hash !== nextHash) {
+      window.history.pushState(
+        null,
+        "",
+        `${window.location.pathname}${window.location.search}${nextHash}`,
+      );
+    }
+  };
+
+  const navigateToHealthView = (view: HealthViewId) => {
+    setActiveWorkspace("Health");
+    setLastOperationalWorkspace("Health");
+    setOperationalActivated(true);
+    setActiveHealthView(view);
+    const nextHash = healthViewHash(view);
     if (window.location.hash !== nextHash) {
       window.history.pushState(
         null,
@@ -149,7 +181,9 @@ export function App() {
               fallback={<WorkspaceRouteLoading workspace={lastOperationalWorkspace} />}
             >
               <OperationalApplication
+                activeHealthView={activeHealthView}
                 activeWorkspace={lastOperationalWorkspace}
+                onNavigateHealthView={navigateToHealthView}
                 onNavigate={navigateToWorkspace}
               />
             </Suspense>
