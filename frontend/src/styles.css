@@ -2285,6 +2285,14 @@ textarea:focus-visible {
   color: #52615c;
 }
 
+.data-initialization-action > div {
+  min-width: 0;
+}
+
+.data-initialization-action p {
+  overflow-wrap: anywhere;
+}
+
 .artifact-acquisition-action button,
 .artifact-acquisition-confirm-actions button,
 .configuration-rendering-action button,
