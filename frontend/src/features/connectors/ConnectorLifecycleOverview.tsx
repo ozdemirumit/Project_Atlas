@@ -1,5 +1,7 @@
 import { CheckCircle2, CircleDashed, Database, ShieldCheck } from "lucide-react";
 
+import type { ConnectorViewId } from "../shell/workspace";
+
 type LifecycleStage = {
   name: string;
   detail: string;
@@ -9,6 +11,12 @@ type LifecycleStage = {
     state?: "available" | "pending";
   }[];
 };
+
+function stageView(name: string): ConnectorViewId | undefined {
+  if (name === "Target and credentials") return "runtime";
+  if (name === "Knowledge publication") return "knowledge";
+  return undefined;
+}
 
 const lifecycleStages: readonly LifecycleStage[] = [
   {
@@ -147,7 +155,7 @@ const lifecycleStages: readonly LifecycleStage[] = [
   },
 ];
 
-export function ConnectorLifecycleOverview() {
+export function ConnectorLifecycleOverview({ activeView }: { activeView: ConnectorViewId }) {
   return (
     <section className="connector-lifecycle" aria-labelledby="connector-lifecycle-title">
       <div className="section-heading">
@@ -174,40 +182,54 @@ export function ConnectorLifecycleOverview() {
         </div>
       </div>
       <div className="connector-lifecycle-list">
-        {lifecycleStages.map((stage, index) => (
-          <div className="connector-lifecycle-row" data-state={stage.state} key={stage.name}>
-            <span className="connector-lifecycle-index">{String(index + 1).padStart(2, "0")}</span>
-            <div>
-              <strong>{stage.name}</strong>
-              <span>{stage.detail}</span>
-              <div className="connector-capability-list" aria-label={`${stage.name} capabilities`}>
-                {stage.capabilities.map((capability) => (
-                  <span
-                    className="connector-capability"
-                    data-state={capability.state ?? "available"}
-                    key={capability.name}
-                  >
-                    {capability.name}
-                  </span>
-                ))}
+        {lifecycleStages.map((stage, index) => {
+          const view = stageView(stage.name);
+          return (
+            <div
+              className="connector-lifecycle-row"
+              data-state={stage.state}
+              data-focused={view === activeView || undefined}
+              id={view ? `connector-view-${view}` : undefined}
+              key={stage.name}
+            >
+              <span className="connector-lifecycle-index">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <div>
+                <strong>{stage.name}</strong>
+                <span>{stage.detail}</span>
+                <div
+                  className="connector-capability-list"
+                  aria-label={`${stage.name} capabilities`}
+                >
+                  {stage.capabilities.map((capability) => (
+                    <span
+                      className="connector-capability"
+                      data-state={capability.state ?? "available"}
+                      key={capability.name}
+                    >
+                      {capability.name}
+                    </span>
+                  ))}
+                </div>
               </div>
+              <span className="connector-lifecycle-state">
+                {stage.state === "available" ? (
+                  <CheckCircle2 size={16} />
+                ) : stage.state === "current" ? (
+                  <Database size={16} />
+                ) : (
+                  <CircleDashed size={16} />
+                )}
+                {stage.state === "available"
+                  ? "Available"
+                  : stage.state === "current"
+                    ? "In progress"
+                    : "Not enabled"}
+              </span>
             </div>
-            <span className="connector-lifecycle-state">
-              {stage.state === "available" ? (
-                <CheckCircle2 size={16} />
-              ) : stage.state === "current" ? (
-                <Database size={16} />
-              ) : (
-                <CircleDashed size={16} />
-              )}
-              {stage.state === "available"
-                ? "Available"
-                : stage.state === "current"
-                  ? "In progress"
-                  : "Not enabled"}
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
       <p className="connector-lifecycle-boundary">
         Availability is platform capability coverage, not authority for a connector instance.

@@ -49,7 +49,11 @@ function renderLanding() {
   });
   return render(
     <QueryClientProvider client={client}>
-      <WorkspaceLanding identity={identity} onNavigate={() => undefined} />
+      <WorkspaceLanding
+        identity={identity}
+        onNavigate={() => undefined}
+        onNavigateCapability={() => undefined}
+      />
     </QueryClientProvider>,
   );
 }

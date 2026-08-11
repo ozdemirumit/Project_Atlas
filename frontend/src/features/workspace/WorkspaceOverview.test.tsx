@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { WorkspaceOverview } from "./WorkspaceOverview";
 
 describe("WorkspaceOverview", () => {
-  it("groups implemented capabilities and navigates to their owning workspace", () => {
+  it("groups implemented capabilities and navigates to their exact task views", () => {
     const onNavigate = vi.fn();
     render(<WorkspaceOverview onNavigate={onNavigate} />);
 
@@ -16,8 +16,13 @@ describe("WorkspaceOverview", () => {
     expect(screen.getByRole("heading", { name: "Enterprise controls" })).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: /MCP Builder/ }));
-    expect(onNavigate).toHaveBeenCalledWith("Connectors");
+    expect(onNavigate).toHaveBeenCalledWith({ workspace: "Connectors", view: "builder" });
     fireEvent.click(screen.getByRole("button", { name: /Inventory and health/ }));
-    expect(onNavigate).toHaveBeenCalledWith("Health");
+    expect(onNavigate).toHaveBeenCalledWith({ workspace: "Health", view: "overview" });
+    fireEvent.click(screen.getByRole("button", { name: /Identity and access/ }));
+    expect(onNavigate).toHaveBeenCalledWith({ workspace: "Health", view: "governance" });
+    expect(screen.getByRole("button", { name: /Runtime governance/ })).toHaveTextContent(
+      "Connectors / Runtime",
+    );
   });
 });

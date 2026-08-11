@@ -5,7 +5,7 @@ import { ConnectorLifecycleOverview } from "./ConnectorLifecycleOverview";
 
 describe("ConnectorLifecycleOverview", () => {
   it("distinguishes platform coverage from instance authority", () => {
-    render(<ConnectorLifecycleOverview />);
+    render(<ConnectorLifecycleOverview activeView="knowledge" />);
 
     expect(screen.getByRole("heading", { name: "Connector lifecycle" })).toBeVisible();
     expect(screen.getByLabelText("Delivery status")).toHaveTextContent(
@@ -49,6 +49,8 @@ describe("ConnectorLifecycleOverview", () => {
     expect(within(bounded as HTMLElement).getByText("Available")).toBeVisible();
     const knowledge = screen.getByText("Knowledge publication").closest(".connector-lifecycle-row");
     expect(knowledge).not.toBeNull();
+    expect(knowledge).toHaveAttribute("id", "connector-view-knowledge");
+    expect(knowledge).toHaveAttribute("data-focused", "true");
     expect(within(knowledge as HTMLElement).getByText("Available")).toBeVisible();
     expect(
       within(knowledge as HTMLElement).getByText("Draft curation"),
