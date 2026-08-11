@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-142 |
 | Title | Bootstrap Identity Handoff workflow ownership extraction |
-| Status | In Progress |
+| Status | In Review |
 | Branch | `agent/bootstrap-identity-handoff-workflow` |
-| Pull Request | Pending |
+| Pull Request | [#154](https://github.com/ozdemirumit/Project_Atlas/pull/154) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090, ADR-091, ADR-092, ADR-093, ADR-094, ADR-095, ADR-096, ADR-097, ADR-098 |
 | Last Updated | 2026-08-11 |
-| Next Action | Complete Identity Handoff component extraction, tests and validation |
+| Next Action | Wait for exact-head CI, then squash-merge PR #154 |
 
 ### ATLAS-IMP-142 Scope Rationale
 
