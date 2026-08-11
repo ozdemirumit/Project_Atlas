@@ -2095,7 +2095,7 @@ export function OperationalApplication({
                       </div>
                     }
                   >
-                    <InstalledMcpManagementWorkspace />
+                    <InstalledMcpManagementWorkspace subjectId={identity?.subject_id ?? ""} />
                   </Suspense>
                 </WorkspaceLoadBoundary>
               </div>

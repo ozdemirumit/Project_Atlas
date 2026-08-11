@@ -15,6 +15,9 @@ from atlas.api.instance_creation_schemas import (
     ConnectorInstanceRecordData,
     ConnectorInstanceRetirementInput,
     ConnectorUpgradeApprovalCreateInput,
+    ConnectorUpgradeApprovalDecisionInput,
+    ConnectorUpgradeApprovalRecordData,
+    ConnectorUpgradeApprovalRecordResponse,
     ConnectorUpgradeApprovalRequestData,
     ConnectorUpgradeApprovalResponse,
     ConnectorUpgradePlanData,
@@ -28,6 +31,7 @@ from atlas.api.security import (
     authorize_connector_instance_read,
     authorize_connector_instance_retire,
     authorize_connector_upgrade_approval_create,
+    authorize_connector_upgrade_approval_decide,
     authorize_connector_upgrade_approval_read,
     browser_session_subject,
 )
@@ -51,6 +55,7 @@ from atlas.modules.connectors.application.upgrade_readiness import (
     ConnectorUpgradeReadinessService,
 )
 from atlas.modules.connectors.domain.instance_creation import ConnectorInstanceRecord
+from atlas.modules.connectors.domain.upgrade_approval import ConnectorUpgradeApprovalOutcome
 from atlas.modules.identity.domain.models import AuthenticatedSubject
 
 router = APIRouter(prefix="/connectors/instances", tags=["connectors"])
@@ -91,7 +96,7 @@ def _response(
 
 def _raise_upgrade_approval(error: ConnectorUpgradeApprovalError) -> NoReturn:
     code = error.code
-    if code.endswith(("mfa_required", "assurance_insufficient")):
+    if code.endswith(("mfa_required", "assurance_insufficient", "separation_required")):
         status = 403
     elif code.endswith("not_found"):
         status = 404
@@ -334,6 +339,76 @@ async def create_connector_upgrade_approval_request(
     response.headers["Cache-Control"] = "no-store"
     return ConnectorUpgradeApprovalResponse(
         data=ConnectorUpgradeApprovalRequestData.from_domain(approval_request),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get(
+    "/{record_id}/upgrade-plans/{candidate_receipt_id}/approval-record",
+    response_model=ConnectorUpgradeApprovalRecordResponse,
+)
+async def get_connector_upgrade_approval_record_for_plan(
+    record_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    candidate_receipt_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_connector_upgrade_approval_read)],
+) -> ConnectorUpgradeApprovalRecordResponse:
+    service: ConnectorUpgradeApprovalService = request.app.state.connector_upgrade_approval_service
+    try:
+        record = await service.get_record_for_plan(
+            actor=subject,
+            record_id=record_id,
+            candidate_receipt_id=candidate_receipt_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorUpgradeApprovalError as error:
+        _raise_upgrade_approval(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorUpgradeApprovalRecordResponse(
+        data=ConnectorUpgradeApprovalRecordData.from_domain(record),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.post(
+    "/{record_id}/upgrade-approval-requests/{request_id}/decisions",
+    response_model=ConnectorUpgradeApprovalRecordResponse,
+)
+async def decide_connector_upgrade_approval_request(
+    record_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    payload: ConnectorUpgradeApprovalDecisionInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_upgrade_approval_decide)
+    ],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> ConnectorUpgradeApprovalRecordResponse:
+    service: ConnectorUpgradeApprovalService = request.app.state.connector_upgrade_approval_service
+    try:
+        data = payload.model_dump(exclude={"schema_version"})
+        data["outcome"] = ConnectorUpgradeApprovalOutcome(str(data["outcome"]))
+        record = await service.decide(
+            actor=subject,
+            record_id=record_id,
+            request_id=request_id,
+            idempotency_key=idempotency_key,
+            correlation_id=str(request.state.correlation_id),
+            **data,
+        )
+    except ConnectorUpgradeApprovalError as error:
+        _raise_upgrade_approval(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorUpgradeApprovalRecordResponse(
+        data=ConnectorUpgradeApprovalRecordData.from_domain(record),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),

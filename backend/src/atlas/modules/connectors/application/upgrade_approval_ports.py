@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from atlas.modules.connectors.domain.upgrade_approval import (
+    ConnectorUpgradeApprovalDecision,
     ConnectorUpgradeApprovalPolicySnapshot,
     ConnectorUpgradeApprovalRequest,
 )
@@ -33,5 +34,13 @@ class ConnectorUpgradeApprovalRepository(Protocol):
     ) -> ConnectorUpgradeApprovalRequest | None: ...
 
     async def add(self, request: ConnectorUpgradeApprovalRequest) -> bool: ...
+
+    async def get_decision(self, *, request_id: str) -> ConnectorUpgradeApprovalDecision | None: ...
+
+    async def get_decision_by_key(
+        self, *, decided_by: str, idempotency_key: str
+    ) -> ConnectorUpgradeApprovalDecision | None: ...
+
+    async def add_decision(self, decision: ConnectorUpgradeApprovalDecision) -> bool: ...
 
     async def close(self) -> None: ...

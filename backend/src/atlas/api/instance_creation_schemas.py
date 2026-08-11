@@ -9,7 +9,11 @@ from atlas.modules.connectors.domain.instance_creation import (
     ConnectorInstanceCreationPolicySnapshot,
     ConnectorInstanceRecord,
 )
-from atlas.modules.connectors.domain.upgrade_approval import ConnectorUpgradeApprovalRequest
+from atlas.modules.connectors.domain.upgrade_approval import (
+    ConnectorUpgradeApprovalDecision,
+    ConnectorUpgradeApprovalRecord,
+    ConnectorUpgradeApprovalRequest,
+)
 from atlas.modules.connectors.domain.upgrade_readiness import (
     ConnectorCapabilityChange,
     ConnectorUpgradeCandidate,
@@ -382,4 +386,90 @@ class ConnectorUpgradeApprovalResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: ConnectorUpgradeApprovalRequestData
+    meta: ResponseMeta
+
+
+class ConnectorUpgradeApprovalDecisionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = Field(
+        default="atlas.connector-upgrade-approval-decision-input.v1", pattern=STABLE_ID
+    )
+    expected_request_version: int = Field(ge=1)
+    expected_request_digest: str = Field(pattern=DIGEST)
+    outcome: str = Field(pattern=r"^(approve|reject|needs_evidence|defer)$")
+    rationale: str = Field(min_length=20, max_length=1000)
+    acknowledged_decision_grants_no_execution_authority: bool
+
+
+class ConnectorUpgradeApprovalDecisionData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision_id: str
+    schema_version: str
+    version: int
+    request_id: str
+    request_version: int
+    request_digest: str
+    plan_id: str
+    plan_digest: str
+    outcome: str
+    decided_by: str
+    rationale: str
+    organization_id: str
+    environment_id: str
+    approval_policy_id: str
+    approval_policy_digest: str
+    decided_at: datetime
+    canonical_digest: str
+    execution_authorized: bool
+    infrastructure_mutation_performed: bool
+    reused: bool
+
+    @classmethod
+    def from_domain(
+        cls, decision: ConnectorUpgradeApprovalDecision
+    ) -> ConnectorUpgradeApprovalDecisionData:
+        return cls(**{field: getattr(decision, field) for field in cls.model_fields})
+
+
+class ConnectorUpgradeApprovalRecordData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request: ConnectorUpgradeApprovalRequestData
+    decision: ConnectorUpgradeApprovalDecisionData | None
+    state: str
+    approval_valid: bool
+    approval_granted: bool
+    decision_recorded: bool
+    separation_of_duties_enforced: bool
+    package_rebound: bool
+    configuration_changed: bool
+    target_contacted: bool
+    execution_authorized: bool
+    infrastructure_mutation_performed: bool
+
+    @classmethod
+    def from_domain(
+        cls, record: ConnectorUpgradeApprovalRecord
+    ) -> ConnectorUpgradeApprovalRecordData:
+        return cls(
+            request=ConnectorUpgradeApprovalRequestData.from_domain(record.request),
+            decision=(
+                ConnectorUpgradeApprovalDecisionData.from_domain(record.decision)
+                if record.decision
+                else None
+            ),
+            **{
+                field: getattr(record, field)
+                for field in cls.model_fields
+                if field not in {"request", "decision"}
+            },
+        )
+
+
+class ConnectorUpgradeApprovalRecordResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ConnectorUpgradeApprovalRecordData
     meta: ResponseMeta

@@ -3,10 +3,27 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 
 from atlas.modules.identity.domain.models import AssuranceLevel, validate_stable_identifier
 
 _DIGEST = re.compile(r"^[a-f0-9]{64}$")
+
+
+class ConnectorUpgradeApprovalOutcome(StrEnum):
+    APPROVE = "approve"
+    REJECT = "reject"
+    NEEDS_EVIDENCE = "needs_evidence"
+    DEFER = "defer"
+
+
+class ConnectorUpgradeApprovalState(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    NEEDS_EVIDENCE = "needs_evidence"
+    DEFERRED = "deferred"
+    EXPIRED = "expired"
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,3 +155,95 @@ class ConnectorUpgradeApprovalRequest:
             or self.infrastructure_mutation_performed
         ):
             raise ValueError("Connector upgrade approval request violates the authority boundary")
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorUpgradeApprovalDecision:
+    decision_id: str
+    schema_version: str
+    version: int
+    request_id: str
+    request_version: int
+    request_digest: str
+    plan_id: str
+    plan_digest: str
+    outcome: ConnectorUpgradeApprovalOutcome
+    decided_by: str
+    rationale: str
+    organization_id: str
+    environment_id: str
+    approval_policy_id: str
+    approval_policy_digest: str
+    decided_at: datetime
+    canonical_digest: str
+    decision_fingerprint: str
+    idempotency_key: str
+    execution_authorized: bool = False
+    infrastructure_mutation_performed: bool = False
+    reused: bool = False
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.decision_id,
+            self.schema_version,
+            self.request_id,
+            self.plan_id,
+            self.decided_by,
+            self.organization_id,
+            self.environment_id,
+            self.approval_policy_id,
+        ):
+            validate_stable_identifier(value, "connector upgrade approval decision identifier")
+        for value in (
+            self.request_digest,
+            self.plan_digest,
+            self.approval_policy_digest,
+            self.canonical_digest,
+            self.decision_fingerprint,
+        ):
+            if _DIGEST.fullmatch(value) is None:
+                raise ValueError("Connector upgrade approval decision digest is invalid")
+        if (
+            self.version != 1
+            or self.request_version != 1
+            or not 20 <= len(self.rationale.strip()) <= 1000
+            or not 8 <= len(self.idempotency_key) <= 128
+            or self.decided_at.tzinfo is None
+            or self.execution_authorized
+            or self.infrastructure_mutation_performed
+        ):
+            raise ValueError("Connector upgrade approval decision violates the authority boundary")
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorUpgradeApprovalRecord:
+    request: ConnectorUpgradeApprovalRequest
+    decision: ConnectorUpgradeApprovalDecision | None
+    state: ConnectorUpgradeApprovalState
+    approval_valid: bool
+    approval_granted: bool
+    decision_recorded: bool
+    separation_of_duties_enforced: bool = True
+    package_rebound: bool = False
+    configuration_changed: bool = False
+    target_contacted: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_performed: bool = False
+
+    def __post_init__(self) -> None:
+        approved = self.state is ConnectorUpgradeApprovalState.APPROVED and self.approval_valid
+        if (
+            self.approval_granted != approved
+            or self.decision_recorded != (self.decision is not None)
+            or not self.separation_of_duties_enforced
+            or any(
+                (
+                    self.package_rebound,
+                    self.configuration_changed,
+                    self.target_contacted,
+                    self.execution_authorized,
+                    self.infrastructure_mutation_performed,
+                )
+            )
+        ):
+            raise ValueError("Connector upgrade approval record violates the authority boundary")

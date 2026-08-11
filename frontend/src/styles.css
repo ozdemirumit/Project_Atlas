@@ -907,6 +907,68 @@ textarea:focus-visible {
   font-weight: 650;
 }
 
+.installed-mcp-approval-decision {
+  display: grid;
+  gap: 10px;
+  padding-top: 11px;
+  border-top: 1px solid #d8e2df;
+}
+
+.installed-mcp-approval-outcomes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid #bdcbc7;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.installed-mcp-approval-outcomes button {
+  min-height: 34px;
+  padding: 5px 8px;
+  color: #425b54;
+  background: #fff;
+  border: 0;
+  border-right: 1px solid #d2ddda;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.installed-mcp-approval-outcomes button:last-child {
+  border-right: 0;
+}
+
+.installed-mcp-approval-outcomes button[aria-pressed="true"] {
+  color: #fff;
+  background: #315f54;
+}
+
+.installed-mcp-approval-decision > .primary-button {
+  width: fit-content;
+}
+
+.installed-mcp-approval-result {
+  display: grid;
+  gap: 3px;
+  padding: 10px 0;
+  border-top: 1px solid #d8e2df;
+  border-bottom: 1px solid #d8e2df;
+}
+
+.installed-mcp-approval-result strong {
+  color: #315f54;
+  text-transform: capitalize;
+}
+
+.installed-mcp-approval-result span,
+.installed-mcp-approval-result small {
+  color: #687872;
+  overflow-wrap: anywhere;
+}
+
+.installed-mcp-approval-result p {
+  color: #334b44;
+}
+
 .installed-mcp-retire {
   border-color: #8a5948;
   color: #fff;
@@ -971,6 +1033,23 @@ textarea:focus-visible {
   }
 
   .installed-mcp-approval-request > .primary-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .installed-mcp-approval-outcomes {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .installed-mcp-approval-outcomes button:nth-child(2) {
+    border-right: 0;
+  }
+
+  .installed-mcp-approval-outcomes button:nth-child(-n + 2) {
+    border-bottom: 1px solid #d2ddda;
+  }
+
+  .installed-mcp-approval-decision > .primary-button {
     width: 100%;
     justify-content: center;
   }

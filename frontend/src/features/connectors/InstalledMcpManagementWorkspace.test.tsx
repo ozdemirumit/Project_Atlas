@@ -11,8 +11,11 @@ import {
 } from "../../api/connectorInstances";
 import {
   createConnectorUpgradeApprovalRequest,
+  decideConnectorUpgradeApproval,
+  getConnectorUpgradeApprovalRecord,
   getConnectorUpgradePlan,
   getConnectorUpgradeReadiness,
+  type ConnectorUpgradeApprovalRecord,
   type ConnectorUpgradeApprovalRequest,
   type ConnectorUpgradePlan,
   type ConnectorUpgradeReadiness,
@@ -174,6 +177,51 @@ const upgradeApprovalRequest: ConnectorUpgradeApprovalRequest = {
   reused: false,
 };
 
+const pendingUpgradeApproval: ConnectorUpgradeApprovalRecord = {
+  request: upgradeApprovalRequest,
+  decision: null,
+  state: "pending",
+  approval_valid: false,
+  approval_granted: false,
+  decision_recorded: false,
+  separation_of_duties_enforced: true,
+  package_rebound: false,
+  configuration_changed: false,
+  target_contacted: false,
+  execution_authorized: false,
+  infrastructure_mutation_performed: false,
+};
+
+const approvedUpgradeApproval: ConnectorUpgradeApprovalRecord = {
+  ...pendingUpgradeApproval,
+  decision: {
+    decision_id: "connector-upgrade-approval-decision.test",
+    schema_version: "atlas.connector-upgrade-approval-decision.v1",
+    version: 1,
+    request_id: upgradeApprovalRequest.request_id,
+    request_version: 1,
+    request_digest: upgradeApprovalRequest.canonical_digest,
+    plan_id: upgradePlan.plan_id,
+    plan_digest: upgradePlan.canonical_digest,
+    outcome: "approve",
+    decided_by: "subject.connector-independent-approver",
+    rationale: "Approve this exact immutable plan after independent evidence review.",
+    organization_id: instance.organization_id,
+    environment_id: instance.environment_id,
+    approval_policy_id: upgradeApprovalRequest.approval_policy_id,
+    approval_policy_digest: upgradeApprovalRequest.approval_policy_digest,
+    decided_at: "2026-08-12T00:30:00Z",
+    canonical_digest: "6".repeat(64),
+    execution_authorized: false,
+    infrastructure_mutation_performed: false,
+    reused: false,
+  },
+  state: "approved",
+  approval_valid: true,
+  approval_granted: true,
+  decision_recorded: true,
+};
+
 vi.mock("../../api/connectorInstances", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorInstances")>();
   return {
@@ -195,18 +243,20 @@ vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
   return {
     ...original,
     createConnectorUpgradeApprovalRequest: vi.fn(),
+    decideConnectorUpgradeApproval: vi.fn(),
+    getConnectorUpgradeApprovalRecord: vi.fn(),
     getConnectorUpgradeReadiness: vi.fn(),
     getConnectorUpgradePlan: vi.fn(),
   };
 });
 
-function renderWorkspace() {
+function renderWorkspace(subjectId = "subject.connector-operator") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <InstalledMcpManagementWorkspace />
+      <InstalledMcpManagementWorkspace subjectId={subjectId} />
     </QueryClientProvider>,
   );
 }
@@ -217,7 +267,9 @@ beforeEach(() => {
   vi.mocked(getConnectorInstances).mockResolvedValue([instance]);
   vi.mocked(getConnectorUpgradeReadiness).mockResolvedValue(upgradeReadiness);
   vi.mocked(getConnectorUpgradePlan).mockResolvedValue(upgradePlan);
+  vi.mocked(getConnectorUpgradeApprovalRecord).mockResolvedValue(null);
   vi.mocked(createConnectorUpgradeApprovalRequest).mockResolvedValue(upgradeApprovalRequest);
+  vi.mocked(decideConnectorUpgradeApproval).mockResolvedValue(approvedUpgradeApproval);
   vi.mocked(createConnectorInstance).mockResolvedValue({ data: instance });
   vi.mocked(retireConnectorInstance).mockResolvedValue({
     ...instance,
@@ -271,7 +323,7 @@ describe("InstalledMcpManagementWorkspace", () => {
       instance.record_id,
       upgradePlan.candidate_receipt_id,
     );
-    const request = screen.getByRole("button", { name: "Request human approval" });
+    const request = await screen.findByRole("button", { name: "Request human approval" });
     expect(request).toBeDisabled();
     fireEvent.click(screen.getByLabelText(/This creates a review request only/i));
     expect(request).toBeEnabled();
@@ -279,7 +331,31 @@ describe("InstalledMcpManagementWorkspace", () => {
     await waitFor(() => expect(createConnectorUpgradeApprovalRequest).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("Pending human review")).toBeVisible();
     expect(screen.getByText("Requester cannot decide")).toBeVisible();
-    expect(screen.getByText(/records no approval/i)).toBeVisible();
+    expect(screen.getByText(/grants no execution authority/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /install|apply|execute/i })).toBeNull();
+  });
+
+  it("restores a pending request and lets only an independent human record a non-executable decision", async () => {
+    vi.mocked(getConnectorUpgradeApprovalRecord).mockResolvedValue(pendingUpgradeApproval);
+    renderWorkspace("subject.connector-independent-approver");
+    fireEvent.click(await screen.findByRole("button", { name: "Review update for Storage East" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Review plan for version.2.0.0" }));
+
+    expect(await screen.findByText("Pending human review")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Approve" })).toHaveAttribute("aria-pressed", "false");
+    const recordDecision = screen.getByRole("button", { name: "Record decision" });
+    expect(recordDecision).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    fireEvent.change(screen.getByLabelText("Decision rationale"), {
+      target: { value: "Approve this exact immutable plan after independent evidence review." },
+    });
+    fireEvent.click(screen.getByLabelText(/records a human decision only/i));
+    expect(recordDecision).toBeEnabled();
+    fireEvent.click(recordDecision);
+
+    await waitFor(() => expect(decideConnectorUpgradeApproval).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Human decision: approved")).toBeVisible();
+    expect(screen.getByText("subject.connector-independent-approver")).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|apply|execute/i })).toBeNull();
   });
 

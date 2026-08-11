@@ -9,13 +9,18 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  UserCheck,
+  UserX,
   X,
 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import {
   createConnectorUpgradeApprovalRequest,
+  decideConnectorUpgradeApproval,
+  getConnectorUpgradeApprovalRecord,
   getConnectorUpgradeReadiness,
+  type ConnectorUpgradeApprovalOutcome,
   type ConnectorUpgradeCandidate,
   getConnectorUpgradePlan,
   type ConnectorUpgradePlan,
@@ -249,7 +254,7 @@ function UpgradeCandidateCard({
   );
 }
 
-function UpgradePlanEvidence({ plan }: { plan: ConnectorUpgradePlan }) {
+function UpgradePlanEvidence({ plan, subjectId }: { plan: ConnectorUpgradePlan; subjectId: string }) {
   const interruption = plan.estimated_interruption_min_minutes === null
     ? "Not established"
     : `${plan.estimated_interruption_min_minutes}-${plan.estimated_interruption_max_minutes} minutes`;
@@ -270,30 +275,92 @@ function UpgradePlanEvidence({ plan }: { plan: ConnectorUpgradePlan }) {
       </div>
       {plan.unknowns.length > 0 && <div className="installed-mcp-plan-unknowns"><strong>Unknowns</strong><ul>{plan.unknowns.map((item) => <li key={item}>{item}</li>)}</ul></div>}
       <p className="installed-mcp-plan-boundary">This plan does not rebind a package, migrate configuration, stop a session, contact a target, restore data or authorize execution.</p>
-      {plan.plan_eligible && <UpgradeApprovalRequestPanel plan={plan} />}
+      {plan.plan_eligible && <UpgradeApprovalRequestPanel plan={plan} subjectId={subjectId} />}
     </section>
   );
 }
 
-function UpgradeApprovalRequestPanel({ plan }: { plan: ConnectorUpgradePlan }) {
+const APPROVAL_OUTCOMES: Array<{ value: ConnectorUpgradeApprovalOutcome; label: string }> = [
+  { value: "approve", label: "Approve" },
+  { value: "reject", label: "Reject" },
+  { value: "needs_evidence", label: "Request evidence" },
+  { value: "defer", label: "Defer" },
+];
+
+function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgradePlan; subjectId: string }) {
+  const queryClient = useQueryClient();
+  const queryKey = ["connector-upgrade-approval-record", plan.source_record_id, plan.candidate_receipt_id];
   const [purpose, setPurpose] = useState(
     "Submit this exact connector upgrade plan for independent human review.",
   );
   const [acknowledged, setAcknowledged] = useState(false);
-  const mutation = useMutation({ mutationFn: createConnectorUpgradeApprovalRequest });
+  const [outcome, setOutcome] = useState<ConnectorUpgradeApprovalOutcome | null>(null);
+  const [rationale, setRationale] = useState("");
+  const [decisionAcknowledged, setDecisionAcknowledged] = useState(false);
+  const recordQuery = useQuery({
+    queryKey,
+    queryFn: () => getConnectorUpgradeApprovalRecord(plan),
+    retry: false,
+  });
+  const mutation = useMutation({
+    mutationFn: createConnectorUpgradeApprovalRequest,
+    onSuccess: (request) => {
+      setAcknowledged(false);
+      queryClient.setQueryData(queryKey, {
+        request,
+        decision: null,
+        state: "pending",
+        approval_valid: false,
+        approval_granted: false,
+        decision_recorded: false,
+        separation_of_duties_enforced: true,
+        package_rebound: false,
+        configuration_changed: false,
+        target_contacted: false,
+        execution_authorized: false,
+        infrastructure_mutation_performed: false,
+      });
+    },
+  });
+  const decisionMutation = useMutation({
+    mutationFn: decideConnectorUpgradeApproval,
+    onSuccess: (record) => {
+      queryClient.setQueryData(queryKey, record);
+      setDecisionAcknowledged(false);
+    },
+  });
+  const record = decisionMutation.data ?? recordQuery.data;
+  const pending = record?.state === "pending" && record.decision === null;
+  const requesterIsCurrentSubject = record?.request.requested_by === subjectId;
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!acknowledged || purpose.trim().length < 20) return;
     mutation.mutate({ plan, purpose });
   };
-  if (mutation.data) {
+  if (record) {
     return (
       <section className="installed-mcp-approval-request" aria-live="polite">
-        <div className="installed-mcp-approval-heading"><ShieldCheck size={18} /><div><strong>Pending human review</strong><span>{mutation.data.request_id}</span></div></div>
-        <dl><div><dt>Exact plan</dt><dd>{mutation.data.plan_digest.slice(0, 16)}</dd></div><div><dt>Expires</dt><dd>{new Date(mutation.data.expires_at).toLocaleString()}</dd></div><div><dt>Separation</dt><dd>Requester cannot decide</dd></div></dl>
-        <p>The request records no approval, grants no execution authority and performs no infrastructure change.</p>
+        <div className="installed-mcp-approval-heading"><ShieldCheck size={18} /><div><strong>{record.state === "pending" ? "Pending human review" : `Human decision: ${record.state.replaceAll("_", " ")}`}</strong><span>{record.request.request_id}</span></div></div>
+        <dl><div><dt>Exact plan</dt><dd>{record.request.plan_digest.slice(0, 16)}</dd></div><div><dt>Expires</dt><dd>{new Date(record.request.expires_at).toLocaleString()}</dd></div><div><dt>Separation</dt><dd>Requester cannot decide</dd></div></dl>
+        {pending && requesterIsCurrentSubject && <div className="installed-mcp-status error-state" role="status"><UserX size={17} /><div><strong>Independent approver required</strong><span>{record.request.requested_by} cannot decide this request.</span></div></div>}
+        {pending && !requesterIsCurrentSubject && (
+          <div className="installed-mcp-approval-decision">
+            <div className="installed-mcp-approval-outcomes" role="group" aria-label="Approval decision">
+              {APPROVAL_OUTCOMES.map((item) => <button type="button" key={item.value} aria-pressed={outcome === item.value} onClick={() => setOutcome(item.value)}>{item.label}</button>)}
+            </div>
+            <label>Decision rationale<textarea value={rationale} minLength={20} maxLength={1000} onChange={(event) => setRationale(event.target.value)} /></label>
+            <label className="checkbox-row"><input type="checkbox" checked={decisionAcknowledged} onChange={(event) => setDecisionAcknowledged(event.target.checked)} /><span>This records a human decision only. It grants no package, runtime or execution authority.</span></label>
+            {decisionMutation.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><span>The decision was rejected because identity, policy, expiry or exact plan evidence changed.</span></div>}
+            <button className="primary-button" type="button" disabled={!outcome || rationale.trim().length < 20 || !decisionAcknowledged || decisionMutation.isPending} onClick={() => { if (outcome) decisionMutation.mutate({ record, outcome, rationale }); }}><UserCheck size={16} />{decisionMutation.isPending ? "Recording decision..." : "Record decision"}</button>
+          </div>
+        )}
+        {record.decision && <div className="installed-mcp-approval-result"><strong>{record.decision.outcome.replaceAll("_", " ")}</strong><span>{record.decision.decided_by}</span><p>{record.decision.rationale}</p><small>{new Date(record.decision.decided_at).toLocaleString()}</small></div>}
+        <p>The record grants no execution authority and performs no package, runtime or infrastructure change.</p>
       </section>
     );
+  }
+  if (recordQuery.isLoading || (mutation.isSuccess && recordQuery.isFetching)) {
+    return <div className="installed-mcp-status"><RefreshCw className="spin" size={17} /><span>Checking governed approval state...</span></div>;
   }
   return (
     <form className="installed-mcp-approval-request" onSubmit={submit}>
@@ -308,9 +375,11 @@ function UpgradeApprovalRequestPanel({ plan }: { plan: ConnectorUpgradePlan }) {
 
 function UpgradeReadinessDialog({
   instance,
+  subjectId,
   onCancel,
 }: {
   instance: ConnectorInstanceRecord;
+  subjectId: string;
   onCancel: () => void;
 }) {
   const [candidateReceiptId, setCandidateReceiptId] = useState<string | null>(null);
@@ -345,14 +414,14 @@ function UpgradeReadinessDialog({
         )}
         {planQuery.isLoading && <div className="installed-mcp-status"><RefreshCw className="spin" size={18} /><span>Building exact upgrade plan evidence...</span></div>}
         {planQuery.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={18} /><span>Upgrade plan is unavailable or source evidence changed.</span></div>}
-        {planQuery.data && <UpgradePlanEvidence plan={planQuery.data} />}
+        {planQuery.data && <UpgradePlanEvidence plan={planQuery.data} subjectId={subjectId} />}
         <footer><button type="button" className="secondary-button" onClick={onCancel}>Close review</button></footer>
       </section>
     </div>
   );
 }
 
-export default function InstalledMcpManagementWorkspace() {
+export default function InstalledMcpManagementWorkspace({ subjectId }: { subjectId: string }) {
   const queryClient = useQueryClient();
   const [lifecycle, setLifecycle] = useState<LifecycleFilter>("active");
   const [search, setSearch] = useState("");
@@ -453,7 +522,7 @@ export default function InstalledMcpManagementWorkspace() {
       <div className="installed-mcp-footnote"><span>{activeCount} active in this result</span><span>Packages and lifecycle history are preserved.</span></div>
       {adding && <AddMcpDialog packages={packages} policies={policies} pending={createMutation.isPending} onCancel={() => setAdding(false)} onSubmit={(input) => createMutation.mutate(input)} />}
       {retiring && <RetireMcpDialog instance={retiring} pending={retireMutation.isPending} onCancel={() => setRetiring(null)} onSubmit={(reason) => retireMutation.mutate({ instance: retiring, reason })} />}
-      {reviewing && <UpgradeReadinessDialog instance={reviewing} onCancel={() => setReviewing(null)} />}
+      {reviewing && <UpgradeReadinessDialog instance={reviewing} subjectId={subjectId} onCancel={() => setReviewing(null)} />}
     </section>
   );
 }
