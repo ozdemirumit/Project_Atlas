@@ -4,14 +4,69 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-139 |
-| Title | Bootstrap Trust Provisioning workflow ownership extraction |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#151](https://github.com/ozdemirumit/Project_Atlas/pull/151) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090, ADR-091, ADR-092, ADR-093, ADR-094, ADR-095 |
+| Task ID | ATLAS-IMP-140 |
+| Title | Bootstrap Data Initialization workflow ownership extraction |
+| Status | In Progress |
+| Branch | `agent/bootstrap-data-initialization-workflow` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090, ADR-091, ADR-092, ADR-093, ADR-094, ADR-095, ADR-096 |
 | Last Updated | 2026-08-11 |
-| Next Action | Define and implement Bootstrap Data Initialization workflow ownership extraction |
+| Next Action | Complete Data Initialization component extraction, tests and validation |
+
+### ATLAS-IMP-140 Scope Rationale
+
+- IMP-139 extracted the complete Trust Provisioning workflow and named Data Initialization as the
+  next state-changing Bootstrap ownership boundary.
+- Data Initialization already has exact run, lease, configuration, trust-plan, data-plan, target,
+  idempotency and no-later-authority contracts, but its interaction lifecycle remains in `App.tsx`.
+- ADR-096 assigns that lifecycle to one lazy Health feature without changing backend contracts,
+  query ownership, migration generation or later-phase authority.
+
+### ATLAS-IMP-140 Acceptance Criteria
+
+- Eligibility, exact-input review intent, justification, confirmation, mutation, failure/result
+  presentation and authoritative cache recovery move into one independently tested lazy feature.
+- Review binds run, lease, completed Trust Provisioning, configuration preview, trust plan, exact
+  data plan, target, ordered migrations and organization scope; changed inputs require a new review.
+- Submission retains the existing version-bound idempotency and exact API input. Failure performs
+  no automatic retry, refreshes state, invalidation and data-plan evidence, and requires new review.
+- Missing, failed, stale, malformed, mismatched, unleased and non-data states expose no action.
+  Cancel performs no request.
+- Result presentation remains bounded and excludes database URLs, credentials, SQL, destructive
+  migration, backup, service, infrastructure and AI authority. Later workflows stay unchanged.
+- Full ESLint, both TypeScript project references, full frontend tests and production build pass
+  with a separate feature chunk.
+- Live desktop/mobile validation covers review/cancel, disabled confirmation, responsive fit and
+  clean behavior without executing Data Initialization.
+
+### ATLAS-IMP-140 Initial Evidence
+
+- IMP-139 merged through PR #151 as `862ccba69a5089b39c629b0a57492ee17185e86c`; exact-head CI run
+  `31490991210` and merged-main run `31491633235` passed frontend and backend jobs.
+- IMP-139 tracker closure is `d18ddf20d1d654d6761a833c399176103f983262`; independent main CI run
+  `31492531790` passed frontend and backend jobs. IMP-140 starts from that exact verified commit.
+- The production entry is 248.62 KB and the transitional operational chunk is 786.67 KB before
+  this extraction.
+
+### ATLAS-IMP-140 Validation Evidence
+
+- `BootstrapDataInitializationWorkspace` now owns exact-input fingerprinting, fail-closed
+  eligibility, review/cancel/confirmation state, mutation, stale-review rejection, success/failure
+  cache recovery and bounded replay/result presentation. `App.tsx` supplies only current state,
+  configuration preview, public trust plan, data plan and authenticated scope.
+- The fingerprint binds run identity/version/state/phase, lease, completed Trust Provisioning,
+  prior Data Initialization, configuration preview, trust plan, target state, data-plan digests,
+  every ordered migration field and organization scope. Availability independently verifies the
+  corresponding run, plan, lease, phase, scope and digest gates.
+- Six dedicated component tests cover exact request/idempotency binding, replay presentation,
+  cancel without request, changed-plan review invalidation, unavailable/mismatched fail-closed
+  behavior, sensitive-data exclusion and failure refresh with a mandatory new review. Existing
+  application integration and the new suite passed 27 tests across two files.
+- Full ESLint passed with zero warnings. Both TypeScript project references passed no-write strict
+  checks. The complete frontend suite passed 82 files and 185 tests.
+- Production Vite build transformed 2,000 modules and emitted a separate 7.97 KB Data
+  Initialization chunk plus a shared 4.09 KB data API chunk. The production entry is 248.69 KB and
+  the transitional operational chunk decreased from 786.67 KB to 778.21 KB.
 
 ### ATLAS-IMP-139 Scope Rationale
 
@@ -232,64 +287,7 @@
   heading and Health workspace widths remained 375/375 px. The bounded 410 px tab strip scrolled
   inside its 375 px navigation container without document overflow; all tab controls remained
   103 x 44 px and every selected tab was visible. All four views retained their canonical URLs and
-  headings, with composer visibility limited to Investigate. The context overlay and closed-context
-  workspace both remained within the viewport without incoherent overlap.
-- Connector live isolation retained only the governed connector workspace; Health navigation and
-  operations content were not visible, composer and inspector were absent, and the document
-  remained 375/375 px. Direct `#/health/unknown` failed to `#/workspace` and presented the truthful
-  Workspace directory with no visible Health task navigation.
-- Application warning/error logs remained empty after desktop navigation, mobile navigation,
-  history, keyboard, Connector isolation and unknown-route validation. The temporary viewport was
-  reset and the deliverable browser tab was left at the clean 1280 px `#/health/overview` route.
-- Source delivery commits `38b7d794830b15b63c51cb06243f7a21a7e09c02` and
-  `b596a7fb74bfa2c4d59fb47ccff0837e39c60b47` were reviewed through PR #149. PR CI run
-  `31484367479` passed frontend and backend jobs, including the clean Linux frontend type-check
-  emission that the local Windows filesystem denied.
-- PR #149 was squash-merged as `e11e1f6b711464fd59cfdcc8d19cb3bb245b78b1`. Merged-main CI run
-  `31484978249` passed frontend and backend jobs, and local `main` synchronized exactly to the
-  remote merge commit before tracker closure.
-
-### ATLAS-IMP-136 Scope Rationale
-
-- IMP-135 closed with a separate 4.97 KB Bootstrap Lease chunk and reduced the transitional
-  operational chunk from 819.78 KB to 803.42 KB.
-- Artifact Acquisition is the first state-changing Bootstrap phase and has exact run revision,
-  lease, plan, preflight, warning acknowledgement, idempotency and recovery responsibilities.
-- ADR-092 assigns the complete acquisition review/mutation/recovery lifecycle to one lazy Health
-  feature while authorized parent queries and every later phase remain outside it.
-
-### ATLAS-IMP-136 Acceptance Criteria
-
-- Eligibility, exact-input review intent, justification, conditional warning acknowledgement,
-  confirmation, mutation, error/result presentation and state/invalidation cache recovery move
-  into one independently tested lazy feature.
-- Review intent binds run identity/revision/state/phase, lease ownership, plan/release/profile,
-  preflight report/manifest/mode/state, execution state and organization/environment/site scope;
-  changed inputs require a new review.
-- Submission retains version-bound idempotency and exact API input. Warning preflight requires an
-  explicit current-review acknowledgement.
-- Failure performs no automatic retry, clears stale intent, refreshes authoritative evidence and
-  requires a new review.
-- Failed, unchecked, mismatched, absent, malformed, running, unleased and non-acquire states expose
-  no workflow. Cancel performs no request.
-- Result presentation preserves bounded artifact evidence and false configuration/service/
-  infrastructure/AI authority. Parent queries and every subsequent Bootstrap workflow remain
-  unchanged.
-- Full ESLint, both TypeScript project references, full frontend tests and production build pass
-  with a separate feature chunk.
-- Live desktop/mobile validation covers review/cancel, route isolation, overflow and final direct
-  application warning/error state without executing an acquisition.
-
-### ATLAS-IMP-136 Initial Evidence
-
-- IMP-135 merged through PR #147 as `fd23a59dfab090b04ec7f99271e4f170308694b5`; PR run
-  `31473432506` and merged-main run `31474149310` passed frontend and backend jobs.
-- IMP-135 closure commit `a92e6f9d1596f709cbaf94dabb227db6f53fe7ff` passed independent main
-  CI run `31474787010` with both jobs successful.
-- Bootstrap Lease is a separate 4.97 KB feature chunk. The production entry is 247.78 KB and the
-  deferred operational chunk is 803.42 KB.
-
-### ATLAS-IMP…172437 tokens truncated…manifest and restricted-network preflight foundation | Completed through [PR #36](https://github.com/ozdemirumit/Project_Atlas/pull/36) from source commit `1f93456`; 261 backend tests, 13 frontend tests, live connected/mirrored/offline API/UI and desktop/mobile validation, and all local and GitHub quality gates passed |
+  headings, with composer visibil…969 tokens truncated…nifest and restricted-network preflight foundation | Completed through [PR #36](https://github.com/ozdemirumit/Project_Atlas/pull/36) from source commit `1f93456`; 261 backend tests, 13 frontend tests, live connected/mirrored/offline API/UI and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-025 | Versioned deployment configuration preview foundation | Completed through [PR #37](https://github.com/ozdemirumit/Project_Atlas/pull/37) from source commit `4917f22`; 268 backend tests, 15 frontend tests, live safe/unsafe configuration API and Linux-lab/developer desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-026 | Deterministic bootstrap plan and resume-state foundation | Completed through [PR #38](https://github.com/ozdemirumit/Project_Atlas/pull/38) from source commit `0a9c38b`; 272 backend tests, 16 frontend tests, live ready/blocked API and desktop/mobile validation, and all local and GitHub quality gates passed |
 | ATLAS-IMP-027 | Persistent bootstrap checkpoint and lease foundation | Completed through [PR #39](https://github.com/ozdemirumit/Project_Atlas/pull/39) from source commit `874fe0a`; 282 backend tests, 18 frontend tests, live non-mutating checkpoint API and desktop/mobile validation, and all local and GitHub quality gates passed |
@@ -359,4 +357,5 @@
 - `Done`: required review is resolved and the implementation pull request is merged.
 
 Git history, code, tests, and pull requests are authoritative when this tracker is stale. Every implementation session must reconcile the tracker against repository evidence before editing and update it before completion.
+
 
