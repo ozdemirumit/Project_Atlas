@@ -4,14 +4,83 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-138 |
-| Title | Bootstrap Configuration Rendering workflow ownership extraction |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#150](https://github.com/ozdemirumit/Project_Atlas/pull/150) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090, ADR-091, ADR-092, ADR-093, ADR-094 |
+| Task ID | ATLAS-IMP-139 |
+| Title | Bootstrap Trust Provisioning workflow ownership extraction |
+| Status | In Progress |
+| Branch | `agent/bootstrap-trust-provisioning-workflow` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090, ADR-091, ADR-092, ADR-093, ADR-094, ADR-095 |
 | Last Updated | 2026-08-11 |
-| Next Action | Define and implement the Bootstrap Trust Provisioning workflow ownership extraction |
+| Next Action | Implement and validate the bounded Trust Provisioning workspace |
+
+### ATLAS-IMP-139 Scope Rationale
+
+- IMP-138 extracted the complete Configuration Rendering workflow and named Trust Provisioning as
+  the next state-changing Bootstrap ownership boundary.
+- Trust Provisioning already has exact run, lease, configuration, trust-plan, scope, idempotency and
+  secret-exclusion contracts, but its interaction lifecycle remains in `App.tsx`.
+- ADR-095 assigns that lifecycle to one lazy Health feature without changing backend contracts,
+  query ownership or later-phase authority.
+
+### ATLAS-IMP-139 Acceptance Criteria
+
+- Eligibility, exact-input review intent, justification, confirmation, mutation, failure/result
+  presentation and state/invalidation cache recovery move into one independently tested lazy
+  feature.
+- Review binds run identity/version/state/phase, lease, completed Configuration Rendering,
+  configuration preview, public trust plan contents and organization scope; changed inputs require
+  a new review.
+- Submission retains existing version-bound idempotency and exact API input. Failure performs no
+  automatic retry, refreshes authoritative evidence and requires a new review.
+- Missing, failed, stale, malformed, mismatched, unleased and non-trust states expose no action.
+  Cancel performs no request.
+- Result presentation remains bounded and excludes private keys, credential values, resolved
+  secrets, data, service, infrastructure and AI authority. Later Bootstrap workflows stay unchanged.
+- Full ESLint, both TypeScript project references, full frontend tests and production build pass
+  with a separate feature chunk.
+- Live desktop/mobile validation covers review/cancel, disabled confirmation, responsive fit and
+  clean behavior without executing Trust Provisioning.
+
+### ATLAS-IMP-139 Initial Evidence
+
+- IMP-138 merged through PR #150 as `4a852b9dc225090b7407b00f89ffeb62bb8bba60`; exact-head CI run
+  `31487442509` and merged-main run `31488000776` passed frontend and backend jobs.
+- IMP-138 tracker closure is `ed8a0da8d3840a1333761d913e014d1d15c614bc`; independent main CI
+  run `31488591473` passed frontend and backend jobs.
+- The production entry is 248.58 KB and the transitional operational chunk is 794.20 KB before
+  this extraction.
+
+### ATLAS-IMP-139 Validation Evidence
+
+- `BootstrapTrustProvisioningWorkspace` now owns exact-input fingerprinting, fail-closed
+  eligibility, review/cancel/confirmation state, mutation, stale-review rejection, success/failure
+  cache recovery and bounded replay/result presentation. `App.tsx` supplies only current state,
+  configuration preview, public trust plan and authenticated scope.
+- The fingerprint binds run identity/version/state/phase, lease, completed Configuration Rendering,
+  prior trust execution, configuration preview, trust-plan identity/digest, ordered public anchors,
+  ordered workload identity references and organization scope. Availability independently verifies
+  every corresponding run, preview, plan, lease and phase gate.
+- Six dedicated component tests cover exact request/idempotency binding, replay presentation,
+  cancel without request, changed-plan review invalidation, unavailable/mismatched fail-closed
+  behavior, secret exclusion and failure refresh with a mandatory new review. Existing application
+  integration and the new suite passed 27 tests across two files.
+- Full ESLint passed with zero warnings. Both TypeScript project references passed no-write strict
+  checks. The complete frontend suite passed 81 files and 179 tests.
+- Production Vite build transformed 1,999 modules and emitted a separate 6.95 KB Trust Provisioning
+  chunk plus a shared 3.80 KB trust API chunk. The production entry is 248.62 KB and the
+  transitional operational chunk decreased from 794.20 KB to 786.67 KB.
+- A temporary isolated Vite harness rendered the real workflow without submitting provisioning.
+  At 1280 x 720, document width remained 1280/1280 px and the 870 px dialog remained inside its
+  872 px workspace. Confirmation began disabled and neither private-key nor secret-value text was
+  present.
+- At an exact 390 x 844 viewport, document width remained 390/390 px; the dialog was 340 px inside
+  a 342 px workspace and its input and buttons were 310 px. The disabled confirmation was visually
+  distinct with no overlap. Cancel restored one 340 px review action with no alert or result.
+- The isolated harness and direct Connector route produced no warning/error logs. Connector stayed
+  at 1280/1280 px with its governed analysis visible and no Trust review, heading or feature script.
+  Direct Deployments returned to its truthful empty-checkpoint state with no Trust action and no
+  warning/error logs. The viewport override was reset, the deliverable tab remained at
+  `#/health/deployments`, and all temporary harness files were removed.
 
 ### ATLAS-IMP-138 Scope Rationale
 
@@ -82,8 +151,6 @@
 - PR #150 was squash-merged as `4a852b9dc225090b7407b00f89ffeb62bb8bba60`. Merged-main CI run
   `31488000776` passed frontend and backend jobs, and local `main` synchronized exactly to the
   remote merge commit before tracker closure.
-
-### ATLAS-IMP-137 Scope Rationale
 
 ### ATLAS-IMP-137 Scope Rationale
 
