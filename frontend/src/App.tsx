@@ -45,11 +45,7 @@ import {
 import {
   previewBootstrapServicePlan,
 } from "./api/bootstrapServices";
-import {
-  handoffBootstrapIdentity,
-  previewBootstrapIdentityPlan,
-  type BootstrapIdentityHandoffResult,
-} from "./api/bootstrapIdentity";
+import { previewBootstrapIdentityPlan } from "./api/bootstrapIdentity";
 import {
   previewBootstrapIntegrationPlan,
   validateBootstrapIntegrations,
@@ -232,6 +228,9 @@ const BootstrapDataInitializationWorkspace = lazy(
 const BootstrapServiceDeploymentWorkspace = lazy(
   () => import("./features/health/BootstrapServiceDeploymentWorkspace"),
 );
+const BootstrapIdentityHandoffWorkspace = lazy(
+  () => import("./features/health/BootstrapIdentityHandoffWorkspace"),
+);
 const BootstrapInvalidationWorkspace = lazy(
   () => import("./features/health/BootstrapInvalidationWorkspace"),
 );
@@ -380,10 +379,6 @@ export function OperationalApplication({
   const [bootstrapRebasePending, setBootstrapRebasePending] = useState(false);
   const [bootstrapRebaseResult, setBootstrapRebaseResult] =
     useState<BootstrapRebaseResult | null>(null);
-  const [identityHandoffJustification, setIdentityHandoffJustification] = useState("");
-  const [identityHandoffPending, setIdentityHandoffPending] = useState(false);
-  const [identityHandoffResult, setIdentityHandoffResult] =
-    useState<BootstrapIdentityHandoffResult | null>(null);
   const [integrationValidationJustification, setIntegrationValidationJustification] =
     useState("");
   const [integrationValidationPending, setIntegrationValidationPending] = useState(false);
@@ -1120,9 +1115,6 @@ export function OperationalApplication({
       setBootstrapRebaseJustification("");
       setBootstrapRebasePending(false);
       setBootstrapRebaseResult(null);
-      setIdentityHandoffJustification("");
-      setIdentityHandoffPending(false);
-      setIdentityHandoffResult(null);
       setIntegrationValidationJustification("");
       setIntegrationValidationPending(false);
       setIntegrationValidationResult(null);
@@ -1569,29 +1561,6 @@ export function OperationalApplication({
       ]);
     },
   });
-  const identityHandoffMutation = useMutation({
-    mutationFn: () =>
-      handoffBootstrapIdentity({
-        state: bootstrapState!,
-        configuration: deploymentConfiguration!,
-        trustPlan: bootstrapTrustPlan!,
-        dataPlan: bootstrapDataPlan!,
-        servicePlan: bootstrapServicePlan!,
-        identityPlan: bootstrapIdentityPlan!,
-        scope: identity!.scope,
-        justification: identityHandoffJustification.trim(),
-      }),
-    onSuccess: async (response) => {
-      setIdentityHandoffResult(response.data);
-      setIdentityHandoffPending(false);
-      setIdentityHandoffJustification("");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["bootstrap-state"] }),
-        queryClient.invalidateQueries({ queryKey: ["bootstrap-invalidation"] }),
-        queryClient.invalidateQueries({ queryKey: ["bootstrap-identity-plan"] }),
-      ]);
-    },
-  });
   const integrationValidationMutation = useMutation({
     mutationFn: () =>
       validateBootstrapIntegrations({
@@ -1744,41 +1713,12 @@ export function OperationalApplication({
       setHumanReviewAcknowledged(false);
     },
   });
-  const identityExecution =
-    identityHandoffResult?.execution ?? bootstrapState?.run?.identity_handoff;
   const integrationExecution =
     integrationValidationResult?.execution ?? bootstrapState?.run?.integration_validation;
   const verificationExecution =
     verificationResult?.execution ?? bootstrapState?.run?.end_to_end_verification;
   const handoffExecution =
     handoffResult?.execution ?? bootstrapState?.run?.operational_handoff;
-  const identityPhaseAvailable = Boolean(
-    bootstrapState?.run &&
-      bootstrapState.lease_held_by_current_actor &&
-      bootstrapState.run.current_phase_id === "phase.identity" &&
-      bootstrapState.run.identity_handoff?.state !== "running" &&
-      bootstrapState.run.completed_phase_ids.includes("phase.services") &&
-      bootstrapState.run.service_deployment?.state === "completed" &&
-      bootstrapState.run.service_deployment.ready_service_count ===
-        bootstrapState.run.service_deployment.deployed_service_count &&
-      bootstrapState.run.service_deployment.passed_probe_count ===
-        bootstrapState.run.service_deployment.ready_service_count * 3 &&
-      deploymentConfiguration?.state === "passed" &&
-      deploymentConfiguration.configuration_digest === bootstrapState.run.configuration_digest &&
-      bootstrapTrustPlan?.state === "passed" &&
-      bootstrapDataPlan?.state === "passed" &&
-      bootstrapServicePlan?.state === "passed" &&
-      bootstrapState.run.service_deployment.service_plan_digest ===
-        bootstrapServicePlan.service_plan_digest &&
-      bootstrapIdentityPlan?.state === "passed" &&
-      bootstrapIdentityPlan.release_id === bootstrapState.run.release_id &&
-      bootstrapIdentityPlan.profile === bootstrapState.run.profile &&
-      bootstrapIdentityPlan.configuration_digest ===
-        bootstrapState.run.configuration_digest &&
-      bootstrapIdentityPlan.trust_plan_digest === bootstrapTrustPlan.trust_plan_digest &&
-      bootstrapIdentityPlan.data_plan_digest === bootstrapDataPlan.data_plan_digest &&
-      bootstrapIdentityPlan.service_plan_digest === bootstrapServicePlan.service_plan_digest,
-  );
   const integrationPhaseAvailable = Boolean(
     bootstrapState?.run &&
       bootstrapState.lease_held_by_current_actor &&
@@ -8752,174 +8692,22 @@ export function OperationalApplication({
                             trustPlan={bootstrapTrustPlan}
                           />
                         )}
-                      {identityPhaseAvailable &&
+                      {deploymentConfiguration &&
+                        bootstrapTrustPlan &&
+                        bootstrapDataPlan &&
+                        bootstrapServicePlan &&
                         bootstrapIdentityPlan &&
-                        !identityHandoffPending && (
-                          <div className="data-initialization-action identity-handoff-action">
-                            <div>
-                              <strong>Publish governed identity handoff</strong>
-                              <p>
-                                Reviews the restricted administrator, recovery seal, LDAPS provider,
-                                pilot identity, and {bootstrapIdentityPlan.group_mappings.length} group
-                                mappings. No credential, account, directory, provider, session, or token
-                                is changed.
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIdentityHandoffResult(null);
-                                setIdentityHandoffPending(true);
-                              }}
-                            >
-                              <UserCheck size={14} /> Review identity handoff
-                            </button>
-                          </div>
+                        identity && (
+                          <BootstrapIdentityHandoffWorkspace
+                            configuration={deploymentConfiguration}
+                            dataPlan={bootstrapDataPlan}
+                            identityPlan={bootstrapIdentityPlan}
+                            scope={identity.scope}
+                            servicePlan={bootstrapServicePlan}
+                            state={bootstrapState}
+                            trustPlan={bootstrapTrustPlan}
+                          />
                         )}
-                      {identityHandoffPending &&
-                        identityPhaseAvailable &&
-                        bootstrapIdentityPlan && (
-                          <div
-                            className="data-initialization-confirmation identity-handoff-confirmation"
-                            role="dialog"
-                          >
-                            <div>
-                              <strong>Confirm synthetic identity handoff</strong>
-                              <p>
-                                Target {bootstrapIdentityPlan.target_id} is {" "}
-                                {bootstrapIdentityPlan.target_state}. Only one Atlas-owned, secret-free
-                                identity state document will be atomically published.
-                              </p>
-                            </div>
-                            <div className="identity-plan-summary">
-                              <div>
-                                <span>Administrator</span>
-                                <code>{bootstrapIdentityPlan.bootstrap_administrator_subject_id}</code>
-                                <small>Credential replacement required</small>
-                              </div>
-                              <div>
-                                <span>Recovery identity</span>
-                                <code>{bootstrapIdentityPlan.recovery_identity_id}</code>
-                                <small>Recovery seal required</small>
-                              </div>
-                              <div>
-                                <span>Enterprise provider</span>
-                                <code>{bootstrapIdentityPlan.provider_id}</code>
-                                <small>LDAPS metadata only</small>
-                              </div>
-                              <div>
-                                <span>Pilot identity</span>
-                                <code>{bootstrapIdentityPlan.pilot_subject_id}</code>
-                                <small>Validation reference only</small>
-                              </div>
-                            </div>
-                            <div className="identity-mapping-list">
-                              {bootstrapIdentityPlan.group_mappings.map((mapping) => (
-                                <div key={mapping.mapping_id}>
-                                  <div>
-                                    <code>{mapping.directory_group_reference}</code>
-                                    <small>{mapping.mapping_id}</small>
-                                  </div>
-                                  <strong>{mapping.role_ids.join(", ")}</strong>
-                                </div>
-                              ))}
-                            </div>
-                            <label>
-                              Identity-handoff justification
-                              <input
-                                value={identityHandoffJustification}
-                                maxLength={500}
-                                onChange={(event) =>
-                                  setIdentityHandoffJustification(event.target.value)
-                                }
-                                placeholder="Record the reviewed reason for publishing identity state"
-                              />
-                            </label>
-                            {identityHandoffMutation.isError && (
-                              <div className="impact-message impact-error" role="alert">
-                                <AlertTriangle size={16} /> Identity state was not published. Refresh
-                                the governed state and exact identity plan before retrying.
-                              </div>
-                            )}
-                            <div className="data-initialization-confirm-actions">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setIdentityHandoffPending(false);
-                                  setIdentityHandoffJustification("");
-                                }}
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                className="data-initialization-confirm"
-                                type="button"
-                                disabled={
-                                  identityHandoffJustification.trim().length < 12 ||
-                                  identityHandoffMutation.isPending
-                                }
-                                onClick={() => identityHandoffMutation.mutate()}
-                              >
-                                <UserCheck size={14} /> Confirm identity
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      {identityExecution && (
-                        <div
-                          className={`data-initialization-result identity-handoff-result ${identityExecution.state}`}
-                        >
-                          <div className="data-initialization-result-heading">
-                            {identityExecution.state === "completed" ? (
-                              <CheckCircle2 size={18} />
-                            ) : (
-                              <AlertTriangle size={18} />
-                            )}
-                            <div>
-                              <strong>Identity handoff {identityExecution.state}</strong>
-                              <code>{identityExecution.result_code}</code>
-                            </div>
-                            <span className={`state-badge ${identityExecution.state}`}>
-                              {identityExecution.state}
-                            </span>
-                          </div>
-                          <div className="data-initialization-summary">
-                            <div>
-                              <span>Group mappings</span>
-                              <strong>{identityExecution.group_mapping_count}</strong>
-                            </div>
-                            <div>
-                              <span>Validations</span>
-                              <strong>{identityExecution.validation_count}</strong>
-                            </div>
-                            <div>
-                              <span>Recovery seal</span>
-                              <strong>
-                                {identityExecution.bootstrap_material_sealed ? "Verified" : "Pending"}
-                              </strong>
-                            </div>
-                            <div>
-                              <span>Real identity systems</span>
-                              <strong>Unchanged</strong>
-                            </div>
-                          </div>
-                          {identityExecution.evidence.map((item) => (
-                            <div className="service-state-evidence" key={item.evidence_id}>
-                              <div>
-                                <code>{item.evidence_id}</code>
-                                <span>{item.disposition}</span>
-                              </div>
-                              <code>{item.sha256.slice(0, 20)}...</code>
-                            </div>
-                          ))}
-                          {identityExecution.state === "failed" && (
-                            <p className="data-recovery-note">
-                              No partial identity state was published. Correct the bounded failure and
-                              retry under the active lease.
-                            </p>
-                          )}
-                        </div>
-                      )}
                       {integrationPhaseAvailable &&
                         bootstrapIntegrationPlan &&
                         !integrationValidationPending && (
