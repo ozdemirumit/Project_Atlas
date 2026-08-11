@@ -4,14 +4,75 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-133 |
-| Title | Bootstrap Checkpoint presentation extraction |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#145](https://github.com/ozdemirumit/Project_Atlas/pull/145) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ATLAS-057, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089 |
-| Last Updated | 2026-08-10 |
-| Next Action | Define and implement Bootstrap Invalidation presentation extraction |
+| Task ID | ATLAS-IMP-134 |
+| Title | Bootstrap Invalidation presentation extraction |
+| Status | In Progress |
+| Branch | `agent/bootstrap-invalidation-presentation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-028, ATLAS-029, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ATLAS-057, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090 |
+| Last Updated | 2026-08-11 |
+| Next Action | Complete live validation, PR review, CI and merge for IMP-134 |
+
+### ATLAS-IMP-134 Scope Rationale
+
+- IMP-133 closed with a separate 2.46 KB Bootstrap Checkpoint chunk and reduced the transitional
+  operational chunk from 822.91 KB to 821.45 KB.
+- Bootstrap Invalidation contains a bounded read-only drift/reuse/invalidated evidence surface next
+  to a stronger controlled rebase workflow.
+- ADR-090 accepts presentation-first extraction while preview query, rebase eligibility,
+  confirmation, mutation, cache invalidation and result remain parent/server responsibilities.
+
+### ATLAS-IMP-134 Acceptance Criteria
+
+- State, empty guidance, source revision, earliest boundary, bounded change reasons and
+  reusable/invalidated/downstream phase lists move into one independently tested lazy feature.
+- Old/new reference values remain undisclosed; phase classification renders exactly as supplied.
+- Parent authorized query and controlled rebase workflow remain unchanged.
+- Forbidden, malformed or absent previews remain absent; Connector routes do not download,
+  evaluate or mount the feature.
+- Lazy load/render failure hides the full invalidation/rebase section and its controls.
+- No API, query cache, identity, RBAC, tenant, lease, rebase, checkpoint, phase, rollback,
+  deployment or infrastructure authority moves into presentation.
+- Full ESLint, both TypeScript project references, full frontend tests and production build pass
+  with a separate feature chunk.
+- Live desktop/mobile validation covers invalidation evidence, route isolation, overflow and final
+  application warning/error state.
+
+### ATLAS-IMP-134 Initial Evidence
+
+- IMP-133 merged through PR #145 as `ab81f3c9fd120b4f4df1283db611e01b935b3cd9`; PR run
+  `31465946250` and merged-main run `31466378823` passed frontend and backend jobs.
+- IMP-133 closure commit `77340d125725d3a710b01b35d9b1576779913a22` passed independent main
+  CI run `31466848199` with both jobs successful.
+- Bootstrap Checkpoint is a separate 2.46 KB feature chunk. The production entry is 247.70 KB and
+  the deferred operational chunk is 821.45 KB.
+
+### ATLAS-IMP-134 Validation Evidence
+
+- `BootstrapInvalidationWorkspace.tsx` owns invalidation state, empty guidance, source revision,
+  earliest boundary, bounded change reasons and reusable/invalidated/downstream phase lists only.
+  Preview query, rebase eligibility, confirmation, mutation, cache invalidation and result remain
+  outside it.
+- Four focused component tests cover drift identity/counts, exact server phase classifications,
+  old/new reference non-disclosure, no-authority behavior and the unchanged empty state. Existing
+  configuration/bootstrap integration coverage preserved malformed absence and controlled rebase;
+  focused validation passed 25 tests across two files.
+- Full ESLint and both no-write TypeScript project references passed. The full frontend suite passed
+  76 files and 152 tests.
+- Production build transformed 1,993 modules and emitted a separate 2.56 KB Bootstrap Invalidation
+  chunk. The transitional operational chunk decreased from 821.45 KB to 819.78 KB.
+- Live desktop validation passed at 1280 px against the server-produced empty invalidation state:
+  empty guidance rendered, no rebase/update action appeared, and the document, Health workspace and
+  invalidation section had no horizontal overflow. The separate 2.56 KB feature asset was observed
+  only after the Health route rendered it, and the application warning/error log was empty.
+- A fresh direct Connector route rendered its governed analysis workspace, did not render or load
+  the Bootstrap Invalidation feature, had 1280/1280 px document width and produced no application
+  warning/error log.
+- Mobile validation passed inside a temporary 375 CSS-pixel harness: the embedded document, Health
+  workspace and invalidation section each remained 360/360 px after browser chrome allocation;
+  empty guidance remained visible and no rebase/update action appeared. The harness was removed
+  after validation and emitted no warning/error log. Populated drift, phase classification and
+  privacy behavior remain covered by focused component tests.
 
 ### ATLAS-IMP-133 Scope Rationale
 

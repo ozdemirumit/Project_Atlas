@@ -229,6 +229,9 @@ const BootstrapPlanWorkspace = lazy(
 const BootstrapCheckpointWorkspace = lazy(
   () => import("./features/health/BootstrapCheckpointWorkspace"),
 );
+const BootstrapInvalidationWorkspace = lazy(
+  () => import("./features/health/BootstrapInvalidationWorkspace"),
+);
 
 function statusLabel(status: string | undefined): string {
   if (!status) return "Connecting";
@@ -11294,79 +11297,27 @@ export function OperationalApplication({
                 </WorkspaceLoadBoundary>
               )}
 
-              {bootstrapInvalidation && (
-                <section className="workspace-section bootstrap-invalidation-section">
-                  <div className="section-heading bootstrap-invalidation-heading">
-                    <div>
-                      <p className="eyebrow">RESUME SAFETY</p>
-                      <h2>Checkpoint invalidation preview</h2>
-                      <p>Candidate inputs compared with the current run without changing it.</p>
-                    </div>
-                    <span className={`state-badge ${bootstrapInvalidation.state}`}>
-                      <Scale size={14} /> {bootstrapInvalidation.state}
-                    </span>
-                  </div>
-                  {bootstrapInvalidation.state === "empty" ? (
-                    <div className="bootstrap-state-empty">
-                      <Scale size={18} />
-                      <div>
-                        <strong>No current run is available for drift comparison.</strong>
-                        <p>Initialize governed checkpoint state before evaluating resume safety.</p>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="bootstrap-invalidation-summary">
+              {activeNavigation === "Health" && bootstrapInvalidation && (
+                <WorkspaceLoadBoundary
+                  compact
+                  resetKey={bootstrapInvalidation.preview_id}
+                  workspace="Health"
+                >
+                  <Suspense
+                    fallback={
+                      <div className="workspace-message" aria-live="polite" aria-busy="true">
+                        <Clock3 size={22} />
                         <div>
-                          <span>Source revision</span>
-                          <strong>{bootstrapInvalidation.source_run_version}</strong>
-                        </div>
-                        <div>
-                          <span>Earliest boundary</span>
-                          <code>{bootstrapInvalidation.earliest_affected_phase_id ?? "none"}</code>
-                        </div>
-                        <div>
-                          <span>Reusable</span>
-                          <strong>{bootstrapInvalidation.reusable_checkpoint_phase_ids.length}</strong>
-                        </div>
-                        <div>
-                          <span>Invalidated</span>
-                          <strong>{bootstrapInvalidation.invalidated_checkpoint_phase_ids.length}</strong>
+                          <h2>Loading Bootstrap Invalidation</h2>
+                          <p>Preparing authorized checkpoint drift evidence.</p>
                         </div>
                       </div>
-                      {bootstrapInvalidation.changes.length > 0 && (
-                        <div className="bootstrap-change-list">
-                          {bootstrapInvalidation.changes.map((change) => (
-                            <article key={change.reason_code}>
-                              <div>
-                                <code>{change.reason_code}</code>
-                                <strong>{change.field.replaceAll("_", " ")}</strong>
-                              </div>
-                              <span>from {change.earliest_affected_phase_id}</span>
-                            </article>
-                          ))}
-                        </div>
-                      )}
-                      <div className="bootstrap-invalidation-columns">
-                        <div>
-                          <h3>Reusable checkpoints</h3>
-                          <p>
-                            {bootstrapInvalidation.reusable_checkpoint_phase_ids.join(", ") ||
-                              "None"}
-                          </p>
-                        </div>
-                        <div>
-                          <h3>Invalidated checkpoints</h3>
-                          <p>
-                            {bootstrapInvalidation.invalidated_checkpoint_phase_ids.join(", ") ||
-                              "None"}
-                          </p>
-                        </div>
-                        <div>
-                          <h3>Downstream review</h3>
-                          <p>{bootstrapInvalidation.downstream_phase_ids.join(", ") || "None"}</p>
-                        </div>
-                      </div>
+                    }
+                  >
+                    <section className="workspace-section bootstrap-invalidation-section">
+                      <BootstrapInvalidationWorkspace preview={bootstrapInvalidation} />
+                      {bootstrapInvalidation.state !== "empty" && (
+                        <>
                       {bootstrapInvalidation.state === "drifted" &&
                         bootstrapState?.run &&
                         bootstrapState.lease_held_by_current_actor &&
@@ -11460,16 +11411,19 @@ export function OperationalApplication({
                           </div>
                         </div>
                       )}
-                    </>
-                  )}
-                  <div className="safety-notice">
-                    <ShieldCheck size={16} />
-                    <span>
-                      Preview is read-only. A confirmed plan update changes checkpoint metadata only;
-                      no lease, file, phase, rollback, or infrastructure operation is authorized.
-                    </span>
-                  </div>
-                </section>
+                        </>
+                      )}
+                      <div className="safety-notice">
+                        <ShieldCheck size={16} />
+                        <span>
+                          Preview is read-only. A confirmed plan update changes checkpoint metadata
+                          only; no lease, file, phase, rollback, or infrastructure operation is
+                          authorized.
+                        </span>
+                      </div>
+                    </section>
+                  </Suspense>
+                </WorkspaceLoadBoundary>
               )}
 
               {overview && (
