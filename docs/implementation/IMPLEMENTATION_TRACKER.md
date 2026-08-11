@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-145 |
 | Title | Capability-aware workspace navigation |
-| Status | In Progress |
-| Branch | `agent/capability-deep-link-navigation` |
-| Pull Request | Pending |
+| Status | Complete |
+| Branch | `agent/capability-deep-link-navigation` (merged) |
+| Pull Request | [#157](https://github.com/ozdemirumit/Project_Atlas/pull/157) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-031, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-101 |
 | Last Updated | 2026-08-11 |
-| Next Action | Deliver the validated slice through PR, CI and merge verification |
+| Next Action | Audit the next incomplete product workflow and open ATLAS-IMP-146 |
 
 ### ATLAS-IMP-145 Scope Rationale
 
@@ -68,7 +68,11 @@
 
 ### ATLAS-IMP-145 Delivery Evidence
 
-- Pending local and GitHub delivery.
+- Exact PR head `1ece4563cb4be2d3ae72165b24726765c76a06a0` passed Continuous Integration
+  run `31527553525`, including frontend and backend jobs.
+- PR #157 was squash-merged to `main` as `ff40e2f9f22ddb191c9d606dd78d33878d870a2b`.
+  Merged-main Continuous Integration run `31528047624` passed frontend and backend jobs, and the
+  local `main` branch was fast-forwarded to the same verified commit before tracker closure.
 
 ### ATLAS-IMP-144 Scope Rationale
 
