@@ -4,14 +4,78 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-140 |
-| Title | Bootstrap Data Initialization workflow ownership extraction |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#152](https://github.com/ozdemirumit/Project_Atlas/pull/152) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090, ADR-091, ADR-092, ADR-093, ADR-094, ADR-095, ADR-096 |
+| Task ID | ATLAS-IMP-141 |
+| Title | Bootstrap Service Deployment workflow ownership extraction |
+| Status | In Progress |
+| Branch | `agent/bootstrap-service-deployment-workflow` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090, ADR-091, ADR-092, ADR-093, ADR-094, ADR-095, ADR-096, ADR-097 |
 | Last Updated | 2026-08-11 |
-| Next Action | Define and implement Bootstrap Service Deployment workflow ownership extraction |
+| Next Action | Complete Service Deployment component extraction, tests and validation |
+
+### ATLAS-IMP-141 Scope Rationale
+
+- IMP-140 extracted Data Initialization and named Service Deployment as the next state-changing
+  Bootstrap ownership boundary.
+- Service Deployment already has exact run, lease, configuration, trust, data, service-plan,
+  target, idempotency and no-real-runtime contracts, but its interaction lifecycle remains in
+  `App.tsx`.
+- ADR-097 assigns that lifecycle to one lazy Health feature without changing backend contracts,
+  query ownership, plan generation, real runtime state or later-phase authority.
+
+### ATLAS-IMP-141 Acceptance Criteria
+
+- Eligibility, exact-input review, justification, confirmation, mutation, failure/result
+  presentation and authoritative cache recovery move into one independently tested lazy feature.
+- Review binds run, lease, completed Data Initialization, configuration, trust, data and exact
+  service plan, target, ordered dependencies and organization scope; drift requires a new review.
+- Submission retains version-bound idempotency and exact API input. Failure performs no automatic
+  retry, refreshes state, invalidation and service-plan evidence, and requires a new review.
+- Missing, stale, failed, malformed, mismatched, unleased, out-of-order and non-services evidence
+  exposes no action. Cancel performs no request.
+- Results exclude real process/container/OS-service, port/network, secret, external-data,
+  infrastructure and AI authority. Identity and later workflows stay unchanged.
+- Full ESLint, both TypeScript projects, full frontend tests and production build pass with a
+  separate feature chunk.
+- Live desktop/mobile validation covers review/cancel, disabled confirmation, responsive fit and
+  clean behavior without executing Service Deployment.
+
+### ATLAS-IMP-141 Initial Evidence
+
+- IMP-140 merged through PR #152 as `650059aae9ab44ddebb69b2cf1fa689c9aa59ae1`; exact-head CI run
+  `31496831796` and merged-main run `31497594202` passed frontend and backend jobs.
+- IMP-140 tracker closure is `5c905cb950edd490cd31bdf3fa7023a15ccd5097`; independent main CI run
+  `31498557684` passed frontend and backend jobs. IMP-141 starts from that verified commit.
+- The production entry is 248.69 KB and the transitional operational chunk is 778.21 KB before
+  this extraction.
+
+### ATLAS-IMP-141 Validation Evidence
+
+- `BootstrapServiceDeploymentWorkspace` owns exact-input fingerprinting, fail-closed eligibility,
+  review/cancel/confirmation state, mutation, stale-review rejection, success/failure cache
+  recovery and bounded replay/result presentation. `App.tsx` supplies only current state,
+  configuration, trust, data and service plans, and authenticated scope.
+- Availability validates completed Data Initialization bindings and requires unique, strictly
+  ordered private services whose dependencies refer only to earlier services and whose root,
+  privileged and arbitrary-public-egress flags remain false.
+- Six direct tests cover exact request/idempotency, replay and sanitized probe evidence, cancel
+  without request, changed-plan review invalidation, lease and forward-dependency fail-closed gates,
+  runtime/sensitive exclusion and failure refresh requiring a new review. Existing integration and
+  the new suite passed 27 tests across two files.
+- Full ESLint passed with zero warnings. Both no-write TypeScript projects passed. The complete
+  frontend suite passed 83 files and 191 tests.
+- Production build transformed 2,001 modules and emitted a separate 9.52 KB Service Deployment
+  chunk plus a shared 4.88 KB service API chunk. The production entry is 248.73 KB and the
+  transitional operational chunk decreased from 778.21 KB to 768.43 KB.
+- The real component and production CSS were rendered without submitting deployment. Desktop at
+  1280 x 720 measured 1280/1280 px document width and an 868 px dialog ending at 1,074 px; its
+  838 px input fit and confirmation began disabled.
+- Exact 390 x 844 mobile validation measured 390/390 px document width, a 358 px dialog ending at
+  374 px, and 328 px input/buttons. Sensitive/runtime text was absent. Cancel removed the dialog,
+  restored a 358 px review action and retained 390 px document width.
+- Direct Deployments at mobile width and Connector at 1280 x 720 exposed no Service Deployment
+  action/dialog/text, had no horizontal overflow and emitted no warning/error logs. Temporary
+  validation files were removed.
 
 ### ATLAS-IMP-140 Scope Rationale
 
@@ -89,6 +153,8 @@
 - PR #152 was squash-merged to `main` as `650059aae9ab44ddebb69b2cf1fa689c9aa59ae1`.
   Merged-main CI run `31497594202` passed frontend and backend jobs, and local `main` was
   fast-forwarded to the same verified commit before this tracker closure.
+- Tracker closure commit `5c905cb950edd490cd31bdf3fa7023a15ccd5097` passed independent main CI
+  run `31498557684`, including frontend and backend jobs.
 
 ### ATLAS-IMP-139 Scope Rationale
 
