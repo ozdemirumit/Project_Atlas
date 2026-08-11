@@ -4,14 +4,80 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-137 |
-| Title | Health workspace task-view consolidation |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#149](https://github.com/ozdemirumit/Project_Atlas/pull/149) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090, ADR-091, ADR-092, ADR-093 |
+| Task ID | ATLAS-IMP-138 |
+| Title | Bootstrap Configuration Rendering workflow ownership extraction |
+| Status | In Progress |
+| Branch | `agent/bootstrap-configuration-rendering-workflow` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090, ADR-091, ADR-092, ADR-093, ADR-094 |
 | Last Updated | 2026-08-11 |
-| Next Action | Define and implement the Configuration Rendering workflow ownership extraction |
+| Next Action | Implement and validate the bounded Configuration Rendering workspace |
+
+### ATLAS-IMP-138 Scope Rationale
+
+- IMP-137 created a dedicated Deployments task view but left Configuration Rendering review,
+  mutation, recovery and result presentation in the transitional application module.
+- Configuration Rendering is the next state-changing Bootstrap phase after Artifact Acquisition and
+  already has strict run, lease, preview, scope, idempotency and no-later-authority contracts.
+- ADR-094 assigns the complete interaction lifecycle to one lazy Health feature without changing
+  backend contracts or parent query ownership.
+
+### ATLAS-IMP-138 Acceptance Criteria
+
+- Eligibility, exact-input review intent, justification, confirmation, mutation, error/result
+  presentation and state/invalidation cache recovery move into one independently tested lazy
+  feature.
+- Review intent binds run identity/version/state/phase, lease, completed phases, artifact result,
+  prior configuration result, configuration preview and organization scope; changed inputs require
+  a new review.
+- Submission retains the existing version-bound idempotency and exact API input. Failure performs
+  no automatic retry, refreshes authoritative evidence and requires a new review.
+- Failed, unavailable, stale, mismatched, unleased and non-configure states expose no action. Cancel
+  performs no request.
+- Result presentation preserves bounded file evidence and false trust/secret/data/service/
+  infrastructure/AI authority. Parent queries and later Bootstrap workflows remain unchanged.
+- Full ESLint, both TypeScript project references, full frontend tests and production build pass
+  with a separate feature chunk.
+- Live desktop/mobile validation covers review/cancel, route isolation, overflow and clean direct
+  application logs without executing Configuration Rendering.
+
+### ATLAS-IMP-138 Initial Evidence
+
+- IMP-137 merged through PR #149 as `e11e1f6b711464fd59cfdcc8d19cb3bb245b78b1`; PR CI run
+  `31484367479` and merged-main run `31484978249` passed frontend and backend jobs.
+- IMP-137 tracker closure is `902571ea52d325bf896ba59075aea61dc645f52e`; independent main CI
+  run `31485621960` passed frontend and backend jobs.
+- The production entry is 248.58 KB and the transitional operational chunk is 799.62 KB before
+  this extraction.
+
+### ATLAS-IMP-138 Validation Evidence
+
+- `BootstrapConfigurationRenderingWorkspace` now owns exact-input fingerprinting, fail-closed
+  eligibility, review/cancel/confirmation state, mutation, stale-review rejection, success/failure
+  cache recovery and bounded replay/result presentation. `App.tsx` supplies only current state,
+  configuration preview, authenticated scope and timestamp formatting.
+- The fingerprint binds run identity/version/state/phase, lease, completed phases, artifact and
+  prior configuration execution, preview identity/schema/state/digest and organization scope.
+  Availability independently verifies every corresponding run, preview, lease and phase gate.
+- Six dedicated component tests cover exact request/idempotency binding, replay presentation,
+  cancel without request, changed-evidence review invalidation, unavailable/mismatched fail-closed
+  behavior and failure refresh with a mandatory new review. Existing application integration and
+  the new suite passed 27 tests across two files.
+- Full ESLint passed with zero warnings. Both TypeScript project references passed no-write strict
+  checks. The complete frontend suite passed 80 files and 173 tests.
+- Production Vite build transformed 1,998 modules and emitted a separate 7.77 KB Configuration
+  Rendering chunk. The production entry remained 248.58 KB and the transitional operational chunk
+  decreased from 799.62 KB to 794.20 KB.
+- A temporary isolated Vite harness rendered the real component without submitting a mutation.
+  Chrome DevTools Protocol validation passed at 1280 x 720 and an exact 390 x 844 mobile viewport.
+  Desktop document width remained 1280/1280 px with an 870 px dialog inside an 872 px workspace.
+  Mobile document width remained 390/390 px with a 340 px dialog inside a 342 px workspace.
+- Mobile review showed the bounded digest description, full-width input, disabled confirmation and
+  cancel controls without overlap. Cancel restored the single review action at the same dimensions.
+  A shared Bootstrap confirmation style now makes disabled actions visually distinct. Screenshots
+  were inspected and the temporary harness, capture script and generated images were removed.
+
+### ATLAS-IMP-137 Scope Rationale
 
 ### ATLAS-IMP-137 Scope Rationale
 
