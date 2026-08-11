@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-134 |
 | Title | Bootstrap Invalidation presentation extraction |
-| Status | In Progress |
-| Branch | `agent/bootstrap-invalidation-presentation` |
-| Pull Request | Pending |
+| Status | Complete |
+| Branch | `main` |
+| Pull Request | [#146](https://github.com/ozdemirumit/Project_Atlas/pull/146) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-028, ATLAS-029, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ATLAS-057, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090 |
 | Last Updated | 2026-08-11 |
-| Next Action | Complete live validation, PR review, CI and merge for IMP-134 |
+| Next Action | Define the next stateful Bootstrap workflow ownership slice |
 
 ### ATLAS-IMP-134 Scope Rationale
 
@@ -73,6 +73,10 @@
   empty guidance remained visible and no rebase/update action appeared. The harness was removed
   after validation and emitted no warning/error log. Populated drift, phase classification and
   privacy behavior remain covered by focused component tests.
+- PR #146 passed Continuous Integration run `31468997010` with successful frontend and backend
+  jobs, then squash-merged as `455d1bba7d39109da0867834b958190ea6a8b99c`.
+- The merged `main` commit passed independent push CI run `31469582824` with successful frontend and
+  backend jobs.
 
 ### ATLAS-IMP-133 Scope Rationale
 
