@@ -4,14 +4,81 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-142 |
-| Title | Bootstrap Identity Handoff workflow ownership extraction |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#154](https://github.com/ozdemirumit/Project_Atlas/pull/154) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090, ADR-091, ADR-092, ADR-093, ADR-094, ADR-095, ADR-096, ADR-097, ADR-098 |
+| Task ID | ATLAS-IMP-143 |
+| Title | Inventory Device Registry management |
+| Status | In Progress |
+| Branch | `agent/inventory-device-registry-management` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-016, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-099 |
 | Last Updated | 2026-08-11 |
-| Next Action | Define and implement Inventory Device Registry management, then MCP Lifecycle management surfaces |
+| Next Action | Complete live validation, PR/CI/merge, then implement MCP Lifecycle management |
+
+### ATLAS-IMP-143 Scope Rationale
+
+- Product audit confirmed that Health Inventory is a read-only synthetic storage observation and
+  exposes no device create or removal lifecycle.
+- Observed health evidence and operator-managed device registration require separate authority and
+  persistence boundaries.
+- ADR-099 introduces an authorized, audited and reversible Device Registry without credentials,
+  target connectivity, infrastructure execution or hard deletion.
+
+### ATLAS-IMP-143 Acceptance Criteria
+
+- An independently owned inventory domain exposes create, list, get and version-bound retire
+  contracts with exact organization, environment and site scope.
+- Create and retire are idempotent, audited and permission-separated. Hidden or unauthorized
+  records remain undisclosed; enterprise mutation requires a browser session plus CSRF, while the
+  explicitly enabled development identity remains locally usable.
+- PostgreSQL persistence is used when configured; local memory fallback makes no durability claim.
+- Health Overview visibly supports Add Device, active/retired/all filtering, search and explicit
+  retirement while preserving the existing synthetic storage evidence workspace.
+- No API or UI stores credentials, contacts devices, infers health, invokes MCP functions, grants
+  AI authority or exposes hard delete.
+- Backend format, lint, mypy and full tests pass. Frontend ESLint, both TypeScript projects, full
+  tests and production build pass with a separate lazy feature chunk.
+- Live desktop/mobile validation covers identity context, register/cancel, retirement
+  confirmation, responsive fit, clean registry requests and no page-level runtime error.
+
+### ATLAS-IMP-143 Initial Evidence
+
+- IMP-142 merged through PR #154 as `29fad6eb5109e788fde6a6413b74f77225bcdf58`;
+  exact-head CI run `31506477860` and merged-main run `31507165839` passed.
+- IMP-142 tracker closure `301d45e3499cf90e6b4895c27c11ed2e36109b5d` passed independent
+  main CI run `31508016018` before IMP-143 branched.
+- Live audit found no device add/retire or MCP install/update/retire controls in the shipped UI.
+
+### ATLAS-IMP-143 Validation Evidence
+
+- The inventory domain now owns immutable identity and canonical digest validation, manual create,
+  bounded list/get, optimistic retirement and service-level audit records behind repository ports.
+- Memory and PostgreSQL adapters implement scope-key and actor/idempotency uniqueness. Migration
+  `20260811_0095` adds the durable table and indexes without credential columns.
+- Distinct read, create and retire permissions, C0/C2 scopes, enterprise browser-session/CSRF,
+  an explicit development-only identity exception, generic denial and no-store responses govern
+  the four API operations.
+- Four backend API tests cover authentication and RBAC denial, create/list/retire, secret-free
+  response boundaries, audit evidence, idempotent replay, version conflict and acknowledgement.
+- Four direct component tests cover visible add/retire controls, complete acknowledged
+  registration, explicit retirement, lifecycle filters and absence of hard delete.
+- Backend Ruff format and lint passed 1,169 files, mypy passed 1,072 source files, and the full
+  suite passed 957 tests with three existing Windows symlink skips.
+- Full frontend ESLint and both TypeScript projects passed. The complete suite passed 85 files and
+  201 tests. Production build transformed 2,004 modules and emitted a separate 13.33 KB registry
+  chunk; the entry is 248.87 KB and the known transitional operational chunk is 758.56 KB.
+- Live desktop validation at 1280 x 720 measured 1280/1280 px document width. Add and retire
+  confirmations began disabled; exact registry requests returned GET 200, create 201, retire 200
+  and refreshed GET 200 responses. The retired record remained searchable and no hard-delete
+  control was exposed.
+- Live mobile validation at 390 x 844 measured 390/390 px document width. The Add Device dialog
+  and form measured 390 x 844, confirmation began disabled and content remained bounded.
+- Cancel closed the Add Device dialog without a POST. Registry requests produced no failures,
+  modern HTML patterns produced no console error and no page-level runtime error occurred. The
+  page still emits the pre-existing favicon 404 and unavailable Bootstrap data-plan 409 outside
+  the registry boundary.
+
+### ATLAS-IMP-143 Delivery Evidence
+
+- Live validation is complete. GitHub delivery is pending.
 
 ### ATLAS-IMP-142 Scope Rationale
 

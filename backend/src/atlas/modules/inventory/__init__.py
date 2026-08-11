@@ -1,0 +1,1 @@
+"""Governed infrastructure inventory registry."""

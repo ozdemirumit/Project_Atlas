@@ -186,6 +186,9 @@ import {
 const HealthInventoryEvidenceWorkspace = lazy(
   () => import("./features/health/HealthInventoryEvidenceWorkspace"),
 );
+const InventoryDeviceRegistryWorkspace = lazy(
+  () => import("./features/health/InventoryDeviceRegistryWorkspace"),
+);
 const HealthDecisionSupportWorkspace = lazy(
   () => import("./features/health/HealthDecisionSupportWorkspace"),
 );
@@ -8041,6 +8044,7 @@ export function OperationalApplication({
                       </div>
                     }
                   >
+                    <InventoryDeviceRegistryWorkspace />
                     <HealthInventoryEvidenceWorkspace
                       impact={impact}
                       impactError={impactQuery.isError}

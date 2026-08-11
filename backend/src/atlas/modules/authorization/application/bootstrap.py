@@ -29,6 +29,9 @@ WORKLOAD_IDENTITY_ADMIN_CREATE = "identity.workload.admin.create"
 WORKLOAD_IDENTITY_ADMIN_ROTATE = "identity.workload.admin.rotate"
 WORKLOAD_IDENTITY_ADMIN_REVOKE = "identity.workload.admin.revoke"
 STORAGE_OVERVIEW_READ = "storage.overview.read"
+INVENTORY_DEVICE_READ = "inventory.devices.read"
+INVENTORY_DEVICE_CREATE = "inventory.devices.create"
+INVENTORY_DEVICE_RETIRE = "inventory.devices.retire"
 AI_GROUNDED_QUERY_CREATE = "ai.grounded-query.create"
 GRAPH_STORAGE_IMPACT_READ = "graph.storage-impact.read"
 HEALTH_CHECK_OVERVIEW_READ = "health-check.overview.read"
@@ -351,6 +354,25 @@ def workload_identity_permission_definitions() -> tuple[PermissionDefinition, ..
     )
 
 
+def inventory_device_permission_definitions() -> tuple[PermissionDefinition, ...]:
+    return (
+        PermissionDefinition(
+            permission_id=INVENTORY_DEVICE_READ,
+            description="Read secret-free infrastructure device registry records.",
+        ),
+        PermissionDefinition(
+            permission_id=INVENTORY_DEVICE_CREATE,
+            description=(
+                "Register one infrastructure device without credentials or execution authority."
+            ),
+        ),
+        PermissionDefinition(
+            permission_id=INVENTORY_DEVICE_RETIRE,
+            description="Retire one exact device while preserving its audit history.",
+        ),
+    )
+
+
 def security_administrator_role_definition(
     *, include_workload_identity: bool = False
 ) -> RoleDefinition:
@@ -391,6 +413,19 @@ def storage_overview_scope(organization_id: str, environment: str) -> ResourceSc
         domain_id="domain.storage",
         resource_id="resource.storage.lab-overview",
         capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+def inventory_device_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.inventory",
+        resource_id="resource.inventory.devices",
+        capability_class=capability_class,
     )
 
 
@@ -1622,6 +1657,7 @@ def build_development_authorization_service(
     permissions = (
         *identity_governance_permission_definitions(),
         *workload_identity_permission_definitions(),
+        *inventory_device_permission_definitions(),
         *audit_permission_definitions(),
         PermissionDefinition(
             permission_id=IDENTITY_SELF_READ,
@@ -2430,6 +2466,9 @@ def build_development_authorization_service(
                 API_CREDENTIAL_SELF_READ,
                 API_CREDENTIAL_SELF_REVOKE,
                 STORAGE_OVERVIEW_READ,
+                INVENTORY_DEVICE_READ,
+                INVENTORY_DEVICE_CREATE,
+                INVENTORY_DEVICE_RETIRE,
                 AI_GROUNDED_QUERY_CREATE,
                 GRAPH_STORAGE_IMPACT_READ,
                 HEALTH_CHECK_OVERVIEW_READ,
@@ -2695,6 +2734,30 @@ def build_development_authorization_service(
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=storage_overview_scope(
                     settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.inventory-device-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=inventory_device_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C0_INFORMATIONAL,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.inventory-device-manage",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=inventory_device_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),

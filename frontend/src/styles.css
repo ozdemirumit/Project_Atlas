@@ -9206,3 +9206,447 @@ tbody tr.selected {
 .recommendation-evidence-notice p {
   margin: 0 0 4px;
 }
+
+.inventory-device-registry {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
+.inventory-device-heading,
+.inventory-device-heading-actions,
+.inventory-device-toolbar,
+.inventory-device-search,
+.inventory-device-status,
+.inventory-device-empty,
+.inventory-device-boundary,
+.inventory-device-dialog-heading,
+.inventory-device-dialog-actions,
+.inventory-device-retirement-impact,
+.inventory-device-acknowledgement {
+  display: flex;
+  align-items: center;
+}
+
+.inventory-device-heading {
+  align-items: flex-start;
+}
+
+.inventory-device-heading > div:first-child {
+  min-width: 0;
+}
+
+.inventory-device-heading p:not(.eyebrow) {
+  margin: 5px 0 0;
+  color: #60706b;
+  font-size: 12px;
+}
+
+.inventory-device-heading-actions {
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.inventory-device-heading-actions button,
+.inventory-device-dialog-actions button {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.inventory-device-heading-actions button,
+.inventory-device-primary {
+  border-color: #2f6d5a;
+  background: #2f6d5a;
+  color: #fff;
+}
+
+.inventory-persistence {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid #c2d0cb;
+  border-radius: 5px;
+  color: #4e615b;
+  background: #f5f8f7;
+  font-size: 11px;
+  font-weight: 720;
+}
+
+.inventory-persistence.durable {
+  border-color: #9bbdaf;
+  color: #205c49;
+  background: #edf7f2;
+}
+
+.inventory-device-toolbar {
+  min-width: 0;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #d8e1de;
+}
+
+.inventory-device-segments {
+  display: grid;
+  width: min(100%, 300px);
+  min-width: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 3px;
+  border: 1px solid #bdcbc6;
+  border-radius: 6px;
+  background: #edf2f0;
+}
+
+.inventory-device-segments button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #52635d;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 740;
+  cursor: pointer;
+}
+
+.inventory-device-segments button[aria-pressed="true"] {
+  background: #fff;
+  color: #175743;
+  box-shadow: 0 1px 3px rgb(23 45 38 / 14%);
+}
+
+.inventory-device-search {
+  width: min(100%, 320px);
+  min-width: 0;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid #c7d1ce;
+  border-radius: 5px;
+  color: #62716c;
+  background: #fff;
+}
+
+.inventory-device-search input {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  border: 0;
+  outline: 0;
+  color: #263630;
+  background: transparent;
+}
+
+.inventory-device-status,
+.inventory-device-empty {
+  min-height: 56px;
+  gap: 10px;
+  padding: 13px 14px;
+  border: 1px dashed #b6c5c0;
+  border-radius: 6px;
+  color: #4b5d57;
+  background: #f8faf9;
+}
+
+.inventory-device-status.error-state {
+  border-style: solid;
+  border-color: #d7a29d;
+  color: #823f39;
+  background: #fff7f6;
+}
+
+.inventory-device-empty p {
+  margin: 3px 0 0;
+  color: #6a7874;
+  font-size: 12px;
+}
+
+.inventory-device-table-wrap {
+  min-width: 0;
+  border: 1px solid #d5dfdc;
+  border-radius: 6px;
+}
+
+.inventory-device-table {
+  min-width: 920px;
+}
+
+.inventory-device-table th:last-child,
+.inventory-device-table td:last-child {
+  width: 52px;
+  text-align: center;
+}
+
+.inventory-device-identity {
+  display: grid;
+  min-width: 240px;
+  align-items: start;
+  gap: 9px;
+  grid-template-columns: 18px minmax(0, 1fr);
+}
+
+.inventory-device-identity > svg {
+  margin-top: 2px;
+  color: #3e7564;
+}
+
+.inventory-device-identity span,
+.inventory-device-management {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.inventory-device-identity strong,
+.inventory-device-identity small,
+.inventory-device-identity code,
+.inventory-device-management {
+  overflow-wrap: anywhere;
+}
+
+.inventory-device-identity small,
+.inventory-device-table td > small {
+  display: block;
+  color: #697872;
+  font-size: 10px;
+}
+
+.inventory-device-identity code {
+  color: #73817d;
+  font-size: 10px;
+}
+
+.inventory-device-lifecycle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #2e6d59;
+  font-size: 11px;
+  font-weight: 760;
+  text-transform: capitalize;
+}
+
+.inventory-device-lifecycle.retired {
+  color: #697570;
+}
+
+.inventory-device-row-action {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #d0d9d6;
+  border-radius: 5px;
+  color: #6e5b3d;
+  background: #fff;
+}
+
+.inventory-device-row-action:hover {
+  border-color: #b89b6b;
+  background: #fffaf0;
+}
+
+.inventory-device-boundary {
+  align-items: flex-start;
+  gap: 8px;
+  color: #52645e;
+  font-size: 11px;
+}
+
+.inventory-device-boundary svg {
+  flex: 0 0 auto;
+  color: #2f705d;
+}
+
+.inventory-device-dialog {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(20 32 28 / 42%);
+}
+
+.inventory-device-dialog form {
+  display: grid;
+  width: min(100%, 720px);
+  max-height: calc(100vh - 40px);
+  min-width: 0;
+  gap: 16px;
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid #becbc7;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 18px 50px rgb(17 31 26 / 24%);
+}
+
+.inventory-device-dialog.retirement form {
+  width: min(100%, 560px);
+}
+
+.inventory-device-dialog-heading {
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #d8e1de;
+}
+
+.inventory-device-dialog-heading h3 {
+  margin: 2px 0 0;
+  color: #23342f;
+  font-size: 17px;
+  letter-spacing: 0;
+}
+
+.inventory-device-form-grid {
+  display: grid;
+  min-width: 0;
+  gap: 13px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.inventory-device-form-grid label,
+.inventory-device-dialog.retirement form > label:not(.inventory-device-acknowledgement) {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  color: #354640;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.inventory-device-form-wide {
+  grid-column: 1 / -1;
+}
+
+.inventory-device-form-grid input,
+.inventory-device-form-grid select,
+.inventory-device-form-grid textarea,
+.inventory-device-dialog.retirement textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #bac7c3;
+  border-radius: 5px;
+  color: #23342f;
+  background: #fff;
+  font: inherit;
+}
+
+.inventory-device-form-grid input,
+.inventory-device-form-grid select {
+  height: 38px;
+  padding: 0 10px;
+}
+
+.inventory-device-form-grid textarea,
+.inventory-device-dialog.retirement textarea {
+  resize: vertical;
+  padding: 9px 10px;
+  line-height: 1.45;
+}
+
+.inventory-device-acknowledgement {
+  align-items: flex-start;
+  gap: 9px;
+  color: #465850;
+  font-size: 12px;
+}
+
+.inventory-device-acknowledgement input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+}
+
+.inventory-device-dialog-actions {
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #d8e1de;
+}
+
+.inventory-device-dialog-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.inventory-device-retire {
+  border-color: #8a5948;
+  color: #fff;
+  background: #8a5948;
+}
+
+.inventory-device-retirement-impact {
+  align-items: flex-start;
+  gap: 9px;
+  padding: 12px;
+  border-left: 3px solid #a87942;
+  color: #5f513f;
+  background: #fff9ef;
+}
+
+.inventory-device-retirement-impact svg {
+  flex: 0 0 auto;
+}
+
+.inventory-device-retirement-impact p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  .inventory-device-heading,
+  .inventory-device-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inventory-device-heading-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .inventory-device-search,
+  .inventory-device-segments {
+    width: 100%;
+    max-width: none;
+  }
+
+  .inventory-device-dialog {
+    align-items: stretch;
+    padding: 0;
+  }
+
+  .inventory-device-dialog form,
+  .inventory-device-dialog.retirement form {
+    width: 100%;
+    max-height: 100vh;
+    min-height: 100vh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .inventory-device-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inventory-device-form-wide {
+    grid-column: auto;
+  }
+
+  .inventory-device-dialog-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
