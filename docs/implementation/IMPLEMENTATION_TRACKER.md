@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-149 |
 | Title | Connector upgrade approval decision |
-| Status | In Progress |
-| Branch | `agent/mcp-upgrade-approval-decision` |
-| Pull Request | Pending |
+| Status | Completed |
+| Branch | `main` |
+| Pull Request | [#161](https://github.com/ozdemirumit/Project_Atlas/pull/161) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-102, ADR-103, ADR-104, ADR-105 |
 | Last Updated | 2026-08-12 |
-| Next Action | Implement exact connector upgrade approval decisions and independent-review UI |
+| Next Action | Audit the next approved implementation slice from the governing backlog |
 
 ### ATLAS-IMP-149 Scope Rationale
 
@@ -71,6 +71,15 @@
   1,280 px and 390 px. Both widths had zero horizontal overflow, the mobile dialog measured 390 x
   844 px, and no install, apply or execute control existed. Deliberately unmocked unrelated
   workspaces produced only expected 403 resource entries.
+
+### ATLAS-IMP-149 Delivery Evidence
+
+- Implementation commit `1b721abccd34b9166e34368bfdba707208b14230` passed exact-head
+  pull-request CI run `31547490870`; backend completed in 7m13s and frontend in 4m32s.
+- PR [#161](https://github.com/ozdemirumit/Project_Atlas/pull/161) was squash-merged to `main` as
+  `6109a67efcc39315934b1eb1ec2460cb51c3adda`.
+- The exact merged `main` commit passed independent push CI run `31547983912`; backend completed in
+  7m16s and frontend completed in 4m23s with every required step successful.
 
 ### ATLAS-IMP-148 Scope Rationale
 
