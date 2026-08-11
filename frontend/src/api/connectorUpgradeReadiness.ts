@@ -109,6 +109,44 @@ export type ConnectorUpgradePlan = {
   infrastructure_mutation_performed: false;
 };
 
+export type ConnectorUpgradeApprovalRequest = {
+  request_id: string;
+  schema_version: "atlas.connector-upgrade-approval-request.v1";
+  version: 1;
+  source_record_id: string;
+  source_record_version: number;
+  instance_id: string;
+  connector_id: string;
+  plan_id: string;
+  plan_digest: string;
+  readiness_digest: string;
+  current_release_version: string;
+  current_receipt_id: string;
+  current_receipt_digest: string;
+  candidate_release_version: string;
+  candidate_receipt_id: string;
+  candidate_receipt_digest: string;
+  candidate_digest: string;
+  risk_level: "low" | "medium" | "high" | "critical";
+  organization_id: string;
+  environment_id: string;
+  requested_by: string;
+  purpose: string;
+  approval_policy_id: string;
+  approval_policy_digest: string;
+  approval_policy_version: string;
+  created_at: string;
+  expires_at: string;
+  state: "pending";
+  canonical_digest: string;
+  separation_of_duties_required: true;
+  approval_granted: false;
+  decision_recorded: false;
+  execution_authorized: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
 const DIGEST = /^[a-f0-9]{64}$/;
 
 function strings(value: unknown): value is string[] {
@@ -238,6 +276,52 @@ function plan(value: unknown): value is ConnectorUpgradePlan {
   );
 }
 
+function approvalRequest(value: unknown): value is ConnectorUpgradeApprovalRequest {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  const digests = [
+    item.plan_digest,
+    item.readiness_digest,
+    item.current_receipt_digest,
+    item.candidate_receipt_digest,
+    item.candidate_digest,
+    item.approval_policy_digest,
+    item.canonical_digest,
+  ];
+  return (
+    item.schema_version === "atlas.connector-upgrade-approval-request.v1" &&
+    item.version === 1 &&
+    typeof item.request_id === "string" &&
+    typeof item.source_record_id === "string" &&
+    typeof item.source_record_version === "number" &&
+    typeof item.instance_id === "string" &&
+    typeof item.connector_id === "string" &&
+    typeof item.plan_id === "string" &&
+    typeof item.current_release_version === "string" &&
+    typeof item.current_receipt_id === "string" &&
+    typeof item.candidate_release_version === "string" &&
+    typeof item.candidate_receipt_id === "string" &&
+    (item.risk_level === "low" || item.risk_level === "medium" || item.risk_level === "high" || item.risk_level === "critical") &&
+    typeof item.organization_id === "string" &&
+    typeof item.environment_id === "string" &&
+    typeof item.requested_by === "string" &&
+    typeof item.purpose === "string" &&
+    typeof item.approval_policy_id === "string" &&
+    typeof item.approval_policy_version === "string" &&
+    typeof item.created_at === "string" &&
+    typeof item.expires_at === "string" &&
+    item.state === "pending" &&
+    digests.every((digest) => typeof digest === "string" && DIGEST.test(digest)) &&
+    item.separation_of_duties_required === true &&
+    item.approval_granted === false &&
+    item.decision_recorded === false &&
+    item.execution_authorized === false &&
+    item.infrastructure_mutation_performed === false &&
+    typeof item.reused === "boolean" &&
+    !("request_fingerprint" in item || "idempotency_key" in item || "credential" in item)
+  );
+}
+
 export async function getConnectorUpgradeReadiness(
   recordId: string,
 ): Promise<ConnectorUpgradeReadiness> {
@@ -265,6 +349,69 @@ export async function getConnectorUpgradePlan(
   const payload: unknown = await response.json();
   if (!payload || typeof payload !== "object" || !("data" in payload) || !plan(payload.data)) {
     throw new Error("Connector upgrade plan returned an unsafe record");
+  }
+  return payload.data;
+}
+
+export async function createConnectorUpgradeApprovalRequest(input: {
+  plan: ConnectorUpgradePlan;
+  purpose: string;
+}): Promise<ConnectorUpgradeApprovalRequest> {
+  if (!input.plan.plan_eligible || input.plan.plan_state !== "ready_for_human_review") {
+    throw new Error("Only an eligible exact upgrade plan can enter human approval");
+  }
+  const response = await apiFetch(
+    `/api/v1/connectors/instances/${encodeURIComponent(input.plan.source_record_id)}/upgrade-plans/${encodeURIComponent(input.plan.candidate_receipt_id)}/approval-requests`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": `connector-upgrade-approval.${crypto.randomUUID()}`,
+      },
+      body: JSON.stringify({
+        schema_version: "atlas.connector-upgrade-approval-create-input.v1",
+        source_plan_digest: input.plan.canonical_digest,
+        purpose: input.purpose.trim(),
+        acknowledged_request_is_not_approval_and_grants_no_execution_authority: true,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Connector upgrade approval request failed with ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    !("data" in payload) ||
+    !approvalRequest(payload.data)
+  ) {
+    throw new Error("Connector upgrade approval returned an unsafe record");
+  }
+  if (
+    payload.data.plan_id !== input.plan.plan_id ||
+    payload.data.plan_digest !== input.plan.canonical_digest ||
+    payload.data.source_record_id !== input.plan.source_record_id ||
+    payload.data.candidate_receipt_id !== input.plan.candidate_receipt_id
+  ) {
+    throw new Error("Connector upgrade approval does not match the exact plan");
+  }
+  return payload.data;
+}
+
+export async function getConnectorUpgradeApprovalRequest(
+  recordId: string,
+  requestId: string,
+): Promise<ConnectorUpgradeApprovalRequest> {
+  const response = await apiFetch(
+    `/api/v1/connectors/instances/${encodeURIComponent(recordId)}/upgrade-approval-requests/${encodeURIComponent(requestId)}`,
+    { headers: { Accept: "application/json" }, cache: "no-store" },
+  );
+  if (!response.ok) throw new Error(`Connector upgrade approval read failed with ${response.status}`);
+  const payload: unknown = await response.json();
+  if (!payload || typeof payload !== "object" || !("data" in payload) || !approvalRequest(payload.data)) {
+    throw new Error("Connector upgrade approval returned an unsafe record");
   }
   return payload.data;
 }

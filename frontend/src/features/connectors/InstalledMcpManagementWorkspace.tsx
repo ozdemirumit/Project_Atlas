@@ -14,6 +14,7 @@ import {
 import { useState, type FormEvent } from "react";
 
 import {
+  createConnectorUpgradeApprovalRequest,
   getConnectorUpgradeReadiness,
   type ConnectorUpgradeCandidate,
   getConnectorUpgradePlan,
@@ -262,14 +263,46 @@ function UpgradePlanEvidence({ plan }: { plan: ConnectorUpgradePlan }) {
       {plan.blockers.length > 0 && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><div><strong>Plan blocked</strong><span>{plan.blockers.join(", ")}</span></div></div>}
       <div className="installed-mcp-plan-columns">
         <div><strong>Prerequisites</strong><ul>{plan.prerequisite_ids.map((item) => <li key={item}>{item}</li>)}</ul></div>
-        <div><strong>Ordered plan</strong><ol>{plan.steps.map((step) => <li key={step.step_id}><span>{step.phase.replaceAll("_", " ")}</span><small>{step.expected_minutes} min{step.requires_service_interruption ? " · interruption" : ""}</small></li>)}</ol></div>
+        <div><strong>Ordered plan</strong><ol>{plan.steps.map((step) => <li key={step.step_id}><span>{step.phase.replaceAll("_", " ")}</span><small>{step.expected_minutes} min{step.requires_service_interruption ? " | interruption" : ""}</small></li>)}</ol></div>
         <div><strong>Stop conditions</strong><ul>{plan.stop_condition_ids.map((item) => <li key={item}>{item}</li>)}</ul></div>
         <div><strong>Rollback</strong><ol>{plan.rollback_step_ids.map((item) => <li key={item}>{item}</li>)}</ol></div>
         <div><strong>Post-validation</strong><ul>{plan.validation_check_ids.map((item) => <li key={item}>{item}</li>)}</ul></div>
       </div>
       {plan.unknowns.length > 0 && <div className="installed-mcp-plan-unknowns"><strong>Unknowns</strong><ul>{plan.unknowns.map((item) => <li key={item}>{item}</li>)}</ul></div>}
       <p className="installed-mcp-plan-boundary">This plan does not rebind a package, migrate configuration, stop a session, contact a target, restore data or authorize execution.</p>
+      {plan.plan_eligible && <UpgradeApprovalRequestPanel plan={plan} />}
     </section>
+  );
+}
+
+function UpgradeApprovalRequestPanel({ plan }: { plan: ConnectorUpgradePlan }) {
+  const [purpose, setPurpose] = useState(
+    "Submit this exact connector upgrade plan for independent human review.",
+  );
+  const [acknowledged, setAcknowledged] = useState(false);
+  const mutation = useMutation({ mutationFn: createConnectorUpgradeApprovalRequest });
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!acknowledged || purpose.trim().length < 20) return;
+    mutation.mutate({ plan, purpose });
+  };
+  if (mutation.data) {
+    return (
+      <section className="installed-mcp-approval-request" aria-live="polite">
+        <div className="installed-mcp-approval-heading"><ShieldCheck size={18} /><div><strong>Pending human review</strong><span>{mutation.data.request_id}</span></div></div>
+        <dl><div><dt>Exact plan</dt><dd>{mutation.data.plan_digest.slice(0, 16)}</dd></div><div><dt>Expires</dt><dd>{new Date(mutation.data.expires_at).toLocaleString()}</dd></div><div><dt>Separation</dt><dd>Requester cannot decide</dd></div></dl>
+        <p>The request records no approval, grants no execution authority and performs no infrastructure change.</p>
+      </section>
+    );
+  }
+  return (
+    <form className="installed-mcp-approval-request" onSubmit={submit}>
+      <div className="installed-mcp-approval-heading"><ShieldCheck size={18} /><div><strong>Request independent human review</strong><span>Bound to this exact immutable plan and active approval policy.</span></div></div>
+      <label>Review purpose<textarea value={purpose} minLength={20} maxLength={1000} onChange={(event) => setPurpose(event.target.value)} /></label>
+      <label className="checkbox-row"><input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} /><span>This creates a review request only. It is not approval and grants no execution authority.</span></label>
+      {mutation.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><span>The approval request was rejected or the plan evidence changed.</span></div>}
+      <button className="primary-button" type="submit" disabled={!acknowledged || purpose.trim().length < 20 || mutation.isPending}><ShieldCheck size={16} />{mutation.isPending ? "Requesting review..." : "Request human approval"}</button>
+    </form>
   );
 }
 

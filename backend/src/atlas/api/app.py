@@ -561,6 +561,13 @@ from atlas.modules.connectors.adapters.target_session_synthetic import (
     SyntheticConnectorTargetSessionAdapter,
     UnavailableConnectorTargetSessionAdapter,
 )
+from atlas.modules.connectors.adapters.upgrade_approval_memory import (
+    InMemoryConnectorUpgradeApprovalPolicySource,
+    InMemoryConnectorUpgradeApprovalRepository,
+)
+from atlas.modules.connectors.adapters.upgrade_approval_postgres import (
+    PostgreSQLConnectorUpgradeApprovalRepository,
+)
 from atlas.modules.connectors.adapters.validation_intake_memory import (
     InMemoryPackageValidationRepository,
 )
@@ -690,6 +697,10 @@ from atlas.modules.connectors.application.target_configuration import (
 from atlas.modules.connectors.application.target_session import (
     ConnectorTargetSessionService,
     build_development_connector_target_session_policy,
+)
+from atlas.modules.connectors.application.upgrade_approval import (
+    ConnectorUpgradeApprovalService,
+    build_development_connector_upgrade_approval_policy,
 )
 from atlas.modules.connectors.application.upgrade_readiness import (
     ConnectorUpgradeReadinessService,
@@ -1520,6 +1531,7 @@ def create_app(
     package_registration_service: PackageRegistrationService | None = None,
     package_installation_service: PackageInstallationService | None = None,
     connector_instance_creation_service: ConnectorInstanceCreationService | None = None,
+    connector_upgrade_approval_service: ConnectorUpgradeApprovalService | None = None,
     target_configuration_service: ConnectorTargetConfigurationService | None = None,
     credential_assignment_service: ConnectorCredentialAssignmentService | None = None,
     configuration_validation_service: ConnectorConfigurationValidationService | None = None,
@@ -2767,6 +2779,35 @@ def create_app(
         audit_sink=resolved_audit_sink,
         environment_id=resolved_connector_instance_creation_service.environment_id,
     )
+    if connector_upgrade_approval_service is not None:
+        resolved_connector_upgrade_approval_service = connector_upgrade_approval_service
+    else:
+        connector_upgrade_approval_repository = (
+            PostgreSQLConnectorUpgradeApprovalRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryConnectorUpgradeApprovalRepository()
+        )
+        connector_upgrade_approval_policies = (
+            ()
+            if is_production
+            else (
+                build_development_connector_upgrade_approval_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
+        resolved_connector_upgrade_approval_service = ConnectorUpgradeApprovalService(
+            repository=connector_upgrade_approval_repository,
+            policy_source=InMemoryConnectorUpgradeApprovalPolicySource(
+                connector_upgrade_approval_policies
+            ),
+            upgrade_service=resolved_connector_upgrade_readiness_service,
+            audit_sink=resolved_audit_sink,
+            environment_id=resolved_connector_instance_creation_service.environment_id,
+        )
     if credential_assignment_service is not None:
         resolved_credential_assignment_service = credential_assignment_service
     else:
@@ -5021,6 +5062,7 @@ def create_app(
             resolved_connector_instance_lifecycle_service
         )
         app.state.connector_upgrade_readiness_service = resolved_connector_upgrade_readiness_service
+        app.state.connector_upgrade_approval_service = resolved_connector_upgrade_approval_service
         app.state.target_configuration_service = resolved_target_configuration_service
         app.state.credential_assignment_service = resolved_credential_assignment_service
         app.state.configuration_validation_service = resolved_configuration_validation_service
@@ -5192,6 +5234,7 @@ def create_app(
         await resolved_configuration_validation_service.close()
         await resolved_credential_assignment_service.close()
         await resolved_target_configuration_service.close()
+        await resolved_connector_upgrade_approval_service.close()
         await resolved_connector_instance_creation_service.close()
         await resolved_package_installation_service.close()
         await resolved_package_registration_service.close()

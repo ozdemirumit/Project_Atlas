@@ -10,8 +10,10 @@ import {
   type ConnectorInstanceCreationPolicy,
 } from "../../api/connectorInstances";
 import {
+  createConnectorUpgradeApprovalRequest,
   getConnectorUpgradePlan,
   getConnectorUpgradeReadiness,
+  type ConnectorUpgradeApprovalRequest,
   type ConnectorUpgradePlan,
   type ConnectorUpgradeReadiness,
 } from "../../api/connectorUpgradeReadiness";
@@ -134,6 +136,44 @@ const upgradePlan: ConnectorUpgradePlan = {
   infrastructure_mutation_performed: false,
 };
 
+const upgradeApprovalRequest: ConnectorUpgradeApprovalRequest = {
+  request_id: "connector-upgrade-approval-request.test",
+  schema_version: "atlas.connector-upgrade-approval-request.v1",
+  version: 1,
+  source_record_id: instance.record_id,
+  source_record_version: instance.version,
+  instance_id: instance.instance_id,
+  connector_id: instance.connector_id,
+  plan_id: upgradePlan.plan_id,
+  plan_digest: upgradePlan.canonical_digest,
+  readiness_digest: upgradePlan.readiness_digest,
+  current_release_version: upgradePlan.current_release_version,
+  current_receipt_id: upgradePlan.current_receipt_id,
+  current_receipt_digest: upgradePlan.current_receipt_digest,
+  candidate_release_version: upgradePlan.candidate_release_version,
+  candidate_receipt_id: upgradePlan.candidate_receipt_id,
+  candidate_receipt_digest: upgradePlan.candidate_receipt_digest,
+  candidate_digest: upgradePlan.candidate_digest,
+  risk_level: upgradePlan.risk_level,
+  organization_id: instance.organization_id,
+  environment_id: instance.environment_id,
+  requested_by: "subject.connector-operator",
+  purpose: "Submit this exact connector upgrade plan for independent human review.",
+  approval_policy_id: "connector-upgrade-approval-policy.development",
+  approval_policy_digest: "8".repeat(64),
+  approval_policy_version: "version.1.0",
+  created_at: "2026-08-12T00:00:00Z",
+  expires_at: "2026-08-12T02:00:00Z",
+  state: "pending",
+  canonical_digest: "7".repeat(64),
+  separation_of_duties_required: true,
+  approval_granted: false,
+  decision_recorded: false,
+  execution_authorized: false,
+  infrastructure_mutation_performed: false,
+  reused: false,
+};
+
 vi.mock("../../api/connectorInstances", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorInstances")>();
   return {
@@ -154,6 +194,7 @@ vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorUpgradeReadiness")>();
   return {
     ...original,
+    createConnectorUpgradeApprovalRequest: vi.fn(),
     getConnectorUpgradeReadiness: vi.fn(),
     getConnectorUpgradePlan: vi.fn(),
   };
@@ -176,6 +217,7 @@ beforeEach(() => {
   vi.mocked(getConnectorInstances).mockResolvedValue([instance]);
   vi.mocked(getConnectorUpgradeReadiness).mockResolvedValue(upgradeReadiness);
   vi.mocked(getConnectorUpgradePlan).mockResolvedValue(upgradePlan);
+  vi.mocked(createConnectorUpgradeApprovalRequest).mockResolvedValue(upgradeApprovalRequest);
   vi.mocked(createConnectorInstance).mockResolvedValue({ data: instance });
   vi.mocked(retireConnectorInstance).mockResolvedValue({
     ...instance,
@@ -229,6 +271,15 @@ describe("InstalledMcpManagementWorkspace", () => {
       instance.record_id,
       upgradePlan.candidate_receipt_id,
     );
+    const request = screen.getByRole("button", { name: "Request human approval" });
+    expect(request).toBeDisabled();
+    fireEvent.click(screen.getByLabelText(/This creates a review request only/i));
+    expect(request).toBeEnabled();
+    fireEvent.click(request);
+    await waitFor(() => expect(createConnectorUpgradeApprovalRequest).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Pending human review")).toBeVisible();
+    expect(screen.getByText("Requester cannot decide")).toBeVisible();
+    expect(screen.getByText(/records no approval/i)).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|apply|execute/i })).toBeNull();
   });
 
@@ -254,6 +305,29 @@ describe("InstalledMcpManagementWorkspace", () => {
         instanceKey: `${installation.connector_id}-managed`,
       }),
     );
+  });
+
+  it("does not expose an approval request control for a blocked upgrade plan", async () => {
+    vi.mocked(getConnectorUpgradePlan).mockResolvedValue({
+      ...upgradePlan,
+      plan_state: "blocked",
+      plan_eligible: false,
+      target_configured: true,
+      target_id: "target.storage-east",
+      site_id: "site.primary",
+      target_product: "product.storage",
+      blockers: ["connector.upgrade.impact-evidence-required"],
+      unknowns: ["Current service impact is not established."],
+      estimated_interruption_min_minutes: null,
+      estimated_interruption_max_minutes: null,
+    });
+    renderWorkspace();
+    fireEvent.click(await screen.findByRole("button", { name: "Review update for Storage East" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Review plan for version.2.0.0" }));
+
+    expect(await screen.findByText("blocked")).toBeVisible();
+    expect(screen.getByText(/impact-evidence-required/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Request human approval" })).toBeNull();
   });
 
   it("requires a reason and explicit no-runtime-action acknowledgement before retirement", async () => {

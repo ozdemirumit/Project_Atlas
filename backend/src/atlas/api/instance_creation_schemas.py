@@ -9,6 +9,7 @@ from atlas.modules.connectors.domain.instance_creation import (
     ConnectorInstanceCreationPolicySnapshot,
     ConnectorInstanceRecord,
 )
+from atlas.modules.connectors.domain.upgrade_approval import ConnectorUpgradeApprovalRequest
 from atlas.modules.connectors.domain.upgrade_readiness import (
     ConnectorCapabilityChange,
     ConnectorUpgradeCandidate,
@@ -317,4 +318,68 @@ class ConnectorUpgradePlanResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: ConnectorUpgradePlanData
+    meta: ResponseMeta
+
+
+class ConnectorUpgradeApprovalCreateInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = Field(
+        default="atlas.connector-upgrade-approval-create-input.v1", pattern=STABLE_ID
+    )
+    source_plan_digest: str = Field(pattern=DIGEST)
+    purpose: str = Field(min_length=20, max_length=1000)
+    acknowledged_request_is_not_approval_and_grants_no_execution_authority: bool
+
+
+class ConnectorUpgradeApprovalRequestData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str
+    schema_version: str
+    version: int
+    source_record_id: str
+    source_record_version: int
+    instance_id: str
+    connector_id: str
+    plan_id: str
+    plan_digest: str
+    readiness_digest: str
+    current_release_version: str
+    current_receipt_id: str
+    current_receipt_digest: str
+    candidate_release_version: str
+    candidate_receipt_id: str
+    candidate_receipt_digest: str
+    candidate_digest: str
+    risk_level: str
+    organization_id: str
+    environment_id: str
+    requested_by: str
+    purpose: str
+    approval_policy_id: str
+    approval_policy_digest: str
+    approval_policy_version: str
+    created_at: datetime
+    expires_at: datetime
+    state: str
+    canonical_digest: str
+    separation_of_duties_required: bool
+    approval_granted: bool
+    decision_recorded: bool
+    execution_authorized: bool
+    infrastructure_mutation_performed: bool
+    reused: bool
+
+    @classmethod
+    def from_domain(
+        cls, request: ConnectorUpgradeApprovalRequest
+    ) -> ConnectorUpgradeApprovalRequestData:
+        return cls(**{field: getattr(request, field) for field in cls.model_fields})
+
+
+class ConnectorUpgradeApprovalResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ConnectorUpgradeApprovalRequestData
     meta: ResponseMeta
