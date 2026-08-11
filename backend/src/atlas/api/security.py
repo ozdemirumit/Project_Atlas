@@ -118,6 +118,9 @@ from atlas.modules.authorization.application.bootstrap import (
     IDENTITY_GOVERNANCE_READ,
     IDENTITY_SELF_READ,
     IDENTITY_SUBJECT_ADMIN_DISABLE,
+    INVENTORY_DEVICE_CREATE,
+    INVENTORY_DEVICE_READ,
+    INVENTORY_DEVICE_RETIRE,
     INVESTIGATION_CREATE,
     KNOWLEDGE_CORRECTION_RESUBMISSION_CREATE,
     KNOWLEDGE_CORRECTION_RESUBMISSION_READ,
@@ -270,6 +273,7 @@ from atlas.modules.authorization.application.bootstrap import (
     graph_storage_impact_scope,
     health_check_scope,
     identity_governance_scope,
+    inventory_device_scope,
     investigation_scope,
     logical_backup_scope,
     mcp_builder_scope,
@@ -440,6 +444,30 @@ async def browser_session_subject(
             detail="Use a CSRF-protected browser session for credential management.",
         )
     return subject
+
+
+async def inventory_device_mutation_subject(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthenticatedSubject:
+    if (
+        getattr(request.state, "authenticated_credential_kind", None)
+        is CredentialKind.BROWSER_SESSION
+    ):
+        return subject
+    settings = request.app.state.settings
+    if (
+        settings.environment == "development"
+        and settings.development_identity_enabled
+        and subject.authentication_method is AuthenticationMethod.DEVELOPMENT
+    ):
+        return subject
+    raise AtlasError(
+        status=403,
+        code="browser_session_required",
+        title="Browser session required",
+        detail="Use a CSRF-protected browser session for inventory lifecycle management.",
+    )
 
 
 async def authorize_identity_self_read(
@@ -873,6 +901,92 @@ async def authorize_storage_overview_read(
         )
     request.state.authorization_decision = decision
     return decision
+
+
+async def _authorize_inventory_device(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    reason: str | None = None
+    idempotency_key: str | None = None
+    if capability_class is CapabilityClass.C2_DIAGNOSTIC:
+        reason, idempotency_key = await _governance_mutation_audit_fields(request)
+        if reason is None and permission_id == INVENTORY_DEVICE_CREATE:
+            try:
+                body = await request.json()
+            except ValueError:
+                body = None
+            raw_purpose = body.get("purpose") if isinstance(body, dict) else None
+            if isinstance(raw_purpose, str):
+                candidate = raw_purpose.strip()
+                if 20 <= len(candidate) <= 240 and not any(
+                    ord(character) < 32 for character in candidate
+                ):
+                    reason = candidate
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.inventory.device",
+            scope=inventory_device_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+            reason=reason,
+            idempotency_key=idempotency_key,
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_inventory_device_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_inventory_device(
+        request,
+        subject,
+        permission_id=INVENTORY_DEVICE_READ,
+        capability_class=CapabilityClass.C0_INFORMATIONAL,
+    )
+
+
+async def authorize_inventory_device_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(inventory_device_mutation_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_inventory_device(
+        request,
+        subject,
+        permission_id=INVENTORY_DEVICE_CREATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_inventory_device_retire(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(inventory_device_mutation_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_inventory_device(
+        request,
+        subject,
+        permission_id=INVENTORY_DEVICE_RETIRE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
 
 
 async def authorize_release_preflight_read(

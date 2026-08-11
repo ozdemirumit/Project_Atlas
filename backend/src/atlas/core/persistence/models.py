@@ -3791,3 +3791,46 @@ class FinalRecommendationDispositionModel(Base):
     environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class InventoryDeviceRecordModel(Base):
+    __tablename__ = "inventory_device_records"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "device_key",
+            name="uq_inventory_device_records_scope_key",
+        ),
+        UniqueConstraint(
+            "created_by",
+            "create_idempotency_key",
+            name="uq_inventory_device_records_actor_create_idem",
+        ),
+        UniqueConstraint(
+            "retired_by",
+            "retirement_idempotency_key",
+            name="uq_inventory_device_records_actor_retire_idem",
+        ),
+    )
+
+    device_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    device_key: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    display_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    device_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    vendor: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    model: Mapped[str] = mapped_column(String(160), nullable=False)
+    serial_number: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    management_address: Mapped[str | None] = mapped_column(String(253), nullable=True)
+    lifecycle: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    create_idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    retired_by: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    retirement_idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
