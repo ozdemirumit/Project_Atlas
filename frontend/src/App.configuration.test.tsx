@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./ApplicationCoordinator";
 
@@ -591,6 +591,10 @@ const bootstrapInvalidation = {
     infrastructure_mutation_authorized: false,
   },
 };
+
+beforeEach(() => {
+  window.history.replaceState({}, "", "/#/health/deployments");
+});
 
 afterEach(() => {
   cleanup();
@@ -3412,6 +3416,7 @@ describe("deployment configuration preview", () => {
   }, 15_000);
 
   it("shows only assigned human reviews and records an acknowledged non-approval outcome", async () => {
+    window.history.replaceState({}, "", "/#/health/governance");
     const reviewerIdentity = {
       data: {
         ...identity.data,
@@ -3576,6 +3581,7 @@ describe("deployment configuration preview", () => {
   });
 
   it("creates a non-executable receipt after the final accountable approval", async () => {
+    window.history.replaceState({}, "", "/#/health/governance");
     const finalIdentity = {
       data: {
         ...identity.data,

@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./ApplicationCoordinator";
 
@@ -1246,6 +1246,10 @@ const reportResponse = {
   },
 };
 
+beforeEach(() => {
+  window.history.replaceState({}, "", "/#/health/overview");
+});
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -1298,7 +1302,7 @@ describe("Atlas application shell", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "Storage estate assessment" }),
+      await screen.findByRole("heading", { name: "Health overview" }),
     ).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /^Workspace$/ }));
     expect(
@@ -1307,15 +1311,12 @@ describe("Atlas application shell", () => {
     expect(window.location.hash).toBe("#/workspace");
     fireEvent.click(screen.getByRole("button", { name: /^Health$/ }));
     expect(
-      await screen.findByRole("heading", { name: "Storage estate assessment" }),
+      await screen.findByRole("heading", { name: "Health overview" }),
     ).toBeVisible();
-    expect(window.location.hash).toBe("#/health");
+    expect(window.location.hash).toBe("#/health/overview");
     expect(screen.getByText("Human decision required")).toBeVisible();
-    const inventoryHeading = await screen.findByRole("heading", { name: "Storage systems" });
-    const reviewHeading = await screen.findByRole("heading", { name: "Assigned upgrade reviews" });
-    expect(
-      inventoryHeading.compareDocumentPosition(reviewHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).not.toBe(0);
+    expect(await screen.findByRole("heading", { name: "Storage systems" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Assigned upgrade reviews" })).toBeNull();
     expect(screen.getByLabelText("Health inventory and evidence")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /^Connectors$/ }));
     expect(await screen.findByRole("heading", { name: "Governed connector analysis" })).toBeVisible();
@@ -1325,6 +1326,9 @@ describe("Atlas application shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open context panel" }));
     expect(await screen.findByText("test")).toBeVisible();
     expect(await screen.findByText("Local Operator")).toBeVisible();
+    fireEvent.click(screen.getByRole("tab", { name: "Governance" }));
+    expect(window.location.hash).toBe("#/health/governance");
+    expect(await screen.findByRole("heading", { name: "Assigned upgrade reviews" })).toBeVisible();
     expect(await screen.findByText("Syslog and SIEM delivery")).toBeVisible();
     expect(screen.getByText("Enterprise SIEM synthetic TLS collector")).toBeVisible();
     expect(screen.getByText("Not confirmed")).toBeVisible();
@@ -1332,6 +1336,7 @@ describe("Atlas application shell", () => {
     expect(
       await screen.findByText(/Transport handoff recorded. SIEM ingestion remains unconfirmed/),
     ).toBeVisible();
+    fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
     expect(await screen.findAllByText("VSP One B28")).not.toHaveLength(0);
     expect(screen.getByText("VSP G400")).toBeVisible();
     expect(screen.getAllByText("CTL01").length).toBeGreaterThan(0);
@@ -1349,7 +1354,9 @@ describe("Atlas application shell", () => {
     expect(screen.getByText("Controller warning requires correlation")).toBeVisible();
     expect(screen.getByText(/event-log evidence is not configured/)).toBeVisible();
     expect(screen.getByText(/results do not authorize an infrastructure change/)).toBeVisible();
-    expect(screen.getByText("Start a bounded investigation")).toBeVisible();
+    fireEvent.click(screen.getByRole("tab", { name: "Investigate" }));
+    expect(window.location.hash).toBe("#/health/investigate");
+    expect(await screen.findByText("Start a bounded investigation")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Start investigation" }));
 
@@ -1398,6 +1405,7 @@ describe("Atlas application shell", () => {
   });
 
   it("signs in through the browser session and signs out with CSRF", async () => {
+    window.history.replaceState({}, "", "/#/health/governance");
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
     let authenticated = false;
     let logoutRequest: RequestInit | undefined;
@@ -1548,6 +1556,7 @@ describe("Atlas application shell", () => {
   }, 15_000);
 
   it("discovers authorized identity governance and revokes exact foreign access", async () => {
+    window.history.replaceState({}, "", "/#/health/governance");
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
     document.cookie = "atlas_csrf=csrf_governance_test; path=/; SameSite=Strict";
     const governanceRequests: { url: string; init: RequestInit | undefined }[] = [];
@@ -1678,6 +1687,7 @@ describe("Atlas application shell", () => {
   });
 
   it("keeps identity governance absent when enterprise discovery is forbidden", async () => {
+    window.history.replaceState({}, "", "/#/health/governance");
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
     const ordinaryIdentity = {
       ...identityResponse,
@@ -1830,6 +1840,7 @@ describe("Atlas application shell", () => {
   });
 
   it("discovers bounded audit governance for a Security Auditor and retries with CSRF", async () => {
+    window.history.replaceState({}, "", "/#/health/governance");
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
     document.cookie = "atlas_csrf=csrf_audit_test; path=/; SameSite=Strict";
     let retryRequest: RequestInit | undefined;
@@ -1941,6 +1952,7 @@ describe("Atlas application shell", () => {
   });
 
   it("keeps audit governance silent when an ordinary enterprise operator receives 403", async () => {
+    window.history.replaceState({}, "", "/#/health/governance");
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
     const operatorIdentity = {
       ...identityResponse,
