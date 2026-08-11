@@ -4,14 +4,74 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-132 |
-| Title | Bootstrap Plan presentation extraction |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#144](https://github.com/ozdemirumit/Project_Atlas/pull/144) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-025, ATLAS-026, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ATLAS-057, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088 |
+| Task ID | ATLAS-IMP-133 |
+| Title | Bootstrap Checkpoint presentation extraction |
+| Status | In Progress |
+| Branch | `agent/bootstrap-checkpoint-presentation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ATLAS-057, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089 |
 | Last Updated | 2026-08-10 |
-| Next Action | Define and implement Bootstrap Checkpoint presentation extraction |
+| Next Action | Publish IMP-133, complete PR/merged-main CI, then close the tracker on `main` |
+
+### ATLAS-IMP-133 Scope Rationale
+
+- IMP-132 closed with a separate 1.85 KB Bootstrap Plan chunk and reduced the transitional
+  operational chunk from 824.09 KB to 822.91 KB.
+- Bootstrap Checkpoint has an approximately 75-line read-only presentation for durable run,
+  revision, phase progress, lease-state, digest and expiry evidence before stateful actions.
+- ADR-089 accepts presentation-first extraction while state query, lease claim, invalidation,
+  rebase and every phase-changing workflow remain parent/server responsibilities.
+
+### ATLAS-IMP-133 Acceptance Criteria
+
+- Durability, run/revision/completion identity, bounded lease status, ordered checkpoint progress,
+  digest/expiry and empty state move into one independently tested lazy feature.
+- Parent authorized state query and all state-changing bootstrap workflows remain unchanged.
+- Forbidden, malformed or absent state remains absent; Connector routes do not download, evaluate
+  or mount the feature.
+- Phase state derives only from matching checkpoint/current-phase evidence or pending fallback; no
+  execution readiness is inferred.
+- Lazy load/render failure hides the entire checkpoint/workflow section and its controls.
+- No API, query cache, identity, RBAC, tenant, lease, invalidation, rebase, phase, rollback,
+  deployment or infrastructure authority moves into presentation.
+- ESLint, both TypeScript project references, full frontend tests and production build pass with a
+  separate feature chunk.
+- Live desktop/mobile validation covers checkpoint evidence, route isolation, overflow and final
+  application warning/error state.
+
+### ATLAS-IMP-133 Initial Evidence
+
+- IMP-132 merged through PR #144 as `52f86fde3bcc44898247d533f90d691fad6777fe`; successful PR
+  run `31420458893` and merged-main run `31421180164` passed frontend and backend jobs.
+- IMP-132 closure commit `762d693f0c66cc48eb3dc2cf6ddd9e3b9285547f` passed independent main
+  CI run `31421852082` with both jobs successful.
+- Bootstrap Plan is a separate 1.85 KB feature chunk. The production entry is 247.66 KB and the
+  deferred operational chunk is 822.91 KB.
+
+### ATLAS-IMP-133 Validation Evidence
+
+- `BootstrapCheckpointWorkspace.tsx` owns durability, run/revision/completion identity, bounded
+  lease labels, ordered checkpoint state, digest/expiry and empty-state presentation only. State
+  query, lease claim, invalidation, rebase and every phase-changing workflow remain outside it.
+- Four focused component tests cover durable/ephemeral and empty states, privacy-bounded lease
+  evidence, exact completed/current/pending order, digest/expiry and no-authority behavior. Existing
+  configuration/bootstrap integration coverage preserved malformed absence and governed workflows;
+  focused validation passed 25 tests across two files.
+- Full ESLint and both no-write TypeScript project references passed. The full frontend suite passed
+  75 files and 148 tests.
+- Production build transformed 1,992 modules and emitted a separate 2.46 KB Bootstrap Checkpoint
+  chunk. The transitional operational chunk decreased from 822.91 KB to 821.45 KB.
+- Live desktop validation passed at 1280 px against the server-produced empty checkpoint state:
+  durability and no-lease-on-view evidence rendered, only the separate review-intent control was
+  available, no phase action appeared, and document/workspace/empty-state widths had no horizontal
+  overflow. The final application warning/error log was empty.
+- A fresh direct Connector route rendered its governed analysis workspace, did not render or load
+  the Bootstrap Checkpoint feature, and had no application warning/error log.
+- Mobile validation passed at a 375 CSS-pixel viewport: the document remained 375/375 px, the
+  workspace remained 349/349 px, and empty-state/lease-review content remained 347/347 px. The
+  isolated iframe emitted only the known Browser instrumentation `MutationObserver` error; direct
+  Atlas pages were clean. Populated completed/current/pending checkpoint evidence remains covered by
+  the focused component test. GitHub publication remains pending.
 
 ### ATLAS-IMP-132 Scope Rationale
 
