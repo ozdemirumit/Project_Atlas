@@ -7,7 +7,7 @@ import {
   ApplicationSidebar,
   ApplicationTopbar,
 } from "../shell/ApplicationShell";
-import type { WorkspaceId } from "../shell/workspace";
+import type { WorkspaceCapabilityDestination, WorkspaceId } from "../shell/workspace";
 import { WorkspaceOverview } from "./WorkspaceOverview";
 import { useState } from "react";
 import { ShieldCheck } from "lucide-react";
@@ -15,9 +15,14 @@ import { ShieldCheck } from "lucide-react";
 interface WorkspaceLandingProps {
   identity: CurrentIdentity;
   onNavigate: (workspace: WorkspaceId) => void;
+  onNavigateCapability: (destination: WorkspaceCapabilityDestination) => void;
 }
 
-export function WorkspaceLanding({ identity, onNavigate }: WorkspaceLandingProps) {
+export function WorkspaceLanding({
+  identity,
+  onNavigate,
+  onNavigateCapability,
+}: WorkspaceLandingProps) {
   const queryClient = useQueryClient();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const statusQuery = useQuery({
@@ -86,7 +91,7 @@ export function WorkspaceLanding({ identity, onNavigate }: WorkspaceLandingProps
                 Sign-out was not completed. Your current session remains authoritative.
               </div>
             )}
-            <WorkspaceOverview onNavigate={onNavigate} />
+            <WorkspaceOverview onNavigate={onNavigateCapability} />
           </section>
         </div>
       </main>

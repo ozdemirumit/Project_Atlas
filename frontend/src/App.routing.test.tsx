@@ -6,25 +6,33 @@ const operationalRender = vi.hoisted(() => vi.fn());
 
 vi.mock("./OperationalApplication", () => ({
   OperationalApplication: ({
+    activeConnectorView,
     activeHealthView,
     activeWorkspace,
+    onNavigateConnectorView,
     onNavigateHealthView,
     onNavigate,
   }: {
+    activeConnectorView: "inventory" | "builder" | "runtime" | "knowledge";
     activeHealthView: "overview" | "investigate" | "deployments" | "governance";
     activeWorkspace: "Health" | "Connectors";
+    onNavigateConnectorView: (view: "knowledge") => void;
     onNavigateHealthView: (view: "governance") => void;
     onNavigate: (workspace: "Workspace") => void;
   }) => {
-    operationalRender(activeWorkspace, activeHealthView);
+    const activeView = activeWorkspace === "Connectors" ? activeConnectorView : activeHealthView;
+    operationalRender(activeWorkspace, activeView);
     return (
       <main>
-        <h1>Loaded {activeWorkspace} {activeHealthView}</h1>
+        <h1>Loaded {activeWorkspace} {activeView}</h1>
         <button type="button" onClick={() => onNavigate("Workspace")}>
           Return to Workspace
         </button>
         <button type="button" onClick={() => onNavigateHealthView("governance")}>
           Open governance
+        </button>
+        <button type="button" onClick={() => onNavigateConnectorView("knowledge")}>
+          Open connector knowledge
         </button>
       </main>
     );
@@ -127,11 +135,23 @@ describe("workspace route loading boundary", () => {
     expect(operationalRender).toHaveBeenCalledWith("Health", "overview");
   });
 
+  it("opens exact capability destinations from Workspace", async () => {
+    window.history.replaceState(null, "", "/#/workspace");
+    mockAuthenticatedRequests();
+    renderApp();
+    await screen.findByRole("heading", { name: "Enterprise operations" });
+
+    fireEvent.click(screen.getByRole("button", { name: /MCP Builder/ }));
+
+    expect(await screen.findByRole("heading", { name: "Loaded Connectors builder" })).toBeVisible();
+    expect(window.location.hash).toBe("#/connectors/builder");
+  });
+
   it("loads direct Connector and approval routes through the operational boundary", async () => {
     window.history.replaceState(null, "", "/#/connectors");
     mockAuthenticatedRequests();
     const view = renderApp();
-    expect(await screen.findByRole("heading", { name: "Loaded Connectors overview" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Loaded Connectors inventory" })).toBeVisible();
 
     view.unmount();
     window.history.replaceState(null, "", "/?approval_request_id=request.test#/workspace");
@@ -150,6 +170,16 @@ describe("workspace route loading boundary", () => {
 
   it("fails an unknown nested Health view back to Workspace", async () => {
     window.history.replaceState(null, "", "/#/health/unknown");
+    mockAuthenticatedRequests();
+    renderApp();
+
+    expect(await screen.findByRole("heading", { name: "Enterprise operations" })).toBeVisible();
+    expect(window.location.hash).toBe("#/workspace");
+    expect(operationalRender).not.toHaveBeenCalled();
+  });
+
+  it("fails an unknown nested Connector view back to Workspace", async () => {
+    window.history.replaceState(null, "", "/#/connectors/unknown");
     mockAuthenticatedRequests();
     renderApp();
 
@@ -182,9 +212,13 @@ describe("workspace route loading boundary", () => {
     expect(await screen.findByRole("heading", { name: "Loaded Health governance" })).toBeVisible();
     expect(window.location.hash).toBe("#/health/governance");
 
-    window.history.pushState(null, "", "/#/connectors");
+    window.history.pushState(null, "", "/#/connectors/runtime");
     window.dispatchEvent(new HashChangeEvent("hashchange"));
-    expect(await screen.findByRole("heading", { name: "Loaded Connectors overview" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Loaded Connectors runtime" })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open connector knowledge" }));
+    expect(await screen.findByRole("heading", { name: "Loaded Connectors knowledge" })).toBeVisible();
+    expect(window.location.hash).toBe("#/connectors/knowledge");
   });
 
   it("keeps Workspace fail closed until identity verification is retried successfully", async () => {

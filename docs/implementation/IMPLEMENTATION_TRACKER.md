@@ -4,14 +4,71 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-144 |
-| Title | Installed MCP lifecycle management |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#156](https://github.com/ozdemirumit/Project_Atlas/pull/156) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-100 |
+| Task ID | ATLAS-IMP-145 |
+| Title | Capability-aware workspace navigation |
+| Status | In Progress |
+| Branch | `agent/capability-deep-link-navigation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-031, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-101 |
 | Last Updated | 2026-08-11 |
-| Next Action | Audit remaining operator-visible management gaps and select ATLAS-IMP-145 from the approved roadmap |
+| Next Action | Deliver the validated slice through PR, CI and merge verification |
+
+### ATLAS-IMP-145 Scope Rationale
+
+- Product audit confirmed that all 13 Workspace capability buttons route only to a broad Health
+  or Connectors destination, so investigation, governance and deployment tasks open the wrong
+  initial view and connector task intent is lost.
+- Health already owns stable task views. Connector inventory, Builder and governed lifecycle
+  coverage exist but have no durable task-level route or accessible task navigation.
+- ADR-101 introduces typed destinations and connector subroutes without changing backend,
+  authorization, workflow state or ordered lifecycle prerequisites.
+
+### ATLAS-IMP-145 Acceptance Criteria
+
+- Every Workspace capability declares and displays an exact typed Health or Connector task
+  destination rather than an ambiguous owning workspace.
+- Health capabilities open Overview, Investigate, Deployments or Governance as appropriate.
+- Connectors exposes Inventory, Builder, Runtime and Knowledge tabs with canonical direct routes,
+  browser history support and backward-compatible `#/connectors` handling.
+- Connector task selection brings the corresponding existing governed section into view without
+  creating records, enabling controls or granting authority.
+- Unknown nested Health and Connector routes fail closed to Workspace.
+- Connector tabs support tab semantics, roving focus and arrow/home/end keyboard navigation.
+- Routing and component tests, full frontend quality gates, production build and live
+  desktop/mobile validation pass.
+
+### ATLAS-IMP-145 Initial Evidence
+
+- IMP-144 merged through PR #156 as `68171537d82c78223199814b6a532cacd43816a7`;
+  exact-head CI run `31522928126` and merged-main run `31523561165` passed.
+- IMP-144 tracker closure `7d57c80065e855b0b04beae0d4ac8e5dae1baa04` passed independent
+  main CI run `31524245855` before IMP-145 branched.
+- `WorkspaceOverview` currently accepts only `WorkspaceId`; every Health capability calls
+  `onNavigate("Health")` and every connector capability calls `onNavigate("Connectors")`.
+
+### ATLAS-IMP-145 Validation Evidence
+
+- All 13 Workspace capabilities now declare an exact typed destination. Health restores Overview,
+  Investigate, Deployments or Governance; Connectors restores Inventory, Builder, Runtime or
+  Knowledge through canonical nested hashes.
+- Connector task navigation uses accessible tab semantics, roving focus and arrow/home/end
+  keyboard behavior. Direct routes and browser history preserve the selected task, while unknown
+  nested routes fail closed to Workspace and bare `#/connectors` remains backward compatible.
+- Task selection scrolls only to existing governed sections and does not create records, bypass
+  prerequisites or add connector, credential, runtime, AI or infrastructure authority.
+- Six focused test files passed 20 tests. Full frontend ESLint and both TypeScript projects passed;
+  the complete suite passed 87 files and 210 tests.
+- Production build transformed 2,006 modules. The entry is 250.11 KB, the Installed MCP management
+  chunk is 11.60 KB and the known transitional operational chunk is 755.27 KB.
+- Live desktop validation confirmed exact Builder, Runtime and Governance destinations, browser
+  back restoration, keyboard selection and focused section placement at approximately 58 px.
+- Live mobile validation at 390 x 844 measured 390/390 px document and body width. All four
+  Connector tabs fit in a 366 x 44 px task strip, the closed navigation drawer is non-visible and
+  non-interactive, and no page-level JavaScript error occurred.
+
+### ATLAS-IMP-145 Delivery Evidence
+
+- Pending local and GitHub delivery.
 
 ### ATLAS-IMP-144 Scope Rationale
 

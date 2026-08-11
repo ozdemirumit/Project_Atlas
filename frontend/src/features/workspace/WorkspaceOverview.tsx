@@ -13,10 +13,10 @@ import {
   Workflow,
 } from "lucide-react";
 
-import type { WorkspaceId } from "../shell/workspace";
+import type { WorkspaceCapabilityDestination } from "../shell/workspace";
 
 interface Capability {
-  destination: Exclude<WorkspaceId, "Workspace">;
+  destination: WorkspaceCapabilityDestination;
   icon: typeof Activity;
   label: string;
 }
@@ -30,40 +30,45 @@ const capabilityGroups: CapabilityGroup[] = [
   {
     title: "Infrastructure operations",
     capabilities: [
-      { label: "Inventory and health", destination: "Health", icon: Activity },
-      { label: "Topology and service impact", destination: "Health", icon: GitBranch },
-      { label: "Investigation and RCA", destination: "Health", icon: ScanSearch },
-      { label: "Recommendations and reports", destination: "Health", icon: FileChartColumn },
+      { label: "Inventory and health", destination: { workspace: "Health", view: "overview" }, icon: Activity },
+      { label: "Topology and service impact", destination: { workspace: "Health", view: "overview" }, icon: GitBranch },
+      { label: "Investigation and RCA", destination: { workspace: "Health", view: "investigate" }, icon: ScanSearch },
+      { label: "Recommendations and reports", destination: { workspace: "Health", view: "investigate" }, icon: FileChartColumn },
     ],
   },
   {
     title: "Connector lifecycle",
     capabilities: [
-      { label: "MCP Builder", destination: "Connectors", icon: Blocks },
-      { label: "Package trust chain", destination: "Connectors", icon: ShieldCheck },
-      { label: "Runtime governance", destination: "Connectors", icon: Network },
+      { label: "MCP Builder", destination: { workspace: "Connectors", view: "builder" }, icon: Blocks },
+      { label: "Package trust chain", destination: { workspace: "Connectors", view: "builder" }, icon: ShieldCheck },
+      { label: "Runtime governance", destination: { workspace: "Connectors", view: "runtime" }, icon: Network },
     ],
   },
   {
     title: "AI decision support",
     capabilities: [
-      { label: "Knowledge indexing", destination: "Connectors", icon: BrainCircuit },
-      { label: "Protected model context", destination: "Connectors", icon: Bot },
-      { label: "Recommendation review", destination: "Connectors", icon: Workflow },
+      { label: "Knowledge indexing", destination: { workspace: "Connectors", view: "knowledge" }, icon: BrainCircuit },
+      { label: "Protected model context", destination: { workspace: "Connectors", view: "knowledge" }, icon: Bot },
+      { label: "Recommendation review", destination: { workspace: "Connectors", view: "knowledge" }, icon: Workflow },
     ],
   },
   {
     title: "Enterprise controls",
     capabilities: [
-      { label: "Identity and access", destination: "Health", icon: KeyRound },
-      { label: "Audit and SIEM export", destination: "Health", icon: ShieldCheck },
-      { label: "Deployment and bootstrap", destination: "Health", icon: Workflow },
+      { label: "Identity and access", destination: { workspace: "Health", view: "governance" }, icon: KeyRound },
+      { label: "Audit and SIEM export", destination: { workspace: "Health", view: "governance" }, icon: ShieldCheck },
+      { label: "Deployment and bootstrap", destination: { workspace: "Health", view: "deployments" }, icon: Workflow },
     ],
   },
 ];
 
 interface WorkspaceOverviewProps {
-  onNavigate: (workspace: WorkspaceId) => void;
+  onNavigate: (destination: WorkspaceCapabilityDestination) => void;
+}
+
+function destinationLabel(destination: WorkspaceCapabilityDestination): string {
+  const view = destination.view.charAt(0).toUpperCase() + destination.view.slice(1);
+  return `${destination.workspace} / ${view}`;
 }
 
 export function WorkspaceOverview({ onNavigate }: WorkspaceOverviewProps) {
@@ -101,7 +106,7 @@ export function WorkspaceOverview({ onNavigate }: WorkspaceOverviewProps) {
                 >
                   <Icon size={18} strokeWidth={1.8} />
                   <span>{label}</span>
-                  <small>{destination}</small>
+                  <small>{destinationLabel(destination)}</small>
                   <ArrowRight size={16} aria-hidden="true" />
                 </button>
               ))}

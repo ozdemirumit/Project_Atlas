@@ -31,7 +31,7 @@ import {
   UserX,
   X,
 } from "lucide-react";
-import { lazy, Suspense, type FormEvent, useState } from "react";
+import { lazy, Suspense, type FormEvent, useEffect, useState } from "react";
 
 import {
   createApiCredential,
@@ -76,12 +76,13 @@ import {
 import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
 import { ConnectorLifecycleOverview } from "./features/connectors/ConnectorLifecycleOverview";
+import { ConnectorWorkspaceNavigation } from "./features/connectors/ConnectorWorkspaceNavigation";
 import {
   ApplicationSidebar,
   ApplicationTopbar,
 } from "./features/shell/ApplicationShell";
 import { WorkspaceLoadBoundary } from "./features/shell/WorkspaceLoadBoundary";
-import type { HealthViewId, WorkspaceId } from "./features/shell/workspace";
+import type { ConnectorViewId, HealthViewId, WorkspaceId } from "./features/shell/workspace";
 import { HealthWorkspaceNavigation } from "./features/health/HealthWorkspaceNavigation";
 import { healthViewDescriptor } from "./features/health/healthWorkspace";
 import { PackageApprovalPanel } from "./features/connectors/PackageApprovalPanel";
@@ -320,22 +321,50 @@ const MCP_BUILDER_SECURITY_CONTROLS: Array<{
   { id: "capability_governance", label: "Capability governance" },
 ];
 
+const connectorViewTargetIds: Record<ConnectorViewId, string> = {
+  inventory: "connector-view-inventory",
+  builder: "connector-view-builder",
+  runtime: "connector-view-runtime",
+  knowledge: "connector-view-knowledge",
+};
+
 interface OperationalApplicationProps {
+  activeConnectorView: ConnectorViewId;
   activeHealthView: HealthViewId;
   activeWorkspace: Exclude<WorkspaceId, "Workspace">;
+  onNavigateConnectorView: (view: ConnectorViewId) => void;
   onNavigateHealthView: (view: HealthViewId) => void;
   onNavigate: (workspace: WorkspaceId) => void;
 }
 
 export function OperationalApplication({
+  activeConnectorView,
   activeHealthView,
   activeWorkspace,
+  onNavigateConnectorView,
   onNavigateHealthView,
   onNavigate,
 }: OperationalApplicationProps) {
   const queryClient = useQueryClient();
   const activeNavigation = activeWorkspace;
   const activeHealthViewDescriptor = healthViewDescriptor(activeHealthView);
+
+  useEffect(() => {
+    if (activeNavigation !== "Connectors") return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(connectorViewTargetIds[activeConnectorView]);
+      target?.scrollIntoView?.({
+        block: "start",
+        behavior:
+          typeof window.matchMedia === "function" &&
+          window.matchMedia("(prefers-reduced-motion: reduce)").matches
+            ? "auto"
+            : "smooth",
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeConnectorView, activeNavigation]);
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(shouldOpenInspector);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
@@ -2052,20 +2081,29 @@ export function OperationalApplication({
 
             {activeNavigation === "Connectors" && (
             <div className="mcp-builder-workspace">
-              <WorkspaceLoadBoundary compact resetKey="installed-mcp-management" workspace="Connectors">
-                <Suspense
-                  fallback={
-                    <div className="workspace-message" aria-live="polite" aria-busy="true">
-                      <Clock3 size={22} />
-                      <div><h2>Loading installed MCPs</h2><p>Preparing authorized package and instance lifecycle records.</p></div>
-                    </div>
-                  }
-                >
-                  <InstalledMcpManagementWorkspace />
-                </Suspense>
-              </WorkspaceLoadBoundary>
-              <ConnectorLifecycleOverview />
-              <section className="workspace-section mcp-builder-section">
+              <ConnectorWorkspaceNavigation
+                activeView={activeConnectorView}
+                onNavigate={onNavigateConnectorView}
+              />
+              <div id="connector-view-inventory" className="connector-view-anchor">
+                <WorkspaceLoadBoundary compact resetKey="installed-mcp-management" workspace="Connectors">
+                  <Suspense
+                    fallback={
+                      <div className="workspace-message" aria-live="polite" aria-busy="true">
+                        <Clock3 size={22} />
+                        <div><h2>Loading installed MCPs</h2><p>Preparing authorized package and instance lifecycle records.</p></div>
+                      </div>
+                    }
+                  >
+                    <InstalledMcpManagementWorkspace />
+                  </Suspense>
+                </WorkspaceLoadBoundary>
+              </div>
+              <ConnectorLifecycleOverview activeView={activeConnectorView} />
+              <section
+                className="workspace-section mcp-builder-section connector-view-anchor"
+                id="connector-view-builder"
+              >
                 <div className="section-heading">
                   <div>
                     <p className="eyebrow">SOURCE INTAKE</p>

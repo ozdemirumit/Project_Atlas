@@ -7,10 +7,14 @@ import {
   WorkspaceRouteLoading,
 } from "./features/shell/WorkspaceLoadBoundary";
 import {
+  connectorViewFromHash,
+  connectorViewHash,
+  type ConnectorViewId,
   healthViewFromHash,
   healthViewHash,
   type HealthViewId,
   isKnownWorkspaceHash,
+  type WorkspaceCapabilityDestination,
   type WorkspaceId,
   workspaceFromHash,
   workspaceHash,
@@ -47,6 +51,10 @@ function healthViewFromLocation(): HealthViewId {
   return healthViewFromHash(window.location.hash);
 }
 
+function connectorViewFromLocation(): ConnectorViewId {
+  return connectorViewFromHash(window.location.hash);
+}
+
 function operationalWorkspace(
   workspace: WorkspaceId,
 ): Exclude<WorkspaceId, "Workspace"> {
@@ -70,6 +78,9 @@ function IdentityVerificationFailure({ onRetry }: { onRetry: () => void }) {
 export function App() {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId>(workspaceFromLocation);
   const [activeHealthView, setActiveHealthView] = useState<HealthViewId>(healthViewFromLocation);
+  const [activeConnectorView, setActiveConnectorView] = useState<ConnectorViewId>(
+    connectorViewFromLocation,
+  );
   const [lastOperationalWorkspace, setLastOperationalWorkspace] = useState<
     Exclude<WorkspaceId, "Workspace">
   >(() => operationalWorkspace(workspaceFromLocation()));
@@ -86,6 +97,7 @@ export function App() {
     const syncWorkspace = () => {
       const workspace = workspaceFromLocation();
       setActiveHealthView(healthViewFromLocation());
+      setActiveConnectorView(connectorViewFromLocation());
       if (workspace !== "Workspace") {
         setLastOperationalWorkspace(workspace);
         setOperationalActivated(true);
@@ -108,6 +120,7 @@ export function App() {
     }
     setActiveWorkspace(workspace);
     if (workspace === "Health") setActiveHealthView("overview");
+    if (workspace === "Connectors") setActiveConnectorView("inventory");
     const nextHash = workspaceHash(workspace);
     if (window.location.hash !== nextHash) {
       window.history.pushState(
@@ -130,6 +143,29 @@ export function App() {
         "",
         `${window.location.pathname}${window.location.search}${nextHash}`,
       );
+    }
+  };
+
+  const navigateToConnectorView = (view: ConnectorViewId) => {
+    setActiveWorkspace("Connectors");
+    setLastOperationalWorkspace("Connectors");
+    setOperationalActivated(true);
+    setActiveConnectorView(view);
+    const nextHash = connectorViewHash(view);
+    if (window.location.hash !== nextHash) {
+      window.history.pushState(
+        null,
+        "",
+        `${window.location.pathname}${window.location.search}${nextHash}`,
+      );
+    }
+  };
+
+  const navigateToCapability = (destination: WorkspaceCapabilityDestination) => {
+    if (destination.workspace === "Health") {
+      navigateToHealthView(destination.view);
+    } else {
+      navigateToConnectorView(destination.view);
     }
   };
 
@@ -160,7 +196,11 @@ export function App() {
   return (
     <>
       {showWorkspace && identity && (
-        <WorkspaceLanding identity={identity} onNavigate={navigateToWorkspace} />
+        <WorkspaceLanding
+          identity={identity}
+          onNavigate={navigateToWorkspace}
+          onNavigateCapability={navigateToCapability}
+        />
       )}
       {activeWorkspace === "Workspace" && identityQuery.isLoading && (
         <WorkspaceRouteLoading workspace="Workspace" />
@@ -181,8 +221,10 @@ export function App() {
               fallback={<WorkspaceRouteLoading workspace={lastOperationalWorkspace} />}
             >
               <OperationalApplication
+                activeConnectorView={activeConnectorView}
                 activeHealthView={activeHealthView}
                 activeWorkspace={lastOperationalWorkspace}
+                onNavigateConnectorView={navigateToConnectorView}
                 onNavigateHealthView={navigateToHealthView}
                 onNavigate={navigateToWorkspace}
               />
