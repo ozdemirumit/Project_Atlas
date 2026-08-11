@@ -1408,6 +1408,35 @@ class ConnectorTargetConfigurationBindingModel(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
+class ConnectorUpgradeApprovalRequestModel(Base):
+    __tablename__ = "connector_upgrade_approval_requests"
+    __table_args__ = (
+        UniqueConstraint("plan_digest", name="uq_connector_upgrade_approval_requests_plan"),
+        UniqueConstraint(
+            "requested_by",
+            "idempotency_key",
+            name="uq_connector_upgrade_approval_requests_actor_idempotency",
+        ),
+    )
+
+    request_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source_record_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    instance_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    connector_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    plan_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    candidate_receipt_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    requested_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class ConnectorCredentialAssignmentModel(Base):
     __tablename__ = "connector_credential_assignments"
     __table_args__ = (

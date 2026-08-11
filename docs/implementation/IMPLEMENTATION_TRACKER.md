@@ -4,14 +4,71 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-147 |
-| Title | Governed connector upgrade plan |
-| Status | Complete |
-| Branch | `agent/mcp-upgrade-plan` (merged) |
-| Pull Request | [#159](https://github.com/ozdemirumit/Project_Atlas/pull/159) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-100, ADR-102, ADR-103 |
+| Task ID | ATLAS-IMP-148 |
+| Title | Connector upgrade approval request |
+| Status | In Progress |
+| Branch | `agent/mcp-upgrade-approval-request` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-102, ADR-103, ADR-104 |
 | Last Updated | 2026-08-12 |
-| Next Action | Audit the next incomplete product workflow and open ATLAS-IMP-148 |
+| Next Action | Deliver the implementation through exact-head PR CI and verified main merge |
+
+### ATLAS-IMP-148 Scope Rationale
+
+- IMP-147 exposes an exact, non-executable connector upgrade plan, but the plan cannot enter a
+  durable human approval boundary.
+- The existing general approval service is storage-recommendation specific and cannot validate or
+  preserve connector package, receipt and plan lineage.
+- ADR-104 introduces a connector-specific immutable request while keeping decisions, package
+  rebinding and operational execution outside this implementation slice.
+
+### ATLAS-IMP-148 Acceptance Criteria
+
+- An authorized enterprise human with MFA can submit one exact eligible connector plan for review
+  with a bounded purpose, explicit acknowledgement and idempotency key.
+- The request binds source instance/version, current and candidate receipts/digests, readiness and
+  plan digests, risk and exactly one active signed approval policy.
+- Configured-target, blocked, expired, drifted or otherwise ineligible plans fail closed. Zero or
+  multiple active policies fail closed.
+- The durable repository enforces unique plan and actor-idempotency boundaries; exact replay is safe.
+- Create/read endpoints are no-store, audited and omit fingerprints, idempotency keys, credentials,
+  endpoints and artifact-custody metadata.
+- The UI requires purpose and explicit no-authority acknowledgement, then displays pending state,
+  plan digest, expiry and requester/approver separation without decision or execution controls.
+- No package, configuration, runtime, target, credential or infrastructure mutation occurs.
+- Focused and full backend/frontend gates, migration checks, production build and live responsive
+  validation pass.
+
+### ATLAS-IMP-148 Initial Evidence
+
+- IMP-147 merged through PR #159 as `86d0f97f37cd6555c6628a4617eaeea3826392ff`;
+  exact-head CI run `31539350398` and merged-main run `31539902405` passed.
+- IMP-147 tracker closure `a7896a83361834ebd50730b6507b26de1b562006` passed independent
+  main CI run `31540566435` before IMP-148 branched.
+- ATLAS-037 explicitly separates request, decision and execution authority. Existing connector
+  package approval records cannot represent an instance-specific upgrade plan.
+
+### ATLAS-IMP-148 Validation Evidence
+
+- The immutable approval request binds the exact instance, current and candidate package receipts,
+  readiness result, upgrade plan digest, risk and one active signed policy selected server-side.
+  Configured-target, blocked, expired, drifted and ineligible plans fail closed.
+- Request creation requires an authorized enterprise human with MFA, a bounded purpose, explicit
+  no-authority acknowledgement and an idempotency key. Exact replay is safe; the durable repository
+  enforces one request per exact plan and actor-idempotency uniqueness.
+- Create/read APIs are no-store and audit recorded. Their safe projections omit fingerprints,
+  idempotency keys, credentials, target endpoints and artifact-custody metadata. The request remains
+  pending and grants no approval, decision, package rebinding, execution or infrastructure mutation.
+- Backend formatting and lint passed 1,182 files, mypy passed 1,181 source files, and the complete
+  backend suite passed 969 tests with three environment-specific Windows symlink skips. Alembic
+  reports the single linear `20260812_0097` head.
+- Frontend ESLint and both TypeScript projects passed; all 212 tests in 87 files passed. The
+  2,007-module production build completed with the existing advisory limited to the transitional
+  `OperationalApplication` chunk.
+- Live Playwright validation passed at 1,280 px and 390 px with no horizontal overflow. The approval
+  acknowledgement, request action and pending evidence are accessible; the mobile review dialog is
+  full viewport and shows requester/approver separation without approval or execution controls.
+  Deliberately unmocked unrelated workspaces produced only the expected 403 resource entries.
 
 ### ATLAS-IMP-147 Scope Rationale
 

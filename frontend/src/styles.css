@@ -846,6 +846,67 @@ textarea:focus-visible {
   line-height: 1.45;
 }
 
+.installed-mcp-approval-request {
+  display: grid;
+  gap: 11px;
+  padding-top: 13px;
+  border-top: 1px solid #d1dcda;
+}
+
+.installed-mcp-approval-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  color: #315f54;
+}
+
+.installed-mcp-approval-heading div,
+.installed-mcp-approval-request label {
+  display: grid;
+  gap: 4px;
+}
+
+.installed-mcp-approval-heading span,
+.installed-mcp-approval-request p {
+  margin: 0;
+  color: #63736e;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.installed-mcp-approval-request textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+
+.installed-mcp-approval-request > .primary-button {
+  width: fit-content;
+}
+
+.installed-mcp-approval-request dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.installed-mcp-approval-request dl div {
+  min-width: 0;
+}
+
+.installed-mcp-approval-request dt {
+  color: #76837f;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.installed-mcp-approval-request dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  font-weight: 650;
+}
+
 .installed-mcp-retire {
   border-color: #8a5948;
   color: #fff;
@@ -901,6 +962,15 @@ textarea:focus-visible {
   }
 
   .installed-mcp-plan-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .installed-mcp-approval-request dl {
+    grid-template-columns: 1fr;
+  }
+
+  .installed-mcp-approval-request > .primary-button {
     width: 100%;
     justify-content: center;
   }
