@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-144 |
 | Title | Installed MCP lifecycle management |
-| Status | In Progress |
-| Branch | `agent/mcp-lifecycle-management` |
-| Pull Request | Pending |
+| Status | Complete |
+| Branch | `main` |
+| Pull Request | [#156](https://github.com/ozdemirumit/Project_Atlas/pull/156) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-100 |
 | Last Updated | 2026-08-11 |
-| Next Action | Implement installed package discovery, connector instance add/list/retire APIs and the visible MCP management workspace |
+| Next Action | Audit remaining operator-visible management gaps and select ATLAS-IMP-145 from the approved roadmap |
 
 ### ATLAS-IMP-144 Scope Rationale
 
@@ -89,7 +89,11 @@
 
 ### ATLAS-IMP-144 Delivery Evidence
 
-- Pending local and GitHub delivery.
+- Exact PR head `acf2a019a57f01aa8e77a21033fbe9e2deb975c3` passed Continuous Integration
+  run `31522928126`, including frontend and backend jobs.
+- PR #156 was squash-merged to `main` as `68171537d82c78223199814b6a532cacd43816a7`.
+  Merged-main Continuous Integration run `31523561165` passed frontend and backend jobs, and the
+  local `main` branch was fast-forwarded to the same verified commit before tracker closure.
 
 ### ATLAS-IMP-143 Scope Rationale
 
