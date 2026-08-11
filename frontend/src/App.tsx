@@ -77,7 +77,6 @@ import {
   renderBootstrapConfiguration,
   type BootstrapConfigurationRenderingResult,
 } from "./api/bootstrapConfigurationRendering";
-import { claimBootstrapLease, type BootstrapClaimResult } from "./api/bootstrapClaim";
 import { getBootstrapPlan } from "./api/bootstrapPlan";
 import { previewBootstrapInvalidation } from "./api/bootstrapInvalidation";
 import { rebaseBootstrapPlan, type BootstrapRebaseResult } from "./api/bootstrapRebase";
@@ -228,6 +227,9 @@ const BootstrapPlanWorkspace = lazy(
 );
 const BootstrapCheckpointWorkspace = lazy(
   () => import("./features/health/BootstrapCheckpointWorkspace"),
+);
+const BootstrapLeaseWorkspace = lazy(
+  () => import("./features/health/BootstrapLeaseWorkspace"),
 );
 const BootstrapInvalidationWorkspace = lazy(
   () => import("./features/health/BootstrapInvalidationWorkspace"),
@@ -451,10 +453,6 @@ export function OperationalApplication({
   const [completionReceiptAcknowledged, setCompletionReceiptAcknowledged] = useState(false);
   const [completionReceipt, setCompletionReceipt] =
     useState<UpgradeReviewCompletionReceipt | null>(null);
-  const [bootstrapClaimJustification, setBootstrapClaimJustification] = useState("");
-  const [bootstrapClaimPending, setBootstrapClaimPending] = useState(false);
-  const [bootstrapClaimResult, setBootstrapClaimResult] =
-    useState<BootstrapClaimResult | null>(null);
   const [pendingDisableSubjectId, setPendingDisableSubjectId] = useState<string | null>(null);
   const [investigationQuestion, setInvestigationQuestion] = useState(
     "What evidence explains the current storage warning?",
@@ -1179,9 +1177,6 @@ export function OperationalApplication({
       setUpgradeJustification("");
       setUpgradePending(false);
       setUpgradeSimulation(null);
-      setBootstrapClaimJustification("");
-      setBootstrapClaimPending(false);
-      setBootstrapClaimResult(null);
       await queryClient.invalidateQueries({ queryKey: ["current-identity"] });
     },
   });
@@ -1881,25 +1876,6 @@ export function OperationalApplication({
       setHumanReviewAcknowledged(false);
     },
   });
-  const bootstrapClaimMutation = useMutation({
-    mutationFn: () =>
-      claimBootstrapLease({
-        state: bootstrapState!,
-        plan: bootstrapPlan!,
-        configuration: deploymentConfiguration!,
-        scope: identity!.scope,
-        justification: bootstrapClaimJustification.trim(),
-      }),
-    onSuccess: async (response) => {
-      setBootstrapClaimResult(response.data);
-      setBootstrapClaimPending(false);
-      setBootstrapClaimJustification("");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["bootstrap-state"] }),
-        queryClient.invalidateQueries({ queryKey: ["bootstrap-invalidation"] }),
-      ]);
-    },
-  });
   const artifactExecution =
     artifactAcquisitionResult?.execution ?? bootstrapState?.run?.artifact_acquisition;
   const configurationExecution =
@@ -1930,12 +1906,6 @@ export function OperationalApplication({
       releasePreflight.profile === bootstrapState.run.profile &&
       releasePreflight.state !== "failed" &&
       releasePreflight.state !== "unchecked",
-  );
-  const bootstrapLeaseAvailable = Boolean(
-    bootstrapState?.lease_available &&
-      bootstrapPlan?.state === "ready" &&
-      deploymentConfiguration?.state === "passed" &&
-      bootstrapState?.run?.state !== "completed",
   );
   const configurationPhaseAvailable = Boolean(
     bootstrapState?.run &&
@@ -11200,89 +11170,13 @@ export function OperationalApplication({
                         )}
                     </>
                   )}
-                  {bootstrapLeaseAvailable && !bootstrapClaimPending && (
-                    <div className="bootstrap-claim-action">
-                      <div>
-                        <strong>
-                          {bootstrapState.run ? "Reclaim coordination lease" : "Initialize bootstrap run"}
-                        </strong>
-                        <p>
-                          Establishes the exact plan lock and checkpoint boundary. It does not run a
-                          phase or write release artifacts.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setBootstrapClaimResult(null);
-                          setBootstrapClaimPending(true);
-                        }}
-                      >
-                        <LockKeyhole size={14} /> Review lease
-                      </button>
-                    </div>
-                  )}
-                  {bootstrapClaimPending && bootstrapLeaseAvailable && (
-                    <div className="bootstrap-claim-confirmation" role="dialog">
-                      <div>
-                        <strong>Confirm bootstrap coordination lease</strong>
-                        <p>
-                          The exact release, configuration, plan, and phase order will be locked to
-                          this browser session for 10 minutes.
-                        </p>
-                      </div>
-                      <label>
-                        Lease justification
-                        <input
-                          value={bootstrapClaimJustification}
-                          maxLength={500}
-                          onChange={(event) => setBootstrapClaimJustification(event.target.value)}
-                          placeholder="Record the reviewed reason for coordinating this bootstrap run"
-                        />
-                      </label>
-                      {bootstrapClaimMutation.isError && (
-                        <div className="impact-message impact-error" role="alert">
-                          <AlertTriangle size={16} /> The coordination lease was not established.
-                        </div>
-                      )}
-                      <div className="bootstrap-claim-confirm-actions">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setBootstrapClaimPending(false);
-                            setBootstrapClaimJustification("");
-                          }}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          className="bootstrap-claim-confirm"
-                          type="button"
-                          disabled={
-                            bootstrapClaimJustification.trim().length < 12 ||
-                            bootstrapClaimMutation.isPending
-                          }
-                          onClick={() => bootstrapClaimMutation.mutate()}
-                        >
-                          <LockKeyhole size={14} /> Confirm lease
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  {bootstrapClaimResult && (
-                    <div className="bootstrap-claim-result" role="status">
-                      <CheckCircle2 size={18} />
-                      <div>
-                        <strong>Coordination lease established</strong>
-                        <p>
-                          Run {bootstrapClaimResult.run.run_id} is locked at revision {" "}
-                          {bootstrapState.run?.run_id === bootstrapClaimResult.run.run_id
-                            ? bootstrapState.run.version
-                            : bootstrapClaimResult.run.version}
-                          .
-                        </p>
-                      </div>
-                    </div>
+                  {bootstrapPlan && deploymentConfiguration && identity && (
+                    <BootstrapLeaseWorkspace
+                      configuration={deploymentConfiguration}
+                      plan={bootstrapPlan}
+                      scope={identity.scope}
+                      state={bootstrapState}
+                    />
                   )}
                   <div className="safety-notice">
                     <ShieldCheck size={16} />

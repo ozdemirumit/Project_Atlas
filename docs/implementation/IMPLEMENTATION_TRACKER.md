@@ -4,14 +4,84 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-134 |
-| Title | Bootstrap Invalidation presentation extraction |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#146](https://github.com/ozdemirumit/Project_Atlas/pull/146) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-028, ATLAS-029, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ATLAS-057, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090 |
+| Task ID | ATLAS-IMP-135 |
+| Title | Bootstrap Lease workflow ownership extraction |
+| Status | In Progress |
+| Branch | `agent/bootstrap-lease-workflow` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-025, ATLAS-026, ATLAS-027, ATLAS-028, ATLAS-029, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-038, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ATLAS-057, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090, ADR-091 |
 | Last Updated | 2026-08-11 |
-| Next Action | Define the next stateful Bootstrap workflow ownership slice |
+| Next Action | Extract the exact-input Bootstrap lease workflow into one governed Health owner |
+
+### ATLAS-IMP-135 Scope Rationale
+
+- IMP-134 closed with a separate 2.56 KB Bootstrap Invalidation chunk and reduced the transitional
+  operational chunk from 821.45 KB to 819.78 KB.
+- Coordination lease is the first bounded stateful Bootstrap workflow: it has explicit intent,
+  exact run revision, audited justification, ten-minute lease, idempotency, concurrency and recovery
+  responsibilities but no phase-execution authority.
+- ADR-091 assigns the complete review/mutation/recovery lifecycle to one lazy Health feature while
+  authorized queries and all deployment phase workflows remain outside it.
+
+### ATLAS-IMP-135 Acceptance Criteria
+
+- Eligibility, review intent, justification, confirmation, mutation, error/result presentation and
+  Bootstrap state/invalidation cache recovery move into one independently tested lazy feature.
+- Reviewed intent binds run identity/revision, plan digest/resume key, configuration digest and
+  organization/environment/site scope; changed inputs require a new review.
+- Initial claim and expired-lease reclaim retain version-bound idempotency, exact phase order,
+  ten-minute duration and server-validated false execution/infrastructure authority.
+- Failure performs no automatic retry, clears stale intent, refreshes authoritative evidence and
+  requires a new review.
+- Unavailable lease, blocked plan, failed configuration, completed run, forbidden/malformed/absent
+  inputs and non-Health routes expose no workflow.
+- Parent state/query composition and every release acquisition or Bootstrap phase workflow remain
+  unchanged.
+- Full ESLint, both TypeScript project references, full frontend tests and production build pass
+  with a separate feature chunk.
+- Live desktop/mobile validation covers lease review/cancel, route isolation, overflow and final
+  application warning/error state without executing a claim.
+
+### ATLAS-IMP-135 Initial Evidence
+
+- IMP-134 merged through PR #146 as `455d1bba7d39109da0867834b958190ea6a8b99c`; PR run
+  `31468997010` and merged-main run `31469582824` passed frontend and backend jobs.
+- IMP-134 closure commit `744419ab3abe1c92bcaf4d2572a2b1a44422645f` passed independent main
+  CI run `31470003977` with both jobs successful.
+- Bootstrap Invalidation is a separate 2.56 KB feature chunk. The production entry is 247.70 KB and
+  the deferred operational chunk is 819.78 KB.
+
+### ATLAS-IMP-135 Validation Evidence
+
+- `BootstrapLeaseWorkspace.tsx` owns eligibility presentation, exact-input review fingerprint,
+  justification, confirmation, version-bound mutation, bounded error/result state and authoritative
+  Bootstrap state/invalidation cache recovery. Parent state/query composition and every phase
+  workflow remain outside it.
+- Five focused component tests cover exact initial claim input and ten-minute duration,
+  revision-bound expired-lease reclaim, stale-intent invalidation, conflict recovery with a new
+  review requirement, unavailable gates, cancel/no-call behavior and absence of phase authority.
+  Existing configuration/bootstrap integration coverage preserved lease-before-phase behavior;
+  focused validation passed 26 tests across two files.
+- Full ESLint and both no-write TypeScript project references passed. A cold lazy-route expectation
+  now carries an explicit 10-second test boundary instead of the framework's timing-sensitive
+  three-second default. The full frontend suite passed 77 files and 157 tests.
+- Production build transformed 1,994 modules and emitted a separate 4.97 KB Bootstrap Lease chunk
+  plus a 13.24 KB shared Bootstrap State chunk. The transitional operational chunk decreased from
+  819.78 KB to 803.42 KB; the production entry is 247.78 KB.
+- Live desktop validation passed at 1280 px against the server-produced empty checkpoint state:
+  one review control opened an exact-input dialog, confirmation was initially disabled, a bounded
+  justification enabled it, and cancel restored the single review control without a claim, result
+  or alert. Empty checkpoint evidence remained unchanged; document, Health workspace and lease
+  action widths had no horizontal overflow. The 4.97 KB feature asset was observed only after the
+  Health route rendered it, and the direct application warning/error log was empty.
+- A fresh direct Connector route rendered its governed analysis workspace, did not render or load
+  the Bootstrap Lease feature, had 1280/1280 px document width and produced no application
+  warning/error log.
+- Mobile validation passed inside a temporary 375 CSS-pixel harness: review opened the dialog with
+  confirmation disabled, cancel returned one review control, and no claim/result/alert appeared.
+  The embedded document and Health workspace remained 360/360 px; the lease action remained
+  332/332 px. The temporary harness was removed after validation. It emitted only the known Browser
+  iframe-instrumentation `MutationObserver` error; both direct Atlas pages were clean.
 
 ### ATLAS-IMP-134 Scope Rationale
 
