@@ -4,7 +4,8 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Any, cast
 
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
@@ -56,6 +57,35 @@ class PostgreSQLConnectorInstanceRepository:
             )
             return self._to_domain(row.payload) if row else None
 
+    async def get_by_retirement_key(
+        self, *, retired_by: str, idempotency_key: str
+    ) -> ConnectorInstanceRecord | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorInstanceRecordModel).where(
+                    ConnectorInstanceRecordModel.retired_by == retired_by,
+                    ConnectorInstanceRecordModel.retirement_idempotency_key == idempotency_key,
+                )
+            )
+            return self._to_domain(row.payload) if row else None
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorInstanceRecord, ...]:
+        async with self._sessions() as session:
+            rows = await session.scalars(
+                select(ConnectorInstanceRecordModel)
+                .where(
+                    ConnectorInstanceRecordModel.organization_id == organization_id,
+                    ConnectorInstanceRecordModel.environment_id == environment_id,
+                )
+                .order_by(
+                    ConnectorInstanceRecordModel.display_name,
+                    ConnectorInstanceRecordModel.instance_id,
+                )
+            )
+            return tuple(self._to_domain(row.payload) for row in rows)
+
     async def add(self, record: ConnectorInstanceRecord) -> bool:
         payload = ConnectorInstanceCreationService._normalize(asdict(record))
         assert isinstance(payload, dict)
@@ -74,6 +104,11 @@ class PostgreSQLConnectorInstanceRepository:
                         organization_id=record.organization_id,
                         environment_id=record.environment_id,
                         canonical_digest=record.canonical_digest,
+                        display_name=record.display_name,
+                        instance_state=record.instance_state,
+                        version=record.version,
+                        retired_by=record.retired_by,
+                        retirement_idempotency_key=record.retirement_idempotency_key,
                         payload=payload,
                     )
                 )
@@ -83,6 +118,35 @@ class PostgreSQLConnectorInstanceRepository:
                 return False
         return True
 
+    async def update(self, record: ConnectorInstanceRecord, *, expected_version: int) -> bool:
+        payload = ConnectorInstanceCreationService._normalize(asdict(record))
+        assert isinstance(payload, dict)
+        async with self._sessions() as session:
+            try:
+                result = cast(
+                    CursorResult[Any],
+                    await session.execute(
+                        update(ConnectorInstanceRecordModel)
+                        .where(
+                            ConnectorInstanceRecordModel.record_id == record.record_id,
+                            ConnectorInstanceRecordModel.version == expected_version,
+                        )
+                        .values(
+                            version=record.version,
+                            instance_state=record.instance_state,
+                            retired_by=record.retired_by,
+                            retirement_idempotency_key=record.retirement_idempotency_key,
+                            canonical_digest=record.canonical_digest,
+                            payload=payload,
+                        )
+                    ),
+                )
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+                return False
+        return result.rowcount == 1
+
     async def close(self) -> None:
         await self._engine.dispose()
 
@@ -90,4 +154,6 @@ class PostgreSQLConnectorInstanceRepository:
     def _to_domain(raw: dict[str, Any]) -> ConnectorInstanceRecord:
         payload = dict(raw)
         payload["created_at"] = datetime.fromisoformat(str(payload["created_at"]))
+        if payload.get("retired_at") is not None:
+            payload["retired_at"] = datetime.fromisoformat(str(payload["retired_at"]))
         return ConnectorInstanceRecord(**cast(Any, payload))

@@ -42,4 +42,7 @@ export const connectorInstanceRecord = {
   deployment_approved: false,
   infrastructure_mutation_performed: false,
   reused: false,
+  retired_by: null,
+  retired_at: null,
+  retirement_reason: null,
 } satisfies ConnectorInstanceRecord;

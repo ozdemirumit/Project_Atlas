@@ -289,6 +289,28 @@ class PackageInstallationService:
         )
         return receipt
 
+    async def list(
+        self, *, actor: AuthenticatedSubject, correlation_id: str
+    ) -> tuple[ConnectorPackageInstallationReceipt, ...]:
+        self._require_enterprise_human(actor)
+        receipts = await self._repository.list_scope(
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
+        for receipt in receipts:
+            self._verify_receipt(receipt)
+            self._require_scope(actor, receipt.organization_id, receipt.environment_id)
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_package_installations_listed",
+            self._environment_id,
+            None,
+            (("count", str(len(receipts))),),
+            permission_id=INSTALLATION_READ_PERMISSION,
+        )
+        return receipts
+
     async def connector_instance_creation_source(
         self, *, receipt_id: str
     ) -> tuple[

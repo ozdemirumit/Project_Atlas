@@ -5,7 +5,10 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from atlas.api.schemas import ResponseMeta
-from atlas.modules.connectors.domain.instance_creation import ConnectorInstanceRecord
+from atlas.modules.connectors.domain.instance_creation import (
+    ConnectorInstanceCreationPolicySnapshot,
+    ConnectorInstanceRecord,
+)
 
 STABLE_ID = r"^[a-z][a-z0-9_.:-]{2,127}$"
 DIGEST = r"^[a-f0-9]{64}$"
@@ -26,6 +29,41 @@ class ConnectorInstanceCreationInput(BaseModel):
     instance_policy_digest: str = Field(pattern=DIGEST)
     purpose: str = Field(min_length=20, max_length=1000)
     acknowledged_instance_is_disabled_and_grants_no_target_or_runtime_authority: bool
+
+
+class ConnectorInstanceRetirementInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = Field(
+        default="atlas.connector-instance-retirement-input.v1", pattern=STABLE_ID
+    )
+    expected_version: int = Field(ge=1)
+    reason: str = Field(min_length=20, max_length=1000)
+    acknowledged_retirement_preserves_history_and_performs_no_runtime_action: bool
+
+
+class ConnectorInstanceCreationPolicyData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy_id: str
+    schema_version: str
+    version: int
+    organization_id: str
+    environment_id: str
+    policy_version: str
+    allowed_sdk_profiles: tuple[str, ...]
+    allowed_capability_classes: tuple[str, ...]
+    required_initial_state: str
+    maximum_instance_key_length: int
+    maximum_display_name_length: int
+    expires_at: datetime
+    canonical_digest: str
+
+    @classmethod
+    def from_domain(
+        cls, policy: ConnectorInstanceCreationPolicySnapshot
+    ) -> ConnectorInstanceCreationPolicyData:
+        return cls(**{field: getattr(policy, field) for field in cls.model_fields})
 
 
 class ConnectorInstanceRecordData(BaseModel):
@@ -70,6 +108,9 @@ class ConnectorInstanceRecordData(BaseModel):
     deployment_approved: bool
     infrastructure_mutation_performed: bool
     reused: bool
+    retired_by: str | None
+    retired_at: datetime | None
+    retirement_reason: str | None
 
     @classmethod
     def from_domain(cls, record: ConnectorInstanceRecord) -> ConnectorInstanceRecordData:
@@ -80,4 +121,18 @@ class ConnectorInstanceCreationResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: ConnectorInstanceRecordData
+    meta: ResponseMeta
+
+
+class ConnectorInstanceListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: tuple[ConnectorInstanceRecordData, ...]
+    meta: ResponseMeta
+
+
+class ConnectorInstanceCreationPolicyListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: tuple[ConnectorInstanceCreationPolicyData, ...]
     meta: ResponseMeta

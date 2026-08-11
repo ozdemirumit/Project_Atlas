@@ -98,6 +98,33 @@ function isInstallationResponse(
   );
 }
 
+function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
+export async function getConnectorPackageInstallations(): Promise<
+  ConnectorPackageInstallationReceipt[]
+> {
+  const response = await apiFetch("/api/v1/connectors/package-installation-receipts", {
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    throw new Error(`Connector package inventory failed with ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  if (!payload || typeof payload !== "object" || !("data" in payload)) {
+    throw new Error("Connector package inventory was malformed");
+  }
+  const data: unknown = payload.data;
+  if (
+    !isUnknownArray(data) ||
+    !data.every((item) => isInstallationResponse({ data: item }))
+  ) {
+    throw new Error("Connector package inventory returned unsafe records");
+  }
+  return data as ConnectorPackageInstallationReceipt[];
+}
+
 export async function createConnectorPackageInstallation(input: {
   registration: ConnectorPackageRegistrationRecord;
   policyId: string;

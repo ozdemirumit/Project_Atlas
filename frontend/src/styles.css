@@ -167,7 +167,427 @@ textarea:focus-visible {
   margin: 12px 0 0;
 }
 
+.installed-mcp-workspace {
+  display: grid;
+  min-width: 0;
+  max-width: 1120px;
+  gap: 16px;
+  margin: 0 auto 24px;
+  padding: 4px 0 24px;
+  border-bottom: 1px solid #dce4e1;
+}
+
+.installed-mcp-heading,
+.installed-mcp-heading-actions,
+.installed-mcp-toolbar,
+.installed-mcp-search,
+.installed-mcp-status,
+.installed-mcp-empty,
+.installed-mcp-footnote,
+.installed-mcp-dialog header,
+.installed-mcp-dialog footer,
+.installed-mcp-retirement-impact {
+  display: flex;
+  align-items: center;
+}
+
+.installed-mcp-heading {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.installed-mcp-heading > div:first-child {
+  min-width: 0;
+}
+
+.installed-mcp-heading h2 {
+  margin: 2px 0 0;
+  font-size: 20px;
+  letter-spacing: 0;
+}
+
+.installed-mcp-heading p:not(.eyebrow) {
+  margin: 5px 0 0;
+  color: #61716d;
+  font-size: 12px;
+}
+
+.installed-mcp-heading-actions {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.installed-mcp-heading-actions button {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.installed-mcp-toolbar {
+  min-width: 0;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #dce4e1;
+}
+
+.installed-mcp-filters {
+  display: grid;
+  width: min(100%, 300px);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 3px;
+  border: 1px solid #bdcbc6;
+  border-radius: 6px;
+  background: #edf2f0;
+}
+
+.installed-mcp-filters button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #52635d;
+  font-size: 12px;
+  font-weight: 740;
+  cursor: pointer;
+}
+
+.installed-mcp-filters button[data-active="true"] {
+  background: #fff;
+  color: #175743;
+  box-shadow: 0 1px 3px rgb(23 45 38 / 14%);
+}
+
+.installed-mcp-search {
+  width: min(100%, 320px);
+  min-width: 0;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid #c7d1ce;
+  border-radius: 5px;
+  color: #62716c;
+  background: #fff;
+}
+
+.installed-mcp-search input {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+}
+
+.installed-mcp-status,
+.installed-mcp-empty {
+  min-height: 62px;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px 14px;
+  border: 1px dashed #b6c5c0;
+  border-radius: 6px;
+  color: #4b5d57;
+  background: #f8faf9;
+}
+
+.installed-mcp-status > div,
+.installed-mcp-empty > div {
+  display: grid;
+  gap: 3px;
+}
+
+.installed-mcp-status span,
+.installed-mcp-empty span {
+  color: #687772;
+  font-size: 12px;
+}
+
+.installed-mcp-status.error-state {
+  border-style: solid;
+  border-color: #d7a29d;
+  color: #823f39;
+  background: #fff7f6;
+}
+
+.installed-mcp-empty.compact {
+  min-height: 0;
+}
+
+.installed-mcp-table-wrap {
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid #d5dfdc;
+  border-radius: 6px;
+}
+
+.installed-mcp-table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.installed-mcp-table th,
+.installed-mcp-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #e0e6e4;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.installed-mcp-table th {
+  color: #5d6c68;
+  background: #f5f8f7;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.installed-mcp-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.installed-mcp-table td:first-child,
+.installed-mcp-table td:nth-child(2) {
+  min-width: 180px;
+}
+
+.installed-mcp-table td:first-child strong,
+.installed-mcp-table td:first-child code,
+.installed-mcp-table td:nth-child(2) strong,
+.installed-mcp-table td:nth-child(2) span {
+  display: block;
+  margin-top: 3px;
+}
+
+.installed-mcp-table code,
+.installed-mcp-table td:nth-child(2) span,
+.installed-mcp-table td:nth-child(4) {
+  overflow-wrap: anywhere;
+  color: #6a7874;
+  font-size: 10px;
+}
+
+.installed-mcp-event-label {
+  display: block;
+  color: #6a7874;
+  font-size: 10px;
+}
+
+.installed-mcp-table th:last-child,
+.installed-mcp-table td:last-child {
+  width: 52px;
+  text-align: center;
+}
+
+.installed-mcp-footnote {
+  justify-content: space-between;
+  gap: 12px;
+  color: #61716d;
+  font-size: 11px;
+}
+
+.installed-mcp-dialog-backdrop {
+  position: fixed;
+  z-index: 35;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(20 32 28 / 42%);
+}
+
+.installed-mcp-dialog {
+  display: grid;
+  width: min(100%, 680px);
+  max-height: calc(100vh - 40px);
+  min-width: 0;
+  gap: 16px;
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid #becbc7;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 18px 50px rgb(17 31 26 / 24%);
+}
+
+.installed-mcp-dialog.retirement {
+  width: min(100%, 560px);
+}
+
+.installed-mcp-dialog header {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #d8e1de;
+}
+
+.installed-mcp-dialog h3 {
+  margin: 2px 0 0;
+  font-size: 17px;
+  letter-spacing: 0;
+}
+
+.installed-mcp-dialog > label,
+.installed-mcp-form-grid label {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  color: #354640;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.installed-mcp-dialog input:not([type="checkbox"]),
+.installed-mcp-dialog select,
+.installed-mcp-dialog textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #bac7c3;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.installed-mcp-dialog input:not([type="checkbox"]),
+.installed-mcp-dialog select {
+  height: 38px;
+  padding: 0 10px;
+}
+
+.installed-mcp-dialog textarea {
+  resize: vertical;
+  padding: 9px 10px;
+  line-height: 1.45;
+}
+
+.installed-mcp-form-grid {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.installed-mcp-package-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  color: #5f6e69;
+  font-size: 11px;
+}
+
+.installed-mcp-dialog .approval-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.installed-mcp-dialog .approval-check input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+}
+
+.installed-mcp-dialog footer {
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #d8e1de;
+}
+
+.installed-mcp-dialog footer button {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.installed-mcp-dialog footer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.installed-mcp-retirement-impact {
+  align-items: flex-start;
+  gap: 9px;
+  padding: 12px;
+  border-left: 3px solid #a87942;
+  color: #5f513f;
+  background: #fff9ef;
+}
+
+.installed-mcp-retirement-impact p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.installed-mcp-retire {
+  border-color: #8a5948;
+  color: #fff;
+  background: #8a5948;
+}
+
 @media (max-width: 560px) {
+  .installed-mcp-heading,
+  .installed-mcp-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .installed-mcp-heading-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .installed-mcp-heading-actions .state-badge {
+    flex: 1 1 auto;
+  }
+
+  .installed-mcp-filters,
+  .installed-mcp-search {
+    width: 100%;
+    max-width: none;
+  }
+
+  .installed-mcp-dialog-backdrop {
+    align-items: stretch;
+    padding: 0;
+  }
+
+  .installed-mcp-dialog,
+  .installed-mcp-dialog.retirement {
+    width: 100%;
+    max-height: 100vh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .installed-mcp-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .installed-mcp-dialog footer {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .installed-mcp-dialog footer button {
+    width: 100%;
+  }
+
+  .installed-mcp-footnote {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .connector-lifecycle-summary {
     grid-template-columns: 1fr 1fr;
   }

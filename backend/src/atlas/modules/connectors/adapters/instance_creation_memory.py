@@ -46,6 +46,34 @@ class InMemoryConnectorInstanceRepository:
             None,
         )
 
+    async def get_by_retirement_key(
+        self, *, retired_by: str, idempotency_key: str
+    ) -> ConnectorInstanceRecord | None:
+        return next(
+            (
+                item
+                for item in self._records.values()
+                if item.retired_by == retired_by
+                and item.retirement_idempotency_key == idempotency_key
+            ),
+            None,
+        )
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorInstanceRecord, ...]:
+        return tuple(
+            sorted(
+                (
+                    item
+                    for item in self._records.values()
+                    if item.organization_id == organization_id
+                    and item.environment_id == environment_id
+                ),
+                key=lambda item: (item.display_name.casefold(), item.instance_id),
+            )
+        )
+
     async def add(self, record: ConnectorInstanceRecord) -> bool:
         async with self._lock:
             if record.record_id in self._records:
@@ -66,6 +94,21 @@ class InMemoryConnectorInstanceRepository:
             self._records[record.record_id] = record
             return True
 
+    async def update(self, record: ConnectorInstanceRecord, *, expected_version: int) -> bool:
+        async with self._lock:
+            current = self._records.get(record.record_id)
+            if current is None or current.version != expected_version:
+                return False
+            if any(
+                item.record_id != record.record_id
+                and item.retired_by == record.retired_by
+                and item.retirement_idempotency_key == record.retirement_idempotency_key
+                for item in self._records.values()
+            ):
+                return False
+            self._records[record.record_id] = record
+            return True
+
     async def close(self) -> None:
         return None
 
@@ -76,3 +119,18 @@ class InMemoryConnectorInstanceCreationPolicySource:
 
     async def get_by_id(self, *, policy_id: str) -> ConnectorInstanceCreationPolicySnapshot | None:
         return self._policies.get(policy_id)
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorInstanceCreationPolicySnapshot, ...]:
+        return tuple(
+            sorted(
+                (
+                    item
+                    for item in self._policies.values()
+                    if item.organization_id == organization_id
+                    and item.environment_id == environment_id
+                ),
+                key=lambda item: item.policy_id,
+            )
+        )

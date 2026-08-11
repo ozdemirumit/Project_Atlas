@@ -70,6 +70,24 @@ class PostgreSQLPackageInstallationRepository:
             )
             return self._to_domain(row.payload) if row else None
 
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorPackageInstallationReceipt, ...]:
+        async with self._sessions() as session:
+            rows = await session.scalars(
+                select(ConnectorPackageInstallationReceiptModel)
+                .where(
+                    ConnectorPackageInstallationReceiptModel.organization_id == organization_id,
+                    ConnectorPackageInstallationReceiptModel.environment_id == environment_id,
+                )
+                .order_by(
+                    ConnectorPackageInstallationReceiptModel.connector_id,
+                    ConnectorPackageInstallationReceiptModel.release_version,
+                    ConnectorPackageInstallationReceiptModel.receipt_id,
+                )
+            )
+            return tuple(self._to_domain(row.payload) for row in rows)
+
     async def add(self, receipt: ConnectorPackageInstallationReceipt) -> bool:
         payload = PackageInstallationService._normalize(asdict(receipt))
         assert isinstance(payload, dict)

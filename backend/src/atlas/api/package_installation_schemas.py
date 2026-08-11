@@ -120,3 +120,10 @@ class ConnectorPackageInstallationResponse(BaseModel):
 
     data: ConnectorPackageInstallationReceiptData
     meta: ResponseMeta
+
+
+class ConnectorPackageInstallationListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: tuple[ConnectorPackageInstallationReceiptData, ...]
+    meta: ResponseMeta

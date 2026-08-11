@@ -33,6 +33,10 @@ class ConnectorInstanceCreationPolicySource(Protocol):
         self, *, policy_id: str
     ) -> ConnectorInstanceCreationPolicySnapshot | None: ...
 
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorInstanceCreationPolicySnapshot, ...]: ...
+
 
 class ConnectorInstanceRepository(Protocol):
     @property
@@ -48,6 +52,16 @@ class ConnectorInstanceRepository(Protocol):
         self, *, created_by: str, idempotency_key: str
     ) -> ConnectorInstanceRecord | None: ...
 
+    async def get_by_retirement_key(
+        self, *, retired_by: str, idempotency_key: str
+    ) -> ConnectorInstanceRecord | None: ...
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorInstanceRecord, ...]: ...
+
     async def add(self, record: ConnectorInstanceRecord) -> bool: ...
+
+    async def update(self, record: ConnectorInstanceRecord, *, expected_version: int) -> bool: ...
 
     async def close(self) -> None: ...

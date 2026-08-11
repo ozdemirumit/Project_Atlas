@@ -66,6 +66,10 @@ class ConnectorInstanceCreationService:
     def repository(self) -> ConnectorInstanceRepository:
         return self._repository
 
+    @property
+    def environment_id(self) -> str:
+        return self._environment_id
+
     async def create(
         self,
         *,
@@ -269,6 +273,36 @@ class ConnectorInstanceCreationService:
         )
         return record
 
+    async def list_policies(
+        self, *, actor: AuthenticatedSubject, correlation_id: str
+    ) -> tuple[ConnectorInstanceCreationPolicySnapshot, ...]:
+        self._require_enterprise_human(actor)
+        policies = await self._policy_source.list_scope(
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
+        now = self._clock()
+        current: list[ConnectorInstanceCreationPolicySnapshot] = []
+        for policy in policies:
+            self._verify_policy(policy)
+            if (
+                policy.organization_id != actor.organization_id
+                or policy.environment_id != self._environment_id
+                or not policy.issued_at <= now < policy.expires_at
+            ):
+                continue
+            current.append(policy)
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_instance_policies_listed",
+            self._environment_id,
+            None,
+            (("count", str(len(current))),),
+            permission_id=INSTANCE_READ_PERMISSION,
+        )
+        return tuple(current)
+
     async def target_configuration_source(
         self, *, record_id: str
     ) -> tuple[
@@ -431,8 +465,18 @@ class ConnectorInstanceCreationService:
     @classmethod
     def _record_payload(cls, record: ConnectorInstanceRecord) -> dict[str, object]:
         payload = cast(dict[str, object], asdict(record))
-        for field in ("canonical_digest", "request_fingerprint", "idempotency_key", "reused"):
+        for field in (
+            "canonical_digest",
+            "request_fingerprint",
+            "idempotency_key",
+            "retirement_request_fingerprint",
+            "retirement_idempotency_key",
+            "reused",
+        ):
             payload.pop(field)
+        if record.retired_by is None:
+            for field in ("retired_by", "retired_at", "retirement_reason"):
+                payload.pop(field)
         return cast(dict[str, object], cls._normalize(payload))
 
     @classmethod
