@@ -4,7 +4,7 @@ import json
 import re
 from collections.abc import Callable
 from dataclasses import asdict, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from hashlib import sha256
 from typing import Protocol, cast
@@ -31,6 +31,8 @@ from atlas.modules.connectors.domain.package_registration import ConnectorPackag
 from atlas.modules.connectors.domain.upgrade_readiness import (
     ConnectorCapabilityChange,
     ConnectorUpgradeCandidate,
+    ConnectorUpgradePlan,
+    ConnectorUpgradePlanStep,
     ConnectorUpgradeReadiness,
 )
 from atlas.modules.identity.domain.models import (
@@ -41,6 +43,7 @@ from atlas.modules.identity.domain.models import (
 )
 
 UPGRADE_READINESS_SCHEMA = "atlas.connector-upgrade-readiness.v1"
+UPGRADE_PLAN_SCHEMA = "atlas.connector-upgrade-plan.v1"
 _SEMVER = re.compile(
     r"^version\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
     r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
@@ -204,6 +207,199 @@ class ConnectorUpgradeReadinessService:
             )
         )
         return readiness
+
+    async def plan(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        record_id: str,
+        candidate_receipt_id: str,
+        correlation_id: str,
+    ) -> ConnectorUpgradePlan:
+        readiness = await self.evaluate(
+            actor=actor,
+            record_id=record_id,
+            correlation_id=correlation_id,
+        )
+        candidate = next(
+            (item for item in readiness.candidates if item.receipt_id == candidate_receipt_id),
+            None,
+        )
+        if candidate is None:
+            raise ConnectorInstanceCreationError("connector_upgrade_candidate_not_found")
+        target = await self._target_repository.get_by_instance(source_instance_record_id=record_id)
+        if (target is not None) != readiness.target_configured:
+            raise ConnectorInstanceCreationError("connector_upgrade_plan_source_drift")
+        target_configured = target is not None
+        blockers = tuple(
+            dict.fromkeys(
+                (
+                    *candidate.blockers,
+                    *(("connector.upgrade.impact-evidence-required",) if target_configured else ()),
+                )
+            )
+        )
+        prerequisites = [
+            "connector.upgrade.prerequisite.exact-lineage",
+            "connector.upgrade.prerequisite.package-installed",
+            "connector.upgrade.prerequisite.rollback-anchor",
+            "connector.upgrade.prerequisite.human-approval",
+        ]
+        if candidate.policy_review_required:
+            prerequisites.append("connector.upgrade.prerequisite.policy-review")
+        if candidate.configuration_migration_required:
+            prerequisites.append("connector.upgrade.prerequisite.configuration-runbook")
+        if target_configured:
+            prerequisites.append("connector.upgrade.prerequisite.impact-assessment")
+        now = self._clock()
+        steps = self._plan_steps(target_configured=target_configured)
+        plan_seed = {
+            "schema_version": UPGRADE_PLAN_SCHEMA,
+            "source_record_id": readiness.source_record_id,
+            "source_record_version": readiness.source_record_version,
+            "readiness_digest": readiness.canonical_digest,
+            "candidate_receipt_id": candidate.receipt_id,
+            "candidate_digest": candidate.canonical_digest,
+            "target_binding_digest": target.canonical_digest if target else None,
+            "prerequisites": tuple(prerequisites),
+            "steps": tuple(asdict(item) for item in steps),
+            "blockers": blockers,
+        }
+        plan_digest = self._digest(plan_seed)
+        plan = ConnectorUpgradePlan(
+            plan_id=f"connector-upgrade-plan.{plan_digest[:24]}",
+            schema_version=UPGRADE_PLAN_SCHEMA,
+            source_record_id=readiness.source_record_id,
+            source_record_version=readiness.source_record_version,
+            instance_id=readiness.instance_id,
+            connector_id=readiness.connector_id,
+            current_release_version=readiness.current_release_version,
+            current_receipt_id=readiness.current_receipt_id,
+            current_receipt_digest=readiness.current_receipt_digest,
+            candidate_release_version=candidate.release_version,
+            candidate_receipt_id=candidate.receipt_id,
+            candidate_receipt_digest=candidate.receipt_digest,
+            readiness_digest=readiness.canonical_digest,
+            candidate_digest=candidate.canonical_digest,
+            risk_level=candidate.risk_level,
+            target_configured=target_configured,
+            target_id=target.target_id if target else None,
+            site_id=target.site_id if target else None,
+            target_product=target.target_product if target else None,
+            plan_state="blocked" if blockers or target_configured else "ready_for_human_review",
+            plan_eligible=not blockers and not target_configured,
+            prerequisite_ids=tuple(prerequisites),
+            steps=steps,
+            validation_check_ids=(
+                "connector.upgrade.verify.package-lineage",
+                "connector.upgrade.verify.configuration-schema",
+                "connector.upgrade.verify.capability-policy",
+                "connector.upgrade.verify.target-connectivity",
+                "connector.upgrade.verify.runtime-health",
+                "connector.upgrade.verify.audit-completeness",
+            ),
+            stop_condition_ids=(
+                "connector.upgrade.stop.source-drift",
+                "connector.upgrade.stop.policy-rejected",
+                "connector.upgrade.stop.impact-unknown",
+                "connector.upgrade.stop.validation-failed",
+                "connector.upgrade.stop.rollback-anchor-invalid",
+            ),
+            rollback_step_ids=(
+                "connector.upgrade.rollback.quiesce-candidate",
+                "connector.upgrade.rollback.restore-package-binding",
+                "connector.upgrade.rollback.restore-configuration",
+                "connector.upgrade.rollback.verify-source-release",
+            ),
+            blockers=blockers,
+            unknowns=(
+                (
+                    "Current business-service impact, active sessions and approved maintenance "
+                    "window are not established."
+                ),
+            )
+            if target_configured
+            else (),
+            estimated_interruption_min_minutes=None if target_configured else 0,
+            estimated_interruption_max_minutes=None if target_configured else 0,
+            rollback_window_minutes=60,
+            generated_at=now,
+            expires_at=now + timedelta(hours=1),
+            canonical_digest=plan_digest,
+        )
+        await self._audit_sink.record(
+            AuditRecord(
+                event_id=f"evt_{uuid4().hex}",
+                event_type="atlas.connector.upgrade-plan",
+                schema_version="1.0",
+                producer="project-atlas-api",
+                producer_version=__version__,
+                occurred_at=now,
+                correlation_id=correlation_id,
+                subject_id=actor.subject_id,
+                actor_type=actor.kind.value,
+                authentication_method=actor.authentication_method.value,
+                assurance_level=actor.assurance_level.value,
+                permission_id=INSTANCE_READ_PERMISSION,
+                resource_type="resource.connector.instance",
+                scope_reference=readiness.instance_id,
+                decision_id=None,
+                outcome="succeeded",
+                result_code="connector_upgrade_plan_generated",
+                idempotency_key=None,
+                target_metadata=(
+                    ("candidate_receipt_id", candidate.receipt_id),
+                    ("plan_state", plan.plan_state),
+                ),
+            )
+        )
+        return plan
+
+    @staticmethod
+    def _plan_steps(*, target_configured: bool) -> tuple[ConnectorUpgradePlanStep, ...]:
+        return (
+            ConnectorUpgradePlanStep(
+                "connector.upgrade.step.obtain-approval", 1, "approval", 0, False, False
+            ),
+            ConnectorUpgradePlanStep(
+                "connector.upgrade.step.capture-baseline", 2, "precheck", 2, False, False
+            ),
+            ConnectorUpgradePlanStep(
+                "connector.upgrade.step.quiesce-sessions",
+                3,
+                "quiescence",
+                2,
+                target_configured,
+                True,
+            ),
+            ConnectorUpgradePlanStep(
+                "connector.upgrade.step.bind-candidate-package",
+                4,
+                "package_binding",
+                3,
+                target_configured,
+                True,
+            ),
+            ConnectorUpgradePlanStep(
+                "connector.upgrade.step.migrate-configuration",
+                5,
+                "configuration",
+                4,
+                target_configured,
+                True,
+            ),
+            ConnectorUpgradePlanStep(
+                "connector.upgrade.step.verify-candidate", 6, "verification", 5, False, True
+            ),
+            ConnectorUpgradePlanStep(
+                "connector.upgrade.step.confirm-rollback-gate",
+                7,
+                "rollback_gate",
+                2,
+                False,
+                True,
+            ),
+        )
 
     def _candidate(
         self,

@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from test_browser_sessions import BasicTestIdentityProvider, login, settings
 from test_instance_creation import create_instance, instance_fixture, instance_operator
 from test_package_acquisition import CollectingAuditSink
+from test_target_configuration import bind_target, target_configuration_fixture
 
 from atlas.api.app import create_app
 from atlas.modules.connectors.adapters.target_configuration_memory import (
@@ -255,6 +256,110 @@ async def test_upgrade_readiness_blocks_sdk_changes_and_rejects_inconsistent_lin
         )
 
 
+@pytest.mark.asyncio
+async def test_upgrade_plan_is_deterministic_and_non_executable_for_unconfigured_instance() -> None:
+    audit = CollectingAuditSink()
+    instance_service, package_service, _, _, installation, policy = await instance_fixture()
+    instance = await create_instance(instance_service, installation, policy)
+    (
+        current_receipt,
+        _,
+        current_registration,
+        _,
+    ) = await package_service.connector_instance_creation_source(receipt_id=installation.receipt_id)
+    candidate_receipt, candidate_registration = upgrade_package(
+        current_receipt, current_registration
+    )
+    service = ConnectorUpgradeReadinessService(
+        instance_repository=instance_service.repository,
+        target_repository=InMemoryConnectorTargetConfigurationRepository(),
+        package_source=UpgradePackageSource(
+            ((current_receipt, current_registration), (candidate_receipt, candidate_registration))
+        ),
+        audit_sink=audit,
+        environment_id=instance.environment_id,
+        clock=lambda: installation.installed_at + timedelta(hours=2),
+    )
+
+    first = await service.plan(
+        actor=instance_operator(),
+        record_id=instance.record_id,
+        candidate_receipt_id=candidate_receipt.receipt_id,
+        correlation_id="correlation.connector-upgrade-plan",
+    )
+    second = await service.plan(
+        actor=instance_operator(),
+        record_id=instance.record_id,
+        candidate_receipt_id=candidate_receipt.receipt_id,
+        correlation_id="correlation.connector-upgrade-plan-repeat",
+    )
+
+    assert first.plan_id == second.plan_id and first.canonical_digest == second.canonical_digest
+    assert first.plan_state == "ready_for_human_review" and first.plan_eligible
+    assert first.estimated_interruption_min_minutes == 0
+    assert first.estimated_interruption_max_minutes == 0
+    assert len(first.steps) == 7 and first.steps[0].phase == "approval"
+    assert first.rollback_step_ids and first.stop_condition_ids and first.validation_check_ids
+    assert first.approval_required and first.decision_support_only
+    assert not first.execution_authorized and not first.infrastructure_mutation_performed
+    assert [item.result_code for item in audit.records] == [
+        "connector_upgrade_readiness_evaluated",
+        "connector_upgrade_plan_generated",
+        "connector_upgrade_readiness_evaluated",
+        "connector_upgrade_plan_generated",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_upgrade_plan_blocks_configured_target_until_impact_is_established() -> None:
+    (
+        target_service,
+        instance_service,
+        package_service,
+        _,
+        instance,
+        profile,
+        policy,
+    ) = await target_configuration_fixture()
+    binding = await bind_target(target_service, instance, profile, policy)
+    (
+        current_receipt,
+        _,
+        current_registration,
+        _,
+    ) = await package_service.connector_instance_creation_source(
+        receipt_id=instance.source_installation_receipt_id
+    )
+    candidate_receipt, candidate_registration = upgrade_package(
+        current_receipt, current_registration
+    )
+    service = ConnectorUpgradeReadinessService(
+        instance_repository=instance_service.repository,
+        target_repository=target_service.repository,
+        package_source=UpgradePackageSource(
+            ((current_receipt, current_registration), (candidate_receipt, candidate_registration))
+        ),
+        audit_sink=CollectingAuditSink(),
+        environment_id=instance.environment_id,
+    )
+
+    plan = await service.plan(
+        actor=instance_operator(),
+        record_id=instance.record_id,
+        candidate_receipt_id=candidate_receipt.receipt_id,
+        correlation_id="correlation.connector-upgrade-plan-configured",
+    )
+
+    assert plan.plan_state == "blocked" and not plan.plan_eligible
+    assert "connector.upgrade.impact-evidence-required" in plan.blockers
+    assert plan.target_id == binding.target_id and plan.site_id == binding.site_id
+    assert plan.target_product == binding.target_product
+    assert plan.estimated_interruption_min_minutes is None
+    assert plan.estimated_interruption_max_minutes is None
+    assert plan.unknowns
+    assert any(item.requires_service_interruption for item in plan.steps)
+
+
 def test_upgrade_readiness_api_is_no_store_and_exposes_no_mutation_authority(
     tmp_path: Path,
 ) -> None:
@@ -272,26 +377,45 @@ def test_upgrade_readiness_api_is_no_store_and_exposes_no_mutation_authority(
         development_subject_id=subject.subject_id,
         mcp_builder_generation_root=tmp_path / "mcp-builder-generations",
     )
-    with TestClient(
-        create_app(
-            app_settings,
-            identity_provider=BasicTestIdentityProvider(subject),
-            registry_publication_service=publication_service,
-            package_registration_service=registration_service,
-            package_installation_service=package_service,
-            connector_instance_creation_service=instance_service,
-        )
-    ) as client:
+    current_receipt, _, current_registration, _ = asyncio.run(
+        package_service.connector_instance_creation_source(receipt_id=installation.receipt_id)
+    )
+    candidate_receipt, candidate_registration = upgrade_package(
+        current_receipt, current_registration
+    )
+    plan_service = ConnectorUpgradeReadinessService(
+        instance_repository=instance_service.repository,
+        target_repository=InMemoryConnectorTargetConfigurationRepository(),
+        package_source=UpgradePackageSource(
+            ((current_receipt, current_registration), (candidate_receipt, candidate_registration))
+        ),
+        audit_sink=CollectingAuditSink(),
+        environment_id=instance.environment_id,
+    )
+    app = create_app(
+        app_settings,
+        identity_provider=BasicTestIdentityProvider(subject),
+        registry_publication_service=publication_service,
+        package_registration_service=registration_service,
+        package_installation_service=package_service,
+        connector_instance_creation_service=instance_service,
+    )
+    with TestClient(app) as client:
+        app.state.connector_upgrade_readiness_service = plan_service
         login(client)
         response = client.get(
             f"/api/v1/connectors/instances/{instance.record_id}/upgrade-readiness"
+        )
+        plan_response = client.get(
+            f"/api/v1/connectors/instances/{instance.record_id}/upgrade-plans/"
+            f"{candidate_receipt.receipt_id}"
         )
 
     assert response.status_code == 200, response.text
     assert response.headers["Cache-Control"] == "no-store"
     data = response.json()["data"]
     assert data["source_record_id"] == instance.record_id
-    assert data["candidates"] == []
+    assert len(data["candidates"]) == 1
     assert data["decision_support_only"] is True
     assert data["execution_authorized"] is False
     assert data["infrastructure_mutation_performed"] is False
@@ -304,3 +428,13 @@ def test_upgrade_readiness_api_is_no_store_and_exposes_no_mutation_authority(
         "credential",
     ):
         assert hidden not in rendered
+    assert plan_response.status_code == 200, plan_response.text
+    assert plan_response.headers["Cache-Control"] == "no-store"
+    plan_data = plan_response.json()["data"]
+    assert plan_data["plan_state"] == "ready_for_human_review"
+    assert plan_data["candidate_receipt_id"] == candidate_receipt.receipt_id
+    assert plan_data["approval_required"] is True
+    assert plan_data["execution_authorized"] is False
+    assert plan_data["infrastructure_mutation_performed"] is False
+    assert "target_endpoint" not in plan_response.text.lower()
+    assert "secret_reference" not in plan_response.text.lower()

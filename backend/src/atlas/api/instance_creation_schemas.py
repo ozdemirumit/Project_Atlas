@@ -12,6 +12,8 @@ from atlas.modules.connectors.domain.instance_creation import (
 from atlas.modules.connectors.domain.upgrade_readiness import (
     ConnectorCapabilityChange,
     ConnectorUpgradeCandidate,
+    ConnectorUpgradePlan,
+    ConnectorUpgradePlanStep,
     ConnectorUpgradeReadiness,
 )
 
@@ -243,4 +245,76 @@ class ConnectorUpgradeReadinessResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: ConnectorUpgradeReadinessData
+    meta: ResponseMeta
+
+
+class ConnectorUpgradePlanStepData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    step_id: str
+    sequence: int
+    phase: str
+    expected_minutes: int
+    requires_service_interruption: bool
+    rollback_boundary: bool
+
+    @classmethod
+    def from_domain(cls, step: ConnectorUpgradePlanStep) -> ConnectorUpgradePlanStepData:
+        return cls(**{field: getattr(step, field) for field in cls.model_fields})
+
+
+class ConnectorUpgradePlanData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    plan_id: str
+    schema_version: str
+    source_record_id: str
+    source_record_version: int
+    instance_id: str
+    connector_id: str
+    current_release_version: str
+    current_receipt_id: str
+    current_receipt_digest: str
+    candidate_release_version: str
+    candidate_receipt_id: str
+    candidate_receipt_digest: str
+    readiness_digest: str
+    candidate_digest: str
+    risk_level: str
+    target_configured: bool
+    target_id: str | None
+    site_id: str | None
+    target_product: str | None
+    plan_state: str
+    plan_eligible: bool
+    prerequisite_ids: tuple[str, ...]
+    steps: tuple[ConnectorUpgradePlanStepData, ...]
+    validation_check_ids: tuple[str, ...]
+    stop_condition_ids: tuple[str, ...]
+    rollback_step_ids: tuple[str, ...]
+    blockers: tuple[str, ...]
+    unknowns: tuple[str, ...]
+    estimated_interruption_min_minutes: int | None
+    estimated_interruption_max_minutes: int | None
+    rollback_window_minutes: int
+    generated_at: datetime
+    expires_at: datetime
+    canonical_digest: str
+    approval_required: bool
+    decision_support_only: bool
+    execution_authorized: bool
+    infrastructure_mutation_performed: bool
+
+    @classmethod
+    def from_domain(cls, plan: ConnectorUpgradePlan) -> ConnectorUpgradePlanData:
+        return cls(
+            **{field: getattr(plan, field) for field in cls.model_fields if field != "steps"},
+            steps=tuple(ConnectorUpgradePlanStepData.from_domain(item) for item in plan.steps),
+        )
+
+
+class ConnectorUpgradePlanResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ConnectorUpgradePlanData
     meta: ResponseMeta

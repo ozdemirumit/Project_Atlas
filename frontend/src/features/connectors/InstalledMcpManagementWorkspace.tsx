@@ -4,6 +4,7 @@ import {
   Archive,
   ArrowUpCircle,
   Boxes,
+  ClipboardList,
   PackagePlus,
   RefreshCw,
   Search,
@@ -15,6 +16,8 @@ import { useState, type FormEvent } from "react";
 import {
   getConnectorUpgradeReadiness,
   type ConnectorUpgradeCandidate,
+  getConnectorUpgradePlan,
+  type ConnectorUpgradePlan,
 } from "../../api/connectorUpgradeReadiness";
 import {
   createConnectorInstance,
@@ -205,7 +208,13 @@ function RetireMcpDialog({
   );
 }
 
-function UpgradeCandidateCard({ candidate }: { candidate: ConnectorUpgradeCandidate }) {
+function UpgradeCandidateCard({
+  candidate,
+  onReviewPlan,
+}: {
+  candidate: ConnectorUpgradeCandidate;
+  onReviewPlan: () => void;
+}) {
   const changes = [
     ...candidate.capability_changes.map(
       (item) => `${item.change_type}: ${item.capability_id}`,
@@ -234,7 +243,33 @@ function UpgradeCandidateCard({ candidate }: { candidate: ConnectorUpgradeCandid
       </div>
       <div className="installed-mcp-rollback"><Archive size={15} /><span>Rollback anchor <code>{candidate.rollback_receipt_id}</code></span></div>
       {!candidate.review_eligible && <div className="installed-mcp-status error-state"><AlertTriangle size={17} /><span>Review blocked: {candidate.blockers.join(", ")}</span></div>}
+      <button type="button" className="secondary-button installed-mcp-plan-button" onClick={onReviewPlan}><ClipboardList size={15} />Review plan for {candidate.release_version}</button>
     </article>
+  );
+}
+
+function UpgradePlanEvidence({ plan }: { plan: ConnectorUpgradePlan }) {
+  const interruption = plan.estimated_interruption_min_minutes === null
+    ? "Not established"
+    : `${plan.estimated_interruption_min_minutes}-${plan.estimated_interruption_max_minutes} minutes`;
+  return (
+    <section className="installed-mcp-plan" aria-labelledby="connector-upgrade-plan-title">
+      <header>
+        <div><p className="eyebrow">NON-EXECUTABLE PLAN</p><h4 id="connector-upgrade-plan-title">{plan.current_release_version} to {plan.candidate_release_version}</h4></div>
+        <span className={`state-badge ${plan.plan_eligible ? "pending" : "blocked"}`}>{plan.plan_state.replaceAll("_", " ")}</span>
+      </header>
+      <div className="installed-mcp-plan-summary"><span>Interruption <strong>{interruption}</strong></span><span>Rollback window <strong>{plan.rollback_window_minutes} minutes</strong></span><span>Human approval <strong>Required</strong></span></div>
+      {plan.blockers.length > 0 && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><div><strong>Plan blocked</strong><span>{plan.blockers.join(", ")}</span></div></div>}
+      <div className="installed-mcp-plan-columns">
+        <div><strong>Prerequisites</strong><ul>{plan.prerequisite_ids.map((item) => <li key={item}>{item}</li>)}</ul></div>
+        <div><strong>Ordered plan</strong><ol>{plan.steps.map((step) => <li key={step.step_id}><span>{step.phase.replaceAll("_", " ")}</span><small>{step.expected_minutes} min{step.requires_service_interruption ? " · interruption" : ""}</small></li>)}</ol></div>
+        <div><strong>Stop conditions</strong><ul>{plan.stop_condition_ids.map((item) => <li key={item}>{item}</li>)}</ul></div>
+        <div><strong>Rollback</strong><ol>{plan.rollback_step_ids.map((item) => <li key={item}>{item}</li>)}</ol></div>
+        <div><strong>Post-validation</strong><ul>{plan.validation_check_ids.map((item) => <li key={item}>{item}</li>)}</ul></div>
+      </div>
+      {plan.unknowns.length > 0 && <div className="installed-mcp-plan-unknowns"><strong>Unknowns</strong><ul>{plan.unknowns.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+      <p className="installed-mcp-plan-boundary">This plan does not rebind a package, migrate configuration, stop a session, contact a target, restore data or authorize execution.</p>
+    </section>
   );
 }
 
@@ -245,9 +280,15 @@ function UpgradeReadinessDialog({
   instance: ConnectorInstanceRecord;
   onCancel: () => void;
 }) {
+  const [candidateReceiptId, setCandidateReceiptId] = useState<string | null>(null);
   const query = useQuery({
     queryKey: ["connector-upgrade-readiness", instance.record_id],
     queryFn: () => getConnectorUpgradeReadiness(instance.record_id),
+  });
+  const planQuery = useQuery({
+    queryKey: ["connector-upgrade-plan", instance.record_id, candidateReceiptId],
+    queryFn: () => getConnectorUpgradePlan(instance.record_id, candidateReceiptId ?? ""),
+    enabled: candidateReceiptId !== null,
   });
   return (
     <div className="installed-mcp-dialog-backdrop" role="presentation">
@@ -263,12 +304,15 @@ function UpgradeReadinessDialog({
           <>
             <div className="installed-mcp-upgrade-current"><span>Current governed release</span><strong>{query.data.current_release_version}</strong><code>{query.data.current_package_digest.slice(0, 16)}</code></div>
             {query.data.candidates.length ? (
-              <div className="installed-mcp-upgrade-list">{query.data.candidates.map((candidate) => <UpgradeCandidateCard candidate={candidate} key={candidate.receipt_id} />)}</div>
+              <div className="installed-mcp-upgrade-list">{query.data.candidates.map((candidate) => <UpgradeCandidateCard candidate={candidate} key={candidate.receipt_id} onReviewPlan={() => setCandidateReceiptId(candidate.receipt_id)} />)}</div>
             ) : (
               <div className="installed-mcp-empty compact"><ArrowUpCircle size={20} /><div><strong>No newer governed package is installed</strong><span>Complete package assurance and installation in MCP Builder before reviewing an update.</span></div></div>
             )}
           </>
         )}
+        {planQuery.isLoading && <div className="installed-mcp-status"><RefreshCw className="spin" size={18} /><span>Building exact upgrade plan evidence...</span></div>}
+        {planQuery.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={18} /><span>Upgrade plan is unavailable or source evidence changed.</span></div>}
+        {planQuery.data && <UpgradePlanEvidence plan={planQuery.data} />}
         <footer><button type="button" className="secondary-button" onClick={onCancel}>Close review</button></footer>
       </section>
     </div>

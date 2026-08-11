@@ -14,6 +14,8 @@ from atlas.api.instance_creation_schemas import (
     ConnectorInstanceListResponse,
     ConnectorInstanceRecordData,
     ConnectorInstanceRetirementInput,
+    ConnectorUpgradePlanData,
+    ConnectorUpgradePlanResponse,
     ConnectorUpgradeReadinessData,
     ConnectorUpgradeReadinessResponse,
 )
@@ -232,6 +234,39 @@ async def get_connector_upgrade_readiness(
     response.headers["Cache-Control"] = "no-store"
     return ConnectorUpgradeReadinessResponse(
         data=ConnectorUpgradeReadinessData.from_domain(readiness),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get(
+    "/{record_id}/upgrade-plans/{candidate_receipt_id}",
+    response_model=ConnectorUpgradePlanResponse,
+)
+async def get_connector_upgrade_plan(
+    record_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    candidate_receipt_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_connector_instance_read)],
+) -> ConnectorUpgradePlanResponse:
+    service: ConnectorUpgradeReadinessService = (
+        request.app.state.connector_upgrade_readiness_service
+    )
+    try:
+        plan = await service.plan(
+            actor=subject,
+            record_id=record_id,
+            candidate_receipt_id=candidate_receipt_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorInstanceCreationError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorUpgradePlanResponse(
+        data=ConnectorUpgradePlanData.from_domain(plan),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),

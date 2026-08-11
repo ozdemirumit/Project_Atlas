@@ -755,6 +755,97 @@ textarea:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.installed-mcp-plan-button {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+}
+
+.installed-mcp-plan {
+  display: grid;
+  gap: 13px;
+  padding: 14px;
+  border: 1px solid #aebfba;
+  border-radius: 6px;
+  background: #fbfcfc;
+}
+
+.installed-mcp-plan > header,
+.installed-mcp-plan-summary {
+  display: flex;
+  align-items: center;
+}
+
+.installed-mcp-plan > header {
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 0 10px;
+}
+
+.installed-mcp-plan h4 {
+  margin: 2px 0 0;
+  font-size: 14px;
+}
+
+.installed-mcp-plan-summary {
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  color: #5d6d68;
+  font-size: 11px;
+}
+
+.installed-mcp-plan-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.installed-mcp-plan-columns > div,
+.installed-mcp-plan-unknowns {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #d7e0dd;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.installed-mcp-plan-columns ul,
+.installed-mcp-plan-columns ol,
+.installed-mcp-plan-unknowns ul {
+  display: grid;
+  gap: 4px;
+  margin: 7px 0 0;
+  padding-left: 18px;
+  color: #52635d;
+  font-size: 10px;
+}
+
+.installed-mcp-plan-columns li {
+  overflow-wrap: anywhere;
+}
+
+.installed-mcp-plan-columns ol li span,
+.installed-mcp-plan-columns ol li small {
+  display: block;
+}
+
+.installed-mcp-plan-columns ol li small {
+  margin-top: 1px;
+  color: #75827e;
+}
+
+.installed-mcp-plan-boundary {
+  margin: 0;
+  padding: 9px 10px;
+  border-left: 3px solid #2f7664;
+  color: #466159;
+  background: #f0f7f5;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .installed-mcp-retire {
   border-color: #8a5948;
   color: #fff;
@@ -803,6 +894,15 @@ textarea:focus-visible {
 
   .installed-mcp-upgrade-facts {
     grid-template-columns: 1fr;
+  }
+
+  .installed-mcp-plan-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .installed-mcp-plan-button {
+    width: 100%;
+    justify-content: center;
   }
 
   .installed-mcp-dialog footer {
