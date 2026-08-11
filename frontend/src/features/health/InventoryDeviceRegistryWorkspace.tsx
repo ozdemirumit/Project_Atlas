@@ -101,7 +101,7 @@ function DeviceCreateDialog({
               required
               autoFocus
               value={deviceKey}
-              pattern="[a-z][-a-z0-9_.:]{2,127}"
+              pattern={"[a-z][a-z0-9_.:\\-]{2,127}"}
               maxLength={128}
               placeholder="storage.vsp-01"
               onChange={(event) => setDeviceKey(event.target.value.toLowerCase())}
@@ -134,7 +134,7 @@ function DeviceCreateDialog({
             <input
               value={managementAddress}
               maxLength={253}
-              pattern="[A-Za-z0-9][-A-Za-z0-9.:]{0,252}"
+              pattern={"[A-Za-z0-9][A-Za-z0-9.:\\-]{0,252}"}
               placeholder="vsp-01.example.net"
               onChange={(event) => setManagementAddress(event.target.value)}
             />

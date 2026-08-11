@@ -4,14 +4,92 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-143 |
-| Title | Inventory Device Registry management |
-| Status | Complete |
-| Branch | `main` |
-| Pull Request | [#155](https://github.com/ozdemirumit/Project_Atlas/pull/155) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-016, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-099 |
+| Task ID | ATLAS-IMP-144 |
+| Title | Installed MCP lifecycle management |
+| Status | In Progress |
+| Branch | `agent/mcp-lifecycle-management` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-100 |
 | Last Updated | 2026-08-11 |
-| Next Action | Implement MCP Lifecycle management |
+| Next Action | Implement installed package discovery, connector instance add/list/retire APIs and the visible MCP management workspace |
+
+### ATLAS-IMP-144 Scope Rationale
+
+- Product audit confirmed that Connectors presents lifecycle capability coverage and the Builder
+  pipeline, but no concise installed MCP inventory or visible add/remove controls.
+- The existing governed package installation and connector instance creation records are the
+  authoritative supply-chain and identity evidence; lifecycle management must extend those
+  contracts instead of introducing a bypass installation path.
+- ADR-100 defines removal as version-bound retirement of an unconfigured, non-authoritative
+  connector instance. Package artifacts and audit history remain immutable.
+
+### ATLAS-IMP-144 Acceptance Criteria
+
+- Authorized operators can list installed package receipts and connector instances within their
+  exact organization and environment without exposing installation custody references, request
+  fingerprints, idempotency keys, target endpoints or secrets.
+- Add MCP selects an exact governed package installation and creates only a disabled,
+  unconfigured connector instance through the existing creation service and policy boundary.
+- Remove MCP is an acknowledged, reasoned, idempotent and optimistic retirement. It is rejected
+  after target configuration exists and performs no package deletion, runtime stop, target call,
+  credential operation or infrastructure mutation.
+- Retirement preserves the stable instance and creation lineage, increments the version and
+  records actor, time, reason and a new canonical digest. Retired instances cannot enter target
+  configuration governance.
+- Read, create and retire operations are permission-separated, audited, scope-filtered and
+  no-store. Enterprise mutation requires a CSRF-protected browser session.
+- The Connectors first viewport visibly exposes Installed MCPs, active/retired/all filtering,
+  refresh, Add MCP and retirement controls before the detailed lifecycle and Builder pipeline.
+- Backend format, lint, mypy and full tests pass. Frontend ESLint, both TypeScript projects, full
+  tests and production build pass with a separate lazy MCP management chunk.
+- Live desktop/mobile validation covers empty and populated inventory, add/cancel, retirement
+  confirmation, responsive fit, clean lifecycle requests and absence of hard delete.
+
+### ATLAS-IMP-144 Initial Evidence
+
+- IMP-143 merged through PR #155 as `17d34e0f05e950ed69d71999fdff933106df7b83`;
+  exact-head CI run `31513123179` and merged-main run `31513836605` passed.
+- IMP-143 tracker closure `3638bc448447b0308b36b9bf5bb86ebf9d240173` passed independent
+  main CI run `31514495621` before IMP-144 branched.
+- Existing package-installation and instance-creation APIs expose create/get only. The Connectors
+  workspace has no installed inventory query or instance retirement control.
+
+### ATLAS-IMP-144 Validation Evidence
+
+- Installed package and signed instance-policy discovery now feed the existing exact connector
+  instance creation boundary. Instance inventory and retirement add no target, credential,
+  runtime, execution, deployment or infrastructure authority.
+- Retirement is reasoned, acknowledged, idempotent and version-bound. It preserves package and
+  creation lineage, records a new canonical digest, rejects configured instances and prevents a
+  retired record from entering target configuration governance.
+- PostgreSQL migration `20260811_0096` adds queryable lifecycle, version and retirement
+  idempotency fields while preserving existing version-one canonical payloads. Alembic reports it
+  as the single migration head.
+- Three focused backend tests cover scoped package/policy/instance discovery, safe API responses,
+  create/list/retire integration, replay, stale-version and configured-instance rejection, audit
+  evidence, retired-source rejection and absence of hard delete.
+- Four focused component tests cover visible add/retire controls, governed package and policy
+  selection, acknowledgement gates, lifecycle filters, empty-state guidance and no delete action.
+- Backend Ruff format and lint passed 1,171 files, mypy passed 1,074 source files, and the full
+  suite passed 960 tests with three existing Windows symlink skips.
+- Full frontend ESLint and both TypeScript projects passed. The complete suite passed 86 files and
+  205 tests. Production build transformed 2,005 modules and emitted a separate 11.59 KB Installed
+  MCP management chunk; the entry is 248.94 KB and the known transitional operational chunk is
+  753.33 KB.
+- Live desktop validation at 1280 x 720 measured 1280/1280 px document width and placed Installed
+  MCPs before lifecycle coverage. Package, policy and instance GETs returned 200, create returned
+  201, retirement returned 200 and the retired result remained visible through its filter.
+- Live mobile validation at 390 x 844 measured 390/390 px document width and the Add MCP dialog
+  measured 390 x 844. Add and retire confirmations began disabled, cancel produced no POST, no
+  hard-delete control was exposed and no page-level JavaScript error occurred.
+- Modern HTML patterns produced no console error. The limited live-test identity still receives
+  expected 403 responses from the pre-existing identity-governance, audit-export and workload-
+  identity workspaces, and the existing favicon request returns 404; all MCP lifecycle requests
+  completed successfully.
+
+### ATLAS-IMP-144 Delivery Evidence
+
+- Pending local and GitHub delivery.
 
 ### ATLAS-IMP-143 Scope Rationale
 

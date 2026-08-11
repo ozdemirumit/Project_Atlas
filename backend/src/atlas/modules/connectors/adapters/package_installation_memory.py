@@ -60,6 +60,21 @@ class InMemoryPackageInstallationRepository:
             None,
         )
 
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorPackageInstallationReceipt, ...]:
+        return tuple(
+            sorted(
+                (
+                    item
+                    for item in self._receipts.values()
+                    if item.organization_id == organization_id
+                    and item.environment_id == environment_id
+                ),
+                key=lambda item: (item.connector_id, item.release_version, item.receipt_id),
+            )
+        )
+
     async def add(self, receipt: ConnectorPackageInstallationReceipt) -> bool:
         async with self._lock:
             if receipt.receipt_id in self._receipts:

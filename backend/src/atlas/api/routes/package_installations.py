@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, Path, Request, Response
 from atlas.api.errors import AtlasError
 from atlas.api.package_installation_schemas import (
     ConnectorPackageInstallationInput,
+    ConnectorPackageInstallationListResponse,
     ConnectorPackageInstallationReceiptData,
     ConnectorPackageInstallationResponse,
 )
@@ -53,6 +54,32 @@ def _response(
     response.headers["Cache-Control"] = "no-store"
     return ConnectorPackageInstallationResponse(
         data=ConnectorPackageInstallationReceiptData.from_domain(receipt),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get("", response_model=ConnectorPackageInstallationListResponse)
+async def list_connector_package_installation_receipts(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_package_installation_read)
+    ],
+) -> ConnectorPackageInstallationListResponse:
+    service: PackageInstallationService = request.app.state.package_installation_service
+    try:
+        receipts = await service.list(
+            actor=subject,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except PackageInstallationError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorPackageInstallationListResponse(
+        data=tuple(ConnectorPackageInstallationReceiptData.from_domain(item) for item in receipts),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),

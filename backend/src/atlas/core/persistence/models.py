@@ -1371,6 +1371,13 @@ class ConnectorInstanceRecordModel(Base):
     organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    instance_state: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="disabled_unconfigured", index=True
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    retired_by: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    retirement_idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 

@@ -56,6 +56,7 @@ from atlas.modules.authorization.application.bootstrap import (
     CONNECTOR_CREDENTIAL_ASSIGNMENT_READ,
     CONNECTOR_INSTANCE_CREATE,
     CONNECTOR_INSTANCE_READ,
+    CONNECTOR_INSTANCE_RETIRE,
     CONNECTOR_INVOCATION_AUTHORIZATION_CREATE,
     CONNECTOR_INVOCATION_AUTHORIZATION_READ,
     CONNECTOR_INVOCATION_EVIDENCE_CREATE,
@@ -3343,6 +3344,18 @@ async def authorize_connector_instance_read(
         subject,
         permission_id=CONNECTOR_INSTANCE_READ,
         capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def authorize_connector_instance_retire(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_instance(
+        request,
+        subject,
+        permission_id=CONNECTOR_INSTANCE_RETIRE,
+        capability_class=CapabilityClass.C3_CONTROLLED_CHANGE,
     )
 
 

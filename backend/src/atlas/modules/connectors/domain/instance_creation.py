@@ -8,6 +8,7 @@ from atlas.modules.identity.domain.models import AssuranceLevel, validate_stable
 
 _DIGEST = re.compile(r"^[a-f0-9]{64}$")
 DISABLED_UNCONFIGURED = "disabled_unconfigured"
+RETIRED = "retired"
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +136,11 @@ class ConnectorInstanceRecord:
     deployment_approved: bool = False
     infrastructure_mutation_performed: bool = False
     reused: bool = False
+    retired_by: str | None = None
+    retired_at: datetime | None = None
+    retirement_reason: str | None = None
+    retirement_request_fingerprint: str | None = None
+    retirement_idempotency_key: str | None = None
 
     def __post_init__(self) -> None:
         for value in (
@@ -168,7 +174,7 @@ class ConnectorInstanceRecord:
         ):
             validate_stable_identifier(value, "connector instance record identifier")
         if (
-            self.version != 1
+            self.version not in {1, 2}
             or any(
                 _DIGEST.fullmatch(value) is None
                 for value in (
@@ -192,7 +198,7 @@ class ConnectorInstanceRecord:
             or not 3 <= len(self.instance_key) <= 128
             or self.instance_key != self.instance_key.lower()
             or not 3 <= len(self.display_name.strip()) <= 200
-            or self.instance_state != DISABLED_UNCONFIGURED
+            or self.instance_state not in {DISABLED_UNCONFIGURED, RETIRED}
             or not 20 <= len(self.purpose.strip()) <= 1000
             or not 8 <= len(self.idempotency_key) <= 128
             or self.created_at.tzinfo is None
@@ -202,9 +208,10 @@ class ConnectorInstanceRecord:
                     self.connector_registered,
                     self.package_installed,
                     self.instance_created,
-                    self.eligible_for_configuration_governance,
                 )
             )
+            or self.eligible_for_configuration_governance
+            != (self.instance_state == DISABLED_UNCONFIGURED)
             or self.promotion_blocked
             or any(
                 (
@@ -219,3 +226,26 @@ class ConnectorInstanceRecord:
             )
         ):
             raise ValueError("Connector instance record violates the authority boundary")
+        retirement_values = (
+            self.retired_by,
+            self.retired_at,
+            self.retirement_reason,
+            self.retirement_request_fingerprint,
+            self.retirement_idempotency_key,
+        )
+        if self.instance_state == DISABLED_UNCONFIGURED:
+            if self.version != 1 or any(value is not None for value in retirement_values):
+                raise ValueError("Active connector instance retirement metadata is invalid")
+        elif (
+            self.version != 2
+            or self.retired_by is None
+            or self.retired_at is None
+            or self.retired_at.tzinfo is None
+            or self.retirement_reason is None
+            or not 20 <= len(self.retirement_reason.strip()) <= 1000
+            or self.retirement_request_fingerprint is None
+            or _DIGEST.fullmatch(self.retirement_request_fingerprint) is None
+            or self.retirement_idempotency_key is None
+            or not 8 <= len(self.retirement_idempotency_key) <= 128
+        ):
+            raise ValueError("Retired connector instance metadata is invalid")

@@ -189,6 +189,9 @@ const HealthInventoryEvidenceWorkspace = lazy(
 const InventoryDeviceRegistryWorkspace = lazy(
   () => import("./features/health/InventoryDeviceRegistryWorkspace"),
 );
+const InstalledMcpManagementWorkspace = lazy(
+  () => import("./features/connectors/InstalledMcpManagementWorkspace"),
+);
 const HealthDecisionSupportWorkspace = lazy(
   () => import("./features/health/HealthDecisionSupportWorkspace"),
 );
@@ -2049,6 +2052,18 @@ export function OperationalApplication({
 
             {activeNavigation === "Connectors" && (
             <div className="mcp-builder-workspace">
+              <WorkspaceLoadBoundary compact resetKey="installed-mcp-management" workspace="Connectors">
+                <Suspense
+                  fallback={
+                    <div className="workspace-message" aria-live="polite" aria-busy="true">
+                      <Clock3 size={22} />
+                      <div><h2>Loading installed MCPs</h2><p>Preparing authorized package and instance lifecycle records.</p></div>
+                    </div>
+                  }
+                >
+                  <InstalledMcpManagementWorkspace />
+                </Suspense>
+              </WorkspaceLoadBoundary>
               <ConnectorLifecycleOverview />
               <section className="workspace-section mcp-builder-section">
                 <div className="section-heading">

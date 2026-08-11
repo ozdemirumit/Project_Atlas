@@ -141,6 +141,7 @@ CONNECTOR_PACKAGE_INSTALLATION_CREATE = "connectors.package-installation-receipt
 CONNECTOR_PACKAGE_INSTALLATION_READ = "connectors.package-installation-receipts.read"
 CONNECTOR_INSTANCE_CREATE = "connectors.instances.create"
 CONNECTOR_INSTANCE_READ = "connectors.instances.read"
+CONNECTOR_INSTANCE_RETIRE = "connectors.instances.retire"
 CONNECTOR_TARGET_CONFIGURATION_CREATE = "connectors.target-configuration-bindings.create"
 CONNECTOR_TARGET_CONFIGURATION_READ = "connectors.target-configuration-bindings.read"
 CONNECTOR_CREDENTIAL_ASSIGNMENT_CREATE = "connectors.credential-assignments.create"
@@ -2059,7 +2060,13 @@ def build_development_authorization_service(
         ),
         PermissionDefinition(
             permission_id=CONNECTOR_INSTANCE_READ,
-            description="Read one immutable minimized connector instance record.",
+            description="Read minimized connector instance lifecycle records.",
+        ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_INSTANCE_RETIRE,
+            description=(
+                "Retire one disabled unconfigured connector instance with history preserved."
+            ),
         ),
         PermissionDefinition(
             permission_id=CONNECTOR_TARGET_CONFIGURATION_CREATE,
@@ -2562,6 +2569,7 @@ def build_development_authorization_service(
                 CONNECTOR_PACKAGE_INSTALLATION_READ,
                 CONNECTOR_INSTANCE_CREATE,
                 CONNECTOR_INSTANCE_READ,
+                CONNECTOR_INSTANCE_RETIRE,
                 CONNECTOR_TARGET_CONFIGURATION_CREATE,
                 CONNECTOR_TARGET_CONFIGURATION_READ,
                 CONNECTOR_CREDENTIAL_ASSIGNMENT_CREATE,

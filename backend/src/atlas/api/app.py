@@ -607,6 +607,9 @@ from atlas.modules.connectors.application.instance_creation import (
     ConnectorInstanceCreationService,
     build_development_connector_instance_creation_policy,
 )
+from atlas.modules.connectors.application.instance_lifecycle import (
+    ConnectorInstanceLifecycleService,
+)
 from atlas.modules.connectors.application.invocation_authorization import (
     ConnectorInvocationAuthorizationService,
     build_development_connector_invocation_authorization_policy,
@@ -2747,6 +2750,12 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    resolved_connector_instance_lifecycle_service = ConnectorInstanceLifecycleService(
+        repository=resolved_connector_instance_creation_service.repository,
+        target_repository=resolved_target_configuration_service.repository,
+        audit_sink=resolved_audit_sink,
+        environment_id=resolved_connector_instance_creation_service.environment_id,
+    )
     if credential_assignment_service is not None:
         resolved_credential_assignment_service = credential_assignment_service
     else:
@@ -4997,6 +5006,9 @@ def create_app(
         app.state.package_registration_service = resolved_package_registration_service
         app.state.package_installation_service = resolved_package_installation_service
         app.state.connector_instance_creation_service = resolved_connector_instance_creation_service
+        app.state.connector_instance_lifecycle_service = (
+            resolved_connector_instance_lifecycle_service
+        )
         app.state.target_configuration_service = resolved_target_configuration_service
         app.state.credential_assignment_service = resolved_credential_assignment_service
         app.state.configuration_validation_service = resolved_configuration_validation_service
