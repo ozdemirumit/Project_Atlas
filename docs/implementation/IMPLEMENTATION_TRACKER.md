@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-137 |
 | Title | Health workspace task-view consolidation |
-| Status | In Progress |
+| Status | In Review |
 | Branch | `agent/health-workspace-task-views` |
-| Pull Request | Pending |
+| Pull Request | [#149](https://github.com/ozdemirumit/Project_Atlas/pull/149) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-011, ATLAS-013, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083, ADR-084, ADR-085, ADR-086, ADR-087, ADR-088, ADR-089, ADR-090, ADR-091, ADR-092, ADR-093 |
 | Last Updated | 2026-08-11 |
-| Next Action | Complete validation, live review and delivery of the Health task views |
+| Next Action | Complete PR #149 CI, merge and main synchronization |
 
 ### ATLAS-IMP-137 Scope Rationale
 
