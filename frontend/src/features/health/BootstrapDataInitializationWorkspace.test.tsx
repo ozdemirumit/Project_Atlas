@@ -407,4 +407,3 @@ describe("BootstrapDataInitializationWorkspace", () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["bootstrap-data-plan"] });
   });
 });
-
