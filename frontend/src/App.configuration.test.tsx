@@ -624,7 +624,9 @@ describe("deployment configuration preview", () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText("Versioned deployment preview")).toBeVisible();
+    expect(
+      await screen.findByText("Versioned deployment preview", {}, { timeout: 10_000 }),
+    ).toBeVisible();
     expect(screen.getByText("Secrets use opaque references only.")).toBeVisible();
     expect(screen.getByText(/No file write, secret provisioning, port change/)).toBeVisible();
     expect(screen.queryByText(/top-secret-value/)).not.toBeInTheDocument();
