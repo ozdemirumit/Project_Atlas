@@ -7,6 +7,7 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeApprovalPolicySnapshot,
     ConnectorUpgradeApprovalRequest,
     ConnectorUpgradeApprovalRevalidation,
+    ConnectorUpgradeChangeContextDraft,
 )
 
 
@@ -15,6 +16,7 @@ class InMemoryConnectorUpgradeApprovalRepository:
         self._records: dict[str, ConnectorUpgradeApprovalRequest] = {}
         self._decisions: dict[str, ConnectorUpgradeApprovalDecision] = {}
         self._revalidations: dict[str, ConnectorUpgradeApprovalRevalidation] = {}
+        self._change_context_drafts: dict[str, ConnectorUpgradeChangeContextDraft] = {}
         self._lock = asyncio.Lock()
 
     @property
@@ -115,6 +117,37 @@ class InMemoryConnectorUpgradeApprovalRepository:
             ):
                 return False
             self._revalidations[revalidation.revalidation_id] = revalidation
+            return True
+
+    async def get_latest_change_context_draft(
+        self, *, request_id: str
+    ) -> ConnectorUpgradeChangeContextDraft | None:
+        matches = tuple(
+            item for item in self._change_context_drafts.values() if item.request_id == request_id
+        )
+        return max(matches, key=lambda item: item.created_at) if matches else None
+
+    async def get_change_context_draft_by_key(
+        self, *, created_by: str, idempotency_key: str
+    ) -> ConnectorUpgradeChangeContextDraft | None:
+        return next(
+            (
+                item
+                for item in self._change_context_drafts.values()
+                if item.created_by == created_by and item.idempotency_key == idempotency_key
+            ),
+            None,
+        )
+
+    async def add_change_context_draft(self, draft: ConnectorUpgradeChangeContextDraft) -> bool:
+        async with self._lock:
+            if draft.draft_id in self._change_context_drafts or any(
+                item.created_by == draft.created_by
+                and item.idempotency_key == draft.idempotency_key
+                for item in self._change_context_drafts.values()
+            ):
+                return False
+            self._change_context_drafts[draft.draft_id] = draft
             return True
 
     async def close(self) -> None:

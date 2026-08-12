@@ -28,6 +28,7 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeApprovalRequest,
     ConnectorUpgradeApprovalRevalidation,
     ConnectorUpgradeApprovalState,
+    ConnectorUpgradeChangeContextDraft,
     ConnectorUpgradeHandoffReadinessAssessment,
 )
 from atlas.modules.identity.domain.models import (
@@ -48,6 +49,9 @@ UPGRADE_APPROVAL_REVALIDATION_CREATE_PERMISSION = "connectors.upgrade-approval-r
 UPGRADE_APPROVAL_REVALIDATION_READ_PERMISSION = "connectors.upgrade-approval-revalidations.read"
 UPGRADE_HANDOFF_READINESS_SCHEMA = "atlas.connector-upgrade-handoff-readiness.v2"
 UPGRADE_HANDOFF_READINESS_READ_PERMISSION = "connectors.upgrade-handoff-readiness.read"
+UPGRADE_CHANGE_CONTEXT_SCHEMA = "atlas.connector-upgrade-change-context-draft.v1"
+UPGRADE_CHANGE_CONTEXT_CREATE_PERMISSION = "connectors.upgrade-change-context-drafts.create"
+UPGRADE_CHANGE_CONTEXT_READ_PERMISSION = "connectors.upgrade-change-context-drafts.read"
 UPGRADE_HANDOFF_APPLICABILITY_POLICY_ID = "connector-upgrade-handoff-evidence-applicability.default"
 UPGRADE_HANDOFF_APPLICABILITY_POLICY_VERSION = "v2026.08.12.1"
 UPGRADE_HANDOFF_CURRENT_CHECK_IDS = (
@@ -741,6 +745,260 @@ class ConnectorUpgradeApprovalService:
             idempotency_key=None,
         )
         return assessment
+
+    async def create_change_context_draft(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        record_id: str,
+        request_id: str,
+        expected_readiness_digest: str,
+        proposed_window_start: datetime,
+        proposed_window_end: datetime,
+        justification: str,
+        acknowledged_draft_grants_no_dispatch_approval_handoff_or_execution_authority: bool,
+        idempotency_key: str,
+        correlation_id: str,
+    ) -> ConnectorUpgradeChangeContextDraft:
+        self._require_enterprise_human(actor)
+        normalized_justification = justification.strip()
+        if (
+            not acknowledged_draft_grants_no_dispatch_approval_handoff_or_execution_authority
+            or not 20 <= len(normalized_justification) <= 1000
+        ):
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_change_context_acknowledgement_required"
+            )
+        now = self._clock()
+        if (
+            proposed_window_start.tzinfo is None
+            or proposed_window_end.tzinfo is None
+            or proposed_window_start < now + timedelta(minutes=15)
+            or proposed_window_start > now + timedelta(days=90)
+            or not timedelta(minutes=15)
+            <= proposed_window_end - proposed_window_start
+            <= timedelta(hours=4)
+        ):
+            raise ConnectorUpgradeApprovalError("connector_upgrade_change_context_window_invalid")
+        request = await self._repository.get(request_id=request_id)
+        if request is None:
+            raise ConnectorUpgradeApprovalError("connector_upgrade_approval_request_not_found")
+        self._require_request_scope(request, actor, record_id)
+        revalidation = await self._repository.get_latest_revalidation(request_id=request_id)
+        if revalidation is None or revalidation.revalidated_by != actor.subject_id:
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_change_context_verifier_required"
+            )
+        self._verify_revalidation(revalidation)
+        readiness = await self.assess_handoff_readiness(
+            actor=actor,
+            record_id=record_id,
+            request_id=request_id,
+            correlation_id=correlation_id,
+        )
+        if readiness.canonical_digest != expected_readiness_digest:
+            raise ConnectorUpgradeApprovalError("connector_upgrade_change_context_readiness_stale")
+        fingerprint = self._digest(
+            {
+                "request_id": request_id,
+                "readiness_digest": readiness.canonical_digest,
+                "window": (proposed_window_start.isoformat(), proposed_window_end.isoformat()),
+                "justification": normalized_justification,
+                "acknowledged_no_authority": True,
+            }
+        )
+        prior = await self._repository.get_change_context_draft_by_key(
+            created_by=actor.subject_id, idempotency_key=idempotency_key
+        )
+        if prior is not None:
+            self._verify_change_context_draft(prior)
+            if prior.request_fingerprint != fingerprint:
+                raise ConnectorUpgradeApprovalError(
+                    "connector_upgrade_change_context_idempotency_conflict"
+                )
+            await self._audit_revalidation(
+                actor=actor,
+                correlation_id=correlation_id,
+                revalidation=revalidation,
+                result_code="connector_upgrade_change_context_draft_reused",
+                permission_id=UPGRADE_CHANGE_CONTEXT_CREATE_PERMISSION,
+                idempotency_key=idempotency_key,
+            )
+            return replace(prior, reused=True)
+        title = (
+            f"Review connector upgrade {readiness.connector_id} for {readiness.environment_id}"
+        )[:160]
+        itsm_digest = self._digest(
+            {
+                "title": title,
+                "request_digest": readiness.request_digest,
+                "readiness_digest": readiness.canonical_digest,
+                "window": (proposed_window_start.isoformat(), proposed_window_end.isoformat()),
+                "justification": normalized_justification,
+                "itsm_dispatched": False,
+                "window_approved": False,
+            }
+        )
+        payload = {
+            "schema_version": UPGRADE_CHANGE_CONTEXT_SCHEMA,
+            "source_record_id": readiness.source_record_id,
+            "source_record_version": readiness.source_record_version,
+            "instance_id": readiness.instance_id,
+            "connector_id": readiness.connector_id,
+            "request_id": readiness.request_id,
+            "request_digest": readiness.request_digest,
+            "decision_digest": readiness.decision_digest,
+            "revalidation_id": readiness.revalidation_id,
+            "revalidation_digest": readiness.revalidation_digest,
+            "readiness_digest": readiness.canonical_digest,
+            "organization_id": readiness.organization_id,
+            "environment_id": readiness.environment_id,
+            "created_by": actor.subject_id,
+            "justification": normalized_justification,
+            "window": (proposed_window_start.isoformat(), proposed_window_end.isoformat()),
+            "itsm_draft_title": title,
+            "itsm_draft_digest": itsm_digest,
+            "request_fingerprint": fingerprint,
+            "created_at": now.isoformat(),
+            "valid_until": readiness.evidence_valid_until.isoformat(),
+        }
+        digest = self._digest(payload)
+        draft = ConnectorUpgradeChangeContextDraft(
+            draft_id=f"connector-upgrade-change-context-draft.{digest[:24]}",
+            schema_version=UPGRADE_CHANGE_CONTEXT_SCHEMA,
+            source_record_id=readiness.source_record_id,
+            source_record_version=readiness.source_record_version,
+            instance_id=readiness.instance_id,
+            connector_id=readiness.connector_id,
+            request_id=readiness.request_id,
+            request_digest=readiness.request_digest,
+            decision_digest=readiness.decision_digest,
+            revalidation_id=readiness.revalidation_id,
+            revalidation_digest=readiness.revalidation_digest,
+            readiness_digest=readiness.canonical_digest,
+            organization_id=readiness.organization_id,
+            environment_id=readiness.environment_id,
+            created_by=actor.subject_id,
+            justification=normalized_justification,
+            proposed_window_start=proposed_window_start,
+            proposed_window_end=proposed_window_end,
+            itsm_draft_title=title,
+            itsm_draft_digest=itsm_digest,
+            request_fingerprint=fingerprint,
+            idempotency_key=idempotency_key,
+            created_at=now,
+            valid_until=readiness.evidence_valid_until,
+            canonical_digest=digest,
+        )
+        if not await self._repository.add_change_context_draft(draft):
+            raced = await self._repository.get_change_context_draft_by_key(
+                created_by=actor.subject_id, idempotency_key=idempotency_key
+            )
+            if raced is None:
+                raise ConnectorUpgradeApprovalError(
+                    "connector_upgrade_change_context_idempotency_conflict"
+                )
+            self._verify_change_context_draft(raced)
+            if raced.request_fingerprint != fingerprint:
+                raise ConnectorUpgradeApprovalError(
+                    "connector_upgrade_change_context_idempotency_conflict"
+                )
+            draft = replace(raced, reused=True)
+        await self._audit_revalidation(
+            actor=actor,
+            correlation_id=correlation_id,
+            revalidation=revalidation,
+            result_code="connector_upgrade_change_context_draft_created",
+            permission_id=UPGRADE_CHANGE_CONTEXT_CREATE_PERMISSION,
+            idempotency_key=idempotency_key,
+        )
+        return draft
+
+    async def get_latest_change_context_draft(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        record_id: str,
+        request_id: str,
+        correlation_id: str,
+    ) -> ConnectorUpgradeChangeContextDraft:
+        self._require_enterprise_human(actor)
+        request = await self._repository.get(request_id=request_id)
+        if request is None:
+            raise ConnectorUpgradeApprovalError("connector_upgrade_approval_request_not_found")
+        self._require_request_scope(request, actor, record_id)
+        draft = await self._repository.get_latest_change_context_draft(request_id=request_id)
+        if draft is None or draft.organization_id != actor.organization_id:
+            raise ConnectorUpgradeApprovalError("connector_upgrade_change_context_draft_not_found")
+        self._verify_change_context_draft(draft)
+        revalidation = await self._repository.get_latest_revalidation(request_id=request_id)
+        if revalidation is None:
+            raise ConnectorUpgradeApprovalError("connector_upgrade_change_context_draft_not_found")
+        self._verify_revalidation(revalidation)
+        if (
+            revalidation.revalidation_id != draft.revalidation_id
+            or revalidation.canonical_digest != draft.revalidation_digest
+            or self._clock() >= draft.valid_until
+        ):
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_change_context_draft_not_current"
+            )
+        await self._audit_revalidation(
+            actor=actor,
+            correlation_id=correlation_id,
+            revalidation=revalidation,
+            result_code="connector_upgrade_change_context_draft_read",
+            permission_id=UPGRADE_CHANGE_CONTEXT_READ_PERMISSION,
+            idempotency_key=None,
+        )
+        return draft
+
+    @classmethod
+    def _verify_change_context_draft(cls, draft: ConnectorUpgradeChangeContextDraft) -> None:
+        itsm_digest = cls._digest(
+            {
+                "title": draft.itsm_draft_title,
+                "request_digest": draft.request_digest,
+                "readiness_digest": draft.readiness_digest,
+                "window": (
+                    draft.proposed_window_start.isoformat(),
+                    draft.proposed_window_end.isoformat(),
+                ),
+                "justification": draft.justification,
+                "itsm_dispatched": False,
+                "window_approved": False,
+            }
+        )
+        payload = {
+            "schema_version": draft.schema_version,
+            "source_record_id": draft.source_record_id,
+            "source_record_version": draft.source_record_version,
+            "instance_id": draft.instance_id,
+            "connector_id": draft.connector_id,
+            "request_id": draft.request_id,
+            "request_digest": draft.request_digest,
+            "decision_digest": draft.decision_digest,
+            "revalidation_id": draft.revalidation_id,
+            "revalidation_digest": draft.revalidation_digest,
+            "readiness_digest": draft.readiness_digest,
+            "organization_id": draft.organization_id,
+            "environment_id": draft.environment_id,
+            "created_by": draft.created_by,
+            "justification": draft.justification,
+            "window": (
+                draft.proposed_window_start.isoformat(),
+                draft.proposed_window_end.isoformat(),
+            ),
+            "itsm_draft_title": draft.itsm_draft_title,
+            "itsm_draft_digest": draft.itsm_draft_digest,
+            "request_fingerprint": draft.request_fingerprint,
+            "created_at": draft.created_at.isoformat(),
+            "valid_until": draft.valid_until.isoformat(),
+        }
+        if draft.itsm_draft_digest != itsm_digest or draft.canonical_digest != cls._digest(payload):
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_change_context_integrity_invalid"
+            )
 
     async def close(self) -> None:
         await self._repository.close()

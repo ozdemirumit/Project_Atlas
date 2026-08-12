@@ -4,14 +4,68 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-152 |
-| Title | Connector upgrade handoff evidence applicability |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#164](https://github.com/ozdemirumit/Project_Atlas/pull/164) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-102, ADR-103, ADR-104, ADR-105, ADR-106, ADR-107, ADR-108 |
+| Task ID | ATLAS-IMP-153 |
+| Title | Connector upgrade change-context draft |
+| Status | In Progress |
+| Branch | `agent/mcp-upgrade-change-context-draft` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-102, ADR-103, ADR-104, ADR-105, ADR-106, ADR-107, ADR-108, ADR-109 |
 | Last Updated | 2026-08-12 |
-| Next Action | Audit the next approved implementation slice from the governing backlog |
+| Next Action | Complete full regression, live validation and delivery evidence |
+
+### ATLAS-IMP-153 Scope Rationale
+
+- IMP-152 correctly leaves ITSM, maintenance-window and audit-readiness evidence blocked.
+- The existing platform change-review contract cannot safely represent connector package lineage.
+- ADR-109 introduces an exact-readiness-bound internal draft while deliberately leaving external
+  ITSM dispatch, approval, window authority and blocker resolution out of scope.
+
+### ATLAS-IMP-153 Acceptance Criteria
+
+- The latest independent verifier can create one immutable, idempotent draft bound to the exact
+  current readiness digest and a bounded proposed window.
+- Stale readiness, invalid windows, missing acknowledgement, cross-scope access and conflicting
+  idempotent replay fail closed.
+- PostgreSQL persistence is append-only with a unique actor-idempotency constraint and migration
+  head remains linear.
+- Create/latest-read endpoints are CSRF/RBAC protected, no-store, audit recorded and omit internal
+  fingerprints, idempotency keys, secrets, endpoints and credentials.
+- The UI creates and restores the draft and clearly displays no dispatch, no window approval and
+  continued blocked handoff state.
+- ITSM and maintenance-window blockers remain unresolved; no handoff, execution or infrastructure
+  authority is created.
+- Focused and full backend/frontend gates, production build and live responsive validation pass.
+
+### ATLAS-IMP-153 Initial Evidence
+
+- IMP-152 merged through PR #164 as `2d7e7fc98f6e7c2d73659303618ac3b815be95ba`;
+  tracker closure `e35ad1009cb32d26345eceb3be42e9de5ee042d9` passed main CI run
+  `31559207360` before IMP-153 branched.
+- ATLAS-036 keeps external ITSM authoritative and prohibits interpreting a draft or ticket state as
+  unrestricted change authority.
+- ADR-108 leaves ITSM, window and audit readiness blocked and requires separate evidence contracts.
+
+### ATLAS-IMP-153 Validation Evidence
+
+- The immutable draft binds exact request, decision, revalidation and handoff-readiness digests,
+  rejects stale/expired evidence, enforces independent-verifier ownership and records create, replay
+  and read audit outcomes. ITSM dispatch, window approval, handoff, target contact, package rebinding,
+  configuration mutation, approval consumption, execution and infrastructure mutation remain false.
+- Backend formatting and lint passed 1,185 files, mypy passed 1,083 source files, and the complete
+  backend suite passed 977 tests with three environment-specific Windows symlink skips. Alembic
+  remains at the single linear `20260812_0100` head.
+- Frontend ESLint and both TypeScript projects passed; all 217 tests in 88 files passed. The
+  2,007-module production build completed with the existing advisory limited to the transitional
+  `OperationalApplication` chunk.
+- Live validation created the internal draft and rendered its no-dispatch, no-window-approval and
+  blocked-handoff state at 1,280 px and 390 px. Both widths had zero horizontal document overflow,
+  mobile scroll X remained zero, the dialog measured 390 x 844 px, no browser errors occurred and
+  no install, apply, execute or handoff control existed. The off-canvas mobile sidebar was the only
+  intentionally out-of-viewport element group.
+
+### ATLAS-IMP-153 Delivery Evidence
+
+- Pending.
 
 ### ATLAS-IMP-152 Scope Rationale
 

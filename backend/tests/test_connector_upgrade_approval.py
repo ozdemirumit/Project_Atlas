@@ -597,6 +597,75 @@ async def test_upgrade_approval_revalidation_requires_three_people_and_remains_n
         request_id=request.request_id,
         correlation_id="correlation.connector-upgrade-handoff-readiness",
     )
+    draft = await service.create_change_context_draft(
+        actor=verifier,
+        record_id=instance.record_id,
+        request_id=request.request_id,
+        expected_readiness_digest=readiness.canonical_digest,
+        proposed_window_start=current_time[0] + timedelta(hours=2),
+        proposed_window_end=current_time[0] + timedelta(hours=3),
+        justification="Prepare a governed connector upgrade change-context draft for ITSM review.",
+        acknowledged_draft_grants_no_dispatch_approval_handoff_or_execution_authority=True,
+        idempotency_key="connector-upgrade-change-context-001",
+        correlation_id="correlation.connector-upgrade-change-context",
+    )
+    replayed_draft = await service.create_change_context_draft(
+        actor=verifier,
+        record_id=instance.record_id,
+        request_id=request.request_id,
+        expected_readiness_digest=readiness.canonical_digest,
+        proposed_window_start=current_time[0] + timedelta(hours=2),
+        proposed_window_end=current_time[0] + timedelta(hours=3),
+        justification="Prepare a governed connector upgrade change-context draft for ITSM review.",
+        acknowledged_draft_grants_no_dispatch_approval_handoff_or_execution_authority=True,
+        idempotency_key="connector-upgrade-change-context-001",
+        correlation_id="correlation.connector-upgrade-change-context-replay",
+    )
+    latest_draft = await service.get_latest_change_context_draft(
+        actor=verifier,
+        record_id=instance.record_id,
+        request_id=request.request_id,
+        correlation_id="correlation.connector-upgrade-change-context-read",
+    )
+    with pytest.raises(ConnectorUpgradeApprovalError, match="verifier_required"):
+        await service.create_change_context_draft(
+            actor=requester,
+            record_id=instance.record_id,
+            request_id=request.request_id,
+            expected_readiness_digest=readiness.canonical_digest,
+            proposed_window_start=current_time[0] + timedelta(hours=2),
+            proposed_window_end=current_time[0] + timedelta(hours=3),
+            justification="Prepare a governed connector upgrade change-context draft for review.",
+            acknowledged_draft_grants_no_dispatch_approval_handoff_or_execution_authority=True,
+            idempotency_key="connector-upgrade-change-context-requester",
+            correlation_id="correlation.connector-upgrade-change-context-requester",
+        )
+    with pytest.raises(ConnectorUpgradeApprovalError, match="readiness_stale"):
+        await service.create_change_context_draft(
+            actor=verifier,
+            record_id=instance.record_id,
+            request_id=request.request_id,
+            expected_readiness_digest="0" * 64,
+            proposed_window_start=current_time[0] + timedelta(hours=2),
+            proposed_window_end=current_time[0] + timedelta(hours=3),
+            justification="Prepare a governed connector upgrade change-context draft for review.",
+            acknowledged_draft_grants_no_dispatch_approval_handoff_or_execution_authority=True,
+            idempotency_key="connector-upgrade-change-context-stale",
+            correlation_id="correlation.connector-upgrade-change-context-stale",
+        )
+    with pytest.raises(ConnectorUpgradeApprovalError, match="idempotency_conflict"):
+        await service.create_change_context_draft(
+            actor=verifier,
+            record_id=instance.record_id,
+            request_id=request.request_id,
+            expected_readiness_digest=readiness.canonical_digest,
+            proposed_window_start=current_time[0] + timedelta(hours=3),
+            proposed_window_end=current_time[0] + timedelta(hours=4),
+            justification="Prepare a governed connector upgrade change-context draft for review.",
+            acknowledged_draft_grants_no_dispatch_approval_handoff_or_execution_authority=True,
+            idempotency_key="connector-upgrade-change-context-001",
+            correlation_id="correlation.connector-upgrade-change-context-conflict",
+        )
 
     assert revalidation.approval_current_at_revalidation
     assert revalidation.governance_ready and not revalidation.handoff_ready
@@ -634,6 +703,27 @@ async def test_upgrade_approval_revalidation_requires_three_people_and_remains_n
     assert not readiness.package_rebound and not readiness.configuration_changed
     assert not readiness.execution_authorized
     assert not readiness.infrastructure_mutation_performed
+    assert draft.state == "draft" and replayed_draft.reused
+    assert latest_draft.draft_id == draft.draft_id
+    assert draft.readiness_digest == readiness.canonical_digest
+    assert not draft.itsm_dispatched and not draft.window_approved
+    assert not draft.handoff_ready and not draft.handoff_artifact_issued
+    assert not draft.approval_consumed and not draft.execution_authorized
+    assert not draft.target_contacted and not draft.package_rebound
+    assert not draft.configuration_changed
+    assert not draft.infrastructure_mutation_performed
+    current_time[0] = draft.valid_until
+    with pytest.raises(ConnectorUpgradeApprovalError, match="draft_not_current"):
+        await service.get_latest_change_context_draft(
+            actor=verifier,
+            record_id=instance.record_id,
+            request_id=request.request_id,
+            correlation_id="correlation.connector-upgrade-change-context-expired",
+        )
+    restored_draft = PostgreSQLConnectorUpgradeApprovalRepository._change_context_to_domain(
+        cast(dict[str, object], ConnectorUpgradeApprovalService._normalize(asdict(draft)))
+    )
+    assert restored_draft == draft
     restored = PostgreSQLConnectorUpgradeApprovalRepository._revalidation_to_domain(
         cast(
             dict[str, object],
@@ -643,6 +733,12 @@ async def test_upgrade_approval_revalidation_requires_three_people_and_remains_n
     assert restored == revalidation
     assert [item.result_code for item in audit.records].count(
         "connector_upgrade_approval_revalidated"
+    ) == 1
+    assert [item.result_code for item in audit.records].count(
+        "connector_upgrade_change_context_draft_created"
+    ) == 1
+    assert [item.result_code for item in audit.records].count(
+        "connector_upgrade_change_context_draft_reused"
     ) == 1
 
 
@@ -736,10 +832,35 @@ def test_upgrade_approval_revalidation_api_is_no_store_and_hides_custody_metadat
             f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
             f"{request.request_id}/handoff-readiness"
         )
+        readiness_digest = readiness_response.json()["data"]["canonical_digest"]
+        draft_response = client.post(
+            f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
+            f"{request.request_id}/change-context-drafts",
+            headers={
+                "Idempotency-Key": "connector-upgrade-change-context-api",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+            json={
+                "schema_version": "atlas.connector-upgrade-change-context-draft-input.v1",
+                "expected_readiness_digest": readiness_digest,
+                "proposed_window_start": (plan.generated_at + timedelta(hours=3)).isoformat(),
+                "proposed_window_end": (plan.generated_at + timedelta(hours=4)).isoformat(),
+                "justification": "Prepare the exact connector upgrade for governed ITSM review.",
+                (
+                    "acknowledged_draft_grants_no_dispatch_approval_handoff_or_execution_authority"
+                ): True,
+            },
+        )
+        draft_read_response = client.get(
+            f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
+            f"{request.request_id}/change-context-drafts/latest"
+        )
 
     assert response.status_code == 201, response.text
     assert read_response.status_code == 200, read_response.text
     assert readiness_response.status_code == 200, readiness_response.text
+    assert draft_response.status_code == 201, draft_response.text
+    assert draft_read_response.status_code == 200, draft_read_response.text
     assert response.headers["Cache-Control"] == "no-store"
     data = response.json()["data"]
     assert data["governance_ready"] is True and data["handoff_ready"] is False
@@ -753,11 +874,24 @@ def test_upgrade_approval_revalidation_api_is_no_store_and_hides_custody_metadat
     assert len(readiness_data["not_applicable_check_ids"]) == 3
     assert len(readiness_data["blocker_ids"]) == 3
     assert readiness_data["applicability_policy_digest"]
-    rendered = response.text.lower()
+    draft_data = draft_response.json()["data"]
+    assert draft_data["state"] == "draft"
+    assert draft_data["readiness_digest"] == readiness_data["canonical_digest"]
+    assert draft_data["itsm_dispatched"] is False
+    assert draft_data["window_approved"] is False
+    assert draft_data["handoff_ready"] is False
+    assert draft_data["target_contacted"] is False
+    assert draft_data["package_rebound"] is False
+    assert draft_data["configuration_changed"] is False
+    assert draft_data["execution_authorized"] is False
+    assert draft_read_response.json()["data"]["draft_id"] == draft_data["draft_id"]
+    assert draft_response.headers["Cache-Control"] == "no-store"
+    rendered = f"{response.text} {draft_response.text} {draft_read_response.text}".lower()
     for hidden in (
         "revalidation_fingerprint",
         "idempotency_key",
         "credential",
         "target_endpoint",
+        "request_fingerprint",
     ):
         assert hidden not in rendered
