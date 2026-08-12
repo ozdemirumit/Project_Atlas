@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-161 |
 | Title | Connector upgrade signing-provider conformance assessment foundation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/mcp-signing-provider-conformance` |
-| Pull Request | Pending |
+| Pull Request | [#173](https://github.com/ozdemirumit/Project_Atlas/pull/173) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-114, ADR-115, ADR-116, ADR-117 |
 | Last Updated | 2026-08-12 |
-| Next Action | Publish the completed IMP-161 slice for review and pass exact-head CI |
+| Next Action | Pass exact-head CI, merge PR #173 and verify merged-main CI |
 
 ### ATLAS-IMP-161 Scope Rationale
 
@@ -69,7 +69,10 @@
 
 ### ATLAS-IMP-161 Delivery Evidence
 
-- Pending.
+- ADR-117 records the provider-neutral diagnostic contract, adapter-contained raw signature,
+  short-lived evidence, C2/C1 authorization, required audit and production fail-closed boundary.
+- Source commit `cc27863` is published in draft PR
+  [#173](https://github.com/ozdemirumit/Project_Atlas/pull/173); exact-head CI is in progress.
 
 ### ATLAS-IMP-160 Scope Rationale
 
