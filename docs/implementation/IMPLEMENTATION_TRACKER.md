@@ -4,14 +4,42 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-168 |
-| Title | Governed ITSM handoff human review foundation |
-| Status | In Progress; implementation and local validation complete |
-| Branch | `agent/itsm-handoff-human-review` |
-| Pull Request | [#180](https://github.com/ozdemirumit/Project_Atlas/pull/180) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-016, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-124 |
+| Task ID | ATLAS-IMP-169 |
+| Title | Durable technical reports and post-restart ITSM review revalidation |
+| Status | In Progress; scope and acceptance recorded |
+| Branch | `main` (start record; implementation branch pending) |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-016, ATLAS-032, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-124, ADR-125 (planned) |
 | Last Updated | 2026-08-13 |
-| Next Action | Complete GitHub PR, exact-head CI, squash merge and independent `main` CI validation |
+| Next Action | Record ADR-125, implement durable exact-report storage and restart-safe review revalidation, then complete local, live and GitHub validation |
+
+### ATLAS-IMP-169 Scope Rationale
+
+- IMP-168 makes ITSM handoff human reviews durable when PostgreSQL is configured, but their exact
+  technical-report source remains process-local. After restart, Atlas correctly fails closed and
+  cannot display or revalidate an otherwise durable review.
+- A durable report repository is required before any future outbound ITSM readiness or dispatch
+  slice can prove that a review still binds the exact original content.
+- This slice persists generated report artifacts and their review-only handoff drafts. It does not
+  add dispatch, external ticket mutation, workflow approval or infrastructure execution authority.
+
+### ATLAS-IMP-169 Acceptance Criteria
+
+- Generated technical reports, sections, lineage, embedded review state, rendered Markdown and ITSM
+  handoff drafts round-trip through a durable repository without losing classification, expiry,
+  component versions, content digest or no-authority fields.
+- Report creation remains idempotent for an exact source request and repository writes are atomic;
+  conflicting identities, versions, digests or duplicate immutable IDs fail closed.
+- Report lookup enforces exact organization/environment/site scope, expiry, no-store response and
+  attributable audit. The handoff-review service can revalidate a durable review after a process
+  restart against the exact durable report and canonical handoff digest.
+- In-memory development behavior remains available without a database URL. PostgreSQL schema and
+  repository behavior follow existing migration, connection and close semantics with one Alembic
+  head.
+- The UI may recover a generated report and its human-review evidence after reload without exposing
+  dispatch, arbitrary ticket mutation, credential, approval or execution controls.
+- ADR, focused and full backend/frontend gates, production build and live restart validation pass
+  before delivery.
 
 ### ATLAS-IMP-168 Scope Rationale
 
@@ -70,6 +98,15 @@
   review, explicit enterprise-MFA reviewer requirement and no-dispatch/no-execution boundaries.
   Desktop 1,280 x 720 and mobile 390 x 844 views had no horizontal overflow or Vite overlay; no
   dispatch or execute button was present.
+
+### ATLAS-IMP-168 Delivery Evidence
+
+- Source head `3dd86e343b4e71a25b627a18eaab15bed86658a1` passed exact-head PR CI run
+  `31649650411`; backend completed in 5m51s and frontend in 4m24s.
+- PR [#180](https://github.com/ozdemirumit/Project_Atlas/pull/180) was squash-merged as
+  `a721aa18f8fdf173489ce1e7958cd7a5f3c9dda0`.
+- The exact merged commit independently passed `main` CI run `31650079954`; backend completed in
+  5m42s and frontend in 4m37s.
 
 ### ATLAS-IMP-167 Scope Rationale
 
