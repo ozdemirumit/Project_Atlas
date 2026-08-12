@@ -279,7 +279,7 @@ const upgradeApprovalRevalidation: ConnectorUpgradeApprovalRevalidation = {
 
 const handoffReadiness: ConnectorUpgradeHandoffReadiness = {
   assessment_id: "connector-upgrade-handoff-readiness.test",
-  schema_version: "atlas.connector-upgrade-handoff-readiness.v1",
+  schema_version: "atlas.connector-upgrade-handoff-readiness.v2",
   source_record_id: instance.record_id,
   source_record_version: instance.version,
   instance_id: instance.instance_id,
@@ -295,13 +295,24 @@ const handoffReadiness: ConnectorUpgradeHandoffReadiness = {
   organization_id: instance.organization_id,
   environment_id: instance.environment_id,
   assessed_by: "subject.connector-independent-verifier",
+  applicability_policy_id: "connector-upgrade-handoff-evidence-applicability.default",
+  applicability_policy_version: "v2026.08.12.1",
+  applicability_policy_digest: "6".repeat(64),
+  required_check_ids: [
+    "connector.upgrade.handoff.approval-current",
+    "connector.upgrade.handoff.itsm-change-current",
+    "connector.upgrade.handoff.maintenance-window-current",
+    "connector.upgrade.handoff.audit-readiness-evidence-current",
+  ],
   satisfied_check_ids: ["connector.upgrade.handoff.approval-current"],
+  not_applicable_check_ids: [
+    "connector.upgrade.handoff.target-binding-current",
+    "connector.upgrade.handoff.service-impact-evidence-current",
+    "connector.upgrade.handoff.runtime-health-evidence-current",
+  ],
   blocker_ids: [
-    "connector.upgrade.handoff.blocked.target-binding-missing",
-    "connector.upgrade.handoff.blocked.service-impact-evidence-missing",
     "connector.upgrade.handoff.blocked.itsm-change-missing",
     "connector.upgrade.handoff.blocked.maintenance-window-missing",
-    "connector.upgrade.handoff.blocked.runtime-health-evidence-missing",
     "connector.upgrade.handoff.blocked.audit-readiness-evidence-missing",
   ],
   assessed_at: "2026-08-12T00:41:00Z",
@@ -481,7 +492,12 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(screen.getByText(/Handoff remains blocked/i)).toBeVisible();
     expect(await screen.findByText("Handoff blocked")).toBeVisible();
     expect(screen.getByText(/No artifact was issued/i)).toBeVisible();
-    expect(screen.getByText(/target-binding-missing/i)).toBeVisible();
+    expect(screen.getByText("Required evidence missing")).toBeVisible();
+    expect(screen.getByText(/itsm-change-missing/i)).toBeVisible();
+    expect(screen.getByText("Satisfied checks")).toBeVisible();
+    expect(screen.getByText("Not applicable in this context")).toBeVisible();
+    expect(screen.getByText(/target-binding-current/i)).toBeVisible();
+    expect(screen.getByText(/Applicability policy v2026.08.12.1/i)).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|apply|execute|handoff/i })).toBeNull();
   });
 

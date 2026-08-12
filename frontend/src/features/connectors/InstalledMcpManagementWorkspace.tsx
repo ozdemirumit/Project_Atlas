@@ -403,8 +403,12 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
                     <div>
                       <strong>Handoff blocked</strong>
                       <span>No artifact was issued and the approval remains unconsumed.</span>
-                      <p>Missing evidence</p>
+                      <p>Required evidence missing</p>
                       <ul>{handoffReadinessQuery.data.blocker_ids.map((blockerId) => <li key={blockerId}>{blockerId}</li>)}</ul>
+                      <p>Satisfied checks</p>
+                      <ul>{handoffReadinessQuery.data.satisfied_check_ids.map((checkId) => <li key={checkId}>{checkId}</li>)}</ul>
+                      {handoffReadinessQuery.data.not_applicable_check_ids.length > 0 && <><p>Not applicable in this context</p><ul>{handoffReadinessQuery.data.not_applicable_check_ids.map((checkId) => <li key={checkId}>{checkId}</li>)}</ul></>}
+                      <small>Applicability policy {handoffReadinessQuery.data.applicability_policy_version}</small>
                     </div>
                   </div>
                 )}
