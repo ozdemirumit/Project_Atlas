@@ -479,7 +479,7 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
                     </div>
                     <div className="installed-mcp-approval-decision">
                       <strong>Verify evidence receipt</strong>
-                      <label>Receipt JSON<input type="file" accept=".json,application/json" onChange={(event) => {
+                      <label className="installed-mcp-receipt-file"><FileCheck2 size={18} /><span><strong>{verificationFileName || "Select receipt JSON"}</strong><small>JSON, maximum 64 KB</small></span><input aria-label="Receipt JSON" type="file" accept=".json,application/json" onChange={(event) => {
                         const file = event.currentTarget.files?.[0];
                         setVerificationFileError("");
                         setVerificationReceipt(null);
@@ -503,7 +503,6 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
                           }
                         });
                       }} /></label>
-                      {verificationFileName && <small>{verificationFileName}</small>}
                       {verificationFileError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><span>{verificationFileError}</span></div>}
                       {evidenceReceiptVerificationMutation.data ? (
                         <div className={`installed-mcp-status ${evidenceReceiptVerificationMutation.data.verification_state === "current" ? "" : "error-state"}`} role="status">

@@ -8,10 +8,10 @@
 | Title | Connector upgrade evidence receipt verification |
 | Status | In Progress |
 | Branch | `agent/mcp-upgrade-evidence-verification` |
-| Pull Request | Pending |
+| Pull Request | [#170](https://github.com/ozdemirumit/Project_Atlas/pull/170) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110, ADR-111, ADR-112, ADR-113, ADR-114 |
 | Last Updated | 2026-08-12 |
-| Next Action | Define and implement non-executable receipt integrity verification and current-state revalidation |
+| Next Action | Complete final exact-head CI, merge PR #170 and verify the merged `main` commit |
 
 ### ATLAS-IMP-158 Scope Rationale
 
@@ -48,7 +48,24 @@
 
 ### ATLAS-IMP-158 Validation Evidence
 
-- Pending.
+- Domain, application and API validation bind the uploaded receipt to its deterministic identifier,
+  canonical SHA-256 digest, exact organization/environment/request scope and current authoritative
+  request, decision, revalidation, immutable plan and evidence records. Tampered, malformed,
+  authority-bearing and cross-scope receipts fail closed.
+- Verification distinguishes `current`, `stale`, `expired` and `unverifiable` states. Every result
+  explicitly reports that digest integrity does not prove authenticity and grants no approval,
+  handoff, target, configuration, runtime, execution or infrastructure-mutation authority.
+- Exact-head GitHub CI run `31584667158` passed backend formatting, lint, mypy and the complete test
+  suite in 6m46s, plus frontend ESLint, TypeScript, all tests and production build in 4m29s.
+- Local backend and frontend reruns remain blocked by access-denied errors in Python DLLs and the
+  shared Node dependency cache that Norton previously quarantined. Source-level `git diff --check`,
+  the browser workflow and the independent clean-runner CI remain successful; the failure is an
+  explicitly recorded workstation dependency-cache condition, not a product test failure.
+- Live browser validation uploaded and verified the minimized receipt at 1,280 px and 390 px. The
+  current-state result exposed integrity, current-state and authenticity separately; there were no
+  browser errors, prohibited execution controls or horizontal document overflow. Mobile scroll X
+  remained zero and the 390 x 844 px dialog stayed within the viewport; only the intentional
+  off-canvas navigation was outside the visible mobile canvas.
 
 ### ATLAS-IMP-158 Delivery Evidence
 
