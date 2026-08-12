@@ -8,10 +8,10 @@
 | Title | Connector upgrade non-executable evidence receipt |
 | Status | In Progress |
 | Branch | `agent/mcp-upgrade-evidence-receipt` |
-| Pull Request | Pending |
+| Pull Request | [#169](https://github.com/ozdemirumit/Project_Atlas/pull/169) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110, ADR-111, ADR-112, ADR-113 |
 | Last Updated | 2026-08-12 |
-| Next Action | Define and implement a non-executable, integrity-verifiable evidence receipt |
+| Next Action | Complete exact-head CI and merge PR #169 |
 
 ### ATLAS-IMP-157 Scope Rationale
 
@@ -56,7 +56,8 @@
   configuration, execution or infrastructure-mutation authority.
 - Ten focused backend tests passed before a later Norton Behavioral Protection lock denied access to
   the workstation's base Python executable. Backend Ruff formatting and lint still passed all 1,184
-  files; the clean exact-head GitHub CI environment is the required full backend confirmation.
+  files. Exact-head GitHub CI independently passed formatting, lint, mypy and the complete backend
+  test suite in a clean environment.
 - Frontend ESLint and TypeScript passed, all 218 tests in 88 files passed and the production build
   completed with only the existing `OperationalApplication` chunk advisory. Twelve focused receipt
   and connector-workspace tests had also passed before the local security lock.
@@ -67,7 +68,10 @@
 
 ### ATLAS-IMP-157 Delivery Evidence
 
-- Pending.
+- Implementation commit `e8dc5c2c6ae8d39c271c53f6b44fc3d9303b28ea` passed exact-head
+  pull-request CI run `31581664954`; backend completed in 7m30s and frontend in 4m28s.
+- PR [#169](https://github.com/ozdemirumit/Project_Atlas/pull/169) remains open until the final
+  tracker-only head commit passes the same required backend and frontend gates.
 
 ### ATLAS-IMP-156 Scope Rationale
 
