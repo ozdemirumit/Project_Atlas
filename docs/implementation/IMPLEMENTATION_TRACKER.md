@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-164 |
 | Title | Connector upgrade signing-provider onboarding policy authenticity foundation |
-| Status | Planning |
-| Branch | `main` |
+| Status | Validated; preparing pull request |
+| Branch | `agent/mcp-signing-provider-onboarding-policy-authenticity` |
 | Pull Request | Not opened |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-020, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-115, ADR-116, ADR-117, ADR-118, ADR-119 |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-020, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-115, ADR-116, ADR-117, ADR-118, ADR-119, ADR-120 |
 | Last Updated | 2026-08-12 |
-| Next Action | Record ADR-120 and bind active policy to independently verified issuer attestation |
+| Next Action | Publish the validated slice, run exact-head CI and complete review |
 
 ### ATLAS-IMP-164 Scope Rationale
 
@@ -50,6 +50,34 @@
   frontend in 4m32s.
 - ADR-119 establishes canonical integrity and issuer metadata but deliberately does not claim
   cryptographically verified issuer provenance.
+- The clean starting commit `41d1c4baf10ebd7f83444204278aabc965c39434` passed independent
+  `main` CI run `31624764266` with backend in 3m53s and frontend in 4m43s.
+
+### ATLAS-IMP-164 Validation Evidence
+
+- ADR-120 records independently supplied policy attestation, issuer trust and cryptographic verifier
+  boundaries. Immutable attestation and trust-key values bind exact scope, policy digest, issuer,
+  key/algorithm identity, lifecycle state and validity windows.
+- Missing attestation, missing trust key and cryptographically unverified signature tests fail closed
+  with stable reason codes. Expired, future, ambiguous, scope, binding, integrity, disabled and revoked
+  states are rejected in the service boundary. Production receives empty sources and an unavailable
+  verifier; development HMAC remains explicitly non-production.
+- Backend formatting and lint passed; strict `mypy` passed across 969 source and focused test files.
+  The focused connector-upgrade/API suite passed 32 tests, and the complete backend regression passed
+  994 tests with three expected Windows symlink skips. Alembic reports the single `20260812_0101`
+  head because provenance evidence is injected and readiness remains computed on read.
+- Frontend TypeScript and zero-warning lint passed; the focused API/workspace suite passed 18 tests,
+  the complete frontend suite passed 224 tests across 88 files and the production Vite build passed
+  with only the existing chunk-size advisory.
+- Live session verification recorded login `201`, readiness `200`, `Cache-Control: no-store`, verified
+  policy provenance, exact attestation/trust-key binding and 13 blocked provider requirements. All
+  provider configuration, key management, receipt signing, execution and infrastructure mutation
+  flags were false; no raw signature, key material, endpoint, credential, secret or private field was
+  exposed.
+- Live desktop validation at 1280x720 rendered issuer-attestation status, trust-key reference,
+  algorithm and attestation digest without write controls. Chromium device emulation at 390x844
+  measured document/body width at exactly 390px with no page or policy-item overflow; a clean browser
+  session produced no console warning or error.
 
 ### ATLAS-IMP-163 Scope Rationale
 

@@ -34,6 +34,11 @@ from atlas.modules.connectors.adapters.upgrade_evidence_authenticity_memory impo
     NonProductionHmacUpgradeEvidenceAuthenticityProvider,
     UnavailableUpgradeEvidenceAuthenticityProvider,
 )
+from atlas.modules.connectors.adapters.upgrade_onboarding_policy_authenticity_memory import (
+    HmacConnectorUpgradeSigningProviderOnboardingPolicyVerifier,
+    InMemoryConnectorUpgradeSigningProviderOnboardingPolicyAttestationSource,
+    InMemoryConnectorUpgradeSigningProviderOnboardingPolicyTrustSource,
+)
 from atlas.modules.connectors.application.instance_creation import (
     ConnectorInstanceCreationService,
 )
@@ -44,6 +49,8 @@ from atlas.modules.connectors.application.upgrade_approval import (
     ConnectorUpgradeApprovalService,
     build_development_connector_upgrade_approval_policy,
     build_development_connector_upgrade_signing_provider_onboarding_policy,
+    build_development_connector_upgrade_signing_provider_onboarding_policy_attestation,
+    build_development_connector_upgrade_signing_provider_onboarding_policy_trust_key,
 )
 from atlas.modules.connectors.application.upgrade_approval_ports import (
     ConnectorUpgradeApprovalError,
@@ -144,6 +151,24 @@ async def approval_fixture(
         issued_at=now - timedelta(hours=1),
         expires_at=now + timedelta(days=1),
     )
+    onboarding_policy_key_material = b"connector-onboarding-policy-authenticity-test-key"
+    onboarding_policy_trust_key = (
+        build_development_connector_upgrade_signing_provider_onboarding_policy_trust_key(
+            organization_id=instance.organization_id,
+            environment_id=instance.environment_id,
+            not_before=now - timedelta(hours=1),
+            expires_at=now + timedelta(days=1),
+        )
+    )
+    onboarding_policy_attestation = (
+        build_development_connector_upgrade_signing_provider_onboarding_policy_attestation(
+            policy=onboarding_policy,
+            trust_key=onboarding_policy_trust_key,
+            key_material=onboarding_policy_key_material,
+            issued_at=now - timedelta(hours=1),
+            expires_at=now + timedelta(days=1),
+        )
+    )
     service = ConnectorUpgradeApprovalService(
         repository=InMemoryConnectorUpgradeApprovalRepository(),
         policy_source=InMemoryConnectorUpgradeApprovalPolicySource((approval_policy,)),
@@ -171,6 +196,23 @@ async def approval_fixture(
         ),
         signing_provider_onboarding_policy_source=(
             InMemoryConnectorUpgradeSigningProviderOnboardingPolicySource((onboarding_policy,))
+        ),
+        signing_provider_onboarding_policy_attestation_source=(
+            InMemoryConnectorUpgradeSigningProviderOnboardingPolicyAttestationSource(
+                (onboarding_policy_attestation,)
+            )
+        ),
+        signing_provider_onboarding_policy_trust_source=(
+            InMemoryConnectorUpgradeSigningProviderOnboardingPolicyTrustSource(
+                (onboarding_policy_trust_key,)
+            )
+        ),
+        signing_provider_onboarding_policy_verifier=(
+            HmacConnectorUpgradeSigningProviderOnboardingPolicyVerifier(
+                key_id=onboarding_policy_trust_key.key_id,
+                key_version=onboarding_policy_trust_key.key_version,
+                key_material=onboarding_policy_key_material,
+            )
         ),
         clock=resolved_clock,
     )
@@ -672,6 +714,11 @@ async def test_signing_provider_onboarding_readiness_requires_all_authoritative_
     assert dossier.policy_digest != "0" * 64
     assert dossier.policy_expires_at > dossier.evaluated_at
     assert dossier.policy_issued_by == "subject.security-architecture"
+    assert dossier.policy_provenance_verified
+    assert dossier.policy_attestation_id.startswith(
+        "connector-upgrade-signing-provider-onboarding-policy-attestation."
+    )
+    assert dossier.policy_trust_key_id == ("key.connector-upgrade-onboarding-policy.nonproduction")
     assert dossier.required_external_inputs == ()
     assert all(
         item.state is ConnectorUpgradeSigningProviderOnboardingRequirementState.SATISFIED
@@ -782,6 +829,54 @@ async def test_onboarding_policy_governance_rejects_source_scope_mismatch() -> N
         )
 
 
+class _RejectingOnboardingPolicyVerifier:
+    async def verify(self, *, attestation: object, trust_key: object) -> bool:
+        del attestation, trust_key
+        return False
+
+
+@pytest.mark.asyncio
+async def test_onboarding_policy_provenance_fails_closed_without_attestation_or_trust() -> None:
+    service, _, _, _, _, _, _, _ = await approval_fixture()
+    actor = instance_operator("subject.connector-onboarding-policy-provenance-missing")
+    service._signing_provider_onboarding_policy_attestation_source = (
+        InMemoryConnectorUpgradeSigningProviderOnboardingPolicyAttestationSource()
+    )
+    with pytest.raises(
+        ConnectorUpgradeApprovalError,
+        match="connector_upgrade_signing_provider_onboarding_policy_attestation_unavailable",
+    ):
+        await service.signing_provider_onboarding_readiness(
+            actor=actor, correlation_id="correlation.onboarding-policy-attestation-missing"
+        )
+
+    service, _, _, _, _, _, _, _ = await approval_fixture()
+    service._signing_provider_onboarding_policy_trust_source = (
+        InMemoryConnectorUpgradeSigningProviderOnboardingPolicyTrustSource()
+    )
+    with pytest.raises(
+        ConnectorUpgradeApprovalError,
+        match="connector_upgrade_signing_provider_onboarding_policy_trust_key_unavailable",
+    ):
+        await service.signing_provider_onboarding_readiness(
+            actor=actor, correlation_id="correlation.onboarding-policy-trust-missing"
+        )
+
+
+@pytest.mark.asyncio
+async def test_onboarding_policy_provenance_rejects_unverified_signature() -> None:
+    service, _, _, _, _, _, _, _ = await approval_fixture()
+    service._signing_provider_onboarding_policy_verifier = _RejectingOnboardingPolicyVerifier()
+    with pytest.raises(
+        ConnectorUpgradeApprovalError,
+        match="connector_upgrade_signing_provider_onboarding_policy_signature_unverified",
+    ):
+        await service.signing_provider_onboarding_readiness(
+            actor=instance_operator("subject.connector-onboarding-policy-signature"),
+            correlation_id="correlation.onboarding-policy-signature",
+        )
+
+
 @pytest.mark.asyncio
 async def test_onboarding_readiness_rejects_stale_conformance_and_wrong_scope_evidence() -> None:
     service, _, _, _, _, _, sources, _ = await approval_fixture()
@@ -875,11 +970,16 @@ def test_signing_provider_onboarding_readiness_api_is_no_store_and_exact_schema(
     assert len(payload["policy_digest"]) == 64
     assert payload["policy_issued_by"] == "subject.security-architecture"
     assert payload["policy_expires_at"] > payload["evaluated_at"]
+    assert payload["policy_provenance_verified"] is True
+    assert len(payload["policy_attestation_digest"]) == 64
+    assert payload["policy_trust_key_id"].endswith(".nonproduction")
     assert payload["provider_configuration_authorized"] is False
     assert payload["execution_authorized"] is False
     assert "endpoint" not in payload
     assert "credential" not in payload
     assert "secret" not in payload
+    assert "signature" not in payload
+    assert "key_material" not in payload
 
 
 def test_signing_key_trust_effective_state_precedence_is_deterministic() -> None:
