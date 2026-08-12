@@ -356,6 +356,8 @@ class ConnectorUpgradeHandoffReadinessAssessment:
     applicability_policy_id: str
     applicability_policy_version: str
     applicability_policy_digest: str
+    audit_readiness_evidence_id: str | None
+    audit_readiness_evidence_digest: str | None
     required_check_ids: tuple[str, ...]
     satisfied_check_ids: tuple[str, ...]
     not_applicable_check_ids: tuple[str, ...]
@@ -366,6 +368,7 @@ class ConnectorUpgradeHandoffReadinessAssessment:
     assessment_state: str = "blocked"
     approval_current: bool = True
     revalidation_current: bool = True
+    audit_readiness_evidence_current: bool = False
     handoff_ready: bool = False
     handoff_artifact_issued: bool = False
     approval_consumed: bool = False
@@ -403,7 +406,20 @@ class ConnectorUpgradeHandoffReadinessAssessment:
         ):
             if _DIGEST.fullmatch(value) is None:
                 raise ValueError("Connector upgrade handoff readiness digest is invalid")
+        if self.audit_readiness_evidence_id is not None:
+            validate_stable_identifier(
+                self.audit_readiness_evidence_id,
+                "connector upgrade audit readiness evidence identifier",
+            )
+        if (self.audit_readiness_evidence_id is None) != (
+            self.audit_readiness_evidence_digest is None
+        ) or (
+            self.audit_readiness_evidence_digest is not None
+            and _DIGEST.fullmatch(self.audit_readiness_evidence_digest) is None
+        ):
+            raise ValueError("Connector upgrade audit readiness evidence binding is invalid")
         missing_check_ids = set(self.required_check_ids).difference(self.satisfied_check_ids)
+        audit_check_id = "connector.upgrade.handoff.audit-readiness-evidence-current"
         expected_blocker_ids = {
             "connector.upgrade.handoff.blocked."
             f"{item.removeprefix('connector.upgrade.handoff.').removesuffix('-current')}-missing"
@@ -443,6 +459,9 @@ class ConnectorUpgradeHandoffReadinessAssessment:
             or self.evidence_valid_until <= self.assessed_at
             or not self.approval_current
             or not self.revalidation_current
+            or self.audit_readiness_evidence_current
+            != (self.audit_readiness_evidence_id is not None)
+            or self.audit_readiness_evidence_current != (audit_check_id in self.satisfied_check_ids)
             or any(
                 (
                     self.handoff_ready,
@@ -457,6 +476,79 @@ class ConnectorUpgradeHandoffReadinessAssessment:
             )
         ):
             raise ValueError("Connector upgrade handoff readiness violates the authority boundary")
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorUpgradeAuditReadinessEvidence:
+    evidence_id: str
+    schema_version: str
+    organization_id: str
+    environment_id: str
+    request_id: str
+    request_digest: str
+    revalidation_id: str
+    revalidation_digest: str
+    ledger_id: str
+    ledger_generation: str
+    producer_coverage_digest: str
+    integrity_verification_digest: str
+    redaction_policy_digest: str
+    retention_policy_digest: str
+    verified_at: datetime
+    valid_until: datetime
+    canonical_digest: str
+    durable_acceptance: bool
+    append_only: bool
+    integrity_verified: bool
+    gap_free: bool
+    redaction_current: bool
+    retention_current: bool
+    producer_coverage_complete: bool
+    consequential_blocking_enabled: bool
+    infrastructure_mutation_performed: bool = False
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.evidence_id,
+            self.schema_version,
+            self.organization_id,
+            self.environment_id,
+            self.request_id,
+            self.revalidation_id,
+            self.ledger_id,
+            self.ledger_generation,
+        ):
+            validate_stable_identifier(value, "connector upgrade audit readiness identifier")
+        for value in (
+            self.request_digest,
+            self.revalidation_digest,
+            self.producer_coverage_digest,
+            self.integrity_verification_digest,
+            self.redaction_policy_digest,
+            self.retention_policy_digest,
+            self.canonical_digest,
+        ):
+            if _DIGEST.fullmatch(value) is None:
+                raise ValueError("Connector upgrade audit readiness digest is invalid")
+        if (
+            self.verified_at.tzinfo is None
+            or self.valid_until.tzinfo is None
+            or self.valid_until <= self.verified_at
+            or not all(
+                (
+                    self.durable_acceptance,
+                    self.append_only,
+                    self.integrity_verified,
+                    self.gap_free,
+                    self.redaction_current,
+                    self.retention_current,
+                    self.producer_coverage_complete,
+                    self.consequential_blocking_enabled,
+                )
+            )
+            or self.infrastructure_mutation_performed
+        ):
+            raise ValueError("Connector upgrade audit readiness evidence is not authoritative")
 
 
 @dataclass(frozen=True, slots=True)
