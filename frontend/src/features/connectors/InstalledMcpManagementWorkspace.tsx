@@ -29,6 +29,7 @@ import {
   downloadConnectorUpgradeSignedEvidenceReceipt,
   getConnectorUpgradeApprovalRecord,
   getConnectorUpgradeEvidenceSigningKeyTrustInventory,
+  getConnectorUpgradeSigningProviderOnboardingReadiness,
   getLatestConnectorUpgradeSigningProviderConformance,
   getLatestConnectorUpgradeApprovalRevalidation,
   getConnectorUpgradeHandoffReadiness,
@@ -44,6 +45,7 @@ import {
   type ConnectorUpgradeEvidenceReceipt,
   type ConnectorUpgradeSignedEvidenceReceipt,
   type ConnectorUpgradeSigningProviderConformanceAssessment,
+  type ConnectorUpgradeSigningProviderOnboardingReadiness,
   getConnectorUpgradePlan,
   type ConnectorUpgradePlan,
 } from "../../api/connectorUpgradeReadiness";
@@ -664,6 +666,50 @@ function UpgradeReadinessDialog({
   );
 }
 
+function SigningProviderOnboardingReadiness({
+  dossier,
+}: {
+  dossier: ConnectorUpgradeSigningProviderOnboardingReadiness;
+}) {
+  return (
+    <div className="installed-mcp-onboarding-result">
+      <div className={`installed-mcp-conformance-state ${
+        dossier.provider_onboarding_ready ? "conformant" : "blocked"
+      }`}>
+        {dossier.provider_onboarding_ready
+          ? <ShieldCheck size={18} />
+          : <AlertTriangle size={18} />}
+        <div>
+          <strong>{dossier.provider_onboarding_ready
+            ? "Production evidence complete"
+            : `${dossier.required_external_inputs.length} requirements blocked`}</strong>
+          <span>{dossier.provider_class} / {dossier.key_id ?? "No eligible key"}</span>
+          <span>{dossier.algorithm ?? "No eligible algorithm"} / {dossier.policy_version}</span>
+        </div>
+      </div>
+      <div className="installed-mcp-onboarding-requirements" role="list">
+        {dossier.requirements.map((requirement) => (
+          <div
+            className={`installed-mcp-onboarding-requirement ${requirement.state}`}
+            key={requirement.requirement_id}
+            role="listitem"
+          >
+            {requirement.state === "satisfied"
+              ? <ShieldCheck size={15} />
+              : <AlertTriangle size={15} />}
+            <div>
+              <strong>{requirement.requirement_id.replaceAll("-", " ")}</strong>
+              <span>{requirement.state === "satisfied"
+                ? "Authoritative evidence satisfied"
+                : requirement.reason_code.split(".").at(-1)?.replaceAll("-", " ")}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function InstalledMcpManagementWorkspace({ subjectId }: { subjectId: string }) {
   const queryClient = useQueryClient();
   const [lifecycle, setLifecycle] = useState<LifecycleFilter>("active");
@@ -699,7 +745,14 @@ export default function InstalledMcpManagementWorkspace({ subjectId }: { subject
         ["connector-upgrade-signing-provider-conformance"],
         assessment,
       );
+      void queryClient.invalidateQueries({
+        queryKey: ["connector-upgrade-signing-provider-onboarding-readiness"],
+      });
     },
+  });
+  const signingOnboardingQuery = useQuery({
+    queryKey: ["connector-upgrade-signing-provider-onboarding-readiness"],
+    queryFn: getConnectorUpgradeSigningProviderOnboardingReadiness,
   });
   const createMutation = useMutation({
     mutationFn: createConnectorInstance,
@@ -727,6 +780,7 @@ export default function InstalledMcpManagementWorkspace({ subjectId }: { subject
     void instanceQuery.refetch();
     void signingTrustQuery.refetch();
     void signingConformanceQuery.refetch();
+    void signingOnboardingQuery.refetch();
   };
 
   return (
@@ -848,6 +902,41 @@ export default function InstalledMcpManagementWorkspace({ subjectId }: { subject
           )}
           <p className="installed-mcp-signing-boundary">
             Server-generated challenge only. No key management, receipt signing or execution authority.
+          </p>
+        </div>
+        <div className="installed-mcp-onboarding" aria-labelledby="signing-onboarding-title">
+          <div className="installed-mcp-signing-trust-heading">
+            <div>
+              <p className="eyebrow">PRODUCTION EVIDENCE</p>
+              <h3 id="signing-onboarding-title">Provider onboarding readiness</h3>
+            </div>
+            {signingOnboardingQuery.data && (
+              <span className={`state-badge ${
+                signingOnboardingQuery.data.provider_onboarding_ready ? "success" : "neutral"
+              }`}>
+                {signingOnboardingQuery.data.provider_onboarding_ready
+                  ? "ready"
+                  : "evidence required"}
+              </span>
+            )}
+          </div>
+          {signingOnboardingQuery.isLoading && (
+            <div className="installed-mcp-status">
+              <RefreshCw className="spin" size={17} />
+              <span>Evaluating production onboarding evidence...</span>
+            </div>
+          )}
+          {signingOnboardingQuery.isError && (
+            <div className="installed-mcp-status error-state" role="alert">
+              <AlertTriangle size={17} />
+              <span>Production onboarding readiness is unavailable for this scope.</span>
+            </div>
+          )}
+          {signingOnboardingQuery.data && (
+            <SigningProviderOnboardingReadiness dossier={signingOnboardingQuery.data} />
+          )}
+          <p className="installed-mcp-signing-boundary">
+            Evidence only. No provider configuration, key management, signing or execution authority.
           </p>
         </div>
       </section>

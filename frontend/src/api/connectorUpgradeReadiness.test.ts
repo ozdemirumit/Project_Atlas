@@ -5,6 +5,7 @@ import {
   isConnectorUpgradeEvidenceReceiptVerification,
   isConnectorUpgradeEvidenceSigningKeyTrustInventory,
   isConnectorUpgradeSigningProviderConformanceAssessment,
+  isConnectorUpgradeSigningProviderOnboardingReadiness,
   isConnectorUpgradeHandoffReadiness,
   isConnectorUpgradeSignedEvidenceReceipt,
   isConnectorUpgradeSignedEvidenceReceiptVerification,
@@ -249,6 +250,68 @@ describe("connector upgrade signing-provider conformance validation", () => {
       signing_provider_conformant: false,
       reason_codes: ["connector.upgrade.signing-provider-conformance.diagnostic-verify-failed"],
     })).toBe(true);
+  });
+});
+
+describe("connector upgrade signing-provider onboarding readiness validation", () => {
+  const dossier = {
+    dossier_id: "connector-upgrade-signing-provider-onboarding.test",
+    schema_version: "atlas.connector-upgrade-signing-provider-onboarding-readiness.v1",
+    version: 1,
+    organization_id: "organization.development",
+    environment_id: "environment.development",
+    provider_class: "provider.nonproduction-hmac",
+    key_id: "key.connector-upgrade-evidence.test",
+    key_version: "version.1",
+    algorithm: "algorithm.hmac-sha256-nonproduction",
+    provider_trust_digest: "4".repeat(64),
+    conformance_assessment_id: "connector-upgrade-signing-provider-conformance.test",
+    conformance_digest: "5".repeat(64),
+    policy_id: "connector-upgrade-signing-provider-onboarding.default",
+    policy_version: "v2026.08.12.1",
+    evaluated_at: "2026-08-12T12:01:00Z",
+    readiness_state: "blocked",
+    requirements: [
+      {
+        requirement_id: "provider-available",
+        state: "satisfied",
+        reason_code: "connector.upgrade.signing-provider-onboarding.satisfied",
+        evidence_reference: `trust-inventory.${"4".repeat(64)}`,
+      },
+      {
+        requirement_id: "provider-production-approved",
+        state: "blocked",
+        reason_code: (
+          "connector.upgrade.signing-provider-onboarding.provider-not-production-approved"
+        ),
+        evidence_reference: null,
+      },
+    ],
+    required_external_inputs: ["provider-production-approved"],
+    canonical_digest: "6".repeat(64),
+    provider_onboarding_ready: false,
+    evidence_only: true,
+    provider_configuration_authorized: false,
+    key_management_authorized: false,
+    receipt_signing_authorized: false,
+    execution_authorized: false,
+    infrastructure_mutation_performed: false,
+  } as const;
+
+  it("accepts exact blocked evidence and rejects caller authority or inconsistent blockers", () => {
+    expect(isConnectorUpgradeSigningProviderOnboardingReadiness(dossier)).toBe(true);
+    expect(isConnectorUpgradeSigningProviderOnboardingReadiness({
+      ...dossier,
+      provider_configuration_authorized: true,
+    })).toBe(false);
+    expect(isConnectorUpgradeSigningProviderOnboardingReadiness({
+      ...dossier,
+      required_external_inputs: [],
+    })).toBe(false);
+    expect(isConnectorUpgradeSigningProviderOnboardingReadiness({
+      ...dossier,
+      endpoint: "unsafe.example",
+    })).toBe(false);
   });
 });
 

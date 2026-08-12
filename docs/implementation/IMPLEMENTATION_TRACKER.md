@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-162 |
 | Title | Connector upgrade production signing-provider onboarding readiness foundation |
-| Status | Planning |
-| Branch | `main` |
-| Pull Request | Not opened |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-020, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-114, ADR-115, ADR-116, ADR-117 |
+| Status | Review |
+| Branch | `agent/mcp-signing-provider-onboarding-readiness` |
+| Pull Request | [#174](https://github.com/ozdemirumit/Project_Atlas/pull/174) |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-020, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-114, ADR-115, ADR-116, ADR-117, ADR-118 |
 | Last Updated | 2026-08-12 |
-| Next Action | Record ADR-118 and implement the provider-neutral onboarding-readiness evidence contract |
+| Next Action | Pass exact-head CI, merge PR #174 and verify merged-main CI |
 
 ### ATLAS-IMP-162 Scope Rationale
 
@@ -51,6 +51,32 @@
 - This workspace contains no approved production KMS/HSM product or deployment credential. The
   readiness result must therefore remain blocked and explain the required external evidence without
   inventing production configuration.
+
+### ATLAS-IMP-162 Validation Evidence
+
+- ADR-118 records the provider-neutral derived dossier, injected authoritative evidence source,
+  dedicated C1 permission, attributable audit and prohibition on caller-submitted provider or
+  approval facts.
+- Backend formatting and lint passed; strict `mypy` passed across 968 source and focused test files.
+  The focused connector-upgrade/API suite passed 28 tests, and Alembic reports the single
+  `20260812_0101` head because the dossier is computed on read and requires no persistence change.
+- The complete backend regression passed with 990 tests and three expected Windows symlink skips.
+  Frontend TypeScript and zero-warning lint passed; the focused API/workspace suite passed 18 tests,
+  the complete frontend suite passed 224 tests across 88 files and the production Vite build passed.
+- Live HTTP verification recorded browser-session login `201`, readiness read `200` and
+  `Cache-Control: no-store`. The non-production provider remained blocked with 12 unmet requirements;
+  provider configuration, key management, receipt signing and execution authority remained false,
+  and no endpoint, credential or secret field was present.
+- Live browser validation at 1280x900 and 390x844 showed all 14 requirement rows, the production
+  evidence boundary and the fail-closed state without page, panel or item horizontal overflow.
+  No provider configuration, provider approval, key, signing or execution control was present, and
+  browser logs contained no warning or error entries.
+
+### ATLAS-IMP-162 Delivery Evidence
+
+- Source commit `9da952d` is published in draft PR
+  [#174](https://github.com/ozdemirumit/Project_Atlas/pull/174); exact-head CI will include this
+  tracker update before merge review.
 
 ### ATLAS-IMP-161 Scope Rationale
 

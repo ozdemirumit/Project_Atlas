@@ -165,6 +165,9 @@ CONNECTOR_UPGRADE_SIGNING_PROVIDER_CONFORMANCE_CREATE = (
 CONNECTOR_UPGRADE_SIGNING_PROVIDER_CONFORMANCE_READ = (
     "connectors.upgrade-signing-provider-conformance-assessments.read"
 )
+CONNECTOR_UPGRADE_SIGNING_PROVIDER_ONBOARDING_READINESS_READ = (
+    "connectors.upgrade-signing-provider-onboarding-readiness.read"
+)
 CONNECTOR_UPGRADE_CHANGE_CONTEXT_CREATE = "connectors.upgrade-change-context-drafts.create"
 CONNECTOR_UPGRADE_CHANGE_CONTEXT_READ = "connectors.upgrade-change-context-drafts.read"
 CONNECTOR_TARGET_CONFIGURATION_CREATE = "connectors.target-configuration-bindings.create"
@@ -2146,6 +2149,10 @@ def build_development_authorization_service(
             description="Read the latest scoped signing-provider conformance evidence.",
         ),
         PermissionDefinition(
+            permission_id=CONNECTOR_UPGRADE_SIGNING_PROVIDER_ONBOARDING_READINESS_READ,
+            description="Read scoped production signing-provider onboarding readiness.",
+        ),
+        PermissionDefinition(
             permission_id=CONNECTOR_UPGRADE_CHANGE_CONTEXT_CREATE,
             description="Create one connector upgrade ITSM/change-context draft without dispatch.",
         ),
@@ -2668,6 +2675,7 @@ def build_development_authorization_service(
                 CONNECTOR_UPGRADE_SIGNING_KEY_TRUST_INVENTORY_READ,
                 CONNECTOR_UPGRADE_SIGNING_PROVIDER_CONFORMANCE_CREATE,
                 CONNECTOR_UPGRADE_SIGNING_PROVIDER_CONFORMANCE_READ,
+                CONNECTOR_UPGRADE_SIGNING_PROVIDER_ONBOARDING_READINESS_READ,
                 CONNECTOR_UPGRADE_CHANGE_CONTEXT_CREATE,
                 CONNECTOR_UPGRADE_CHANGE_CONTEXT_READ,
                 CONNECTOR_TARGET_CONFIGURATION_CREATE,

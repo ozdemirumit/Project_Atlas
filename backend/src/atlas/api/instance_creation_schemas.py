@@ -27,6 +27,8 @@ from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeSignedEvidenceReceipt,
     ConnectorUpgradeSignedEvidenceReceiptVerification,
     ConnectorUpgradeSigningProviderConformanceAssessment,
+    ConnectorUpgradeSigningProviderOnboardingReadiness,
+    ConnectorUpgradeSigningProviderOnboardingRequirement,
 )
 from atlas.modules.connectors.domain.upgrade_readiness import (
     ConnectorCapabilityChange,
@@ -851,6 +853,70 @@ class ConnectorUpgradeSigningProviderConformanceResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: ConnectorUpgradeSigningProviderConformanceData
+    meta: ResponseMeta
+
+
+class ConnectorUpgradeSigningProviderOnboardingRequirementData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    requirement_id: str = Field(pattern=STABLE_ID)
+    state: Literal["satisfied", "blocked"]
+    reason_code: str = Field(pattern=STABLE_ID)
+    evidence_reference: str | None = Field(default=None, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls, requirement: ConnectorUpgradeSigningProviderOnboardingRequirement
+    ) -> ConnectorUpgradeSigningProviderOnboardingRequirementData:
+        return cls(**{field: getattr(requirement, field) for field in cls.model_fields})
+
+
+class ConnectorUpgradeSigningProviderOnboardingReadinessData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dossier_id: str = Field(pattern=STABLE_ID)
+    schema_version: Literal["atlas.connector-upgrade-signing-provider-onboarding-readiness.v1"]
+    version: Literal[1]
+    organization_id: str = Field(pattern=STABLE_ID)
+    environment_id: str = Field(pattern=STABLE_ID)
+    provider_class: str = Field(pattern=STABLE_ID)
+    key_id: str | None = Field(default=None, pattern=STABLE_ID)
+    key_version: str | None = Field(default=None, pattern=STABLE_ID)
+    algorithm: str | None = Field(default=None, pattern=STABLE_ID)
+    provider_trust_digest: str = Field(pattern=DIGEST)
+    conformance_assessment_id: str | None = Field(default=None, pattern=STABLE_ID)
+    conformance_digest: str | None = Field(default=None, pattern=DIGEST)
+    policy_id: str = Field(pattern=STABLE_ID)
+    policy_version: str = Field(pattern=STABLE_ID)
+    evaluated_at: datetime
+    readiness_state: Literal["ready", "blocked"]
+    requirements: tuple[ConnectorUpgradeSigningProviderOnboardingRequirementData, ...]
+    required_external_inputs: tuple[str, ...]
+    canonical_digest: str = Field(pattern=DIGEST)
+    provider_onboarding_ready: bool
+    evidence_only: Literal[True]
+    provider_configuration_authorized: Literal[False]
+    key_management_authorized: Literal[False]
+    receipt_signing_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_performed: Literal[False]
+
+    @classmethod
+    def from_domain(
+        cls, dossier: ConnectorUpgradeSigningProviderOnboardingReadiness
+    ) -> ConnectorUpgradeSigningProviderOnboardingReadinessData:
+        payload = {field: getattr(dossier, field) for field in cls.model_fields}
+        payload["requirements"] = tuple(
+            ConnectorUpgradeSigningProviderOnboardingRequirementData.from_domain(requirement)
+            for requirement in dossier.requirements
+        )
+        return cls(**payload)
+
+
+class ConnectorUpgradeSigningProviderOnboardingReadinessResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ConnectorUpgradeSigningProviderOnboardingReadinessData
     meta: ResponseMeta
 
 

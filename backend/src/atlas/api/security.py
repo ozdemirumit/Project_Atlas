@@ -127,6 +127,7 @@ from atlas.modules.authorization.application.bootstrap import (
     CONNECTOR_UPGRADE_SIGNING_KEY_TRUST_INVENTORY_READ,
     CONNECTOR_UPGRADE_SIGNING_PROVIDER_CONFORMANCE_CREATE,
     CONNECTOR_UPGRADE_SIGNING_PROVIDER_CONFORMANCE_READ,
+    CONNECTOR_UPGRADE_SIGNING_PROVIDER_ONBOARDING_READINESS_READ,
     DEPLOYMENT_CONFIGURATION_PREVIEW,
     GRAPH_STORAGE_IMPACT_READ,
     HEALTH_CHECK_OVERVIEW_READ,
@@ -3574,6 +3575,18 @@ async def authorize_connector_upgrade_signing_provider_conformance_read(
         request,
         subject,
         permission_id=CONNECTOR_UPGRADE_SIGNING_PROVIDER_CONFORMANCE_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def authorize_connector_upgrade_signing_provider_onboarding_readiness_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(connector_signing_trust_read_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_instance(
+        request,
+        subject,
+        permission_id=CONNECTOR_UPGRADE_SIGNING_PROVIDER_ONBOARDING_READINESS_READ,
         capability_class=CapabilityClass.C1_READ_ONLY,
     )
 

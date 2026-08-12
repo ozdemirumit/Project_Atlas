@@ -19,6 +19,7 @@ from atlas.modules.connectors.application.upgrade_approval_ports import (
     ConnectorUpgradeAuditReadinessSource,
     ConnectorUpgradeItsmChangeEvidenceSource,
     ConnectorUpgradeMaintenanceWindowEvidenceSource,
+    ConnectorUpgradeSigningProviderOnboardingEvidenceSource,
 )
 from atlas.modules.connectors.application.upgrade_evidence_authenticity_ports import (
     ConnectorUpgradeEvidenceAuthenticityError,
@@ -56,6 +57,9 @@ from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeSignedEvidenceReceipt,
     ConnectorUpgradeSignedEvidenceReceiptVerification,
     ConnectorUpgradeSigningProviderConformanceAssessment,
+    ConnectorUpgradeSigningProviderOnboardingReadiness,
+    ConnectorUpgradeSigningProviderOnboardingRequirement,
+    ConnectorUpgradeSigningProviderOnboardingRequirementState,
 )
 from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeSigningProviderConformanceState as ConformanceState,
@@ -128,6 +132,19 @@ UPGRADE_SIGNING_PROVIDER_CONFORMANCE_ALLOWED_ALGORITHMS = frozenset(
         "algorithm.ecdsa-p256-sha256",
     }
 )
+UPGRADE_SIGNING_PROVIDER_ONBOARDING_READINESS_SCHEMA = (
+    "atlas.connector-upgrade-signing-provider-onboarding-readiness.v1"
+)
+UPGRADE_SIGNING_PROVIDER_ONBOARDING_READINESS_PERMISSION = (
+    "connectors.upgrade-signing-provider-onboarding-readiness.read"
+)
+UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_ID = (
+    "connector-upgrade-signing-provider-onboarding.default"
+)
+UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_VERSION = "v2026.08.12.1"
+UPGRADE_SIGNING_PROVIDER_PRODUCTION_ALGORITHMS = frozenset(
+    {"algorithm.rsassa-pss-sha256", "algorithm.ecdsa-p256-sha256"}
+)
 UPGRADE_HANDOFF_APPLICABILITY_POLICY_ID = "connector-upgrade-handoff-evidence-applicability.default"
 UPGRADE_HANDOFF_APPLICABILITY_POLICY_VERSION = "v2026.08.12.1"
 UPGRADE_HANDOFF_CURRENT_CHECK_IDS = (
@@ -178,6 +195,9 @@ class ConnectorUpgradeApprovalService:
         evidence_authenticity_provider: (
             ConnectorUpgradeEvidenceAuthenticityProvider | None
         ) = None,
+        signing_provider_onboarding_evidence_source: (
+            ConnectorUpgradeSigningProviderOnboardingEvidenceSource | None
+        ) = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
@@ -188,6 +208,9 @@ class ConnectorUpgradeApprovalService:
         self._itsm_change_evidence_source = itsm_change_evidence_source
         self._maintenance_window_evidence_source = maintenance_window_evidence_source
         self._evidence_authenticity_provider = evidence_authenticity_provider
+        self._signing_provider_onboarding_evidence_source = (
+            signing_provider_onboarding_evidence_source
+        )
         self._environment_id = environment_id
         self._clock = clock or (lambda: datetime.now(UTC))
         self._mutation_lock = asyncio.Lock()
@@ -1633,6 +1656,256 @@ class ConnectorUpgradeApprovalService:
         )
         return assessment
 
+    async def signing_provider_onboarding_readiness(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+    ) -> ConnectorUpgradeSigningProviderOnboardingReadiness:
+        self._require_authenticated_human(actor)
+        inventory = await self.signing_key_trust_inventory(
+            actor=actor,
+            correlation_id=correlation_id,
+        )
+        now = self._clock()
+        assessment = await self._repository.get_latest_signing_provider_conformance(
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
+        if assessment is not None:
+            self._verify_signing_provider_conformance(assessment)
+        evidence = None
+        if self._signing_provider_onboarding_evidence_source is not None:
+            evidence = await self._signing_provider_onboarding_evidence_source.get_current(
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+                provider_class=inventory.provider_class,
+            )
+            if evidence is not None and (
+                evidence.organization_id != actor.organization_id
+                or evidence.environment_id != self._environment_id
+                or evidence.provider_class != inventory.provider_class
+            ):
+                raise ConnectorUpgradeApprovalError(
+                    "connector_upgrade_signing_provider_onboarding_evidence_not_found"
+                )
+
+        active_keys = tuple(
+            key for key in inventory.keys if key.signing_eligible and key.verification_trusted
+        )
+        selected_key = next(
+            (
+                key
+                for key in active_keys
+                if key.algorithm in UPGRADE_SIGNING_PROVIDER_PRODUCTION_ALGORITHMS
+            ),
+            active_keys[0] if active_keys else None,
+        )
+        conformance_current = assessment is not None and now < assessment.valid_until
+        conformance_satisfied = (
+            conformance_current
+            and assessment is not None
+            and assessment.signing_provider_conformant
+        )
+        conformance_binding = (
+            conformance_satisfied
+            and assessment is not None
+            and assessment.provider_class == inventory.provider_class
+            and assessment.production_approved == inventory.production_approved
+            and any(
+                key.key_id == assessment.key_id
+                and key.key_version == assessment.key_version
+                and key.algorithm == assessment.algorithm
+                for key in active_keys
+            )
+        )
+        production_algorithm = any(
+            key.algorithm in UPGRADE_SIGNING_PROVIDER_PRODUCTION_ALGORITHMS for key in active_keys
+        )
+
+        def requirement(
+            requirement_id: str,
+            satisfied: bool,
+            *,
+            blocked_reason: str,
+            evidence_reference: str | None = None,
+        ) -> ConnectorUpgradeSigningProviderOnboardingRequirement:
+            state = (
+                ConnectorUpgradeSigningProviderOnboardingRequirementState.SATISFIED
+                if satisfied
+                else ConnectorUpgradeSigningProviderOnboardingRequirementState.BLOCKED
+            )
+            reason = "satisfied" if satisfied else blocked_reason
+            return ConnectorUpgradeSigningProviderOnboardingRequirement(
+                requirement_id=requirement_id,
+                state=state,
+                reason_code=f"connector.upgrade.signing-provider-onboarding.{reason}",
+                evidence_reference=evidence_reference if satisfied else None,
+            )
+
+        requirements = (
+            requirement(
+                "provider-available",
+                inventory.provider_available,
+                blocked_reason="provider-unavailable",
+                evidence_reference=f"trust-inventory.{inventory.canonical_digest}",
+            ),
+            requirement(
+                "provider-production-approved",
+                inventory.production_approved,
+                blocked_reason="provider-not-production-approved",
+                evidence_reference=f"trust-inventory.{inventory.canonical_digest}",
+            ),
+            requirement(
+                "production-key-eligible",
+                bool(active_keys),
+                blocked_reason="eligible-key-unavailable",
+                evidence_reference=active_keys[0].key_id if active_keys else None,
+            ),
+            requirement(
+                "production-algorithm-approved",
+                production_algorithm,
+                blocked_reason="production-algorithm-unavailable",
+                evidence_reference=(
+                    next(
+                        key.algorithm
+                        for key in active_keys
+                        if key.algorithm in UPGRADE_SIGNING_PROVIDER_PRODUCTION_ALGORITHMS
+                    )
+                    if production_algorithm
+                    else None
+                ),
+            ),
+            requirement(
+                "conformance-current",
+                conformance_satisfied,
+                blocked_reason=(
+                    "conformance-missing"
+                    if assessment is None
+                    else "conformance-stale"
+                    if not conformance_current
+                    else "conformance-not-satisfied"
+                ),
+                evidence_reference=assessment.assessment_id if assessment is not None else None,
+            ),
+            requirement(
+                "conformance-binding-current",
+                conformance_binding,
+                blocked_reason="conformance-binding-mismatch",
+                evidence_reference=assessment.assessment_id if assessment is not None else None,
+            ),
+            requirement(
+                "workload-identity-approved",
+                evidence is not None and evidence.workload_identity_approved,
+                blocked_reason="workload-identity-evidence-missing",
+            ),
+            requirement(
+                "secret-reference-ownership-verified",
+                evidence is not None and evidence.secret_reference_ownership_verified,
+                blocked_reason="secret-reference-ownership-evidence-missing",
+            ),
+            requirement(
+                "network-boundary-approved",
+                evidence is not None and evidence.network_boundary_approved,
+                blocked_reason="network-boundary-evidence-missing",
+            ),
+            requirement(
+                "key-lifecycle-revocation-approved",
+                evidence is not None and evidence.key_lifecycle_and_revocation_approved,
+                blocked_reason="key-lifecycle-revocation-evidence-missing",
+            ),
+            requirement(
+                "audit-routing-verified",
+                evidence is not None and evidence.audit_routing_verified,
+                blocked_reason="audit-routing-evidence-missing",
+            ),
+            requirement(
+                "availability-recovery-verified",
+                evidence is not None and evidence.availability_and_recovery_verified,
+                blocked_reason="availability-recovery-evidence-missing",
+            ),
+            requirement(
+                "security-approval-current",
+                evidence is not None and evidence.security_approval_reference is not None,
+                blocked_reason="security-approval-evidence-missing",
+                evidence_reference=(evidence.security_approval_reference if evidence else None),
+            ),
+            requirement(
+                "deployment-approval-current",
+                evidence is not None and evidence.deployment_approval_reference is not None,
+                blocked_reason="deployment-approval-evidence-missing",
+                evidence_reference=(evidence.deployment_approval_reference if evidence else None),
+            ),
+        )
+        ready = all(
+            item.state is ConnectorUpgradeSigningProviderOnboardingRequirementState.SATISFIED
+            for item in requirements
+        )
+        required_inputs = tuple(
+            item.requirement_id
+            for item in requirements
+            if item.state is ConnectorUpgradeSigningProviderOnboardingRequirementState.BLOCKED
+        )
+        payload: dict[str, object] = {
+            "schema_version": UPGRADE_SIGNING_PROVIDER_ONBOARDING_READINESS_SCHEMA,
+            "version": 1,
+            "organization_id": actor.organization_id,
+            "environment_id": self._environment_id,
+            "provider_class": inventory.provider_class,
+            "key_id": selected_key.key_id if selected_key is not None else None,
+            "key_version": selected_key.key_version if selected_key is not None else None,
+            "algorithm": selected_key.algorithm if selected_key is not None else None,
+            "provider_trust_digest": inventory.canonical_digest,
+            "conformance_assessment_id": (
+                assessment.assessment_id if assessment is not None else None
+            ),
+            "conformance_digest": assessment.canonical_digest if assessment is not None else None,
+            "policy_id": UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_ID,
+            "policy_version": UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_VERSION,
+            "evaluated_at": now.isoformat(),
+            "readiness_state": "ready" if ready else "blocked",
+            "requirements": [self._normalize(asdict(item)) for item in requirements],
+            "required_external_inputs": required_inputs,
+            "provider_onboarding_ready": ready,
+            "evidence_only": True,
+            "provider_configuration_authorized": False,
+            "key_management_authorized": False,
+            "receipt_signing_authorized": False,
+            "execution_authorized": False,
+            "infrastructure_mutation_performed": False,
+        }
+        digest = self._digest(payload)
+        dossier = ConnectorUpgradeSigningProviderOnboardingReadiness(
+            dossier_id=f"connector-upgrade-signing-provider-onboarding.{digest[:24]}",
+            schema_version=UPGRADE_SIGNING_PROVIDER_ONBOARDING_READINESS_SCHEMA,
+            version=1,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+            provider_class=inventory.provider_class,
+            key_id=selected_key.key_id if selected_key is not None else None,
+            key_version=selected_key.key_version if selected_key is not None else None,
+            algorithm=selected_key.algorithm if selected_key is not None else None,
+            provider_trust_digest=inventory.canonical_digest,
+            conformance_assessment_id=(
+                assessment.assessment_id if assessment is not None else None
+            ),
+            conformance_digest=(assessment.canonical_digest if assessment is not None else None),
+            policy_id=UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_ID,
+            policy_version=UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_VERSION,
+            evaluated_at=now,
+            readiness_state="ready" if ready else "blocked",
+            requirements=requirements,
+            required_external_inputs=required_inputs,
+            canonical_digest=digest,
+            provider_onboarding_ready=ready,
+        )
+        await self._audit_signing_provider_onboarding_readiness(
+            actor=actor,
+            correlation_id=correlation_id,
+            dossier=dossier,
+        )
+        return dossier
+
     @classmethod
     def _verify_signing_provider_conformance(
         cls, assessment: ConnectorUpgradeSigningProviderConformanceAssessment
@@ -2865,6 +3138,47 @@ class ConnectorUpgradeApprovalService:
                     ("state", assessment.state.value),
                     ("production_approved", str(assessment.production_approved).lower()),
                     ("diagnostic_only", "true"),
+                    ("execution_authorized", "false"),
+                ),
+            )
+        )
+
+    async def _audit_signing_provider_onboarding_readiness(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+        dossier: ConnectorUpgradeSigningProviderOnboardingReadiness,
+    ) -> None:
+        await self._audit_sink.record(
+            AuditRecord(
+                event_id=f"evt_{uuid4().hex}",
+                event_type="atlas.connector.upgrade-signing-provider-onboarding-readiness",
+                schema_version="1.0",
+                producer="project-atlas-api",
+                producer_version=__version__,
+                occurred_at=self._clock(),
+                correlation_id=correlation_id,
+                subject_id=actor.subject_id,
+                actor_type=actor.kind.value,
+                authentication_method=actor.authentication_method.value,
+                assurance_level=actor.assurance_level.value,
+                permission_id=UPGRADE_SIGNING_PROVIDER_ONBOARDING_READINESS_PERMISSION,
+                resource_type=("resource.connector.upgrade-signing-provider-onboarding-readiness"),
+                scope_reference=dossier.environment_id,
+                decision_id=dossier.dossier_id,
+                outcome="succeeded",
+                result_code=(
+                    "connector_upgrade_signing_provider_onboarding_ready"
+                    if dossier.provider_onboarding_ready
+                    else "connector_upgrade_signing_provider_onboarding_blocked"
+                ),
+                idempotency_key=None,
+                target_metadata=(
+                    ("provider_class", dossier.provider_class),
+                    ("readiness_state", dossier.readiness_state),
+                    ("blocked_requirement_count", str(len(dossier.required_external_inputs))),
+                    ("provider_configuration_authorized", "false"),
                     ("execution_authorized", "false"),
                 ),
             )
