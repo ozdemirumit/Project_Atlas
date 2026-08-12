@@ -692,6 +692,12 @@ function SigningProviderOnboardingReadiness({
         <div><dt>Issued by</dt><dd>{dossier.policy_issued_by}</dd></div>
         <div><dt>Expires</dt><dd>{new Date(dossier.policy_expires_at).toLocaleString()}</dd></div>
         <div><dt>Digest</dt><dd><code>{dossier.policy_digest.slice(0, 16)}</code></dd></div>
+        <div><dt>Provenance</dt><dd>{dossier.policy_provenance_verified
+          ? "Issuer attestation verified"
+          : "Policy blocked"}</dd></div>
+        <div><dt>Trust key</dt><dd>{dossier.policy_trust_key_id} / {dossier.policy_trust_key_version}</dd></div>
+        <div><dt>Algorithm</dt><dd>{dossier.policy_trust_algorithm}</dd></div>
+        <div><dt>Attestation</dt><dd><code>{dossier.policy_attestation_digest.slice(0, 16)}</code></dd></div>
       </dl>
       <div className="installed-mcp-onboarding-requirements" role="list">
         {dossier.requirements.map((requirement) => (

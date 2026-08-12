@@ -456,12 +456,18 @@ export type ConnectorUpgradeSigningProviderOnboardingReadiness = {
   policy_digest: string;
   policy_issued_by: string;
   policy_expires_at: string;
+  policy_attestation_id: string;
+  policy_attestation_digest: string;
+  policy_trust_key_id: string;
+  policy_trust_key_version: string;
+  policy_trust_algorithm: string;
   evaluated_at: string;
   readiness_state: "ready" | "blocked";
   requirements: ConnectorUpgradeSigningProviderOnboardingRequirement[];
   required_external_inputs: string[];
   canonical_digest: string;
   provider_onboarding_ready: boolean;
+  policy_provenance_verified: true;
   evidence_only: true;
   provider_configuration_authorized: false;
   key_management_authorized: false;
@@ -961,8 +967,11 @@ const signingProviderOnboardingReadinessKeys = [
   "provider_class", "key_id", "key_version", "algorithm", "provider_trust_digest",
   "conformance_assessment_id",
   "conformance_digest", "policy_id", "policy_version", "policy_digest", "policy_issued_by",
-  "policy_expires_at", "evaluated_at", "readiness_state",
+  "policy_expires_at", "policy_attestation_id", "policy_attestation_digest",
+  "policy_trust_key_id", "policy_trust_key_version", "policy_trust_algorithm", "evaluated_at",
+  "readiness_state",
   "requirements", "required_external_inputs", "canonical_digest", "provider_onboarding_ready",
+  "policy_provenance_verified",
   "evidence_only", "provider_configuration_authorized", "key_management_authorized",
   "receipt_signing_authorized", "execution_authorized", "infrastructure_mutation_performed",
 ] as const;
@@ -1211,9 +1220,12 @@ export function isConnectorUpgradeSigningProviderOnboardingReadiness(
       "atlas.connector-upgrade-signing-provider-onboarding-readiness.v1" &&
     item.version === 1 &&
     [item.dossier_id, item.organization_id, item.environment_id, item.provider_class,
-      item.policy_id, item.policy_version, item.policy_issued_by]
+      item.policy_id, item.policy_version, item.policy_issued_by, item.policy_attestation_id,
+      item.policy_trust_key_id, item.policy_trust_key_version, item.policy_trust_algorithm]
       .every((field) => typeof field === "string" && field.length > 2) &&
     typeof item.policy_digest === "string" && DIGEST.test(item.policy_digest) &&
+    typeof item.policy_attestation_digest === "string" &&
+      DIGEST.test(item.policy_attestation_digest) &&
     typeof item.policy_expires_at === "string" &&
       Number.isFinite(Date.parse(item.policy_expires_at)) &&
       Date.parse(item.policy_expires_at) > Date.parse(item.evaluated_at as string) &&
@@ -1232,7 +1244,8 @@ export function isConnectorUpgradeSigningProviderOnboardingReadiness(
     item.required_external_inputs.length === blockedIds.size &&
     item.required_external_inputs.every((requirementId) => blockedIds.has(requirementId)) &&
     typeof item.canonical_digest === "string" && DIGEST.test(item.canonical_digest) &&
-    item.provider_onboarding_ready === ready && item.evidence_only === true &&
+    item.provider_onboarding_ready === ready && item.policy_provenance_verified === true &&
+    item.evidence_only === true &&
     item.provider_configuration_authorized === false &&
     item.key_management_authorized === false && item.receipt_signing_authorized === false &&
     item.execution_authorized === false && item.infrastructure_mutation_performed === false &&

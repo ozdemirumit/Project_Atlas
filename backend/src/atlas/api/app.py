@@ -576,6 +576,12 @@ from atlas.modules.connectors.adapters.upgrade_evidence_authenticity_memory impo
     NonProductionHmacUpgradeEvidenceAuthenticityProvider,
     UnavailableUpgradeEvidenceAuthenticityProvider,
 )
+from atlas.modules.connectors.adapters.upgrade_onboarding_policy_authenticity_memory import (
+    HmacConnectorUpgradeSigningProviderOnboardingPolicyVerifier,
+    InMemoryConnectorUpgradeSigningProviderOnboardingPolicyAttestationSource,
+    InMemoryConnectorUpgradeSigningProviderOnboardingPolicyTrustSource,
+    UnavailableConnectorUpgradeSigningProviderOnboardingPolicyVerifier,
+)
 from atlas.modules.connectors.adapters.validation_intake_memory import (
     InMemoryPackageValidationRepository,
 )
@@ -710,6 +716,11 @@ from atlas.modules.connectors.application.upgrade_approval import (
     ConnectorUpgradeApprovalService,
     build_development_connector_upgrade_approval_policy,
     build_development_connector_upgrade_signing_provider_onboarding_policy,
+    build_development_connector_upgrade_signing_provider_onboarding_policy_attestation,
+    build_development_connector_upgrade_signing_provider_onboarding_policy_trust_key,
+)
+from atlas.modules.connectors.application.upgrade_approval_ports import (
+    ConnectorUpgradeSigningProviderOnboardingPolicyVerifier,
 )
 from atlas.modules.connectors.application.upgrade_readiness import (
     ConnectorUpgradeReadinessService,
@@ -723,6 +734,9 @@ from atlas.modules.connectors.application.vulnerability_analysis import (
 from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeEvidenceSigningKey,
     ConnectorUpgradeEvidenceSigningKeyState,
+    ConnectorUpgradeSigningProviderOnboardingPolicyAttestation,
+    ConnectorUpgradeSigningProviderOnboardingPolicySnapshot,
+    ConnectorUpgradeSigningProviderOnboardingPolicyTrustKey,
 )
 from atlas.modules.graph.adapters.synthetic import build_synthetic_graph_snapshot
 from atlas.modules.graph.application.engine import InMemoryGraphImpactAnalyzer
@@ -2812,18 +2826,65 @@ def create_app(
                 ),
             )
         )
-        connector_upgrade_signing_provider_onboarding_policies = (
-            ()
-            if is_production
-            else (
+        onboarding_policy_authenticity_key_material = sha256(
+            (
+                "atlas-nonproduction-onboarding-policy-verifier:"
+                f"{resolved_settings.development_organization_id}:"
+                f"{resolved_settings.environment}"
+            ).encode("ascii")
+        ).digest()
+        connector_upgrade_signing_provider_onboarding_policies: tuple[
+            ConnectorUpgradeSigningProviderOnboardingPolicySnapshot, ...
+        ]
+        onboarding_policy_trust_keys: tuple[
+            ConnectorUpgradeSigningProviderOnboardingPolicyTrustKey, ...
+        ]
+        onboarding_policy_attestations: tuple[
+            ConnectorUpgradeSigningProviderOnboardingPolicyAttestation, ...
+        ]
+        onboarding_policy_verifier: ConnectorUpgradeSigningProviderOnboardingPolicyVerifier
+        if is_production:
+            connector_upgrade_signing_provider_onboarding_policies = ()
+            onboarding_policy_trust_keys = ()
+            onboarding_policy_attestations = ()
+            onboarding_policy_verifier = (
+                UnavailableConnectorUpgradeSigningProviderOnboardingPolicyVerifier()
+            )
+        else:
+            onboarding_policy = (
                 build_development_connector_upgrade_signing_provider_onboarding_policy(
                     organization_id=resolved_settings.development_organization_id,
                     environment_id=f"environment.{resolved_settings.environment}",
                     issued_at=datetime(2026, 8, 1, tzinfo=UTC),
                     expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                )
+            )
+            onboarding_policy_trust_key = (
+                build_development_connector_upgrade_signing_provider_onboarding_policy_trust_key(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    not_before=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                )
+            )
+            connector_upgrade_signing_provider_onboarding_policies = (onboarding_policy,)
+            onboarding_policy_trust_keys = (onboarding_policy_trust_key,)
+            onboarding_policy_attestations = (
+                build_development_connector_upgrade_signing_provider_onboarding_policy_attestation(
+                    policy=onboarding_policy,
+                    trust_key=onboarding_policy_trust_key,
+                    key_material=onboarding_policy_authenticity_key_material,
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
                 ),
             )
-        )
+            onboarding_policy_verifier = (
+                HmacConnectorUpgradeSigningProviderOnboardingPolicyVerifier(
+                    key_id=onboarding_policy_trust_key.key_id,
+                    key_version=onboarding_policy_trust_key.key_version,
+                    key_material=onboarding_policy_authenticity_key_material,
+                )
+            )
         resolved_connector_upgrade_approval_service = ConnectorUpgradeApprovalService(
             repository=connector_upgrade_approval_repository,
             policy_source=InMemoryConnectorUpgradeApprovalPolicySource(
@@ -2842,6 +2903,17 @@ def create_app(
                     connector_upgrade_signing_provider_onboarding_policies
                 )
             ),
+            signing_provider_onboarding_policy_attestation_source=(
+                InMemoryConnectorUpgradeSigningProviderOnboardingPolicyAttestationSource(
+                    onboarding_policy_attestations
+                )
+            ),
+            signing_provider_onboarding_policy_trust_source=(
+                InMemoryConnectorUpgradeSigningProviderOnboardingPolicyTrustSource(
+                    onboarding_policy_trust_keys
+                )
+            ),
+            signing_provider_onboarding_policy_verifier=onboarding_policy_verifier,
             evidence_authenticity_provider=(
                 UnavailableUpgradeEvidenceAuthenticityProvider()
                 if is_production

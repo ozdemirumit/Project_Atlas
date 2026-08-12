@@ -891,12 +891,18 @@ class ConnectorUpgradeSigningProviderOnboardingReadinessData(BaseModel):
     policy_digest: str = Field(pattern=DIGEST)
     policy_issued_by: str = Field(pattern=STABLE_ID)
     policy_expires_at: datetime
+    policy_attestation_id: str = Field(pattern=STABLE_ID)
+    policy_attestation_digest: str = Field(pattern=DIGEST)
+    policy_trust_key_id: str = Field(pattern=STABLE_ID)
+    policy_trust_key_version: str = Field(pattern=STABLE_ID)
+    policy_trust_algorithm: str = Field(pattern=STABLE_ID)
     evaluated_at: datetime
     readiness_state: Literal["ready", "blocked"]
     requirements: tuple[ConnectorUpgradeSigningProviderOnboardingRequirementData, ...]
     required_external_inputs: tuple[str, ...]
     canonical_digest: str = Field(pattern=DIGEST)
     provider_onboarding_ready: bool
+    policy_provenance_verified: Literal[True]
     evidence_only: Literal[True]
     provider_configuration_authorized: Literal[False]
     key_management_authorized: Literal[False]

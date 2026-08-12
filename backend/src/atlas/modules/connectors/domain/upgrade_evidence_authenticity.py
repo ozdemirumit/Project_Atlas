@@ -48,6 +48,12 @@ class ConnectorUpgradeSigningProviderOnboardingRequirementState(StrEnum):
     BLOCKED = "blocked"
 
 
+class ConnectorUpgradeSigningProviderOnboardingPolicyTrustKeyState(StrEnum):
+    ACTIVE = "active"
+    DISABLED = "disabled"
+    REVOKED = "revoked"
+
+
 @dataclass(frozen=True, slots=True)
 class ConnectorUpgradeSigningProviderOnboardingPolicySnapshot:
     policy_id: str
@@ -100,6 +106,95 @@ class ConnectorUpgradeSigningProviderOnboardingPolicySnapshot:
             or _DIGEST.fullmatch(self.canonical_digest) is None
         ):
             raise ValueError("Connector upgrade signing provider onboarding policy is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorUpgradeSigningProviderOnboardingPolicyAttestation:
+    attestation_id: str
+    schema_version: str
+    version: int
+    organization_id: str
+    environment_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    issuer_id: str
+    key_id: str
+    key_version: str
+    algorithm: str
+    issued_at: datetime
+    expires_at: datetime
+    signature_value: str
+    signature_digest: str
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.attestation_id,
+            self.schema_version,
+            self.organization_id,
+            self.environment_id,
+            self.policy_id,
+            self.policy_version,
+            self.issuer_id,
+            self.key_id,
+            self.key_version,
+            self.algorithm,
+        ):
+            validate_stable_identifier(
+                value, "connector upgrade signing provider onboarding policy attestation"
+            )
+        if (
+            self.schema_version
+            != "atlas.connector-upgrade-signing-provider-onboarding-policy-attestation.v1"
+            or self.version != 1
+            or _DIGEST.fullmatch(self.policy_digest) is None
+            or _SIGNATURE.fullmatch(self.signature_value) is None
+            or _DIGEST.fullmatch(self.signature_digest) is None
+            or _DIGEST.fullmatch(self.canonical_digest) is None
+            or self.issued_at.tzinfo is None
+            or self.expires_at.tzinfo is None
+            or self.expires_at <= self.issued_at
+        ):
+            raise ValueError(
+                "Connector upgrade signing provider onboarding policy attestation is invalid"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorUpgradeSigningProviderOnboardingPolicyTrustKey:
+    issuer_id: str
+    key_id: str
+    key_version: str
+    algorithm: str
+    organization_id: str
+    environment_id: str
+    state: ConnectorUpgradeSigningProviderOnboardingPolicyTrustKeyState
+    not_before: datetime
+    expires_at: datetime
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.issuer_id,
+            self.key_id,
+            self.key_version,
+            self.algorithm,
+            self.organization_id,
+            self.environment_id,
+        ):
+            validate_stable_identifier(
+                value, "connector upgrade signing provider onboarding policy trust key"
+            )
+        if (
+            self.not_before.tzinfo is None
+            or self.expires_at.tzinfo is None
+            or self.expires_at <= self.not_before
+            or _DIGEST.fullmatch(self.canonical_digest) is None
+        ):
+            raise ValueError(
+                "Connector upgrade signing provider onboarding policy trust key is invalid"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -410,12 +505,18 @@ class ConnectorUpgradeSigningProviderOnboardingReadiness:
     policy_digest: str
     policy_issued_by: str
     policy_expires_at: datetime
+    policy_attestation_id: str
+    policy_attestation_digest: str
+    policy_trust_key_id: str
+    policy_trust_key_version: str
+    policy_trust_algorithm: str
     evaluated_at: datetime
     readiness_state: str
     requirements: tuple[ConnectorUpgradeSigningProviderOnboardingRequirement, ...]
     required_external_inputs: tuple[str, ...]
     canonical_digest: str
     provider_onboarding_ready: bool
+    policy_provenance_verified: bool = True
     evidence_only: bool = True
     provider_configuration_authorized: bool = False
     key_management_authorized: bool = False
@@ -433,6 +534,10 @@ class ConnectorUpgradeSigningProviderOnboardingReadiness:
             self.policy_id,
             self.policy_version,
             self.policy_issued_by,
+            self.policy_attestation_id,
+            self.policy_trust_key_id,
+            self.policy_trust_key_version,
+            self.policy_trust_algorithm,
         ):
             validate_stable_identifier(
                 value, "connector upgrade signing provider onboarding readiness"
@@ -466,6 +571,7 @@ class ConnectorUpgradeSigningProviderOnboardingReadiness:
             or ((self.conformance_assessment_id is None) != (self.conformance_digest is None))
             or self.evaluated_at.tzinfo is None
             or _DIGEST.fullmatch(self.policy_digest) is None
+            or _DIGEST.fullmatch(self.policy_attestation_digest) is None
             or self.policy_expires_at.tzinfo is None
             or self.policy_expires_at <= self.evaluated_at
             or self.readiness_state not in {"ready", "blocked"}
@@ -474,6 +580,7 @@ class ConnectorUpgradeSigningProviderOnboardingReadiness:
             or self.provider_onboarding_ready != all_satisfied
             or self.readiness_state != ("ready" if all_satisfied else "blocked")
             or _DIGEST.fullmatch(self.canonical_digest) is None
+            or not self.policy_provenance_verified
             or not self.evidence_only
             or any(
                 (

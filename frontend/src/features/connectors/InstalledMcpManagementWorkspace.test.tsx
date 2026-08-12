@@ -142,6 +142,11 @@ const signingProviderOnboarding: ConnectorUpgradeSigningProviderOnboardingReadin
   policy_digest: "7".repeat(64),
   policy_issued_by: "subject.security-architecture",
   policy_expires_at: "2026-08-13T12:01:00Z",
+  policy_attestation_id: "connector-upgrade-onboarding-policy-attestation.test",
+  policy_attestation_digest: "8".repeat(64),
+  policy_trust_key_id: "key.connector-upgrade-onboarding-policy.test",
+  policy_trust_key_version: "version.1",
+  policy_trust_algorithm: "algorithm.hmac-sha256-nonproduction",
   evaluated_at: "2026-08-12T12:01:00Z",
   readiness_state: "blocked",
   requirements: [
@@ -174,6 +179,7 @@ const signingProviderOnboarding: ConnectorUpgradeSigningProviderOnboardingReadin
   ],
   canonical_digest: "6".repeat(64),
   provider_onboarding_ready: false,
+  policy_provenance_verified: true,
   evidence_only: true,
   provider_configuration_authorized: false,
   key_management_authorized: false,
@@ -766,6 +772,9 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(screen.getByText("connector-upgrade-signing-provider-onboarding.default")).toBeVisible();
     expect(screen.getByText("subject.security-architecture")).toBeVisible();
     expect(screen.getByText("7777777777777777")).toBeVisible();
+    expect(screen.getByText("Issuer attestation verified")).toBeVisible();
+    expect(screen.getByText(/key\.connector-upgrade-onboarding-policy\.test/)).toBeVisible();
+    expect(screen.getByText("8888888888888888")).toBeVisible();
     expect(screen.getAllByText("key.connector-upgrade-evidence.test")).toHaveLength(2);
     expect(screen.getByText("Verification trusted")).toBeVisible();
     expect(screen.getByText(/No key management or signing authority/i)).toBeVisible();
