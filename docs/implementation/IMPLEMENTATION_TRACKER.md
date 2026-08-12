@@ -8,7 +8,7 @@
 | Title | Connector upgrade authoritative maintenance-window evidence |
 | Status | In Progress |
 | Branch | `agent/mcp-upgrade-maintenance-window-evidence` |
-| Pull Request | Pending |
+| Pull Request | [#168](https://github.com/ozdemirumit/Project_Atlas/pull/168) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110, ADR-111, ADR-112 |
 | Last Updated | 2026-08-12 |
 | Next Action | Publish through pull request, verify CI, merge and select the next safe slice |
@@ -51,9 +51,10 @@
   `evidence_complete`; handoff readiness, artifact issuance, approval consumption, target contact,
   package rebinding, configuration change, execution authority and infrastructure mutation remain
   false. The default application source is empty and no vendor integration is fabricated.
-- Backend Ruff and mypy passed before the final presentation-only wording adjustment; ten focused
-  backend tests passed. Norton terminated or indefinitely delayed repeated local full-suite Python
-  launches, so the complete backend suite is a required PR-CI gate and must pass before merge.
+- Backend formatting and lint passed 1,184 files, mypy passed 964 source files, and the complete
+  backend suite passed 977 tests with three environment-specific Windows symlink skips after Norton
+  was disabled. Alembic remains at the single linear `20260812_0100` head because this inbound
+  source contract adds no storage. Exact-head PR CI independently passed every backend gate.
 - Frontend ESLint and both TypeScript projects passed; all 217 tests in 88 files passed. The
   production build completed with the existing advisory limited to the transitional
   `OperationalApplication` chunk. The final wording adjustment additionally passed 11 focused
