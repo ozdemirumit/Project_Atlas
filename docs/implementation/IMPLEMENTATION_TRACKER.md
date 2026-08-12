@@ -8,7 +8,7 @@
 | Title | Governed ITSM handoff human review foundation |
 | Status | In Progress; implementation and local validation complete |
 | Branch | `agent/itsm-handoff-human-review` |
-| Pull Request | Pending |
+| Pull Request | [#180](https://github.com/ozdemirumit/Project_Atlas/pull/180) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-016, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-124 |
 | Last Updated | 2026-08-13 |
 | Next Action | Complete GitHub PR, exact-head CI, squash merge and independent `main` CI validation |
