@@ -4,14 +4,52 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-156 |
-| Title | Connector upgrade authoritative maintenance-window evidence |
+| Task ID | ATLAS-IMP-157 |
+| Title | Connector upgrade non-executable evidence receipt |
 | Status | In Progress |
-| Branch | `agent/mcp-upgrade-maintenance-window-evidence` |
-| Pull Request | [#168](https://github.com/ozdemirumit/Project_Atlas/pull/168) |
+| Branch | `agent/mcp-upgrade-evidence-receipt` |
+| Pull Request | Pending |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110, ADR-111, ADR-112 |
 | Last Updated | 2026-08-12 |
-| Next Action | Publish through pull request, verify CI, merge and select the next safe slice |
+| Next Action | Define and implement a non-executable, integrity-verifiable evidence receipt |
+
+### ATLAS-IMP-157 Scope Rationale
+
+- IMP-156 reaches `evidence_complete` without issuing a handoff artifact or execution authority.
+- ATLAS-037 leaves an explicit MVP choice between a non-executable approval receipt and deferring
+  all artifacts; early Atlas releases remain decision-support oriented.
+- The next safe slice is a bounded downloadable receipt for accountable review and audit. It must
+  not be accepted by any runtime, consume approval or behave as an approval/handoff token.
+
+### ATLAS-IMP-157 Acceptance Criteria
+
+- Receipt issuance requires the exact current `evidence_complete` assessment and revalidates all
+  bound request, decision, plan, ITSM, audit and maintenance-window evidence.
+- The receipt contains safe references, evidence-check results, validity bounds and explicit
+  non-execution claims; it contains no endpoint, credential, secret, raw ticket or target payload.
+- Canonical digest and deterministic receipt identity detect tampering, drift and replay; a changed
+  readiness assessment makes an older receipt stale.
+- Issuance does not consume approval, set handoff readiness, contact a target, rebind a package,
+  change configuration, authorize execution or mutate infrastructure.
+- Authorized UI supports reviewing and downloading the receipt, while runtime validators and tests
+  reject malformed or authority-bearing payloads.
+- Focused and full backend/frontend gates, production build and live responsive validation pass.
+
+### ATLAS-IMP-157 Initial Evidence
+
+- IMP-156 merged through PR #168 as `f527db47fe4069713bdde122c57435f4638edf07`;
+  exact-head PR CI run `31575398805` and exact-main push CI run `31578246476` both passed before
+  IMP-157 begins.
+- ATLAS-037 states that early releases may stop at an approved handoff plan and explicitly asks
+  whether MVP should issue a non-executable approval receipt.
+
+### ATLAS-IMP-157 Validation Evidence
+
+- Pending.
+
+### ATLAS-IMP-157 Delivery Evidence
+
+- Pending.
 
 ### ATLAS-IMP-156 Scope Rationale
 
@@ -67,7 +105,13 @@
 
 ### ATLAS-IMP-156 Delivery Evidence
 
-- Pending.
+- Implementation commits `27bfabad646e8a652516df6b315cc04cdb05800f` and
+  `87f5f4d65b80ae09fa9585b53e5aa8aec56a23e6` passed exact-head pull-request CI run
+  `31575398805`; backend completed in 7m52s and frontend in 4m51s.
+- PR [#168](https://github.com/ozdemirumit/Project_Atlas/pull/168) was squash-merged to `main` as
+  `f527db47fe4069713bdde122c57435f4638edf07`.
+- The exact merged `main` commit passed independent push CI run `31578246476`; backend completed in
+  6m42s and frontend completed in 4m24s with every required step successful.
 
 ### ATLAS-IMP-155 Scope Rationale
 
