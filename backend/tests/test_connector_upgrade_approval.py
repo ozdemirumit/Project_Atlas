@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import asdict, replace
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -84,7 +84,11 @@ from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeEvidenceSigningProviderTrust,
     ConnectorUpgradeSigningProviderConformanceState,
     ConnectorUpgradeSigningProviderOnboardingEvidence,
+    ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState,
+    ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceState,
     ConnectorUpgradeSigningProviderOnboardingPolicySnapshot,
+    ConnectorUpgradeSigningProviderOnboardingPolicyTrustKey,
+    ConnectorUpgradeSigningProviderOnboardingPolicyTrustKeyState,
     ConnectorUpgradeSigningProviderOnboardingRequirementState,
 )
 from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticationMethod
@@ -878,6 +882,216 @@ async def test_onboarding_policy_provenance_rejects_unverified_signature() -> No
 
 
 @pytest.mark.asyncio
+async def test_onboarding_policy_provenance_diagnostic_is_scoped_audited_and_safe() -> None:
+    service, _, _, _, _, _, sources, audit = await approval_fixture()
+    instance, _ = sources
+    diagnostic = await service.signing_provider_onboarding_policy_provenance_diagnostic(
+        actor=instance_operator("subject.connector-onboarding-policy-diagnostic"),
+        correlation_id="correlation.onboarding-policy-diagnostic",
+    )
+
+    assert (
+        diagnostic.state is ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceState.VERIFIED
+    )
+    assert diagnostic.provenance_verified
+    assert diagnostic.valid_until is not None
+    assert tuple(check.check_id for check in diagnostic.checks) == (
+        "policy-current",
+        "attestation-current",
+        "attestation-binding-valid",
+        "trust-key-current",
+        "signature-verified",
+    )
+    assert all(
+        check.state is ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.VERIFIED
+        for check in diagnostic.checks
+    )
+    assert diagnostic.organization_id == instance.organization_id
+    assert diagnostic.environment_id == instance.environment_id
+    assert diagnostic.attestation_digest is not None
+    assert not diagnostic.policy_authoring_authorized
+    assert not diagnostic.trust_management_authorized
+    assert not diagnostic.execution_authorized
+    assert audit.records[-1].permission_id is not None
+    assert audit.records[-1].permission_id.endswith("provenance-diagnostics.read")
+    assert audit.records[-1].result_code.endswith("provenance_verified")
+
+
+@pytest.mark.asyncio
+async def test_onboarding_policy_provenance_diagnostic_explains_missing_and_unverified() -> None:
+    service, _, _, _, _, _, _, _ = await approval_fixture()
+    actor = instance_operator("subject.connector-onboarding-policy-diagnostic-blocked")
+    service._signing_provider_onboarding_policy_attestation_source = (
+        InMemoryConnectorUpgradeSigningProviderOnboardingPolicyAttestationSource()
+    )
+    missing = await service.signing_provider_onboarding_policy_provenance_diagnostic(
+        actor=actor,
+        correlation_id="correlation.onboarding-policy-diagnostic-missing",
+    )
+
+    assert missing.state is ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceState.BLOCKED
+    assert not missing.provenance_verified
+    assert missing.policy_id is not None
+    assert missing.attestation_id is None
+    assert missing.checks[0].state is (
+        ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.VERIFIED
+    )
+    assert missing.checks[1].state is (
+        ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.UNAVAILABLE
+    )
+    assert missing.reason_codes[0].endswith(".attestation-unavailable")
+    with pytest.raises(
+        ConnectorUpgradeApprovalError,
+        match="connector_upgrade_signing_provider_onboarding_policy_attestation_unavailable",
+    ):
+        await service.signing_provider_onboarding_readiness(
+            actor=actor,
+            correlation_id="correlation.onboarding-policy-readiness-still-blocked",
+        )
+
+    service, _, _, _, _, _, _, _ = await approval_fixture()
+    service._signing_provider_onboarding_policy_verifier = _RejectingOnboardingPolicyVerifier()
+    unverified = await service.signing_provider_onboarding_policy_provenance_diagnostic(
+        actor=actor,
+        correlation_id="correlation.onboarding-policy-diagnostic-unverified",
+    )
+    assert unverified.checks[-1].state is (
+        ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.BLOCKED
+    )
+    assert unverified.reason_codes == (
+        "connector.upgrade.signing-provider-onboarding-policy-provenance.signature-unverified",
+    )
+
+
+@pytest.mark.asyncio
+async def test_onboarding_policy_provenance_diagnostic_explains_policy_lifecycle() -> None:
+    service, _, _, _, _, _, sources, _ = await approval_fixture()
+    instance, _ = sources
+    actor = instance_operator("subject.connector-onboarding-policy-diagnostic-lifecycle")
+    service._signing_provider_onboarding_policy_source = None
+    unavailable = await service.signing_provider_onboarding_policy_provenance_diagnostic(
+        actor=actor,
+        correlation_id="correlation.onboarding-policy-diagnostic-unavailable",
+    )
+    assert unavailable.checks[0].state is (
+        ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.BLOCKED
+    )
+    assert unavailable.checks[0].reason_code.endswith(".unavailable")
+    assert unavailable.policy_id is None
+    assert all(
+        check.state
+        is ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.UNAVAILABLE
+        for check in unavailable.checks[1:]
+    )
+
+    now = service._clock()
+    expired_policy = build_development_connector_upgrade_signing_provider_onboarding_policy(
+        organization_id=instance.organization_id,
+        environment_id=instance.environment_id,
+        issued_at=now - timedelta(days=2),
+        expires_at=now - timedelta(days=1),
+    )
+    service._signing_provider_onboarding_policy_source = (
+        InMemoryConnectorUpgradeSigningProviderOnboardingPolicySource((expired_policy,))
+    )
+    expired = await service.signing_provider_onboarding_policy_provenance_diagnostic(
+        actor=actor,
+        correlation_id="correlation.onboarding-policy-diagnostic-expired",
+    )
+    assert expired.checks[0].reason_code.endswith(".expired")
+    assert expired.policy_id is None
+
+
+def _trust_key_with_integrity(
+    service: ConnectorUpgradeApprovalService,
+    key: ConnectorUpgradeSigningProviderOnboardingPolicyTrustKey,
+    **changes: object,
+) -> ConnectorUpgradeSigningProviderOnboardingPolicyTrustKey:
+    changed = replace(key, **cast(Any, changes), canonical_digest="0" * 64)
+    payload = cast(dict[str, object], asdict(changed))
+    payload.pop("canonical_digest")
+    return replace(changed, canonical_digest=service._digest(service._normalize(payload)))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("changes", "expected_reason"),
+    (
+        (
+            {"state": ConnectorUpgradeSigningProviderOnboardingPolicyTrustKeyState.DISABLED},
+            "trust-key-disabled",
+        ),
+        (
+            {"state": ConnectorUpgradeSigningProviderOnboardingPolicyTrustKeyState.REVOKED},
+            "trust-key-revoked",
+        ),
+        (
+            {
+                "not_before": datetime(
+                    2026, 7, 31, tzinfo=instance_operator().authenticated_at.tzinfo
+                ),
+                "expires_at": datetime(
+                    2026, 8, 1, tzinfo=instance_operator().authenticated_at.tzinfo
+                ),
+            },
+            "trust-key-expired",
+        ),
+        (
+            {
+                "not_before": datetime(
+                    2026, 8, 20, tzinfo=instance_operator().authenticated_at.tzinfo
+                ),
+                "expires_at": datetime(
+                    2026, 8, 21, tzinfo=instance_operator().authenticated_at.tzinfo
+                ),
+            },
+            "trust-key-not-yet-effective",
+        ),
+    ),
+)
+async def test_onboarding_policy_provenance_diagnostic_reports_trust_lifecycle(
+    changes: dict[str, object], expected_reason: str
+) -> None:
+    service, _, _, _, _, _, sources, _ = await approval_fixture()
+    instance, _ = sources
+    source = service._signing_provider_onboarding_policy_trust_source
+    assert source is not None
+    keys = await source.list_scope(
+        organization_id=instance.organization_id,
+        environment_id=instance.environment_id,
+        issuer_id="subject.security-architecture",
+    )
+    changed = _trust_key_with_integrity(service, keys[0], **changes)
+    service._signing_provider_onboarding_policy_trust_source = (
+        InMemoryConnectorUpgradeSigningProviderOnboardingPolicyTrustSource((changed,))
+    )
+
+    diagnostic = await service.signing_provider_onboarding_policy_provenance_diagnostic(
+        actor=instance_operator("subject.connector-onboarding-policy-trust-lifecycle"),
+        correlation_id="correlation.onboarding-policy-trust-lifecycle",
+    )
+
+    assert (
+        diagnostic.state is ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceState.BLOCKED
+    )
+    assert diagnostic.checks[3].reason_code.endswith(expected_reason)
+    assert diagnostic.checks[4].state is (
+        ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.UNAVAILABLE
+    )
+
+
+@pytest.mark.asyncio
+async def test_onboarding_policy_provenance_diagnostic_fails_closed_when_audit_fails() -> None:
+    service, _, _, _, _, _, _, _ = await approval_fixture()
+    service._audit_sink = FailingAuditSink()
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        await service.signing_provider_onboarding_policy_provenance_diagnostic(
+            actor=instance_operator("subject.connector-onboarding-policy-audit-failure"),
+            correlation_id="correlation.onboarding-policy-audit-failure",
+        )
+
+
+@pytest.mark.asyncio
 async def test_onboarding_readiness_rejects_stale_conformance_and_wrong_scope_evidence() -> None:
     service, _, _, _, _, _, sources, _ = await approval_fixture()
     instance, _ = sources
@@ -957,6 +1171,10 @@ def test_signing_provider_onboarding_readiness_api_is_no_store_and_exact_schema(
     with TestClient(app) as client:
         login(client)
         response = client.get(endpoint)
+        diagnostic_response = client.get(
+            "/api/v1/connectors/instances/"
+            "upgrade-evidence-signing-provider-onboarding-policy-provenance-diagnostic"
+        )
 
     assert response.status_code == 200
     assert response.headers["Cache-Control"] == "no-store"
@@ -980,6 +1198,23 @@ def test_signing_provider_onboarding_readiness_api_is_no_store_and_exact_schema(
     assert "secret" not in payload
     assert "signature" not in payload
     assert "key_material" not in payload
+
+    assert diagnostic_response.status_code == 200
+    assert diagnostic_response.headers["Cache-Control"] == "no-store"
+    diagnostic = diagnostic_response.json()["data"]
+    assert diagnostic["schema_version"] == (
+        "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v1"
+    )
+    assert diagnostic["state"] == "verified"
+    assert diagnostic["provenance_verified"] is True
+    assert len(diagnostic["checks"]) == 5
+    assert diagnostic["reason_codes"] == []
+    assert diagnostic["trust_management_authorized"] is False
+    assert diagnostic["execution_authorized"] is False
+    assert "signature" not in diagnostic
+    assert "key_material" not in diagnostic
+    assert "credential" not in diagnostic
+    assert "endpoint" not in diagnostic
 
 
 def test_signing_key_trust_effective_state_precedence_is_deterministic() -> None:

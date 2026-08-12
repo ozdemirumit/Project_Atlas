@@ -514,8 +514,15 @@ textarea:focus-visible {
   background: #fff;
 }
 
-.installed-mcp-onboarding-requirement.satisfied {
+.installed-mcp-onboarding-requirement.satisfied,
+.installed-mcp-onboarding-requirement.verified {
   color: #176b4d;
+}
+
+.installed-mcp-onboarding-requirement.unavailable {
+  color: #687772;
+  border-style: dashed;
+  background: #f7f9f8;
 }
 
 .installed-mcp-onboarding-requirement > div {

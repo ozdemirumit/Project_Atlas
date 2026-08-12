@@ -5,7 +5,7 @@ import base64
 import hmac
 import json
 from collections.abc import Callable
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from hashlib import sha256
@@ -64,6 +64,10 @@ from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeSignedEvidenceReceiptVerification,
     ConnectorUpgradeSigningProviderConformanceAssessment,
     ConnectorUpgradeSigningProviderOnboardingPolicyAttestation,
+    ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck,
+    ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState,
+    ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic,
+    ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceState,
     ConnectorUpgradeSigningProviderOnboardingPolicySnapshot,
     ConnectorUpgradeSigningProviderOnboardingPolicyTrustKey,
     ConnectorUpgradeSigningProviderOnboardingPolicyTrustKeyState,
@@ -148,6 +152,19 @@ UPGRADE_SIGNING_PROVIDER_ONBOARDING_READINESS_SCHEMA = (
 UPGRADE_SIGNING_PROVIDER_ONBOARDING_READINESS_PERMISSION = (
     "connectors.upgrade-signing-provider-onboarding-readiness.read"
 )
+UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_PROVENANCE_DIAGNOSTIC_SCHEMA = (
+    "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v1"
+)
+UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_PROVENANCE_DIAGNOSTIC_PERMISSION = (
+    "connectors.upgrade-signing-provider-onboarding-policy-provenance-diagnostics.read"
+)
+UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_PROVENANCE_CHECK_IDS = (
+    "policy-current",
+    "attestation-current",
+    "attestation-binding-valid",
+    "trust-key-current",
+    "signature-verified",
+)
 UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_SCHEMA = (
     "atlas.connector-upgrade-signing-provider-onboarding-policy.v1"
 )
@@ -204,6 +221,15 @@ UPGRADE_APPROVAL_REVALIDATION_CHECK_IDS = (
     "connector.upgrade.revalidation.expiry-current",
     "connector.upgrade.revalidation.nonexecution-boundary-intact",
 )
+
+
+@dataclass(frozen=True, slots=True)
+class _OnboardingPolicyProvenanceEvaluation:
+    diagnostic: ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic
+    policy: ConnectorUpgradeSigningProviderOnboardingPolicySnapshot | None
+    attestation: ConnectorUpgradeSigningProviderOnboardingPolicyAttestation | None
+    trust_key: ConnectorUpgradeSigningProviderOnboardingPolicyTrustKey | None
+    failure_code: str | None
 
 
 class ConnectorUpgradeApprovalService:
@@ -1714,10 +1740,18 @@ class ConnectorUpgradeApprovalService:
     ) -> ConnectorUpgradeSigningProviderOnboardingReadiness:
         self._require_authenticated_human(actor)
         now = self._clock()
-        policy = await self._active_signing_provider_onboarding_policy(actor=actor, now=now)
-        attestation, trust_key = await self._verify_signing_provider_onboarding_policy_provenance(
-            actor=actor, policy=policy, now=now
+        provenance = await self._evaluate_signing_provider_onboarding_policy_provenance(
+            actor=actor, now=now
         )
+        if provenance.failure_code is not None:
+            raise ConnectorUpgradeApprovalError(provenance.failure_code)
+        policy = provenance.policy
+        attestation = provenance.attestation
+        trust_key = provenance.trust_key
+        if policy is None or attestation is None or trust_key is None:
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_signing_provider_onboarding_policy_provenance_unavailable"
+            )
         inventory = await self.signing_key_trust_inventory(
             actor=actor,
             correlation_id=correlation_id,
@@ -1992,6 +2026,23 @@ class ConnectorUpgradeApprovalService:
             dossier=dossier,
         )
         return dossier
+
+    async def signing_provider_onboarding_policy_provenance_diagnostic(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+    ) -> ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic:
+        self._require_authenticated_human(actor)
+        evaluation = await self._evaluate_signing_provider_onboarding_policy_provenance(
+            actor=actor, now=self._clock()
+        )
+        await self._audit_signing_provider_onboarding_policy_provenance_diagnostic(
+            actor=actor,
+            correlation_id=correlation_id,
+            diagnostic=evaluation.diagnostic,
+        )
+        return evaluation.diagnostic
 
     @classmethod
     def _verify_signing_provider_conformance(
@@ -2745,23 +2796,93 @@ class ConnectorUpgradeApprovalService:
             "connector_upgrade_signing_provider_onboarding_policy_not_yet_effective"
         )
 
-    async def _verify_signing_provider_onboarding_policy_provenance(
+    async def _evaluate_signing_provider_onboarding_policy_provenance(
         self,
         *,
         actor: AuthenticatedSubject,
-        policy: ConnectorUpgradeSigningProviderOnboardingPolicySnapshot,
         now: datetime,
-    ) -> tuple[
-        ConnectorUpgradeSigningProviderOnboardingPolicyAttestation,
-        ConnectorUpgradeSigningProviderOnboardingPolicyTrustKey,
-    ]:
-        if (
-            self._signing_provider_onboarding_policy_attestation_source is None
-            or self._signing_provider_onboarding_policy_trust_source is None
-            or self._signing_provider_onboarding_policy_verifier is None
-        ):
-            raise ConnectorUpgradeApprovalError(
-                "connector_upgrade_signing_provider_onboarding_policy_provenance_unavailable"
+    ) -> _OnboardingPolicyProvenanceEvaluation:
+        checks: list[ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck] = []
+        policy: ConnectorUpgradeSigningProviderOnboardingPolicySnapshot | None = None
+        attestation: ConnectorUpgradeSigningProviderOnboardingPolicyAttestation | None = None
+        trust_key: ConnectorUpgradeSigningProviderOnboardingPolicyTrustKey | None = None
+
+        def check(
+            check_id: str,
+            state: ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState,
+            reason: str,
+            evidence_reference: str | None = None,
+        ) -> ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck:
+            return ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck(
+                check_id=check_id,
+                state=state,
+                reason_code=(
+                    f"connector.upgrade.signing-provider-onboarding-policy-provenance.{reason}"
+                ),
+                evidence_reference=evidence_reference,
+            )
+
+        def blocked(
+            *,
+            check_id: str,
+            state: ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState,
+            reason: str,
+            failure_code: str,
+        ) -> _OnboardingPolicyProvenanceEvaluation:
+            checks.append(check(check_id, state, reason))
+            remaining = UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_PROVENANCE_CHECK_IDS[
+                len(checks) :
+            ]
+            checks.extend(
+                check(
+                    item,
+                    ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.UNAVAILABLE,
+                    "prerequisite-unavailable",
+                )
+                for item in remaining
+            )
+            diagnostic = self._build_signing_provider_onboarding_policy_provenance_diagnostic(
+                actor=actor,
+                environment_id=self._environment_id,
+                now=now,
+                policy=policy,
+                attestation=attestation,
+                trust_key=trust_key,
+                checks=tuple(checks),
+            )
+            return _OnboardingPolicyProvenanceEvaluation(
+                diagnostic=diagnostic,
+                policy=policy,
+                attestation=attestation,
+                trust_key=trust_key,
+                failure_code=failure_code,
+            )
+
+        try:
+            policy = await self._active_signing_provider_onboarding_policy(actor=actor, now=now)
+        except ConnectorUpgradeApprovalError as error:
+            return blocked(
+                check_id="policy-current",
+                state=ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.BLOCKED,
+                reason=self._provenance_reason(error.code),
+                failure_code=error.code,
+            )
+        checks.append(
+            check(
+                "policy-current",
+                ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.VERIFIED,
+                "policy-current",
+                policy.policy_id,
+            )
+        )
+        if self._signing_provider_onboarding_policy_attestation_source is None:
+            return blocked(
+                check_id="attestation-current",
+                state=ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.UNAVAILABLE,
+                reason="attestation-source-unavailable",
+                failure_code=(
+                    "connector_upgrade_signing_provider_onboarding_policy_provenance_unavailable"
+                ),
             )
         attestations = await self._signing_provider_onboarding_policy_attestation_source.list_scope(
             organization_id=actor.organization_id,
@@ -2769,19 +2890,37 @@ class ConnectorUpgradeApprovalService:
             policy_id=policy.policy_id,
         )
         for item in attestations:
-            self._verify_signing_provider_onboarding_policy_attestation(item)
+            try:
+                self._verify_signing_provider_onboarding_policy_attestation(item)
+            except ConnectorUpgradeApprovalError as error:
+                return blocked(
+                    check_id="attestation-current",
+                    state=ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.BLOCKED,
+                    reason=self._provenance_reason(error.code),
+                    failure_code=error.code,
+                )
             if (
                 item.organization_id != actor.organization_id
                 or item.environment_id != self._environment_id
                 or item.policy_id != policy.policy_id
             ):
-                raise ConnectorUpgradeApprovalError(
-                    "connector_upgrade_signing_provider_onboarding_policy_attestation_scope_invalid"
+                return blocked(
+                    check_id="attestation-current",
+                    state=ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.BLOCKED,
+                    reason="attestation-scope-invalid",
+                    failure_code=(
+                        "connector_upgrade_signing_provider_onboarding_policy_attestation_scope_invalid"
+                    ),
                 )
         active = tuple(item for item in attestations if item.issued_at <= now < item.expires_at)
         if len(active) > 1:
-            raise ConnectorUpgradeApprovalError(
-                "connector_upgrade_signing_provider_onboarding_policy_attestation_ambiguous"
+            return blocked(
+                check_id="attestation-current",
+                state=ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.BLOCKED,
+                reason="attestation-ambiguous",
+                failure_code=(
+                    "connector_upgrade_signing_provider_onboarding_policy_attestation_ambiguous"
+                ),
             )
         if not active:
             code = (
@@ -2791,10 +2930,28 @@ class ConnectorUpgradeApprovalService:
                 if attestations and all(now < item.issued_at for item in attestations)
                 else "unavailable"
             )
-            raise ConnectorUpgradeApprovalError(
+            failure_code = (
                 f"connector_upgrade_signing_provider_onboarding_policy_attestation_{code}"
             )
+            return blocked(
+                check_id="attestation-current",
+                state=(
+                    ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.UNAVAILABLE
+                    if code == "unavailable"
+                    else ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.BLOCKED
+                ),
+                reason=f"attestation-{code.replace('_', '-')}",
+                failure_code=failure_code,
+            )
         attestation = active[0]
+        checks.append(
+            check(
+                "attestation-current",
+                ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.VERIFIED,
+                "attestation-current",
+                attestation.attestation_id,
+            )
+        )
         if (
             attestation.organization_id != actor.organization_id
             or attestation.environment_id != self._environment_id
@@ -2803,8 +2960,30 @@ class ConnectorUpgradeApprovalService:
             or attestation.policy_digest != policy.canonical_digest
             or attestation.issuer_id != policy.issued_by
         ):
-            raise ConnectorUpgradeApprovalError(
-                "connector_upgrade_signing_provider_onboarding_policy_attestation_binding_invalid"
+            return blocked(
+                check_id="attestation-binding-valid",
+                state=ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.BLOCKED,
+                reason="attestation-binding-invalid",
+                failure_code=(
+                    "connector_upgrade_signing_provider_onboarding_policy_attestation_binding_invalid"
+                ),
+            )
+        checks.append(
+            check(
+                "attestation-binding-valid",
+                ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.VERIFIED,
+                "attestation-binding-valid",
+                policy.policy_id,
+            )
+        )
+        if self._signing_provider_onboarding_policy_trust_source is None:
+            return blocked(
+                check_id="trust-key-current",
+                state=ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.UNAVAILABLE,
+                reason="trust-source-unavailable",
+                failure_code=(
+                    "connector_upgrade_signing_provider_onboarding_policy_provenance_unavailable"
+                ),
             )
         trust_keys = await self._signing_provider_onboarding_policy_trust_source.list_scope(
             organization_id=actor.organization_id,
@@ -2817,26 +2996,237 @@ class ConnectorUpgradeApprovalService:
             if key.key_id == attestation.key_id
             and key.key_version == attestation.key_version
             and key.algorithm == attestation.algorithm
-            and key.state is ConnectorUpgradeSigningProviderOnboardingPolicyTrustKeyState.ACTIVE
-            and key.not_before <= now < key.expires_at
         )
         if len(matching) > 1:
-            raise ConnectorUpgradeApprovalError(
-                "connector_upgrade_signing_provider_onboarding_policy_trust_key_ambiguous"
+            return blocked(
+                check_id="trust-key-current",
+                state=ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.BLOCKED,
+                reason="trust-key-ambiguous",
+                failure_code=(
+                    "connector_upgrade_signing_provider_onboarding_policy_trust_key_ambiguous"
+                ),
             )
         if not matching:
-            raise ConnectorUpgradeApprovalError(
-                "connector_upgrade_signing_provider_onboarding_policy_trust_key_unavailable"
+            return blocked(
+                check_id="trust-key-current",
+                state=ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.UNAVAILABLE,
+                reason="trust-key-unavailable",
+                failure_code=(
+                    "connector_upgrade_signing_provider_onboarding_policy_trust_key_unavailable"
+                ),
             )
-        trust_key = matching[0]
-        self._verify_signing_provider_onboarding_policy_trust_key(trust_key)
+        candidate_trust_key = matching[0]
+        if (
+            candidate_trust_key.organization_id != actor.organization_id
+            or candidate_trust_key.environment_id != self._environment_id
+            or candidate_trust_key.issuer_id != attestation.issuer_id
+        ):
+            return blocked(
+                check_id="trust-key-current",
+                state=ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.BLOCKED,
+                reason="trust-key-scope-invalid",
+                failure_code=(
+                    "connector_upgrade_signing_provider_onboarding_policy_trust_key_scope_invalid"
+                ),
+            )
+        try:
+            self._verify_signing_provider_onboarding_policy_trust_key(candidate_trust_key)
+        except ConnectorUpgradeApprovalError as error:
+            return blocked(
+                check_id="trust-key-current",
+                state=ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.BLOCKED,
+                reason=self._provenance_reason(error.code),
+                failure_code=error.code,
+            )
+        trust_key = candidate_trust_key
+        if (
+            trust_key.state
+            is not ConnectorUpgradeSigningProviderOnboardingPolicyTrustKeyState.ACTIVE
+        ):
+            state_name = trust_key.state.value
+            return blocked(
+                check_id="trust-key-current",
+                state=ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.BLOCKED,
+                reason=f"trust-key-{state_name}",
+                failure_code=(
+                    f"connector_upgrade_signing_provider_onboarding_policy_trust_key_{state_name}"
+                ),
+            )
+        if now < trust_key.not_before:
+            return blocked(
+                check_id="trust-key-current",
+                state=ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.BLOCKED,
+                reason="trust-key-not-yet-effective",
+                failure_code=(
+                    "connector_upgrade_signing_provider_onboarding_policy_trust_key_not_yet_effective"
+                ),
+            )
+        if now >= trust_key.expires_at:
+            return blocked(
+                check_id="trust-key-current",
+                state=ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.BLOCKED,
+                reason="trust-key-expired",
+                failure_code=(
+                    "connector_upgrade_signing_provider_onboarding_policy_trust_key_expired"
+                ),
+            )
+        checks.append(
+            check(
+                "trust-key-current",
+                ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.VERIFIED,
+                "trust-key-current",
+                trust_key.key_id,
+            )
+        )
+        if self._signing_provider_onboarding_policy_verifier is None:
+            return blocked(
+                check_id="signature-verified",
+                state=ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.UNAVAILABLE,
+                reason="verifier-unavailable",
+                failure_code=(
+                    "connector_upgrade_signing_provider_onboarding_policy_provenance_unavailable"
+                ),
+            )
         if not await self._signing_provider_onboarding_policy_verifier.verify(
             attestation=attestation, trust_key=trust_key
         ):
-            raise ConnectorUpgradeApprovalError(
-                "connector_upgrade_signing_provider_onboarding_policy_signature_unverified"
+            return blocked(
+                check_id="signature-verified",
+                state=ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.BLOCKED,
+                reason="signature-unverified",
+                failure_code=(
+                    "connector_upgrade_signing_provider_onboarding_policy_signature_unverified"
+                ),
             )
-        return attestation, trust_key
+        checks.append(
+            check(
+                "signature-verified",
+                ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.VERIFIED,
+                "signature-verified",
+                attestation.attestation_id,
+            )
+        )
+        diagnostic = self._build_signing_provider_onboarding_policy_provenance_diagnostic(
+            actor=actor,
+            environment_id=self._environment_id,
+            now=now,
+            policy=policy,
+            attestation=attestation,
+            trust_key=trust_key,
+            checks=tuple(checks),
+        )
+        return _OnboardingPolicyProvenanceEvaluation(
+            diagnostic=diagnostic,
+            policy=policy,
+            attestation=attestation,
+            trust_key=trust_key,
+            failure_code=None,
+        )
+
+    @staticmethod
+    def _provenance_reason(error_code: str) -> str:
+        prefix = "connector_upgrade_signing_provider_onboarding_policy_"
+        return error_code.removeprefix(prefix).replace("_", "-")
+
+    @classmethod
+    def _build_signing_provider_onboarding_policy_provenance_diagnostic(
+        cls,
+        *,
+        actor: AuthenticatedSubject,
+        environment_id: str,
+        now: datetime,
+        policy: ConnectorUpgradeSigningProviderOnboardingPolicySnapshot | None,
+        attestation: ConnectorUpgradeSigningProviderOnboardingPolicyAttestation | None,
+        trust_key: ConnectorUpgradeSigningProviderOnboardingPolicyTrustKey | None,
+        checks: tuple[ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck, ...],
+    ) -> ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic:
+        verified = all(
+            item.state
+            is ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.VERIFIED
+            for item in checks
+        )
+        reason_codes = tuple(
+            item.reason_code
+            for item in checks
+            if item.state
+            is not ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.VERIFIED
+        )
+        expiries = tuple(
+            value
+            for value in (
+                policy.expires_at if policy is not None else None,
+                attestation.expires_at if attestation is not None else None,
+                trust_key.expires_at if trust_key is not None else None,
+            )
+            if value is not None and value > now
+        )
+        valid_until = min(expiries) if verified and len(expiries) == 3 else None
+        state = (
+            ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceState.VERIFIED
+            if verified
+            else ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceState.BLOCKED
+        )
+        payload: dict[str, object] = {
+            "schema_version": (
+                UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_PROVENANCE_DIAGNOSTIC_SCHEMA
+            ),
+            "version": 1,
+            "organization_id": actor.organization_id,
+            "environment_id": environment_id,
+            "evaluated_at": now.isoformat(),
+            "valid_until": valid_until.isoformat() if valid_until is not None else None,
+            "state": state.value,
+            "policy_id": policy.policy_id if policy is not None else None,
+            "policy_version": policy.policy_version if policy is not None else None,
+            "policy_digest": policy.canonical_digest if policy is not None else None,
+            "policy_issued_by": policy.issued_by if policy is not None else None,
+            "attestation_id": attestation.attestation_id if attestation is not None else None,
+            "attestation_digest": (
+                attestation.canonical_digest if attestation is not None else None
+            ),
+            "trust_key_id": trust_key.key_id if trust_key is not None else None,
+            "trust_key_version": trust_key.key_version if trust_key is not None else None,
+            "trust_algorithm": trust_key.algorithm if trust_key is not None else None,
+            "trust_key_state": trust_key.state.value if trust_key is not None else None,
+            "checks": [cls._normalize(asdict(item)) for item in checks],
+            "reason_codes": reason_codes,
+            "provenance_verified": verified,
+            "diagnostic_only": True,
+            "policy_authoring_authorized": False,
+            "trust_management_authorized": False,
+            "provider_configuration_authorized": False,
+            "key_management_authorized": False,
+            "receipt_signing_authorized": False,
+            "execution_authorized": False,
+            "infrastructure_mutation_performed": False,
+        }
+        digest = cls._digest(payload)
+        return ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic(
+            diagnostic_id=f"connector-upgrade-onboarding-policy-provenance.{digest[:24]}",
+            schema_version=(
+                UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_PROVENANCE_DIAGNOSTIC_SCHEMA
+            ),
+            version=1,
+            organization_id=actor.organization_id,
+            environment_id=environment_id,
+            evaluated_at=now,
+            valid_until=valid_until,
+            state=state,
+            policy_id=policy.policy_id if policy is not None else None,
+            policy_version=policy.policy_version if policy is not None else None,
+            policy_digest=policy.canonical_digest if policy is not None else None,
+            policy_issued_by=policy.issued_by if policy is not None else None,
+            attestation_id=attestation.attestation_id if attestation is not None else None,
+            attestation_digest=(attestation.canonical_digest if attestation is not None else None),
+            trust_key_id=trust_key.key_id if trust_key is not None else None,
+            trust_key_version=trust_key.key_version if trust_key is not None else None,
+            trust_algorithm=trust_key.algorithm if trust_key is not None else None,
+            trust_key_state=trust_key.state if trust_key is not None else None,
+            checks=checks,
+            reason_codes=reason_codes,
+            canonical_digest=digest,
+            provenance_verified=verified,
+        )
 
     async def _active_policy(
         self, *, actor: AuthenticatedSubject, now: datetime
@@ -3445,6 +3835,55 @@ class ConnectorUpgradeApprovalService:
                     ("readiness_state", dossier.readiness_state),
                     ("blocked_requirement_count", str(len(dossier.required_external_inputs))),
                     ("provider_configuration_authorized", "false"),
+                    ("execution_authorized", "false"),
+                ),
+            )
+        )
+
+    async def _audit_signing_provider_onboarding_policy_provenance_diagnostic(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+        diagnostic: ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic,
+    ) -> None:
+        await self._audit_sink.record(
+            AuditRecord(
+                event_id=f"evt_{uuid4().hex}",
+                event_type=(
+                    "atlas.connector.upgrade-signing-provider-onboarding-policy-provenance-"
+                    "diagnostic"
+                ),
+                schema_version="1.0",
+                producer="project-atlas-api",
+                producer_version=__version__,
+                occurred_at=self._clock(),
+                correlation_id=correlation_id,
+                subject_id=actor.subject_id,
+                actor_type=actor.kind.value,
+                authentication_method=actor.authentication_method.value,
+                assurance_level=actor.assurance_level.value,
+                permission_id=(
+                    UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_PROVENANCE_DIAGNOSTIC_PERMISSION
+                ),
+                resource_type=(
+                    "resource.connector.upgrade-signing-provider-onboarding-policy-provenance-"
+                    "diagnostic"
+                ),
+                scope_reference=diagnostic.environment_id,
+                decision_id=diagnostic.diagnostic_id,
+                outcome="succeeded",
+                result_code=(
+                    "connector_upgrade_signing_provider_onboarding_policy_provenance_verified"
+                    if diagnostic.provenance_verified
+                    else "connector_upgrade_signing_provider_onboarding_policy_provenance_blocked"
+                ),
+                idempotency_key=None,
+                target_metadata=(
+                    ("state", diagnostic.state.value),
+                    ("blocked_check_count", str(len(diagnostic.reason_codes))),
+                    ("diagnostic_only", "true"),
+                    ("trust_management_authorized", "false"),
                     ("execution_authorized", "false"),
                 ),
             )

@@ -49,6 +49,8 @@ from atlas.api.instance_creation_schemas import (
     ConnectorUpgradeSigningProviderConformanceData,
     ConnectorUpgradeSigningProviderConformanceInput,
     ConnectorUpgradeSigningProviderConformanceResponse,
+    ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnosticData,
+    ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnosticResponse,
     ConnectorUpgradeSigningProviderOnboardingReadinessData,
     ConnectorUpgradeSigningProviderOnboardingReadinessResponse,
 )
@@ -72,6 +74,7 @@ from atlas.api.security import (
     authorize_connector_upgrade_signing_key_trust_inventory_read,
     authorize_connector_upgrade_signing_provider_conformance_create,
     authorize_connector_upgrade_signing_provider_conformance_read,
+    authorize_connector_upgrade_signing_provider_onboarding_policy_provenance_diagnostic_read,
     authorize_connector_upgrade_signing_provider_onboarding_readiness_read,
     browser_session_subject,
     connector_signing_conformance_subject,
@@ -295,6 +298,37 @@ async def assess_connector_upgrade_signing_provider_conformance(
     response.headers["Cache-Control"] = "no-store"
     return ConnectorUpgradeSigningProviderConformanceResponse(
         data=ConnectorUpgradeSigningProviderConformanceData.from_domain(assessment),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get(
+    "/upgrade-evidence-signing-provider-onboarding-policy-provenance-diagnostic",
+    response_model=(ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnosticResponse),
+)
+async def get_connector_upgrade_signing_provider_onboarding_policy_provenance_diagnostic(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(connector_signing_trust_read_subject)],
+    _decision: Annotated[
+        AuthorizationDecision,
+        Depends(
+            authorize_connector_upgrade_signing_provider_onboarding_policy_provenance_diagnostic_read
+        ),
+    ],
+) -> ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnosticResponse:
+    service: ConnectorUpgradeApprovalService = request.app.state.connector_upgrade_approval_service
+    diagnostic = await service.signing_provider_onboarding_policy_provenance_diagnostic(
+        actor=subject,
+        correlation_id=str(request.state.correlation_id),
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnosticResponse(
+        data=ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnosticData.from_domain(
+            diagnostic
+        ),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),

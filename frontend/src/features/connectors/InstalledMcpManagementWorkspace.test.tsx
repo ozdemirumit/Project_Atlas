@@ -20,6 +20,7 @@ import {
   getConnectorUpgradeHandoffReadiness,
   getConnectorUpgradeEvidenceSigningKeyTrustInventory,
   getConnectorUpgradeSigningProviderOnboardingReadiness,
+  getConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic,
   getLatestConnectorUpgradeSigningProviderConformance,
   getLatestConnectorUpgradeChangeContextDraft,
   getLatestConnectorUpgradeApprovalRevalidation,
@@ -40,6 +41,7 @@ import {
   type ConnectorUpgradeSignedEvidenceReceiptVerification,
   type ConnectorUpgradeSigningProviderConformanceAssessment,
   type ConnectorUpgradeSigningProviderOnboardingReadiness,
+  type ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic,
   type ConnectorUpgradePlan,
   type ConnectorUpgradeReadiness,
 } from "../../api/connectorUpgradeReadiness";
@@ -181,6 +183,50 @@ const signingProviderOnboarding: ConnectorUpgradeSigningProviderOnboardingReadin
   provider_onboarding_ready: false,
   policy_provenance_verified: true,
   evidence_only: true,
+  provider_configuration_authorized: false,
+  key_management_authorized: false,
+  receipt_signing_authorized: false,
+  execution_authorized: false,
+  infrastructure_mutation_performed: false,
+};
+
+const signingProviderOnboardingProvenance:
+ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic = {
+  diagnostic_id: "connector-upgrade-onboarding-policy-provenance.test",
+  schema_version:
+    "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v1",
+  version: 1,
+  organization_id: installation.organization_id,
+  environment_id: installation.environment_id,
+  evaluated_at: "2026-08-12T12:01:00Z",
+  valid_until: "2026-08-13T12:01:00Z",
+  state: "verified",
+  policy_id: signingProviderOnboarding.policy_id,
+  policy_version: signingProviderOnboarding.policy_version,
+  policy_digest: signingProviderOnboarding.policy_digest,
+  policy_issued_by: signingProviderOnboarding.policy_issued_by,
+  attestation_id: signingProviderOnboarding.policy_attestation_id,
+  attestation_digest: signingProviderOnboarding.policy_attestation_digest,
+  trust_key_id: signingProviderOnboarding.policy_trust_key_id,
+  trust_key_version: signingProviderOnboarding.policy_trust_key_version,
+  trust_algorithm: signingProviderOnboarding.policy_trust_algorithm,
+  trust_key_state: "active",
+  checks: [
+    "policy-current", "attestation-current", "attestation-binding-valid",
+    "trust-key-current", "signature-verified",
+  ].map((check_id) => ({
+    check_id,
+    state: "verified" as const,
+    reason_code:
+      `connector.upgrade.signing-provider-onboarding-policy-provenance.${check_id}`,
+    evidence_reference: "evidence.safe-reference",
+  })),
+  reason_codes: [],
+  canonical_digest: "9".repeat(64),
+  provenance_verified: true,
+  diagnostic_only: true,
+  policy_authoring_authorized: false,
+  trust_management_authorized: false,
   provider_configuration_authorized: false,
   key_management_authorized: false,
   receipt_signing_authorized: false,
@@ -685,6 +731,7 @@ vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
     assessConnectorUpgradeSigningProviderConformance: vi.fn(),
     getLatestConnectorUpgradeSigningProviderConformance: vi.fn(),
     getConnectorUpgradeSigningProviderOnboardingReadiness: vi.fn(),
+    getConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic: vi.fn(),
     getLatestConnectorUpgradeChangeContextDraft: vi.fn(),
     createConnectorUpgradeChangeContextDraft: vi.fn(),
     createConnectorUpgradeEvidenceReceipt: vi.fn(),
@@ -732,6 +779,9 @@ beforeEach(() => {
   vi.mocked(getConnectorUpgradeSigningProviderOnboardingReadiness).mockResolvedValue(
     signingProviderOnboarding,
   );
+  vi.mocked(
+    getConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic,
+  ).mockResolvedValue(signingProviderOnboardingProvenance);
   vi.mocked(getLatestConnectorUpgradeChangeContextDraft).mockResolvedValue(null);
   vi.mocked(createConnectorUpgradeChangeContextDraft).mockResolvedValue(changeContextDraft);
   vi.mocked(createConnectorUpgradeEvidenceReceipt).mockResolvedValue(evidenceReceipt);
@@ -766,14 +816,18 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(await screen.findByRole("heading", { name: "Signing trust" })).toBeVisible();
     expect(screen.getByText("Signing-provider conformance")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Provider onboarding readiness" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Policy provenance diagnostic" })).toBeVisible();
+    expect(screen.getByText("Policy provenance verified")).toBeVisible();
+    expect(screen.getAllByText("signature verified")).toHaveLength(2);
     expect(screen.getByText("2 requirements blocked")).toBeVisible();
     expect(screen.getByText("provider production approved")).toBeVisible();
     expect(screen.getByText("security approval current")).toBeVisible();
-    expect(screen.getByText("connector-upgrade-signing-provider-onboarding.default")).toBeVisible();
-    expect(screen.getByText("subject.security-architecture")).toBeVisible();
-    expect(screen.getByText("7777777777777777")).toBeVisible();
+    expect(screen.getAllByText("connector-upgrade-signing-provider-onboarding.default"))
+      .toHaveLength(2);
+    expect(screen.getAllByText("subject.security-architecture")).toHaveLength(2);
+    expect(screen.getAllByText("7777777777777777")).toHaveLength(2);
     expect(screen.getByText("Issuer attestation verified")).toBeVisible();
-    expect(screen.getByText(/key\.connector-upgrade-onboarding-policy\.test/)).toBeVisible();
+    expect(screen.getAllByText(/key\.connector-upgrade-onboarding-policy\.test/)).toHaveLength(2);
     expect(screen.getByText("8888888888888888")).toBeVisible();
     expect(screen.getAllByText("key.connector-upgrade-evidence.test")).toHaveLength(2);
     expect(screen.getByText("Verification trusted")).toBeVisible();
@@ -785,6 +839,7 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(screen.queryByRole("button", { name: /delete/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /rotate|revoke|disable|export key/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /configure provider|approve provider/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /upload|trust key|sign policy/i })).toBeNull();
   });
 
   it("runs a bounded provider assessment without exposing signing or key controls", async () => {
@@ -802,6 +857,45 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(screen.getByText(/not approved for production/i)).toBeVisible();
     expect(screen.getByText(/Server-generated challenge only/i)).toBeVisible();
     expect(screen.queryByRole("button", { name: /sign receipt|rotate|revoke|export/i })).toBeNull();
+  });
+
+  it("explains blocked policy provenance without exposing trust mutation controls", async () => {
+    const blockedChecks = signingProviderOnboardingProvenance.checks.map((check, index) =>
+      index === 0
+        ? check
+        : {
+            ...check,
+            state: "unavailable" as const,
+            reason_code: index === 1
+              ? "connector.upgrade.signing-provider-onboarding-policy-provenance.attestation-unavailable"
+              : "connector.upgrade.signing-provider-onboarding-policy-provenance.prerequisite-unavailable",
+            evidence_reference: null,
+          });
+    vi.mocked(
+      getConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic,
+    ).mockResolvedValue({
+      ...signingProviderOnboardingProvenance,
+      valid_until: null,
+      state: "blocked",
+      attestation_id: null,
+      attestation_digest: null,
+      trust_key_id: null,
+      trust_key_version: null,
+      trust_algorithm: null,
+      trust_key_state: null,
+      checks: blockedChecks,
+      reason_codes: blockedChecks.slice(1).map((check) => check.reason_code),
+      provenance_verified: false,
+    });
+    renderWorkspace();
+
+    expect(await screen.findByText("4 provenance checks blocked")).toBeVisible();
+    expect(screen.getAllByText("prerequisite unavailable")).toHaveLength(3);
+    expect(screen.getByText(/No verified validity horizon/i)).toBeVisible();
+    expect(screen.getByText(/No trust-store, policy, key or provider mutation authority/i))
+      .toBeVisible();
+    expect(screen.queryByRole("button", { name: /upload|trust|sign|approve|configure/i }))
+      .toBeNull();
   });
 
   it("shows evidence-based upgrade readiness without exposing an update action", async () => {
