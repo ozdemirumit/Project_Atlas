@@ -329,8 +329,8 @@ describe("connector upgrade onboarding-policy provenance diagnostic validation",
   const diagnostic = {
     diagnostic_id: "connector-upgrade-onboarding-policy-provenance.test",
     schema_version:
-      "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v1",
-    version: 1,
+      "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v2",
+    version: 2,
     organization_id: "organization.development",
     environment_id: "environment.development",
     evaluated_at: "2026-08-12T12:01:00Z",
@@ -355,6 +355,10 @@ describe("connector upgrade onboarding-policy provenance diagnostic validation",
       reason_code:
         `connector.upgrade.signing-provider-onboarding-policy-provenance.${check_id}`,
       evidence_reference: "evidence.safe-reference",
+      owner_role_id: null,
+      evidence_requirement_id: null,
+      next_action_id: null,
+      external_input_required: false,
     })),
     reason_codes: [],
     canonical_digest: "9".repeat(64),
@@ -396,6 +400,16 @@ describe("connector upgrade onboarding-policy provenance diagnostic validation",
             ? "connector.upgrade.signing-provider-onboarding-policy-provenance.attestation-unavailable"
             : "connector.upgrade.signing-provider-onboarding-policy-provenance.prerequisite-unavailable",
           evidence_reference: null,
+          owner_role_id: index === 1
+            ? "role.security-policy-attestation-owner"
+            : "role.connector-upgrade-provenance-coordinator",
+          evidence_requirement_id: index === 1
+            ? "evidence.current-policy-attestation"
+            : "evidence.prior-provenance-check",
+          next_action_id: index === 1
+            ? "action.publish-policy-attestation"
+            : "action.resolve-prior-provenance-check",
+          external_input_required: index === 1,
         });
     const reason_codes = blockedChecks.slice(1).map((check) => check.reason_code);
     expect(isConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic({
@@ -412,6 +426,22 @@ describe("connector upgrade onboarding-policy provenance diagnostic validation",
       reason_codes,
       provenance_verified: false,
     })).toBe(true);
+    expect(isConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic({
+      ...diagnostic,
+      valid_until: null,
+      state: "blocked",
+      attestation_id: null,
+      attestation_digest: null,
+      trust_key_id: null,
+      trust_key_version: null,
+      trust_algorithm: null,
+      trust_key_state: null,
+      checks: blockedChecks.map((check, index) => index === 1
+        ? { ...check, owner_role_id: "role.security-trust-store-owner" }
+        : check),
+      reason_codes,
+      provenance_verified: false,
+    })).toBe(false);
   });
 });
 

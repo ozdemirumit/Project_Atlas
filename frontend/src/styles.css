@@ -525,6 +525,24 @@ textarea:focus-visible {
   background: #f7f9f8;
 }
 
+.installed-mcp-provenance-guidance {
+  display: grid;
+  gap: 3px;
+  margin-top: 6px;
+  color: #61716d;
+  font-size: 0.78rem;
+}
+
+.installed-mcp-provenance-guidance b {
+  color: #263431;
+  font-weight: 600;
+}
+
+.installed-mcp-provenance-external {
+  color: #8a4b08;
+  font-weight: 600;
+}
+
 .installed-mcp-onboarding-requirement > div {
   display: grid;
   min-width: 0;

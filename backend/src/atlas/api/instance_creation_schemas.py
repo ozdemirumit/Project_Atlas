@@ -938,6 +938,10 @@ class ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckData(BaseMod
     state: Literal["verified", "blocked", "unavailable"]
     reason_code: str = Field(pattern=STABLE_ID)
     evidence_reference: str | None = Field(default=None, pattern=STABLE_ID)
+    owner_role_id: str | None = Field(default=None, pattern=STABLE_ID)
+    evidence_requirement_id: str | None = Field(default=None, pattern=STABLE_ID)
+    next_action_id: str | None = Field(default=None, pattern=STABLE_ID)
+    external_input_required: bool
 
     @classmethod
     def from_domain(
@@ -951,9 +955,9 @@ class ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnosticData(Ba
 
     diagnostic_id: str = Field(pattern=STABLE_ID)
     schema_version: Literal[
-        "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v1"
+        "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v2"
     ]
-    version: Literal[1]
+    version: Literal[2]
     organization_id: str = Field(pattern=STABLE_ID)
     environment_id: str = Field(pattern=STABLE_ID)
     evaluated_at: datetime

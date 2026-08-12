@@ -84,6 +84,7 @@ from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeEvidenceSigningProviderTrust,
     ConnectorUpgradeSigningProviderConformanceState,
     ConnectorUpgradeSigningProviderOnboardingEvidence,
+    ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck,
     ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState,
     ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceState,
     ConnectorUpgradeSigningProviderOnboardingPolicySnapshot,
@@ -906,6 +907,13 @@ async def test_onboarding_policy_provenance_diagnostic_is_scoped_audited_and_saf
         check.state is ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.VERIFIED
         for check in diagnostic.checks
     )
+    assert all(
+        check.owner_role_id is None
+        and check.evidence_requirement_id is None
+        and check.next_action_id is None
+        and not check.external_input_required
+        for check in diagnostic.checks
+    )
     assert diagnostic.organization_id == instance.organization_id
     assert diagnostic.environment_id == instance.environment_id
     assert diagnostic.attestation_digest is not None
@@ -940,6 +948,12 @@ async def test_onboarding_policy_provenance_diagnostic_explains_missing_and_unve
         ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.UNAVAILABLE
     )
     assert missing.reason_codes[0].endswith(".attestation-unavailable")
+    assert missing.checks[1].owner_role_id == "role.security-policy-attestation-owner"
+    assert missing.checks[1].evidence_requirement_id == "evidence.current-policy-attestation"
+    assert missing.checks[1].next_action_id == "action.publish-policy-attestation"
+    assert missing.checks[1].external_input_required
+    assert missing.checks[2].owner_role_id == "role.connector-upgrade-provenance-coordinator"
+    assert not missing.checks[2].external_input_required
     with pytest.raises(
         ConnectorUpgradeApprovalError,
         match="connector_upgrade_signing_provider_onboarding_policy_attestation_unavailable",
@@ -961,6 +975,39 @@ async def test_onboarding_policy_provenance_diagnostic_explains_missing_and_unve
     assert unverified.reason_codes == (
         "connector.upgrade.signing-provider-onboarding-policy-provenance.signature-unverified",
     )
+    assert unverified.checks[-1].owner_role_id == "role.security-policy-attestation-owner"
+    assert unverified.checks[-1].next_action_id == ("action.reissue-verifiable-policy-attestation")
+
+
+def test_onboarding_policy_provenance_check_rejects_inconsistent_remediation() -> None:
+    with pytest.raises(ValueError, match="remediation is invalid"):
+        ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck(
+            check_id="policy-current",
+            state=ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.VERIFIED,
+            reason_code=(
+                "connector.upgrade.signing-provider-onboarding-policy-provenance.policy-current"
+            ),
+            owner_role_id="role.security-policy-governance",
+        )
+    with pytest.raises(ValueError, match="remediation is invalid"):
+        ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck(
+            check_id="policy-current",
+            state=ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.BLOCKED,
+            reason_code=(
+                "connector.upgrade.signing-provider-onboarding-policy-provenance.unavailable"
+            ),
+        )
+
+
+def test_onboarding_policy_provenance_remediation_mapping_fails_closed() -> None:
+    with pytest.raises(
+        ConnectorUpgradeApprovalError,
+        match=(
+            "connector_upgrade_signing_provider_onboarding_policy_provenance_"
+            "remediation_mapping_invalid"
+        ),
+    ):
+        ConnectorUpgradeApprovalService._provenance_remediation("unknown-reason")
 
 
 @pytest.mark.asyncio
@@ -1203,12 +1250,15 @@ def test_signing_provider_onboarding_readiness_api_is_no_store_and_exact_schema(
     assert diagnostic_response.headers["Cache-Control"] == "no-store"
     diagnostic = diagnostic_response.json()["data"]
     assert diagnostic["schema_version"] == (
-        "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v1"
+        "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v2"
     )
+    assert diagnostic["version"] == 2
     assert diagnostic["state"] == "verified"
     assert diagnostic["provenance_verified"] is True
     assert len(diagnostic["checks"]) == 5
     assert diagnostic["reason_codes"] == []
+    assert all(check["owner_role_id"] is None for check in diagnostic["checks"])
+    assert all(check["external_input_required"] is False for check in diagnostic["checks"])
     assert diagnostic["trust_management_authorized"] is False
     assert diagnostic["execution_authorized"] is False
     assert "signature" not in diagnostic

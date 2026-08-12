@@ -194,8 +194,8 @@ const signingProviderOnboardingProvenance:
 ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic = {
   diagnostic_id: "connector-upgrade-onboarding-policy-provenance.test",
   schema_version:
-    "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v1",
-  version: 1,
+    "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v2",
+  version: 2,
   organization_id: installation.organization_id,
   environment_id: installation.environment_id,
   evaluated_at: "2026-08-12T12:01:00Z",
@@ -220,6 +220,10 @@ ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic = {
     reason_code:
       `connector.upgrade.signing-provider-onboarding-policy-provenance.${check_id}`,
     evidence_reference: "evidence.safe-reference",
+    owner_role_id: null,
+    evidence_requirement_id: null,
+    next_action_id: null,
+    external_input_required: false,
   })),
   reason_codes: [],
   canonical_digest: "9".repeat(64),
@@ -870,6 +874,16 @@ describe("InstalledMcpManagementWorkspace", () => {
               ? "connector.upgrade.signing-provider-onboarding-policy-provenance.attestation-unavailable"
               : "connector.upgrade.signing-provider-onboarding-policy-provenance.prerequisite-unavailable",
             evidence_reference: null,
+            owner_role_id: index === 1
+              ? "role.security-policy-attestation-owner"
+              : "role.connector-upgrade-provenance-coordinator",
+            evidence_requirement_id: index === 1
+              ? "evidence.current-policy-attestation"
+              : "evidence.prior-provenance-check",
+            next_action_id: index === 1
+              ? "action.publish-policy-attestation"
+              : "action.resolve-prior-provenance-check",
+            external_input_required: index === 1,
           });
     vi.mocked(
       getConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic,
@@ -891,6 +905,11 @@ describe("InstalledMcpManagementWorkspace", () => {
 
     expect(await screen.findByText("4 provenance checks blocked")).toBeVisible();
     expect(screen.getAllByText("prerequisite unavailable")).toHaveLength(3);
+    expect(screen.getByText("security policy attestation owner")).toBeVisible();
+    expect(screen.getByText("current policy attestation")).toBeVisible();
+    expect(screen.getByText("publish policy attestation")).toBeVisible();
+    expect(screen.getByText("External deployment input required")).toBeVisible();
+    expect(screen.getAllByText("connector upgrade provenance coordinator")).toHaveLength(3);
     expect(screen.getByText(/No verified validity horizon/i)).toBeVisible();
     expect(screen.getByText(/No trust-store, policy, key or provider mutation authority/i))
       .toBeVisible();
