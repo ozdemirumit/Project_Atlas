@@ -749,13 +749,21 @@ vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
   };
 });
 
-function renderWorkspace(subjectId = "subject.connector-operator") {
+function renderWorkspace(
+  subjectId = "subject.connector-operator",
+  enterpriseMfaAvailable = true,
+  onRequestEnterpriseLogin?: () => void,
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <InstalledMcpManagementWorkspace subjectId={subjectId} />
+      <InstalledMcpManagementWorkspace
+        enterpriseMfaAvailable={enterpriseMfaAvailable}
+        onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+        subjectId={subjectId}
+      />
     </QueryClientProvider>,
   );
 }
@@ -817,7 +825,14 @@ describe("InstalledMcpManagementWorkspace", () => {
     renderWorkspace();
 
     expect(await screen.findByRole("heading", { name: "Installed MCPs" })).toBeVisible();
-    expect(await screen.findByRole("heading", { name: "Signing trust" })).toBeVisible();
+    expect(await screen.findByText("Storage East")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Add MCP" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retire Storage East" })).toBeVisible();
+    expect(screen.getByText("Security and onboarding diagnostics")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Signing trust" })).not.toBeVisible();
+
+    fireEvent.click(screen.getByText("Security and onboarding diagnostics"));
+    expect(screen.getByRole("heading", { name: "Signing trust" })).toBeVisible();
     expect(screen.getByText("Signing-provider conformance")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Provider onboarding readiness" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Policy provenance diagnostic" })).toBeVisible();
@@ -836,9 +851,6 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(screen.getAllByText("key.connector-upgrade-evidence.test")).toHaveLength(2);
     expect(screen.getByText("Verification trusted")).toBeVisible();
     expect(screen.getByText(/No key management or signing authority/i)).toBeVisible();
-    expect(await screen.findByText("Storage East")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Add MCP" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Retire Storage East" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Review update for Storage East" })).toBeVisible();
     expect(screen.queryByRole("button", { name: /delete/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /rotate|revoke|disable|export key/i })).toBeNull();
@@ -850,6 +862,7 @@ describe("InstalledMcpManagementWorkspace", () => {
     vi.mocked(getLatestConnectorUpgradeSigningProviderConformance).mockResolvedValue(null);
     renderWorkspace();
 
+    fireEvent.click(await screen.findByText("Security and onboarding diagnostics"));
     const run = await screen.findByRole("button", { name: "Run assessment" });
     expect(await screen.findByText(/No bounded provider assessment/i)).toBeVisible();
     fireEvent.click(run);
@@ -903,6 +916,7 @@ describe("InstalledMcpManagementWorkspace", () => {
     });
     renderWorkspace();
 
+    fireEvent.click(await screen.findByText("Security and onboarding diagnostics"));
     expect(await screen.findByText("4 provenance checks blocked")).toBeVisible();
     expect(screen.getAllByText("prerequisite unavailable")).toHaveLength(3);
     expect(screen.getByText("security policy attestation owner")).toBeVisible();
@@ -915,6 +929,20 @@ describe("InstalledMcpManagementWorkspace", () => {
       .toBeVisible();
     expect(screen.queryByRole("button", { name: /upload|trust|sign|approve|configure/i }))
       .toBeNull();
+  });
+
+  it("routes development-mode operators to enterprise login without enabling mutations", async () => {
+    const onRequestEnterpriseLogin = vi.fn();
+    renderWorkspace("subject.local-operator", false, onRequestEnterpriseLogin);
+
+    expect(await screen.findByText(/Enterprise MFA required for MCP lifecycle changes/i))
+      .toBeVisible();
+    expect(await screen.findByText("Storage East")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Add MCP" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Retire Storage East" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in to manage" }));
+    expect(onRequestEnterpriseLogin).toHaveBeenCalledTimes(1);
   });
 
   it("shows evidence-based upgrade readiness without exposing an update action", async () => {

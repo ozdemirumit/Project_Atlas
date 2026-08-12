@@ -48,13 +48,19 @@ const device: InventoryDevice = {
   reused: false,
 };
 
-function renderWorkspace() {
+function renderWorkspace(
+  governedSessionAvailable = true,
+  onRequestEnterpriseLogin?: () => void,
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <InventoryDeviceRegistryWorkspace />
+      <InventoryDeviceRegistryWorkspace
+        governedSessionAvailable={governedSessionAvailable}
+        onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+      />
     </QueryClientProvider>,
   );
 }
@@ -156,5 +162,19 @@ describe("InventoryDeviceRegistryWorkspace", () => {
     await waitFor(() =>
       expect(getInventoryDevices).toHaveBeenLastCalledWith({ lifecycle: "retired", query: "" }),
     );
+  });
+
+  it("keeps development mode read-only and offers enterprise login", async () => {
+    const onRequestEnterpriseLogin = vi.fn();
+    renderWorkspace(false, onRequestEnterpriseLogin);
+
+    expect(await screen.findByText(/Signed browser session required for device lifecycle changes/i))
+      .toBeVisible();
+    expect(await screen.findByText("Primary VSP")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Add device" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Retire Primary VSP" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in to manage" }));
+    expect(onRequestEnterpriseLogin).toHaveBeenCalledTimes(1);
   });
 });

@@ -371,6 +371,7 @@ export function OperationalApplication({
   const [selectedHealthCheckId, setSelectedHealthCheckId] = useState<string | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [enterpriseLoginRequested, setEnterpriseLoginRequested] = useState(false);
   const [approvalRequestId, setApprovalRequestId] = useState<string | null>(() =>
     new URLSearchParams(window.location.search).get("approval_request_id"),
   );
@@ -1115,6 +1116,7 @@ export function OperationalApplication({
   const loginMutation = useMutation({
     mutationFn: () => createBrowserSession(username, password),
     onSuccess: async () => {
+      setEnterpriseLoginRequested(false);
       await queryClient.invalidateQueries({ queryKey: ["current-identity"] });
     },
     onSettled: () => setPassword(""),
@@ -1974,7 +1976,7 @@ export function OperationalApplication({
     overview?.evidence.filter((item) =>
       selectedAsset?.evidence_references.includes(item.reference),
     ) ?? [];
-  if (!identityQuery.isLoading && identityQuery.data === null) {
+  if (!identityQuery.isLoading && (identityQuery.data === null || enterpriseLoginRequested)) {
     const submitLogin = (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       if (username && password && !loginMutation.isPending) loginMutation.mutate();
@@ -2024,6 +2026,15 @@ export function OperationalApplication({
               <LogIn size={18} />
               {loginMutation.isPending ? "Signing in" : "Sign in"}
             </button>
+            {enterpriseLoginRequested && identity?.authentication.method === "development" && (
+              <button
+                className="login-development-return"
+                type="button"
+                onClick={() => setEnterpriseLoginRequested(false)}
+              >
+                Return to read-only development mode
+              </button>
+            )}
           </form>
         </section>
       </main>
@@ -2095,7 +2106,21 @@ export function OperationalApplication({
                       </div>
                     }
                   >
-                    <InstalledMcpManagementWorkspace subjectId={identity?.subject_id ?? ""} />
+                    <InstalledMcpManagementWorkspace
+                      enterpriseMfaAvailable={
+                        identity?.credential_kind === "browser_session" &&
+                        identity.authentication.method !== "development" &&
+                        ["multi_factor", "hardware_backed"].includes(
+                          identity.authentication.assurance_level,
+                        )
+                      }
+                      onRequestEnterpriseLogin={
+                        identity?.credential_kind === "browser_session"
+                          ? undefined
+                          : () => setEnterpriseLoginRequested(true)
+                      }
+                      subjectId={identity?.subject_id ?? ""}
+                    />
                   </Suspense>
                 </WorkspaceLoadBoundary>
               </div>
@@ -8097,7 +8122,12 @@ export function OperationalApplication({
                       </div>
                     }
                   >
-                    <InventoryDeviceRegistryWorkspace />
+                    <InventoryDeviceRegistryWorkspace
+                      governedSessionAvailable={
+                        identity?.credential_kind === "browser_session"
+                      }
+                      onRequestEnterpriseLogin={() => setEnterpriseLoginRequested(true)}
+                    />
                     <HealthInventoryEvidenceWorkspace
                       impact={impact}
                       impactError={impactQuery.isError}

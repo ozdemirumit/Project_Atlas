@@ -473,13 +473,6 @@ async def inventory_device_mutation_subject(
         is CredentialKind.BROWSER_SESSION
     ):
         return subject
-    settings = request.app.state.settings
-    if (
-        settings.environment == "development"
-        and settings.development_identity_enabled
-        and subject.authentication_method is AuthenticationMethod.DEVELOPMENT
-    ):
-        return subject
     raise AtlasError(
         status=403,
         code="browser_session_required",

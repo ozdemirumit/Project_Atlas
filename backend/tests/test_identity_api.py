@@ -56,6 +56,7 @@ def test_development_identity_is_authorized_with_exact_server_configuration() ->
     assert payload["data"]["subject_id"] == "subject.development.operator"
     assert payload["data"]["display_name"] == "Local Operator"
     assert payload["data"]["authentication"]["method"] == "development"
+    assert payload["data"]["credential_kind"] == "identity_provider"
     assert payload["data"]["scope"]["capability_class"] == "C0"
     assert payload["data"]["effective_role_versions"] == ["role.development.operator:v1"]
     assert payload["meta"]["correlation_id"] == "cor_identity_allowed"
@@ -63,6 +64,21 @@ def test_development_identity_is_authorized_with_exact_server_configuration() ->
         "atlas.identity.authentication.succeeded",
         "atlas.authorization.access.allowed",
     ]
+
+
+def test_current_identity_distinguishes_a_governed_browser_session() -> None:
+    settings = Settings(environment="test", development_identity_enabled=True)
+    with TestClient(create_app(settings, audit_sink=CollectingAuditSink())) as client:
+        created = client.post(
+            "/api/v1/authentication/sessions",
+            json={"username": "atlas-demo", "password": "local-demo"},
+        )
+        current = client.get("/api/v1/identity/me")
+
+    assert created.status_code == 201
+    assert current.status_code == 200
+    assert current.json()["data"]["authentication"]["method"] == "development"
+    assert current.json()["data"]["credential_kind"] == "browser_session"
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-import { Activity, PackageCheck, Search, ShieldCheck, type LucideIcon } from "lucide-react";
+import { PackageCheck, Search, Server, ShieldCheck, type LucideIcon } from "lucide-react";
 
 import type { HealthViewId } from "../shell/workspace";
 
@@ -13,10 +13,10 @@ export interface HealthViewDescriptor {
 export const healthViewDescriptors: readonly HealthViewDescriptor[] = [
   {
     id: "overview",
-    label: "Overview",
-    title: "Health overview",
-    description: "Evidence-linked inventory, findings, impact, and scheduled checks.",
-    icon: Activity,
+    label: "Inventory",
+    title: "Infrastructure inventory and health",
+    description: "Register or retire devices, then review evidence-linked health and impact.",
+    icon: Server,
   },
   {
     id: "investigate",
