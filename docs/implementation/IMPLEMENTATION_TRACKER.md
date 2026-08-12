@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-166 |
 | Title | Connector upgrade onboarding-policy provenance remediation guidance foundation |
-| Status | In Progress |
+| Status | In Review; exact-head CI in progress |
 | Branch | `agent/mcp-onboarding-policy-provenance-remediation` |
-| Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-020, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-115, ADR-116, ADR-117, ADR-118, ADR-119, ADR-120, ADR-121 |
+| Pull Request | [#178](https://github.com/ozdemirumit/Project_Atlas/pull/178) |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-020, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-115, ADR-116, ADR-117, ADR-118, ADR-119, ADR-120, ADR-121, ADR-122 |
 | Last Updated | 2026-08-12 |
-| Next Action | Record ADR-122, add bounded remediation ownership to provenance diagnostics and validate it end to end |
+| Next Action | Verify PR #178 exact-head CI, merge it, verify the exact merged commit on `main`, then close IMP-166 and start the next approved slice |
 
 ### ATLAS-IMP-166 Scope Rationale
 
@@ -52,11 +52,33 @@
 
 ### ATLAS-IMP-166 Validation Evidence
 
-- Pending implementation.
+- ADR-122 records the v2 exact contract, immutable server-owned reason mapping, owner/evidence/action
+  identifiers, external-input marker, canonical digest binding and prohibition on remediation
+  controls or inferred authority.
+- Domain checks reject remediation on verified evidence and incomplete remediation on non-verified
+  evidence. The immutable resolver rejects unknown reason codes before a diagnostic is returned;
+  readiness remains fail closed. The focused backend suite passed 37 tests.
+- Backend formatting and lint passed; strict `mypy` passed across 968 source files. The complete
+  final-source backend regression passed 1,004 tests with three expected Windows symlink skips, and
+  Alembic reports one head, `20260812_0101`.
+- Frontend TypeScript and zero-warning ESLint passed. Exact runtime validation accepts only the
+  server-owned reason-to-remediation mapping and rejects inconsistent owner metadata. The focused
+  API/workspace suites passed 21 tests; the complete frontend suite passed 227 tests across 88 files
+  and the production build passed with only the existing large-chunk advisory.
+- Live verified API validation returned the v2 schema, five verified checks, zero remediation fields,
+  no unsafe fields and no authority. A temporary non-product test factory removed attestation input;
+  the live blocked API then returned the attestation owner, required evidence and next action plus
+  coordinator guidance for dependent checks. The normal verified factory was restored afterward.
+- Live browser validation at 1,280 x 720 and Chromium device emulation at 390 x 844 covered verified
+  and blocked guidance. Page, panel, item and guidance overflow counts were zero; owner, evidence,
+  next-step and external-input labels were visible, no Vite overlay or mutation control appeared,
+  and the browser was reset to the default 1,280 x 720 viewport.
 
 ### ATLAS-IMP-166 Delivery Evidence
 
-- Pending implementation.
+- Source commit `ad75c4c81d1618f12c710cd3c091aefd52a7a57e` is published in draft PR
+  [#178](https://github.com/ozdemirumit/Project_Atlas/pull/178); exact-head CI is pending the tracker
+  review commit.
 
 ### ATLAS-IMP-165 Scope Rationale
 
