@@ -4,14 +4,52 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-163 |
-| Title | Connector upgrade signing-provider onboarding policy governance foundation |
-| Status | In review; exact-head CI pending |
-| Branch | `agent/mcp-signing-provider-onboarding-policy` |
-| Pull Request | [#175](https://github.com/ozdemirumit/Project_Atlas/pull/175) |
+| Task ID | ATLAS-IMP-164 |
+| Title | Connector upgrade signing-provider onboarding policy authenticity foundation |
+| Status | Planning |
+| Branch | `main` |
+| Pull Request | Not opened |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-020, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-115, ADR-116, ADR-117, ADR-118, ADR-119 |
 | Last Updated | 2026-08-12 |
-| Next Action | Verify exact-head CI for PR #175 and complete review |
+| Next Action | Record ADR-120 and bind active policy to independently verified issuer attestation |
+
+### ATLAS-IMP-164 Scope Rationale
+
+- IMP-163 verifies policy canonical integrity, exact scope, validity and ambiguity, but an actor that
+  can replace both payload and digest could still self-assert the issuer field.
+- Enterprise policy governance requires provenance from a separate trust domain before onboarding
+  readiness can rely on a policy snapshot.
+- No production issuer trust store, signing key or algorithm has been approved. The next safe slice is
+  a provider-neutral attestation and verification boundary that remains unavailable in production
+  until security owners supply those external inputs.
+
+### ATLAS-IMP-164 Acceptance Criteria
+
+- An immutable exact-scope policy attestation binds policy ID/version/digest, issuer, signing-key
+  reference, algorithm, issue/expiry time, signature digest and canonical digest without exposing
+  signature material.
+- Independently injected trust and verification ports validate exact policy binding, approved issuer,
+  current non-revoked key, permitted algorithm and cryptographic verification result. Missing, stale,
+  ambiguous, wrong-scope, binding-mismatched or unverifiable evidence fails closed with stable codes.
+- Production uses unavailable adapters and no implicit trust anchor. Deterministic development
+  adapters support tests only and cannot approve a production provider or grant policy-authoring,
+  key-management, signing or execution authority.
+- The onboarding dossier binds attestation identity/digest and can use a policy only after provenance
+  verification. Every provider, policy, key, signing, execution and infrastructure-mutation authority
+  flag remains false.
+- The Connector inventory UI exposes read-only provenance state, issuer and trust-key reference with
+  no upload, edit, sign, trust, approve, provider, credential, key-management or execute controls.
+- ADR, focused and full backend/frontend gates, one Alembic head, production build and live responsive
+  validation pass before delivery.
+
+### ATLAS-IMP-164 Initial Evidence
+
+- IMP-163 merged through PR #175 as `9b91f9512d7f89b448e8008d5741d81ec036897a` after exact-head
+  CI run `31623256056` passed with backend in 8m01s and frontend in 4m50s.
+- The exact merged commit independently passed `main` CI run `31623968772` with backend in 8m03s and
+  frontend in 4m32s.
+- ADR-119 establishes canonical integrity and issuer metadata but deliberately does not claim
+  cryptographically verified issuer provenance.
 
 ### ATLAS-IMP-163 Scope Rationale
 
@@ -78,9 +116,12 @@
 
 ### ATLAS-IMP-163 Delivery Evidence
 
-- Source commit `3602d6d` is published in draft PR
-  [#175](https://github.com/ozdemirumit/Project_Atlas/pull/175). Exact-head CI is pending on the
-  tracker-review commit.
+- Source commit `3602d6d` and tracker-review commit `a798694` were published in PR
+  [#175](https://github.com/ozdemirumit/Project_Atlas/pull/175). Exact-head CI run `31623256056`
+  passed with backend in 8m01s and frontend in 4m50s.
+- PR #175 was squash-merged as `9b91f9512d7f89b448e8008d5741d81ec036897a`; the exact merged
+  commit independently passed `main` CI run `31623968772` with backend in 8m03s and frontend in
+  4m32s.
 
 ### ATLAS-IMP-162 Scope Rationale
 
