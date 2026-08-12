@@ -7,6 +7,7 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeApprovalPolicySnapshot,
     ConnectorUpgradeApprovalRequest,
     ConnectorUpgradeApprovalRevalidation,
+    ConnectorUpgradeAuditReadinessEvidence,
     ConnectorUpgradeChangeContextDraft,
 )
 
@@ -21,6 +22,12 @@ class ConnectorUpgradeApprovalPolicySource(Protocol):
     async def list_scope(
         self, *, organization_id: str, environment_id: str
     ) -> tuple[ConnectorUpgradeApprovalPolicySnapshot, ...]: ...
+
+
+class ConnectorUpgradeAuditReadinessSource(Protocol):
+    async def get_current(
+        self, *, organization_id: str, environment_id: str, request_id: str
+    ) -> ConnectorUpgradeAuditReadinessEvidence | None: ...
 
 
 class ConnectorUpgradeApprovalRepository(Protocol):

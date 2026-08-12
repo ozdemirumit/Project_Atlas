@@ -11,7 +11,7 @@ const required = [
 
 const assessment = {
   assessment_id: "connector-upgrade-handoff-readiness.test",
-  schema_version: "atlas.connector-upgrade-handoff-readiness.v2",
+  schema_version: "atlas.connector-upgrade-handoff-readiness.v3",
   source_record_id: "connector-instance-record.test",
   source_record_version: 1,
   instance_id: "connector-instance.test",
@@ -30,6 +30,8 @@ const assessment = {
   applicability_policy_id: "connector-upgrade-handoff-evidence-applicability.default",
   applicability_policy_version: "v2026.08.12.1",
   applicability_policy_digest: "5".repeat(64),
+  audit_readiness_evidence_id: null,
+  audit_readiness_evidence_digest: null,
   required_check_ids: required,
   satisfied_check_ids: [required[0]],
   not_applicable_check_ids: ["connector.upgrade.handoff.target-binding-current"],
@@ -44,6 +46,7 @@ const assessment = {
   assessment_state: "blocked",
   approval_current: true,
   revalidation_current: true,
+  audit_readiness_evidence_current: false,
   handoff_ready: false,
   handoff_artifact_issued: false,
   approval_consumed: false,
@@ -57,12 +60,26 @@ const assessment = {
 describe("connector upgrade handoff readiness validation", () => {
   it("accepts disjoint policy-bound evidence classifications", () => {
     expect(isConnectorUpgradeHandoffReadiness(assessment)).toBe(true);
+    expect(isConnectorUpgradeHandoffReadiness({
+      ...assessment,
+      audit_readiness_evidence_id: "connector-upgrade-audit-readiness-evidence.test",
+      audit_readiness_evidence_digest: "7".repeat(64),
+      audit_readiness_evidence_current: true,
+      satisfied_check_ids: [required[0], required[3]],
+      blocker_ids: assessment.blocker_ids.slice(0, 2),
+    })).toBe(true);
   });
 
   it("fails closed for overlapping, duplicate or incomplete classifications", () => {
     expect(isConnectorUpgradeHandoffReadiness({
       ...assessment,
       not_applicable_check_ids: [required[0]],
+    })).toBe(false);
+    expect(isConnectorUpgradeHandoffReadiness({
+      ...assessment,
+      audit_readiness_evidence_id: "connector-upgrade-audit-readiness-evidence.test",
+      audit_readiness_evidence_digest: "7".repeat(64),
+      audit_readiness_evidence_current: true,
     })).toBe(false);
     expect(isConnectorUpgradeHandoffReadiness({
       ...assessment,

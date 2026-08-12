@@ -236,7 +236,7 @@ export type ConnectorUpgradeApprovalRevalidation = {
 
 export type ConnectorUpgradeHandoffReadiness = {
   assessment_id: string;
-  schema_version: "atlas.connector-upgrade-handoff-readiness.v2";
+  schema_version: "atlas.connector-upgrade-handoff-readiness.v3";
   source_record_id: string;
   source_record_version: number;
   instance_id: string;
@@ -255,6 +255,8 @@ export type ConnectorUpgradeHandoffReadiness = {
   applicability_policy_id: string;
   applicability_policy_version: string;
   applicability_policy_digest: string;
+  audit_readiness_evidence_id: string | null;
+  audit_readiness_evidence_digest: string | null;
   required_check_ids: string[];
   satisfied_check_ids: string[];
   not_applicable_check_ids: string[];
@@ -265,6 +267,7 @@ export type ConnectorUpgradeHandoffReadiness = {
   assessment_state: "blocked";
   approval_current: true;
   revalidation_current: true;
+  audit_readiness_evidence_current: boolean;
   handoff_ready: false;
   handoff_artifact_issued: false;
   approval_consumed: false;
@@ -594,8 +597,9 @@ export function isConnectorUpgradeHandoffReadiness(
         .replace("connector.upgrade.handoff.", "")
         .replace(/-current$/, "")}-missing`))
     : null;
+  const auditCheck = "connector.upgrade.handoff.audit-readiness-evidence-current";
   return (
-    item.schema_version === "atlas.connector-upgrade-handoff-readiness.v2" &&
+    item.schema_version === "atlas.connector-upgrade-handoff-readiness.v3" &&
     item.assessment_state === "blocked" &&
     [item.assessment_id, item.source_record_id, item.instance_id, item.connector_id, item.request_id,
       item.decision_id, item.revalidation_id, item.plan_id, item.organization_id, item.environment_id,
@@ -604,6 +608,14 @@ export function isConnectorUpgradeHandoffReadiness(
     [item.request_digest, item.decision_digest, item.revalidation_digest, item.plan_digest,
       item.applicability_policy_digest, item.canonical_digest]
       .every((digest) => typeof digest === "string" && DIGEST.test(digest)) &&
+    ((item.audit_readiness_evidence_id === null && item.audit_readiness_evidence_digest === null &&
+      item.audit_readiness_evidence_current === false) ||
+      (typeof item.audit_readiness_evidence_id === "string" &&
+        typeof item.audit_readiness_evidence_digest === "string" &&
+        DIGEST.test(item.audit_readiness_evidence_digest) &&
+        item.audit_readiness_evidence_current === true)) &&
+    satisfied !== null &&
+    item.audit_readiness_evidence_current === satisfied.has(auditCheck) &&
     requiredItems !== null && required !== null && required.size === requiredItems.length && required.size > 0 &&
     satisfiedItems !== null && satisfied !== null && satisfied.size === satisfiedItems.length && satisfied.size > 0 &&
     [...satisfied].every((checkId) => required.has(checkId)) &&

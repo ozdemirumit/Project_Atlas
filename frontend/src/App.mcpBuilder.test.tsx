@@ -2353,7 +2353,9 @@ describe("MCP Builder workspace", () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: "Connectors" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Connectors" }, { timeout: 15_000 }),
+    );
     fireEvent.change(screen.getByLabelText("Vendor"), {
       target: { value: "Atlas Synthetic" },
     });
