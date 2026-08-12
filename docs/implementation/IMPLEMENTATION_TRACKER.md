@@ -4,14 +4,59 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-165 |
-| Title | Connector upgrade onboarding-policy provenance diagnostic foundation |
-| Status | In Review; exact-head CI in progress |
-| Branch | `agent/mcp-onboarding-policy-provenance-diagnostics` |
-| Pull Request | [#177](https://github.com/ozdemirumit/Project_Atlas/pull/177) |
+| Task ID | ATLAS-IMP-166 |
+| Title | Connector upgrade onboarding-policy provenance remediation guidance foundation |
+| Status | In Progress |
+| Branch | `agent/mcp-onboarding-policy-provenance-remediation` |
+| Pull Request | Pending |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-020, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-115, ADR-116, ADR-117, ADR-118, ADR-119, ADR-120, ADR-121 |
 | Last Updated | 2026-08-12 |
-| Next Action | Verify PR #177 exact-head CI, merge it, verify the exact merged commit on `main`, then close IMP-165 and start the next approved slice |
+| Next Action | Record ADR-122, add bounded remediation ownership to provenance diagnostics and validate it end to end |
+
+### ATLAS-IMP-166 Scope Rationale
+
+- IMP-165 safely distinguishes policy, attestation, binding, trust-key and signature failures, but its
+  v1 contract does not yet identify the accountable owner, evidence class or safe next step for a
+  non-verified check.
+- ADR-121 explicitly requires operators to identify the evidence owner that must act. Closure
+  reconciliation found that this part of the acceptance intent remained incomplete after PR #177.
+- Production trust-store, verifier, KMS/HSM and key-custody selections still require external
+  deployment decisions. Atlas can provide bounded guidance without inventing those inputs or adding
+  any mutation control.
+
+### ATLAS-IMP-166 Acceptance Criteria
+
+- A versioned immutable diagnostic contract deterministically maps every non-verified provenance
+  check and stable reason code to an accountable owner-role ID, required-evidence ID, safe next-action
+  ID and external-input-required flag; verified checks carry no remediation request.
+- Guidance is server-owned, canonical-digest-bound to the exact organization, environment,
+  diagnostic state and evidence time, and cannot be supplied or overridden by the caller.
+- Unknown or inconsistent reason mappings, unsafe fields, duplicate actions and remediation on a
+  verified check fail closed. Readiness remains unchanged and blocked evidence never becomes trust.
+- Existing exact-scope default-deny C1 authorization, required attributable audit and `no-store`
+  response behavior remain enforced. No credentials, endpoints, key/signature material, provider
+  parameters or policy/trust mutation controls are exposed.
+- The Connector inventory UI displays concise accountable-owner and required-evidence guidance only
+  for blocked or unavailable checks, with explicit external-deployment wording and no action button.
+- ADR, focused and full backend/frontend gates, one Alembic head, production build and live responsive
+  validation pass before delivery.
+
+### ATLAS-IMP-166 Initial Evidence
+
+- IMP-165 merged through PR #177 as `7af72f6d4a7afb7eb4658a8764999f201346043c` after exact-head CI
+  run `31632863297` passed with backend in 6m55s and frontend in 4m48s.
+- The exact merged commit independently passed `main` CI run `31633457822` with backend in 7m02s and
+  frontend in 4m48s.
+- ADR-121 requires safe identification of the responsible evidence owner while reserving production
+  trust-store and verifier selection for external deployment governance.
+
+### ATLAS-IMP-166 Validation Evidence
+
+- Pending implementation.
+
+### ATLAS-IMP-166 Delivery Evidence
+
+- Pending implementation.
 
 ### ATLAS-IMP-165 Scope Rationale
 
@@ -76,9 +121,15 @@
 
 ### ATLAS-IMP-165 Delivery Evidence
 
-- Source commit `e3ce6f58cffaaf82023d7e790bb09caed595f929` is published in draft PR
-  [#177](https://github.com/ozdemirumit/Project_Atlas/pull/177); exact-head CI run `31632768605` is in
-  progress.
+- Source commit `e3ce6f58cffaaf82023d7e790bb09caed595f929` and tracker-review commit
+  `1676891d6eb381fd701650bda90a58c3930050d8` were published in PR
+  [#177](https://github.com/ozdemirumit/Project_Atlas/pull/177). Exact-head CI run `31632863297`
+  passed with backend in 6m55s and frontend in 4m48s.
+- PR #177 was squash-merged as `7af72f6d4a7afb7eb4658a8764999f201346043c`; the exact merged
+  commit independently passed `main` CI run `31633457822` with backend in 7m02s and frontend in
+  4m48s.
+- Closure reconciliation carried the not-yet-structured remediation-ownership portion of the
+  acceptance intent into ATLAS-IMP-166 instead of overstating the v1 diagnostic contract.
 
 ### ATLAS-IMP-164 Scope Rationale
 
