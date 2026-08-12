@@ -4,14 +4,53 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-154 |
-| Title | Connector upgrade audit-readiness evidence |
+| Task ID | ATLAS-IMP-155 |
+| Title | Connector upgrade authoritative ITSM change evidence |
 | Status | In Progress |
-| Branch | `agent/mcp-upgrade-audit-readiness-evidence` |
+| Branch | Pending |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-034, ATLAS-035, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110 |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110 |
 | Last Updated | 2026-08-12 |
-| Next Action | Deliver exact implementation through pull-request and main CI |
+| Next Action | Define authoritative ITSM change evidence scope and ADR |
+
+### ATLAS-IMP-155 Scope Rationale
+
+- IMP-154 satisfies the audit-readiness check only; ITSM change and maintenance-window checks remain
+  blocked.
+- ATLAS-036 keeps external ITSM authoritative for service-management records and requires a
+  validated integration, current source version and exact plan binding before Atlas accepts state.
+- The next safe slice is a vendor-neutral inbound evidence contract. It must not fabricate a
+  ServiceNow, Jira or other vendor adapter, dispatch a draft, modify a ticket, approve a window or
+  grant execution authority.
+
+### ATLAS-IMP-155 Acceptance Criteria
+
+- Missing, stale, inaccessible, cross-scope, lineage-mismatched, source-version-conflicted or
+  digest-corrupt ITSM evidence leaves the ITSM check blocked or fails closed.
+- Exact current evidence identifies the validated adapter, authoritative instance and external
+  change record, binds the approved record version to the exact request, revalidation and plan, and
+  proves current readable state without exposing endpoints, credentials or ticket content.
+- Valid ITSM evidence satisfies only the ITSM-change check. Maintenance-window evidence remains a
+  separate blocker even when the change record itself is current.
+- A change in ITSM evidence changes readiness and makes an older change-context draft stale.
+- UI and runtime validators distinguish absent versus verified ITSM change evidence while every
+  no-handoff/no-execution field remains false.
+- Focused and full backend/frontend gates, production build and live responsive validation pass.
+
+### ATLAS-IMP-155 Initial Evidence
+
+- IMP-154 merged through PR #166 as `3e4316d4c8d782e8237408990232642be2eb1dbd`; exact-head PR CI
+  run `31565224411` and exact-main push CI run `31565641656` both passed before IMP-155 begins.
+- ATLAS-036 explicitly states that a generic ticket state, comment, email or webhook alone is not
+  approval and that ITSM unavailability preserves the pending state.
+
+### ATLAS-IMP-155 Validation Evidence
+
+- Pending.
+
+### ATLAS-IMP-155 Delivery Evidence
+
+- Pending.
 
 ### ATLAS-IMP-154 Scope Rationale
 
@@ -68,7 +107,12 @@
 
 ### ATLAS-IMP-154 Delivery Evidence
 
-- Pending.
+- Implementation commit `a07c67129324b1c6b610bb174acf272fa4d1cb6c` passed exact-head
+  pull-request CI run `31565224411`; backend completed in 7m00s and frontend in 4m49s.
+- PR [#166](https://github.com/ozdemirumit/Project_Atlas/pull/166) was squash-merged to `main` as
+  `3e4316d4c8d782e8237408990232642be2eb1dbd`.
+- The exact merged `main` commit passed independent push CI run `31565641656`; backend completed in
+  6m59s and frontend completed in 4m46s with every required step successful.
 
 ### ATLAS-IMP-153 Scope Rationale
 
