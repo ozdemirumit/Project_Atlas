@@ -4,14 +4,58 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-159 |
-| Title | Connector upgrade evidence receipt authenticity foundation |
-| Status | Review |
-| Branch | `agent/mcp-upgrade-evidence-authenticity` |
-| Pull Request | [PR #171](https://github.com/ozdemirumit/Project_Atlas/pull/171) |
+| Task ID | ATLAS-IMP-160 |
+| Title | Connector upgrade signing-key trust inventory foundation |
+| Status | In Progress |
+| Branch | `agent/mcp-upgrade-signing-key-inventory` |
+| Pull Request | Pending |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110, ADR-111, ADR-112, ADR-113, ADR-114, ADR-115 |
 | Last Updated | 2026-08-12 |
-| Next Action | Run final exact-head CI, merge PR #171 and verify the merged `main` commit |
+| Next Action | Define ADR-116 and implement exact-scope, read-only signing-key trust inventory |
+
+### ATLAS-IMP-160 Scope Rationale
+
+- IMP-159 authenticates one signed receipt and reports the key reference used for that artifact, but
+  operators cannot inspect the currently trusted signing-key metadata before creating or verifying
+  evidence.
+- Production KMS or HSM selection still requires deployment-specific input. The next provider-neutral
+  slice must therefore expose trust metadata and effective lifecycle state without selecting a
+  vendor, importing a key or weakening the production fail-closed boundary.
+- The inventory is evidence for security and operational review only. It cannot create, rotate,
+  disable, revoke, delete or export a key and cannot grant signing or infrastructure authority.
+
+### ATLAS-IMP-160 Acceptance Criteria
+
+- A versioned trust-inventory contract exposes only scoped key ID, version, signer profile/workload,
+  algorithm, provider class, configured lifecycle state, validity window and derived effective state.
+- The provider port returns an immutable exact-organization and exact-environment snapshot without
+  exposing symmetric/private key material, signatures, credentials, provider tokens or endpoints.
+- Effective state distinguishes active, not-yet-valid, expired, disabled, revoked and unavailable;
+  signing eligibility and verification trust remain separate explicit facts.
+- Authenticated exact-scope C1 APIs require dedicated default-deny RBAC, no-store responses,
+  non-disclosing errors and required attributable read audit.
+- The Connector inventory UI shows trust readiness, validity and production/non-production provider
+  posture without exposing add, rotate, disable, revoke, delete, import or export controls.
+- Architecture decision, focused and full backend/frontend gates, production build and live
+  responsive validation pass before delivery.
+
+### ATLAS-IMP-160 Initial Evidence
+
+- IMP-159 merged through PR #171 as `01807e845959957f926fe6d1aa7ed20a71680a67` after exact-head CI
+  run `31591093305` passed; the merged commit independently passed `main` CI run `31591703942` with
+  backend in 7m22s and frontend in 4m48s.
+- ADR-115 requires key-lifecycle validation, production fail-closed behavior and an injected provider,
+  while reserving concrete KMS/HSM integration for a separately reviewed deployment decision.
+- The current signing provider already owns bounded key metadata and exact-scope validation, providing
+  a narrow extension point for a secret-free immutable inventory snapshot.
+
+### ATLAS-IMP-160 Validation Evidence
+
+- Pending.
+
+### ATLAS-IMP-160 Delivery Evidence
+
+- Pending.
 
 ### ATLAS-IMP-159 Scope Rationale
 
@@ -69,8 +113,10 @@
 
 ### ATLAS-IMP-159 Delivery Evidence
 
-- Draft PR #171 contains source commits `b46cff0`, `c687b03` and `70a397e`; final exact-head CI,
-  ready-for-review transition, merge and independent `main` verification remain pending.
+- PR #171 passed final exact-head CI run `31591093305`, was marked ready and squash-merged as
+  `01807e845959957f926fe6d1aa7ed20a71680a67` on 2026-08-12.
+- The exact merged commit independently passed `main` CI run `31591703942`; backend completed in
+  7m22s and frontend completed in 4m48s.
 
 ### ATLAS-IMP-158 Scope Rationale
 
