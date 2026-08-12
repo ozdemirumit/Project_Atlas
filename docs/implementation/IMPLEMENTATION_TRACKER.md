@@ -9,9 +9,9 @@
 | Status | In Progress |
 | Branch | `agent/mcp-signing-provider-conformance` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-114, ADR-115, ADR-116 |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-114, ADR-115, ADR-116, ADR-117 |
 | Last Updated | 2026-08-12 |
-| Next Action | Define ADR-117 and implement a non-authoritative signing-provider conformance assessment |
+| Next Action | Publish the completed IMP-161 slice for review and pass exact-head CI |
 
 ### ATLAS-IMP-161 Scope Rationale
 
@@ -51,7 +51,21 @@
 
 ### ATLAS-IMP-161 Validation Evidence
 
-- Pending.
+- Backend formatting and lint passed; strict `mypy` passed across 968 source and focused test files.
+  The focused connector-upgrade suite passed 19 tests after moving raw sign-and-verify handling fully
+  inside the provider adapter.
+- The final exact-head complete backend regression passed with 986 tests and three expected Windows
+  symlink skips after the adapter-boundary refactor; Alembic reports the single `20260812_0101` head.
+- Frontend TypeScript and zero-warning lint passed. The focused API/workspace suite passed 17 tests;
+  the complete frontend suite passed 223 tests across 88 files and the production Vite build passed.
+- Live HTTP verification recorded login `201`, missing-CSRF denial `403`, authorized assessment
+  creation `201`, latest read `200` and `Cache-Control: no-store` on both protected responses. The
+  assessment was conformant for the non-production provider while production approval, key
+  management, receipt signing and execution authority remained false; no sensitive field was
+  present.
+- Live browser validation at 1280x720 and 390x844 showed the bounded assessment, production
+  fail-closed message and server-generated-challenge limitation without horizontal overflow or key,
+  receipt-signing or execution controls. Browser logs contained no warning or error entries.
 
 ### ATLAS-IMP-161 Delivery Evidence
 

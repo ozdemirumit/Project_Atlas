@@ -4,6 +4,7 @@ import {
   isConnectorUpgradeEvidenceReceipt,
   isConnectorUpgradeEvidenceReceiptVerification,
   isConnectorUpgradeEvidenceSigningKeyTrustInventory,
+  isConnectorUpgradeSigningProviderConformanceAssessment,
   isConnectorUpgradeHandoffReadiness,
   isConnectorUpgradeSignedEvidenceReceipt,
   isConnectorUpgradeSignedEvidenceReceiptVerification,
@@ -197,6 +198,56 @@ describe("connector upgrade signing-key trust validation", () => {
         verification_trusted: true,
         reason_codes: ["connector.upgrade.signing-key-trust.expired"],
       }],
+    })).toBe(true);
+  });
+});
+
+describe("connector upgrade signing-provider conformance validation", () => {
+  const conformance = {
+    assessment_id: "connector-upgrade-signing-provider-conformance.test",
+    schema_version: "atlas.connector-upgrade-signing-provider-conformance-assessment.v1",
+    version: 1,
+    organization_id: "organization.test",
+    environment_id: "environment.test",
+    assessed_by: "subject.test",
+    provider_class: "provider.nonproduction-hmac",
+    production_approved: false,
+    key_id: "key.connector-upgrade-evidence.test",
+    key_version: "version.1",
+    algorithm: "algorithm.hmac-sha256-nonproduction",
+    challenge_digest: "1".repeat(64),
+    policy_id: "connector-upgrade-signing-provider-conformance.default",
+    policy_version: "v2026.08.12.1",
+    observed_at: "2026-08-12T12:00:00Z",
+    valid_until: "2026-08-12T12:05:00Z",
+    state: "conformant",
+    reason_codes: ["connector.upgrade.signing-provider-conformance.conformant"],
+    request_fingerprint: "2".repeat(64),
+    canonical_digest: "3".repeat(64),
+    diagnostic_only: true,
+    signing_provider_conformant: true,
+    key_management_authorized: false,
+    receipt_signing_authorized: false,
+    execution_authorized: false,
+    infrastructure_mutation_performed: false,
+    reused: false,
+  };
+
+  it("accepts exact diagnostic evidence and rejects signatures or authority", () => {
+    expect(isConnectorUpgradeSigningProviderConformanceAssessment(conformance)).toBe(true);
+    expect(isConnectorUpgradeSigningProviderConformanceAssessment({
+      ...conformance,
+      signature_value: "unsafe",
+    })).toBe(false);
+    expect(isConnectorUpgradeSigningProviderConformanceAssessment({
+      ...conformance,
+      receipt_signing_authorized: true,
+    })).toBe(false);
+    expect(isConnectorUpgradeSigningProviderConformanceAssessment({
+      ...conformance,
+      state: "verify_failed",
+      signing_provider_conformant: false,
+      reason_codes: ["connector.upgrade.signing-provider-conformance.diagnostic-verify-failed"],
     })).toBe(true);
   });
 });

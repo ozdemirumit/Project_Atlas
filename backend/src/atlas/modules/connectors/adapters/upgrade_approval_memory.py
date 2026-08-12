@@ -12,6 +12,9 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeItsmChangeEvidence,
     ConnectorUpgradeMaintenanceWindowEvidence,
 )
+from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
+    ConnectorUpgradeSigningProviderConformanceAssessment,
+)
 
 
 class InMemoryConnectorUpgradeApprovalRepository:
@@ -20,6 +23,9 @@ class InMemoryConnectorUpgradeApprovalRepository:
         self._decisions: dict[str, ConnectorUpgradeApprovalDecision] = {}
         self._revalidations: dict[str, ConnectorUpgradeApprovalRevalidation] = {}
         self._change_context_drafts: dict[str, ConnectorUpgradeChangeContextDraft] = {}
+        self._signing_provider_conformance: dict[
+            str, ConnectorUpgradeSigningProviderConformanceAssessment
+        ] = {}
         self._lock = asyncio.Lock()
 
     @property
@@ -151,6 +157,41 @@ class InMemoryConnectorUpgradeApprovalRepository:
             ):
                 return False
             self._change_context_drafts[draft.draft_id] = draft
+            return True
+
+    async def get_latest_signing_provider_conformance(
+        self, *, organization_id: str, environment_id: str
+    ) -> ConnectorUpgradeSigningProviderConformanceAssessment | None:
+        matches = tuple(
+            item
+            for item in self._signing_provider_conformance.values()
+            if item.organization_id == organization_id and item.environment_id == environment_id
+        )
+        return max(matches, key=lambda item: item.observed_at) if matches else None
+
+    async def get_signing_provider_conformance_by_key(
+        self, *, assessed_by: str, idempotency_key: str
+    ) -> ConnectorUpgradeSigningProviderConformanceAssessment | None:
+        return next(
+            (
+                item
+                for item in self._signing_provider_conformance.values()
+                if item.assessed_by == assessed_by and item.idempotency_key == idempotency_key
+            ),
+            None,
+        )
+
+    async def add_signing_provider_conformance(
+        self, assessment: ConnectorUpgradeSigningProviderConformanceAssessment
+    ) -> bool:
+        async with self._lock:
+            if assessment.assessment_id in self._signing_provider_conformance or any(
+                item.assessed_by == assessment.assessed_by
+                and item.idempotency_key == assessment.idempotency_key
+                for item in self._signing_provider_conformance.values()
+            ):
+                return False
+            self._signing_provider_conformance[assessment.assessment_id] = assessment
             return True
 
     async def close(self) -> None:

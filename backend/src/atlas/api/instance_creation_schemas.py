@@ -26,6 +26,7 @@ from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeEvidenceSigningKeyTrustInventory,
     ConnectorUpgradeSignedEvidenceReceipt,
     ConnectorUpgradeSignedEvidenceReceiptVerification,
+    ConnectorUpgradeSigningProviderConformanceAssessment,
 )
 from atlas.modules.connectors.domain.upgrade_readiness import (
     ConnectorCapabilityChange,
@@ -789,6 +790,67 @@ class ConnectorUpgradeEvidenceSigningKeyTrustInventoryResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: ConnectorUpgradeEvidenceSigningKeyTrustInventoryData
+    meta: ResponseMeta
+
+
+class ConnectorUpgradeSigningProviderConformanceInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["atlas.connector-upgrade-signing-provider-conformance-input.v1"] = (
+        "atlas.connector-upgrade-signing-provider-conformance-input.v1"
+    )
+    acknowledged_diagnostic_grants_no_key_receipt_or_execution_authority: Literal[True]
+
+
+class ConnectorUpgradeSigningProviderConformanceData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    assessment_id: str = Field(pattern=STABLE_ID)
+    schema_version: Literal["atlas.connector-upgrade-signing-provider-conformance-assessment.v1"]
+    version: Literal[1]
+    organization_id: str = Field(pattern=STABLE_ID)
+    environment_id: str = Field(pattern=STABLE_ID)
+    assessed_by: str = Field(pattern=STABLE_ID)
+    provider_class: str = Field(pattern=STABLE_ID)
+    production_approved: bool
+    key_id: str | None = Field(default=None, pattern=STABLE_ID)
+    key_version: str | None = Field(default=None, pattern=STABLE_ID)
+    algorithm: str | None = Field(default=None, pattern=STABLE_ID)
+    challenge_digest: str = Field(pattern=DIGEST)
+    policy_id: str = Field(pattern=STABLE_ID)
+    policy_version: str = Field(pattern=STABLE_ID)
+    observed_at: datetime
+    valid_until: datetime
+    state: Literal[
+        "conformant",
+        "unavailable",
+        "ineligible_key",
+        "sign_failed",
+        "verify_failed",
+        "policy_blocked",
+    ]
+    reason_codes: tuple[str, ...]
+    request_fingerprint: str = Field(pattern=DIGEST)
+    canonical_digest: str = Field(pattern=DIGEST)
+    diagnostic_only: Literal[True]
+    signing_provider_conformant: bool
+    key_management_authorized: Literal[False]
+    receipt_signing_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_performed: Literal[False]
+    reused: bool
+
+    @classmethod
+    def from_domain(
+        cls, assessment: ConnectorUpgradeSigningProviderConformanceAssessment
+    ) -> ConnectorUpgradeSigningProviderConformanceData:
+        return cls(**{field: getattr(assessment, field) for field in cls.model_fields})
+
+
+class ConnectorUpgradeSigningProviderConformanceResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ConnectorUpgradeSigningProviderConformanceData
     meta: ResponseMeta
 
 

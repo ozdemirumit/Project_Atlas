@@ -10,6 +10,7 @@ import {
   type ConnectorInstanceCreationPolicy,
 } from "../../api/connectorInstances";
 import {
+  assessConnectorUpgradeSigningProviderConformance,
   createConnectorUpgradeApprovalRequest,
   createConnectorUpgradeChangeContextDraft,
   createConnectorUpgradeEvidenceReceipt,
@@ -18,6 +19,7 @@ import {
   getConnectorUpgradeApprovalRecord,
   getConnectorUpgradeHandoffReadiness,
   getConnectorUpgradeEvidenceSigningKeyTrustInventory,
+  getLatestConnectorUpgradeSigningProviderConformance,
   getLatestConnectorUpgradeChangeContextDraft,
   getLatestConnectorUpgradeApprovalRevalidation,
   getConnectorUpgradePlan,
@@ -35,6 +37,7 @@ import {
   type ConnectorUpgradeEvidenceSigningKeyTrustInventory,
   type ConnectorUpgradeSignedEvidenceReceipt,
   type ConnectorUpgradeSignedEvidenceReceiptVerification,
+  type ConnectorUpgradeSigningProviderConformanceAssessment,
   type ConnectorUpgradePlan,
   type ConnectorUpgradeReadiness,
 } from "../../api/connectorUpgradeReadiness";
@@ -87,6 +90,36 @@ const signingKeyTrustInventory: ConnectorUpgradeEvidenceSigningKeyTrustInventory
   signing_authorized: false,
   execution_authorized: false,
   infrastructure_mutation_performed: false,
+};
+
+const signingProviderConformance: ConnectorUpgradeSigningProviderConformanceAssessment = {
+  assessment_id: "connector-upgrade-signing-provider-conformance.test",
+  schema_version: "atlas.connector-upgrade-signing-provider-conformance-assessment.v1",
+  version: 1,
+  organization_id: installation.organization_id,
+  environment_id: installation.environment_id,
+  assessed_by: "subject.connector-operator",
+  provider_class: "provider.nonproduction-hmac",
+  production_approved: false,
+  key_id: "key.connector-upgrade-evidence.test",
+  key_version: "version.1",
+  algorithm: "algorithm.hmac-sha256-nonproduction",
+  challenge_digest: "1".repeat(64),
+  policy_id: "connector-upgrade-signing-provider-conformance.default",
+  policy_version: "v2026.08.12.1",
+  observed_at: "2026-08-12T12:00:00Z",
+  valid_until: "2026-08-12T12:05:00Z",
+  state: "conformant",
+  reason_codes: ["connector.upgrade.signing-provider-conformance.conformant"],
+  request_fingerprint: "2".repeat(64),
+  canonical_digest: "3".repeat(64),
+  diagnostic_only: true,
+  signing_provider_conformant: true,
+  key_management_authorized: false,
+  receipt_signing_authorized: false,
+  execution_authorized: false,
+  infrastructure_mutation_performed: false,
+  reused: false,
 };
 
 const upgradeReadiness: ConnectorUpgradeReadiness = {
@@ -583,6 +616,8 @@ vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
     getConnectorUpgradeApprovalRecord: vi.fn(),
     getConnectorUpgradeHandoffReadiness: vi.fn(),
     getConnectorUpgradeEvidenceSigningKeyTrustInventory: vi.fn(),
+    assessConnectorUpgradeSigningProviderConformance: vi.fn(),
+    getLatestConnectorUpgradeSigningProviderConformance: vi.fn(),
     getLatestConnectorUpgradeChangeContextDraft: vi.fn(),
     createConnectorUpgradeChangeContextDraft: vi.fn(),
     createConnectorUpgradeEvidenceReceipt: vi.fn(),
@@ -621,6 +656,12 @@ beforeEach(() => {
   vi.mocked(getConnectorUpgradeEvidenceSigningKeyTrustInventory).mockResolvedValue(
     signingKeyTrustInventory,
   );
+  vi.mocked(getLatestConnectorUpgradeSigningProviderConformance).mockResolvedValue(
+    signingProviderConformance,
+  );
+  vi.mocked(assessConnectorUpgradeSigningProviderConformance).mockResolvedValue(
+    signingProviderConformance,
+  );
   vi.mocked(getLatestConnectorUpgradeChangeContextDraft).mockResolvedValue(null);
   vi.mocked(createConnectorUpgradeChangeContextDraft).mockResolvedValue(changeContextDraft);
   vi.mocked(createConnectorUpgradeEvidenceReceipt).mockResolvedValue(evidenceReceipt);
@@ -653,7 +694,8 @@ describe("InstalledMcpManagementWorkspace", () => {
 
     expect(await screen.findByRole("heading", { name: "Installed MCPs" })).toBeVisible();
     expect(await screen.findByRole("heading", { name: "Signing trust" })).toBeVisible();
-    expect(screen.getByText("key.connector-upgrade-evidence.test")).toBeVisible();
+    expect(screen.getByText("Signing-provider conformance")).toBeVisible();
+    expect(screen.getAllByText("key.connector-upgrade-evidence.test")).toHaveLength(2);
     expect(screen.getByText("Verification trusted")).toBeVisible();
     expect(screen.getByText(/No key management or signing authority/i)).toBeVisible();
     expect(await screen.findByText("Storage East")).toBeVisible();
@@ -662,6 +704,23 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(screen.getByRole("button", { name: "Review update for Storage East" })).toBeVisible();
     expect(screen.queryByRole("button", { name: /delete/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /rotate|revoke|disable|export key/i })).toBeNull();
+  });
+
+  it("runs a bounded provider assessment without exposing signing or key controls", async () => {
+    vi.mocked(getLatestConnectorUpgradeSigningProviderConformance).mockResolvedValue(null);
+    renderWorkspace();
+
+    const run = await screen.findByRole("button", { name: "Run assessment" });
+    expect(await screen.findByText(/No bounded provider assessment/i)).toBeVisible();
+    fireEvent.click(run);
+
+    await waitFor(() =>
+      expect(assessConnectorUpgradeSigningProviderConformance).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("conformant")).toBeVisible();
+    expect(screen.getByText("provider.nonproduction-hmac")).toBeVisible();
+    expect(screen.getByText(/not approved for production/i)).toBeVisible();
+    expect(screen.getByText(/Server-generated challenge only/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /sign receipt|rotate|revoke|export/i })).toBeNull();
   });
 
   it("shows evidence-based upgrade readiness without exposing an update action", async () => {

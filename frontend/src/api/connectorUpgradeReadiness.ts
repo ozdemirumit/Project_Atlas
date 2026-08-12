@@ -400,6 +400,37 @@ export type ConnectorUpgradeEvidenceSigningKeyTrustInventory = {
   infrastructure_mutation_performed: false;
 };
 
+export type ConnectorUpgradeSigningProviderConformanceAssessment = {
+  assessment_id: string;
+  schema_version: "atlas.connector-upgrade-signing-provider-conformance-assessment.v1";
+  version: 1;
+  organization_id: string;
+  environment_id: string;
+  assessed_by: string;
+  provider_class: string;
+  production_approved: boolean;
+  key_id: string | null;
+  key_version: string | null;
+  algorithm: string | null;
+  challenge_digest: string;
+  policy_id: string;
+  policy_version: string;
+  observed_at: string;
+  valid_until: string;
+  state: "conformant" | "unavailable" | "ineligible_key" | "sign_failed" |
+    "verify_failed" | "policy_blocked";
+  reason_codes: string[];
+  request_fingerprint: string;
+  canonical_digest: string;
+  diagnostic_only: true;
+  signing_provider_conformant: boolean;
+  key_management_authorized: false;
+  receipt_signing_authorized: false;
+  execution_authorized: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
 export type ConnectorUpgradeSignedEvidenceReceipt = {
   signed_receipt_id: string;
   schema_version: "atlas.connector-upgrade-signed-evidence-receipt.v1";
@@ -872,6 +903,16 @@ const signingKeyTrustInventoryKeys = [
   "infrastructure_mutation_performed",
 ] as const;
 
+const signingProviderConformanceKeys = [
+  "assessment_id", "schema_version", "version", "organization_id", "environment_id",
+  "assessed_by", "provider_class", "production_approved", "key_id", "key_version",
+  "algorithm", "challenge_digest", "policy_id", "policy_version", "observed_at",
+  "valid_until", "state", "reason_codes", "request_fingerprint", "canonical_digest",
+  "diagnostic_only", "signing_provider_conformant", "key_management_authorized",
+  "receipt_signing_authorized", "execution_authorized", "infrastructure_mutation_performed",
+  "reused",
+] as const;
+
 const signedEvidenceReceiptKeys = [
   "signed_receipt_id", "schema_version", "version", "receipt", "signature", "organization_id",
   "environment_id", "request_id", "canonical_digest", "evidence_receipt_only",
@@ -1039,6 +1080,46 @@ export function isConnectorUpgradeEvidenceSigningKeyTrustInventory(
     item.key_management_authorized === false && item.signing_authorized === false &&
     item.execution_authorized === false && item.infrastructure_mutation_performed === false &&
     !Object.keys(item).some((key) => /private|material|secret|token|credential|endpoint/i.test(key))
+  );
+}
+
+export function isConnectorUpgradeSigningProviderConformanceAssessment(
+  value: unknown,
+): value is ConnectorUpgradeSigningProviderConformanceAssessment {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  const states = new Set([
+    "conformant", "unavailable", "ineligible_key", "sign_failed", "verify_failed",
+    "policy_blocked",
+  ]);
+  const observedAt = typeof item.observed_at === "string"
+    ? Date.parse(item.observed_at) : Number.NaN;
+  const validUntil = typeof item.valid_until === "string"
+    ? Date.parse(item.valid_until) : Number.NaN;
+  const conformant = item.state === "conformant";
+  return (
+    hasExactKeys(item, signingProviderConformanceKeys) &&
+    item.schema_version ===
+      "atlas.connector-upgrade-signing-provider-conformance-assessment.v1" &&
+    item.version === 1 &&
+    [item.assessment_id, item.organization_id, item.environment_id, item.assessed_by,
+      item.provider_class, item.policy_id, item.policy_version]
+      .every((field) => typeof field === "string" && field.length > 2) &&
+    [item.key_id, item.key_version, item.algorithm]
+      .every((field) => field === null || (typeof field === "string" && field.length > 2)) &&
+    [item.challenge_digest, item.request_fingerprint, item.canonical_digest]
+      .every((digest) => typeof digest === "string" && DIGEST.test(digest)) &&
+    Number.isFinite(observedAt) && Number.isFinite(validUntil) && observedAt < validUntil &&
+    states.has(String(item.state)) && strings(item.reason_codes) && item.reason_codes.length > 0 &&
+    item.reason_codes.every((reason) =>
+      reason.startsWith("connector.upgrade.signing-provider-conformance.")) &&
+    typeof item.production_approved === "boolean" && item.diagnostic_only === true &&
+    item.signing_provider_conformant === conformant &&
+    item.key_management_authorized === false && item.receipt_signing_authorized === false &&
+    item.execution_authorized === false && item.infrastructure_mutation_performed === false &&
+    typeof item.reused === "boolean" &&
+    !Object.keys(item).some((key) =>
+      /signature|private|material|secret|token|credential|endpoint/i.test(key))
   );
 }
 
@@ -1511,6 +1592,55 @@ export async function getConnectorUpgradeEvidenceSigningKeyTrustInventory(): Pro
   if (!payload || typeof payload !== "object" || !("data" in payload) ||
       !isConnectorUpgradeEvidenceSigningKeyTrustInventory(payload.data)) {
     throw new Error("Connector upgrade signing-key trust inventory returned an unsafe payload");
+  }
+  return payload.data;
+}
+
+const SIGNING_PROVIDER_CONFORMANCE_ENDPOINT = (
+  "/api/v1/connectors/instances/" +
+  "upgrade-evidence-signing-provider-conformance-assessments"
+);
+
+export async function assessConnectorUpgradeSigningProviderConformance(): Promise<
+  ConnectorUpgradeSigningProviderConformanceAssessment
+> {
+  const response = await apiFetch(SIGNING_PROVIDER_CONFORMANCE_ENDPOINT, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "Idempotency-Key": `connector-signing-conformance.${crypto.randomUUID()}`,
+    },
+    body: JSON.stringify({
+      schema_version: "atlas.connector-upgrade-signing-provider-conformance-input.v1",
+      acknowledged_diagnostic_grants_no_key_receipt_or_execution_authority: true,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Connector signing-provider assessment failed with ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  if (!payload || typeof payload !== "object" || !("data" in payload) ||
+      !isConnectorUpgradeSigningProviderConformanceAssessment(payload.data)) {
+    throw new Error("Connector signing-provider assessment returned an unsafe payload");
+  }
+  return payload.data;
+}
+
+export async function getLatestConnectorUpgradeSigningProviderConformance(): Promise<
+  ConnectorUpgradeSigningProviderConformanceAssessment | null
+> {
+  const response = await apiFetch(`${SIGNING_PROVIDER_CONFORMANCE_ENDPOINT}/latest`, {
+    headers: { Accept: "application/json" },
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(`Connector signing-provider assessment read failed with ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  if (!payload || typeof payload !== "object" || !("data" in payload) ||
+      !isConnectorUpgradeSigningProviderConformanceAssessment(payload.data)) {
+    throw new Error("Connector signing-provider assessment read returned an unsafe payload");
   }
   return payload.data;
 }

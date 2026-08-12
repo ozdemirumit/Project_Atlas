@@ -46,6 +46,9 @@ from atlas.api.instance_creation_schemas import (
     ConnectorUpgradeSignedEvidenceReceiptVerificationData,
     ConnectorUpgradeSignedEvidenceReceiptVerificationInput,
     ConnectorUpgradeSignedEvidenceReceiptVerificationResponse,
+    ConnectorUpgradeSigningProviderConformanceData,
+    ConnectorUpgradeSigningProviderConformanceInput,
+    ConnectorUpgradeSigningProviderConformanceResponse,
 )
 from atlas.api.schemas import ResponseMeta
 from atlas.api.security import (
@@ -65,7 +68,10 @@ from atlas.api.security import (
     authorize_connector_upgrade_signed_evidence_receipt_create,
     authorize_connector_upgrade_signed_evidence_receipt_verify,
     authorize_connector_upgrade_signing_key_trust_inventory_read,
+    authorize_connector_upgrade_signing_provider_conformance_create,
+    authorize_connector_upgrade_signing_provider_conformance_read,
     browser_session_subject,
+    connector_signing_conformance_subject,
     connector_signing_trust_read_subject,
 )
 from atlas.modules.authorization.domain.models import AuthorizationDecision
@@ -251,6 +257,71 @@ async def get_connector_upgrade_signing_key_trust_inventory(
     response.headers["Cache-Control"] = "no-store"
     return ConnectorUpgradeEvidenceSigningKeyTrustInventoryResponse(
         data=ConnectorUpgradeEvidenceSigningKeyTrustInventoryData.from_domain(inventory),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.post(
+    "/upgrade-evidence-signing-provider-conformance-assessments",
+    response_model=ConnectorUpgradeSigningProviderConformanceResponse,
+    status_code=201,
+)
+async def assess_connector_upgrade_signing_provider_conformance(
+    payload: ConnectorUpgradeSigningProviderConformanceInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(connector_signing_conformance_subject)],
+    _decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_connector_upgrade_signing_provider_conformance_create),
+    ],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> ConnectorUpgradeSigningProviderConformanceResponse:
+    service: ConnectorUpgradeApprovalService = request.app.state.connector_upgrade_approval_service
+    try:
+        assessment = await service.assess_signing_provider_conformance(
+            actor=subject,
+            idempotency_key=idempotency_key,
+            correlation_id=str(request.state.correlation_id),
+            **payload.model_dump(exclude={"schema_version"}),
+        )
+    except ConnectorUpgradeApprovalError as error:
+        _raise_upgrade_approval(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorUpgradeSigningProviderConformanceResponse(
+        data=ConnectorUpgradeSigningProviderConformanceData.from_domain(assessment),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get(
+    "/upgrade-evidence-signing-provider-conformance-assessments/latest",
+    response_model=ConnectorUpgradeSigningProviderConformanceResponse,
+)
+async def get_latest_connector_upgrade_signing_provider_conformance(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(connector_signing_conformance_subject)],
+    _decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_connector_upgrade_signing_provider_conformance_read),
+    ],
+) -> ConnectorUpgradeSigningProviderConformanceResponse:
+    service: ConnectorUpgradeApprovalService = request.app.state.connector_upgrade_approval_service
+    try:
+        assessment = await service.latest_signing_provider_conformance(
+            actor=subject,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorUpgradeApprovalError as error:
+        _raise_upgrade_approval(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorUpgradeSigningProviderConformanceResponse(
+        data=ConnectorUpgradeSigningProviderConformanceData.from_domain(assessment),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),

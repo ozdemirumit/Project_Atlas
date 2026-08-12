@@ -34,6 +34,15 @@ class ConnectorUpgradeEvidenceSigningKeyEffectiveState(StrEnum):
     REVOKED = "revoked"
 
 
+class ConnectorUpgradeSigningProviderConformanceState(StrEnum):
+    CONFORMANT = "conformant"
+    UNAVAILABLE = "unavailable"
+    INELIGIBLE_KEY = "ineligible_key"
+    SIGN_FAILED = "sign_failed"
+    VERIFY_FAILED = "verify_failed"
+    POLICY_BLOCKED = "policy_blocked"
+
+
 @dataclass(frozen=True, slots=True)
 class ConnectorUpgradeEvidenceSigningKey:
     key_id: str
@@ -89,6 +98,32 @@ class ConnectorUpgradeEvidenceSigningProviderTrust:
             or (not self.provider_available and self.keys)
         ):
             raise ValueError("Connector upgrade evidence signing provider trust is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorUpgradeEvidenceSigningProviderDiagnostic:
+    provider_class: str
+    organization_id: str
+    environment_id: str
+    key: ConnectorUpgradeEvidenceSigningKey | None
+    state: ConnectorUpgradeSigningProviderConformanceState
+
+    def __post_init__(self) -> None:
+        for value in (self.provider_class, self.organization_id, self.environment_id):
+            validate_stable_identifier(value, "connector upgrade signing provider diagnostic")
+        if self.state not in {
+            ConnectorUpgradeSigningProviderConformanceState.CONFORMANT,
+            ConnectorUpgradeSigningProviderConformanceState.UNAVAILABLE,
+            ConnectorUpgradeSigningProviderConformanceState.INELIGIBLE_KEY,
+            ConnectorUpgradeSigningProviderConformanceState.SIGN_FAILED,
+            ConnectorUpgradeSigningProviderConformanceState.VERIFY_FAILED,
+        }:
+            raise ValueError("Connector upgrade signing provider diagnostic state is invalid")
+        if self.key is not None and (
+            self.key.organization_id != self.organization_id
+            or self.key.environment_id != self.environment_id
+        ):
+            raise ValueError("Connector upgrade signing provider diagnostic scope is invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +206,84 @@ class ConnectorUpgradeEvidenceSigningKeyTrustInventory:
             )
         ):
             raise ValueError("Connector upgrade signing key trust inventory is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorUpgradeSigningProviderConformanceAssessment:
+    assessment_id: str
+    schema_version: str
+    version: int
+    organization_id: str
+    environment_id: str
+    assessed_by: str
+    provider_class: str
+    production_approved: bool
+    key_id: str | None
+    key_version: str | None
+    algorithm: str | None
+    challenge_digest: str
+    policy_id: str
+    policy_version: str
+    observed_at: datetime
+    valid_until: datetime
+    state: ConnectorUpgradeSigningProviderConformanceState
+    reason_codes: tuple[str, ...]
+    request_fingerprint: str
+    idempotency_key: str
+    canonical_digest: str
+    diagnostic_only: bool = True
+    signing_provider_conformant: bool = False
+    key_management_authorized: bool = False
+    receipt_signing_authorized: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_performed: bool = False
+    reused: bool = False
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.assessment_id,
+            self.schema_version,
+            self.organization_id,
+            self.environment_id,
+            self.assessed_by,
+            self.provider_class,
+            self.policy_id,
+            self.policy_version,
+        ):
+            validate_stable_identifier(value, "connector upgrade signing provider conformance")
+        for optional_value in (self.key_id, self.key_version, self.algorithm):
+            if optional_value is not None:
+                validate_stable_identifier(
+                    optional_value, "connector upgrade signing provider conformance key"
+                )
+        if (
+            self.schema_version
+            != "atlas.connector-upgrade-signing-provider-conformance-assessment.v1"
+            or self.version != 1
+            or _DIGEST.fullmatch(self.challenge_digest) is None
+            or _DIGEST.fullmatch(self.request_fingerprint) is None
+            or _DIGEST.fullmatch(self.canonical_digest) is None
+            or self.observed_at.tzinfo is None
+            or self.valid_until.tzinfo is None
+            or self.valid_until <= self.observed_at
+            or not self.reason_codes
+            or any(
+                not reason.startswith("connector.upgrade.signing-provider-conformance.")
+                for reason in self.reason_codes
+            )
+            or self.signing_provider_conformant
+            != (self.state is ConnectorUpgradeSigningProviderConformanceState.CONFORMANT)
+            or not self.diagnostic_only
+            or any(
+                (
+                    self.key_management_authorized,
+                    self.receipt_signing_authorized,
+                    self.execution_authorized,
+                    self.infrastructure_mutation_performed,
+                )
+            )
+        ):
+            raise ValueError("Connector upgrade signing provider conformance is invalid")
 
 
 @dataclass(frozen=True, slots=True)
