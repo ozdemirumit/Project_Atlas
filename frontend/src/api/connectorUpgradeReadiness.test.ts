@@ -257,7 +257,7 @@ describe("connector upgrade evidence receipt validation", () => {
       receipt,
       signature: {
         key_id: "key.connector-upgrade-evidence.test",
-        key_version: "v1",
+        key_version: "version.1",
         signer_profile_id: "signer-profile.nonproduction-hmac",
         signer_workload_id: "workload.connector-upgrade-evidence-signer",
         algorithm: "algorithm.hmac-sha256-nonproduction",

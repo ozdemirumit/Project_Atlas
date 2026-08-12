@@ -134,7 +134,7 @@ async def approval_fixture(
         evidence_authenticity_provider=NonProductionHmacUpgradeEvidenceAuthenticityProvider(
             key=ConnectorUpgradeEvidenceSigningKey(
                 key_id="key.connector-upgrade-evidence.test",
-                key_version="v1",
+                key_version="version.1",
                 signer_profile_id="signer-profile.nonproduction-hmac",
                 signer_workload_id="workload.connector-upgrade-evidence-signer",
                 algorithm="algorithm.hmac-sha256-nonproduction",
@@ -1414,7 +1414,7 @@ def test_upgrade_approval_revalidation_api_is_no_store_and_hides_custody_metadat
             "receipt": uploaded_receipt,
             "signature": {
                 "key_id": "key.connector-upgrade-evidence.test",
-                "key_version": "v1",
+                "key_version": "version.1",
                 "signer_profile_id": "signer-profile.nonproduction-hmac",
                 "signer_workload_id": "workload.connector-upgrade-evidence-signer",
                 "algorithm": "algorithm.hmac-sha256-nonproduction",
