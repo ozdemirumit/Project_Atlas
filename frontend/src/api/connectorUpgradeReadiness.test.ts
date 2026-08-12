@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { isConnectorUpgradeHandoffReadiness } from "./connectorUpgradeReadiness";
+import {
+  isConnectorUpgradeEvidenceReceipt,
+  isConnectorUpgradeHandoffReadiness,
+} from "./connectorUpgradeReadiness";
 
 const required = [
   "connector.upgrade.handoff.approval-current",
@@ -131,5 +134,58 @@ describe("connector upgrade handoff readiness validation", () => {
         "connector.upgrade.handoff.blocked.unrelated-evidence-missing",
       ],
     })).toBe(false);
+  });
+});
+
+describe("connector upgrade evidence receipt validation", () => {
+  const receipt = {
+    receipt_id: "connector-upgrade-evidence-receipt.test",
+    schema_version: "atlas.connector-upgrade-evidence-receipt.v1",
+    version: 1,
+    assessment_id: assessment.assessment_id,
+    assessment_digest: assessment.canonical_digest,
+    request_id: assessment.request_id,
+    request_digest: assessment.request_digest,
+    decision_id: assessment.decision_id,
+    decision_digest: assessment.decision_digest,
+    revalidation_id: assessment.revalidation_id,
+    revalidation_digest: assessment.revalidation_digest,
+    plan_id: assessment.plan_id,
+    plan_digest: assessment.plan_digest,
+    organization_id: assessment.organization_id,
+    environment_id: assessment.environment_id,
+    created_by: assessment.assessed_by,
+    audit_readiness_evidence_id: "connector-upgrade-audit-readiness-evidence.test",
+    audit_readiness_evidence_digest: "7".repeat(64),
+    itsm_change_evidence_id: "connector-upgrade-itsm-change-evidence.test",
+    itsm_change_evidence_digest: "8".repeat(64),
+    maintenance_window_evidence_id: "connector-upgrade-maintenance-window-evidence.test",
+    maintenance_window_evidence_digest: "9".repeat(64),
+    required_check_ids: required,
+    satisfied_check_ids: required,
+    not_applicable_check_ids: assessment.not_applicable_check_ids,
+    created_at: assessment.assessed_at,
+    valid_until: assessment.evidence_valid_until,
+    canonical_digest: "a".repeat(64),
+    evidence_receipt_only: true,
+    runtime_acceptable: false,
+    approval_consumed: false,
+    handoff_ready: false,
+    handoff_artifact_issued: false,
+    target_contacted: false,
+    package_rebound: false,
+    configuration_changed: false,
+    execution_authorized: false,
+    infrastructure_mutation_performed: false,
+  };
+
+  it("accepts a complete non-executable receipt and rejects authority-bearing variants", () => {
+    expect(isConnectorUpgradeEvidenceReceipt(receipt)).toBe(true);
+    expect(isConnectorUpgradeEvidenceReceipt({ ...receipt, runtime_acceptable: true })).toBe(false);
+    expect(isConnectorUpgradeEvidenceReceipt({
+      ...receipt,
+      satisfied_check_ids: required.slice(1),
+    })).toBe(false);
+    expect(isConnectorUpgradeEvidenceReceipt({ ...receipt, token: "unsafe" })).toBe(false);
   });
 });

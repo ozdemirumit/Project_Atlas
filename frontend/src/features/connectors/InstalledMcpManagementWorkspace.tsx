@@ -5,6 +5,7 @@ import {
   ArrowUpCircle,
   Boxes,
   ClipboardList,
+  Download,
   PackagePlus,
   RefreshCw,
   Search,
@@ -18,7 +19,9 @@ import { useState, type FormEvent } from "react";
 import {
   createConnectorUpgradeApprovalRequest,
   createConnectorUpgradeChangeContextDraft,
+  createConnectorUpgradeEvidenceReceipt,
   decideConnectorUpgradeApproval,
+  downloadConnectorUpgradeEvidenceReceipt,
   getConnectorUpgradeApprovalRecord,
   getLatestConnectorUpgradeApprovalRevalidation,
   getConnectorUpgradeHandoffReadiness,
@@ -310,6 +313,7 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
   const [windowStart, setWindowStart] = useState("");
   const [windowEnd, setWindowEnd] = useState("");
   const [changeAcknowledged, setChangeAcknowledged] = useState(false);
+  const [receiptAcknowledged, setReceiptAcknowledged] = useState(false);
   const recordQuery = useQuery({
     queryKey,
     queryFn: () => getConnectorUpgradeApprovalRecord(plan),
@@ -365,6 +369,10 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
     queryFn: () => getConnectorUpgradeHandoffReadiness(record!),
     enabled: Boolean(revalidation),
     retry: false,
+  });
+  const evidenceReceiptMutation = useMutation({
+    mutationFn: createConnectorUpgradeEvidenceReceipt,
+    onSuccess: () => setReceiptAcknowledged(false),
   });
   const changeContextQueryKey = ["connector-upgrade-change-context", record?.request.request_id];
   const changeContextQuery = useQuery({
@@ -435,6 +443,27 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
                   </div>
                 )}
                 {handoffReadinessQuery.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><span>Handoff readiness could not be assessed from current governed evidence.</span></div>}
+                {handoffReadinessQuery.data?.assessment_state === "evidence_complete" && (
+                  <div className="installed-mcp-approval-decision">
+                    <strong>Non-executable evidence receipt</strong>
+                    <p>Preserve the exact completed review as a safe JSON record. The receipt cannot be used by a runtime and grants no handoff authority.</p>
+                    {evidenceReceiptMutation.data ? (
+                      <div className="installed-mcp-approval-result">
+                        <strong>Evidence receipt ready</strong>
+                        <span>{evidenceReceiptMutation.data.receipt_id}</span>
+                        <p>Runtime acceptable: no. Approval consumed: no.</p>
+                        <small>Valid until {new Date(evidenceReceiptMutation.data.valid_until).toLocaleString()}</small>
+                        <button className="secondary-button" type="button" onClick={() => downloadConnectorUpgradeEvidenceReceipt(evidenceReceiptMutation.data)}><Download size={16} />Download JSON receipt</button>
+                      </div>
+                    ) : (
+                      <>
+                        <label className="checkbox-row"><input type="checkbox" checked={receiptAcknowledged} onChange={(event) => setReceiptAcknowledged(event.target.checked)} /><span>This receipt is evidence only. It grants no approval, handoff, runtime or execution authority.</span></label>
+                        {evidenceReceiptMutation.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><span>The receipt was rejected because current governed evidence changed.</span></div>}
+                        <button className="primary-button" type="button" disabled={!receiptAcknowledged || evidenceReceiptMutation.isPending} onClick={() => evidenceReceiptMutation.mutate({ record, readiness: handoffReadinessQuery.data! })}><ClipboardList size={16} />{evidenceReceiptMutation.isPending ? "Creating receipt..." : "Create evidence receipt"}</button>
+                      </>
+                    )}
+                  </div>
+                )}
                 {handoffReadinessQuery.data && (changeContextMutation.data ?? changeContextQuery.data) ? (
                   <div className="installed-mcp-approval-result">
                     <strong>Change-context draft recorded</strong>

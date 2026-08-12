@@ -896,6 +896,24 @@ async def test_upgrade_approval_revalidation_requires_three_people_and_remains_n
     assert not readiness.itsm_change_evidence_current
     assert readiness.maintenance_window_evidence_id is None
     assert not readiness.maintenance_window_evidence_current
+    with pytest.raises(ConnectorUpgradeApprovalError, match="confirmation_required"):
+        await service.create_evidence_receipt(
+            actor=verifier,
+            record_id=instance.record_id,
+            request_id=request.request_id,
+            expected_readiness_digest=readiness.canonical_digest,
+            acknowledged_receipt_is_non_executable_and_grants_no_handoff_authority=False,
+            correlation_id="correlation.connector-upgrade-evidence-receipt-unconfirmed",
+        )
+    with pytest.raises(ConnectorUpgradeApprovalError, match="readiness_not_current"):
+        await service.create_evidence_receipt(
+            actor=verifier,
+            record_id=instance.record_id,
+            request_id=request.request_id,
+            expected_readiness_digest=readiness.canonical_digest,
+            acknowledged_receipt_is_non_executable_and_grants_no_handoff_authority=True,
+            correlation_id="correlation.connector-upgrade-evidence-receipt-blocked",
+        )
     audit_readiness_source.replace((audit_evidence,))
     readiness_with_audit = await service.assess_handoff_readiness(
         actor=verifier,
@@ -961,6 +979,39 @@ async def test_upgrade_approval_revalidation_requires_three_people_and_remains_n
     assert not complete_readiness.handoff_ready
     assert not complete_readiness.handoff_artifact_issued
     assert not complete_readiness.execution_authorized
+    receipt = await service.create_evidence_receipt(
+        actor=verifier,
+        record_id=instance.record_id,
+        request_id=request.request_id,
+        expected_readiness_digest=complete_readiness.canonical_digest,
+        acknowledged_receipt_is_non_executable_and_grants_no_handoff_authority=True,
+        correlation_id="correlation.connector-upgrade-evidence-receipt",
+    )
+    replayed_receipt = await service.create_evidence_receipt(
+        actor=verifier,
+        record_id=instance.record_id,
+        request_id=request.request_id,
+        expected_readiness_digest=complete_readiness.canonical_digest,
+        acknowledged_receipt_is_non_executable_and_grants_no_handoff_authority=True,
+        correlation_id="correlation.connector-upgrade-evidence-receipt-replay",
+    )
+    assert receipt == replayed_receipt
+    assert receipt.assessment_digest == complete_readiness.canonical_digest
+    assert receipt.required_check_ids == receipt.satisfied_check_ids
+    assert receipt.evidence_receipt_only and not receipt.runtime_acceptable
+    assert not receipt.approval_consumed and not receipt.handoff_artifact_issued
+    assert not receipt.execution_authorized and not receipt.infrastructure_mutation_performed
+    with pytest.raises(ValueError, match="authority boundary"):
+        replace(receipt, runtime_acceptable=True)
+    with pytest.raises(ConnectorUpgradeApprovalError, match="readiness_not_current"):
+        await service.create_evidence_receipt(
+            actor=verifier,
+            record_id=instance.record_id,
+            request_id=request.request_id,
+            expected_readiness_digest="0" * 64,
+            acknowledged_receipt_is_non_executable_and_grants_no_handoff_authority=True,
+            correlation_id="correlation.connector-upgrade-evidence-receipt-stale",
+        )
     maintenance_window_evidence_source.replace(
         (replace(window_evidence, canonical_digest="0" * 64),)
     )
@@ -1121,6 +1172,25 @@ def test_upgrade_approval_revalidation_api_is_no_store_and_hides_custody_metadat
             f"{request.request_id}/handoff-readiness"
         )
         readiness_digest = readiness_response.json()["data"]["canonical_digest"]
+        receipt_without_csrf = client.post(
+            f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
+            f"{request.request_id}/evidence-receipts",
+            json={
+                "schema_version": "atlas.connector-upgrade-evidence-receipt-input.v1",
+                "expected_readiness_digest": readiness_digest,
+                "acknowledged_receipt_is_non_executable_and_grants_no_handoff_authority": True,
+            },
+        )
+        blocked_receipt_response = client.post(
+            f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
+            f"{request.request_id}/evidence-receipts",
+            headers={"X-CSRF-Token": login_response.headers["X-CSRF-Token"]},
+            json={
+                "schema_version": "atlas.connector-upgrade-evidence-receipt-input.v1",
+                "expected_readiness_digest": readiness_digest,
+                "acknowledged_receipt_is_non_executable_and_grants_no_handoff_authority": True,
+            },
+        )
         draft_response = client.post(
             f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
             f"{request.request_id}/change-context-drafts",
@@ -1147,6 +1217,9 @@ def test_upgrade_approval_revalidation_api_is_no_store_and_hides_custody_metadat
     assert response.status_code == 201, response.text
     assert read_response.status_code == 200, read_response.text
     assert readiness_response.status_code == 200, readiness_response.text
+    assert receipt_without_csrf.status_code == 403, receipt_without_csrf.text
+    assert blocked_receipt_response.status_code == 409, blocked_receipt_response.text
+    assert blocked_receipt_response.json()["code"].endswith("readiness_not_current")
     assert draft_response.status_code == 201, draft_response.text
     assert draft_read_response.status_code == 200, draft_read_response.text
     assert response.headers["Cache-Control"] == "no-store"

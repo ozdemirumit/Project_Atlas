@@ -284,6 +284,47 @@ export type ConnectorUpgradeHandoffReadiness = {
   infrastructure_mutation_performed: false;
 };
 
+export type ConnectorUpgradeEvidenceReceipt = {
+  receipt_id: string;
+  schema_version: "atlas.connector-upgrade-evidence-receipt.v1";
+  version: 1;
+  assessment_id: string;
+  assessment_digest: string;
+  request_id: string;
+  request_digest: string;
+  decision_id: string;
+  decision_digest: string;
+  revalidation_id: string;
+  revalidation_digest: string;
+  plan_id: string;
+  plan_digest: string;
+  organization_id: string;
+  environment_id: string;
+  created_by: string;
+  audit_readiness_evidence_id: string;
+  audit_readiness_evidence_digest: string;
+  itsm_change_evidence_id: string;
+  itsm_change_evidence_digest: string;
+  maintenance_window_evidence_id: string;
+  maintenance_window_evidence_digest: string;
+  required_check_ids: string[];
+  satisfied_check_ids: string[];
+  not_applicable_check_ids: string[];
+  created_at: string;
+  valid_until: string;
+  canonical_digest: string;
+  evidence_receipt_only: true;
+  runtime_acceptable: false;
+  approval_consumed: false;
+  handoff_ready: false;
+  handoff_artifact_issued: false;
+  target_contacted: false;
+  package_rebound: false;
+  configuration_changed: false;
+  execution_authorized: false;
+  infrastructure_mutation_performed: false;
+};
+
 export type ConnectorUpgradeChangeContextDraft = {
   draft_id: string;
   schema_version: "atlas.connector-upgrade-change-context-draft.v1";
@@ -658,6 +699,43 @@ export function isConnectorUpgradeHandoffReadiness(
   );
 }
 
+export function isConnectorUpgradeEvidenceReceipt(
+  value: unknown,
+): value is ConnectorUpgradeEvidenceReceipt {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  const required = strings(item.required_check_ids) ? item.required_check_ids : null;
+  const satisfied = strings(item.satisfied_check_ids) ? item.satisfied_check_ids : null;
+  const notApplicable = strings(item.not_applicable_check_ids)
+    ? item.not_applicable_check_ids
+    : null;
+  return (
+    item.schema_version === "atlas.connector-upgrade-evidence-receipt.v1" &&
+    item.version === 1 &&
+    [item.receipt_id, item.assessment_id, item.request_id, item.decision_id,
+      item.revalidation_id, item.plan_id, item.organization_id, item.environment_id,
+      item.created_by, item.audit_readiness_evidence_id, item.itsm_change_evidence_id,
+      item.maintenance_window_evidence_id, item.created_at, item.valid_until]
+      .every((field) => typeof field === "string") &&
+    [item.assessment_digest, item.request_digest, item.decision_digest,
+      item.revalidation_digest, item.plan_digest, item.audit_readiness_evidence_digest,
+      item.itsm_change_evidence_digest, item.maintenance_window_evidence_digest,
+      item.canonical_digest]
+      .every((digest) => typeof digest === "string" && DIGEST.test(digest)) &&
+    required !== null && satisfied !== null && notApplicable !== null &&
+    required.length > 0 && new Set(required).size === required.length &&
+    required.length === satisfied.length && required.every((checkId) => satisfied.includes(checkId)) &&
+    new Set(notApplicable).size === notApplicable.length &&
+    notApplicable.every((checkId) => !required.includes(checkId)) &&
+    item.evidence_receipt_only === true && item.runtime_acceptable === false &&
+    item.approval_consumed === false && item.handoff_ready === false &&
+    item.handoff_artifact_issued === false && item.target_contacted === false &&
+    item.package_rebound === false && item.configuration_changed === false &&
+    item.execution_authorized === false && item.infrastructure_mutation_performed === false &&
+    !("token" in item || "credential" in item || "target" in item || "endpoint" in item)
+  );
+}
+
 function changeContextDraft(value: unknown): value is ConnectorUpgradeChangeContextDraft {
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
@@ -939,6 +1017,51 @@ export async function getLatestConnectorUpgradeChangeContextDraft(
     throw new Error("Connector upgrade change-context does not match the exact approval");
   }
   return payload.data;
+}
+
+export async function createConnectorUpgradeEvidenceReceipt(input: {
+  record: ConnectorUpgradeApprovalRecord;
+  readiness: ConnectorUpgradeHandoffReadiness;
+}): Promise<ConnectorUpgradeEvidenceReceipt> {
+  const { record, readiness } = input;
+  if (readiness.assessment_state !== "evidence_complete" || readiness.blocker_ids.length > 0) {
+    throw new Error("Only an evidence-complete assessment can produce a receipt");
+  }
+  const response = await apiFetch(
+    `/api/v1/connectors/instances/${encodeURIComponent(record.request.source_record_id)}/upgrade-approval-requests/${encodeURIComponent(record.request.request_id)}/evidence-receipts`,
+    {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        schema_version: "atlas.connector-upgrade-evidence-receipt-input.v1",
+        expected_readiness_digest: readiness.canonical_digest,
+        acknowledged_receipt_is_non_executable_and_grants_no_handoff_authority: true,
+      }),
+    },
+  );
+  if (!response.ok) throw new Error(`Connector upgrade evidence receipt failed with ${response.status}`);
+  const payload: unknown = await response.json();
+  if (!payload || typeof payload !== "object" || !("data" in payload) ||
+      !isConnectorUpgradeEvidenceReceipt(payload.data)) {
+    throw new Error("Connector upgrade evidence receipt returned an unsafe payload");
+  }
+  if (payload.data.assessment_digest !== readiness.canonical_digest ||
+      payload.data.request_digest !== record.request.canonical_digest) {
+    throw new Error("Connector upgrade evidence receipt does not match current readiness");
+  }
+  return payload.data;
+}
+
+export function downloadConnectorUpgradeEvidenceReceipt(
+  receipt: ConnectorUpgradeEvidenceReceipt,
+): void {
+  const blob = new Blob([`${JSON.stringify(receipt, null, 2)}\n`], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${receipt.receipt_id}.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 export async function createConnectorUpgradeChangeContextDraft(input: {

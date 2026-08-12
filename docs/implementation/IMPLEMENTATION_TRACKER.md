@@ -9,7 +9,7 @@
 | Status | In Progress |
 | Branch | `agent/mcp-upgrade-evidence-receipt` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110, ADR-111, ADR-112 |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110, ADR-111, ADR-112, ADR-113 |
 | Last Updated | 2026-08-12 |
 | Next Action | Define and implement a non-executable, integrity-verifiable evidence receipt |
 
@@ -40,12 +40,30 @@
 - IMP-156 merged through PR #168 as `f527db47fe4069713bdde122c57435f4638edf07`;
   exact-head PR CI run `31575398805` and exact-main push CI run `31578246476` both passed before
   IMP-157 begins.
+- The IMP-156 closure and IMP-157 start commit `1cac9ab9b298533627dbbbff9d94c690f937d130`
+  passed independent `main` CI run `31578975645` before implementation began.
 - ATLAS-037 states that early releases may stop at an approved handoff plan and explicitly asks
   whether MVP should issue a non-executable approval receipt.
 
 ### ATLAS-IMP-157 Validation Evidence
 
-- Pending.
+- The receipt is deterministic and binds the exact current readiness, request, decision,
+  revalidation, immutable plan, organization, environment and all three authoritative evidence
+  records. Missing confirmation, blockers, stale digest, expiry, missing evidence or changed
+  revalidation fails closed.
+- Domain and browser validators require every mandatory check to be satisfied and reject malformed
+  digests, overlapping applicability, runtime acceptance or any approval, handoff, target,
+  configuration, execution or infrastructure-mutation authority.
+- Ten focused backend tests passed before a later Norton Behavioral Protection lock denied access to
+  the workstation's base Python executable. Backend Ruff formatting and lint still passed all 1,184
+  files; the clean exact-head GitHub CI environment is the required full backend confirmation.
+- Frontend ESLint and TypeScript passed, all 218 tests in 88 files passed and the production build
+  completed with only the existing `OperationalApplication` chunk advisory. Twelve focused receipt
+  and connector-workspace tests had also passed before the local security lock.
+- Live validation created and downloaded the non-executable receipt at 1,280 px and 390 px. Both
+  widths had zero horizontal document overflow, mobile scroll X remained zero, the dialog measured
+  390 x 844 px, no browser errors occurred and no install, apply, execute or handoff control existed.
+  The off-canvas mobile sidebar was the only intentionally out-of-viewport element group.
 
 ### ATLAS-IMP-157 Delivery Evidence
 

@@ -148,6 +148,7 @@ CONNECTOR_UPGRADE_APPROVAL_DECIDE = "connectors.upgrade-approval-decisions.creat
 CONNECTOR_UPGRADE_APPROVAL_REVALIDATION_CREATE = "connectors.upgrade-approval-revalidations.create"
 CONNECTOR_UPGRADE_APPROVAL_REVALIDATION_READ = "connectors.upgrade-approval-revalidations.read"
 CONNECTOR_UPGRADE_HANDOFF_READINESS_READ = "connectors.upgrade-handoff-readiness.read"
+CONNECTOR_UPGRADE_EVIDENCE_RECEIPT_CREATE = "connectors.upgrade-evidence-receipts.create"
 CONNECTOR_UPGRADE_CHANGE_CONTEXT_CREATE = "connectors.upgrade-change-context-drafts.create"
 CONNECTOR_UPGRADE_CHANGE_CONTEXT_READ = "connectors.upgrade-change-context-drafts.read"
 CONNECTOR_TARGET_CONFIGURATION_CREATE = "connectors.target-configuration-bindings.create"
@@ -2101,6 +2102,10 @@ def build_development_authorization_service(
             description="Assess connector upgrade handoff readiness without issuing an artifact.",
         ),
         PermissionDefinition(
+            permission_id=CONNECTOR_UPGRADE_EVIDENCE_RECEIPT_CREATE,
+            description="Create one non-executable connector upgrade evidence receipt.",
+        ),
+        PermissionDefinition(
             permission_id=CONNECTOR_UPGRADE_CHANGE_CONTEXT_CREATE,
             description="Create one connector upgrade ITSM/change-context draft without dispatch.",
         ),
@@ -2616,6 +2621,7 @@ def build_development_authorization_service(
                 CONNECTOR_UPGRADE_APPROVAL_REVALIDATION_CREATE,
                 CONNECTOR_UPGRADE_APPROVAL_REVALIDATION_READ,
                 CONNECTOR_UPGRADE_HANDOFF_READINESS_READ,
+                CONNECTOR_UPGRADE_EVIDENCE_RECEIPT_CREATE,
                 CONNECTOR_UPGRADE_CHANGE_CONTEXT_CREATE,
                 CONNECTOR_UPGRADE_CHANGE_CONTEXT_READ,
                 CONNECTOR_TARGET_CONFIGURATION_CREATE,
@@ -3606,6 +3612,18 @@ def build_development_authorization_service(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-upgrade-evidence-receipt",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_instance_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),

@@ -33,6 +33,7 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeApprovalState,
     ConnectorUpgradeAuditReadinessEvidence,
     ConnectorUpgradeChangeContextDraft,
+    ConnectorUpgradeEvidenceReceipt,
     ConnectorUpgradeHandoffReadinessAssessment,
     ConnectorUpgradeItsmChangeEvidence,
     ConnectorUpgradeMaintenanceWindowEvidence,
@@ -63,6 +64,8 @@ UPGRADE_ITSM_CHANGE_EVIDENCE_SCHEMA = "atlas.connector-upgrade-itsm-change-evide
 UPGRADE_MAINTENANCE_WINDOW_EVIDENCE_SCHEMA = (
     "atlas.connector-upgrade-maintenance-window-evidence.v1"
 )
+UPGRADE_EVIDENCE_RECEIPT_SCHEMA = "atlas.connector-upgrade-evidence-receipt.v1"
+UPGRADE_EVIDENCE_RECEIPT_CREATE_PERMISSION = "connectors.upgrade-evidence-receipts.create"
 UPGRADE_HANDOFF_APPLICABILITY_POLICY_ID = "connector-upgrade-handoff-evidence-applicability.default"
 UPGRADE_HANDOFF_APPLICABILITY_POLICY_VERSION = "v2026.08.12.1"
 UPGRADE_HANDOFF_CURRENT_CHECK_IDS = (
@@ -907,11 +910,130 @@ class ConnectorUpgradeApprovalService:
             actor=actor,
             correlation_id=correlation_id,
             revalidation=revalidation,
-            result_code="connector_upgrade_handoff_readiness_blocked",
+            result_code=(
+                "connector_upgrade_handoff_evidence_complete"
+                if assessment.assessment_state == "evidence_complete"
+                else "connector_upgrade_handoff_readiness_blocked"
+            ),
             permission_id=UPGRADE_HANDOFF_READINESS_READ_PERMISSION,
             idempotency_key=None,
         )
         return assessment
+
+    async def create_evidence_receipt(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        record_id: str,
+        request_id: str,
+        expected_readiness_digest: str,
+        acknowledged_receipt_is_non_executable_and_grants_no_handoff_authority: bool,
+        correlation_id: str,
+    ) -> ConnectorUpgradeEvidenceReceipt:
+        self._require_enterprise_human(actor)
+        if not acknowledged_receipt_is_non_executable_and_grants_no_handoff_authority:
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_evidence_receipt_confirmation_required"
+            )
+        readiness = await self.assess_handoff_readiness(
+            actor=actor,
+            record_id=record_id,
+            request_id=request_id,
+            correlation_id=correlation_id,
+        )
+        now = self._clock()
+        evidence_bindings = (
+            readiness.audit_readiness_evidence_id,
+            readiness.audit_readiness_evidence_digest,
+            readiness.itsm_change_evidence_id,
+            readiness.itsm_change_evidence_digest,
+            readiness.maintenance_window_evidence_id,
+            readiness.maintenance_window_evidence_digest,
+        )
+        if (
+            readiness.assessment_state != "evidence_complete"
+            or readiness.blocker_ids
+            or readiness.canonical_digest != expected_readiness_digest
+            or now >= readiness.evidence_valid_until
+            or any(value is None for value in evidence_bindings)
+        ):
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_evidence_receipt_readiness_not_current"
+            )
+        revalidation = await self._repository.get_latest_revalidation(request_id=request_id)
+        if revalidation is None or revalidation.revalidation_id != readiness.revalidation_id:
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_evidence_receipt_readiness_not_current"
+            )
+        payload: dict[str, object] = {
+            "schema_version": UPGRADE_EVIDENCE_RECEIPT_SCHEMA,
+            "version": 1,
+            "assessment": (readiness.assessment_id, readiness.canonical_digest),
+            "request": (readiness.request_id, readiness.request_digest),
+            "decision": (readiness.decision_id, readiness.decision_digest),
+            "revalidation": (readiness.revalidation_id, readiness.revalidation_digest),
+            "plan": (readiness.plan_id, readiness.plan_digest),
+            "scope": (readiness.organization_id, readiness.environment_id),
+            "created_by": actor.subject_id,
+            "evidence": evidence_bindings,
+            "required_check_ids": readiness.required_check_ids,
+            "satisfied_check_ids": readiness.satisfied_check_ids,
+            "not_applicable_check_ids": readiness.not_applicable_check_ids,
+            "created_at": revalidation.revalidated_at.isoformat(),
+            "valid_until": readiness.evidence_valid_until.isoformat(),
+            "evidence_receipt_only": True,
+            "runtime_acceptable": False,
+            "approval_consumed": False,
+            "handoff_ready": False,
+            "handoff_artifact_issued": False,
+            "target_contacted": False,
+            "package_rebound": False,
+            "configuration_changed": False,
+            "execution_authorized": False,
+            "infrastructure_mutation_performed": False,
+        }
+        digest = self._digest(payload)
+        receipt = ConnectorUpgradeEvidenceReceipt(
+            receipt_id=f"connector-upgrade-evidence-receipt.{digest[:24]}",
+            schema_version=UPGRADE_EVIDENCE_RECEIPT_SCHEMA,
+            version=1,
+            assessment_id=readiness.assessment_id,
+            assessment_digest=readiness.canonical_digest,
+            request_id=readiness.request_id,
+            request_digest=readiness.request_digest,
+            decision_id=readiness.decision_id,
+            decision_digest=readiness.decision_digest,
+            revalidation_id=readiness.revalidation_id,
+            revalidation_digest=readiness.revalidation_digest,
+            plan_id=readiness.plan_id,
+            plan_digest=readiness.plan_digest,
+            organization_id=readiness.organization_id,
+            environment_id=readiness.environment_id,
+            created_by=actor.subject_id,
+            audit_readiness_evidence_id=cast(str, readiness.audit_readiness_evidence_id),
+            audit_readiness_evidence_digest=cast(str, readiness.audit_readiness_evidence_digest),
+            itsm_change_evidence_id=cast(str, readiness.itsm_change_evidence_id),
+            itsm_change_evidence_digest=cast(str, readiness.itsm_change_evidence_digest),
+            maintenance_window_evidence_id=cast(str, readiness.maintenance_window_evidence_id),
+            maintenance_window_evidence_digest=cast(
+                str, readiness.maintenance_window_evidence_digest
+            ),
+            required_check_ids=readiness.required_check_ids,
+            satisfied_check_ids=readiness.satisfied_check_ids,
+            not_applicable_check_ids=readiness.not_applicable_check_ids,
+            created_at=revalidation.revalidated_at,
+            valid_until=readiness.evidence_valid_until,
+            canonical_digest=digest,
+        )
+        await self._audit_revalidation(
+            actor=actor,
+            correlation_id=correlation_id,
+            revalidation=revalidation,
+            result_code="connector_upgrade_evidence_receipt_created",
+            permission_id=UPGRADE_EVIDENCE_RECEIPT_CREATE_PERMISSION,
+            idempotency_key=None,
+        )
+        return receipt
 
     @classmethod
     def _verify_audit_readiness_evidence(
