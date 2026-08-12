@@ -74,6 +74,8 @@ from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeEvidenceSigningProviderDiagnostic,
     ConnectorUpgradeEvidenceSigningProviderTrust,
     ConnectorUpgradeSigningProviderConformanceState,
+    ConnectorUpgradeSigningProviderOnboardingEvidence,
+    ConnectorUpgradeSigningProviderOnboardingRequirementState,
 )
 from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticationMethod
 
@@ -490,6 +492,274 @@ def test_signing_provider_conformance_api_requires_csrf_and_exposes_no_signature
     assert "signature" not in payload
     assert "signature_value" not in payload
     assert "key_material" not in payload
+
+
+class _ProductionConformanceProvider:
+    def __init__(self, *, key: ConnectorUpgradeEvidenceSigningKey) -> None:
+        self._key = key
+
+    async def trust_inventory(
+        self, *, organization_id: str, environment_id: str
+    ) -> ConnectorUpgradeEvidenceSigningProviderTrust:
+        return ConnectorUpgradeEvidenceSigningProviderTrust(
+            provider_class="provider.test-production-kms",
+            organization_id=organization_id,
+            environment_id=environment_id,
+            provider_available=True,
+            production_approved=True,
+            keys=(self._key,),
+        )
+
+    async def active_key(
+        self, *, organization_id: str, environment_id: str
+    ) -> ConnectorUpgradeEvidenceSigningKey:
+        assert organization_id == self._key.organization_id
+        assert environment_id == self._key.environment_id
+        return self._key
+
+    async def diagnostic_sign_and_verify(
+        self,
+        *,
+        organization_id: str,
+        environment_id: str,
+        challenge_digest: str,
+        issued_at: datetime,
+        expires_at: datetime,
+    ) -> ConnectorUpgradeEvidenceSigningProviderDiagnostic:
+        del challenge_digest, issued_at, expires_at
+        return ConnectorUpgradeEvidenceSigningProviderDiagnostic(
+            provider_class="provider.test-production-kms",
+            organization_id=organization_id,
+            environment_id=environment_id,
+            key=self._key,
+            state=ConnectorUpgradeSigningProviderConformanceState.CONFORMANT,
+        )
+
+    async def sign(
+        self,
+        *,
+        key: ConnectorUpgradeEvidenceSigningKey,
+        payload_digest: str,
+        issued_at: datetime,
+        expires_at: datetime,
+    ) -> ConnectorUpgradeEvidenceSignature:
+        raise ConnectorUpgradeEvidenceAuthenticityError("test_provider_sign_not_implemented")
+
+    async def verify(
+        self,
+        *,
+        signature: ConnectorUpgradeEvidenceSignature,
+        payload_digest: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorUpgradeEvidenceSigningKey:
+        raise ConnectorUpgradeEvidenceAuthenticityError("test_provider_verify_not_implemented")
+
+
+class _OnboardingEvidenceSource:
+    def __init__(self, evidence: ConnectorUpgradeSigningProviderOnboardingEvidence | None) -> None:
+        self._evidence = evidence
+
+    async def get_current(
+        self, *, organization_id: str, environment_id: str, provider_class: str
+    ) -> ConnectorUpgradeSigningProviderOnboardingEvidence | None:
+        del organization_id, environment_id, provider_class
+        return self._evidence
+
+
+@pytest.mark.asyncio
+async def test_onboarding_readiness_blocks_nonproduction_and_missing_evidence() -> None:
+    service, _, _, _, _, _, sources, audit = await approval_fixture()
+    instance, _ = sources
+    actor = instance_operator("subject.connector-onboarding-readiness-blocked")
+    await service.assess_signing_provider_conformance(
+        actor=actor,
+        acknowledged_diagnostic_grants_no_key_receipt_or_execution_authority=True,
+        idempotency_key="connector-onboarding-readiness-blocked",
+        correlation_id="correlation.connector-onboarding-readiness-assess",
+    )
+
+    dossier = await service.signing_provider_onboarding_readiness(
+        actor=actor,
+        correlation_id="correlation.connector-onboarding-readiness-blocked",
+    )
+
+    states = {item.requirement_id: item.state for item in dossier.requirements}
+    assert dossier.organization_id == instance.organization_id
+    assert dossier.readiness_state == "blocked"
+    assert not dossier.provider_onboarding_ready
+    assert states["provider-available"] is (
+        ConnectorUpgradeSigningProviderOnboardingRequirementState.SATISFIED
+    )
+    assert states["provider-production-approved"] is (
+        ConnectorUpgradeSigningProviderOnboardingRequirementState.BLOCKED
+    )
+    assert states["production-algorithm-approved"] is (
+        ConnectorUpgradeSigningProviderOnboardingRequirementState.BLOCKED
+    )
+    assert states["conformance-current"] is (
+        ConnectorUpgradeSigningProviderOnboardingRequirementState.SATISFIED
+    )
+    assert "security-approval-current" in dossier.required_external_inputs
+    assert dossier.evidence_only and not dossier.provider_configuration_authorized
+    assert not dossier.key_management_authorized and not dossier.receipt_signing_authorized
+    assert not dossier.execution_authorized and not dossier.infrastructure_mutation_performed
+    assert audit.records[-1].result_code == (
+        "connector_upgrade_signing_provider_onboarding_blocked"
+    )
+
+
+@pytest.mark.asyncio
+async def test_signing_provider_onboarding_readiness_requires_all_authoritative_evidence() -> None:
+    service, _, _, _, _, _, sources, audit = await approval_fixture()
+    instance, _ = sources
+    now = service._clock()
+    key = ConnectorUpgradeEvidenceSigningKey(
+        key_id="key.connector-upgrade-evidence.production-test",
+        key_version="version.1",
+        signer_profile_id="signer-profile.production-test",
+        signer_workload_id="workload.connector-upgrade-evidence-production-test",
+        algorithm="algorithm.rsassa-pss-sha256",
+        organization_id=instance.organization_id,
+        environment_id=instance.environment_id,
+        state=ConnectorUpgradeEvidenceSigningKeyState.ACTIVE,
+        not_before=now - timedelta(hours=1),
+        expires_at=now + timedelta(days=1),
+    )
+    service._evidence_authenticity_provider = _ProductionConformanceProvider(key=key)
+    service._signing_provider_onboarding_evidence_source = _OnboardingEvidenceSource(
+        ConnectorUpgradeSigningProviderOnboardingEvidence(
+            organization_id=instance.organization_id,
+            environment_id=instance.environment_id,
+            provider_class="provider.test-production-kms",
+            workload_identity_approved=True,
+            secret_reference_ownership_verified=True,
+            network_boundary_approved=True,
+            key_lifecycle_and_revocation_approved=True,
+            audit_routing_verified=True,
+            availability_and_recovery_verified=True,
+            security_approval_reference="approval.security.test",
+            deployment_approval_reference="approval.deployment.test",
+        )
+    )
+    actor = instance_operator("subject.connector-onboarding-readiness-ready")
+    await service.assess_signing_provider_conformance(
+        actor=actor,
+        acknowledged_diagnostic_grants_no_key_receipt_or_execution_authority=True,
+        idempotency_key="connector-onboarding-readiness-ready",
+        correlation_id="correlation.connector-onboarding-readiness-ready-assess",
+    )
+
+    dossier = await service.signing_provider_onboarding_readiness(
+        actor=actor,
+        correlation_id="correlation.connector-onboarding-readiness-ready",
+    )
+
+    assert dossier.provider_onboarding_ready and dossier.readiness_state == "ready"
+    assert dossier.required_external_inputs == ()
+    assert all(
+        item.state is ConnectorUpgradeSigningProviderOnboardingRequirementState.SATISFIED
+        for item in dossier.requirements
+    )
+    assert not dossier.provider_configuration_authorized
+    assert not dossier.execution_authorized
+    assert audit.records[-1].result_code == "connector_upgrade_signing_provider_onboarding_ready"
+
+
+@pytest.mark.asyncio
+async def test_onboarding_readiness_rejects_stale_conformance_and_wrong_scope_evidence() -> None:
+    service, _, _, _, _, _, sources, _ = await approval_fixture()
+    instance, _ = sources
+    actor = instance_operator("subject.connector-onboarding-readiness-stale")
+    assessed_at = service._clock()
+    await service.assess_signing_provider_conformance(
+        actor=actor,
+        acknowledged_diagnostic_grants_no_key_receipt_or_execution_authority=True,
+        idempotency_key="connector-onboarding-readiness-stale",
+        correlation_id="correlation.connector-onboarding-readiness-stale-assess",
+    )
+    service._clock = lambda: assessed_at + timedelta(minutes=6)
+
+    stale = await service.signing_provider_onboarding_readiness(
+        actor=actor,
+        correlation_id="correlation.connector-onboarding-readiness-stale",
+    )
+
+    conformance = next(
+        item for item in stale.requirements if item.requirement_id == "conformance-current"
+    )
+    assert conformance.state is ConnectorUpgradeSigningProviderOnboardingRequirementState.BLOCKED
+    assert conformance.reason_code.endswith(".conformance-stale")
+
+    service._signing_provider_onboarding_evidence_source = _OnboardingEvidenceSource(
+        ConnectorUpgradeSigningProviderOnboardingEvidence(
+            organization_id="organization.foreign",
+            environment_id=instance.environment_id,
+            provider_class="provider.nonproduction-hmac",
+            workload_identity_approved=False,
+            secret_reference_ownership_verified=False,
+            network_boundary_approved=False,
+            key_lifecycle_and_revocation_approved=False,
+            audit_routing_verified=False,
+            availability_and_recovery_verified=False,
+            security_approval_reference=None,
+            deployment_approval_reference=None,
+        )
+    )
+    with pytest.raises(
+        ConnectorUpgradeApprovalError,
+        match="connector_upgrade_signing_provider_onboarding_evidence_not_found",
+    ):
+        await service.signing_provider_onboarding_readiness(
+            actor=actor,
+            correlation_id="correlation.connector-onboarding-readiness-wrong-scope",
+        )
+
+
+def test_signing_provider_onboarding_readiness_api_is_no_store_and_exact_schema(
+    tmp_path: Path,
+) -> None:
+    (
+        service,
+        _,
+        instance_service,
+        package_service,
+        registration_service,
+        publication_service,
+        _,
+        _,
+    ) = asyncio.run(approval_fixture())
+    actor = instance_operator("subject.connector-onboarding-readiness-api")
+    app = create_app(
+        settings(
+            development_subject_id=actor.subject_id,
+            mcp_builder_generation_root=tmp_path / "mcp-builder-generations",
+        ),
+        identity_provider=BasicTestIdentityProvider(actor),
+        registry_publication_service=publication_service,
+        package_registration_service=registration_service,
+        package_installation_service=package_service,
+        connector_instance_creation_service=instance_service,
+        connector_upgrade_approval_service=service,
+    )
+    endpoint = "/api/v1/connectors/instances/upgrade-evidence-signing-provider-onboarding-readiness"
+    with TestClient(app) as client:
+        login(client)
+        response = client.get(endpoint)
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    payload = response.json()["data"]
+    assert payload["schema_version"] == (
+        "atlas.connector-upgrade-signing-provider-onboarding-readiness.v1"
+    )
+    assert payload["readiness_state"] == "blocked"
+    assert payload["provider_onboarding_ready"] is False
+    assert payload["provider_configuration_authorized"] is False
+    assert payload["execution_authorized"] is False
+    assert "endpoint" not in payload
+    assert "credential" not in payload
+    assert "secret" not in payload
 
 
 def test_signing_key_trust_effective_state_precedence_is_deterministic() -> None:

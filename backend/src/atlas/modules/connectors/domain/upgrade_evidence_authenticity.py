@@ -43,6 +43,11 @@ class ConnectorUpgradeSigningProviderConformanceState(StrEnum):
     POLICY_BLOCKED = "policy_blocked"
 
 
+class ConnectorUpgradeSigningProviderOnboardingRequirementState(StrEnum):
+    SATISFIED = "satisfied"
+    BLOCKED = "blocked"
+
+
 @dataclass(frozen=True, slots=True)
 class ConnectorUpgradeEvidenceSigningKey:
     key_id: str
@@ -284,6 +289,142 @@ class ConnectorUpgradeSigningProviderConformanceAssessment:
             )
         ):
             raise ValueError("Connector upgrade signing provider conformance is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorUpgradeSigningProviderOnboardingEvidence:
+    organization_id: str
+    environment_id: str
+    provider_class: str
+    workload_identity_approved: bool
+    secret_reference_ownership_verified: bool
+    network_boundary_approved: bool
+    key_lifecycle_and_revocation_approved: bool
+    audit_routing_verified: bool
+    availability_and_recovery_verified: bool
+    security_approval_reference: str | None
+    deployment_approval_reference: str | None
+
+    def __post_init__(self) -> None:
+        for value in (self.organization_id, self.environment_id, self.provider_class):
+            validate_stable_identifier(
+                value, "connector upgrade signing provider onboarding evidence"
+            )
+        for reference in (self.security_approval_reference, self.deployment_approval_reference):
+            if reference is not None:
+                validate_stable_identifier(
+                    reference, "connector upgrade signing provider onboarding approval"
+                )
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorUpgradeSigningProviderOnboardingRequirement:
+    requirement_id: str
+    state: ConnectorUpgradeSigningProviderOnboardingRequirementState
+    reason_code: str
+    evidence_reference: str | None = None
+
+    def __post_init__(self) -> None:
+        validate_stable_identifier(
+            self.requirement_id, "connector upgrade signing provider onboarding requirement"
+        )
+        if not self.reason_code.startswith("connector.upgrade.signing-provider-onboarding."):
+            raise ValueError("Connector upgrade signing provider onboarding reason is invalid")
+        if self.evidence_reference is not None:
+            validate_stable_identifier(
+                self.evidence_reference,
+                "connector upgrade signing provider onboarding evidence reference",
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorUpgradeSigningProviderOnboardingReadiness:
+    dossier_id: str
+    schema_version: str
+    version: int
+    organization_id: str
+    environment_id: str
+    provider_class: str
+    key_id: str | None
+    key_version: str | None
+    algorithm: str | None
+    provider_trust_digest: str
+    conformance_assessment_id: str | None
+    conformance_digest: str | None
+    policy_id: str
+    policy_version: str
+    evaluated_at: datetime
+    readiness_state: str
+    requirements: tuple[ConnectorUpgradeSigningProviderOnboardingRequirement, ...]
+    required_external_inputs: tuple[str, ...]
+    canonical_digest: str
+    provider_onboarding_ready: bool
+    evidence_only: bool = True
+    provider_configuration_authorized: bool = False
+    key_management_authorized: bool = False
+    receipt_signing_authorized: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_performed: bool = False
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.dossier_id,
+            self.schema_version,
+            self.organization_id,
+            self.environment_id,
+            self.provider_class,
+            self.policy_id,
+            self.policy_version,
+        ):
+            validate_stable_identifier(
+                value, "connector upgrade signing provider onboarding readiness"
+            )
+        for optional_value in (self.conformance_assessment_id,):
+            if optional_value is not None:
+                validate_stable_identifier(
+                    optional_value, "connector upgrade signing provider onboarding conformance"
+                )
+        for optional_value in (self.key_id, self.key_version, self.algorithm):
+            if optional_value is not None:
+                validate_stable_identifier(
+                    optional_value, "connector upgrade signing provider onboarding key"
+                )
+        requirement_ids = {requirement.requirement_id for requirement in self.requirements}
+        all_satisfied = all(
+            requirement.state is ConnectorUpgradeSigningProviderOnboardingRequirementState.SATISFIED
+            for requirement in self.requirements
+        )
+        if (
+            self.schema_version
+            != "atlas.connector-upgrade-signing-provider-onboarding-readiness.v1"
+            or self.version != 1
+            or _DIGEST.fullmatch(self.provider_trust_digest) is None
+            or len({value is None for value in (self.key_id, self.key_version, self.algorithm)})
+            != 1
+            or (
+                self.conformance_digest is not None
+                and _DIGEST.fullmatch(self.conformance_digest) is None
+            )
+            or ((self.conformance_assessment_id is None) != (self.conformance_digest is None))
+            or self.evaluated_at.tzinfo is None
+            or self.readiness_state not in {"ready", "blocked"}
+            or not self.requirements
+            or len(requirement_ids) != len(self.requirements)
+            or self.provider_onboarding_ready != all_satisfied
+            or self.readiness_state != ("ready" if all_satisfied else "blocked")
+            or _DIGEST.fullmatch(self.canonical_digest) is None
+            or not self.evidence_only
+            or any(
+                (
+                    self.provider_configuration_authorized,
+                    self.key_management_authorized,
+                    self.receipt_signing_authorized,
+                    self.execution_authorized,
+                    self.infrastructure_mutation_performed,
+                )
+            )
+        ):
+            raise ValueError("Connector upgrade signing provider onboarding readiness is invalid")
 
 
 @dataclass(frozen=True, slots=True)

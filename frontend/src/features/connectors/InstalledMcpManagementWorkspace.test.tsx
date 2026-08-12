@@ -19,6 +19,7 @@ import {
   getConnectorUpgradeApprovalRecord,
   getConnectorUpgradeHandoffReadiness,
   getConnectorUpgradeEvidenceSigningKeyTrustInventory,
+  getConnectorUpgradeSigningProviderOnboardingReadiness,
   getLatestConnectorUpgradeSigningProviderConformance,
   getLatestConnectorUpgradeChangeContextDraft,
   getLatestConnectorUpgradeApprovalRevalidation,
@@ -38,6 +39,7 @@ import {
   type ConnectorUpgradeSignedEvidenceReceipt,
   type ConnectorUpgradeSignedEvidenceReceiptVerification,
   type ConnectorUpgradeSigningProviderConformanceAssessment,
+  type ConnectorUpgradeSigningProviderOnboardingReadiness,
   type ConnectorUpgradePlan,
   type ConnectorUpgradeReadiness,
 } from "../../api/connectorUpgradeReadiness";
@@ -120,6 +122,61 @@ const signingProviderConformance: ConnectorUpgradeSigningProviderConformanceAsse
   execution_authorized: false,
   infrastructure_mutation_performed: false,
   reused: false,
+};
+
+const signingProviderOnboarding: ConnectorUpgradeSigningProviderOnboardingReadiness = {
+  dossier_id: "connector-upgrade-signing-provider-onboarding.test",
+  schema_version: "atlas.connector-upgrade-signing-provider-onboarding-readiness.v1",
+  version: 1,
+  organization_id: installation.organization_id,
+  environment_id: installation.environment_id,
+  provider_class: "provider.nonproduction-hmac",
+  key_id: "key.connector-upgrade-evidence.test",
+  key_version: "version.1",
+  algorithm: "algorithm.hmac-sha256-nonproduction",
+  provider_trust_digest: "4".repeat(64),
+  conformance_assessment_id: signingProviderConformance.assessment_id,
+  conformance_digest: signingProviderConformance.canonical_digest,
+  policy_id: "connector-upgrade-signing-provider-onboarding.default",
+  policy_version: "v2026.08.12.1",
+  evaluated_at: "2026-08-12T12:01:00Z",
+  readiness_state: "blocked",
+  requirements: [
+    {
+      requirement_id: "provider-available",
+      state: "satisfied",
+      reason_code: "connector.upgrade.signing-provider-onboarding.satisfied",
+      evidence_reference: `trust-inventory.${"4".repeat(64)}`,
+    },
+    {
+      requirement_id: "provider-production-approved",
+      state: "blocked",
+      reason_code: (
+        "connector.upgrade.signing-provider-onboarding.provider-not-production-approved"
+      ),
+      evidence_reference: null,
+    },
+    {
+      requirement_id: "security-approval-current",
+      state: "blocked",
+      reason_code: (
+        "connector.upgrade.signing-provider-onboarding.security-approval-evidence-missing"
+      ),
+      evidence_reference: null,
+    },
+  ],
+  required_external_inputs: [
+    "provider-production-approved",
+    "security-approval-current",
+  ],
+  canonical_digest: "6".repeat(64),
+  provider_onboarding_ready: false,
+  evidence_only: true,
+  provider_configuration_authorized: false,
+  key_management_authorized: false,
+  receipt_signing_authorized: false,
+  execution_authorized: false,
+  infrastructure_mutation_performed: false,
 };
 
 const upgradeReadiness: ConnectorUpgradeReadiness = {
@@ -618,6 +675,7 @@ vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
     getConnectorUpgradeEvidenceSigningKeyTrustInventory: vi.fn(),
     assessConnectorUpgradeSigningProviderConformance: vi.fn(),
     getLatestConnectorUpgradeSigningProviderConformance: vi.fn(),
+    getConnectorUpgradeSigningProviderOnboardingReadiness: vi.fn(),
     getLatestConnectorUpgradeChangeContextDraft: vi.fn(),
     createConnectorUpgradeChangeContextDraft: vi.fn(),
     createConnectorUpgradeEvidenceReceipt: vi.fn(),
@@ -662,6 +720,9 @@ beforeEach(() => {
   vi.mocked(assessConnectorUpgradeSigningProviderConformance).mockResolvedValue(
     signingProviderConformance,
   );
+  vi.mocked(getConnectorUpgradeSigningProviderOnboardingReadiness).mockResolvedValue(
+    signingProviderOnboarding,
+  );
   vi.mocked(getLatestConnectorUpgradeChangeContextDraft).mockResolvedValue(null);
   vi.mocked(createConnectorUpgradeChangeContextDraft).mockResolvedValue(changeContextDraft);
   vi.mocked(createConnectorUpgradeEvidenceReceipt).mockResolvedValue(evidenceReceipt);
@@ -695,6 +756,10 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(await screen.findByRole("heading", { name: "Installed MCPs" })).toBeVisible();
     expect(await screen.findByRole("heading", { name: "Signing trust" })).toBeVisible();
     expect(screen.getByText("Signing-provider conformance")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Provider onboarding readiness" })).toBeVisible();
+    expect(screen.getByText("2 requirements blocked")).toBeVisible();
+    expect(screen.getByText("provider production approved")).toBeVisible();
+    expect(screen.getByText("security approval current")).toBeVisible();
     expect(screen.getAllByText("key.connector-upgrade-evidence.test")).toHaveLength(2);
     expect(screen.getByText("Verification trusted")).toBeVisible();
     expect(screen.getByText(/No key management or signing authority/i)).toBeVisible();
@@ -704,6 +769,7 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(screen.getByRole("button", { name: "Review update for Storage East" })).toBeVisible();
     expect(screen.queryByRole("button", { name: /delete/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /rotate|revoke|disable|export key/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /configure provider|approve provider/i })).toBeNull();
   });
 
   it("runs a bounded provider assessment without exposing signing or key controls", async () => {

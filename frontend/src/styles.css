@@ -454,6 +454,60 @@ textarea:focus-visible {
   margin: 0;
 }
 
+.installed-mcp-onboarding {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid #dbe3e0;
+}
+
+.installed-mcp-onboarding-result {
+  display: grid;
+  gap: 10px;
+}
+
+.installed-mcp-onboarding-requirements {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.installed-mcp-onboarding-requirement {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+  min-height: 52px;
+  padding: 8px;
+  border: 1px solid #d8e1de;
+  border-radius: 4px;
+  color: #8a3f2b;
+  background: #fff;
+}
+
+.installed-mcp-onboarding-requirement.satisfied {
+  color: #176b4d;
+}
+
+.installed-mcp-onboarding-requirement > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.installed-mcp-onboarding-requirement strong {
+  color: #253a35;
+  font-size: 11px;
+  text-transform: capitalize;
+  overflow-wrap: anywhere;
+}
+
+.installed-mcp-onboarding-requirement span {
+  color: #687772;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
 .installed-mcp-toolbar {
   min-width: 0;
   justify-content: space-between;
@@ -1211,6 +1265,10 @@ textarea:focus-visible {
   }
 
   .installed-mcp-conformance-result dl {
+    grid-template-columns: 1fr;
+  }
+
+  .installed-mcp-onboarding-requirements {
     grid-template-columns: 1fr;
   }
 
