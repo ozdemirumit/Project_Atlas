@@ -4,14 +4,60 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-164 |
-| Title | Connector upgrade signing-provider onboarding policy authenticity foundation |
-| Status | In review; exact-head CI pending |
-| Branch | `agent/mcp-signing-provider-onboarding-policy-authenticity` |
-| Pull Request | [#176](https://github.com/ozdemirumit/Project_Atlas/pull/176) |
+| Task ID | ATLAS-IMP-165 |
+| Title | Connector upgrade onboarding-policy provenance diagnostic foundation |
+| Status | In Progress |
+| Branch | `agent/mcp-onboarding-policy-provenance-diagnostics` |
+| Pull Request | Pending |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-020, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-115, ADR-116, ADR-117, ADR-118, ADR-119, ADR-120 |
 | Last Updated | 2026-08-12 |
-| Next Action | Verify exact-head CI for PR #176 and complete review |
+| Next Action | Record ADR-121, implement the fail-closed provenance diagnostic boundary and validate it end to end |
+
+### ATLAS-IMP-165 Scope Rationale
+
+- IMP-164 correctly blocks the onboarding dossier when policy provenance cannot be verified, but the
+  protected read currently collapses every failure into an unavailable response.
+- Operators need a bounded explanation of whether attestation, trust-key, lifecycle, binding,
+  integrity or verifier evidence is missing without receiving signature material, key material or
+  security-sensitive provider configuration.
+- A separate read-only diagnostic boundary can make the blocked posture explainable while preserving
+  fail-closed readiness, independent trust inputs and the prohibition on provider or key management.
+
+### ATLAS-IMP-165 Acceptance Criteria
+
+- An immutable exact-scope provenance diagnostic binds the active policy, evidence time, attestation
+  and trust-key references when safely available, an overall verified/blocked state, ordered checks,
+  stable reason codes, validity horizon and a canonical digest.
+- Diagnostic assembly reports missing, ambiguous, future, expired, wrong-scope, binding-mismatched,
+  integrity-invalid, disabled/revoked and cryptographically unverified evidence without weakening the
+  readiness service or converting unavailable evidence into trust.
+- Authenticated exact-scope C1 read access uses dedicated default-deny RBAC, no-store responses,
+  bounded audit metadata and fail-closed required-audit behavior.
+- API and UI expose only safe identifiers, digests, lifecycle states and remediation ownership; raw
+  signatures, public/private key material, credentials, endpoints, provider parameters and mutation
+  controls remain absent.
+- The Connector inventory UI presents the provenance diagnostic as read-only evidence and clearly
+  distinguishes verified, blocked and unavailable checks. Every provider, policy, key, signing,
+  execution and infrastructure-mutation authority remains false.
+- ADR, focused and full backend/frontend gates, one Alembic head, production build and live responsive
+  validation pass before delivery.
+
+### ATLAS-IMP-165 Initial Evidence
+
+- IMP-164 merged through PR #176 as `2a86c006c4f8b99d5d51faf757b8cf694c0c9f14` after exact-head
+  CI run `31627294533` passed with backend in 7m47s and frontend in 4m40s.
+- The exact merged commit independently passed `main` CI run `31628016763` with backend in 7m24s and
+  frontend in 4m43s.
+- ADR-120 requires stable fail-closed provenance errors but does not define a safe diagnostic contract
+  that remains readable when onboarding readiness is blocked.
+
+### ATLAS-IMP-165 Validation Evidence
+
+- Pending implementation.
+
+### ATLAS-IMP-165 Delivery Evidence
+
+- Pending implementation.
 
 ### ATLAS-IMP-164 Scope Rationale
 
@@ -81,9 +127,12 @@
 
 ### ATLAS-IMP-164 Delivery Evidence
 
-- Source commit `a739e7e` is published in draft PR
-  [#176](https://github.com/ozdemirumit/Project_Atlas/pull/176). Exact-head CI is pending on the
-  tracker-review commit.
+- Source commit `a739e7e` and tracker-review commit `2f63626` were published in PR
+  [#176](https://github.com/ozdemirumit/Project_Atlas/pull/176). Exact-head CI run `31627294533`
+  passed with backend in 7m47s and frontend in 4m40s.
+- PR #176 was squash-merged as `2a86c006c4f8b99d5d51faf757b8cf694c0c9f14`; the exact merged
+  commit independently passed `main` CI run `31628016763` with backend in 7m24s and frontend in
+  4m43s.
 
 ### ATLAS-IMP-163 Scope Rationale
 
