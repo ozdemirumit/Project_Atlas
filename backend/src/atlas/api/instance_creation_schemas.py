@@ -535,6 +535,8 @@ class ConnectorUpgradeHandoffReadinessData(BaseModel):
     applicability_policy_digest: str
     audit_readiness_evidence_id: str | None
     audit_readiness_evidence_digest: str | None
+    itsm_change_evidence_id: str | None
+    itsm_change_evidence_digest: str | None
     required_check_ids: tuple[str, ...]
     satisfied_check_ids: tuple[str, ...]
     not_applicable_check_ids: tuple[str, ...]
@@ -546,6 +548,7 @@ class ConnectorUpgradeHandoffReadinessData(BaseModel):
     approval_current: bool
     revalidation_current: bool
     audit_readiness_evidence_current: bool
+    itsm_change_evidence_current: bool
     handoff_ready: bool
     handoff_artifact_issued: bool
     approval_consumed: bool

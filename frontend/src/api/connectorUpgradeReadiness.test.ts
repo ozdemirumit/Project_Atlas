@@ -11,7 +11,7 @@ const required = [
 
 const assessment = {
   assessment_id: "connector-upgrade-handoff-readiness.test",
-  schema_version: "atlas.connector-upgrade-handoff-readiness.v3",
+  schema_version: "atlas.connector-upgrade-handoff-readiness.v4",
   source_record_id: "connector-instance-record.test",
   source_record_version: 1,
   instance_id: "connector-instance.test",
@@ -32,6 +32,8 @@ const assessment = {
   applicability_policy_digest: "5".repeat(64),
   audit_readiness_evidence_id: null,
   audit_readiness_evidence_digest: null,
+  itsm_change_evidence_id: null,
+  itsm_change_evidence_digest: null,
   required_check_ids: required,
   satisfied_check_ids: [required[0]],
   not_applicable_check_ids: ["connector.upgrade.handoff.target-binding-current"],
@@ -47,6 +49,7 @@ const assessment = {
   approval_current: true,
   revalidation_current: true,
   audit_readiness_evidence_current: false,
+  itsm_change_evidence_current: false,
   handoff_ready: false,
   handoff_artifact_issued: false,
   approval_consumed: false,
@@ -68,12 +71,26 @@ describe("connector upgrade handoff readiness validation", () => {
       satisfied_check_ids: [required[0], required[3]],
       blocker_ids: assessment.blocker_ids.slice(0, 2),
     })).toBe(true);
+    expect(isConnectorUpgradeHandoffReadiness({
+      ...assessment,
+      itsm_change_evidence_id: "connector-upgrade-itsm-change-evidence.test",
+      itsm_change_evidence_digest: "8".repeat(64),
+      itsm_change_evidence_current: true,
+      satisfied_check_ids: [required[0], required[1]],
+      blocker_ids: assessment.blocker_ids.slice(1),
+    })).toBe(true);
   });
 
   it("fails closed for overlapping, duplicate or incomplete classifications", () => {
     expect(isConnectorUpgradeHandoffReadiness({
       ...assessment,
       not_applicable_check_ids: [required[0]],
+    })).toBe(false);
+    expect(isConnectorUpgradeHandoffReadiness({
+      ...assessment,
+      itsm_change_evidence_id: "connector-upgrade-itsm-change-evidence.test",
+      itsm_change_evidence_digest: "8".repeat(64),
+      itsm_change_evidence_current: true,
     })).toBe(false);
     expect(isConnectorUpgradeHandoffReadiness({
       ...assessment,

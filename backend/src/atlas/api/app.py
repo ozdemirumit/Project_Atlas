@@ -565,6 +565,7 @@ from atlas.modules.connectors.adapters.upgrade_approval_memory import (
     InMemoryConnectorUpgradeApprovalPolicySource,
     InMemoryConnectorUpgradeApprovalRepository,
     InMemoryConnectorUpgradeAuditReadinessSource,
+    InMemoryConnectorUpgradeItsmChangeEvidenceSource,
 )
 from atlas.modules.connectors.adapters.upgrade_approval_postgres import (
     PostgreSQLConnectorUpgradeApprovalRepository,
@@ -2809,6 +2810,7 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=resolved_connector_instance_creation_service.environment_id,
             audit_readiness_source=InMemoryConnectorUpgradeAuditReadinessSource(),
+            itsm_change_evidence_source=InMemoryConnectorUpgradeItsmChangeEvidenceSource(),
         )
     if credential_assignment_service is not None:
         resolved_credential_assignment_service = credential_assignment_service
