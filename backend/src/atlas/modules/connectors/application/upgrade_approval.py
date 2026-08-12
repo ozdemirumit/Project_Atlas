@@ -48,7 +48,11 @@ from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeEvidenceAuthenticityState,
     ConnectorUpgradeEvidenceSignature,
     ConnectorUpgradeEvidenceSigningKey,
+    ConnectorUpgradeEvidenceSigningKeyEffectiveState,
     ConnectorUpgradeEvidenceSigningKeyState,
+    ConnectorUpgradeEvidenceSigningKeyTrust,
+    ConnectorUpgradeEvidenceSigningKeyTrustInventory,
+    ConnectorUpgradeEvidenceSigningProviderTrust,
     ConnectorUpgradeSignedEvidenceReceipt,
     ConnectorUpgradeSignedEvidenceReceiptVerification,
 )
@@ -93,6 +97,12 @@ UPGRADE_SIGNED_EVIDENCE_RECEIPT_VERIFICATION_SCHEMA = (
 )
 UPGRADE_SIGNED_EVIDENCE_RECEIPT_VERIFY_PERMISSION = (
     "connectors.upgrade-signed-evidence-receipts.verify"
+)
+UPGRADE_SIGNING_KEY_TRUST_INVENTORY_SCHEMA = (
+    "atlas.connector-upgrade-signing-key-trust-inventory.v1"
+)
+UPGRADE_SIGNING_KEY_TRUST_INVENTORY_READ_PERMISSION = (
+    "connectors.upgrade-signing-key-trust-inventory.read"
 )
 UPGRADE_HANDOFF_APPLICABILITY_POLICY_ID = "connector-upgrade-handoff-evidence-applicability.default"
 UPGRADE_HANDOFF_APPLICABILITY_POLICY_VERSION = "v2026.08.12.1"
@@ -1263,6 +1273,124 @@ class ConnectorUpgradeApprovalService:
         )
         return verification
 
+    async def signing_key_trust_inventory(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+    ) -> ConnectorUpgradeEvidenceSigningKeyTrustInventory:
+        self._require_authenticated_human(actor)
+        now = self._clock()
+        if self._evidence_authenticity_provider is None:
+            provider = ConnectorUpgradeEvidenceSigningProviderTrust(
+                provider_class="provider.unavailable",
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+                provider_available=False,
+                production_approved=False,
+                keys=(),
+            )
+        else:
+            try:
+                provider = await self._evidence_authenticity_provider.trust_inventory(
+                    organization_id=actor.organization_id,
+                    environment_id=self._environment_id,
+                )
+            except ConnectorUpgradeEvidenceAuthenticityError as error:
+                raise ConnectorUpgradeApprovalError(error.code) from error
+        if (
+            provider.organization_id != actor.organization_id
+            or provider.environment_id != self._environment_id
+        ):
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_signing_key_trust_inventory_not_found"
+            )
+        keys = tuple(
+            self._signing_key_trust(key=key, now=now)
+            for key in sorted(provider.keys, key=lambda item: (item.key_id, item.key_version))
+        )
+        payload: dict[str, object] = {
+            "schema_version": UPGRADE_SIGNING_KEY_TRUST_INVENTORY_SCHEMA,
+            "organization_id": actor.organization_id,
+            "environment_id": self._environment_id,
+            "provider_class": provider.provider_class,
+            "provider_state": "available" if provider.provider_available else "unavailable",
+            "generated_at": now.isoformat(),
+            "keys": [
+                {
+                    "key_id": key.key_id,
+                    "key_version": key.key_version,
+                    "signer_profile_id": key.signer_profile_id,
+                    "signer_workload_id": key.signer_workload_id,
+                    "algorithm": key.algorithm,
+                    "configured_state": key.configured_state.value,
+                    "effective_state": key.effective_state.value,
+                    "not_before": key.not_before.isoformat(),
+                    "expires_at": key.expires_at.isoformat(),
+                    "signing_eligible": key.signing_eligible,
+                    "verification_trusted": key.verification_trusted,
+                    "reason_codes": key.reason_codes,
+                }
+                for key in keys
+            ],
+            "provider_available": provider.provider_available,
+            "production_approved": provider.production_approved,
+            "key_management_authorized": False,
+            "signing_authorized": False,
+            "execution_authorized": False,
+            "infrastructure_mutation_performed": False,
+        }
+        inventory = ConnectorUpgradeEvidenceSigningKeyTrustInventory(
+            schema_version=UPGRADE_SIGNING_KEY_TRUST_INVENTORY_SCHEMA,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+            provider_class=provider.provider_class,
+            provider_state="available" if provider.provider_available else "unavailable",
+            generated_at=now,
+            keys=keys,
+            canonical_digest=self._digest(payload),
+            provider_available=provider.provider_available,
+            production_approved=provider.production_approved,
+        )
+        await self._audit_signing_key_trust_inventory(
+            actor=actor,
+            correlation_id=correlation_id,
+            inventory=inventory,
+        )
+        return inventory
+
+    @staticmethod
+    def _signing_key_trust(
+        *, key: ConnectorUpgradeEvidenceSigningKey, now: datetime
+    ) -> ConnectorUpgradeEvidenceSigningKeyTrust:
+        if key.state is ConnectorUpgradeEvidenceSigningKeyState.REVOKED:
+            effective = ConnectorUpgradeEvidenceSigningKeyEffectiveState.REVOKED
+        elif key.state is ConnectorUpgradeEvidenceSigningKeyState.DISABLED:
+            effective = ConnectorUpgradeEvidenceSigningKeyEffectiveState.DISABLED
+        elif now < key.not_before:
+            effective = ConnectorUpgradeEvidenceSigningKeyEffectiveState.NOT_YET_VALID
+        elif now >= key.expires_at:
+            effective = ConnectorUpgradeEvidenceSigningKeyEffectiveState.EXPIRED
+        else:
+            effective = ConnectorUpgradeEvidenceSigningKeyEffectiveState.ACTIVE
+        trusted = effective is ConnectorUpgradeEvidenceSigningKeyEffectiveState.ACTIVE
+        return ConnectorUpgradeEvidenceSigningKeyTrust(
+            key_id=key.key_id,
+            key_version=key.key_version,
+            signer_profile_id=key.signer_profile_id,
+            signer_workload_id=key.signer_workload_id,
+            algorithm=key.algorithm,
+            configured_state=key.state,
+            effective_state=effective,
+            not_before=key.not_before,
+            expires_at=key.expires_at,
+            signing_eligible=trusted,
+            verification_trusted=trusted,
+            reason_codes=(
+                f"connector.upgrade.signing-key-trust.{effective.value.replace('_', '-')}",
+            ),
+        )
+
     async def sign_evidence_receipt(
         self,
         *,
@@ -2347,6 +2475,42 @@ class ConnectorUpgradeApprovalService:
             )
         )
 
+    async def _audit_signing_key_trust_inventory(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+        inventory: ConnectorUpgradeEvidenceSigningKeyTrustInventory,
+    ) -> None:
+        await self._audit_sink.record(
+            AuditRecord(
+                event_id=f"evt_{uuid4().hex}",
+                event_type="atlas.connector.upgrade-signing-key-trust-inventory",
+                schema_version="1.0",
+                producer="project-atlas-api",
+                producer_version=__version__,
+                occurred_at=self._clock(),
+                correlation_id=correlation_id,
+                subject_id=actor.subject_id,
+                actor_type=actor.kind.value,
+                authentication_method=actor.authentication_method.value,
+                assurance_level=actor.assurance_level.value,
+                permission_id=UPGRADE_SIGNING_KEY_TRUST_INVENTORY_READ_PERMISSION,
+                resource_type="resource.connector.upgrade-signing-key-trust-inventory",
+                scope_reference=inventory.environment_id,
+                decision_id=inventory.canonical_digest,
+                outcome="succeeded",
+                result_code=f"connector_upgrade_signing_provider_{inventory.provider_state}",
+                idempotency_key=None,
+                target_metadata=(
+                    ("provider_class", inventory.provider_class),
+                    ("key_count", str(len(inventory.keys))),
+                    ("key_management_authorized", "false"),
+                    ("execution_authorized", "false"),
+                ),
+            )
+        )
+
     async def _audit_decision(
         self,
         *,
@@ -2428,6 +2592,13 @@ class ConnectorUpgradeApprovalService:
             AssuranceLevel.HARDWARE_BACKED: 3,
         }
         return order[actual] >= order[required]
+
+    @staticmethod
+    def _require_authenticated_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_signing_key_trust_human_required"
+            )
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:

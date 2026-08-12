@@ -368,6 +368,38 @@ export type ConnectorUpgradeEvidenceSignature = {
   expires_at: string;
 };
 
+export type ConnectorUpgradeEvidenceSigningKeyTrust = {
+  key_id: string;
+  key_version: string;
+  signer_profile_id: string;
+  signer_workload_id: string;
+  algorithm: string;
+  configured_state: "active" | "disabled" | "revoked";
+  effective_state: "active" | "not_yet_valid" | "expired" | "disabled" | "revoked";
+  not_before: string;
+  expires_at: string;
+  signing_eligible: boolean;
+  verification_trusted: boolean;
+  reason_codes: string[];
+};
+
+export type ConnectorUpgradeEvidenceSigningKeyTrustInventory = {
+  schema_version: "atlas.connector-upgrade-signing-key-trust-inventory.v1";
+  organization_id: string;
+  environment_id: string;
+  provider_class: string;
+  provider_state: "available" | "unavailable";
+  generated_at: string;
+  keys: ConnectorUpgradeEvidenceSigningKeyTrust[];
+  canonical_digest: string;
+  provider_available: boolean;
+  production_approved: boolean;
+  key_management_authorized: false;
+  signing_authorized: false;
+  execution_authorized: false;
+  infrastructure_mutation_performed: false;
+};
+
 export type ConnectorUpgradeSignedEvidenceReceipt = {
   signed_receipt_id: string;
   schema_version: "atlas.connector-upgrade-signed-evidence-receipt.v1";
@@ -827,6 +859,19 @@ const evidenceSignatureKeys = [
   "signed_payload_digest", "signature_value", "signature_digest", "issued_at", "expires_at",
 ] as const;
 
+const signingKeyTrustKeys = [
+  "key_id", "key_version", "signer_profile_id", "signer_workload_id", "algorithm",
+  "configured_state", "effective_state", "not_before", "expires_at", "signing_eligible",
+  "verification_trusted", "reason_codes",
+] as const;
+
+const signingKeyTrustInventoryKeys = [
+  "schema_version", "organization_id", "environment_id", "provider_class", "provider_state",
+  "generated_at", "keys", "canonical_digest", "provider_available", "production_approved",
+  "key_management_authorized", "signing_authorized", "execution_authorized",
+  "infrastructure_mutation_performed",
+] as const;
+
 const signedEvidenceReceiptKeys = [
   "signed_receipt_id", "schema_version", "version", "receipt", "signature", "organization_id",
   "environment_id", "request_id", "canonical_digest", "evidence_receipt_only",
@@ -948,6 +993,52 @@ function isConnectorUpgradeEvidenceSignature(
       .every((digest) => typeof digest === "string" && DIGEST.test(digest)) &&
     typeof item.signature_value === "string" && /^[A-Za-z0-9_-]{43,512}$/.test(item.signature_value) &&
     Number.isFinite(issuedAt) && Number.isFinite(expiresAt) && issuedAt < expiresAt
+  );
+}
+
+function isConnectorUpgradeEvidenceSigningKeyTrust(
+  value: unknown,
+): value is ConnectorUpgradeEvidenceSigningKeyTrust {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  const configuredStates = new Set(["active", "disabled", "revoked"]);
+  const effectiveStates = new Set(["active", "not_yet_valid", "expired", "disabled", "revoked"]);
+  const notBefore = typeof item.not_before === "string" ? Date.parse(item.not_before) : Number.NaN;
+  const expiresAt = typeof item.expires_at === "string" ? Date.parse(item.expires_at) : Number.NaN;
+  const active = item.effective_state === "active";
+  return (
+    hasExactKeys(item, signingKeyTrustKeys) &&
+    [item.key_id, item.key_version, item.signer_profile_id, item.signer_workload_id, item.algorithm]
+      .every((field) => typeof field === "string" && field.length > 2) &&
+    configuredStates.has(String(item.configured_state)) &&
+    effectiveStates.has(String(item.effective_state)) &&
+    Number.isFinite(notBefore) && Number.isFinite(expiresAt) && notBefore < expiresAt &&
+    item.signing_eligible === active && typeof item.verification_trusted === "boolean" &&
+    strings(item.reason_codes) && item.reason_codes.length > 0 &&
+    !Object.keys(item).some((key) => /private|material|secret|token|credential|endpoint/i.test(key))
+  );
+}
+
+export function isConnectorUpgradeEvidenceSigningKeyTrustInventory(
+  value: unknown,
+): value is ConnectorUpgradeEvidenceSigningKeyTrustInventory {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  const available = item.provider_state === "available";
+  return (
+    hasExactKeys(item, signingKeyTrustInventoryKeys) &&
+    item.schema_version === "atlas.connector-upgrade-signing-key-trust-inventory.v1" &&
+    [item.organization_id, item.environment_id, item.provider_class, item.generated_at]
+      .every((field) => typeof field === "string" && field.length > 2) &&
+    Number.isFinite(Date.parse(String(item.generated_at))) &&
+    (item.provider_state === "available" || item.provider_state === "unavailable") &&
+    item.provider_available === available && typeof item.production_approved === "boolean" &&
+    Array.isArray(item.keys) && item.keys.every(isConnectorUpgradeEvidenceSigningKeyTrust) &&
+    (!available ? item.keys.length === 0 : true) &&
+    typeof item.canonical_digest === "string" && DIGEST.test(item.canonical_digest) &&
+    item.key_management_authorized === false && item.signing_authorized === false &&
+    item.execution_authorized === false && item.infrastructure_mutation_performed === false &&
+    !Object.keys(item).some((key) => /private|material|secret|token|credential|endpoint/i.test(key))
   );
 }
 
@@ -1402,6 +1493,24 @@ export async function createConnectorUpgradeSignedEvidenceReceipt(input: {
   if (payload.data.receipt.canonical_digest !== receipt.canonical_digest ||
       payload.data.request_id !== record.request.request_id) {
     throw new Error("Signed connector upgrade evidence receipt does not match the source receipt");
+  }
+  return payload.data;
+}
+
+export async function getConnectorUpgradeEvidenceSigningKeyTrustInventory(): Promise<
+  ConnectorUpgradeEvidenceSigningKeyTrustInventory
+> {
+  const response = await apiFetch(
+    "/api/v1/connectors/instances/upgrade-evidence-signing-key-trust",
+    { headers: { Accept: "application/json" } },
+  );
+  if (!response.ok) {
+    throw new Error(`Connector upgrade signing-key trust inventory failed with ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  if (!payload || typeof payload !== "object" || !("data" in payload) ||
+      !isConnectorUpgradeEvidenceSigningKeyTrustInventory(payload.data)) {
+    throw new Error("Connector upgrade signing-key trust inventory returned an unsafe payload");
   }
   return payload.data;
 }

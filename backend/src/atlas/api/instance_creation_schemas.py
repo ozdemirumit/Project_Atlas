@@ -22,6 +22,8 @@ from atlas.modules.connectors.domain.upgrade_approval import (
 )
 from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeEvidenceSignature,
+    ConnectorUpgradeEvidenceSigningKeyTrust,
+    ConnectorUpgradeEvidenceSigningKeyTrustInventory,
     ConnectorUpgradeSignedEvidenceReceipt,
     ConnectorUpgradeSignedEvidenceReceiptVerification,
 )
@@ -729,6 +731,65 @@ class ConnectorUpgradeEvidenceSignatureData(BaseModel):
 
     def to_domain(self) -> ConnectorUpgradeEvidenceSignature:
         return ConnectorUpgradeEvidenceSignature(**self.model_dump())
+
+
+class ConnectorUpgradeEvidenceSigningKeyTrustData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key_id: str = Field(pattern=STABLE_ID)
+    key_version: str = Field(pattern=STABLE_ID)
+    signer_profile_id: str = Field(pattern=STABLE_ID)
+    signer_workload_id: str = Field(pattern=STABLE_ID)
+    algorithm: str = Field(pattern=STABLE_ID)
+    configured_state: Literal["active", "disabled", "revoked"]
+    effective_state: Literal["active", "not_yet_valid", "expired", "disabled", "revoked"]
+    not_before: datetime
+    expires_at: datetime
+    signing_eligible: bool
+    verification_trusted: bool
+    reason_codes: tuple[str, ...]
+
+    @classmethod
+    def from_domain(
+        cls, trust: ConnectorUpgradeEvidenceSigningKeyTrust
+    ) -> ConnectorUpgradeEvidenceSigningKeyTrustData:
+        return cls(**{field: getattr(trust, field) for field in cls.model_fields})
+
+
+class ConnectorUpgradeEvidenceSigningKeyTrustInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["atlas.connector-upgrade-signing-key-trust-inventory.v1"]
+    organization_id: str = Field(pattern=STABLE_ID)
+    environment_id: str = Field(pattern=STABLE_ID)
+    provider_class: str = Field(pattern=STABLE_ID)
+    provider_state: Literal["available", "unavailable"]
+    generated_at: datetime
+    keys: tuple[ConnectorUpgradeEvidenceSigningKeyTrustData, ...]
+    canonical_digest: str = Field(pattern=DIGEST)
+    provider_available: bool
+    production_approved: bool
+    key_management_authorized: Literal[False]
+    signing_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_performed: Literal[False]
+
+    @classmethod
+    def from_domain(
+        cls, inventory: ConnectorUpgradeEvidenceSigningKeyTrustInventory
+    ) -> ConnectorUpgradeEvidenceSigningKeyTrustInventoryData:
+        payload = {field: getattr(inventory, field) for field in cls.model_fields}
+        payload["keys"] = tuple(
+            ConnectorUpgradeEvidenceSigningKeyTrustData.from_domain(key) for key in inventory.keys
+        )
+        return cls(**payload)
+
+
+class ConnectorUpgradeEvidenceSigningKeyTrustInventoryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ConnectorUpgradeEvidenceSigningKeyTrustInventoryData
+    meta: ResponseMeta
 
 
 class ConnectorUpgradeSignedEvidenceReceiptData(BaseModel):

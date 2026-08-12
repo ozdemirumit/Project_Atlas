@@ -26,6 +26,7 @@ import {
   downloadConnectorUpgradeEvidenceReceipt,
   downloadConnectorUpgradeSignedEvidenceReceipt,
   getConnectorUpgradeApprovalRecord,
+  getConnectorUpgradeEvidenceSigningKeyTrustInventory,
   getLatestConnectorUpgradeApprovalRevalidation,
   getConnectorUpgradeHandoffReadiness,
   getLatestConnectorUpgradeChangeContextDraft,
@@ -678,6 +679,10 @@ export default function InstalledMcpManagementWorkspace({ subjectId }: { subject
     queryKey: ["connector-instances", lifecycle, search],
     queryFn: () => getConnectorInstances({ lifecycle, query: search }),
   });
+  const signingTrustQuery = useQuery({
+    queryKey: ["connector-upgrade-signing-key-trust"],
+    queryFn: getConnectorUpgradeEvidenceSigningKeyTrustInventory,
+  });
   const createMutation = useMutation({
     mutationFn: createConnectorInstance,
     onSuccess: async () => {
@@ -702,6 +707,7 @@ export default function InstalledMcpManagementWorkspace({ subjectId }: { subject
     void packageQuery.refetch();
     void policyQuery.refetch();
     void instanceQuery.refetch();
+    void signingTrustQuery.refetch();
   };
 
   return (
@@ -718,6 +724,33 @@ export default function InstalledMcpManagementWorkspace({ subjectId }: { subject
           <button className="primary-button" type="button" disabled={packageQuery.isLoading || policyQuery.isLoading} onClick={() => { createMutation.reset(); setAdding(true); }}><PackagePlus size={16} />Add MCP</button>
         </div>
       </div>
+      <section className="installed-mcp-signing-trust" aria-labelledby="signing-trust-title">
+        <div className="installed-mcp-signing-trust-heading">
+          <div>
+            <p className="eyebrow">EVIDENCE AUTHENTICITY</p>
+            <h3 id="signing-trust-title">Signing trust</h3>
+          </div>
+          {signingTrustQuery.data && (
+            <span className={`state-badge ${signingTrustQuery.data.provider_available ? "success" : "neutral"}`}>
+              {signingTrustQuery.data.provider_state}
+            </span>
+          )}
+        </div>
+        {signingTrustQuery.isLoading && <div className="installed-mcp-status"><RefreshCw className="spin" size={17} /><span>Reading scoped signing trust...</span></div>}
+        {signingTrustQuery.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><span>Signing trust metadata is unavailable for this scope.</span></div>}
+        {signingTrustQuery.data && signingTrustQuery.data.keys.length === 0 && (
+          <div className="installed-mcp-status"><ShieldCheck size={17} /><div><strong>No trusted signing key</strong><span>{signingTrustQuery.data.provider_class}. Production signing remains fail-closed.</span></div></div>
+        )}
+        {signingTrustQuery.data?.keys.map((key) => (
+          <div className="installed-mcp-signing-key" key={`${key.key_id}:${key.key_version}`}>
+            <ShieldCheck size={18} />
+            <div><strong>{key.key_id}</strong><span>{key.key_version} / {key.signer_profile_id}</span></div>
+            <div><strong>{key.effective_state.replaceAll("_", " ")}</strong><span>Valid until {new Date(key.expires_at).toLocaleString()}</span></div>
+            <div><strong>{key.verification_trusted ? "Verification trusted" : "Verification blocked"}</strong><span>{key.algorithm}</span></div>
+          </div>
+        ))}
+        {signingTrustQuery.data && <p className="installed-mcp-signing-boundary">Read-only metadata. No key management or signing authority.</p>}
+      </section>
       <div className="installed-mcp-toolbar">
         <div className="installed-mcp-filters" aria-label="MCP lifecycle filter">
           {(["active", "retired", "all"] as const).map((value) => (

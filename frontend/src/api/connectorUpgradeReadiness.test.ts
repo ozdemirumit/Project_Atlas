@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   isConnectorUpgradeEvidenceReceipt,
   isConnectorUpgradeEvidenceReceiptVerification,
+  isConnectorUpgradeEvidenceSigningKeyTrustInventory,
   isConnectorUpgradeHandoffReadiness,
   isConnectorUpgradeSignedEvidenceReceipt,
   isConnectorUpgradeSignedEvidenceReceiptVerification,
@@ -137,6 +138,66 @@ describe("connector upgrade handoff readiness validation", () => {
         "connector.upgrade.handoff.blocked.unrelated-evidence-missing",
       ],
     })).toBe(false);
+  });
+});
+
+describe("connector upgrade signing-key trust validation", () => {
+  const inventory = {
+    schema_version: "atlas.connector-upgrade-signing-key-trust-inventory.v1",
+    organization_id: "organization.test",
+    environment_id: "environment.test",
+    provider_class: "provider.nonproduction-hmac",
+    provider_state: "available",
+    generated_at: "2026-08-12T12:00:00Z",
+    keys: [{
+      key_id: "key.connector-upgrade-evidence.test",
+      key_version: "version.1",
+      signer_profile_id: "signer-profile.nonproduction-hmac",
+      signer_workload_id: "workload.connector-upgrade-evidence-signer",
+      algorithm: "algorithm.hmac-sha256-nonproduction",
+      configured_state: "active",
+      effective_state: "active",
+      not_before: "2026-08-01T00:00:00Z",
+      expires_at: "2030-01-01T00:00:00Z",
+      signing_eligible: true,
+      verification_trusted: true,
+      reason_codes: ["connector.upgrade.signing-key-trust.active"],
+    }],
+    canonical_digest: "a".repeat(64),
+    provider_available: true,
+    production_approved: false,
+    key_management_authorized: false,
+    signing_authorized: false,
+    execution_authorized: false,
+    infrastructure_mutation_performed: false,
+  };
+
+  it("accepts exact read-only metadata and rejects authority or key material", () => {
+    expect(isConnectorUpgradeEvidenceSigningKeyTrustInventory(inventory)).toBe(true);
+    expect(isConnectorUpgradeEvidenceSigningKeyTrustInventory({
+      ...inventory,
+      key_management_authorized: true,
+    })).toBe(false);
+    expect(isConnectorUpgradeEvidenceSigningKeyTrustInventory({
+      ...inventory,
+      keys: [{ ...inventory.keys[0], key_material: "unsafe" }],
+    })).toBe(false);
+    expect(isConnectorUpgradeEvidenceSigningKeyTrustInventory({
+      ...inventory,
+      provider_state: "unavailable",
+      provider_available: false,
+      keys: [],
+    })).toBe(true);
+    expect(isConnectorUpgradeEvidenceSigningKeyTrustInventory({
+      ...inventory,
+      keys: [{
+        ...inventory.keys[0],
+        effective_state: "expired",
+        signing_eligible: false,
+        verification_trusted: true,
+        reason_codes: ["connector.upgrade.signing-key-trust.expired"],
+      }],
+    })).toBe(true);
   });
 });
 
