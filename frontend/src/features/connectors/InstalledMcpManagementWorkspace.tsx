@@ -21,19 +21,24 @@ import {
   createConnectorUpgradeApprovalRequest,
   createConnectorUpgradeChangeContextDraft,
   createConnectorUpgradeEvidenceReceipt,
+  createConnectorUpgradeSignedEvidenceReceipt,
   decideConnectorUpgradeApproval,
   downloadConnectorUpgradeEvidenceReceipt,
+  downloadConnectorUpgradeSignedEvidenceReceipt,
   getConnectorUpgradeApprovalRecord,
   getLatestConnectorUpgradeApprovalRevalidation,
   getConnectorUpgradeHandoffReadiness,
   getLatestConnectorUpgradeChangeContextDraft,
   getConnectorUpgradeReadiness,
   isConnectorUpgradeEvidenceReceipt,
+  isConnectorUpgradeSignedEvidenceReceipt,
   revalidateConnectorUpgradeApproval,
   verifyConnectorUpgradeEvidenceReceipt,
+  verifyConnectorUpgradeSignedEvidenceReceipt,
   type ConnectorUpgradeApprovalOutcome,
   type ConnectorUpgradeCandidate,
   type ConnectorUpgradeEvidenceReceipt,
+  type ConnectorUpgradeSignedEvidenceReceipt,
   getConnectorUpgradePlan,
   type ConnectorUpgradePlan,
 } from "../../api/connectorUpgradeReadiness";
@@ -318,8 +323,11 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
   const [windowEnd, setWindowEnd] = useState("");
   const [changeAcknowledged, setChangeAcknowledged] = useState(false);
   const [receiptAcknowledged, setReceiptAcknowledged] = useState(false);
+  const [signatureAcknowledged, setSignatureAcknowledged] = useState(false);
   const [verificationReceipt, setVerificationReceipt] =
     useState<ConnectorUpgradeEvidenceReceipt | null>(null);
+  const [verificationSignedReceipt, setVerificationSignedReceipt] =
+    useState<ConnectorUpgradeSignedEvidenceReceipt | null>(null);
   const [verificationFileName, setVerificationFileName] = useState("");
   const [verificationFileError, setVerificationFileError] = useState("");
   const [verificationAcknowledged, setVerificationAcknowledged] = useState(false);
@@ -385,6 +393,14 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
   });
   const evidenceReceiptVerificationMutation = useMutation({
     mutationFn: verifyConnectorUpgradeEvidenceReceipt,
+    onSuccess: () => setVerificationAcknowledged(false),
+  });
+  const signedEvidenceReceiptMutation = useMutation({
+    mutationFn: createConnectorUpgradeSignedEvidenceReceipt,
+    onSuccess: () => setSignatureAcknowledged(false),
+  });
+  const signedEvidenceVerificationMutation = useMutation({
+    mutationFn: verifyConnectorUpgradeSignedEvidenceReceipt,
     onSuccess: () => setVerificationAcknowledged(false),
   });
   const changeContextQueryKey = ["connector-upgrade-change-context", record?.request.request_id];
@@ -468,6 +484,23 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
                           <p>Runtime acceptable: no. Approval consumed: no.</p>
                           <small>Valid until {new Date(evidenceReceiptMutation.data.valid_until).toLocaleString()}</small>
                           <button className="secondary-button" type="button" onClick={() => downloadConnectorUpgradeEvidenceReceipt(evidenceReceiptMutation.data)}><Download size={16} />Download JSON receipt</button>
+                          {signedEvidenceReceiptMutation.data ? (
+                            <div className="installed-mcp-status" role="status">
+                              <ShieldCheck size={17} />
+                              <div>
+                                <strong>Origin authenticated</strong>
+                                <span>{signedEvidenceReceiptMutation.data.signature.key_id} / {signedEvidenceReceiptMutation.data.signature.key_version}</span>
+                                <p>Signature grants no approval, handoff, runtime or execution authority.</p>
+                                <button className="secondary-button" type="button" onClick={() => downloadConnectorUpgradeSignedEvidenceReceipt(signedEvidenceReceiptMutation.data)}><Download size={16} />Download signed receipt</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <label className="checkbox-row"><input type="checkbox" checked={signatureAcknowledged} onChange={(event) => setSignatureAcknowledged(event.target.checked)} /><span>Authenticate Atlas origin only. The signature is not approval or execution authority.</span></label>
+                              {signedEvidenceReceiptMutation.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><span>Origin authentication is unavailable or the receipt is no longer current.</span></div>}
+                              <button className="secondary-button" type="button" disabled={!signatureAcknowledged || signedEvidenceReceiptMutation.isPending} onClick={() => signedEvidenceReceiptMutation.mutate({ record, receipt: evidenceReceiptMutation.data })}><ShieldCheck size={16} />{signedEvidenceReceiptMutation.isPending ? "Authenticating origin..." : "Authenticate Atlas origin"}</button>
+                            </>
+                          )}
                         </div>
                       ) : (
                         <>
@@ -483,9 +516,11 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
                         const file = event.currentTarget.files?.[0];
                         setVerificationFileError("");
                         setVerificationReceipt(null);
+                        setVerificationSignedReceipt(null);
                         setVerificationFileName(file?.name ?? "");
                         setVerificationAcknowledged(false);
                         evidenceReceiptVerificationMutation.reset();
+                        signedEvidenceVerificationMutation.reset();
                         if (!file) return;
                         if (file.size > 65_536) {
                           setVerificationFileError("The receipt exceeds the 64 KB verification limit.");
@@ -494,26 +529,34 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
                         void file.text().then((content) => {
                           try {
                             const candidate: unknown = JSON.parse(content);
-                            if (!isConnectorUpgradeEvidenceReceipt(candidate) || candidate.request_id !== record.request.request_id) {
+                            if (isConnectorUpgradeSignedEvidenceReceipt(candidate) && candidate.request_id === record.request.request_id) {
+                              setVerificationSignedReceipt(candidate);
+                            } else if (isConnectorUpgradeEvidenceReceipt(candidate) && candidate.request_id === record.request.request_id) {
+                              setVerificationReceipt(candidate);
+                            } else {
                               throw new Error("unsafe receipt");
                             }
-                            setVerificationReceipt(candidate);
                           } catch {
                             setVerificationFileError("The file is not a safe receipt for this exact approval request.");
                           }
                         });
                       }} /></label>
                       {verificationFileError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><span>{verificationFileError}</span></div>}
-                      {evidenceReceiptVerificationMutation.data ? (
+                      {signedEvidenceVerificationMutation.data ? (
+                        <div className={`installed-mcp-status ${signedEvidenceVerificationMutation.data.authenticity_state === "authentic" && signedEvidenceVerificationMutation.data.current_state_matches ? "" : "error-state"}`} role="status">
+                          {signedEvidenceVerificationMutation.data.authenticity_state === "authentic" && signedEvidenceVerificationMutation.data.current_state_matches ? <ShieldCheck size={17} /> : <AlertTriangle size={17} />}
+                          <div><strong>Signature {signedEvidenceVerificationMutation.data.authenticity_state}</strong><span>Integrity valid: yes. Atlas origin authenticated: {signedEvidenceVerificationMutation.data.authenticity_proven ? "yes" : "no"}. Current state matches: {signedEvidenceVerificationMutation.data.current_state_matches ? "yes" : "no"}.</span><small>{signedEvidenceVerificationMutation.data.key_id} / {signedEvidenceVerificationMutation.data.key_version}</small></div>
+                        </div>
+                      ) : evidenceReceiptVerificationMutation.data ? (
                         <div className={`installed-mcp-status ${evidenceReceiptVerificationMutation.data.verification_state === "current" ? "" : "error-state"}`} role="status">
                           {evidenceReceiptVerificationMutation.data.verification_state === "current" ? <ShieldCheck size={17} /> : <AlertTriangle size={17} />}
                           <div><strong>Receipt {evidenceReceiptVerificationMutation.data.verification_state}</strong><span>Integrity valid: yes. Current state matches: {evidenceReceiptVerificationMutation.data.current_state_matches ? "yes" : "no"}. Authenticity proven: no.</span></div>
                         </div>
                       ) : (
                         <>
-                          <label className="checkbox-row"><input type="checkbox" checked={verificationAcknowledged} onChange={(event) => setVerificationAcknowledged(event.target.checked)} /><span>Digest integrity is not authenticity, approval, runtime acceptance or execution authority.</span></label>
-                          {evidenceReceiptVerificationMutation.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><span>The receipt failed integrity or authorized current-state verification.</span></div>}
-                          <button className="secondary-button" type="button" disabled={!verificationReceipt || !verificationAcknowledged || evidenceReceiptVerificationMutation.isPending} onClick={() => { if (verificationReceipt) evidenceReceiptVerificationMutation.mutate({ record, receipt: verificationReceipt }); }}><FileCheck2 size={16} />{evidenceReceiptVerificationMutation.isPending ? "Verifying receipt..." : "Verify evidence receipt"}</button>
+                          <label className="checkbox-row"><input type="checkbox" checked={verificationAcknowledged} onChange={(event) => setVerificationAcknowledged(event.target.checked)} /><span>{verificationSignedReceipt ? "A valid signature authenticates Atlas origin only; it is not approval or execution authority." : "Digest integrity is not authenticity, approval, runtime acceptance or execution authority."}</span></label>
+                          {(evidenceReceiptVerificationMutation.isError || signedEvidenceVerificationMutation.isError) && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><span>The receipt failed integrity, origin or authorized current-state verification.</span></div>}
+                          <button className="secondary-button" type="button" disabled={(!verificationReceipt && !verificationSignedReceipt) || !verificationAcknowledged || evidenceReceiptVerificationMutation.isPending || signedEvidenceVerificationMutation.isPending} onClick={() => { if (verificationSignedReceipt) signedEvidenceVerificationMutation.mutate({ record, signedReceipt: verificationSignedReceipt }); else if (verificationReceipt) evidenceReceiptVerificationMutation.mutate({ record, receipt: verificationReceipt }); }}><FileCheck2 size={16} />{evidenceReceiptVerificationMutation.isPending || signedEvidenceVerificationMutation.isPending ? "Verifying receipt..." : verificationSignedReceipt ? "Verify signed receipt" : "Verify evidence receipt"}</button>
                         </>
                       )}
                     </div>

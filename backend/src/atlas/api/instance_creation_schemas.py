@@ -20,6 +20,11 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeEvidenceReceiptVerification,
     ConnectorUpgradeHandoffReadinessAssessment,
 )
+from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
+    ConnectorUpgradeEvidenceSignature,
+    ConnectorUpgradeSignedEvidenceReceipt,
+    ConnectorUpgradeSignedEvidenceReceiptVerification,
+)
 from atlas.modules.connectors.domain.upgrade_readiness import (
     ConnectorCapabilityChange,
     ConnectorUpgradeCandidate,
@@ -699,6 +704,150 @@ class ConnectorUpgradeEvidenceReceiptVerificationResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: ConnectorUpgradeEvidenceReceiptVerificationData
+    meta: ResponseMeta
+
+
+class ConnectorUpgradeEvidenceSignatureData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key_id: str = Field(pattern=STABLE_ID)
+    key_version: str = Field(pattern=STABLE_ID)
+    signer_profile_id: str = Field(pattern=STABLE_ID)
+    signer_workload_id: str = Field(pattern=STABLE_ID)
+    algorithm: Literal["algorithm.hmac-sha256-nonproduction"]
+    signed_payload_digest: str = Field(pattern=DIGEST)
+    signature_value: str = Field(min_length=43, max_length=512, pattern=r"^[A-Za-z0-9_-]+$")
+    signature_digest: str = Field(pattern=DIGEST)
+    issued_at: datetime
+    expires_at: datetime
+
+    @classmethod
+    def from_domain(
+        cls, signature: ConnectorUpgradeEvidenceSignature
+    ) -> ConnectorUpgradeEvidenceSignatureData:
+        return cls(**{field: getattr(signature, field) for field in cls.model_fields})
+
+    def to_domain(self) -> ConnectorUpgradeEvidenceSignature:
+        return ConnectorUpgradeEvidenceSignature(**self.model_dump())
+
+
+class ConnectorUpgradeSignedEvidenceReceiptData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    signed_receipt_id: str = Field(pattern=STABLE_ID)
+    schema_version: Literal["atlas.connector-upgrade-signed-evidence-receipt.v1"]
+    version: Literal[1]
+    receipt: ConnectorUpgradeEvidenceReceiptData
+    signature: ConnectorUpgradeEvidenceSignatureData
+    organization_id: str = Field(pattern=STABLE_ID)
+    environment_id: str = Field(pattern=STABLE_ID)
+    request_id: str = Field(pattern=STABLE_ID)
+    canonical_digest: str = Field(pattern=DIGEST)
+    evidence_receipt_only: Literal[True]
+    authenticity_claimed: Literal[True]
+    runtime_acceptable: Literal[False]
+    approval_consumed: Literal[False]
+    handoff_ready: Literal[False]
+    handoff_artifact_issued: Literal[False]
+    target_contacted: Literal[False]
+    package_rebound: Literal[False]
+    configuration_changed: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_performed: Literal[False]
+
+    @classmethod
+    def from_domain(
+        cls, signed: ConnectorUpgradeSignedEvidenceReceipt
+    ) -> ConnectorUpgradeSignedEvidenceReceiptData:
+        payload = {field: getattr(signed, field) for field in cls.model_fields}
+        payload["receipt"] = ConnectorUpgradeEvidenceReceiptData.from_domain(signed.receipt)
+        payload["signature"] = ConnectorUpgradeEvidenceSignatureData.from_domain(signed.signature)
+        return cls(**payload)
+
+    def to_domain(self) -> ConnectorUpgradeSignedEvidenceReceipt:
+        payload = self.model_dump(exclude={"receipt", "signature"})
+        return ConnectorUpgradeSignedEvidenceReceipt(
+            **payload,
+            receipt=self.receipt.to_domain(),
+            signature=self.signature.to_domain(),
+        )
+
+
+class ConnectorUpgradeSignedEvidenceReceiptInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["atlas.connector-upgrade-signed-evidence-receipt-input.v1"] = (
+        "atlas.connector-upgrade-signed-evidence-receipt-input.v1"
+    )
+    receipt: ConnectorUpgradeEvidenceReceiptData
+    acknowledged_signature_authenticates_origin_but_grants_no_authority: Literal[True]
+
+
+class ConnectorUpgradeSignedEvidenceReceiptResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ConnectorUpgradeSignedEvidenceReceiptData
+    meta: ResponseMeta
+
+
+class ConnectorUpgradeSignedEvidenceReceiptVerificationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[
+        "atlas.connector-upgrade-signed-evidence-receipt-verification-input.v1"
+    ] = "atlas.connector-upgrade-signed-evidence-receipt-verification-input.v1"
+    signed_receipt: ConnectorUpgradeSignedEvidenceReceiptData
+    acknowledged_signature_is_not_approval_or_execution_authority: Literal[True]
+
+
+class ConnectorUpgradeSignedEvidenceReceiptVerificationData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    verification_id: str = Field(pattern=STABLE_ID)
+    schema_version: Literal["atlas.connector-upgrade-signed-evidence-receipt-verification.v1"]
+    signed_receipt_id: str = Field(pattern=STABLE_ID)
+    signed_receipt_digest: str = Field(pattern=DIGEST)
+    receipt_id: str = Field(pattern=STABLE_ID)
+    receipt_digest: str = Field(pattern=DIGEST)
+    request_id: str = Field(pattern=STABLE_ID)
+    organization_id: str = Field(pattern=STABLE_ID)
+    environment_id: str = Field(pattern=STABLE_ID)
+    verified_by: str = Field(pattern=STABLE_ID)
+    verified_at: datetime
+    key_id: str = Field(pattern=STABLE_ID)
+    key_version: str = Field(pattern=STABLE_ID)
+    signer_workload_id: str = Field(pattern=STABLE_ID)
+    algorithm: Literal["algorithm.hmac-sha256-nonproduction"]
+    authenticity_state: Literal["authentic", "invalid", "expired", "revoked", "unverifiable"]
+    receipt_verification_state: Literal[
+        "current", "stale", "expired", "unverifiable", "not_compared"
+    ]
+    reason_codes: tuple[str, ...]
+    canonical_digest: str = Field(pattern=DIGEST)
+    integrity_valid: Literal[True]
+    authenticity_proven: bool
+    current_state_matches: bool
+    evidence_receipt_only: Literal[True]
+    approval_consumed: Literal[False]
+    handoff_ready: Literal[False]
+    handoff_artifact_issued: Literal[False]
+    target_contacted: Literal[False]
+    package_rebound: Literal[False]
+    configuration_changed: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_performed: Literal[False]
+
+    @classmethod
+    def from_domain(
+        cls, verification: ConnectorUpgradeSignedEvidenceReceiptVerification
+    ) -> ConnectorUpgradeSignedEvidenceReceiptVerificationData:
+        return cls(**{field: getattr(verification, field) for field in cls.model_fields})
+
+
+class ConnectorUpgradeSignedEvidenceReceiptVerificationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ConnectorUpgradeSignedEvidenceReceiptVerificationData
     meta: ResponseMeta
 
 

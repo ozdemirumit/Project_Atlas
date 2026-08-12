@@ -122,6 +122,8 @@ from atlas.modules.authorization.application.bootstrap import (
     CONNECTOR_UPGRADE_EVIDENCE_RECEIPT_CREATE,
     CONNECTOR_UPGRADE_EVIDENCE_RECEIPT_VERIFY,
     CONNECTOR_UPGRADE_HANDOFF_READINESS_READ,
+    CONNECTOR_UPGRADE_SIGNED_EVIDENCE_RECEIPT_CREATE,
+    CONNECTOR_UPGRADE_SIGNED_EVIDENCE_RECEIPT_VERIFY,
     DEPLOYMENT_CONFIGURATION_PREVIEW,
     GRAPH_STORAGE_IMPACT_READ,
     HEALTH_CHECK_OVERVIEW_READ,
@@ -3461,6 +3463,30 @@ async def authorize_connector_upgrade_evidence_receipt_verify(
         request,
         subject,
         permission_id=CONNECTOR_UPGRADE_EVIDENCE_RECEIPT_VERIFY,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_connector_upgrade_signed_evidence_receipt_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_instance(
+        request,
+        subject,
+        permission_id=CONNECTOR_UPGRADE_SIGNED_EVIDENCE_RECEIPT_CREATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_connector_upgrade_signed_evidence_receipt_verify(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_instance(
+        request,
+        subject,
+        permission_id=CONNECTOR_UPGRADE_SIGNED_EVIDENCE_RECEIPT_VERIFY,
         capability_class=CapabilityClass.C2_DIAGNOSTIC,
     )
 

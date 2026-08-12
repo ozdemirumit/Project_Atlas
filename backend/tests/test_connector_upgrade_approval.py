@@ -29,6 +29,9 @@ from atlas.modules.connectors.adapters.upgrade_approval_memory import (
 from atlas.modules.connectors.adapters.upgrade_approval_postgres import (
     PostgreSQLConnectorUpgradeApprovalRepository,
 )
+from atlas.modules.connectors.adapters.upgrade_evidence_authenticity_memory import (
+    NonProductionHmacUpgradeEvidenceAuthenticityProvider,
+)
 from atlas.modules.connectors.application.instance_creation import (
     ConnectorInstanceCreationService,
 )
@@ -56,6 +59,11 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeEvidenceReceiptVerificationState,
     ConnectorUpgradeItsmChangeEvidence,
     ConnectorUpgradeMaintenanceWindowEvidence,
+)
+from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
+    ConnectorUpgradeEvidenceAuthenticityState,
+    ConnectorUpgradeEvidenceSigningKey,
+    ConnectorUpgradeEvidenceSigningKeyState,
 )
 
 
@@ -123,6 +131,22 @@ async def approval_fixture(
         audit_readiness_source=audit_readiness_source,
         itsm_change_evidence_source=itsm_change_evidence_source,
         maintenance_window_evidence_source=maintenance_window_evidence_source,
+        evidence_authenticity_provider=NonProductionHmacUpgradeEvidenceAuthenticityProvider(
+            key=ConnectorUpgradeEvidenceSigningKey(
+                key_id="key.connector-upgrade-evidence.test",
+                key_version="version.1",
+                signer_profile_id="signer-profile.nonproduction-hmac",
+                signer_workload_id="workload.connector-upgrade-evidence-signer",
+                algorithm="algorithm.hmac-sha256-nonproduction",
+                organization_id=instance.organization_id,
+                environment_id=instance.environment_id,
+                state=ConnectorUpgradeEvidenceSigningKeyState.ACTIVE,
+                not_before=now - timedelta(days=1),
+                expires_at=now + timedelta(days=2),
+            ),
+            key_material=b"connector-upgrade-evidence-test-key-material-v1",
+            clock=resolved_clock,
+        ),
         clock=resolved_clock,
     )
     return (
@@ -1018,6 +1042,61 @@ async def test_upgrade_approval_revalidation_requires_three_people_and_remains_n
     assert verification.current_state_compared and not verification.receipt_expired
     assert not verification.authenticity_proven and not verification.execution_authorized
     assert not verification.handoff_ready and not verification.approval_consumed
+    signed_receipt = await service.sign_evidence_receipt(
+        actor=independent_auditor,
+        record_id=instance.record_id,
+        request_id=request.request_id,
+        receipt=receipt,
+        acknowledged_signature_authenticates_origin_but_grants_no_authority=True,
+        correlation_id="correlation.connector-upgrade-signed-evidence-receipt",
+    )
+    authenticity_auditor = instance_operator("subject.connector-upgrade-authenticity-auditor")
+    signed_verification = await service.verify_signed_evidence_receipt(
+        actor=authenticity_auditor,
+        record_id=instance.record_id,
+        request_id=request.request_id,
+        signed_receipt=signed_receipt,
+        acknowledged_signature_is_not_approval_or_execution_authority=True,
+        correlation_id="correlation.connector-upgrade-signed-evidence-verify",
+    )
+    assert (
+        signed_verification.authenticity_state
+        is ConnectorUpgradeEvidenceAuthenticityState.AUTHENTIC
+    )
+    assert signed_verification.authenticity_proven
+    assert signed_verification.receipt_verification_state == "current"
+    assert signed_verification.current_state_matches
+    assert not signed_verification.execution_authorized
+    assert not signed_verification.handoff_ready and not signed_verification.approval_consumed
+    tampered_signature = replace(
+        signed_receipt.signature,
+        signature_value=(
+            signed_receipt.signature.signature_value[:-1]
+            + ("A" if signed_receipt.signature.signature_value[-1] != "A" else "B")
+        ),
+    )
+    tampered_digest = ConnectorUpgradeApprovalService._digest(
+        ConnectorUpgradeApprovalService._signed_evidence_envelope_payload(
+            receipt, tampered_signature
+        )
+    )
+    tampered_signed_receipt = replace(
+        signed_receipt,
+        signed_receipt_id=(f"connector-upgrade-signed-evidence-receipt.{tampered_digest[:24]}"),
+        signature=tampered_signature,
+        canonical_digest=tampered_digest,
+    )
+    invalid_signature = await service.verify_signed_evidence_receipt(
+        actor=authenticity_auditor,
+        record_id=instance.record_id,
+        request_id=request.request_id,
+        signed_receipt=tampered_signed_receipt,
+        acknowledged_signature_is_not_approval_or_execution_authority=True,
+        correlation_id="correlation.connector-upgrade-signed-evidence-invalid",
+    )
+    assert invalid_signature.authenticity_state is ConnectorUpgradeEvidenceAuthenticityState.INVALID
+    assert not invalid_signature.authenticity_proven
+    assert invalid_signature.receipt_verification_state == "not_compared"
     with pytest.raises(ConnectorUpgradeApprovalError, match="integrity_invalid"):
         await service.verify_evidence_receipt(
             actor=independent_auditor,
@@ -1328,6 +1407,65 @@ def test_upgrade_approval_revalidation_api_is_no_store_and_hides_custody_metadat
                 ("acknowledged_digest_integrity_is_not_authenticity_or_execution_authority"): True,
             },
         )
+        uploaded_signed_receipt = {
+            "signed_receipt_id": "connector-upgrade-signed-evidence-receipt.uploaded",
+            "schema_version": "atlas.connector-upgrade-signed-evidence-receipt.v1",
+            "version": 1,
+            "receipt": uploaded_receipt,
+            "signature": {
+                "key_id": "key.connector-upgrade-evidence.test",
+                "key_version": "version.1",
+                "signer_profile_id": "signer-profile.nonproduction-hmac",
+                "signer_workload_id": "workload.connector-upgrade-evidence-signer",
+                "algorithm": "algorithm.hmac-sha256-nonproduction",
+                "signed_payload_digest": "e" * 64,
+                "signature_value": "A" * 43,
+                "signature_digest": "f" * 64,
+                "issued_at": response.json()["data"]["revalidated_at"],
+                "expires_at": response.json()["data"]["valid_until"],
+            },
+            "organization_id": request.organization_id,
+            "environment_id": request.environment_id,
+            "request_id": request.request_id,
+            "canonical_digest": "1" * 64,
+            "evidence_receipt_only": True,
+            "authenticity_claimed": True,
+            "runtime_acceptable": False,
+            "approval_consumed": False,
+            "handoff_ready": False,
+            "handoff_artifact_issued": False,
+            "target_contacted": False,
+            "package_rebound": False,
+            "configuration_changed": False,
+            "execution_authorized": False,
+            "infrastructure_mutation_performed": False,
+        }
+        signed_verify_without_csrf = client.post(
+            f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
+            f"{request.request_id}/signed-evidence-receipts/verify",
+            json={
+                "schema_version": (
+                    "atlas.connector-upgrade-signed-evidence-receipt-verification-input.v1"
+                ),
+                "signed_receipt": uploaded_signed_receipt,
+                "acknowledged_signature_is_not_approval_or_execution_authority": True,
+            },
+        )
+        signed_authority_response = client.post(
+            f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
+            f"{request.request_id}/signed-evidence-receipts/verify",
+            headers={"X-CSRF-Token": login_response.headers["X-CSRF-Token"]},
+            json={
+                "schema_version": (
+                    "atlas.connector-upgrade-signed-evidence-receipt-verification-input.v1"
+                ),
+                "signed_receipt": {
+                    **uploaded_signed_receipt,
+                    "execution_authorized": True,
+                },
+                "acknowledged_signature_is_not_approval_or_execution_authority": True,
+            },
+        )
         draft_response = client.post(
             f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
             f"{request.request_id}/change-context-drafts",
@@ -1359,6 +1497,8 @@ def test_upgrade_approval_revalidation_api_is_no_store_and_hides_custody_metadat
     assert blocked_receipt_response.json()["code"].endswith("readiness_not_current")
     assert verify_without_csrf.status_code == 403, verify_without_csrf.text
     assert verify_authority_response.status_code == 422, verify_authority_response.text
+    assert signed_verify_without_csrf.status_code == 403, signed_verify_without_csrf.text
+    assert signed_authority_response.status_code == 422, signed_authority_response.text
     assert draft_response.status_code == 201, draft_response.text
     assert draft_read_response.status_code == 200, draft_read_response.text
     assert response.headers["Cache-Control"] == "no-store"

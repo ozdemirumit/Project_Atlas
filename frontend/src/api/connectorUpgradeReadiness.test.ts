@@ -4,6 +4,8 @@ import {
   isConnectorUpgradeEvidenceReceipt,
   isConnectorUpgradeEvidenceReceiptVerification,
   isConnectorUpgradeHandoffReadiness,
+  isConnectorUpgradeSignedEvidenceReceipt,
+  isConnectorUpgradeSignedEvidenceReceiptVerification,
 } from "./connectorUpgradeReadiness";
 
 const required = [
@@ -245,5 +247,88 @@ describe("connector upgrade evidence receipt validation", () => {
       current_state_matches: false,
       receipt_expired: true,
     })).toBe(true);
+  });
+
+  it("validates signed origin evidence without accepting operational authority", () => {
+    const signed = {
+      signed_receipt_id: "connector-upgrade-signed-evidence-receipt.test",
+      schema_version: "atlas.connector-upgrade-signed-evidence-receipt.v1",
+      version: 1,
+      receipt,
+      signature: {
+        key_id: "key.connector-upgrade-evidence.test",
+        key_version: "version.1",
+        signer_profile_id: "signer-profile.nonproduction-hmac",
+        signer_workload_id: "workload.connector-upgrade-evidence-signer",
+        algorithm: "algorithm.hmac-sha256-nonproduction",
+        signed_payload_digest: "c".repeat(64),
+        signature_value: "A".repeat(43),
+        signature_digest: "d".repeat(64),
+        issued_at: "2026-08-12T00:42:00Z",
+        expires_at: "2026-08-12T00:52:00Z",
+      },
+      organization_id: receipt.organization_id,
+      environment_id: receipt.environment_id,
+      request_id: receipt.request_id,
+      canonical_digest: "e".repeat(64),
+      evidence_receipt_only: true,
+      authenticity_claimed: true,
+      runtime_acceptable: false,
+      approval_consumed: false,
+      handoff_ready: false,
+      handoff_artifact_issued: false,
+      target_contacted: false,
+      package_rebound: false,
+      configuration_changed: false,
+      execution_authorized: false,
+      infrastructure_mutation_performed: false,
+    };
+    expect(isConnectorUpgradeSignedEvidenceReceipt(signed)).toBe(true);
+    expect(isConnectorUpgradeSignedEvidenceReceipt({ ...signed, private_key: "unsafe" })).toBe(false);
+    expect(isConnectorUpgradeSignedEvidenceReceipt({ ...signed, execution_authorized: true }))
+      .toBe(false);
+
+    const verification = {
+      verification_id: "connector-upgrade-signed-evidence-verification.test",
+      schema_version: "atlas.connector-upgrade-signed-evidence-receipt-verification.v1",
+      signed_receipt_id: signed.signed_receipt_id,
+      signed_receipt_digest: signed.canonical_digest,
+      receipt_id: receipt.receipt_id,
+      receipt_digest: receipt.canonical_digest,
+      request_id: receipt.request_id,
+      organization_id: receipt.organization_id,
+      environment_id: receipt.environment_id,
+      verified_by: "subject.authenticity-auditor",
+      verified_at: "2026-08-12T00:45:00Z",
+      key_id: signed.signature.key_id,
+      key_version: signed.signature.key_version,
+      signer_workload_id: signed.signature.signer_workload_id,
+      algorithm: signed.signature.algorithm,
+      authenticity_state: "authentic",
+      receipt_verification_state: "current",
+      reason_codes: ["connector.upgrade.signed-evidence-receipt.authentic"],
+      canonical_digest: "f".repeat(64),
+      integrity_valid: true,
+      authenticity_proven: true,
+      current_state_matches: true,
+      evidence_receipt_only: true,
+      approval_consumed: false,
+      handoff_ready: false,
+      handoff_artifact_issued: false,
+      target_contacted: false,
+      package_rebound: false,
+      configuration_changed: false,
+      execution_authorized: false,
+      infrastructure_mutation_performed: false,
+    };
+    expect(isConnectorUpgradeSignedEvidenceReceiptVerification(verification)).toBe(true);
+    expect(isConnectorUpgradeSignedEvidenceReceiptVerification({
+      ...verification,
+      authenticity_proven: false,
+    })).toBe(false);
+    expect(isConnectorUpgradeSignedEvidenceReceiptVerification({
+      ...verification,
+      receipt_verification_state: "stale",
+    })).toBe(false);
   });
 });

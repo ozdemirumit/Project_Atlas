@@ -571,6 +571,10 @@ from atlas.modules.connectors.adapters.upgrade_approval_memory import (
 from atlas.modules.connectors.adapters.upgrade_approval_postgres import (
     PostgreSQLConnectorUpgradeApprovalRepository,
 )
+from atlas.modules.connectors.adapters.upgrade_evidence_authenticity_memory import (
+    NonProductionHmacUpgradeEvidenceAuthenticityProvider,
+    UnavailableUpgradeEvidenceAuthenticityProvider,
+)
 from atlas.modules.connectors.adapters.validation_intake_memory import (
     InMemoryPackageValidationRepository,
 )
@@ -713,6 +717,10 @@ from atlas.modules.connectors.application.validation_intake import PackageValida
 from atlas.modules.connectors.application.vulnerability_analysis import (
     PackageVulnerabilityAnalysisService,
     build_bootstrap_advisory_snapshot,
+)
+from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
+    ConnectorUpgradeEvidenceSigningKey,
+    ConnectorUpgradeEvidenceSigningKeyState,
 )
 from atlas.modules.graph.adapters.synthetic import build_synthetic_graph_snapshot
 from atlas.modules.graph.application.engine import InMemoryGraphImpactAnalyzer
@@ -2814,6 +2822,33 @@ def create_app(
             itsm_change_evidence_source=InMemoryConnectorUpgradeItsmChangeEvidenceSource(),
             maintenance_window_evidence_source=(
                 InMemoryConnectorUpgradeMaintenanceWindowEvidenceSource()
+            ),
+            evidence_authenticity_provider=(
+                UnavailableUpgradeEvidenceAuthenticityProvider()
+                if is_production
+                else NonProductionHmacUpgradeEvidenceAuthenticityProvider(
+                    key=ConnectorUpgradeEvidenceSigningKey(
+                        key_id="key.connector-upgrade-evidence.nonproduction",
+                        key_version="version.1",
+                        signer_profile_id="signer-profile.nonproduction-hmac",
+                        signer_workload_id="workload.connector-upgrade-evidence-signer",
+                        algorithm="algorithm.hmac-sha256-nonproduction",
+                        organization_id=resolved_settings.development_organization_id,
+                        environment_id=(
+                            resolved_connector_instance_creation_service.environment_id
+                        ),
+                        state=ConnectorUpgradeEvidenceSigningKeyState.ACTIVE,
+                        not_before=datetime(2026, 8, 1, tzinfo=UTC),
+                        expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                    ),
+                    key_material=sha256(
+                        (
+                            "atlas-nonproduction-upgrade-evidence-signer:"
+                            f"{resolved_settings.development_organization_id}:"
+                            f"{resolved_settings.environment}"
+                        ).encode("ascii")
+                    ).digest(),
+                )
             ),
         )
     if credential_assignment_service is not None:

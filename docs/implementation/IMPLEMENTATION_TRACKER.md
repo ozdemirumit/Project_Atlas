@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-159 |
 | Title | Connector upgrade evidence receipt authenticity foundation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/mcp-upgrade-evidence-authenticity` |
-| Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110, ADR-111, ADR-112, ADR-113, ADR-114 |
+| Pull Request | [PR #171](https://github.com/ozdemirumit/Project_Atlas/pull/171) |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110, ADR-111, ADR-112, ADR-113, ADR-114, ADR-115 |
 | Last Updated | 2026-08-12 |
-| Next Action | Define and implement signed receipt origin authentication and key-lifecycle validation |
+| Next Action | Run final exact-head CI, merge PR #171 and verify the merged `main` commit |
 
 ### ATLAS-IMP-159 Scope Rationale
 
@@ -43,6 +43,8 @@
 - IMP-158 merged through PR #170 as `11aecc300a4bf50af26598078dc5e73967d71ce1` after final exact-head
   CI run `31585669553` passed; the exact merged commit independently passed `main` CI run
   `31586265591` before IMP-159 begins.
+- The IMP-158 closure and IMP-159 start commit `33bd906da01d40c5e1b1b58d09a69caf56fde1ff`
+  passed independent `main` CI run `31586965338` with backend in 6m54s and frontend in 4m33s.
 - ADR-114 explicitly reserves origin authentication for a separate key-management and signing
   decision and prevents digest verification from overstating authenticity.
 - The connector package pipeline already establishes signer ports, policy snapshots, key references,
@@ -50,11 +52,25 @@
 
 ### ATLAS-IMP-159 Validation Evidence
 
-- Pending.
+- ADR-115 records the signed-envelope, injected key-provider, production fail-closed and
+  non-production HMAC decisions while explicitly limiting signatures to Atlas-origin evidence.
+- Backend implementation and tests cover exact receipt/scope binding, canonical payload and
+  envelope integrity, key lifecycle, signature substitution, current-state comparison, exact-scope
+  RBAC, CSRF, no-store responses, audit and all-false operational-authority flags.
+- Clean GitHub run `31590166289` passed backend formatting for 1,188 files, lint, strict mypy and
+  all 980 backend tests in 4m43s; frontend lint, TypeScript, all 220 tests and production build
+  passed in 4m34s.
+- Live browser validation exercised receipt creation, Atlas-origin authentication, signed JSON
+  upload and signature/current-state verification. Desktop 1280px and mobile 390px views had no
+  horizontal page overflow, browser errors or operational install/apply/execute/handoff controls.
+- Local Python and frontend dependency caches previously damaged by antivirus quarantine remain
+  unsuitable as authoritative full-suite environments; a fresh temporary backend dependency set
+  started the live API successfully, and clean GitHub runners provide the full quality evidence.
 
 ### ATLAS-IMP-159 Delivery Evidence
 
-- Pending.
+- Draft PR #171 contains source commits `b46cff0`, `c687b03` and `70a397e`; final exact-head CI,
+  ready-for-review transition, merge and independent `main` verification remain pending.
 
 ### ATLAS-IMP-158 Scope Rationale
 
