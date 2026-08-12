@@ -1466,7 +1466,14 @@ from atlas.modules.recovery.adapters.filesystem import FilesystemBackupArchiveSt
 from atlas.modules.recovery.adapters.memory import InMemoryRecoveryRepository
 from atlas.modules.recovery.adapters.postgres import PostgreSQLRecoveryRepository
 from atlas.modules.recovery.application.service import RecoveryService
+from atlas.modules.reports.adapters.handoff_review_memory import (
+    InMemoryItsmHandoffReviewRepository,
+)
+from atlas.modules.reports.adapters.handoff_review_postgres import (
+    PostgreSQLItsmHandoffReviewRepository,
+)
 from atlas.modules.reports.adapters.synthetic import SyntheticTechnicalReportAssembler
+from atlas.modules.reports.application.handoff_review_service import ItsmHandoffReviewService
 from atlas.modules.reports.application.service import ReportService
 from atlas.modules.security_export.adapters.synthetic import (
     SyntheticTlsSyslogTransport,
@@ -1499,6 +1506,7 @@ def create_app(
     recommendation_service: RecommendationService | None = None,
     approval_service: ApprovalService | None = None,
     report_service: ReportService | None = None,
+    itsm_handoff_review_service: ItsmHandoffReviewService | None = None,
     grounded_answer_service: GroundedAnswerService | None = None,
     security_export_service: SecurityExportService | None = None,
     session_service: SessionService | None = None,
@@ -5047,6 +5055,16 @@ def create_app(
         assembler=SyntheticTechnicalReportAssembler(),
         audit_sink=resolved_audit_sink,
     )
+    resolved_itsm_handoff_review_service = itsm_handoff_review_service or ItsmHandoffReviewService(
+        report_source=resolved_report_service,
+        repository=(
+            PostgreSQLItsmHandoffReviewRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryItsmHandoffReviewRepository()
+        ),
+        audit_sink=resolved_audit_sink,
+        environment_id=f"environment.{resolved_settings.environment}",
+    )
     resolved_approval_service = approval_service or ApprovalService(
         recommendation_provider=resolved_recommendation_service,
         audit_sink=resolved_audit_sink,
@@ -5318,6 +5336,7 @@ def create_app(
         app.state.recommendation_service = resolved_recommendation_service
         app.state.approval_service = resolved_approval_service
         app.state.report_service = resolved_report_service
+        app.state.itsm_handoff_review_service = resolved_itsm_handoff_review_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         yield
         await resolved_recommendation_correction_service.close()
@@ -5398,6 +5417,7 @@ def create_app(
         await resolved_recovery_service.close()
         await resolved_support_bundle_service.close()
         await resolved_inventory_device_service.close()
+        await resolved_itsm_handoff_review_service.close()
         await resolved_bootstrap_state_service.close()
         await database_probe.close()
 

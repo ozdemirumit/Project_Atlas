@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-168 |
 | Title | Governed ITSM handoff human review foundation |
-| Status | In Progress; scope and acceptance recorded |
-| Branch | `main` (start record; implementation branch pending) |
+| Status | In Progress; implementation and local validation complete |
+| Branch | `agent/itsm-handoff-human-review` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-016, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-124 (planned) |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-016, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-124 |
 | Last Updated | 2026-08-13 |
-| Next Action | Record ADR-124, implement exact-report ITSM handoff human review, then complete local, live and GitHub validation |
+| Next Action | Complete GitHub PR, exact-head CI, squash merge and independent `main` CI validation |
 
 ### ATLAS-IMP-168 Scope Rationale
 
@@ -49,6 +49,27 @@
   `dispatch_authorized` and `external_record_mutated` false, and the UI labels it review-only.
 - No ITSM vendor, endpoint, credential, production mapping or sandbox has been selected. Those inputs
   remain outside this provider-neutral review slice.
+
+### ATLAS-IMP-168 Validation Evidence
+
+- ADR-124 records the exact report-and-handoff binding, immutable single-review decision,
+  separation of duties, MFA reviewer requirement, durable review repository and unchanged authority
+  boundary. It also records that process-local report storage makes post-restart source validation
+  unavailable and therefore fail closed until reports become durable.
+- Accept, needs-evidence and reject outcomes are stored as attributable records. Accept means only
+  `review_complete`; dispatch, external mutation, ITSM approval, workflow approval, execution and
+  infrastructure mutation remain false. Service-level denials carry stable audit reason codes.
+- The protected API uses exact-scope C1/C2 permissions, browser-session and CSRF enforcement for
+  decisions, idempotency conflict detection, no-store responses and PostgreSQL persistence through
+  migration `20260813_0102`. Alembic reports one head.
+- Backend formatting and lint passed; strict `mypy` passed across 1,093 source files. The complete
+  regression passed 1,011 tests with three expected Windows symlink skips.
+- Frontend TypeScript and zero-warning ESLint passed. The complete suite passed 231 tests across 88
+  files and the production build passed with only the existing large-chunk advisory.
+- Live browser validation generated a source-bound technical report and displayed the pending ITSM
+  review, explicit enterprise-MFA reviewer requirement and no-dispatch/no-execution boundaries.
+  Desktop 1,280 x 720 and mobile 390 x 844 views had no horizontal overflow or Vite overlay; no
+  dispatch or execute button was present.
 
 ### ATLAS-IMP-167 Scope Rationale
 

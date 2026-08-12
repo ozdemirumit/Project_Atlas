@@ -43,6 +43,8 @@ APPROVAL_REQUEST_CREATE = "approval.request.create"
 APPROVAL_REQUEST_READ = "approval.request.read"
 APPROVAL_REQUEST_DECIDE = "approval.request.decide"
 REPORT_CREATE = "report.create"
+ITSM_HANDOFF_REVIEW_READ = "report.itsm-handoff-review.read"
+ITSM_HANDOFF_REVIEW_DECIDE = "report.itsm-handoff-review.decide"
 SECURITY_EXPORT_OVERVIEW_READ = "security-export.overview.read"
 SECURITY_EXPORT_TEST_CREATE = "security-export.test.create"
 AUDIT_READ = "audit.read"
@@ -279,6 +281,7 @@ STORAGE_HEALTH_READ = "storage.health.read"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
+ITSM_REVIEWER_ROLE_ID = "role.itsm-reviewer"
 
 
 def current_identity_scope(organization_id: str, environment: str) -> ResourceScope:
@@ -1598,14 +1601,39 @@ def approval_scope(
     )
 
 
-def report_scope(organization_id: str, environment: str) -> ResourceScope:
+def report_scope(
+    organization_id: str,
+    environment: str,
+    capability_class: CapabilityClass = CapabilityClass.C0_INFORMATIONAL,
+) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
         environment_id=f"environment.{environment}",
         site_id="site.local",
         domain_id="domain.report",
         resource_id="resource.report.storage.synthetic",
-        capability_class=CapabilityClass.C0_INFORMATIONAL,
+        capability_class=capability_class,
+    )
+
+
+def itsm_handoff_review_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.report",
+        resource_id="resource.report.itsm-handoff-review",
+        capability_class=capability_class,
+    )
+
+
+def itsm_reviewer_role_definition() -> RoleDefinition:
+    return RoleDefinition(
+        role_id=ITSM_REVIEWER_ROLE_ID,
+        version=1,
+        permissions=frozenset({ITSM_HANDOFF_REVIEW_READ, ITSM_HANDOFF_REVIEW_DECIDE}),
     )
 
 
@@ -1764,6 +1792,14 @@ def build_development_authorization_service(
         PermissionDefinition(
             permission_id=REPORT_CREATE,
             description="Create a governed report and non-dispatching ITSM handoff draft.",
+        ),
+        PermissionDefinition(
+            permission_id=ITSM_HANDOFF_REVIEW_READ,
+            description="Read an exact-scope immutable ITSM handoff human review.",
+        ),
+        PermissionDefinition(
+            permission_id=ITSM_HANDOFF_REVIEW_DECIDE,
+            description="Record a separated human decision on an exact ITSM handoff draft.",
         ),
         PermissionDefinition(
             permission_id=SECURITY_EXPORT_OVERVIEW_READ,
@@ -2588,6 +2624,8 @@ def build_development_authorization_service(
                 APPROVAL_REQUEST_READ,
                 APPROVAL_REQUEST_DECIDE,
                 REPORT_CREATE,
+                ITSM_HANDOFF_REVIEW_READ,
+                ITSM_HANDOFF_REVIEW_DECIDE,
                 SECURITY_EXPORT_OVERVIEW_READ,
                 SECURITY_EXPORT_TEST_CREATE,
                 RELEASE_PREFLIGHT_READ,
@@ -4642,6 +4680,30 @@ def build_development_authorization_service(
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),
             RoleAssignment(
+                assignment_id="assignment.development.itsm-handoff-review-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=itsm_handoff_review_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.itsm-handoff-review-decide",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=itsm_handoff_review_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
                 assignment_id="assignment.development.security-export",
                 version=1,
                 subject_id=settings.development_subject_id,
@@ -4659,6 +4721,7 @@ def build_development_authorization_service(
             role,
             security_administrator_role_definition(include_workload_identity=True),
             security_auditor_role_definition(),
+            itsm_reviewer_role_definition(),
         ),
         assignments=assignments,
         audit_sink=audit_sink,

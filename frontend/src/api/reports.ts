@@ -1,3 +1,5 @@
+import { ApiRequestError, apiFetch } from "./client";
+
 export type ReportSection = {
   section_id: string;
   title: string;
@@ -81,6 +83,54 @@ type TechnicalReportResponse = {
   meta: { correlation_id: string; generated_at: string };
 };
 
+export type ItsmHandoffReviewOutcome = "accept" | "needs_evidence" | "reject";
+
+export type ItsmHandoffHumanReview = {
+  review_id: string;
+  schema_version: string;
+  version: number;
+  outcome: ItsmHandoffReviewOutcome;
+  report_id: string;
+  report_version: number;
+  report_digest: string;
+  handoff_draft_id: string;
+  handoff_digest: string;
+  handoff_idempotency_key: string;
+  incident_reference: string;
+  operation: string;
+  requester_id: string;
+  reviewer_id: string;
+  reviewer_role_id: string;
+  organization_id: string;
+  environment_id: string;
+  site_id: string;
+  rationale: string;
+  acknowledged_review_only: boolean;
+  request_fingerprint: string;
+  idempotency_key: string;
+  canonical_digest: string;
+  decided_at: string;
+  expires_at: string;
+  review_complete: boolean;
+  dispatch_authorized: boolean;
+  external_record_mutated: boolean;
+  itsm_approval_satisfied: boolean;
+  workflow_approved: boolean;
+  execution_authorized: boolean;
+  infrastructure_mutation_performed: boolean;
+  reused: boolean;
+};
+
+type ItsmHandoffReviewResponse = {
+  data: ItsmHandoffHumanReview;
+  meta: { correlation_id: string; generated_at: string };
+};
+
+type ItsmHandoffReviewLookupResponse = {
+  data: ItsmHandoffHumanReview | null;
+  meta: { correlation_id: string; generated_at: string };
+};
+
 export async function createStorageTechnicalReport(
   targetId: string,
   recommendationId: string,
@@ -105,4 +155,51 @@ export async function createStorageTechnicalReport(
   }
   return (await response.json()) as TechnicalReportResponse;
 }
-import { apiFetch } from "./client";
+
+export async function getItsmHandoffReview(
+  reportId: string,
+  handoffDraftId: string,
+): Promise<ItsmHandoffReviewLookupResponse> {
+  const query = new URLSearchParams({ handoff_draft_id: handoffDraftId });
+  const response = await apiFetch(
+    `/api/v1/reports/${encodeURIComponent(reportId)}/itsm-handoff/review?${query}`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (!response.ok) {
+    throw new ApiRequestError("ITSM handoff review unavailable", response.status);
+  }
+  return (await response.json()) as ItsmHandoffReviewLookupResponse;
+}
+
+export async function decideItsmHandoffReview(
+  report: TechnicalReport,
+  outcome: ItsmHandoffReviewOutcome,
+  rationale: string,
+): Promise<ItsmHandoffReviewResponse> {
+  if (!report.itsm_handoff) {
+    throw new ApiRequestError("ITSM handoff draft unavailable", 409);
+  }
+  const response = await apiFetch(
+    `/api/v1/reports/${encodeURIComponent(report.report_id)}/itsm-handoff/reviews`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": `itsm-handoff-review.${crypto.randomUUID()}`,
+      },
+      body: JSON.stringify({
+        report_version: report.version,
+        report_digest: report.content_digest,
+        handoff_draft_id: report.itsm_handoff.draft_id,
+        outcome,
+        rationale,
+        acknowledged_review_only: true,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new ApiRequestError("ITSM handoff review decision failed", response.status);
+  }
+  return (await response.json()) as ItsmHandoffReviewResponse;
+}

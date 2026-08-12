@@ -2005,6 +2005,45 @@ class HumanReviewCompletionReceiptModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class ItsmHandoffHumanReviewModel(Base):
+    __tablename__ = "report_itsm_handoff_human_reviews"
+    __table_args__ = (
+        CheckConstraint("version = 1", name="ck_report_itsm_handoff_reviews_version"),
+        UniqueConstraint("handoff_draft_id", name="uq_report_itsm_handoff_reviews_handoff"),
+        UniqueConstraint(
+            "reviewer_id",
+            "idempotency_key",
+            name="uq_report_itsm_handoff_reviews_reviewer_idempotency",
+        ),
+    )
+
+    review_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    report_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    report_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    report_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    handoff_draft_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    handoff_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    handoff_idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    incident_reference: Mapped[str] = mapped_column(String(80), nullable=False)
+    operation: Mapped[str] = mapped_column(String(128), nullable=False)
+    requester_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    reviewer_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    reviewer_role_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    rationale: Mapped[str] = mapped_column(String(1000), nullable=False)
+    acknowledged_review_only: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class ConnectorRuntimeActivationModel(Base):
     __tablename__ = "connector_runtime_activations"
     __table_args__ = (

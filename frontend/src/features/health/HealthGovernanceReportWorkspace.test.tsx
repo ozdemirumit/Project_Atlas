@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ApprovalRecord } from "../../api/approvals";
-import type { TechnicalReport } from "../../api/reports";
+import type { ItsmHandoffHumanReview, TechnicalReport } from "../../api/reports";
 import HealthGovernanceReportWorkspace from "./HealthGovernanceReportWorkspace";
 
 afterEach(() => {
@@ -154,6 +154,42 @@ const technicalReport: TechnicalReport = {
   safety_notice: "Decision support only; no execution or external mutation is authorized.",
 };
 
+const itsmHandoffReview: ItsmHandoffHumanReview = {
+  review_id: "itsm-handoff-review.test",
+  schema_version: "atlas.itsm-handoff-human-review.v1",
+  version: 1,
+  outcome: "accept",
+  report_id: technicalReport.report_id,
+  report_version: technicalReport.version,
+  report_digest: technicalReport.content_digest,
+  handoff_draft_id: "itsm.test",
+  handoff_digest: "h".repeat(64),
+  handoff_idempotency_key: "i".repeat(64),
+  incident_reference: "INC-TEST",
+  operation: "append_labeled_analysis",
+  requester_id: technicalReport.requested_by,
+  reviewer_id: "subject.itsm.reviewer",
+  reviewer_role_id: "role.itsm-reviewer",
+  organization_id: technicalReport.organization_id,
+  environment_id: technicalReport.environment_id,
+  site_id: technicalReport.site_id,
+  rationale: "The exact source-bound draft is suitable for accountable review handoff.",
+  acknowledged_review_only: true,
+  request_fingerprint: "f".repeat(64),
+  idempotency_key: "itsm-review.test",
+  canonical_digest: "d".repeat(64),
+  decided_at: "2026-08-10T09:20:00Z",
+  expires_at: technicalReport.expires_at,
+  review_complete: true,
+  dispatch_authorized: false,
+  external_record_mutated: false,
+  itsm_approval_satisfied: false,
+  workflow_approved: false,
+  execution_authorized: false,
+  infrastructure_mutation_performed: false,
+  reused: false,
+};
+
 const baseProps = {
   approvalDecisionError: false,
   approvalDecisionPending: false,
@@ -162,11 +198,19 @@ const baseProps = {
   approvalRationale: "",
   canGenerateReport: false,
   canReviewApproval: false,
+  canReviewItsmHandoff: false,
   canSubmitApproval: false,
+  itsmHandoffReviewAcknowledged: false,
+  itsmHandoffReviewError: false,
+  itsmHandoffReviewPending: false,
+  itsmHandoffReviewRationale: "",
   onApprovalRationaleChange: vi.fn(),
   onDecideApproval: vi.fn(),
+  onDecideItsmHandoffReview: vi.fn(),
   onDownloadReport: vi.fn(),
   onGenerateReport: vi.fn(),
+  onItsmHandoffReviewAcknowledgedChange: vi.fn(),
+  onItsmHandoffReviewRationaleChange: vi.fn(),
   onSubmitApproval: vi.fn(),
   reportError: false,
   reportPending: false,
@@ -228,6 +272,7 @@ describe("HealthGovernanceReportWorkspace", () => {
     expect(screen.getByText(/by subject.reviewer/)).toBeVisible();
     expect(screen.getByText("Immutable source lineage")).toBeVisible();
     expect(screen.getByText("ITSM HANDOFF DRAFT")).toBeVisible();
+    expect(screen.getByText("Enterprise reviewer required")).toBeVisible();
     expect(screen.getByText("Not authorized")).toBeVisible();
     expect(screen.getAllByText("No execution authority")).toHaveLength(2);
     expect(screen.getByText("No external mutation authority")).toBeVisible();
@@ -257,5 +302,62 @@ describe("HealthGovernanceReportWorkspace", () => {
 
     expect(onApprovalRationaleChange).toHaveBeenCalledWith("Needs one more observation.");
     expect(onDecideApproval).toHaveBeenCalledWith("needs_evidence");
+  });
+
+  it("requires rationale and explicit review-only acknowledgement before a handoff decision", () => {
+    const onRationaleChange = vi.fn();
+    const onAcknowledgedChange = vi.fn();
+    const onDecide = vi.fn();
+    const { rerender } = render(
+      <HealthGovernanceReportWorkspace
+        {...baseProps}
+        canReviewItsmHandoff
+        onDecideItsmHandoffReview={onDecide}
+        onItsmHandoffReviewAcknowledgedChange={onAcknowledgedChange}
+        onItsmHandoffReviewRationaleChange={onRationaleChange}
+        technicalReport={technicalReport}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Accept handoff draft" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Review rationale"), {
+      target: { value: "The exact draft is suitable for review." },
+    });
+    fireEvent.click(
+      screen.getByLabelText(/I reviewed this exact draft and understand/i),
+    );
+    expect(onRationaleChange).toHaveBeenCalledWith("The exact draft is suitable for review.");
+    expect(onAcknowledgedChange).toHaveBeenCalledWith(true);
+
+    rerender(
+      <HealthGovernanceReportWorkspace
+        {...baseProps}
+        canReviewItsmHandoff
+        itsmHandoffReviewAcknowledged
+        itsmHandoffReviewRationale="The exact draft is suitable for review."
+        onDecideItsmHandoffReview={onDecide}
+        onItsmHandoffReviewAcknowledgedChange={onAcknowledgedChange}
+        onItsmHandoffReviewRationaleChange={onRationaleChange}
+        technicalReport={technicalReport}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Accept handoff draft" }));
+    expect(onDecide).toHaveBeenCalledWith("accept");
+  });
+
+  it("presents immutable review evidence without implying dispatch or execution authority", () => {
+    render(
+      <HealthGovernanceReportWorkspace
+        {...baseProps}
+        itsmHandoffReview={itsmHandoffReview}
+        technicalReport={technicalReport}
+      />,
+    );
+
+    expect(screen.getByText("subject.itsm.reviewer")).toBeVisible();
+    expect(screen.getByText(itsmHandoffReview.rationale)).toBeVisible();
+    expect(screen.getByText("Not satisfied")).toBeVisible();
+    expect(screen.getByText(/No ticket dispatch, external mutation/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /dispatch|execute|approve workflow/i })).toBeNull();
   });
 });
