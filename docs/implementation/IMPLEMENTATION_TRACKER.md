@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-153 |
 | Title | Connector upgrade change-context draft |
-| Status | In Progress |
-| Branch | `agent/mcp-upgrade-change-context-draft` |
-| Pull Request | Pending |
+| Status | Complete |
+| Branch | `agent/mcp-upgrade-change-context-draft` (merged) |
+| Pull Request | [#165](https://github.com/ozdemirumit/Project_Atlas/pull/165) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-102, ADR-103, ADR-104, ADR-105, ADR-106, ADR-107, ADR-108, ADR-109 |
 | Last Updated | 2026-08-12 |
-| Next Action | Complete full regression, live validation and delivery evidence |
+| Next Action | Select the next governed implementation slice from the remaining handoff blockers |
 
 ### ATLAS-IMP-153 Scope Rationale
 
@@ -65,7 +65,12 @@
 
 ### ATLAS-IMP-153 Delivery Evidence
 
-- Pending.
+- Implementation commit `2bb14f6` passed exact-head pull-request CI run `31561601091`; backend
+  completed in 6m35s and frontend in 4m44s.
+- PR [#165](https://github.com/ozdemirumit/Project_Atlas/pull/165) was squash-merged to `main` as
+  `a720d9676c8512b2e75275c56debf07fa2f7e41f`.
+- The exact merged `main` commit passed independent push CI run `31561979213`; backend completed in
+  7m28s and frontend completed in 4m27s with every required step successful.
 
 ### ATLAS-IMP-152 Scope Rationale
 
