@@ -12,6 +12,7 @@ from atlas.core.persistence.models import (
     ConnectorUpgradeApprovalDecisionModel,
     ConnectorUpgradeApprovalRequestModel,
     ConnectorUpgradeApprovalRevalidationModel,
+    ConnectorUpgradeChangeContextDraftModel,
 )
 from atlas.modules.connectors.application.upgrade_approval import ConnectorUpgradeApprovalService
 from atlas.modules.connectors.domain.upgrade_approval import (
@@ -19,6 +20,7 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeApprovalOutcome,
     ConnectorUpgradeApprovalRequest,
     ConnectorUpgradeApprovalRevalidation,
+    ConnectorUpgradeChangeContextDraft,
 )
 
 
@@ -185,6 +187,55 @@ class PostgreSQLConnectorUpgradeApprovalRepository:
             return False
         return True
 
+    async def get_latest_change_context_draft(
+        self, *, request_id: str
+    ) -> ConnectorUpgradeChangeContextDraft | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorUpgradeChangeContextDraftModel)
+                .where(ConnectorUpgradeChangeContextDraftModel.request_id == request_id)
+                .order_by(ConnectorUpgradeChangeContextDraftModel.created_at.desc())
+                .limit(1)
+            )
+            return self._change_context_to_domain(row.payload) if row else None
+
+    async def get_change_context_draft_by_key(
+        self, *, created_by: str, idempotency_key: str
+    ) -> ConnectorUpgradeChangeContextDraft | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorUpgradeChangeContextDraftModel).where(
+                    ConnectorUpgradeChangeContextDraftModel.created_by == created_by,
+                    ConnectorUpgradeChangeContextDraftModel.idempotency_key == idempotency_key,
+                )
+            )
+            return self._change_context_to_domain(row.payload) if row else None
+
+    async def add_change_context_draft(self, draft: ConnectorUpgradeChangeContextDraft) -> bool:
+        payload = ConnectorUpgradeApprovalService._normalize(asdict(draft))
+        assert isinstance(payload, dict)
+        try:
+            async with self._sessions.begin() as session:
+                session.add(
+                    ConnectorUpgradeChangeContextDraftModel(
+                        draft_id=draft.draft_id,
+                        request_id=draft.request_id,
+                        revalidation_id=draft.revalidation_id,
+                        readiness_digest=draft.readiness_digest,
+                        created_by=draft.created_by,
+                        idempotency_key=draft.idempotency_key,
+                        organization_id=draft.organization_id,
+                        environment_id=draft.environment_id,
+                        created_at=draft.created_at,
+                        valid_until=draft.valid_until,
+                        canonical_digest=draft.canonical_digest,
+                        payload=payload,
+                    )
+                )
+        except IntegrityError:
+            return False
+        return True
+
     async def close(self) -> None:
         await self._engine.dispose()
 
@@ -209,3 +260,10 @@ class PostgreSQLConnectorUpgradeApprovalRepository:
         payload["revalidated_at"] = datetime.fromisoformat(str(payload["revalidated_at"]))
         payload["valid_until"] = datetime.fromisoformat(str(payload["valid_until"]))
         return ConnectorUpgradeApprovalRevalidation(**cast(Any, payload))
+
+    @staticmethod
+    def _change_context_to_domain(raw: dict[str, object]) -> ConnectorUpgradeChangeContextDraft:
+        payload = dict(raw)
+        for field in ("proposed_window_start", "proposed_window_end", "created_at", "valid_until"):
+            payload[field] = datetime.fromisoformat(str(payload[field]))
+        return ConnectorUpgradeChangeContextDraft(**cast(Any, payload))

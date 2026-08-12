@@ -17,10 +17,12 @@ import { useState, type FormEvent } from "react";
 
 import {
   createConnectorUpgradeApprovalRequest,
+  createConnectorUpgradeChangeContextDraft,
   decideConnectorUpgradeApproval,
   getConnectorUpgradeApprovalRecord,
   getLatestConnectorUpgradeApprovalRevalidation,
   getConnectorUpgradeHandoffReadiness,
+  getLatestConnectorUpgradeChangeContextDraft,
   getConnectorUpgradeReadiness,
   revalidateConnectorUpgradeApproval,
   type ConnectorUpgradeApprovalOutcome,
@@ -304,6 +306,10 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
     "Revalidate the exact approved plan without granting handoff authority.",
   );
   const [revalidationAcknowledged, setRevalidationAcknowledged] = useState(false);
+  const [changeJustification, setChangeJustification] = useState("Prepare this exact connector upgrade for governed ITSM and maintenance-window review.");
+  const [windowStart, setWindowStart] = useState("");
+  const [windowEnd, setWindowEnd] = useState("");
+  const [changeAcknowledged, setChangeAcknowledged] = useState(false);
   const recordQuery = useQuery({
     queryKey,
     queryFn: () => getConnectorUpgradeApprovalRecord(plan),
@@ -360,10 +366,24 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
     enabled: Boolean(revalidation),
     retry: false,
   });
+  const changeContextQueryKey = ["connector-upgrade-change-context", record?.request.request_id];
+  const changeContextQuery = useQuery({
+    queryKey: changeContextQueryKey,
+    queryFn: () => getLatestConnectorUpgradeChangeContextDraft(record!),
+    enabled: Boolean(revalidation), retry: false,
+  });
+  const changeContextMutation = useMutation({
+    mutationFn: createConnectorUpgradeChangeContextDraft,
+    onSuccess: (draft) => {
+      queryClient.setQueryData(changeContextQueryKey, draft);
+      setChangeAcknowledged(false);
+    },
+  });
   const canRevalidate = Boolean(
     record?.state === "approved" && record.decision?.outcome === "approve" &&
     subjectId !== record.request.requested_by && subjectId !== record.decision.decided_by,
   );
+  const canCreateChangeContext = revalidation?.revalidated_by === subjectId;
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!acknowledged || purpose.trim().length < 20) return;
@@ -413,6 +433,24 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
                   </div>
                 )}
                 {handoffReadinessQuery.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><span>Handoff readiness could not be assessed from current governed evidence.</span></div>}
+                {handoffReadinessQuery.data && (changeContextMutation.data ?? changeContextQuery.data) ? (
+                  <div className="installed-mcp-approval-result">
+                    <strong>Change-context draft recorded</strong>
+                    <span>{(changeContextMutation.data ?? changeContextQuery.data)!.itsm_draft_title}</span>
+                    <p>Not dispatched. Window not approved. Handoff remains blocked.</p>
+                    <small>{new Date((changeContextMutation.data ?? changeContextQuery.data)!.proposed_window_start).toLocaleString()} to {new Date((changeContextMutation.data ?? changeContextQuery.data)!.proposed_window_end).toLocaleString()}</small>
+                  </div>
+                ) : handoffReadinessQuery.data && canCreateChangeContext ? (
+                  <div className="installed-mcp-approval-decision">
+                    <strong>Prepare change-context draft</strong>
+                    <label>Proposed window start<input type="datetime-local" value={windowStart} onChange={(event) => setWindowStart(event.target.value)} /></label>
+                    <label>Proposed window end<input type="datetime-local" value={windowEnd} onChange={(event) => setWindowEnd(event.target.value)} /></label>
+                    <label>Change justification<textarea value={changeJustification} minLength={20} maxLength={1000} onChange={(event) => setChangeJustification(event.target.value)} /></label>
+                    <label className="checkbox-row"><input type="checkbox" checked={changeAcknowledged} onChange={(event) => setChangeAcknowledged(event.target.checked)} /><span>This creates an internal draft only. It does not dispatch to ITSM, approve the window, issue a handoff or authorize execution.</span></label>
+                    {changeContextMutation.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><span>The draft was rejected because readiness, window or exact approval evidence changed.</span></div>}
+                    <button className="primary-button" type="button" disabled={!changeAcknowledged || !windowStart || !windowEnd || changeJustification.trim().length < 20 || changeContextMutation.isPending} onClick={() => changeContextMutation.mutate({ record, readiness: handoffReadinessQuery.data, proposedWindowStart: windowStart, proposedWindowEnd: windowEnd, justification: changeJustification })}><ClipboardList size={16} />{changeContextMutation.isPending ? "Recording draft..." : "Record change-context draft"}</button>
+                  </div>
+                ) : handoffReadinessQuery.data ? <div className="installed-mcp-status" role="status"><UserX size={17} /><span>The latest independent verifier must prepare the change-context draft.</span></div> : null}
               </div>
             ) : canRevalidate ? (
               <>

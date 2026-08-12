@@ -460,6 +460,103 @@ class ConnectorUpgradeHandoffReadinessAssessment:
 
 
 @dataclass(frozen=True, slots=True)
+class ConnectorUpgradeChangeContextDraft:
+    draft_id: str
+    schema_version: str
+    source_record_id: str
+    source_record_version: int
+    instance_id: str
+    connector_id: str
+    request_id: str
+    request_digest: str
+    decision_digest: str
+    revalidation_id: str
+    revalidation_digest: str
+    readiness_digest: str
+    organization_id: str
+    environment_id: str
+    created_by: str
+    justification: str
+    proposed_window_start: datetime
+    proposed_window_end: datetime
+    itsm_draft_title: str
+    itsm_draft_digest: str
+    request_fingerprint: str
+    idempotency_key: str
+    created_at: datetime
+    valid_until: datetime
+    canonical_digest: str
+    state: str = "draft"
+    itsm_dispatched: bool = False
+    window_approved: bool = False
+    handoff_ready: bool = False
+    handoff_artifact_issued: bool = False
+    approval_consumed: bool = False
+    target_contacted: bool = False
+    package_rebound: bool = False
+    configuration_changed: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_performed: bool = False
+    reused: bool = False
+
+    def __post_init__(self) -> None:
+        identifiers = (
+            self.draft_id,
+            self.schema_version,
+            self.source_record_id,
+            self.instance_id,
+            self.connector_id,
+            self.request_id,
+            self.revalidation_id,
+            self.organization_id,
+            self.environment_id,
+            self.created_by,
+            self.idempotency_key,
+        )
+        digests = (
+            self.request_digest,
+            self.decision_digest,
+            self.revalidation_digest,
+            self.readiness_digest,
+            self.itsm_draft_digest,
+            self.request_fingerprint,
+            self.canonical_digest,
+        )
+        for value in identifiers:
+            validate_stable_identifier(value, "connector upgrade change-context identifier")
+        if (
+            any(_DIGEST.fullmatch(value) is None for value in digests)
+            or self.source_record_version < 1
+            or not 20 <= len(self.justification) <= 1000
+            or not 12 <= len(self.itsm_draft_title) <= 160
+            or self.proposed_window_start.tzinfo is None
+            or self.proposed_window_end.tzinfo is None
+            or self.proposed_window_start >= self.proposed_window_end
+            or self.created_at.tzinfo is None
+            or self.valid_until.tzinfo is None
+            or not self.created_at < self.valid_until
+            or self.state != "draft"
+            or any(
+                (
+                    self.itsm_dispatched,
+                    self.window_approved,
+                    self.handoff_ready,
+                    self.handoff_artifact_issued,
+                    self.approval_consumed,
+                    self.target_contacted,
+                    self.package_rebound,
+                    self.configuration_changed,
+                    self.execution_authorized,
+                    self.infrastructure_mutation_performed,
+                )
+            )
+        ):
+            raise ValueError(
+                "Connector upgrade change-context draft violates the authority boundary"
+            )
+
+
+@dataclass(frozen=True, slots=True)
 class ConnectorUpgradeApprovalRecord:
     request: ConnectorUpgradeApprovalRequest
     decision: ConnectorUpgradeApprovalDecision | None

@@ -148,6 +148,8 @@ CONNECTOR_UPGRADE_APPROVAL_DECIDE = "connectors.upgrade-approval-decisions.creat
 CONNECTOR_UPGRADE_APPROVAL_REVALIDATION_CREATE = "connectors.upgrade-approval-revalidations.create"
 CONNECTOR_UPGRADE_APPROVAL_REVALIDATION_READ = "connectors.upgrade-approval-revalidations.read"
 CONNECTOR_UPGRADE_HANDOFF_READINESS_READ = "connectors.upgrade-handoff-readiness.read"
+CONNECTOR_UPGRADE_CHANGE_CONTEXT_CREATE = "connectors.upgrade-change-context-drafts.create"
+CONNECTOR_UPGRADE_CHANGE_CONTEXT_READ = "connectors.upgrade-change-context-drafts.read"
 CONNECTOR_TARGET_CONFIGURATION_CREATE = "connectors.target-configuration-bindings.create"
 CONNECTOR_TARGET_CONFIGURATION_READ = "connectors.target-configuration-bindings.read"
 CONNECTOR_CREDENTIAL_ASSIGNMENT_CREATE = "connectors.credential-assignments.create"
@@ -2099,6 +2101,14 @@ def build_development_authorization_service(
             description="Assess connector upgrade handoff readiness without issuing an artifact.",
         ),
         PermissionDefinition(
+            permission_id=CONNECTOR_UPGRADE_CHANGE_CONTEXT_CREATE,
+            description="Create one connector upgrade ITSM/change-context draft without dispatch.",
+        ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_UPGRADE_CHANGE_CONTEXT_READ,
+            description="Read one minimized connector upgrade change-context draft.",
+        ),
+        PermissionDefinition(
             permission_id=CONNECTOR_TARGET_CONFIGURATION_CREATE,
             description="Bind a disabled connector instance to governed target configuration.",
         ),
@@ -2606,6 +2616,8 @@ def build_development_authorization_service(
                 CONNECTOR_UPGRADE_APPROVAL_REVALIDATION_CREATE,
                 CONNECTOR_UPGRADE_APPROVAL_REVALIDATION_READ,
                 CONNECTOR_UPGRADE_HANDOFF_READINESS_READ,
+                CONNECTOR_UPGRADE_CHANGE_CONTEXT_CREATE,
+                CONNECTOR_UPGRADE_CHANGE_CONTEXT_READ,
                 CONNECTOR_TARGET_CONFIGURATION_CREATE,
                 CONNECTOR_TARGET_CONFIGURATION_READ,
                 CONNECTOR_CREDENTIAL_ASSIGNMENT_CREATE,

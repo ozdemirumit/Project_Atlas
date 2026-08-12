@@ -23,6 +23,9 @@ from atlas.api.instance_creation_schemas import (
     ConnectorUpgradeApprovalRevalidationData,
     ConnectorUpgradeApprovalRevalidationInput,
     ConnectorUpgradeApprovalRevalidationResponse,
+    ConnectorUpgradeChangeContextDraftData,
+    ConnectorUpgradeChangeContextDraftInput,
+    ConnectorUpgradeChangeContextDraftResponse,
     ConnectorUpgradeHandoffReadinessData,
     ConnectorUpgradeHandoffReadinessResponse,
     ConnectorUpgradePlanData,
@@ -40,6 +43,8 @@ from atlas.api.security import (
     authorize_connector_upgrade_approval_read,
     authorize_connector_upgrade_approval_revalidation_create,
     authorize_connector_upgrade_approval_revalidation_read,
+    authorize_connector_upgrade_change_context_create,
+    authorize_connector_upgrade_change_context_read,
     authorize_connector_upgrade_handoff_readiness_read,
     browser_session_subject,
 )
@@ -104,7 +109,9 @@ def _response(
 
 def _raise_upgrade_approval(error: ConnectorUpgradeApprovalError) -> NoReturn:
     code = error.code
-    if code.endswith(("mfa_required", "assurance_insufficient", "separation_required")):
+    if code.endswith(
+        ("mfa_required", "assurance_insufficient", "separation_required", "verifier_required")
+    ):
         status = 403
     elif code.endswith("not_found"):
         status = 404
@@ -524,6 +531,77 @@ async def assess_connector_upgrade_handoff_readiness(
     response.headers["Cache-Control"] = "no-store"
     return ConnectorUpgradeHandoffReadinessResponse(
         data=ConnectorUpgradeHandoffReadinessData.from_domain(assessment),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.post(
+    "/{record_id}/upgrade-approval-requests/{request_id}/change-context-drafts",
+    response_model=ConnectorUpgradeChangeContextDraftResponse,
+    status_code=201,
+)
+async def create_connector_upgrade_change_context_draft(
+    record_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    payload: ConnectorUpgradeChangeContextDraftInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_upgrade_change_context_create)
+    ],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> ConnectorUpgradeChangeContextDraftResponse:
+    service: ConnectorUpgradeApprovalService = request.app.state.connector_upgrade_approval_service
+    try:
+        draft = await service.create_change_context_draft(
+            actor=subject,
+            record_id=record_id,
+            request_id=request_id,
+            idempotency_key=idempotency_key,
+            correlation_id=str(request.state.correlation_id),
+            **payload.model_dump(exclude={"schema_version"}),
+        )
+    except ConnectorUpgradeApprovalError as error:
+        _raise_upgrade_approval(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorUpgradeChangeContextDraftResponse(
+        data=ConnectorUpgradeChangeContextDraftData.from_domain(draft),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get(
+    "/{record_id}/upgrade-approval-requests/{request_id}/change-context-drafts/latest",
+    response_model=ConnectorUpgradeChangeContextDraftResponse,
+)
+async def get_latest_connector_upgrade_change_context_draft(
+    record_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_upgrade_change_context_read)
+    ],
+) -> ConnectorUpgradeChangeContextDraftResponse:
+    service: ConnectorUpgradeApprovalService = request.app.state.connector_upgrade_approval_service
+    try:
+        draft = await service.get_latest_change_context_draft(
+            actor=subject,
+            record_id=record_id,
+            request_id=request_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorUpgradeApprovalError as error:
+        _raise_upgrade_approval(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorUpgradeChangeContextDraftResponse(
+        data=ConnectorUpgradeChangeContextDraftData.from_domain(draft),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),

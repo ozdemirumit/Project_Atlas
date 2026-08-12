@@ -11,9 +11,11 @@ import {
 } from "../../api/connectorInstances";
 import {
   createConnectorUpgradeApprovalRequest,
+  createConnectorUpgradeChangeContextDraft,
   decideConnectorUpgradeApproval,
   getConnectorUpgradeApprovalRecord,
   getConnectorUpgradeHandoffReadiness,
+  getLatestConnectorUpgradeChangeContextDraft,
   getLatestConnectorUpgradeApprovalRevalidation,
   getConnectorUpgradePlan,
   getConnectorUpgradeReadiness,
@@ -22,6 +24,7 @@ import {
   type ConnectorUpgradeApprovalRequest,
   type ConnectorUpgradeApprovalRevalidation,
   type ConnectorUpgradeHandoffReadiness,
+  type ConnectorUpgradeChangeContextDraft,
   type ConnectorUpgradePlan,
   type ConnectorUpgradeReadiness,
 } from "../../api/connectorUpgradeReadiness";
@@ -331,6 +334,31 @@ const handoffReadiness: ConnectorUpgradeHandoffReadiness = {
   infrastructure_mutation_performed: false,
 };
 
+const changeContextDraft: ConnectorUpgradeChangeContextDraft = {
+  draft_id: "connector-upgrade-change-context-draft.test",
+  schema_version: "atlas.connector-upgrade-change-context-draft.v1",
+  source_record_id: instance.record_id, source_record_version: instance.version,
+  instance_id: instance.instance_id, connector_id: instance.connector_id,
+  request_id: upgradeApprovalRequest.request_id,
+  request_digest: upgradeApprovalRequest.canonical_digest,
+  decision_digest: approvedUpgradeApproval.decision!.canonical_digest,
+  revalidation_id: upgradeApprovalRevalidation.revalidation_id,
+  revalidation_digest: upgradeApprovalRevalidation.canonical_digest,
+  readiness_digest: handoffReadiness.canonical_digest,
+  organization_id: instance.organization_id, environment_id: instance.environment_id,
+  created_by: "subject.connector-independent-verifier",
+  justification: "Prepare this exact connector upgrade for governed ITSM review.",
+  proposed_window_start: "2026-08-12T03:00:00Z",
+  proposed_window_end: "2026-08-12T04:00:00Z",
+  itsm_draft_title: "Review connector upgrade storage.connector for environment.development",
+  itsm_draft_digest: "7".repeat(64), created_at: "2026-08-12T00:42:00Z",
+  valid_until: "2026-08-12T01:00:00Z", canonical_digest: "8".repeat(64), state: "draft",
+  itsm_dispatched: false, window_approved: false, handoff_ready: false,
+  handoff_artifact_issued: false, approval_consumed: false, target_contacted: false,
+  package_rebound: false, configuration_changed: false, execution_authorized: false,
+  infrastructure_mutation_performed: false, reused: false,
+};
+
 vi.mock("../../api/connectorInstances", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorInstances")>();
   return {
@@ -355,6 +383,8 @@ vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
     decideConnectorUpgradeApproval: vi.fn(),
     getConnectorUpgradeApprovalRecord: vi.fn(),
     getConnectorUpgradeHandoffReadiness: vi.fn(),
+    getLatestConnectorUpgradeChangeContextDraft: vi.fn(),
+    createConnectorUpgradeChangeContextDraft: vi.fn(),
     getLatestConnectorUpgradeApprovalRevalidation: vi.fn(),
     getConnectorUpgradeReadiness: vi.fn(),
     getConnectorUpgradePlan: vi.fn(),
@@ -384,6 +414,8 @@ beforeEach(() => {
   vi.mocked(decideConnectorUpgradeApproval).mockResolvedValue(approvedUpgradeApproval);
   vi.mocked(getLatestConnectorUpgradeApprovalRevalidation).mockResolvedValue(null);
   vi.mocked(getConnectorUpgradeHandoffReadiness).mockResolvedValue(handoffReadiness);
+  vi.mocked(getLatestConnectorUpgradeChangeContextDraft).mockResolvedValue(null);
+  vi.mocked(createConnectorUpgradeChangeContextDraft).mockResolvedValue(changeContextDraft);
   vi.mocked(revalidateConnectorUpgradeApproval).mockResolvedValue(upgradeApprovalRevalidation);
   vi.mocked(createConnectorInstance).mockResolvedValue({ data: instance });
   vi.mocked(retireConnectorInstance).mockResolvedValue({
@@ -498,6 +530,14 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(screen.getByText("Not applicable in this context")).toBeVisible();
     expect(screen.getByText(/target-binding-current/i)).toBeVisible();
     expect(screen.getByText(/Applicability policy v2026.08.12.1/i)).toBeVisible();
+    expect(screen.getByText("Prepare change-context draft")).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Proposed window start"), { target: { value: "2026-08-12T03:00" } });
+    fireEvent.change(screen.getByLabelText("Proposed window end"), { target: { value: "2026-08-12T04:00" } });
+    fireEvent.click(screen.getByLabelText(/creates an internal draft only/i));
+    fireEvent.click(screen.getByRole("button", { name: "Record change-context draft" }));
+    await waitFor(() => expect(createConnectorUpgradeChangeContextDraft).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Change-context draft recorded")).toBeVisible();
+    expect(screen.getByText(/Not dispatched. Window not approved. Handoff remains blocked./i)).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|apply|execute|handoff/i })).toBeNull();
   });
 

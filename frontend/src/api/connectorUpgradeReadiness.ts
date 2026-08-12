@@ -275,6 +275,44 @@ export type ConnectorUpgradeHandoffReadiness = {
   infrastructure_mutation_performed: false;
 };
 
+export type ConnectorUpgradeChangeContextDraft = {
+  draft_id: string;
+  schema_version: "atlas.connector-upgrade-change-context-draft.v1";
+  source_record_id: string;
+  source_record_version: number;
+  instance_id: string;
+  connector_id: string;
+  request_id: string;
+  request_digest: string;
+  decision_digest: string;
+  revalidation_id: string;
+  revalidation_digest: string;
+  readiness_digest: string;
+  organization_id: string;
+  environment_id: string;
+  created_by: string;
+  justification: string;
+  proposed_window_start: string;
+  proposed_window_end: string;
+  itsm_draft_title: string;
+  itsm_draft_digest: string;
+  created_at: string;
+  valid_until: string;
+  canonical_digest: string;
+  state: "draft";
+  itsm_dispatched: false;
+  window_approved: false;
+  handoff_ready: false;
+  handoff_artifact_issued: false;
+  approval_consumed: false;
+  target_contacted: false;
+  package_rebound: false;
+  configuration_changed: false;
+  execution_authorized: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
 const DIGEST = /^[a-f0-9]{64}$/;
 
 function strings(value: unknown): value is string[] {
@@ -584,6 +622,29 @@ export function isConnectorUpgradeHandoffReadiness(
   );
 }
 
+function changeContextDraft(value: unknown): value is ConnectorUpgradeChangeContextDraft {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  return (
+    item.schema_version === "atlas.connector-upgrade-change-context-draft.v1" &&
+    item.state === "draft" && typeof item.source_record_version === "number" &&
+    [item.draft_id, item.source_record_id, item.instance_id, item.connector_id, item.request_id,
+      item.revalidation_id, item.organization_id, item.environment_id, item.created_by,
+      item.justification, item.proposed_window_start, item.proposed_window_end, item.itsm_draft_title,
+      item.created_at, item.valid_until].every((field) => typeof field === "string") &&
+    [item.request_digest, item.decision_digest, item.revalidation_digest, item.readiness_digest,
+      item.itsm_draft_digest, item.canonical_digest]
+      .every((digest) => typeof digest === "string" && DIGEST.test(digest)) &&
+    item.itsm_dispatched === false && item.window_approved === false &&
+    item.handoff_ready === false && item.handoff_artifact_issued === false &&
+    item.approval_consumed === false && item.target_contacted === false &&
+    item.package_rebound === false && item.configuration_changed === false &&
+    item.execution_authorized === false &&
+    item.infrastructure_mutation_performed === false && typeof item.reused === "boolean" &&
+    !("idempotency_key" in item || "request_fingerprint" in item || "credential" in item)
+  );
+}
+
 export async function getConnectorUpgradeReadiness(
   recordId: string,
 ): Promise<ConnectorUpgradeReadiness> {
@@ -821,6 +882,60 @@ export async function getConnectorUpgradeHandoffReadiness(
     payload.data.decision_digest !== record.decision?.canonical_digest
   ) {
     throw new Error("Connector upgrade handoff readiness does not match the exact approval");
+  }
+  return payload.data;
+}
+
+export async function getLatestConnectorUpgradeChangeContextDraft(
+  record: ConnectorUpgradeApprovalRecord,
+): Promise<ConnectorUpgradeChangeContextDraft | null> {
+  const response = await apiFetch(
+    `/api/v1/connectors/instances/${encodeURIComponent(record.request.source_record_id)}/upgrade-approval-requests/${encodeURIComponent(record.request.request_id)}/change-context-drafts/latest`,
+    { headers: { Accept: "application/json" }, cache: "no-store" },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Connector upgrade change-context read failed with ${response.status}`);
+  const payload: unknown = await response.json();
+  if (!payload || typeof payload !== "object" || !("data" in payload) || !changeContextDraft(payload.data)) {
+    throw new Error("Connector upgrade change-context returned an unsafe draft");
+  }
+  if (payload.data.request_digest !== record.request.canonical_digest) {
+    throw new Error("Connector upgrade change-context does not match the exact approval");
+  }
+  return payload.data;
+}
+
+export async function createConnectorUpgradeChangeContextDraft(input: {
+  record: ConnectorUpgradeApprovalRecord;
+  readiness: ConnectorUpgradeHandoffReadiness;
+  proposedWindowStart: string;
+  proposedWindowEnd: string;
+  justification: string;
+}): Promise<ConnectorUpgradeChangeContextDraft> {
+  const { record, readiness, proposedWindowStart, proposedWindowEnd, justification } = input;
+  const response = await apiFetch(
+    `/api/v1/connectors/instances/${encodeURIComponent(record.request.source_record_id)}/upgrade-approval-requests/${encodeURIComponent(record.request.request_id)}/change-context-drafts`,
+    {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json",
+        "Idempotency-Key": `connector-upgrade-change-context.${crypto.randomUUID()}` },
+      body: JSON.stringify({
+        schema_version: "atlas.connector-upgrade-change-context-draft-input.v1",
+        expected_readiness_digest: readiness.canonical_digest,
+        proposed_window_start: new Date(proposedWindowStart).toISOString(),
+        proposed_window_end: new Date(proposedWindowEnd).toISOString(),
+        justification: justification.trim(),
+        acknowledged_draft_grants_no_dispatch_approval_handoff_or_execution_authority: true,
+      }),
+    },
+  );
+  if (!response.ok) throw new Error(`Connector upgrade change-context creation failed with ${response.status}`);
+  const payload: unknown = await response.json();
+  if (!payload || typeof payload !== "object" || !("data" in payload) || !changeContextDraft(payload.data)) {
+    throw new Error("Connector upgrade change-context creation returned an unsafe draft");
+  }
+  if (payload.data.readiness_digest !== readiness.canonical_digest || payload.data.request_digest !== record.request.canonical_digest) {
+    throw new Error("Connector upgrade change-context draft does not match current readiness");
   }
   return payload.data;
 }

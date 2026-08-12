@@ -14,6 +14,7 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeApprovalRecord,
     ConnectorUpgradeApprovalRequest,
     ConnectorUpgradeApprovalRevalidation,
+    ConnectorUpgradeChangeContextDraft,
     ConnectorUpgradeHandoffReadinessAssessment,
 )
 from atlas.modules.connectors.domain.upgrade_readiness import (
@@ -562,6 +563,71 @@ class ConnectorUpgradeHandoffReadinessResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: ConnectorUpgradeHandoffReadinessData
+    meta: ResponseMeta
+
+
+class ConnectorUpgradeChangeContextDraftInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = Field(
+        default="atlas.connector-upgrade-change-context-draft-input.v1", pattern=STABLE_ID
+    )
+    expected_readiness_digest: str = Field(pattern=DIGEST)
+    proposed_window_start: datetime
+    proposed_window_end: datetime
+    justification: str = Field(min_length=20, max_length=1000)
+    acknowledged_draft_grants_no_dispatch_approval_handoff_or_execution_authority: bool
+
+
+class ConnectorUpgradeChangeContextDraftData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    draft_id: str
+    schema_version: str
+    source_record_id: str
+    source_record_version: int
+    instance_id: str
+    connector_id: str
+    request_id: str
+    request_digest: str
+    decision_digest: str
+    revalidation_id: str
+    revalidation_digest: str
+    readiness_digest: str
+    organization_id: str
+    environment_id: str
+    created_by: str
+    justification: str
+    proposed_window_start: datetime
+    proposed_window_end: datetime
+    itsm_draft_title: str
+    itsm_draft_digest: str
+    created_at: datetime
+    valid_until: datetime
+    canonical_digest: str
+    state: str
+    itsm_dispatched: bool
+    window_approved: bool
+    handoff_ready: bool
+    handoff_artifact_issued: bool
+    approval_consumed: bool
+    target_contacted: bool
+    package_rebound: bool
+    configuration_changed: bool
+    execution_authorized: bool
+    infrastructure_mutation_performed: bool
+    reused: bool
+
+    @classmethod
+    def from_domain(
+        cls, draft: ConnectorUpgradeChangeContextDraft
+    ) -> ConnectorUpgradeChangeContextDraftData:
+        return cls(**{field: getattr(draft, field) for field in cls.model_fields})
+
+
+class ConnectorUpgradeChangeContextDraftResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    data: ConnectorUpgradeChangeContextDraftData
     meta: ResponseMeta
 
 
