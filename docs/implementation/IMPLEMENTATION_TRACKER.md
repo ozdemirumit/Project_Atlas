@@ -4,14 +4,50 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-162 |
-| Title | Connector upgrade production signing-provider onboarding readiness foundation |
-| Status | Review |
-| Branch | `agent/mcp-signing-provider-onboarding-readiness` |
-| Pull Request | [#174](https://github.com/ozdemirumit/Project_Atlas/pull/174) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-020, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-114, ADR-115, ADR-116, ADR-117, ADR-118 |
+| Task ID | ATLAS-IMP-163 |
+| Title | Connector upgrade signing-provider onboarding policy governance foundation |
+| Status | Planning |
+| Branch | `main` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-020, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-115, ADR-116, ADR-117, ADR-118 |
 | Last Updated | 2026-08-12 |
-| Next Action | Pass exact-head CI, merge PR #174 and verify merged-main CI |
+| Next Action | Record ADR-119 and replace hard-coded readiness rules with an injected policy source |
+
+### ATLAS-IMP-163 Scope Rationale
+
+- IMP-162 derives an exact-scope production onboarding dossier, but its policy identity, permitted
+  production algorithms and requirement set are still service constants.
+- Enterprise deployments need independently governed, expiring and integrity-verifiable policy
+  snapshots so readiness cannot silently change with application code or accept an unapproved vendor.
+- No production KMS/HSM product has been selected. The next safe slice can establish policy governance
+  and keep production fail-closed without naming a vendor, accepting credentials or configuring a
+  provider.
+
+### ATLAS-IMP-163 Acceptance Criteria
+
+- A versioned immutable policy snapshot binds exact organization/environment, permitted provider
+  classes and algorithms, required onboarding requirement IDs, maximum conformance age, issuer,
+  validity window and canonical digest.
+- An injected policy source returns only current, exact-scope, integrity-valid snapshots. Missing,
+  expired, ambiguous, scope-mismatched or digest-invalid policy fails closed with stable reason codes.
+- Production uses no implicit default policy. A development-only policy may support deterministic
+  tests but cannot approve the non-production HMAC adapter or grant provider/key/signing authority.
+- The onboarding dossier binds policy ID, version and digest, evaluates only policy-selected
+  requirements and algorithms, and remains non-authoritative for provider configuration, key
+  management, signing and execution.
+- The Connector inventory UI exposes active policy identity, expiry and policy-blocked posture without
+  policy editing, provider selection, credential, key, approval, signing or execution controls.
+- ADR, focused and full backend/frontend gates, one Alembic head, production build and live responsive
+  validation pass before delivery.
+
+### ATLAS-IMP-163 Initial Evidence
+
+- IMP-162 merged through PR #174 as `d0cdc125d68e42b1eb84c1480b89b82fecf45883` after exact-head
+  CI run `31618242347` passed with backend in 7m07s and frontend in 4m38s.
+- The exact merged commit independently passed `main` CI run `31618879392` with backend in 6m58s and
+  frontend in 4m38s.
+- ADR-118 defines a fixed readiness policy boundary but does not yet define an independently supplied,
+  expiring policy snapshot or ambiguity handling.
 
 ### ATLAS-IMP-162 Scope Rationale
 
@@ -75,8 +111,10 @@
 ### ATLAS-IMP-162 Delivery Evidence
 
 - Source commit `9da952d` is published in draft PR
-  [#174](https://github.com/ozdemirumit/Project_Atlas/pull/174); exact-head CI will include this
-  tracker update before merge review.
+  [#174](https://github.com/ozdemirumit/Project_Atlas/pull/174); tracker-review commit `0c1827b`
+  passed exact-head CI run `31618242347` with backend in 7m07s and frontend in 4m38s.
+- PR #174 was squash-merged as `d0cdc125d68e42b1eb84c1480b89b82fecf45883`; the exact merged
+  commit independently passed `main` CI run `31618879392` with backend in 6m58s and frontend in 4m38s.
 
 ### ATLAS-IMP-161 Scope Rationale
 
