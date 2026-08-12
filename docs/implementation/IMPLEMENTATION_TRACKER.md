@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-152 |
 | Title | Connector upgrade handoff evidence applicability |
-| Status | In Progress |
-| Branch | `agent/mcp-upgrade-evidence-applicability` |
-| Pull Request | Pending |
+| Status | Completed |
+| Branch | `main` |
+| Pull Request | [#164](https://github.com/ozdemirumit/Project_Atlas/pull/164) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-102, ADR-103, ADR-104, ADR-105, ADR-106, ADR-107, ADR-108 |
 | Last Updated | 2026-08-12 |
-| Next Action | Complete full regression, live validation and delivery evidence |
+| Next Action | Audit the next approved implementation slice from the governing backlog |
 
 ### ATLAS-IMP-152 Scope Rationale
 
@@ -69,7 +69,12 @@
 
 ### ATLAS-IMP-152 Delivery Evidence
 
-- Pending.
+- Implementation commit `65c8b802aa614f420a681f0a4954b48c4422a5af` passed exact-head
+  pull-request CI run `31558475655`; backend completed in 5m29s and frontend in 4m20s.
+- PR [#164](https://github.com/ozdemirumit/Project_Atlas/pull/164) was squash-merged to `main` as
+  `2d7e7fc98f6e7c2d73659303618ac3b815be95ba`.
+- The exact merged `main` commit passed independent push CI run `31558802852`; backend completed in
+  6m49s and frontend completed in 4m35s with every required step successful.
 
 ### ATLAS-IMP-151 Scope Rationale
 
