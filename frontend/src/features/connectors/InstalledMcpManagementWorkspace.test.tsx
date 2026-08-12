@@ -733,7 +733,7 @@ describe("InstalledMcpManagementWorkspace", () => {
         })],
       },
     });
-    fireEvent.click(screen.getByLabelText(/A valid signature authenticates Atlas origin only/i));
+    fireEvent.click(await screen.findByLabelText(/A valid signature authenticates Atlas origin only/i));
     const verifySignedReceipt = await screen.findByRole("button", { name: "Verify signed receipt" });
     await waitFor(() => expect(verifySignedReceipt).toBeEnabled());
     fireEvent.click(verifySignedReceipt);
