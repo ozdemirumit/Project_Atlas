@@ -372,7 +372,13 @@ textarea:focus-visible {
 .installed-mcp-status > div,
 .installed-mcp-empty > div {
   display: grid;
+  min-width: 0;
   gap: 3px;
+}
+
+.installed-mcp-status li,
+.installed-mcp-approval-result li {
+  overflow-wrap: anywhere;
 }
 
 .installed-mcp-status span,

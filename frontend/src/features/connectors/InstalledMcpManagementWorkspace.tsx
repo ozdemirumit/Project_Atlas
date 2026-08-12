@@ -20,6 +20,7 @@ import {
   decideConnectorUpgradeApproval,
   getConnectorUpgradeApprovalRecord,
   getLatestConnectorUpgradeApprovalRevalidation,
+  getConnectorUpgradeHandoffReadiness,
   getConnectorUpgradeReadiness,
   revalidateConnectorUpgradeApproval,
   type ConnectorUpgradeApprovalOutcome,
@@ -353,6 +354,12 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
   const pending = record?.state === "pending" && record.decision === null;
   const requesterIsCurrentSubject = record?.request.requested_by === subjectId;
   const revalidation = revalidationMutation.data ?? revalidationQuery.data;
+  const handoffReadinessQuery = useQuery({
+    queryKey: ["connector-upgrade-handoff-readiness", record?.request.request_id, revalidation?.canonical_digest],
+    queryFn: () => getConnectorUpgradeHandoffReadiness(record!),
+    enabled: Boolean(revalidation),
+    retry: false,
+  });
   const canRevalidate = Boolean(
     record?.state === "approved" && record.decision?.outcome === "approve" &&
     subjectId !== record.request.requested_by && subjectId !== record.decision.decided_by,
@@ -390,6 +397,18 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
                 <p>Approval was current at revalidation. Handoff remains blocked.</p>
                 <small>Valid until {new Date(revalidation.valid_until).toLocaleString()}</small>
                 <ul>{revalidation.check_ids.map((checkId) => <li key={checkId}>{checkId}</li>)}</ul>
+                {handoffReadinessQuery.data && (
+                  <div className="installed-mcp-status error-state" role="status">
+                    <AlertTriangle size={17} />
+                    <div>
+                      <strong>Handoff blocked</strong>
+                      <span>No artifact was issued and the approval remains unconsumed.</span>
+                      <p>Missing evidence</p>
+                      <ul>{handoffReadinessQuery.data.blocker_ids.map((blockerId) => <li key={blockerId}>{blockerId}</li>)}</ul>
+                    </div>
+                  </div>
+                )}
+                {handoffReadinessQuery.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><span>Handoff readiness could not be assessed from current governed evidence.</span></div>}
               </div>
             ) : canRevalidate ? (
               <>

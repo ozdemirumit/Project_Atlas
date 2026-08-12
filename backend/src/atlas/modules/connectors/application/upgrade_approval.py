@@ -28,6 +28,7 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeApprovalRequest,
     ConnectorUpgradeApprovalRevalidation,
     ConnectorUpgradeApprovalState,
+    ConnectorUpgradeHandoffReadinessAssessment,
 )
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
@@ -45,6 +46,8 @@ UPGRADE_APPROVAL_READ_PERMISSION = "connectors.upgrade-approval-requests.read"
 UPGRADE_APPROVAL_DECIDE_PERMISSION = "connectors.upgrade-approval-decisions.create"
 UPGRADE_APPROVAL_REVALIDATION_CREATE_PERMISSION = "connectors.upgrade-approval-revalidations.create"
 UPGRADE_APPROVAL_REVALIDATION_READ_PERMISSION = "connectors.upgrade-approval-revalidations.read"
+UPGRADE_HANDOFF_READINESS_SCHEMA = "atlas.connector-upgrade-handoff-readiness.v1"
+UPGRADE_HANDOFF_READINESS_READ_PERMISSION = "connectors.upgrade-handoff-readiness.read"
 UPGRADE_APPROVAL_REVALIDATION_CHECK_IDS = (
     "connector.upgrade.revalidation.request-integrity-current",
     "connector.upgrade.revalidation.decision-integrity-current",
@@ -588,6 +591,113 @@ class ConnectorUpgradeApprovalService:
             idempotency_key=None,
         )
         return revalidation
+
+    async def assess_handoff_readiness(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        record_id: str,
+        request_id: str,
+        correlation_id: str,
+    ) -> ConnectorUpgradeHandoffReadinessAssessment:
+        self._require_enterprise_human(actor)
+        request = await self._repository.get(request_id=request_id)
+        if request is None:
+            raise ConnectorUpgradeApprovalError("connector_upgrade_approval_request_not_found")
+        self._require_request_scope(request, actor, record_id)
+        decision = await self._repository.get_decision(request_id=request.request_id)
+        revalidation = await self._repository.get_latest_revalidation(request_id=request.request_id)
+        if decision is None or revalidation is None:
+            raise ConnectorUpgradeApprovalError("connector_upgrade_handoff_readiness_not_found")
+        self._verify_decision(decision)
+        self._verify_revalidation(revalidation)
+        now = self._clock()
+        if (
+            decision.outcome is not ConnectorUpgradeApprovalOutcome.APPROVE
+            or revalidation.request_digest != request.canonical_digest
+            or revalidation.decision_digest != decision.canonical_digest
+            or revalidation.plan_digest != request.plan_digest
+            or revalidation.organization_id != actor.organization_id
+            or revalidation.environment_id != self._environment_id
+            or now >= revalidation.valid_until
+        ):
+            raise ConnectorUpgradeApprovalError("connector_upgrade_handoff_readiness_not_current")
+        policy = await self._active_policy(actor=actor, now=now)
+        plan = await self._upgrade_service.plan(
+            actor=actor,
+            record_id=request.source_record_id,
+            candidate_receipt_id=request.candidate_receipt_id,
+            correlation_id=correlation_id,
+        )
+        if (
+            policy.canonical_digest != revalidation.approval_policy_digest
+            or plan.canonical_digest != revalidation.plan_digest
+            or plan.readiness_digest != revalidation.readiness_digest
+            or plan.source_record_version != revalidation.source_record_version
+            or now >= plan.expires_at
+        ):
+            raise ConnectorUpgradeApprovalError("connector_upgrade_handoff_readiness_not_current")
+        blockers = (
+            "connector.upgrade.handoff.blocked.target-binding-missing",
+            "connector.upgrade.handoff.blocked.service-impact-evidence-missing",
+            "connector.upgrade.handoff.blocked.itsm-change-missing",
+            "connector.upgrade.handoff.blocked.maintenance-window-missing",
+            "connector.upgrade.handoff.blocked.runtime-health-evidence-missing",
+            "connector.upgrade.handoff.blocked.audit-readiness-evidence-missing",
+        )
+        payload: dict[str, object] = {
+            "schema_version": UPGRADE_HANDOFF_READINESS_SCHEMA,
+            "source_record_id": request.source_record_id,
+            "source_record_version": request.source_record_version,
+            "request_digest": request.canonical_digest,
+            "decision_digest": decision.canonical_digest,
+            "revalidation_digest": revalidation.canonical_digest,
+            "plan_digest": plan.canonical_digest,
+            "assessed_by": actor.subject_id,
+            "satisfied_check_ids": (
+                "connector.upgrade.handoff.approval-current",
+                "connector.upgrade.handoff.revalidation-current",
+                "connector.upgrade.handoff.identity-separation-current",
+                "connector.upgrade.handoff.policy-current",
+                "connector.upgrade.handoff.plan-lineage-current",
+                "connector.upgrade.handoff.prior-execution-absent",
+            ),
+            "blocker_ids": blockers,
+        }
+        digest = self._digest(payload)
+        assessment = ConnectorUpgradeHandoffReadinessAssessment(
+            assessment_id=f"connector-upgrade-handoff-readiness.{digest[:24]}",
+            schema_version=UPGRADE_HANDOFF_READINESS_SCHEMA,
+            source_record_id=request.source_record_id,
+            source_record_version=request.source_record_version,
+            instance_id=request.instance_id,
+            connector_id=request.connector_id,
+            request_id=request.request_id,
+            request_digest=request.canonical_digest,
+            decision_id=decision.decision_id,
+            decision_digest=decision.canonical_digest,
+            revalidation_id=revalidation.revalidation_id,
+            revalidation_digest=revalidation.canonical_digest,
+            plan_id=plan.plan_id,
+            plan_digest=plan.canonical_digest,
+            organization_id=request.organization_id,
+            environment_id=request.environment_id,
+            assessed_by=actor.subject_id,
+            satisfied_check_ids=cast(tuple[str, ...], payload["satisfied_check_ids"]),
+            blocker_ids=blockers,
+            assessed_at=now,
+            evidence_valid_until=min(revalidation.valid_until, plan.expires_at, policy.expires_at),
+            canonical_digest=digest,
+        )
+        await self._audit_revalidation(
+            actor=actor,
+            correlation_id=correlation_id,
+            revalidation=revalidation,
+            result_code="connector_upgrade_handoff_readiness_blocked",
+            permission_id=UPGRADE_HANDOFF_READINESS_READ_PERMISSION,
+            idempotency_key=None,
+        )
+        return assessment
 
     async def close(self) -> None:
         await self._repository.close()

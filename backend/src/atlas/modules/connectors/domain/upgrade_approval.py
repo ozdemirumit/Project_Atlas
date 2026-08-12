@@ -335,6 +335,103 @@ class ConnectorUpgradeApprovalRevalidation:
 
 
 @dataclass(frozen=True, slots=True)
+class ConnectorUpgradeHandoffReadinessAssessment:
+    assessment_id: str
+    schema_version: str
+    source_record_id: str
+    source_record_version: int
+    instance_id: str
+    connector_id: str
+    request_id: str
+    request_digest: str
+    decision_id: str
+    decision_digest: str
+    revalidation_id: str
+    revalidation_digest: str
+    plan_id: str
+    plan_digest: str
+    organization_id: str
+    environment_id: str
+    assessed_by: str
+    satisfied_check_ids: tuple[str, ...]
+    blocker_ids: tuple[str, ...]
+    assessed_at: datetime
+    evidence_valid_until: datetime
+    canonical_digest: str
+    assessment_state: str = "blocked"
+    approval_current: bool = True
+    revalidation_current: bool = True
+    handoff_ready: bool = False
+    handoff_artifact_issued: bool = False
+    approval_consumed: bool = False
+    target_contacted: bool = False
+    package_rebound: bool = False
+    configuration_changed: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_performed: bool = False
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.assessment_id,
+            self.schema_version,
+            self.source_record_id,
+            self.instance_id,
+            self.connector_id,
+            self.request_id,
+            self.decision_id,
+            self.revalidation_id,
+            self.plan_id,
+            self.organization_id,
+            self.environment_id,
+            self.assessed_by,
+        ):
+            validate_stable_identifier(value, "connector upgrade handoff readiness identifier")
+        for value in (
+            self.request_digest,
+            self.decision_digest,
+            self.revalidation_digest,
+            self.plan_digest,
+            self.canonical_digest,
+        ):
+            if _DIGEST.fullmatch(value) is None:
+                raise ValueError("Connector upgrade handoff readiness digest is invalid")
+        if (
+            self.source_record_version < 1
+            or self.assessment_state != "blocked"
+            or not self.satisfied_check_ids
+            or not self.blocker_ids
+            or len(set(self.satisfied_check_ids)) != len(self.satisfied_check_ids)
+            or len(set(self.blocker_ids)) != len(self.blocker_ids)
+            or any(
+                not item.startswith("connector.upgrade.handoff.")
+                for item in self.satisfied_check_ids
+            )
+            or any(
+                not item.startswith("connector.upgrade.handoff.blocked.")
+                for item in self.blocker_ids
+            )
+            or self.assessed_at.tzinfo is None
+            or self.evidence_valid_until.tzinfo is None
+            or self.evidence_valid_until <= self.assessed_at
+            or not self.approval_current
+            or not self.revalidation_current
+            or any(
+                (
+                    self.handoff_ready,
+                    self.handoff_artifact_issued,
+                    self.approval_consumed,
+                    self.target_contacted,
+                    self.package_rebound,
+                    self.configuration_changed,
+                    self.execution_authorized,
+                    self.infrastructure_mutation_performed,
+                )
+            )
+        ):
+            raise ValueError("Connector upgrade handoff readiness violates the authority boundary")
+
+
+@dataclass(frozen=True, slots=True)
 class ConnectorUpgradeApprovalRecord:
     request: ConnectorUpgradeApprovalRequest
     decision: ConnectorUpgradeApprovalDecision | None
