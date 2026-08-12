@@ -214,6 +214,10 @@ class ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck:
     state: ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState
     reason_code: str
     evidence_reference: str | None = None
+    owner_role_id: str | None = None
+    evidence_requirement_id: str | None = None
+    next_action_id: str | None = None
+    external_input_required: bool = False
 
     def __post_init__(self) -> None:
         validate_stable_identifier(self.check_id, "onboarding policy provenance check")
@@ -225,6 +229,23 @@ class ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck:
             validate_stable_identifier(
                 self.evidence_reference, "onboarding policy provenance evidence reference"
             )
+        remediation = (
+            self.owner_role_id,
+            self.evidence_requirement_id,
+            self.next_action_id,
+        )
+        for value in remediation:
+            if value is not None:
+                validate_stable_identifier(value, "onboarding policy provenance remediation")
+        verified = (
+            self.state
+            is ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.VERIFIED
+        )
+        if (
+            verified
+            and (any(value is not None for value in remediation) or self.external_input_required)
+        ) or (not verified and any(value is None for value in remediation)):
+            raise ValueError("Onboarding policy provenance remediation is invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -313,8 +334,8 @@ class ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic:
         )
         if (
             self.schema_version
-            != "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v1"
-            or self.version != 1
+            != "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v2"
+            or self.version != 2
             or self.evaluated_at.tzinfo is None
             or (
                 self.valid_until is not None

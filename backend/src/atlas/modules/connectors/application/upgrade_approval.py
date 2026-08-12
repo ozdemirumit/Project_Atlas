@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from hashlib import sha256
+from types import MappingProxyType
 from typing import cast
 from uuid import uuid4
 
@@ -153,7 +154,7 @@ UPGRADE_SIGNING_PROVIDER_ONBOARDING_READINESS_PERMISSION = (
     "connectors.upgrade-signing-provider-onboarding-readiness.read"
 )
 UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_PROVENANCE_DIAGNOSTIC_SCHEMA = (
-    "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v1"
+    "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v2"
 )
 UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_PROVENANCE_DIAGNOSTIC_PERMISSION = (
     "connectors.upgrade-signing-provider-onboarding-policy-provenance-diagnostics.read"
@@ -164,6 +165,172 @@ UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_PROVENANCE_CHECK_IDS = (
     "attestation-binding-valid",
     "trust-key-current",
     "signature-verified",
+)
+UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_PROVENANCE_REMEDIATION = MappingProxyType(
+    {
+        "unavailable": (
+            "role.security-policy-governance",
+            "evidence.current-onboarding-policy",
+            "action.publish-current-onboarding-policy",
+            True,
+        ),
+        "scope-invalid": (
+            "role.security-policy-governance",
+            "evidence.exact-scope-onboarding-policy",
+            "action.correct-onboarding-policy-scope",
+            True,
+        ),
+        "integrity-failed": (
+            "role.security-policy-governance",
+            "evidence.integrity-valid-onboarding-policy",
+            "action.reissue-onboarding-policy",
+            True,
+        ),
+        "requirement-unsupported": (
+            "role.security-policy-governance",
+            "evidence.supported-onboarding-policy-requirements",
+            "action.review-onboarding-policy-requirements",
+            True,
+        ),
+        "ambiguous": (
+            "role.security-policy-governance",
+            "evidence.single-active-onboarding-policy",
+            "action.resolve-onboarding-policy-ambiguity",
+            True,
+        ),
+        "expired": (
+            "role.security-policy-governance",
+            "evidence.current-onboarding-policy",
+            "action.renew-onboarding-policy",
+            True,
+        ),
+        "not-yet-effective": (
+            "role.security-policy-governance",
+            "evidence.current-onboarding-policy",
+            "action.review-onboarding-policy-effective-window",
+            True,
+        ),
+        "attestation-source-unavailable": (
+            "role.security-policy-attestation-owner",
+            "evidence.onboarding-policy-attestation-source",
+            "action.restore-policy-attestation-source",
+            True,
+        ),
+        "attestation-integrity-failed": (
+            "role.security-policy-attestation-owner",
+            "evidence.integrity-valid-policy-attestation",
+            "action.reissue-policy-attestation",
+            True,
+        ),
+        "attestation-scope-invalid": (
+            "role.security-policy-attestation-owner",
+            "evidence.exact-scope-policy-attestation",
+            "action.correct-policy-attestation-scope",
+            True,
+        ),
+        "attestation-ambiguous": (
+            "role.security-policy-attestation-owner",
+            "evidence.single-active-policy-attestation",
+            "action.resolve-policy-attestation-ambiguity",
+            True,
+        ),
+        "attestation-expired": (
+            "role.security-policy-attestation-owner",
+            "evidence.current-policy-attestation",
+            "action.renew-policy-attestation",
+            True,
+        ),
+        "attestation-not-yet-effective": (
+            "role.security-policy-attestation-owner",
+            "evidence.current-policy-attestation",
+            "action.review-policy-attestation-effective-window",
+            True,
+        ),
+        "attestation-unavailable": (
+            "role.security-policy-attestation-owner",
+            "evidence.current-policy-attestation",
+            "action.publish-policy-attestation",
+            True,
+        ),
+        "attestation-binding-invalid": (
+            "role.security-policy-attestation-owner",
+            "evidence.policy-bound-attestation",
+            "action.reissue-policy-bound-attestation",
+            True,
+        ),
+        "trust-source-unavailable": (
+            "role.security-trust-store-owner",
+            "evidence.onboarding-policy-trust-source",
+            "action.restore-policy-trust-source",
+            True,
+        ),
+        "trust-key-ambiguous": (
+            "role.security-trust-store-owner",
+            "evidence.single-current-policy-trust-key",
+            "action.resolve-policy-trust-key-ambiguity",
+            True,
+        ),
+        "trust-key-unavailable": (
+            "role.security-trust-store-owner",
+            "evidence.current-policy-trust-key",
+            "action.publish-policy-trust-key",
+            True,
+        ),
+        "trust-key-scope-invalid": (
+            "role.security-trust-store-owner",
+            "evidence.exact-scope-policy-trust-key",
+            "action.correct-policy-trust-key-scope",
+            True,
+        ),
+        "trust-integrity-failed": (
+            "role.security-trust-store-owner",
+            "evidence.integrity-valid-policy-trust-key",
+            "action.republish-policy-trust-key",
+            True,
+        ),
+        "trust-key-disabled": (
+            "role.security-trust-store-owner",
+            "evidence.active-policy-trust-key",
+            "action.review-disabled-policy-trust-key",
+            True,
+        ),
+        "trust-key-revoked": (
+            "role.security-trust-store-owner",
+            "evidence.active-policy-trust-key",
+            "action.replace-revoked-policy-trust-key",
+            True,
+        ),
+        "trust-key-not-yet-effective": (
+            "role.security-trust-store-owner",
+            "evidence.current-policy-trust-key",
+            "action.review-policy-trust-key-effective-window",
+            True,
+        ),
+        "trust-key-expired": (
+            "role.security-trust-store-owner",
+            "evidence.current-policy-trust-key",
+            "action.replace-expired-policy-trust-key",
+            True,
+        ),
+        "verifier-unavailable": (
+            "role.security-cryptographic-verification-owner",
+            "evidence.production-policy-signature-verifier",
+            "action.configure-policy-signature-verifier",
+            True,
+        ),
+        "signature-unverified": (
+            "role.security-policy-attestation-owner",
+            "evidence.cryptographically-verifiable-policy-attestation",
+            "action.reissue-verifiable-policy-attestation",
+            True,
+        ),
+        "prerequisite-unavailable": (
+            "role.connector-upgrade-provenance-coordinator",
+            "evidence.prior-provenance-check",
+            "action.resolve-prior-provenance-check",
+            False,
+        ),
+    }
 )
 UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_SCHEMA = (
     "atlas.connector-upgrade-signing-provider-onboarding-policy.v1"
@@ -2813,6 +2980,12 @@ class ConnectorUpgradeApprovalService:
             reason: str,
             evidence_reference: str | None = None,
         ) -> ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck:
+            remediation = (
+                None
+                if state
+                is ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.VERIFIED
+                else self._provenance_remediation(reason)
+            )
             return ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck(
                 check_id=check_id,
                 state=state,
@@ -2820,6 +2993,10 @@ class ConnectorUpgradeApprovalService:
                     f"connector.upgrade.signing-provider-onboarding-policy-provenance.{reason}"
                 ),
                 evidence_reference=evidence_reference,
+                owner_role_id=remediation[0] if remediation is not None else None,
+                evidence_requirement_id=remediation[1] if remediation is not None else None,
+                next_action_id=remediation[2] if remediation is not None else None,
+                external_input_required=remediation[3] if remediation is not None else False,
             )
 
         def blocked(
@@ -3128,6 +3305,16 @@ class ConnectorUpgradeApprovalService:
         prefix = "connector_upgrade_signing_provider_onboarding_policy_"
         return error_code.removeprefix(prefix).replace("_", "-")
 
+    @staticmethod
+    def _provenance_remediation(reason: str) -> tuple[str, str, str, bool]:
+        remediation = UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_PROVENANCE_REMEDIATION.get(reason)
+        if remediation is None:
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_signing_provider_onboarding_policy_provenance_"
+                "remediation_mapping_invalid"
+            )
+        return remediation
+
     @classmethod
     def _build_signing_provider_onboarding_policy_provenance_diagnostic(
         cls,
@@ -3170,7 +3357,7 @@ class ConnectorUpgradeApprovalService:
             "schema_version": (
                 UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_PROVENANCE_DIAGNOSTIC_SCHEMA
             ),
-            "version": 1,
+            "version": 2,
             "organization_id": actor.organization_id,
             "environment_id": environment_id,
             "evaluated_at": now.isoformat(),
@@ -3206,7 +3393,7 @@ class ConnectorUpgradeApprovalService:
             schema_version=(
                 UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_PROVENANCE_DIAGNOSTIC_SCHEMA
             ),
-            version=1,
+            version=2,
             organization_id=actor.organization_id,
             environment_id=environment_id,
             evaluated_at=now,
@@ -3882,6 +4069,10 @@ class ConnectorUpgradeApprovalService:
                 target_metadata=(
                     ("state", diagnostic.state.value),
                     ("blocked_check_count", str(len(diagnostic.reason_codes))),
+                    (
+                        "external_input_required_count",
+                        str(sum(check.external_input_required for check in diagnostic.checks)),
+                    ),
                     ("diagnostic_only", "true"),
                     ("trust_management_authorized", "false"),
                     ("execution_authorized", "false"),

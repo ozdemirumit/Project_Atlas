@@ -729,6 +729,10 @@ function SigningProviderOnboardingPolicyProvenance({
 }: {
   diagnostic: ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic;
 }) {
+  const guidanceLabel = (identifier: string, prefix: string) => identifier
+    .replace(prefix, "")
+    .replaceAll(".", " ")
+    .replaceAll("-", " ");
   return (
     <div className="installed-mcp-onboarding-result installed-mcp-provenance-diagnostic">
       <div className={`installed-mcp-conformance-state ${
@@ -770,6 +774,22 @@ function SigningProviderOnboardingPolicyProvenance({
             <div>
               <strong>{check.check_id.replaceAll("-", " ")}</strong>
               <span>{check.reason_code.split(".").at(-1)?.replaceAll("-", " ")}</span>
+              {check.state !== "verified" && check.owner_role_id &&
+                check.evidence_requirement_id && check.next_action_id ? (
+                  <div className="installed-mcp-provenance-guidance">
+                    <span><b>Owner</b> {guidanceLabel(check.owner_role_id, "role.")}</span>
+                    <span><b>Evidence</b> {guidanceLabel(
+                      check.evidence_requirement_id,
+                      "evidence.",
+                    )}</span>
+                    <span><b>Next step</b> {guidanceLabel(check.next_action_id, "action.")}</span>
+                    {check.external_input_required ? (
+                      <span className="installed-mcp-provenance-external">
+                        External deployment input required
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
             </div>
           </div>
         ))}

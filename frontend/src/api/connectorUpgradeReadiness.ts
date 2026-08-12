@@ -481,13 +481,17 @@ export type ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck = {
   state: "verified" | "blocked" | "unavailable";
   reason_code: string;
   evidence_reference: string | null;
+  owner_role_id: string | null;
+  evidence_requirement_id: string | null;
+  next_action_id: string | null;
+  external_input_required: boolean;
 };
 
 export type ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic = {
   diagnostic_id: string;
   schema_version:
-    "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v1";
-  version: 1;
+    "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v2";
+  version: 2;
   organization_id: string;
   environment_id: string;
   evaluated_at: string;
@@ -1018,7 +1022,8 @@ const signingProviderOnboardingReadinessKeys = [
 ] as const;
 
 const signingProviderOnboardingPolicyProvenanceCheckKeys = [
-  "check_id", "state", "reason_code", "evidence_reference",
+  "check_id", "state", "reason_code", "evidence_reference", "owner_role_id",
+  "evidence_requirement_id", "next_action_id", "external_input_required",
 ] as const;
 
 const signingProviderOnboardingPolicyProvenanceDiagnosticKeys = [
@@ -1031,6 +1036,69 @@ const signingProviderOnboardingPolicyProvenanceDiagnosticKeys = [
   "key_management_authorized", "receipt_signing_authorized", "execution_authorized",
   "infrastructure_mutation_performed",
 ] as const;
+
+const signingProviderOnboardingPolicyProvenanceRemediation = {
+  "unavailable": ["role.security-policy-governance", "evidence.current-onboarding-policy",
+    "action.publish-current-onboarding-policy", true],
+  "scope-invalid": ["role.security-policy-governance", "evidence.exact-scope-onboarding-policy",
+    "action.correct-onboarding-policy-scope", true],
+  "integrity-failed": ["role.security-policy-governance",
+    "evidence.integrity-valid-onboarding-policy", "action.reissue-onboarding-policy", true],
+  "requirement-unsupported": ["role.security-policy-governance",
+    "evidence.supported-onboarding-policy-requirements",
+    "action.review-onboarding-policy-requirements", true],
+  "ambiguous": ["role.security-policy-governance", "evidence.single-active-onboarding-policy",
+    "action.resolve-onboarding-policy-ambiguity", true],
+  "expired": ["role.security-policy-governance", "evidence.current-onboarding-policy",
+    "action.renew-onboarding-policy", true],
+  "not-yet-effective": ["role.security-policy-governance", "evidence.current-onboarding-policy",
+    "action.review-onboarding-policy-effective-window", true],
+  "attestation-source-unavailable": ["role.security-policy-attestation-owner",
+    "evidence.onboarding-policy-attestation-source", "action.restore-policy-attestation-source",
+    true],
+  "attestation-integrity-failed": ["role.security-policy-attestation-owner",
+    "evidence.integrity-valid-policy-attestation", "action.reissue-policy-attestation", true],
+  "attestation-scope-invalid": ["role.security-policy-attestation-owner",
+    "evidence.exact-scope-policy-attestation", "action.correct-policy-attestation-scope", true],
+  "attestation-ambiguous": ["role.security-policy-attestation-owner",
+    "evidence.single-active-policy-attestation", "action.resolve-policy-attestation-ambiguity",
+    true],
+  "attestation-expired": ["role.security-policy-attestation-owner",
+    "evidence.current-policy-attestation", "action.renew-policy-attestation", true],
+  "attestation-not-yet-effective": ["role.security-policy-attestation-owner",
+    "evidence.current-policy-attestation", "action.review-policy-attestation-effective-window",
+    true],
+  "attestation-unavailable": ["role.security-policy-attestation-owner",
+    "evidence.current-policy-attestation", "action.publish-policy-attestation", true],
+  "attestation-binding-invalid": ["role.security-policy-attestation-owner",
+    "evidence.policy-bound-attestation", "action.reissue-policy-bound-attestation", true],
+  "trust-source-unavailable": ["role.security-trust-store-owner",
+    "evidence.onboarding-policy-trust-source", "action.restore-policy-trust-source", true],
+  "trust-key-ambiguous": ["role.security-trust-store-owner",
+    "evidence.single-current-policy-trust-key", "action.resolve-policy-trust-key-ambiguity", true],
+  "trust-key-unavailable": ["role.security-trust-store-owner",
+    "evidence.current-policy-trust-key", "action.publish-policy-trust-key", true],
+  "trust-key-scope-invalid": ["role.security-trust-store-owner",
+    "evidence.exact-scope-policy-trust-key", "action.correct-policy-trust-key-scope", true],
+  "trust-integrity-failed": ["role.security-trust-store-owner",
+    "evidence.integrity-valid-policy-trust-key", "action.republish-policy-trust-key", true],
+  "trust-key-disabled": ["role.security-trust-store-owner", "evidence.active-policy-trust-key",
+    "action.review-disabled-policy-trust-key", true],
+  "trust-key-revoked": ["role.security-trust-store-owner", "evidence.active-policy-trust-key",
+    "action.replace-revoked-policy-trust-key", true],
+  "trust-key-not-yet-effective": ["role.security-trust-store-owner",
+    "evidence.current-policy-trust-key", "action.review-policy-trust-key-effective-window", true],
+  "trust-key-expired": ["role.security-trust-store-owner", "evidence.current-policy-trust-key",
+    "action.replace-expired-policy-trust-key", true],
+  "verifier-unavailable": ["role.security-cryptographic-verification-owner",
+    "evidence.production-policy-signature-verifier", "action.configure-policy-signature-verifier",
+    true],
+  "signature-unverified": ["role.security-policy-attestation-owner",
+    "evidence.cryptographically-verifiable-policy-attestation",
+    "action.reissue-verifiable-policy-attestation", true],
+  "prerequisite-unavailable": ["role.connector-upgrade-provenance-coordinator",
+    "evidence.prior-provenance-check", "action.resolve-prior-provenance-check", false],
+} as const;
 
 const signedEvidenceReceiptKeys = [
   "signed_receipt_id", "schema_version", "version", "receipt", "signature", "organization_id",
@@ -1315,14 +1383,25 @@ function isConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck(
 ): value is ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck {
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
+  const prefix = "connector.upgrade.signing-provider-onboarding-policy-provenance.";
+  const reason = typeof item.reason_code === "string" && item.reason_code.startsWith(prefix)
+    ? item.reason_code.slice(prefix.length)
+    : "";
+  const remediation = signingProviderOnboardingPolicyProvenanceRemediation[
+    reason as keyof typeof signingProviderOnboardingPolicyProvenanceRemediation
+  ];
+  const remediationValid = item.state === "verified"
+    ? item.owner_role_id === null && item.evidence_requirement_id === null &&
+      item.next_action_id === null && item.external_input_required === false
+    : remediation !== undefined && item.owner_role_id === remediation[0] &&
+      item.evidence_requirement_id === remediation[1] && item.next_action_id === remediation[2] &&
+      item.external_input_required === remediation[3];
   return (
     hasExactKeys(item, signingProviderOnboardingPolicyProvenanceCheckKeys) &&
     typeof item.check_id === "string" && item.check_id.length > 2 &&
     (item.state === "verified" || item.state === "blocked" || item.state === "unavailable") &&
     typeof item.reason_code === "string" &&
-    item.reason_code.startsWith(
-      "connector.upgrade.signing-provider-onboarding-policy-provenance.",
-    ) &&
+    item.reason_code.startsWith(prefix) && remediationValid &&
     (item.evidence_reference === null ||
       (typeof item.evidence_reference === "string" && item.evidence_reference.length > 2))
   );
@@ -1354,8 +1433,8 @@ export function isConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagn
   return (
     hasExactKeys(item, signingProviderOnboardingPolicyProvenanceDiagnosticKeys) &&
     item.schema_version ===
-      "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v1" &&
-    item.version === 1 &&
+      "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v2" &&
+    item.version === 2 &&
     [item.diagnostic_id, item.organization_id, item.environment_id]
       .every((field) => typeof field === "string" && field.length > 2) &&
     typeof item.evaluated_at === "string" && Number.isFinite(Date.parse(item.evaluated_at)) &&
