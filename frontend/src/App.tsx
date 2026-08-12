@@ -154,7 +154,12 @@ import {
   type ReleasePreflightMode,
   type ReleasePreflightProfile,
 } from "./api/releasePreflight";
-import { createStorageTechnicalReport } from "./api/reports";
+import {
+  createStorageTechnicalReport,
+  decideItsmHandoffReview,
+  getItsmHandoffReview,
+  type ItsmHandoffReviewOutcome,
+} from "./api/reports";
 import {
   createBrowserSession,
   getBrowserSessions,
@@ -376,6 +381,8 @@ export function OperationalApplication({
     new URLSearchParams(window.location.search).get("approval_request_id"),
   );
   const [approvalRationale, setApprovalRationale] = useState("");
+  const [itsmReviewRationale, setItsmReviewRationale] = useState("");
+  const [itsmReviewAcknowledged, setItsmReviewAcknowledged] = useState(false);
   const [apiCredentialName, setApiCredentialName] = useState("");
   const [apiCredentialPurpose, setApiCredentialPurpose] = useState("");
   const [apiCredentialLifetime, setApiCredentialLifetime] = useState(30);
@@ -1966,6 +1973,55 @@ export function OperationalApplication({
       ),
   });
   const technicalReport = reportMutation.data?.data;
+  const canReadItsmHandoffReview = Boolean(technicalReport?.itsm_handoff && identity);
+  const hasItsmHandoffReviewDecisionIdentity = Boolean(
+    canReadItsmHandoffReview &&
+      identity?.credential_kind === "browser_session" &&
+      identity.subject_kind === "human" &&
+      identity.role_ids.includes("role.itsm-reviewer") &&
+      ["multi_factor", "hardware_backed"].includes(
+        identity.authentication.assurance_level,
+      ),
+  );
+  const itsmHandoffReviewQuery = useQuery({
+    queryKey: [
+      "itsm-handoff-review",
+      technicalReport?.report_id,
+      technicalReport?.itsm_handoff?.draft_id,
+    ],
+    queryFn: () =>
+      getItsmHandoffReview(
+        technicalReport?.report_id ?? "",
+        technicalReport?.itsm_handoff?.draft_id ?? "",
+      ),
+    enabled: canReadItsmHandoffReview,
+  });
+  const itsmHandoffReviewMutation = useMutation({
+    mutationFn: ({
+      report,
+      outcome,
+      rationale,
+    }: {
+      report: NonNullable<typeof technicalReport>;
+      outcome: ItsmHandoffReviewOutcome;
+      rationale: string;
+    }) => decideItsmHandoffReview(report, outcome, rationale),
+    onSuccess: (result) => {
+      queryClient.setQueryData(
+        ["itsm-handoff-review", result.data.report_id, result.data.handoff_draft_id],
+        result,
+      );
+      setItsmReviewRationale("");
+      setItsmReviewAcknowledged(false);
+    },
+  });
+  const itsmHandoffReview =
+    itsmHandoffReviewMutation.data?.data ?? itsmHandoffReviewQuery.data?.data ?? undefined;
+  const canReviewItsmHandoff = Boolean(
+    hasItsmHandoffReviewDecisionIdentity &&
+      !itsmHandoffReview &&
+      identity?.subject_id !== technicalReport?.requested_by,
+  );
   const incidentReference = rcaCase?.incident_references.find(
     (reference) => reference.reference_type === "incident",
   )?.reference_id;
@@ -11501,7 +11557,19 @@ export function OperationalApplication({
                           approvalRationale={approvalRationale}
                           canGenerateReport={Boolean(recommendation && incidentReference)}
                           canReviewApproval={canReviewApproval}
+                          canReviewItsmHandoff={canReviewItsmHandoff}
                           canSubmitApproval={Boolean(recommendation?.preferred_option_id)}
+                          itsmHandoffReview={itsmHandoffReview}
+                          itsmHandoffReviewAcknowledged={itsmReviewAcknowledged}
+                          itsmHandoffReviewError={
+                            itsmHandoffReviewQuery.isError ||
+                            itsmHandoffReviewMutation.isError
+                          }
+                          itsmHandoffReviewPending={
+                            itsmHandoffReviewQuery.isLoading ||
+                            itsmHandoffReviewMutation.isPending
+                          }
+                          itsmHandoffReviewRationale={itsmReviewRationale}
                           onApprovalRationaleChange={setApprovalRationale}
                           onDecideApproval={(outcome) => {
                             if (approval) {
@@ -11528,6 +11596,23 @@ export function OperationalApplication({
                                 recommendationId: recommendation.recommendation_id,
                                 recommendationVersion: recommendation.version,
                                 incidentReference,
+                              });
+                            }
+                          }}
+                          onItsmHandoffReviewAcknowledgedChange={
+                            setItsmReviewAcknowledged
+                          }
+                          onItsmHandoffReviewRationaleChange={setItsmReviewRationale}
+                          onDecideItsmHandoffReview={(outcome) => {
+                            if (
+                              technicalReport &&
+                              itsmReviewAcknowledged &&
+                              itsmReviewRationale.trim().length >= 5
+                            ) {
+                              itsmHandoffReviewMutation.mutate({
+                                report: technicalReport,
+                                outcome,
+                                rationale: itsmReviewRationale.trim(),
                               });
                             }
                           }}

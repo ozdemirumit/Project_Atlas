@@ -140,6 +140,8 @@ from atlas.modules.authorization.application.bootstrap import (
     INVENTORY_DEVICE_READ,
     INVENTORY_DEVICE_RETIRE,
     INVESTIGATION_CREATE,
+    ITSM_HANDOFF_REVIEW_DECIDE,
+    ITSM_HANDOFF_REVIEW_READ,
     KNOWLEDGE_CORRECTION_RESUBMISSION_CREATE,
     KNOWLEDGE_CORRECTION_RESUBMISSION_READ,
     KNOWLEDGE_DETERMINISTIC_CHUNKING_CREATE,
@@ -293,6 +295,7 @@ from atlas.modules.authorization.application.bootstrap import (
     identity_governance_scope,
     inventory_device_scope,
     investigation_scope,
+    itsm_handoff_review_scope,
     logical_backup_scope,
     mcp_builder_scope,
     operational_evidence_knowledge_draft_scope,
@@ -1838,6 +1841,62 @@ async def authorize_report_create(
             code="authorization_denied",
             title="Request denied",
             detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_itsm_handoff_review_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_itsm_handoff_review(
+        request,
+        subject,
+        permission_id=ITSM_HANDOFF_REVIEW_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def authorize_itsm_handoff_review_decide(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_itsm_handoff_review(
+        request,
+        subject,
+        permission_id=ITSM_HANDOFF_REVIEW_DECIDE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def _authorize_itsm_handoff_review(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.report.itsm-handoff-review",
+            scope=itsm_handoff_review_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="ITSM handoff human review is not authorized.",
         )
     request.state.authorization_decision = decision
     return decision

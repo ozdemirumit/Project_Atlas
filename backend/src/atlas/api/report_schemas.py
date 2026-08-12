@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from atlas.api.schemas import ResponseMeta
+from atlas.modules.reports.domain.handoff_review import ItsmHandoffHumanReview
 from atlas.modules.reports.domain.models import TechnicalReport
 
 
@@ -130,4 +131,71 @@ class TechnicalReportResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: TechnicalReportData
+    meta: ResponseMeta
+
+
+class ItsmHandoffReviewDecisionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    report_version: int = Field(ge=1)
+    report_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    handoff_draft_id: str = Field(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")
+    outcome: Literal["accept", "needs_evidence", "reject"]
+    rationale: str = Field(min_length=5, max_length=1000)
+    acknowledged_review_only: Literal[True]
+
+
+class ItsmHandoffHumanReviewData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    review_id: str
+    schema_version: str
+    version: int
+    outcome: str
+    report_id: str
+    report_version: int
+    report_digest: str
+    handoff_draft_id: str
+    handoff_digest: str
+    handoff_idempotency_key: str
+    incident_reference: str
+    operation: str
+    requester_id: str
+    reviewer_id: str
+    reviewer_role_id: str
+    organization_id: str
+    environment_id: str
+    site_id: str
+    rationale: str
+    acknowledged_review_only: bool
+    request_fingerprint: str
+    idempotency_key: str
+    canonical_digest: str
+    decided_at: datetime
+    expires_at: datetime
+    review_complete: bool
+    dispatch_authorized: bool
+    external_record_mutated: bool
+    itsm_approval_satisfied: bool
+    workflow_approved: bool
+    execution_authorized: bool
+    infrastructure_mutation_performed: bool
+    reused: bool
+
+    @classmethod
+    def from_domain(cls, review: ItsmHandoffHumanReview) -> ItsmHandoffHumanReviewData:
+        return cls.model_validate(review, from_attributes=True)
+
+
+class ItsmHandoffHumanReviewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ItsmHandoffHumanReviewData
+    meta: ResponseMeta
+
+
+class ItsmHandoffHumanReviewLookupResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ItsmHandoffHumanReviewData | None
     meta: ResponseMeta

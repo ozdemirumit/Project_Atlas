@@ -9100,6 +9100,244 @@ tbody tr.selected {
   font-size: 7px;
 }
 
+.itsm-review {
+  padding: 14px;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8e5;
+}
+
+.itsm-review-heading,
+.itsm-review-record > div:first-child,
+.itsm-review-message,
+.itsm-review-boundary {
+  display: flex;
+  align-items: flex-start;
+}
+
+.itsm-review-heading {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.itsm-review-heading span,
+.itsm-review-heading h3 {
+  display: block;
+  margin: 0;
+}
+
+.itsm-review-heading span {
+  color: #687a74;
+  font-size: 8px;
+  font-weight: 760;
+}
+
+.itsm-review-heading h3 {
+  margin-top: 4px;
+  color: #35433f;
+  font-size: 11px;
+}
+
+.itsm-review-heading > strong {
+  flex: 0 0 auto;
+  padding: 4px 6px;
+  color: #775b2b;
+  background: #fff2d9;
+  border-radius: 3px;
+  font-size: 8px;
+  text-transform: capitalize;
+}
+
+.itsm-review-heading > strong.complete {
+  color: #276555;
+  background: #e9f5f1;
+}
+
+.itsm-review-message {
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px;
+  color: #52625d;
+  background: #f5f8f7;
+  border: 1px solid #dfe7e4;
+  border-radius: 4px;
+}
+
+.itsm-review-message.error {
+  color: #82433c;
+  background: #fff8f7;
+  border-color: #e8cbc7;
+}
+
+.itsm-review-message svg {
+  flex: 0 0 auto;
+}
+
+.itsm-review-message strong,
+.itsm-review-message p {
+  display: block;
+  margin: 0;
+}
+
+.itsm-review-message strong {
+  font-size: 9px;
+}
+
+.itsm-review-message p {
+  margin-top: 3px;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.itsm-review-record {
+  margin-top: 12px;
+  padding: 11px;
+  background: #f3f8f6;
+  border: 1px solid #d7e5e0;
+  border-radius: 4px;
+}
+
+.itsm-review-record > div:first-child {
+  gap: 8px;
+  color: #315f54;
+}
+
+.itsm-review-record strong,
+.itsm-review-record span {
+  display: block;
+}
+
+.itsm-review-record strong {
+  color: #344c45;
+  font-size: 9px;
+}
+
+.itsm-review-record span {
+  margin-top: 2px;
+  color: #71807b;
+  font-size: 8px;
+}
+
+.itsm-review-record > p {
+  margin: 9px 0;
+  color: #53635e;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.itsm-review-record dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  overflow: hidden;
+  background: #dce7e3;
+  border: 1px solid #dce7e3;
+  border-radius: 3px;
+}
+
+.itsm-review-record dl > div {
+  min-width: 0;
+  padding: 7px;
+  background: #ffffff;
+}
+
+.itsm-review-record dt,
+.itsm-review-record dd {
+  margin: 0;
+}
+
+.itsm-review-record dt {
+  color: #7a8783;
+  font-size: 7px;
+  text-transform: uppercase;
+}
+
+.itsm-review-record dd {
+  margin-top: 3px;
+  color: #3f4e49;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.itsm-review-record code {
+  display: block;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+  color: #62736d;
+  font-size: 7px;
+}
+
+.itsm-review-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.itsm-review-form > label:first-child {
+  color: #55635f;
+  font-size: 8px;
+  font-weight: 720;
+  text-transform: uppercase;
+}
+
+.itsm-review-form textarea {
+  width: 100%;
+  min-height: 68px;
+  padding: 9px;
+  resize: vertical;
+  color: #34413d;
+  background: #ffffff;
+  border: 1px solid #cfdad6;
+  border-radius: 4px;
+  font: inherit;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.itsm-review-acknowledgement {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: #5e6c67;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.itsm-review-acknowledgement input {
+  flex: 0 0 auto;
+  margin: 2px 0 0;
+}
+
+.itsm-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.itsm-review-actions button {
+  min-height: 30px;
+}
+
+.itsm-review-actions .secondary-action.danger:not(:disabled) {
+  color: #87433c;
+  border-color: #e2c4c0;
+  background: #fff8f7;
+}
+
+.itsm-review-boundary {
+  gap: 7px;
+  margin-top: 12px;
+  padding-top: 10px;
+  color: #7c443d;
+  border-top: 1px solid #eadbd8;
+  font-size: 8px;
+  font-weight: 720;
+}
+
+.itsm-review-boundary svg {
+  flex: 0 0 auto;
+}
+
 .report-boundary-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -10004,6 +10242,20 @@ tbody tr.selected {
 
   .itsm-fields > div:last-child {
     border-bottom: 0;
+  }
+
+  .itsm-review-record dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .itsm-review-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .itsm-review-actions button {
+    width: 100%;
+    justify-content: center;
   }
 
   .recommendation-button {

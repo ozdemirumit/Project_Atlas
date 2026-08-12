@@ -14,7 +14,11 @@ import {
 } from "lucide-react";
 
 import type { ApprovalRecord } from "../../api/approvals";
-import type { TechnicalReport } from "../../api/reports";
+import type {
+  ItsmHandoffHumanReview,
+  ItsmHandoffReviewOutcome,
+  TechnicalReport,
+} from "../../api/reports";
 
 export type ApprovalDecisionOutcome = "approve" | "reject" | "needs_evidence" | "defer";
 
@@ -27,11 +31,20 @@ export interface HealthGovernanceReportWorkspaceProps {
   approvalRationale: string;
   canGenerateReport: boolean;
   canReviewApproval: boolean;
+  canReviewItsmHandoff: boolean;
   canSubmitApproval: boolean;
+  itsmHandoffReview?: ItsmHandoffHumanReview;
+  itsmHandoffReviewAcknowledged: boolean;
+  itsmHandoffReviewError: boolean;
+  itsmHandoffReviewPending: boolean;
+  itsmHandoffReviewRationale: string;
   onApprovalRationaleChange: (value: string) => void;
   onDecideApproval: (outcome: ApprovalDecisionOutcome) => void;
+  onDecideItsmHandoffReview: (outcome: ItsmHandoffReviewOutcome) => void;
   onDownloadReport: () => void;
   onGenerateReport: () => void;
+  onItsmHandoffReviewAcknowledgedChange: (value: boolean) => void;
+  onItsmHandoffReviewRationaleChange: (value: string) => void;
   onSubmitApproval: () => void;
   reportError: boolean;
   reportPending: boolean;
@@ -304,16 +317,34 @@ function ApprovalPanel({
 
 function ReportPanel({
   canGenerateReport,
+  canReviewItsmHandoff,
+  itsmHandoffReview,
+  itsmHandoffReviewAcknowledged,
+  itsmHandoffReviewError,
+  itsmHandoffReviewPending,
+  itsmHandoffReviewRationale,
+  onDecideItsmHandoffReview,
   onDownloadReport,
   onGenerateReport,
+  onItsmHandoffReviewAcknowledgedChange,
+  onItsmHandoffReviewRationaleChange,
   reportError,
   reportPending,
   technicalReport,
 }: Pick<
   HealthGovernanceReportWorkspaceProps,
   | "canGenerateReport"
+  | "canReviewItsmHandoff"
+  | "itsmHandoffReview"
+  | "itsmHandoffReviewAcknowledged"
+  | "itsmHandoffReviewError"
+  | "itsmHandoffReviewPending"
+  | "itsmHandoffReviewRationale"
+  | "onDecideItsmHandoffReview"
   | "onDownloadReport"
   | "onGenerateReport"
+  | "onItsmHandoffReviewAcknowledgedChange"
+  | "onItsmHandoffReviewRationaleChange"
   | "reportError"
   | "reportPending"
   | "technicalReport"
@@ -500,6 +531,162 @@ function ReportPanel({
                 Idempotency {technicalReport.itsm_handoff.idempotency_key.slice(0, 20)}…
               </p>
             </div>
+          )}
+
+          {technicalReport.itsm_handoff && (
+            <section className="itsm-review" aria-live="polite">
+              <div className="itsm-review-heading">
+                <div>
+                  <span>ATTRIBUTABLE HUMAN REVIEW</span>
+                  <h3>Review the exact handoff draft</h3>
+                </div>
+                <strong className={itsmHandoffReview?.review_complete ? "complete" : "pending"}>
+                  {itsmHandoffReview
+                    ? itsmHandoffReview.outcome.replaceAll("_", " ")
+                    : "Pending"}
+                </strong>
+              </div>
+
+              {itsmHandoffReviewPending && (
+                <div className="itsm-review-message">
+                  <RefreshCw className="spin" size={17} />
+                  <div>
+                    <strong>Validating immutable review state</strong>
+                    <p>The exact report, digest, draft and reviewer scope are being checked.</p>
+                  </div>
+                </div>
+              )}
+
+              {itsmHandoffReviewError && (
+                <div className="itsm-review-message error" role="alert">
+                  <AlertTriangle size={17} />
+                  <div>
+                    <strong>Review unavailable</strong>
+                    <p>No review decision is accepted when source or authorization checks fail.</p>
+                  </div>
+                </div>
+              )}
+
+              {itsmHandoffReview && (
+                <div className="itsm-review-record">
+                  <div>
+                    <UserCheck size={18} />
+                    <div>
+                      <strong>{itsmHandoffReview.reviewer_id}</strong>
+                      <span>{formatTimestamp(itsmHandoffReview.decided_at)}</span>
+                    </div>
+                  </div>
+                  <p>{itsmHandoffReview.rationale}</p>
+                  <dl>
+                    <div>
+                      <dt>Review complete</dt>
+                      <dd>{itsmHandoffReview.review_complete ? "Yes" : "No"}</dd>
+                    </div>
+                    <div>
+                      <dt>Dispatch authority</dt>
+                      <dd>{itsmHandoffReview.dispatch_authorized ? "Present" : "None"}</dd>
+                    </div>
+                    <div>
+                      <dt>ITSM approval</dt>
+                      <dd>
+                        {itsmHandoffReview.itsm_approval_satisfied
+                          ? "Satisfied"
+                          : "Not satisfied"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Execution authority</dt>
+                      <dd>{itsmHandoffReview.execution_authorized ? "Present" : "None"}</dd>
+                    </div>
+                  </dl>
+                  <code>Digest {itsmHandoffReview.canonical_digest.slice(0, 20)}...</code>
+                </div>
+              )}
+
+              {!itsmHandoffReview && !itsmHandoffReviewPending && canReviewItsmHandoff && (
+                <div className="itsm-review-form">
+                  <label htmlFor="itsm-review-rationale">Review rationale</label>
+                  <textarea
+                    id="itsm-review-rationale"
+                    rows={3}
+                    maxLength={1000}
+                    value={itsmHandoffReviewRationale}
+                    onChange={(event) =>
+                      onItsmHandoffReviewRationaleChange(event.target.value)
+                    }
+                  />
+                  <label className="itsm-review-acknowledgement">
+                    <input
+                      type="checkbox"
+                      checked={itsmHandoffReviewAcknowledged}
+                      onChange={(event) =>
+                        onItsmHandoffReviewAcknowledgedChange(event.target.checked)
+                      }
+                    />
+                    <span>
+                      I reviewed this exact draft and understand that this records review evidence
+                      only. It does not dispatch, approve a workflow or authorize execution.
+                    </span>
+                  </label>
+                  <div className="itsm-review-actions">
+                    <button
+                      type="button"
+                      className="run-check-button"
+                      disabled={
+                        !itsmHandoffReviewAcknowledged ||
+                        itsmHandoffReviewRationale.trim().length < 5
+                      }
+                      onClick={() => onDecideItsmHandoffReview("accept")}
+                    >
+                      <CheckCircle2 size={14} />
+                      Accept handoff draft
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      disabled={
+                        !itsmHandoffReviewAcknowledged ||
+                        itsmHandoffReviewRationale.trim().length < 5
+                      }
+                      onClick={() => onDecideItsmHandoffReview("needs_evidence")}
+                    >
+                      <CircleHelp size={14} />
+                      Needs evidence
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-action danger"
+                      disabled={
+                        !itsmHandoffReviewAcknowledged ||
+                        itsmHandoffReviewRationale.trim().length < 5
+                      }
+                      onClick={() => onDecideItsmHandoffReview("reject")}
+                    >
+                      <X size={14} />
+                      Reject handoff draft
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {!itsmHandoffReview && !itsmHandoffReviewPending && !canReviewItsmHandoff && (
+                <div className="itsm-review-message">
+                  <LockKeyhole size={17} />
+                  <div>
+                    <strong>Enterprise reviewer required</strong>
+                    <p>
+                      A separate human with the ITSM reviewer role and MFA-backed browser session
+                      must review this exact draft.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="itsm-review-boundary">
+                <ShieldCheck size={15} />
+                <span>No ticket dispatch, external mutation, workflow approval or execution.</span>
+              </div>
+            </section>
           )}
 
           <div className="report-boundary-grid">

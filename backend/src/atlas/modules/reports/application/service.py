@@ -138,6 +138,10 @@ class ReportService:
             self._reports[report.report_id] = report
             return report
 
+    async def get(self, *, report_id: str) -> TechnicalReport | None:
+        async with self._lock:
+            return self._reports.get(report_id)
+
     @staticmethod
     def _validate_scope(request: ReportRequest, context: ReportAccessContext) -> None:
         if context.resource_id != REPORT_RESOURCE_ID:
