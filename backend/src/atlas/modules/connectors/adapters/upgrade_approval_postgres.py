@@ -11,12 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async
 from atlas.core.persistence.models import (
     ConnectorUpgradeApprovalDecisionModel,
     ConnectorUpgradeApprovalRequestModel,
+    ConnectorUpgradeApprovalRevalidationModel,
 )
 from atlas.modules.connectors.application.upgrade_approval import ConnectorUpgradeApprovalService
 from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeApprovalDecision,
     ConnectorUpgradeApprovalOutcome,
     ConnectorUpgradeApprovalRequest,
+    ConnectorUpgradeApprovalRevalidation,
 )
 
 
@@ -128,6 +130,61 @@ class PostgreSQLConnectorUpgradeApprovalRepository:
             return False
         return True
 
+    async def get_revalidation(
+        self, *, revalidation_id: str
+    ) -> ConnectorUpgradeApprovalRevalidation | None:
+        async with self._sessions() as session:
+            row = await session.get(ConnectorUpgradeApprovalRevalidationModel, revalidation_id)
+            return self._revalidation_to_domain(row.payload) if row else None
+
+    async def get_latest_revalidation(
+        self, *, request_id: str
+    ) -> ConnectorUpgradeApprovalRevalidation | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorUpgradeApprovalRevalidationModel)
+                .where(ConnectorUpgradeApprovalRevalidationModel.request_id == request_id)
+                .order_by(ConnectorUpgradeApprovalRevalidationModel.revalidated_at.desc())
+                .limit(1)
+            )
+            return self._revalidation_to_domain(row.payload) if row else None
+
+    async def get_revalidation_by_key(
+        self, *, revalidated_by: str, idempotency_key: str
+    ) -> ConnectorUpgradeApprovalRevalidation | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorUpgradeApprovalRevalidationModel).where(
+                    ConnectorUpgradeApprovalRevalidationModel.revalidated_by == revalidated_by,
+                    ConnectorUpgradeApprovalRevalidationModel.idempotency_key == idempotency_key,
+                )
+            )
+            return self._revalidation_to_domain(row.payload) if row else None
+
+    async def add_revalidation(self, revalidation: ConnectorUpgradeApprovalRevalidation) -> bool:
+        payload = ConnectorUpgradeApprovalService._normalize(asdict(revalidation))
+        assert isinstance(payload, dict)
+        try:
+            async with self._sessions.begin() as session:
+                session.add(
+                    ConnectorUpgradeApprovalRevalidationModel(
+                        revalidation_id=revalidation.revalidation_id,
+                        request_id=revalidation.request_id,
+                        decision_id=revalidation.decision_id,
+                        revalidated_by=revalidation.revalidated_by,
+                        idempotency_key=revalidation.idempotency_key,
+                        organization_id=revalidation.organization_id,
+                        environment_id=revalidation.environment_id,
+                        revalidated_at=revalidation.revalidated_at,
+                        valid_until=revalidation.valid_until,
+                        canonical_digest=revalidation.canonical_digest,
+                        payload=payload,
+                    )
+                )
+        except IntegrityError:
+            return False
+        return True
+
     async def close(self) -> None:
         await self._engine.dispose()
 
@@ -144,3 +201,11 @@ class PostgreSQLConnectorUpgradeApprovalRepository:
         payload["outcome"] = ConnectorUpgradeApprovalOutcome(str(payload["outcome"]))
         payload["decided_at"] = datetime.fromisoformat(str(payload["decided_at"]))
         return ConnectorUpgradeApprovalDecision(**cast(Any, payload))
+
+    @staticmethod
+    def _revalidation_to_domain(raw: dict[str, object]) -> ConnectorUpgradeApprovalRevalidation:
+        payload = dict(raw)
+        payload["check_ids"] = tuple(cast(list[str], payload["check_ids"]))
+        payload["revalidated_at"] = datetime.fromisoformat(str(payload["revalidated_at"]))
+        payload["valid_until"] = datetime.fromisoformat(str(payload["valid_until"]))
+        return ConnectorUpgradeApprovalRevalidation(**cast(Any, payload))

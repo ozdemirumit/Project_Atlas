@@ -13,6 +13,7 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeApprovalDecision,
     ConnectorUpgradeApprovalRecord,
     ConnectorUpgradeApprovalRequest,
+    ConnectorUpgradeApprovalRevalidation,
 )
 from atlas.modules.connectors.domain.upgrade_readiness import (
     ConnectorCapabilityChange,
@@ -431,6 +432,80 @@ class ConnectorUpgradeApprovalDecisionData(BaseModel):
         cls, decision: ConnectorUpgradeApprovalDecision
     ) -> ConnectorUpgradeApprovalDecisionData:
         return cls(**{field: getattr(decision, field) for field in cls.model_fields})
+
+
+class ConnectorUpgradeApprovalRevalidationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = Field(
+        default="atlas.connector-upgrade-approval-revalidation-input.v1", pattern=STABLE_ID
+    )
+    expected_request_digest: str = Field(pattern=DIGEST)
+    expected_decision_digest: str = Field(pattern=DIGEST)
+    purpose: str = Field(min_length=20, max_length=1000)
+    acknowledged_revalidation_grants_no_handoff_or_execution_authority: bool
+
+
+class ConnectorUpgradeApprovalRevalidationData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    revalidation_id: str
+    schema_version: str
+    version: int
+    source_record_id: str
+    source_record_version: int
+    instance_id: str
+    connector_id: str
+    request_id: str
+    request_version: int
+    request_digest: str
+    decision_id: str
+    decision_version: int
+    decision_digest: str
+    plan_id: str
+    plan_digest: str
+    readiness_digest: str
+    current_receipt_id: str
+    current_receipt_digest: str
+    candidate_receipt_id: str
+    candidate_receipt_digest: str
+    approval_policy_id: str
+    approval_policy_version: str
+    approval_policy_digest: str
+    organization_id: str
+    environment_id: str
+    requester_id: str
+    approver_id: str
+    revalidated_by: str
+    purpose: str
+    check_ids: tuple[str, ...]
+    revalidated_at: datetime
+    valid_until: datetime
+    canonical_digest: str
+    approval_current_at_revalidation: bool
+    governance_ready: bool
+    handoff_ready: bool
+    target_configured: bool
+    package_rebound: bool
+    configuration_changed: bool
+    target_contacted: bool
+    handoff_artifact_issued: bool
+    execution_authorized: bool
+    infrastructure_mutation_performed: bool
+    reused: bool
+
+    @classmethod
+    def from_domain(
+        cls, revalidation: ConnectorUpgradeApprovalRevalidation
+    ) -> ConnectorUpgradeApprovalRevalidationData:
+        return cls(**{field: getattr(revalidation, field) for field in cls.model_fields})
+
+
+class ConnectorUpgradeApprovalRevalidationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ConnectorUpgradeApprovalRevalidationData
+    meta: ResponseMeta
 
 
 class ConnectorUpgradeApprovalRecordData(BaseModel):

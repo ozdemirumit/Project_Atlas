@@ -19,7 +19,9 @@ import {
   createConnectorUpgradeApprovalRequest,
   decideConnectorUpgradeApproval,
   getConnectorUpgradeApprovalRecord,
+  getLatestConnectorUpgradeApprovalRevalidation,
   getConnectorUpgradeReadiness,
+  revalidateConnectorUpgradeApproval,
   type ConnectorUpgradeApprovalOutcome,
   type ConnectorUpgradeCandidate,
   getConnectorUpgradePlan,
@@ -297,6 +299,10 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
   const [outcome, setOutcome] = useState<ConnectorUpgradeApprovalOutcome | null>(null);
   const [rationale, setRationale] = useState("");
   const [decisionAcknowledged, setDecisionAcknowledged] = useState(false);
+  const [revalidationPurpose, setRevalidationPurpose] = useState(
+    "Revalidate the exact approved plan without granting handoff authority.",
+  );
+  const [revalidationAcknowledged, setRevalidationAcknowledged] = useState(false);
   const recordQuery = useQuery({
     queryKey,
     queryFn: () => getConnectorUpgradeApprovalRecord(plan),
@@ -330,8 +336,27 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
     },
   });
   const record = decisionMutation.data ?? recordQuery.data;
+  const revalidationQueryKey = ["connector-upgrade-approval-revalidation", record?.request.request_id];
+  const revalidationQuery = useQuery({
+    queryKey: revalidationQueryKey,
+    queryFn: () => getLatestConnectorUpgradeApprovalRevalidation(record!),
+    enabled: record?.state === "approved" && record.decision?.outcome === "approve",
+    retry: false,
+  });
+  const revalidationMutation = useMutation({
+    mutationFn: revalidateConnectorUpgradeApproval,
+    onSuccess: (revalidation) => {
+      queryClient.setQueryData(revalidationQueryKey, revalidation);
+      setRevalidationAcknowledged(false);
+    },
+  });
   const pending = record?.state === "pending" && record.decision === null;
   const requesterIsCurrentSubject = record?.request.requested_by === subjectId;
+  const revalidation = revalidationMutation.data ?? revalidationQuery.data;
+  const canRevalidate = Boolean(
+    record?.state === "approved" && record.decision?.outcome === "approve" &&
+    subjectId !== record.request.requested_by && subjectId !== record.decision.decided_by,
+  );
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!acknowledged || purpose.trim().length < 20) return;
@@ -355,6 +380,29 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
           </div>
         )}
         {record.decision && <div className="installed-mcp-approval-result"><strong>{record.decision.outcome.replaceAll("_", " ")}</strong><span>{record.decision.decided_by}</span><p>{record.decision.rationale}</p><small>{new Date(record.decision.decided_at).toLocaleString()}</small></div>}
+        {record.state === "approved" && record.decision?.outcome === "approve" && (
+          <div className="installed-mcp-approval-decision">
+            <div className="installed-mcp-approval-heading"><UserCheck size={18} /><div><strong>Independent approval revalidation</strong><span>A third person verifies the exact request, decision, plan and policy lineage.</span></div></div>
+            {revalidation ? (
+              <div className="installed-mcp-approval-result">
+                <strong>Governance ready</strong>
+                <span>Revalidated by {revalidation.revalidated_by}</span>
+                <p>Approval was current at revalidation. Handoff remains blocked.</p>
+                <small>Valid until {new Date(revalidation.valid_until).toLocaleString()}</small>
+                <ul>{revalidation.check_ids.map((checkId) => <li key={checkId}>{checkId}</li>)}</ul>
+              </div>
+            ) : canRevalidate ? (
+              <>
+                <label>Revalidation purpose<textarea value={revalidationPurpose} minLength={20} maxLength={1000} onChange={(event) => setRevalidationPurpose(event.target.value)} /></label>
+                <label className="checkbox-row"><input type="checkbox" checked={revalidationAcknowledged} onChange={(event) => setRevalidationAcknowledged(event.target.checked)} /><span>This produces evidence only. It grants no handoff, package, runtime or execution authority.</span></label>
+                {revalidationMutation.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><span>Revalidation failed because identity separation, approval lineage, policy or plan freshness changed.</span></div>}
+                <button className="primary-button" type="button" disabled={!revalidationAcknowledged || revalidationPurpose.trim().length < 20 || revalidationMutation.isPending} onClick={() => revalidationMutation.mutate({ record, purpose: revalidationPurpose })}><UserCheck size={16} />{revalidationMutation.isPending ? "Revalidating approval..." : "Revalidate approval"}</button>
+              </>
+            ) : (
+              <div className="installed-mcp-status error-state" role="status"><UserX size={17} /><div><strong>Third verifier required</strong><span>The requester and approver cannot revalidate this approval.</span></div></div>
+            )}
+          </div>
+        )}
         <p>The record grants no execution authority and performs no package, runtime or infrastructure change.</p>
       </section>
     );

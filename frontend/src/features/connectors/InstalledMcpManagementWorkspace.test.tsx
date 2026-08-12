@@ -13,10 +13,13 @@ import {
   createConnectorUpgradeApprovalRequest,
   decideConnectorUpgradeApproval,
   getConnectorUpgradeApprovalRecord,
+  getLatestConnectorUpgradeApprovalRevalidation,
   getConnectorUpgradePlan,
   getConnectorUpgradeReadiness,
+  revalidateConnectorUpgradeApproval,
   type ConnectorUpgradeApprovalRecord,
   type ConnectorUpgradeApprovalRequest,
+  type ConnectorUpgradeApprovalRevalidation,
   type ConnectorUpgradePlan,
   type ConnectorUpgradeReadiness,
 } from "../../api/connectorUpgradeReadiness";
@@ -222,6 +225,56 @@ const approvedUpgradeApproval: ConnectorUpgradeApprovalRecord = {
   decision_recorded: true,
 };
 
+const upgradeApprovalRevalidation: ConnectorUpgradeApprovalRevalidation = {
+  revalidation_id: "connector-upgrade-approval-revalidation.test",
+  schema_version: "atlas.connector-upgrade-approval-revalidation.v1",
+  version: 1,
+  source_record_id: instance.record_id,
+  source_record_version: instance.version,
+  instance_id: instance.instance_id,
+  connector_id: instance.connector_id,
+  request_id: upgradeApprovalRequest.request_id,
+  request_version: 1,
+  request_digest: upgradeApprovalRequest.canonical_digest,
+  decision_id: approvedUpgradeApproval.decision!.decision_id,
+  decision_version: 1,
+  decision_digest: approvedUpgradeApproval.decision!.canonical_digest,
+  plan_id: upgradePlan.plan_id,
+  plan_digest: upgradePlan.canonical_digest,
+  readiness_digest: upgradePlan.readiness_digest,
+  current_receipt_id: upgradePlan.current_receipt_id,
+  current_receipt_digest: upgradePlan.current_receipt_digest,
+  candidate_receipt_id: upgradePlan.candidate_receipt_id,
+  candidate_receipt_digest: upgradePlan.candidate_receipt_digest,
+  approval_policy_id: upgradeApprovalRequest.approval_policy_id,
+  approval_policy_version: upgradeApprovalRequest.approval_policy_version,
+  approval_policy_digest: upgradeApprovalRequest.approval_policy_digest,
+  organization_id: instance.organization_id,
+  environment_id: instance.environment_id,
+  requester_id: upgradeApprovalRequest.requested_by,
+  approver_id: approvedUpgradeApproval.decision!.decided_by,
+  revalidated_by: "subject.connector-independent-verifier",
+  purpose: "Revalidate the exact approved plan without granting handoff authority.",
+  check_ids: [
+    "connector.upgrade.revalidation.request-integrity",
+    "connector.upgrade.revalidation.decision-integrity",
+  ],
+  revalidated_at: "2026-08-12T00:40:00Z",
+  valid_until: "2026-08-12T01:00:00Z",
+  canonical_digest: "5".repeat(64),
+  approval_current_at_revalidation: true,
+  governance_ready: true,
+  handoff_ready: false,
+  target_configured: false,
+  package_rebound: false,
+  configuration_changed: false,
+  target_contacted: false,
+  handoff_artifact_issued: false,
+  execution_authorized: false,
+  infrastructure_mutation_performed: false,
+  reused: false,
+};
+
 vi.mock("../../api/connectorInstances", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorInstances")>();
   return {
@@ -245,8 +298,10 @@ vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
     createConnectorUpgradeApprovalRequest: vi.fn(),
     decideConnectorUpgradeApproval: vi.fn(),
     getConnectorUpgradeApprovalRecord: vi.fn(),
+    getLatestConnectorUpgradeApprovalRevalidation: vi.fn(),
     getConnectorUpgradeReadiness: vi.fn(),
     getConnectorUpgradePlan: vi.fn(),
+    revalidateConnectorUpgradeApproval: vi.fn(),
   };
 });
 
@@ -270,6 +325,8 @@ beforeEach(() => {
   vi.mocked(getConnectorUpgradeApprovalRecord).mockResolvedValue(null);
   vi.mocked(createConnectorUpgradeApprovalRequest).mockResolvedValue(upgradeApprovalRequest);
   vi.mocked(decideConnectorUpgradeApproval).mockResolvedValue(approvedUpgradeApproval);
+  vi.mocked(getLatestConnectorUpgradeApprovalRevalidation).mockResolvedValue(null);
+  vi.mocked(revalidateConnectorUpgradeApproval).mockResolvedValue(upgradeApprovalRevalidation);
   vi.mocked(createConnectorInstance).mockResolvedValue({ data: instance });
   vi.mocked(retireConnectorInstance).mockResolvedValue({
     ...instance,
@@ -357,6 +414,35 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(await screen.findByText("Human decision: approved")).toBeVisible();
     expect(screen.getByText("subject.connector-independent-approver")).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|apply|execute/i })).toBeNull();
+  });
+
+  it("lets only a third human revalidate an approved decision without exposing handoff or execution", async () => {
+    vi.mocked(getConnectorUpgradeApprovalRecord).mockResolvedValue(approvedUpgradeApproval);
+    renderWorkspace("subject.connector-independent-verifier");
+    fireEvent.click(await screen.findByRole("button", { name: "Review update for Storage East" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Review plan for version.2.0.0" }));
+
+    expect(await screen.findByText("Independent approval revalidation")).toBeVisible();
+    const revalidate = screen.getByRole("button", { name: "Revalidate approval" });
+    expect(revalidate).toBeDisabled();
+    fireEvent.click(screen.getByLabelText(/produces evidence only/i));
+    expect(revalidate).toBeEnabled();
+    fireEvent.click(revalidate);
+
+    await waitFor(() => expect(revalidateConnectorUpgradeApproval).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Governance ready")).toBeVisible();
+    expect(screen.getByText(/Handoff remains blocked/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /install|apply|execute|handoff/i })).toBeNull();
+  });
+
+  it("requires a third verifier when the approved decision belongs to the current subject", async () => {
+    vi.mocked(getConnectorUpgradeApprovalRecord).mockResolvedValue(approvedUpgradeApproval);
+    renderWorkspace("subject.connector-independent-approver");
+    fireEvent.click(await screen.findByRole("button", { name: "Review update for Storage East" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Review plan for version.2.0.0" }));
+
+    expect(await screen.findByText("Third verifier required")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Revalidate approval" })).toBeNull();
   });
 
   it("adds only an acknowledged disabled instance from a governed installed package", async () => {

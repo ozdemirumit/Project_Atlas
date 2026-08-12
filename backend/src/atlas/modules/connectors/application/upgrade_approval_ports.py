@@ -6,6 +6,7 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeApprovalDecision,
     ConnectorUpgradeApprovalPolicySnapshot,
     ConnectorUpgradeApprovalRequest,
+    ConnectorUpgradeApprovalRevalidation,
 )
 
 
@@ -42,5 +43,21 @@ class ConnectorUpgradeApprovalRepository(Protocol):
     ) -> ConnectorUpgradeApprovalDecision | None: ...
 
     async def add_decision(self, decision: ConnectorUpgradeApprovalDecision) -> bool: ...
+
+    async def get_revalidation(
+        self, *, revalidation_id: str
+    ) -> ConnectorUpgradeApprovalRevalidation | None: ...
+
+    async def get_latest_revalidation(
+        self, *, request_id: str
+    ) -> ConnectorUpgradeApprovalRevalidation | None: ...
+
+    async def get_revalidation_by_key(
+        self, *, revalidated_by: str, idempotency_key: str
+    ) -> ConnectorUpgradeApprovalRevalidation | None: ...
+
+    async def add_revalidation(
+        self, revalidation: ConnectorUpgradeApprovalRevalidation
+    ) -> bool: ...
 
     async def close(self) -> None: ...

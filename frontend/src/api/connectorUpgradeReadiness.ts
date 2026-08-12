@@ -187,6 +187,53 @@ export type ConnectorUpgradeApprovalRecord = {
   infrastructure_mutation_performed: false;
 };
 
+export type ConnectorUpgradeApprovalRevalidation = {
+  revalidation_id: string;
+  schema_version: "atlas.connector-upgrade-approval-revalidation.v1";
+  version: 1;
+  source_record_id: string;
+  source_record_version: number;
+  instance_id: string;
+  connector_id: string;
+  request_id: string;
+  request_version: 1;
+  request_digest: string;
+  decision_id: string;
+  decision_version: 1;
+  decision_digest: string;
+  plan_id: string;
+  plan_digest: string;
+  readiness_digest: string;
+  current_receipt_id: string;
+  current_receipt_digest: string;
+  candidate_receipt_id: string;
+  candidate_receipt_digest: string;
+  approval_policy_id: string;
+  approval_policy_version: string;
+  approval_policy_digest: string;
+  organization_id: string;
+  environment_id: string;
+  requester_id: string;
+  approver_id: string;
+  revalidated_by: string;
+  purpose: string;
+  check_ids: string[];
+  revalidated_at: string;
+  valid_until: string;
+  canonical_digest: string;
+  approval_current_at_revalidation: true;
+  governance_ready: true;
+  handoff_ready: false;
+  target_configured: false;
+  package_rebound: false;
+  configuration_changed: false;
+  target_contacted: false;
+  handoff_artifact_issued: false;
+  execution_authorized: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
 const DIGEST = /^[a-f0-9]{64}$/;
 
 function strings(value: unknown): value is string[] {
@@ -413,6 +460,41 @@ function approvalRecord(value: unknown): value is ConnectorUpgradeApprovalRecord
   );
 }
 
+function approvalRevalidation(value: unknown): value is ConnectorUpgradeApprovalRevalidation {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  const digests = [
+    item.request_digest,
+    item.decision_digest,
+    item.plan_digest,
+    item.readiness_digest,
+    item.current_receipt_digest,
+    item.candidate_receipt_digest,
+    item.approval_policy_digest,
+    item.canonical_digest,
+  ];
+  return (
+    item.schema_version === "atlas.connector-upgrade-approval-revalidation.v1" &&
+    item.version === 1 && item.request_version === 1 && item.decision_version === 1 &&
+    [
+      item.revalidation_id, item.source_record_id, item.instance_id, item.connector_id,
+      item.request_id, item.decision_id, item.plan_id, item.current_receipt_id,
+      item.candidate_receipt_id, item.approval_policy_id, item.approval_policy_version,
+      item.organization_id, item.environment_id, item.requester_id, item.approver_id,
+      item.revalidated_by, item.purpose, item.revalidated_at, item.valid_until,
+    ].every((field) => typeof field === "string") &&
+    typeof item.source_record_version === "number" && strings(item.check_ids) &&
+    digests.every((digest) => typeof digest === "string" && DIGEST.test(digest)) &&
+    item.approval_current_at_revalidation === true && item.governance_ready === true &&
+    item.handoff_ready === false && item.target_configured === false &&
+    item.package_rebound === false && item.configuration_changed === false &&
+    item.target_contacted === false && item.handoff_artifact_issued === false &&
+    item.execution_authorized === false && item.infrastructure_mutation_performed === false &&
+    typeof item.reused === "boolean" &&
+    !("revalidation_fingerprint" in item || "idempotency_key" in item || "credential" in item)
+  );
+}
+
 export async function getConnectorUpgradeReadiness(
   recordId: string,
 ): Promise<ConnectorUpgradeReadiness> {
@@ -566,6 +648,69 @@ export async function decideConnectorUpgradeApproval(input: {
     payload.data.decision?.outcome !== outcome
   ) {
     throw new Error("Connector upgrade approval decision does not match the exact request");
+  }
+  return payload.data;
+}
+
+export async function getLatestConnectorUpgradeApprovalRevalidation(
+  record: ConnectorUpgradeApprovalRecord,
+): Promise<ConnectorUpgradeApprovalRevalidation | null> {
+  const response = await apiFetch(
+    `/api/v1/connectors/instances/${encodeURIComponent(record.request.source_record_id)}/upgrade-approval-requests/${encodeURIComponent(record.request.request_id)}/revalidations/latest`,
+    { headers: { Accept: "application/json" }, cache: "no-store" },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Connector upgrade approval revalidation read failed with ${response.status}`);
+  const payload: unknown = await response.json();
+  if (!payload || typeof payload !== "object" || !("data" in payload) || !approvalRevalidation(payload.data)) {
+    throw new Error("Connector upgrade approval revalidation returned an unsafe record");
+  }
+  if (
+    payload.data.request_id !== record.request.request_id ||
+    payload.data.request_digest !== record.request.canonical_digest ||
+    payload.data.decision_digest !== record.decision?.canonical_digest
+  ) {
+    throw new Error("Connector upgrade approval revalidation does not match the exact decision");
+  }
+  return payload.data;
+}
+
+export async function revalidateConnectorUpgradeApproval(input: {
+  record: ConnectorUpgradeApprovalRecord;
+  purpose: string;
+}): Promise<ConnectorUpgradeApprovalRevalidation> {
+  const { record, purpose } = input;
+  if (record.state !== "approved" || !record.approval_valid || record.decision?.outcome !== "approve") {
+    throw new Error("Only a current approved decision can be revalidated");
+  }
+  const response = await apiFetch(
+    `/api/v1/connectors/instances/${encodeURIComponent(record.request.source_record_id)}/upgrade-approval-requests/${encodeURIComponent(record.request.request_id)}/revalidations`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": `connector-upgrade-approval-revalidation.${crypto.randomUUID()}`,
+      },
+      body: JSON.stringify({
+        schema_version: "atlas.connector-upgrade-approval-revalidation-input.v1",
+        expected_request_digest: record.request.canonical_digest,
+        expected_decision_digest: record.decision.canonical_digest,
+        purpose: purpose.trim(),
+        acknowledged_revalidation_grants_no_handoff_or_execution_authority: true,
+      }),
+    },
+  );
+  if (!response.ok) throw new Error(`Connector upgrade approval revalidation failed with ${response.status}`);
+  const payload: unknown = await response.json();
+  if (!payload || typeof payload !== "object" || !("data" in payload) || !approvalRevalidation(payload.data)) {
+    throw new Error("Connector upgrade approval revalidation returned an unsafe record");
+  }
+  if (
+    payload.data.request_digest !== record.request.canonical_digest ||
+    payload.data.decision_digest !== record.decision.canonical_digest
+  ) {
+    throw new Error("Connector upgrade approval revalidation does not match the exact decision");
   }
   return payload.data;
 }
