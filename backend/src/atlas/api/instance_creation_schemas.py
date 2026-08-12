@@ -888,6 +888,9 @@ class ConnectorUpgradeSigningProviderOnboardingReadinessData(BaseModel):
     conformance_digest: str | None = Field(default=None, pattern=DIGEST)
     policy_id: str = Field(pattern=STABLE_ID)
     policy_version: str = Field(pattern=STABLE_ID)
+    policy_digest: str = Field(pattern=DIGEST)
+    policy_issued_by: str = Field(pattern=STABLE_ID)
+    policy_expires_at: datetime
     evaluated_at: datetime
     readiness_state: Literal["ready", "blocked"]
     requirements: tuple[ConnectorUpgradeSigningProviderOnboardingRequirementData, ...]

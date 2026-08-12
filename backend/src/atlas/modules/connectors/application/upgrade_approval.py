@@ -20,6 +20,7 @@ from atlas.modules.connectors.application.upgrade_approval_ports import (
     ConnectorUpgradeItsmChangeEvidenceSource,
     ConnectorUpgradeMaintenanceWindowEvidenceSource,
     ConnectorUpgradeSigningProviderOnboardingEvidenceSource,
+    ConnectorUpgradeSigningProviderOnboardingPolicySource,
 )
 from atlas.modules.connectors.application.upgrade_evidence_authenticity_ports import (
     ConnectorUpgradeEvidenceAuthenticityError,
@@ -57,6 +58,7 @@ from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeSignedEvidenceReceipt,
     ConnectorUpgradeSignedEvidenceReceiptVerification,
     ConnectorUpgradeSigningProviderConformanceAssessment,
+    ConnectorUpgradeSigningProviderOnboardingPolicySnapshot,
     ConnectorUpgradeSigningProviderOnboardingReadiness,
     ConnectorUpgradeSigningProviderOnboardingRequirement,
     ConnectorUpgradeSigningProviderOnboardingRequirementState,
@@ -138,12 +140,27 @@ UPGRADE_SIGNING_PROVIDER_ONBOARDING_READINESS_SCHEMA = (
 UPGRADE_SIGNING_PROVIDER_ONBOARDING_READINESS_PERMISSION = (
     "connectors.upgrade-signing-provider-onboarding-readiness.read"
 )
-UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_ID = (
-    "connector-upgrade-signing-provider-onboarding.default"
+UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_SCHEMA = (
+    "atlas.connector-upgrade-signing-provider-onboarding-policy.v1"
 )
-UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_VERSION = "v2026.08.12.1"
-UPGRADE_SIGNING_PROVIDER_PRODUCTION_ALGORITHMS = frozenset(
-    {"algorithm.rsassa-pss-sha256", "algorithm.ecdsa-p256-sha256"}
+UPGRADE_SIGNING_PROVIDER_ONBOARDING_SUPPORTED_REQUIREMENTS = frozenset(
+    {
+        "provider-available",
+        "provider-class-policy-approved",
+        "provider-production-approved",
+        "production-key-eligible",
+        "production-algorithm-approved",
+        "conformance-current",
+        "conformance-binding-current",
+        "workload-identity-approved",
+        "secret-reference-ownership-verified",
+        "network-boundary-approved",
+        "key-lifecycle-revocation-approved",
+        "audit-routing-verified",
+        "availability-recovery-verified",
+        "security-approval-current",
+        "deployment-approval-current",
+    }
 )
 UPGRADE_HANDOFF_APPLICABILITY_POLICY_ID = "connector-upgrade-handoff-evidence-applicability.default"
 UPGRADE_HANDOFF_APPLICABILITY_POLICY_VERSION = "v2026.08.12.1"
@@ -198,6 +215,9 @@ class ConnectorUpgradeApprovalService:
         signing_provider_onboarding_evidence_source: (
             ConnectorUpgradeSigningProviderOnboardingEvidenceSource | None
         ) = None,
+        signing_provider_onboarding_policy_source: (
+            ConnectorUpgradeSigningProviderOnboardingPolicySource | None
+        ) = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
@@ -211,6 +231,7 @@ class ConnectorUpgradeApprovalService:
         self._signing_provider_onboarding_evidence_source = (
             signing_provider_onboarding_evidence_source
         )
+        self._signing_provider_onboarding_policy_source = signing_provider_onboarding_policy_source
         self._environment_id = environment_id
         self._clock = clock or (lambda: datetime.now(UTC))
         self._mutation_lock = asyncio.Lock()
@@ -1663,11 +1684,12 @@ class ConnectorUpgradeApprovalService:
         correlation_id: str,
     ) -> ConnectorUpgradeSigningProviderOnboardingReadiness:
         self._require_authenticated_human(actor)
+        now = self._clock()
+        policy = await self._active_signing_provider_onboarding_policy(actor=actor, now=now)
         inventory = await self.signing_key_trust_inventory(
             actor=actor,
             correlation_id=correlation_id,
         )
-        now = self._clock()
         assessment = await self._repository.get_latest_signing_provider_conformance(
             organization_id=actor.organization_id,
             environment_id=self._environment_id,
@@ -1694,14 +1716,15 @@ class ConnectorUpgradeApprovalService:
             key for key in inventory.keys if key.signing_eligible and key.verification_trusted
         )
         selected_key = next(
-            (
-                key
-                for key in active_keys
-                if key.algorithm in UPGRADE_SIGNING_PROVIDER_PRODUCTION_ALGORITHMS
-            ),
+            (key for key in active_keys if key.algorithm in policy.permitted_algorithms),
             active_keys[0] if active_keys else None,
         )
-        conformance_current = assessment is not None and now < assessment.valid_until
+        conformance_current = (
+            assessment is not None
+            and now < assessment.valid_until
+            and now - assessment.observed_at
+            <= timedelta(seconds=policy.maximum_conformance_age_seconds)
+        )
         conformance_satisfied = (
             conformance_current
             and assessment is not None
@@ -1719,8 +1742,9 @@ class ConnectorUpgradeApprovalService:
                 for key in active_keys
             )
         )
+        provider_class_permitted = inventory.provider_class in policy.permitted_provider_classes
         production_algorithm = any(
-            key.algorithm in UPGRADE_SIGNING_PROVIDER_PRODUCTION_ALGORITHMS for key in active_keys
+            key.algorithm in policy.permitted_algorithms for key in active_keys
         )
 
         def requirement(
@@ -1743,12 +1767,18 @@ class ConnectorUpgradeApprovalService:
                 evidence_reference=evidence_reference if satisfied else None,
             )
 
-        requirements = (
+        available_requirements = (
             requirement(
                 "provider-available",
                 inventory.provider_available,
                 blocked_reason="provider-unavailable",
                 evidence_reference=f"trust-inventory.{inventory.canonical_digest}",
+            ),
+            requirement(
+                "provider-class-policy-approved",
+                provider_class_permitted,
+                blocked_reason="provider-class-policy-blocked",
+                evidence_reference=policy.policy_id if provider_class_permitted else None,
             ),
             requirement(
                 "provider-production-approved",
@@ -1770,7 +1800,7 @@ class ConnectorUpgradeApprovalService:
                     next(
                         key.algorithm
                         for key in active_keys
-                        if key.algorithm in UPGRADE_SIGNING_PROVIDER_PRODUCTION_ALGORITHMS
+                        if key.algorithm in policy.permitted_algorithms
                     )
                     if production_algorithm
                     else None
@@ -1837,6 +1867,13 @@ class ConnectorUpgradeApprovalService:
                 evidence_reference=(evidence.deployment_approval_reference if evidence else None),
             ),
         )
+        available_requirements_by_id = {
+            item.requirement_id: item for item in available_requirements
+        }
+        requirements = tuple(
+            available_requirements_by_id[requirement_id]
+            for requirement_id in policy.required_requirement_ids
+        )
         ready = all(
             item.state is ConnectorUpgradeSigningProviderOnboardingRequirementState.SATISFIED
             for item in requirements
@@ -1860,8 +1897,11 @@ class ConnectorUpgradeApprovalService:
                 assessment.assessment_id if assessment is not None else None
             ),
             "conformance_digest": assessment.canonical_digest if assessment is not None else None,
-            "policy_id": UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_ID,
-            "policy_version": UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_VERSION,
+            "policy_id": policy.policy_id,
+            "policy_version": policy.policy_version,
+            "policy_digest": policy.canonical_digest,
+            "policy_issued_by": policy.issued_by,
+            "policy_expires_at": policy.expires_at.isoformat(),
             "evaluated_at": now.isoformat(),
             "readiness_state": "ready" if ready else "blocked",
             "requirements": [self._normalize(asdict(item)) for item in requirements],
@@ -1890,8 +1930,11 @@ class ConnectorUpgradeApprovalService:
                 assessment.assessment_id if assessment is not None else None
             ),
             conformance_digest=(assessment.canonical_digest if assessment is not None else None),
-            policy_id=UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_ID,
-            policy_version=UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_VERSION,
+            policy_id=policy.policy_id,
+            policy_version=policy.policy_version,
+            policy_digest=policy.canonical_digest,
+            policy_issued_by=policy.issued_by,
+            policy_expires_at=policy.expires_at,
             evaluated_at=now,
             readiness_state="ready" if ready else "blocked",
             requirements=requirements,
@@ -2611,6 +2654,53 @@ class ConnectorUpgradeApprovalService:
     async def close(self) -> None:
         await self._repository.close()
 
+    async def _active_signing_provider_onboarding_policy(
+        self, *, actor: AuthenticatedSubject, now: datetime
+    ) -> ConnectorUpgradeSigningProviderOnboardingPolicySnapshot:
+        if self._signing_provider_onboarding_policy_source is None:
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_signing_provider_onboarding_policy_unavailable"
+            )
+        policies = await self._signing_provider_onboarding_policy_source.list_scope(
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
+        if not policies:
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_signing_provider_onboarding_policy_unavailable"
+            )
+        for policy in policies:
+            if (
+                policy.organization_id != actor.organization_id
+                or policy.environment_id != self._environment_id
+            ):
+                raise ConnectorUpgradeApprovalError(
+                    "connector_upgrade_signing_provider_onboarding_policy_scope_invalid"
+                )
+            self._verify_signing_provider_onboarding_policy(policy)
+            if not set(policy.required_requirement_ids).issubset(
+                UPGRADE_SIGNING_PROVIDER_ONBOARDING_SUPPORTED_REQUIREMENTS
+            ):
+                raise ConnectorUpgradeApprovalError(
+                    "connector_upgrade_signing_provider_onboarding_policy_requirement_unsupported"
+                )
+        active = tuple(
+            policy for policy in policies if policy.effective_at <= now < policy.expires_at
+        )
+        if len(active) > 1:
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_signing_provider_onboarding_policy_ambiguous"
+            )
+        if len(active) == 1:
+            return active[0]
+        if all(now >= policy.expires_at for policy in policies):
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_signing_provider_onboarding_policy_expired"
+            )
+        raise ConnectorUpgradeApprovalError(
+            "connector_upgrade_signing_provider_onboarding_policy_not_yet_effective"
+        )
+
     async def _active_policy(
         self, *, actor: AuthenticatedSubject, now: datetime
     ) -> ConnectorUpgradeApprovalPolicySnapshot:
@@ -2726,6 +2816,17 @@ class ConnectorUpgradeApprovalService:
         if cls._digest(cls._normalize(payload)) != policy.canonical_digest:
             raise ConnectorUpgradeApprovalError(
                 "connector_upgrade_approval_policy_integrity_failed"
+            )
+
+    @classmethod
+    def _verify_signing_provider_onboarding_policy(
+        cls, policy: ConnectorUpgradeSigningProviderOnboardingPolicySnapshot
+    ) -> None:
+        payload = cast(dict[str, object], asdict(policy))
+        payload.pop("canonical_digest")
+        if cls._digest(cls._normalize(payload)) != policy.canonical_digest:
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_signing_provider_onboarding_policy_integrity_failed"
             )
 
     @classmethod
@@ -3325,6 +3426,45 @@ def build_development_connector_upgrade_approval_policy(
         signed_by="subject.security-architecture",
         signature_verified=True,
         issued_at=issued_at,
+        expires_at=expires_at,
+        canonical_digest="0" * 64,
+    )
+    payload = cast(dict[str, object], asdict(policy))
+    payload.pop("canonical_digest")
+    return replace(
+        policy,
+        canonical_digest=ConnectorUpgradeApprovalService._digest(
+            ConnectorUpgradeApprovalService._normalize(payload)
+        ),
+    )
+
+
+def build_development_connector_upgrade_signing_provider_onboarding_policy(
+    *,
+    organization_id: str,
+    environment_id: str,
+    issued_at: datetime,
+    expires_at: datetime,
+) -> ConnectorUpgradeSigningProviderOnboardingPolicySnapshot:
+    policy = ConnectorUpgradeSigningProviderOnboardingPolicySnapshot(
+        policy_id="connector-upgrade-signing-provider-onboarding-policy.development",
+        schema_version=UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_SCHEMA,
+        version=1,
+        organization_id=organization_id,
+        environment_id=environment_id,
+        policy_version="version.1.0",
+        permitted_provider_classes=("provider.test-production-kms",),
+        permitted_algorithms=(
+            "algorithm.rsassa-pss-sha256",
+            "algorithm.ecdsa-p256-sha256",
+        ),
+        required_requirement_ids=tuple(
+            sorted(UPGRADE_SIGNING_PROVIDER_ONBOARDING_SUPPORTED_REQUIREMENTS)
+        ),
+        maximum_conformance_age_seconds=300,
+        issued_by="subject.security-architecture",
+        issued_at=issued_at,
+        effective_at=issued_at,
         expires_at=expires_at,
         canonical_digest="0" * 64,
     )

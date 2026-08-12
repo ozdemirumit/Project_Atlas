@@ -567,6 +567,7 @@ from atlas.modules.connectors.adapters.upgrade_approval_memory import (
     InMemoryConnectorUpgradeAuditReadinessSource,
     InMemoryConnectorUpgradeItsmChangeEvidenceSource,
     InMemoryConnectorUpgradeMaintenanceWindowEvidenceSource,
+    InMemoryConnectorUpgradeSigningProviderOnboardingPolicySource,
 )
 from atlas.modules.connectors.adapters.upgrade_approval_postgres import (
     PostgreSQLConnectorUpgradeApprovalRepository,
@@ -708,6 +709,7 @@ from atlas.modules.connectors.application.target_session import (
 from atlas.modules.connectors.application.upgrade_approval import (
     ConnectorUpgradeApprovalService,
     build_development_connector_upgrade_approval_policy,
+    build_development_connector_upgrade_signing_provider_onboarding_policy,
 )
 from atlas.modules.connectors.application.upgrade_readiness import (
     ConnectorUpgradeReadinessService,
@@ -2810,6 +2812,18 @@ def create_app(
                 ),
             )
         )
+        connector_upgrade_signing_provider_onboarding_policies = (
+            ()
+            if is_production
+            else (
+                build_development_connector_upgrade_signing_provider_onboarding_policy(
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    issued_at=datetime(2026, 8, 1, tzinfo=UTC),
+                    expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+                ),
+            )
+        )
         resolved_connector_upgrade_approval_service = ConnectorUpgradeApprovalService(
             repository=connector_upgrade_approval_repository,
             policy_source=InMemoryConnectorUpgradeApprovalPolicySource(
@@ -2822,6 +2836,11 @@ def create_app(
             itsm_change_evidence_source=InMemoryConnectorUpgradeItsmChangeEvidenceSource(),
             maintenance_window_evidence_source=(
                 InMemoryConnectorUpgradeMaintenanceWindowEvidenceSource()
+            ),
+            signing_provider_onboarding_policy_source=(
+                InMemoryConnectorUpgradeSigningProviderOnboardingPolicySource(
+                    connector_upgrade_signing_provider_onboarding_policies
+                )
             ),
             evidence_authenticity_provider=(
                 UnavailableUpgradeEvidenceAuthenticityProvider()

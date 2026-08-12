@@ -14,6 +14,7 @@ from atlas.modules.connectors.domain.upgrade_approval import (
 )
 from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeSigningProviderConformanceAssessment,
+    ConnectorUpgradeSigningProviderOnboardingPolicySnapshot,
 )
 
 
@@ -205,6 +206,22 @@ class InMemoryConnectorUpgradeApprovalPolicySource:
     async def list_scope(
         self, *, organization_id: str, environment_id: str
     ) -> tuple[ConnectorUpgradeApprovalPolicySnapshot, ...]:
+        return tuple(
+            item
+            for item in self._policies
+            if item.organization_id == organization_id and item.environment_id == environment_id
+        )
+
+
+class InMemoryConnectorUpgradeSigningProviderOnboardingPolicySource:
+    def __init__(
+        self, policies: tuple[ConnectorUpgradeSigningProviderOnboardingPolicySnapshot, ...]
+    ) -> None:
+        self._policies = policies
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorUpgradeSigningProviderOnboardingPolicySnapshot, ...]:
         return tuple(
             item
             for item in self._policies

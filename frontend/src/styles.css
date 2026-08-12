@@ -466,6 +466,35 @@ textarea:focus-visible {
   gap: 10px;
 }
 
+.installed-mcp-onboarding-policy {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 14px;
+  margin: 0;
+  padding: 9px 10px;
+  border-left: 3px solid #59736b;
+  background: #f4f7f6;
+}
+
+.installed-mcp-onboarding-policy > div {
+  min-width: 0;
+}
+
+.installed-mcp-onboarding-policy dt {
+  color: #687772;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.installed-mcp-onboarding-policy dd {
+  margin: 2px 0 0;
+  color: #253a35;
+  font-size: 11px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
 .installed-mcp-onboarding-requirements {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1268,6 +1297,7 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .installed-mcp-onboarding-policy,
   .installed-mcp-onboarding-requirements {
     grid-template-columns: 1fr;
   }

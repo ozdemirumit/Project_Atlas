@@ -139,6 +139,9 @@ const signingProviderOnboarding: ConnectorUpgradeSigningProviderOnboardingReadin
   conformance_digest: signingProviderConformance.canonical_digest,
   policy_id: "connector-upgrade-signing-provider-onboarding.default",
   policy_version: "v2026.08.12.1",
+  policy_digest: "7".repeat(64),
+  policy_issued_by: "subject.security-architecture",
+  policy_expires_at: "2026-08-13T12:01:00Z",
   evaluated_at: "2026-08-12T12:01:00Z",
   readiness_state: "blocked",
   requirements: [
@@ -760,6 +763,9 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(screen.getByText("2 requirements blocked")).toBeVisible();
     expect(screen.getByText("provider production approved")).toBeVisible();
     expect(screen.getByText("security approval current")).toBeVisible();
+    expect(screen.getByText("connector-upgrade-signing-provider-onboarding.default")).toBeVisible();
+    expect(screen.getByText("subject.security-architecture")).toBeVisible();
+    expect(screen.getByText("7777777777777777")).toBeVisible();
     expect(screen.getAllByText("key.connector-upgrade-evidence.test")).toHaveLength(2);
     expect(screen.getByText("Verification trusted")).toBeVisible();
     expect(screen.getByText(/No key management or signing authority/i)).toBeVisible();

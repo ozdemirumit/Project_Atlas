@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-163 |
 | Title | Connector upgrade signing-provider onboarding policy governance foundation |
-| Status | Planning |
-| Branch | `main` |
-| Pull Request | Not opened |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-020, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-115, ADR-116, ADR-117, ADR-118 |
+| Status | In review; exact-head CI pending |
+| Branch | `agent/mcp-signing-provider-onboarding-policy` |
+| Pull Request | [#175](https://github.com/ozdemirumit/Project_Atlas/pull/175) |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-020, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-115, ADR-116, ADR-117, ADR-118, ADR-119 |
 | Last Updated | 2026-08-12 |
-| Next Action | Record ADR-119 and replace hard-coded readiness rules with an injected policy source |
+| Next Action | Verify exact-head CI for PR #175 and complete review |
 
 ### ATLAS-IMP-163 Scope Rationale
 
@@ -48,6 +48,39 @@
   frontend in 4m38s.
 - ADR-118 defines a fixed readiness policy boundary but does not yet define an independently supplied,
   expiring policy snapshot or ambiguity handling.
+- The clean starting commit `213f15a4315cf7153d41900da26bf16d93b1df72` passed independent
+  `main` CI run `31619576944` with backend in 7m36s and frontend in 3m59s.
+
+### ATLAS-IMP-163 Validation Evidence
+
+- ADR-119 records the independently supplied, exact-scope and expiring onboarding policy boundary.
+  The immutable snapshot binds permitted provider classes and algorithms, ordered requirement IDs,
+  maximum conformance age, issuer, validity window and canonical digest.
+- Missing, expired, ambiguous, wrong-scope and digest-invalid policy tests fail closed with stable
+  reason codes. Production receives no implicit policy, while the deterministic development policy
+  excludes the non-production HMAC provider and grants no provider, key, signing or execution
+  authority.
+- Backend formatting and lint passed; strict `mypy` passed across 968 source and focused test files.
+  The focused connector-upgrade/API suite passed 30 tests, and the complete backend regression passed
+  992 tests with three expected Windows symlink skips. Alembic reports the single `20260812_0101`
+  head because policy state is injected and the dossier remains computed on read.
+- Frontend TypeScript and zero-warning lint passed; the focused API/workspace suite passed 18 tests,
+  the complete frontend suite passed 224 tests across 88 files and the production Vite build passed
+  with only the existing chunk-size advisory.
+- Live session verification recorded login `201`, readiness `200`, `Cache-Control: no-store`, 13
+  blocked requirements and the exact policy ID/version/digest/issuer/expiry. All provider
+  configuration, key management, receipt signing, execution and infrastructure mutation flags were
+  false, and the response contained no endpoint, credential, secret, private or material fields.
+- Live desktop validation at 1280x720 rendered the policy identity and all 15 policy-selected
+  requirements. Chromium device emulation at 390x844 measured document and body widths at exactly
+  390px with no page or policy-item overflow; only the pre-existing inventory table retained its
+  intentional internal scroll surface. A fresh browser session produced no console warning or error.
+
+### ATLAS-IMP-163 Delivery Evidence
+
+- Source commit `3602d6d` is published in draft PR
+  [#175](https://github.com/ozdemirumit/Project_Atlas/pull/175). Exact-head CI is pending on the
+  tracker-review commit.
 
 ### ATLAS-IMP-162 Scope Rationale
 

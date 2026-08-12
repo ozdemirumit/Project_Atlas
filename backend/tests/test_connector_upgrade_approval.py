@@ -25,6 +25,7 @@ from atlas.modules.connectors.adapters.upgrade_approval_memory import (
     InMemoryConnectorUpgradeAuditReadinessSource,
     InMemoryConnectorUpgradeItsmChangeEvidenceSource,
     InMemoryConnectorUpgradeMaintenanceWindowEvidenceSource,
+    InMemoryConnectorUpgradeSigningProviderOnboardingPolicySource,
 )
 from atlas.modules.connectors.adapters.upgrade_approval_postgres import (
     PostgreSQLConnectorUpgradeApprovalRepository,
@@ -42,6 +43,7 @@ from atlas.modules.connectors.application.registry_publication import RegistryPu
 from atlas.modules.connectors.application.upgrade_approval import (
     ConnectorUpgradeApprovalService,
     build_development_connector_upgrade_approval_policy,
+    build_development_connector_upgrade_signing_provider_onboarding_policy,
 )
 from atlas.modules.connectors.application.upgrade_approval_ports import (
     ConnectorUpgradeApprovalError,
@@ -75,6 +77,7 @@ from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeEvidenceSigningProviderTrust,
     ConnectorUpgradeSigningProviderConformanceState,
     ConnectorUpgradeSigningProviderOnboardingEvidence,
+    ConnectorUpgradeSigningProviderOnboardingPolicySnapshot,
     ConnectorUpgradeSigningProviderOnboardingRequirementState,
 )
 from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticationMethod
@@ -135,6 +138,12 @@ async def approval_fixture(
         issued_at=now - timedelta(hours=1),
         expires_at=now + timedelta(days=1),
     )
+    onboarding_policy = build_development_connector_upgrade_signing_provider_onboarding_policy(
+        organization_id=instance.organization_id,
+        environment_id=instance.environment_id,
+        issued_at=now - timedelta(hours=1),
+        expires_at=now + timedelta(days=1),
+    )
     service = ConnectorUpgradeApprovalService(
         repository=InMemoryConnectorUpgradeApprovalRepository(),
         policy_source=InMemoryConnectorUpgradeApprovalPolicySource((approval_policy,)),
@@ -159,6 +168,9 @@ async def approval_fixture(
             ),
             key_material=b"connector-upgrade-evidence-test-key-material-v1",
             clock=resolved_clock,
+        ),
+        signing_provider_onboarding_policy_source=(
+            InMemoryConnectorUpgradeSigningProviderOnboardingPolicySource((onboarding_policy,))
         ),
         clock=resolved_clock,
     )
@@ -656,6 +668,10 @@ async def test_signing_provider_onboarding_readiness_requires_all_authoritative_
     )
 
     assert dossier.provider_onboarding_ready and dossier.readiness_state == "ready"
+    assert dossier.policy_id.endswith(".development")
+    assert dossier.policy_digest != "0" * 64
+    assert dossier.policy_expires_at > dossier.evaluated_at
+    assert dossier.policy_issued_by == "subject.security-architecture"
     assert dossier.required_external_inputs == ()
     assert all(
         item.state is ConnectorUpgradeSigningProviderOnboardingRequirementState.SATISFIED
@@ -664,6 +680,106 @@ async def test_signing_provider_onboarding_readiness_requires_all_authoritative_
     assert not dossier.provider_configuration_authorized
     assert not dossier.execution_authorized
     assert audit.records[-1].result_code == "connector_upgrade_signing_provider_onboarding_ready"
+
+
+class _OnboardingPolicySource:
+    def __init__(
+        self, policies: tuple[ConnectorUpgradeSigningProviderOnboardingPolicySnapshot, ...]
+    ) -> None:
+        self._policies = policies
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorUpgradeSigningProviderOnboardingPolicySnapshot, ...]:
+        del organization_id, environment_id
+        return self._policies
+
+
+@pytest.mark.asyncio
+async def test_onboarding_policy_fails_closed_for_missing_invalid_and_ambiguous() -> None:
+    service, _, _, _, _, _, sources, _ = await approval_fixture()
+    instance, _ = sources
+    actor = instance_operator("subject.connector-onboarding-policy-governance")
+    now = service._clock()
+
+    service._signing_provider_onboarding_policy_source = None
+    with pytest.raises(
+        ConnectorUpgradeApprovalError,
+        match="connector_upgrade_signing_provider_onboarding_policy_unavailable",
+    ):
+        await service.signing_provider_onboarding_readiness(
+            actor=actor, correlation_id="correlation.onboarding-policy-unavailable"
+        )
+
+    expired = build_development_connector_upgrade_signing_provider_onboarding_policy(
+        organization_id=instance.organization_id,
+        environment_id=instance.environment_id,
+        issued_at=now - timedelta(days=2),
+        expires_at=now - timedelta(days=1),
+    )
+    service._signing_provider_onboarding_policy_source = (
+        InMemoryConnectorUpgradeSigningProviderOnboardingPolicySource((expired,))
+    )
+    with pytest.raises(
+        ConnectorUpgradeApprovalError,
+        match="connector_upgrade_signing_provider_onboarding_policy_expired",
+    ):
+        await service.signing_provider_onboarding_readiness(
+            actor=actor, correlation_id="correlation.onboarding-policy-expired"
+        )
+
+    active = build_development_connector_upgrade_signing_provider_onboarding_policy(
+        organization_id=instance.organization_id,
+        environment_id=instance.environment_id,
+        issued_at=now - timedelta(hours=1),
+        expires_at=now + timedelta(hours=1),
+    )
+    service._signing_provider_onboarding_policy_source = (
+        InMemoryConnectorUpgradeSigningProviderOnboardingPolicySource((active, active))
+    )
+    with pytest.raises(
+        ConnectorUpgradeApprovalError,
+        match="connector_upgrade_signing_provider_onboarding_policy_ambiguous",
+    ):
+        await service.signing_provider_onboarding_readiness(
+            actor=actor, correlation_id="correlation.onboarding-policy-ambiguous"
+        )
+
+    service._signing_provider_onboarding_policy_source = (
+        InMemoryConnectorUpgradeSigningProviderOnboardingPolicySource(
+            (replace(active, canonical_digest="f" * 64),)
+        )
+    )
+    with pytest.raises(
+        ConnectorUpgradeApprovalError,
+        match="connector_upgrade_signing_provider_onboarding_policy_integrity_failed",
+    ):
+        await service.signing_provider_onboarding_readiness(
+            actor=actor, correlation_id="correlation.onboarding-policy-integrity"
+        )
+
+
+@pytest.mark.asyncio
+async def test_onboarding_policy_governance_rejects_source_scope_mismatch() -> None:
+    service, _, _, _, _, _, sources, _ = await approval_fixture()
+    instance, _ = sources
+    now = service._clock()
+    foreign = build_development_connector_upgrade_signing_provider_onboarding_policy(
+        organization_id="organization.foreign",
+        environment_id=instance.environment_id,
+        issued_at=now - timedelta(hours=1),
+        expires_at=now + timedelta(hours=1),
+    )
+    service._signing_provider_onboarding_policy_source = _OnboardingPolicySource((foreign,))
+
+    with pytest.raises(
+        ConnectorUpgradeApprovalError,
+        match="connector_upgrade_signing_provider_onboarding_policy_scope_invalid",
+    ):
+        await service.signing_provider_onboarding_readiness(
+            actor=instance_operator("subject.connector-onboarding-policy-scope"),
+            correlation_id="correlation.onboarding-policy-scope",
+        )
 
 
 @pytest.mark.asyncio
@@ -755,6 +871,10 @@ def test_signing_provider_onboarding_readiness_api_is_no_store_and_exact_schema(
     )
     assert payload["readiness_state"] == "blocked"
     assert payload["provider_onboarding_ready"] is False
+    assert payload["policy_id"].endswith(".development")
+    assert len(payload["policy_digest"]) == 64
+    assert payload["policy_issued_by"] == "subject.security-architecture"
+    assert payload["policy_expires_at"] > payload["evaluated_at"]
     assert payload["provider_configuration_authorized"] is False
     assert payload["execution_authorized"] is False
     assert "endpoint" not in payload

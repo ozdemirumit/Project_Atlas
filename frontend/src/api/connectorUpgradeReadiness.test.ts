@@ -269,6 +269,9 @@ describe("connector upgrade signing-provider onboarding readiness validation", (
     conformance_digest: "5".repeat(64),
     policy_id: "connector-upgrade-signing-provider-onboarding.default",
     policy_version: "v2026.08.12.1",
+    policy_digest: "7".repeat(64),
+    policy_issued_by: "subject.security-architecture",
+    policy_expires_at: "2026-08-13T12:01:00Z",
     evaluated_at: "2026-08-12T12:01:00Z",
     readiness_state: "blocked",
     requirements: [

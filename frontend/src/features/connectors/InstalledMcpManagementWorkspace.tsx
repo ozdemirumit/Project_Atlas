@@ -687,6 +687,12 @@ function SigningProviderOnboardingReadiness({
           <span>{dossier.algorithm ?? "No eligible algorithm"} / {dossier.policy_version}</span>
         </div>
       </div>
+      <dl className="installed-mcp-onboarding-policy">
+        <div><dt>Policy</dt><dd>{dossier.policy_id}</dd></div>
+        <div><dt>Issued by</dt><dd>{dossier.policy_issued_by}</dd></div>
+        <div><dt>Expires</dt><dd>{new Date(dossier.policy_expires_at).toLocaleString()}</dd></div>
+        <div><dt>Digest</dt><dd><code>{dossier.policy_digest.slice(0, 16)}</code></dd></div>
+      </dl>
       <div className="installed-mcp-onboarding-requirements" role="list">
         {dossier.requirements.map((requirement) => (
           <div
@@ -929,7 +935,7 @@ export default function InstalledMcpManagementWorkspace({ subjectId }: { subject
           {signingOnboardingQuery.isError && (
             <div className="installed-mcp-status error-state" role="alert">
               <AlertTriangle size={17} />
-              <span>Production onboarding readiness is unavailable for this scope.</span>
+              <span>Production onboarding is policy-blocked for this scope.</span>
             </div>
           )}
           {signingOnboardingQuery.data && (
