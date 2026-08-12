@@ -4,14 +4,50 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-155 |
-| Title | Connector upgrade authoritative ITSM change evidence |
+| Task ID | ATLAS-IMP-156 |
+| Title | Connector upgrade authoritative maintenance-window evidence |
 | Status | In Progress |
-| Branch | `agent/mcp-upgrade-itsm-change-evidence` |
+| Branch | Pending |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110, ADR-111 |
 | Last Updated | 2026-08-12 |
-| Next Action | Deliver exact implementation through pull-request and main CI |
+| Next Action | Define authoritative maintenance-window evidence scope and ADR |
+
+### ATLAS-IMP-156 Scope Rationale
+
+- IMP-155 satisfies the ITSM-change check only; the maintenance-window check remains blocked.
+- ATLAS-036 and ATLAS-037 require current source-owned window, freeze and exact-change binding to be
+  revalidated separately from the existence of an active change record.
+- The next safe slice is a vendor-neutral inbound window evidence contract. It must not schedule,
+  reschedule, approve or modify a window, issue a handoff artifact or grant execution authority.
+
+### ATLAS-IMP-156 Acceptance Criteria
+
+- Missing, stale, closed, future, expired, freeze-conflicted, cross-scope, lineage-mismatched,
+  source-version-conflicted or digest-corrupt window evidence fails closed.
+- Exact current evidence binds the authoritative ITSM change evidence, source window version,
+  approved start/end and observation time to the exact request, revalidation and plan.
+- Valid window evidence satisfies the final evidence check but produces a non-executable
+  review-complete assessment, not a handoff or execution token.
+- Evidence change invalidates an older change-context draft; no outbound ITSM or infrastructure
+  action occurs.
+- UI and runtime validators clearly show current evidence with no handoff/execution authority.
+- Focused and full backend/frontend gates, production build and live responsive validation pass.
+
+### ATLAS-IMP-156 Initial Evidence
+
+- IMP-155 merged through PR #167 as `c083e76b5991902ddaff9f1adf98512105846786`; exact-head PR CI
+  run `31567876380` and exact-main push CI run `31568298651` both passed before IMP-156 begins.
+- ATLAS-036 states that change-window state remains ITSM-authoritative; ATLAS-037 requires expiry,
+  freeze, revocation, exact-plan and current-time revalidation before any future handoff.
+
+### ATLAS-IMP-156 Validation Evidence
+
+- Pending.
+
+### ATLAS-IMP-156 Delivery Evidence
+
+- Pending.
 
 ### ATLAS-IMP-155 Scope Rationale
 
@@ -71,7 +107,12 @@
 
 ### ATLAS-IMP-155 Delivery Evidence
 
-- Pending.
+- Implementation commit `e955eca1b1d6bd455aea51b79c7c032ce7af3f20` passed exact-head
+  pull-request CI run `31567876380`; backend completed in 7m15s and frontend in 4m29s.
+- PR [#167](https://github.com/ozdemirumit/Project_Atlas/pull/167) was squash-merged to `main` as
+  `c083e76b5991902ddaff9f1adf98512105846786`.
+- The exact merged `main` commit passed independent push CI run `31568298651`; backend completed in
+  7m41s and frontend completed in 4m39s with every required step successful.
 
 ### ATLAS-IMP-154 Scope Rationale
 
