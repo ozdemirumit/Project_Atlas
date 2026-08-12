@@ -70,7 +70,9 @@
 - ADR-116 records the provider-neutral, metadata-only trust inventory, C1 authorization, required
   audit, production browser-session requirement and development-only local UI exception.
 - Source commit `4ab543c` is published in draft PR
-  [#172](https://github.com/ozdemirumit/Project_Atlas/pull/172); exact-head CI is pending.
+  [#172](https://github.com/ozdemirumit/Project_Atlas/pull/172). Clean exact-head CI run
+  `31596772931` passed at `324fad863b61c6d55ede1a8ccd667390881da43e` with backend in 6m05s and
+  frontend in 4m37s; final validation-record head CI is pending.
 
 ### ATLAS-IMP-159 Scope Rationale
 
