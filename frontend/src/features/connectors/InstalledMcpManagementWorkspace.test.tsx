@@ -12,6 +12,7 @@ import {
 import {
   createConnectorUpgradeApprovalRequest,
   createConnectorUpgradeChangeContextDraft,
+  createConnectorUpgradeEvidenceReceipt,
   decideConnectorUpgradeApproval,
   getConnectorUpgradeApprovalRecord,
   getConnectorUpgradeHandoffReadiness,
@@ -25,6 +26,7 @@ import {
   type ConnectorUpgradeApprovalRevalidation,
   type ConnectorUpgradeHandoffReadiness,
   type ConnectorUpgradeChangeContextDraft,
+  type ConnectorUpgradeEvidenceReceipt,
   type ConnectorUpgradePlan,
   type ConnectorUpgradeReadiness,
 } from "../../api/connectorUpgradeReadiness";
@@ -309,15 +311,25 @@ const handoffReadiness: ConnectorUpgradeHandoffReadiness = {
   maintenance_window_evidence_digest: "9".repeat(64),
   required_check_ids: [
     "connector.upgrade.handoff.approval-current",
-    "connector.upgrade.handoff.itsm-change-current",
-    "connector.upgrade.handoff.maintenance-window-current",
-    "connector.upgrade.handoff.maintenance-window-current",
+    "connector.upgrade.handoff.revalidation-current",
+    "connector.upgrade.handoff.identity-separation-current",
+    "connector.upgrade.handoff.policy-current",
+    "connector.upgrade.handoff.plan-lineage-current",
+    "connector.upgrade.handoff.prior-execution-absent",
     "connector.upgrade.handoff.audit-readiness-evidence-current",
     "connector.upgrade.handoff.itsm-change-current",
+    "connector.upgrade.handoff.maintenance-window-current",
   ],
   satisfied_check_ids: [
     "connector.upgrade.handoff.approval-current",
+    "connector.upgrade.handoff.revalidation-current",
+    "connector.upgrade.handoff.identity-separation-current",
+    "connector.upgrade.handoff.policy-current",
+    "connector.upgrade.handoff.plan-lineage-current",
+    "connector.upgrade.handoff.prior-execution-absent",
     "connector.upgrade.handoff.audit-readiness-evidence-current",
+    "connector.upgrade.handoff.itsm-change-current",
+    "connector.upgrade.handoff.maintenance-window-current",
   ],
   not_applicable_check_ids: [
     "connector.upgrade.handoff.target-binding-current",
@@ -369,6 +381,47 @@ const changeContextDraft: ConnectorUpgradeChangeContextDraft = {
   infrastructure_mutation_performed: false, reused: false,
 };
 
+const evidenceReceipt: ConnectorUpgradeEvidenceReceipt = {
+  receipt_id: "connector-upgrade-evidence-receipt.test",
+  schema_version: "atlas.connector-upgrade-evidence-receipt.v1",
+  version: 1,
+  assessment_id: handoffReadiness.assessment_id,
+  assessment_digest: handoffReadiness.canonical_digest,
+  request_id: handoffReadiness.request_id,
+  request_digest: handoffReadiness.request_digest,
+  decision_id: handoffReadiness.decision_id,
+  decision_digest: handoffReadiness.decision_digest,
+  revalidation_id: handoffReadiness.revalidation_id,
+  revalidation_digest: handoffReadiness.revalidation_digest,
+  plan_id: handoffReadiness.plan_id,
+  plan_digest: handoffReadiness.plan_digest,
+  organization_id: handoffReadiness.organization_id,
+  environment_id: handoffReadiness.environment_id,
+  created_by: "subject.connector-independent-verifier",
+  audit_readiness_evidence_id: handoffReadiness.audit_readiness_evidence_id!,
+  audit_readiness_evidence_digest: handoffReadiness.audit_readiness_evidence_digest!,
+  itsm_change_evidence_id: handoffReadiness.itsm_change_evidence_id!,
+  itsm_change_evidence_digest: handoffReadiness.itsm_change_evidence_digest!,
+  maintenance_window_evidence_id: handoffReadiness.maintenance_window_evidence_id!,
+  maintenance_window_evidence_digest: handoffReadiness.maintenance_window_evidence_digest!,
+  required_check_ids: handoffReadiness.required_check_ids,
+  satisfied_check_ids: handoffReadiness.satisfied_check_ids,
+  not_applicable_check_ids: handoffReadiness.not_applicable_check_ids,
+  created_at: handoffReadiness.assessed_at,
+  valid_until: handoffReadiness.evidence_valid_until,
+  canonical_digest: "a".repeat(64),
+  evidence_receipt_only: true,
+  runtime_acceptable: false,
+  approval_consumed: false,
+  handoff_ready: false,
+  handoff_artifact_issued: false,
+  target_contacted: false,
+  package_rebound: false,
+  configuration_changed: false,
+  execution_authorized: false,
+  infrastructure_mutation_performed: false,
+};
+
 vi.mock("../../api/connectorInstances", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorInstances")>();
   return {
@@ -395,6 +448,7 @@ vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
     getConnectorUpgradeHandoffReadiness: vi.fn(),
     getLatestConnectorUpgradeChangeContextDraft: vi.fn(),
     createConnectorUpgradeChangeContextDraft: vi.fn(),
+    createConnectorUpgradeEvidenceReceipt: vi.fn(),
     getLatestConnectorUpgradeApprovalRevalidation: vi.fn(),
     getConnectorUpgradeReadiness: vi.fn(),
     getConnectorUpgradePlan: vi.fn(),
@@ -426,6 +480,7 @@ beforeEach(() => {
   vi.mocked(getConnectorUpgradeHandoffReadiness).mockResolvedValue(handoffReadiness);
   vi.mocked(getLatestConnectorUpgradeChangeContextDraft).mockResolvedValue(null);
   vi.mocked(createConnectorUpgradeChangeContextDraft).mockResolvedValue(changeContextDraft);
+  vi.mocked(createConnectorUpgradeEvidenceReceipt).mockResolvedValue(evidenceReceipt);
   vi.mocked(revalidateConnectorUpgradeApproval).mockResolvedValue(upgradeApprovalRevalidation);
   vi.mocked(createConnectorInstance).mockResolvedValue({ data: instance });
   vi.mocked(retireConnectorInstance).mockResolvedValue({
@@ -539,6 +594,16 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(screen.getByText(/Audit readiness evidence verified/i)).toBeVisible();
     expect(screen.getByText(/Authoritative ITSM change evidence verified/i)).toBeVisible();
     expect(screen.getByText(/Approved maintenance-window evidence is current/i)).toBeVisible();
+    expect(screen.getByText("Non-executable evidence receipt")).toBeVisible();
+    const createReceipt = screen.getByRole("button", { name: "Create evidence receipt" });
+    expect(createReceipt).toBeDisabled();
+    fireEvent.click(screen.getByLabelText(/This receipt is evidence only/i));
+    expect(createReceipt).toBeEnabled();
+    fireEvent.click(createReceipt);
+    await waitFor(() => expect(createConnectorUpgradeEvidenceReceipt).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Evidence receipt ready")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Download JSON receipt" })).toBeVisible();
+    expect(screen.getByText(/Runtime acceptable: no. Approval consumed: no./i)).toBeVisible();
     expect(screen.getByText("Not applicable in this context")).toBeVisible();
     expect(screen.getByText(/target-binding-current/i)).toBeVisible();
     expect(screen.getByText(/Applicability policy v2026.08.12.1/i)).toBeVisible();

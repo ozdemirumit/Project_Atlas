@@ -515,6 +515,106 @@ class ConnectorUpgradeHandoffReadinessAssessment:
 
 
 @dataclass(frozen=True, slots=True)
+class ConnectorUpgradeEvidenceReceipt:
+    receipt_id: str
+    schema_version: str
+    version: int
+    assessment_id: str
+    assessment_digest: str
+    request_id: str
+    request_digest: str
+    decision_id: str
+    decision_digest: str
+    revalidation_id: str
+    revalidation_digest: str
+    plan_id: str
+    plan_digest: str
+    organization_id: str
+    environment_id: str
+    created_by: str
+    audit_readiness_evidence_id: str
+    audit_readiness_evidence_digest: str
+    itsm_change_evidence_id: str
+    itsm_change_evidence_digest: str
+    maintenance_window_evidence_id: str
+    maintenance_window_evidence_digest: str
+    required_check_ids: tuple[str, ...]
+    satisfied_check_ids: tuple[str, ...]
+    not_applicable_check_ids: tuple[str, ...]
+    created_at: datetime
+    valid_until: datetime
+    canonical_digest: str
+    evidence_receipt_only: bool = True
+    runtime_acceptable: bool = False
+    approval_consumed: bool = False
+    handoff_ready: bool = False
+    handoff_artifact_issued: bool = False
+    target_contacted: bool = False
+    package_rebound: bool = False
+    configuration_changed: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_performed: bool = False
+
+    def __post_init__(self) -> None:
+        identifiers = (
+            self.receipt_id,
+            self.schema_version,
+            self.assessment_id,
+            self.request_id,
+            self.decision_id,
+            self.revalidation_id,
+            self.plan_id,
+            self.organization_id,
+            self.environment_id,
+            self.created_by,
+            self.audit_readiness_evidence_id,
+            self.itsm_change_evidence_id,
+            self.maintenance_window_evidence_id,
+        )
+        for value in identifiers:
+            validate_stable_identifier(value, "connector upgrade evidence receipt identifier")
+        digests = (
+            self.assessment_digest,
+            self.request_digest,
+            self.decision_digest,
+            self.revalidation_digest,
+            self.plan_digest,
+            self.audit_readiness_evidence_digest,
+            self.itsm_change_evidence_digest,
+            self.maintenance_window_evidence_digest,
+            self.canonical_digest,
+        )
+        if any(_DIGEST.fullmatch(value) is None for value in digests):
+            raise ValueError("Connector upgrade evidence receipt digest is invalid")
+        if (
+            self.version != 1
+            or not self.required_check_ids
+            or self.required_check_ids != self.satisfied_check_ids
+            or len(set(self.required_check_ids)) != len(self.required_check_ids)
+            or len(set(self.not_applicable_check_ids)) != len(self.not_applicable_check_ids)
+            or set(self.required_check_ids).intersection(self.not_applicable_check_ids)
+            or self.created_at.tzinfo is None
+            or self.valid_until.tzinfo is None
+            or self.created_at >= self.valid_until
+            or not self.evidence_receipt_only
+            or any(
+                (
+                    self.runtime_acceptable,
+                    self.approval_consumed,
+                    self.handoff_ready,
+                    self.handoff_artifact_issued,
+                    self.target_contacted,
+                    self.package_rebound,
+                    self.configuration_changed,
+                    self.execution_authorized,
+                    self.infrastructure_mutation_performed,
+                )
+            )
+        ):
+            raise ValueError("Connector upgrade evidence receipt violates the authority boundary")
+
+
+@dataclass(frozen=True, slots=True)
 class ConnectorUpgradeAuditReadinessEvidence:
     evidence_id: str
     schema_version: str

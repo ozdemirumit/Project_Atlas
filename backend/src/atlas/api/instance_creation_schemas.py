@@ -15,6 +15,7 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeApprovalRequest,
     ConnectorUpgradeApprovalRevalidation,
     ConnectorUpgradeChangeContextDraft,
+    ConnectorUpgradeEvidenceReceipt,
     ConnectorUpgradeHandoffReadinessAssessment,
 )
 from atlas.modules.connectors.domain.upgrade_readiness import (
@@ -572,6 +573,72 @@ class ConnectorUpgradeHandoffReadinessResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: ConnectorUpgradeHandoffReadinessData
+    meta: ResponseMeta
+
+
+class ConnectorUpgradeEvidenceReceiptInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = Field(
+        default="atlas.connector-upgrade-evidence-receipt-input.v1", pattern=STABLE_ID
+    )
+    expected_readiness_digest: str = Field(pattern=DIGEST)
+    acknowledged_receipt_is_non_executable_and_grants_no_handoff_authority: bool
+
+
+class ConnectorUpgradeEvidenceReceiptData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    receipt_id: str
+    schema_version: str
+    version: int
+    assessment_id: str
+    assessment_digest: str
+    request_id: str
+    request_digest: str
+    decision_id: str
+    decision_digest: str
+    revalidation_id: str
+    revalidation_digest: str
+    plan_id: str
+    plan_digest: str
+    organization_id: str
+    environment_id: str
+    created_by: str
+    audit_readiness_evidence_id: str
+    audit_readiness_evidence_digest: str
+    itsm_change_evidence_id: str
+    itsm_change_evidence_digest: str
+    maintenance_window_evidence_id: str
+    maintenance_window_evidence_digest: str
+    required_check_ids: tuple[str, ...]
+    satisfied_check_ids: tuple[str, ...]
+    not_applicable_check_ids: tuple[str, ...]
+    created_at: datetime
+    valid_until: datetime
+    canonical_digest: str
+    evidence_receipt_only: bool
+    runtime_acceptable: bool
+    approval_consumed: bool
+    handoff_ready: bool
+    handoff_artifact_issued: bool
+    target_contacted: bool
+    package_rebound: bool
+    configuration_changed: bool
+    execution_authorized: bool
+    infrastructure_mutation_performed: bool
+
+    @classmethod
+    def from_domain(
+        cls, receipt: ConnectorUpgradeEvidenceReceipt
+    ) -> ConnectorUpgradeEvidenceReceiptData:
+        return cls(**{field: getattr(receipt, field) for field in cls.model_fields})
+
+
+class ConnectorUpgradeEvidenceReceiptResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ConnectorUpgradeEvidenceReceiptData
     meta: ResponseMeta
 
 
