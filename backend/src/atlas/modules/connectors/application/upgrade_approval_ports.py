@@ -15,6 +15,7 @@ from atlas.modules.connectors.domain.upgrade_approval import (
 from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeSigningProviderConformanceAssessment,
     ConnectorUpgradeSigningProviderOnboardingEvidence,
+    ConnectorUpgradeSigningProviderOnboardingPolicySnapshot,
 )
 
 
@@ -52,6 +53,12 @@ class ConnectorUpgradeSigningProviderOnboardingEvidenceSource(Protocol):
     async def get_current(
         self, *, organization_id: str, environment_id: str, provider_class: str
     ) -> ConnectorUpgradeSigningProviderOnboardingEvidence | None: ...
+
+
+class ConnectorUpgradeSigningProviderOnboardingPolicySource(Protocol):
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorUpgradeSigningProviderOnboardingPolicySnapshot, ...]: ...
 
 
 class ConnectorUpgradeApprovalRepository(Protocol):

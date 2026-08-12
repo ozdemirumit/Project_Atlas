@@ -49,6 +49,60 @@ class ConnectorUpgradeSigningProviderOnboardingRequirementState(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class ConnectorUpgradeSigningProviderOnboardingPolicySnapshot:
+    policy_id: str
+    schema_version: str
+    version: int
+    organization_id: str
+    environment_id: str
+    policy_version: str
+    permitted_provider_classes: tuple[str, ...]
+    permitted_algorithms: tuple[str, ...]
+    required_requirement_ids: tuple[str, ...]
+    maximum_conformance_age_seconds: int
+    issued_by: str
+    issued_at: datetime
+    effective_at: datetime
+    expires_at: datetime
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.policy_id,
+            self.schema_version,
+            self.organization_id,
+            self.environment_id,
+            self.policy_version,
+            self.issued_by,
+            *self.permitted_provider_classes,
+            *self.permitted_algorithms,
+            *self.required_requirement_ids,
+        ):
+            validate_stable_identifier(
+                value, "connector upgrade signing provider onboarding policy"
+            )
+        if (
+            self.schema_version != "atlas.connector-upgrade-signing-provider-onboarding-policy.v1"
+            or self.version != 1
+            or not self.permitted_provider_classes
+            or len(set(self.permitted_provider_classes)) != len(self.permitted_provider_classes)
+            or not self.permitted_algorithms
+            or len(set(self.permitted_algorithms)) != len(self.permitted_algorithms)
+            or not self.required_requirement_ids
+            or len(set(self.required_requirement_ids)) != len(self.required_requirement_ids)
+            or not 1 <= self.maximum_conformance_age_seconds <= 86_400
+            or any(
+                value.tzinfo is None
+                for value in (self.issued_at, self.effective_at, self.expires_at)
+            )
+            or self.effective_at < self.issued_at
+            or self.expires_at <= self.effective_at
+            or _DIGEST.fullmatch(self.canonical_digest) is None
+        ):
+            raise ValueError("Connector upgrade signing provider onboarding policy is invalid")
+
+
+@dataclass(frozen=True, slots=True)
 class ConnectorUpgradeEvidenceSigningKey:
     key_id: str
     key_version: str
@@ -353,6 +407,9 @@ class ConnectorUpgradeSigningProviderOnboardingReadiness:
     conformance_digest: str | None
     policy_id: str
     policy_version: str
+    policy_digest: str
+    policy_issued_by: str
+    policy_expires_at: datetime
     evaluated_at: datetime
     readiness_state: str
     requirements: tuple[ConnectorUpgradeSigningProviderOnboardingRequirement, ...]
@@ -375,6 +432,7 @@ class ConnectorUpgradeSigningProviderOnboardingReadiness:
             self.provider_class,
             self.policy_id,
             self.policy_version,
+            self.policy_issued_by,
         ):
             validate_stable_identifier(
                 value, "connector upgrade signing provider onboarding readiness"
@@ -407,6 +465,9 @@ class ConnectorUpgradeSigningProviderOnboardingReadiness:
             )
             or ((self.conformance_assessment_id is None) != (self.conformance_digest is None))
             or self.evaluated_at.tzinfo is None
+            or _DIGEST.fullmatch(self.policy_digest) is None
+            or self.policy_expires_at.tzinfo is None
+            or self.policy_expires_at <= self.evaluated_at
             or self.readiness_state not in {"ready", "blocked"}
             or not self.requirements
             or len(requirement_ids) != len(self.requirements)

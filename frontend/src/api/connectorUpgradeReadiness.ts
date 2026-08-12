@@ -453,6 +453,9 @@ export type ConnectorUpgradeSigningProviderOnboardingReadiness = {
   conformance_digest: string | null;
   policy_id: string;
   policy_version: string;
+  policy_digest: string;
+  policy_issued_by: string;
+  policy_expires_at: string;
   evaluated_at: string;
   readiness_state: "ready" | "blocked";
   requirements: ConnectorUpgradeSigningProviderOnboardingRequirement[];
@@ -957,7 +960,8 @@ const signingProviderOnboardingReadinessKeys = [
   "dossier_id", "schema_version", "version", "organization_id", "environment_id",
   "provider_class", "key_id", "key_version", "algorithm", "provider_trust_digest",
   "conformance_assessment_id",
-  "conformance_digest", "policy_id", "policy_version", "evaluated_at", "readiness_state",
+  "conformance_digest", "policy_id", "policy_version", "policy_digest", "policy_issued_by",
+  "policy_expires_at", "evaluated_at", "readiness_state",
   "requirements", "required_external_inputs", "canonical_digest", "provider_onboarding_ready",
   "evidence_only", "provider_configuration_authorized", "key_management_authorized",
   "receipt_signing_authorized", "execution_authorized", "infrastructure_mutation_performed",
@@ -1207,8 +1211,12 @@ export function isConnectorUpgradeSigningProviderOnboardingReadiness(
       "atlas.connector-upgrade-signing-provider-onboarding-readiness.v1" &&
     item.version === 1 &&
     [item.dossier_id, item.organization_id, item.environment_id, item.provider_class,
-      item.policy_id, item.policy_version]
+      item.policy_id, item.policy_version, item.policy_issued_by]
       .every((field) => typeof field === "string" && field.length > 2) &&
+    typeof item.policy_digest === "string" && DIGEST.test(item.policy_digest) &&
+    typeof item.policy_expires_at === "string" &&
+      Number.isFinite(Date.parse(item.policy_expires_at)) &&
+      Date.parse(item.policy_expires_at) > Date.parse(item.evaluated_at as string) &&
     ([item.key_id, item.key_version, item.algorithm].every((field) => field === null) ||
       [item.key_id, item.key_version, item.algorithm].every(
         (field) => typeof field === "string" && field.length > 2
