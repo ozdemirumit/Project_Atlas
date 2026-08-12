@@ -529,7 +529,12 @@ class ConnectorUpgradeHandoffReadinessData(BaseModel):
     organization_id: str
     environment_id: str
     assessed_by: str
+    applicability_policy_id: str
+    applicability_policy_version: str
+    applicability_policy_digest: str
+    required_check_ids: tuple[str, ...]
     satisfied_check_ids: tuple[str, ...]
+    not_applicable_check_ids: tuple[str, ...]
     blocker_ids: tuple[str, ...]
     assessed_at: datetime
     evidence_valid_until: datetime

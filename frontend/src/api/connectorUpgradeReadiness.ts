@@ -236,7 +236,7 @@ export type ConnectorUpgradeApprovalRevalidation = {
 
 export type ConnectorUpgradeHandoffReadiness = {
   assessment_id: string;
-  schema_version: "atlas.connector-upgrade-handoff-readiness.v1";
+  schema_version: "atlas.connector-upgrade-handoff-readiness.v2";
   source_record_id: string;
   source_record_version: number;
   instance_id: string;
@@ -252,7 +252,12 @@ export type ConnectorUpgradeHandoffReadiness = {
   organization_id: string;
   environment_id: string;
   assessed_by: string;
+  applicability_policy_id: string;
+  applicability_policy_version: string;
+  applicability_policy_digest: string;
+  required_check_ids: string[];
   satisfied_check_ids: string[];
+  not_applicable_check_ids: string[];
   blocker_ids: string[];
   assessed_at: string;
   evidence_valid_until: string;
@@ -531,19 +536,45 @@ function approvalRevalidation(value: unknown): value is ConnectorUpgradeApproval
   );
 }
 
-function handoffReadiness(value: unknown): value is ConnectorUpgradeHandoffReadiness {
+export function isConnectorUpgradeHandoffReadiness(
+  value: unknown,
+): value is ConnectorUpgradeHandoffReadiness {
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
+  const requiredItems = strings(item.required_check_ids) ? item.required_check_ids : null;
+  const satisfiedItems = strings(item.satisfied_check_ids) ? item.satisfied_check_ids : null;
+  const notApplicableItems = strings(item.not_applicable_check_ids)
+    ? item.not_applicable_check_ids
+    : null;
+  const required = requiredItems ? new Set(requiredItems) : null;
+  const satisfied = satisfiedItems ? new Set(satisfiedItems) : null;
+  const notApplicable = notApplicableItems ? new Set(notApplicableItems) : null;
+  const expectedBlockers = required && satisfied
+    ? new Set([...required]
+      .filter((checkId) => !satisfied.has(checkId))
+      .map((checkId) => `connector.upgrade.handoff.blocked.${checkId
+        .replace("connector.upgrade.handoff.", "")
+        .replace(/-current$/, "")}-missing`))
+    : null;
   return (
-    item.schema_version === "atlas.connector-upgrade-handoff-readiness.v1" &&
+    item.schema_version === "atlas.connector-upgrade-handoff-readiness.v2" &&
     item.assessment_state === "blocked" &&
     [item.assessment_id, item.source_record_id, item.instance_id, item.connector_id, item.request_id,
       item.decision_id, item.revalidation_id, item.plan_id, item.organization_id, item.environment_id,
-      item.assessed_by, item.assessed_at, item.evidence_valid_until].every((field) => typeof field === "string") &&
+      item.assessed_by, item.applicability_policy_id, item.applicability_policy_version,
+      item.assessed_at, item.evidence_valid_until].every((field) => typeof field === "string") &&
     [item.request_digest, item.decision_digest, item.revalidation_digest, item.plan_digest,
-      item.canonical_digest].every((digest) => typeof digest === "string" && DIGEST.test(digest)) &&
-    strings(item.satisfied_check_ids) && item.satisfied_check_ids.length > 0 &&
+      item.applicability_policy_digest, item.canonical_digest]
+      .every((digest) => typeof digest === "string" && DIGEST.test(digest)) &&
+    requiredItems !== null && required !== null && required.size === requiredItems.length && required.size > 0 &&
+    satisfiedItems !== null && satisfied !== null && satisfied.size === satisfiedItems.length && satisfied.size > 0 &&
+    [...satisfied].every((checkId) => required.has(checkId)) &&
+    notApplicableItems !== null && notApplicable !== null && notApplicable.size === notApplicableItems.length &&
+    [...notApplicable].every((checkId) => !required.has(checkId)) &&
     strings(item.blocker_ids) && item.blocker_ids.length > 0 &&
+    new Set(item.blocker_ids).size === item.blocker_ids.length &&
+    expectedBlockers !== null && item.blocker_ids.length === expectedBlockers.size &&
+    item.blocker_ids.every((blockerId) => expectedBlockers.has(blockerId)) &&
     item.approval_current === true && item.revalidation_current === true &&
     item.handoff_ready === false && item.handoff_artifact_issued === false &&
     item.approval_consumed === false && item.target_contacted === false &&
@@ -782,7 +813,7 @@ export async function getConnectorUpgradeHandoffReadiness(
   );
   if (!response.ok) throw new Error(`Connector upgrade handoff readiness failed with ${response.status}`);
   const payload: unknown = await response.json();
-  if (!payload || typeof payload !== "object" || !("data" in payload) || !handoffReadiness(payload.data)) {
+  if (!payload || typeof payload !== "object" || !("data" in payload) || !isConnectorUpgradeHandoffReadiness(payload.data)) {
     throw new Error("Connector upgrade handoff readiness returned an unsafe assessment");
   }
   if (

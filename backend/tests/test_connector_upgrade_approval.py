@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import cast
@@ -608,7 +608,27 @@ async def test_upgrade_approval_revalidation_requires_three_people_and_remains_n
     assert len(revalidation.check_ids) == 7
     assert replay.reused and latest.revalidation_id == revalidation.revalidation_id
     assert readiness.assessment_state == "blocked"
-    assert len(readiness.satisfied_check_ids) == 6 and len(readiness.blocker_ids) == 6
+    assert readiness.applicability_policy_id == (
+        "connector-upgrade-handoff-evidence-applicability.default"
+    )
+    assert readiness.applicability_policy_version == "v2026.08.12.1"
+    assert len(readiness.required_check_ids) == 9
+    assert len(readiness.satisfied_check_ids) == 6
+    assert readiness.not_applicable_check_ids == (
+        "connector.upgrade.handoff.target-binding-current",
+        "connector.upgrade.handoff.service-impact-evidence-current",
+        "connector.upgrade.handoff.runtime-health-evidence-current",
+    )
+    assert readiness.blocker_ids == (
+        "connector.upgrade.handoff.blocked.itsm-change-missing",
+        "connector.upgrade.handoff.blocked.maintenance-window-missing",
+        "connector.upgrade.handoff.blocked.audit-readiness-evidence-missing",
+    )
+    with pytest.raises(ValueError, match="authority boundary"):
+        replace(
+            readiness,
+            not_applicable_check_ids=(readiness.required_check_ids[0],),
+        )
     assert not readiness.handoff_ready and not readiness.handoff_artifact_issued
     assert not readiness.approval_consumed and not readiness.target_contacted
     assert not readiness.package_rebound and not readiness.configuration_changed
@@ -729,7 +749,10 @@ def test_upgrade_approval_revalidation_api_is_no_store_and_hides_custody_metadat
     assert readiness_data["handoff_ready"] is False
     assert readiness_data["handoff_artifact_issued"] is False
     assert readiness_data["approval_consumed"] is False
-    assert len(readiness_data["blocker_ids"]) == 6
+    assert len(readiness_data["required_check_ids"]) == 9
+    assert len(readiness_data["not_applicable_check_ids"]) == 3
+    assert len(readiness_data["blocker_ids"]) == 3
+    assert readiness_data["applicability_policy_digest"]
     rendered = response.text.lower()
     for hidden in (
         "revalidation_fingerprint",

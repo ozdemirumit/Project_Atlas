@@ -46,8 +46,28 @@ UPGRADE_APPROVAL_READ_PERMISSION = "connectors.upgrade-approval-requests.read"
 UPGRADE_APPROVAL_DECIDE_PERMISSION = "connectors.upgrade-approval-decisions.create"
 UPGRADE_APPROVAL_REVALIDATION_CREATE_PERMISSION = "connectors.upgrade-approval-revalidations.create"
 UPGRADE_APPROVAL_REVALIDATION_READ_PERMISSION = "connectors.upgrade-approval-revalidations.read"
-UPGRADE_HANDOFF_READINESS_SCHEMA = "atlas.connector-upgrade-handoff-readiness.v1"
+UPGRADE_HANDOFF_READINESS_SCHEMA = "atlas.connector-upgrade-handoff-readiness.v2"
 UPGRADE_HANDOFF_READINESS_READ_PERMISSION = "connectors.upgrade-handoff-readiness.read"
+UPGRADE_HANDOFF_APPLICABILITY_POLICY_ID = "connector-upgrade-handoff-evidence-applicability.default"
+UPGRADE_HANDOFF_APPLICABILITY_POLICY_VERSION = "v2026.08.12.1"
+UPGRADE_HANDOFF_CURRENT_CHECK_IDS = (
+    "connector.upgrade.handoff.approval-current",
+    "connector.upgrade.handoff.revalidation-current",
+    "connector.upgrade.handoff.identity-separation-current",
+    "connector.upgrade.handoff.policy-current",
+    "connector.upgrade.handoff.plan-lineage-current",
+    "connector.upgrade.handoff.prior-execution-absent",
+)
+UPGRADE_HANDOFF_TARGET_CHECK_IDS = (
+    "connector.upgrade.handoff.target-binding-current",
+    "connector.upgrade.handoff.service-impact-evidence-current",
+    "connector.upgrade.handoff.runtime-health-evidence-current",
+)
+UPGRADE_HANDOFF_CHANGE_CHECK_IDS = (
+    "connector.upgrade.handoff.itsm-change-current",
+    "connector.upgrade.handoff.maintenance-window-current",
+)
+UPGRADE_HANDOFF_AUDIT_CHECK_ID = "connector.upgrade.handoff.audit-readiness-evidence-current"
 UPGRADE_APPROVAL_REVALIDATION_CHECK_IDS = (
     "connector.upgrade.revalidation.request-integrity-current",
     "connector.upgrade.revalidation.decision-integrity-current",
@@ -637,13 +657,33 @@ class ConnectorUpgradeApprovalService:
             or now >= plan.expires_at
         ):
             raise ConnectorUpgradeApprovalError("connector_upgrade_handoff_readiness_not_current")
-        blockers = (
-            "connector.upgrade.handoff.blocked.target-binding-missing",
-            "connector.upgrade.handoff.blocked.service-impact-evidence-missing",
-            "connector.upgrade.handoff.blocked.itsm-change-missing",
-            "connector.upgrade.handoff.blocked.maintenance-window-missing",
-            "connector.upgrade.handoff.blocked.runtime-health-evidence-missing",
-            "connector.upgrade.handoff.blocked.audit-readiness-evidence-missing",
+        applicability_policy = {
+            "policy_id": UPGRADE_HANDOFF_APPLICABILITY_POLICY_ID,
+            "policy_version": UPGRADE_HANDOFF_APPLICABILITY_POLICY_VERSION,
+            "target_checks_required_when_target_configured": UPGRADE_HANDOFF_TARGET_CHECK_IDS,
+            "always_required_change_check_ids": UPGRADE_HANDOFF_CHANGE_CHECK_IDS,
+            "always_required_check_ids": (UPGRADE_HANDOFF_AUDIT_CHECK_ID,),
+        }
+        applicability_policy_digest = self._digest(applicability_policy)
+        contextual_required = UPGRADE_HANDOFF_TARGET_CHECK_IDS if plan.target_configured else ()
+        contextual_not_applicable = (
+            () if plan.target_configured else UPGRADE_HANDOFF_TARGET_CHECK_IDS
+        )
+        required_check_ids = (
+            *UPGRADE_HANDOFF_CURRENT_CHECK_IDS,
+            *contextual_required,
+            *UPGRADE_HANDOFF_CHANGE_CHECK_IDS,
+            UPGRADE_HANDOFF_AUDIT_CHECK_ID,
+        )
+        not_applicable_check_ids = contextual_not_applicable
+        missing_evidence_ids = (
+            *contextual_required,
+            *UPGRADE_HANDOFF_CHANGE_CHECK_IDS,
+            UPGRADE_HANDOFF_AUDIT_CHECK_ID,
+        )
+        blockers = tuple(
+            f"connector.upgrade.handoff.blocked.{check_id.removeprefix('connector.upgrade.handoff.').removesuffix('-current')}-missing"
+            for check_id in missing_evidence_ids
         )
         payload: dict[str, object] = {
             "schema_version": UPGRADE_HANDOFF_READINESS_SCHEMA,
@@ -654,14 +694,12 @@ class ConnectorUpgradeApprovalService:
             "revalidation_digest": revalidation.canonical_digest,
             "plan_digest": plan.canonical_digest,
             "assessed_by": actor.subject_id,
-            "satisfied_check_ids": (
-                "connector.upgrade.handoff.approval-current",
-                "connector.upgrade.handoff.revalidation-current",
-                "connector.upgrade.handoff.identity-separation-current",
-                "connector.upgrade.handoff.policy-current",
-                "connector.upgrade.handoff.plan-lineage-current",
-                "connector.upgrade.handoff.prior-execution-absent",
-            ),
+            "applicability_policy_id": UPGRADE_HANDOFF_APPLICABILITY_POLICY_ID,
+            "applicability_policy_version": UPGRADE_HANDOFF_APPLICABILITY_POLICY_VERSION,
+            "applicability_policy_digest": applicability_policy_digest,
+            "required_check_ids": required_check_ids,
+            "satisfied_check_ids": UPGRADE_HANDOFF_CURRENT_CHECK_IDS,
+            "not_applicable_check_ids": not_applicable_check_ids,
             "blocker_ids": blockers,
         }
         digest = self._digest(payload)
@@ -683,7 +721,12 @@ class ConnectorUpgradeApprovalService:
             organization_id=request.organization_id,
             environment_id=request.environment_id,
             assessed_by=actor.subject_id,
+            applicability_policy_id=UPGRADE_HANDOFF_APPLICABILITY_POLICY_ID,
+            applicability_policy_version=UPGRADE_HANDOFF_APPLICABILITY_POLICY_VERSION,
+            applicability_policy_digest=applicability_policy_digest,
+            required_check_ids=required_check_ids,
             satisfied_check_ids=cast(tuple[str, ...], payload["satisfied_check_ids"]),
+            not_applicable_check_ids=not_applicable_check_ids,
             blocker_ids=blockers,
             assessed_at=now,
             evidence_valid_until=min(revalidation.valid_until, plan.expires_at, policy.expires_at),

@@ -4,14 +4,72 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-151 |
-| Title | Connector upgrade handoff readiness assessment |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#163](https://github.com/ozdemirumit/Project_Atlas/pull/163) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-102, ADR-103, ADR-104, ADR-105, ADR-106, ADR-107 |
+| Task ID | ATLAS-IMP-152 |
+| Title | Connector upgrade handoff evidence applicability |
+| Status | In Progress |
+| Branch | `agent/mcp-upgrade-evidence-applicability` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-102, ADR-103, ADR-104, ADR-105, ADR-106, ADR-107, ADR-108 |
 | Last Updated | 2026-08-12 |
-| Next Action | Audit the next approved implementation slice from the governing backlog |
+| Next Action | Complete full regression, live validation and delivery evidence |
+
+### ATLAS-IMP-152 Scope Rationale
+
+- IMP-151 conservatively reports six evidence categories as missing without evaluating whether each
+  category applies to the exact approved plan.
+- The approved plan is necessarily targetless and unconfigured; requiring a target binding would
+  alter its source lineage and invalidate the approval being assessed.
+- ADR-108 introduces a versioned, digest-bound applicability policy while preserving every
+  no-handoff and no-execution boundary.
+
+### ATLAS-IMP-152 Acceptance Criteria
+
+- The readiness assessment returns policy ID, policy version and policy digest together with
+  disjoint required, satisfied, not-applicable and blocked evidence sets.
+- Target, service-impact and runtime-health evidence are not applicable for the exact targetless
+  plan; ITSM, maintenance-window and always-required audit evidence remain blocked for every risk
+  level.
+- Domain and browser runtime validators reject duplicate, overlapping or inconsistent evidence
+  classifications.
+- The UI visibly separates missing required evidence, satisfied checks and contextual
+  not-applicable checks and identifies the policy version.
+- The API advances to the explicit v2 schema and remains no-store, secret-free and fail-closed.
+- Handoff readiness, artifact issuance, approval consumption, target contact, package rebinding,
+  configuration change, execution and infrastructure mutation remain false.
+- Focused and full backend/frontend gates, production build and live responsive validation pass.
+
+### ATLAS-IMP-152 Initial Evidence
+
+- IMP-151 merged through PR #163 as `f21d8e2708194495a73824ce2f50f8efccc2af60`;
+  tracker closure `e2a3c88b46b1fd376d49ff0c788c104b89fc94d1` passed main CI run
+  `31556158933` before IMP-152 branched.
+- The exact approved upgrade contract requires `target_configured=false`, while target binding
+  changes the source record version and plan lineage.
+- ADR-107 explicitly allows later slices to replace individual blockers after authoritative
+  contracts exist and grants no handoff or execution authority.
+
+### ATLAS-IMP-152 Validation Evidence
+
+- The v2 assessment binds applicability policy ID, version and digest into its canonical digest and
+  returns disjoint required, satisfied, not-applicable and blocker sets. Domain and browser runtime
+  validators reject duplicates, overlaps and incomplete blocker accounting.
+- For the exact targetless plan, six current governance checks are satisfied; target,
+  service-impact and runtime-health checks are not applicable; ITSM, maintenance-window and audit
+  evidence remain blocked. Every no-handoff and no-execution field remains false.
+- Backend formatting and lint passed 1,184 files, mypy passed 1,083 source files, and the complete
+  backend suite passed 977 tests with three environment-specific Windows symlink skips. Alembic
+  remains at the single linear `20260812_0099` head.
+- Frontend ESLint and both TypeScript projects passed; all 217 tests in 88 files passed. The
+  2,007-module production build completed with the existing advisory limited to the transitional
+  `OperationalApplication` chunk.
+- Live validation rendered the three evidence classifications and policy version at 1,280 px and
+  390 px. Both widths had zero horizontal document overflow, mobile scroll X remained zero, the
+  dialog measured 390 x 844 px and no install, apply, execute or handoff control existed. The
+  off-canvas mobile sidebar was the only intentionally out-of-viewport element group.
+
+### ATLAS-IMP-152 Delivery Evidence
+
+- Pending.
 
 ### ATLAS-IMP-151 Scope Rationale
 

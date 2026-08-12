@@ -353,7 +353,12 @@ class ConnectorUpgradeHandoffReadinessAssessment:
     organization_id: str
     environment_id: str
     assessed_by: str
+    applicability_policy_id: str
+    applicability_policy_version: str
+    applicability_policy_digest: str
+    required_check_ids: tuple[str, ...]
     satisfied_check_ids: tuple[str, ...]
+    not_applicable_check_ids: tuple[str, ...]
     blocker_ids: tuple[str, ...]
     assessed_at: datetime
     evidence_valid_until: datetime
@@ -384,6 +389,8 @@ class ConnectorUpgradeHandoffReadinessAssessment:
             self.organization_id,
             self.environment_id,
             self.assessed_by,
+            self.applicability_policy_id,
+            self.applicability_policy_version,
         ):
             validate_stable_identifier(value, "connector upgrade handoff readiness identifier")
         for value in (
@@ -391,20 +398,41 @@ class ConnectorUpgradeHandoffReadinessAssessment:
             self.decision_digest,
             self.revalidation_digest,
             self.plan_digest,
+            self.applicability_policy_digest,
             self.canonical_digest,
         ):
             if _DIGEST.fullmatch(value) is None:
                 raise ValueError("Connector upgrade handoff readiness digest is invalid")
+        missing_check_ids = set(self.required_check_ids).difference(self.satisfied_check_ids)
+        expected_blocker_ids = {
+            "connector.upgrade.handoff.blocked."
+            f"{item.removeprefix('connector.upgrade.handoff.').removesuffix('-current')}-missing"
+            for item in missing_check_ids
+        }
         if (
             self.source_record_version < 1
             or self.assessment_state != "blocked"
+            or not self.required_check_ids
             or not self.satisfied_check_ids
             or not self.blocker_ids
+            or len(set(self.required_check_ids)) != len(self.required_check_ids)
             or len(set(self.satisfied_check_ids)) != len(self.satisfied_check_ids)
+            or len(set(self.not_applicable_check_ids)) != len(self.not_applicable_check_ids)
             or len(set(self.blocker_ids)) != len(self.blocker_ids)
+            or not set(self.satisfied_check_ids).issubset(self.required_check_ids)
+            or set(self.required_check_ids).intersection(self.not_applicable_check_ids)
+            or set(self.blocker_ids) != expected_blocker_ids
+            or any(
+                not item.startswith("connector.upgrade.handoff.")
+                for item in self.required_check_ids
+            )
             or any(
                 not item.startswith("connector.upgrade.handoff.")
                 for item in self.satisfied_check_ids
+            )
+            or any(
+                not item.startswith("connector.upgrade.handoff.")
+                for item in self.not_applicable_check_ids
             )
             or any(
                 not item.startswith("connector.upgrade.handoff.blocked.")
