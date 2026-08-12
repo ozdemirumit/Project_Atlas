@@ -54,6 +54,17 @@ class ConnectorUpgradeSigningProviderOnboardingPolicyTrustKeyState(StrEnum):
     REVOKED = "revoked"
 
 
+class ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceState(StrEnum):
+    VERIFIED = "verified"
+    BLOCKED = "blocked"
+
+
+class ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState(StrEnum):
+    VERIFIED = "verified"
+    BLOCKED = "blocked"
+    UNAVAILABLE = "unavailable"
+
+
 @dataclass(frozen=True, slots=True)
 class ConnectorUpgradeSigningProviderOnboardingPolicySnapshot:
     policy_id: str
@@ -195,6 +206,159 @@ class ConnectorUpgradeSigningProviderOnboardingPolicyTrustKey:
             raise ValueError(
                 "Connector upgrade signing provider onboarding policy trust key is invalid"
             )
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck:
+    check_id: str
+    state: ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState
+    reason_code: str
+    evidence_reference: str | None = None
+
+    def __post_init__(self) -> None:
+        validate_stable_identifier(self.check_id, "onboarding policy provenance check")
+        if not self.reason_code.startswith(
+            "connector.upgrade.signing-provider-onboarding-policy-provenance."
+        ):
+            raise ValueError("Onboarding policy provenance reason is invalid")
+        if self.evidence_reference is not None:
+            validate_stable_identifier(
+                self.evidence_reference, "onboarding policy provenance evidence reference"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic:
+    diagnostic_id: str
+    schema_version: str
+    version: int
+    organization_id: str
+    environment_id: str
+    evaluated_at: datetime
+    valid_until: datetime | None
+    state: ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceState
+    policy_id: str | None
+    policy_version: str | None
+    policy_digest: str | None
+    policy_issued_by: str | None
+    attestation_id: str | None
+    attestation_digest: str | None
+    trust_key_id: str | None
+    trust_key_version: str | None
+    trust_algorithm: str | None
+    trust_key_state: ConnectorUpgradeSigningProviderOnboardingPolicyTrustKeyState | None
+    checks: tuple[ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck, ...]
+    reason_codes: tuple[str, ...]
+    canonical_digest: str
+    provenance_verified: bool
+    diagnostic_only: bool = True
+    policy_authoring_authorized: bool = False
+    trust_management_authorized: bool = False
+    provider_configuration_authorized: bool = False
+    key_management_authorized: bool = False
+    receipt_signing_authorized: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_performed: bool = False
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.diagnostic_id,
+            self.schema_version,
+            self.organization_id,
+            self.environment_id,
+        ):
+            validate_stable_identifier(value, "onboarding policy provenance diagnostic")
+        for optional_value in (
+            self.policy_id,
+            self.policy_version,
+            self.policy_issued_by,
+            self.attestation_id,
+            self.trust_key_id,
+            self.trust_key_version,
+            self.trust_algorithm,
+        ):
+            if optional_value is not None:
+                validate_stable_identifier(optional_value, "onboarding policy provenance reference")
+        check_ids = tuple(check.check_id for check in self.checks)
+        expected_check_ids = (
+            "policy-current",
+            "attestation-current",
+            "attestation-binding-valid",
+            "trust-key-current",
+            "signature-verified",
+        )
+        blocked_reasons = tuple(
+            check.reason_code
+            for check in self.checks
+            if check.state
+            is not ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.VERIFIED
+        )
+        policy_values = (
+            self.policy_id,
+            self.policy_version,
+            self.policy_digest,
+            self.policy_issued_by,
+        )
+        attestation_values = (self.attestation_id, self.attestation_digest)
+        trust_values = (
+            self.trust_key_id,
+            self.trust_key_version,
+            self.trust_algorithm,
+            self.trust_key_state,
+        )
+        all_verified = all(
+            check.state
+            is ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckState.VERIFIED
+            for check in self.checks
+        )
+        if (
+            self.schema_version
+            != "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v1"
+            or self.version != 1
+            or self.evaluated_at.tzinfo is None
+            or (
+                self.valid_until is not None
+                and (self.valid_until.tzinfo is None or self.valid_until <= self.evaluated_at)
+            )
+            or not self.checks
+            or check_ids != expected_check_ids
+            or self.reason_codes != blocked_reasons
+            or any(
+                digest is not None and _DIGEST.fullmatch(digest) is None
+                for digest in (self.policy_digest, self.attestation_digest)
+            )
+            or len({value is None for value in policy_values}) != 1
+            or len({value is None for value in attestation_values}) != 1
+            or len({value is None for value in trust_values}) != 1
+            or self.provenance_verified != all_verified
+            or self.state
+            is not (
+                ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceState.VERIFIED
+                if all_verified
+                else ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceState.BLOCKED
+            )
+            or (all_verified and self.valid_until is None)
+            or (
+                all_verified
+                and any(
+                    value is None for value in (*policy_values, *attestation_values, *trust_values)
+                )
+            )
+            or _DIGEST.fullmatch(self.canonical_digest) is None
+            or not self.diagnostic_only
+            or any(
+                (
+                    self.policy_authoring_authorized,
+                    self.trust_management_authorized,
+                    self.provider_configuration_authorized,
+                    self.key_management_authorized,
+                    self.receipt_signing_authorized,
+                    self.execution_authorized,
+                    self.infrastructure_mutation_performed,
+                )
+            )
+        ):
+            raise ValueError("Onboarding policy provenance diagnostic is invalid")
 
 
 @dataclass(frozen=True, slots=True)

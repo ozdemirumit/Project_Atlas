@@ -476,6 +476,47 @@ export type ConnectorUpgradeSigningProviderOnboardingReadiness = {
   infrastructure_mutation_performed: false;
 };
 
+export type ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck = {
+  check_id: string;
+  state: "verified" | "blocked" | "unavailable";
+  reason_code: string;
+  evidence_reference: string | null;
+};
+
+export type ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic = {
+  diagnostic_id: string;
+  schema_version:
+    "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v1";
+  version: 1;
+  organization_id: string;
+  environment_id: string;
+  evaluated_at: string;
+  valid_until: string | null;
+  state: "verified" | "blocked";
+  policy_id: string | null;
+  policy_version: string | null;
+  policy_digest: string | null;
+  policy_issued_by: string | null;
+  attestation_id: string | null;
+  attestation_digest: string | null;
+  trust_key_id: string | null;
+  trust_key_version: string | null;
+  trust_algorithm: string | null;
+  trust_key_state: "active" | "disabled" | "revoked" | null;
+  checks: ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck[];
+  reason_codes: string[];
+  canonical_digest: string;
+  provenance_verified: boolean;
+  diagnostic_only: true;
+  policy_authoring_authorized: false;
+  trust_management_authorized: false;
+  provider_configuration_authorized: false;
+  key_management_authorized: false;
+  receipt_signing_authorized: false;
+  execution_authorized: false;
+  infrastructure_mutation_performed: false;
+};
+
 export type ConnectorUpgradeSignedEvidenceReceipt = {
   signed_receipt_id: string;
   schema_version: "atlas.connector-upgrade-signed-evidence-receipt.v1";
@@ -976,6 +1017,21 @@ const signingProviderOnboardingReadinessKeys = [
   "receipt_signing_authorized", "execution_authorized", "infrastructure_mutation_performed",
 ] as const;
 
+const signingProviderOnboardingPolicyProvenanceCheckKeys = [
+  "check_id", "state", "reason_code", "evidence_reference",
+] as const;
+
+const signingProviderOnboardingPolicyProvenanceDiagnosticKeys = [
+  "diagnostic_id", "schema_version", "version", "organization_id", "environment_id",
+  "evaluated_at", "valid_until", "state", "policy_id", "policy_version", "policy_digest",
+  "policy_issued_by", "attestation_id", "attestation_digest", "trust_key_id",
+  "trust_key_version", "trust_algorithm", "trust_key_state", "checks", "reason_codes",
+  "canonical_digest", "provenance_verified", "diagnostic_only", "policy_authoring_authorized",
+  "trust_management_authorized", "provider_configuration_authorized",
+  "key_management_authorized", "receipt_signing_authorized", "execution_authorized",
+  "infrastructure_mutation_performed",
+] as const;
+
 const signedEvidenceReceiptKeys = [
   "signed_receipt_id", "schema_version", "version", "receipt", "signature", "organization_id",
   "environment_id", "request_id", "canonical_digest", "evidence_receipt_only",
@@ -1249,6 +1305,88 @@ export function isConnectorUpgradeSigningProviderOnboardingReadiness(
     item.provider_configuration_authorized === false &&
     item.key_management_authorized === false && item.receipt_signing_authorized === false &&
     item.execution_authorized === false && item.infrastructure_mutation_performed === false &&
+    !Object.keys(item).some((key) =>
+      /signature|private|material|secret|token|credential|endpoint/i.test(key))
+  );
+}
+
+function isConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck(
+  value: unknown,
+): value is ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  return (
+    hasExactKeys(item, signingProviderOnboardingPolicyProvenanceCheckKeys) &&
+    typeof item.check_id === "string" && item.check_id.length > 2 &&
+    (item.state === "verified" || item.state === "blocked" || item.state === "unavailable") &&
+    typeof item.reason_code === "string" &&
+    item.reason_code.startsWith(
+      "connector.upgrade.signing-provider-onboarding-policy-provenance.",
+    ) &&
+    (item.evidence_reference === null ||
+      (typeof item.evidence_reference === "string" && item.evidence_reference.length > 2))
+  );
+}
+
+export function isConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic(
+  value: unknown,
+): value is ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  if (!Array.isArray(item.checks) ||
+      !item.checks.every(isConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck) ||
+      !strings(item.reason_codes)) return false;
+  const checks = item.checks;
+  const expectedCheckIds = [
+    "policy-current", "attestation-current", "attestation-binding-valid",
+    "trust-key-current", "signature-verified",
+  ];
+  const blockedReasons = checks
+    .filter((check) => check.state !== "verified")
+    .map((check) => check.reason_code);
+  const verified = checks.every((check) => check.state === "verified");
+  const policy = [item.policy_id, item.policy_version, item.policy_issued_by];
+  const attestation = [item.attestation_id];
+  const trust = [item.trust_key_id, item.trust_key_version, item.trust_algorithm];
+  const allStringsOrNull = (fields: unknown[]) =>
+    fields.every((field) => field === null) ||
+    fields.every((field) => typeof field === "string" && field.length > 2);
+  return (
+    hasExactKeys(item, signingProviderOnboardingPolicyProvenanceDiagnosticKeys) &&
+    item.schema_version ===
+      "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v1" &&
+    item.version === 1 &&
+    [item.diagnostic_id, item.organization_id, item.environment_id]
+      .every((field) => typeof field === "string" && field.length > 2) &&
+    typeof item.evaluated_at === "string" && Number.isFinite(Date.parse(item.evaluated_at)) &&
+    (item.valid_until === null ||
+      (typeof item.valid_until === "string" && Number.isFinite(Date.parse(item.valid_until)) &&
+        Date.parse(item.valid_until) > Date.parse(item.evaluated_at))) &&
+    item.state === (verified ? "verified" : "blocked") &&
+    checks.map((check) => check.check_id).every((checkId, index) =>
+      checkId === expectedCheckIds[index]) &&
+    checks.length === expectedCheckIds.length &&
+    JSON.stringify(item.reason_codes) === JSON.stringify(blockedReasons) &&
+    allStringsOrNull(policy) &&
+    ((item.policy_digest === null && policy.every((field) => field === null)) ||
+      (typeof item.policy_digest === "string" && DIGEST.test(item.policy_digest) &&
+        policy.every((field) => typeof field === "string"))) &&
+    allStringsOrNull(attestation) &&
+    ((item.attestation_digest === null && item.attestation_id === null) ||
+      (typeof item.attestation_digest === "string" && DIGEST.test(item.attestation_digest) &&
+        typeof item.attestation_id === "string")) &&
+    allStringsOrNull(trust) &&
+    ((item.trust_key_state === null && trust.every((field) => field === null)) ||
+      (["active", "disabled", "revoked"].includes(String(item.trust_key_state)) &&
+        trust.every((field) => typeof field === "string"))) &&
+    (!verified || (item.valid_until !== null && item.policy_id !== null &&
+      item.attestation_id !== null && item.trust_key_id !== null)) &&
+    typeof item.canonical_digest === "string" && DIGEST.test(item.canonical_digest) &&
+    item.provenance_verified === verified && item.diagnostic_only === true &&
+    item.policy_authoring_authorized === false && item.trust_management_authorized === false &&
+    item.provider_configuration_authorized === false && item.key_management_authorized === false &&
+    item.receipt_signing_authorized === false && item.execution_authorized === false &&
+    item.infrastructure_mutation_performed === false &&
     !Object.keys(item).some((key) =>
       /signature|private|material|secret|token|credential|endpoint/i.test(key))
   );
@@ -1791,6 +1929,24 @@ export async function getConnectorUpgradeSigningProviderOnboardingReadiness(): P
   if (!payload || typeof payload !== "object" || !("data" in payload) ||
       !isConnectorUpgradeSigningProviderOnboardingReadiness(payload.data)) {
     throw new Error("Connector signing-provider onboarding readiness returned an unsafe payload");
+  }
+  return payload.data;
+}
+
+export async function getConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic():
+Promise<ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic> {
+  const response = await apiFetch(
+    "/api/v1/connectors/instances/" +
+      "upgrade-evidence-signing-provider-onboarding-policy-provenance-diagnostic",
+    { headers: { Accept: "application/json" } },
+  );
+  if (!response.ok) {
+    throw new Error(`Connector onboarding-policy provenance diagnostic failed with ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  if (!payload || typeof payload !== "object" || !("data" in payload) ||
+      !isConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic(payload.data)) {
+    throw new Error("Connector onboarding-policy provenance diagnostic returned an unsafe payload");
   }
   return payload.data;
 }

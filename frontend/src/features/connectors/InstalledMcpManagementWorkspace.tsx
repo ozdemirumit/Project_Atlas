@@ -30,6 +30,7 @@ import {
   getConnectorUpgradeApprovalRecord,
   getConnectorUpgradeEvidenceSigningKeyTrustInventory,
   getConnectorUpgradeSigningProviderOnboardingReadiness,
+  getConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic,
   getLatestConnectorUpgradeSigningProviderConformance,
   getLatestConnectorUpgradeApprovalRevalidation,
   getConnectorUpgradeHandoffReadiness,
@@ -46,6 +47,7 @@ import {
   type ConnectorUpgradeSignedEvidenceReceipt,
   type ConnectorUpgradeSigningProviderConformanceAssessment,
   type ConnectorUpgradeSigningProviderOnboardingReadiness,
+  type ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic,
   getConnectorUpgradePlan,
   type ConnectorUpgradePlan,
 } from "../../api/connectorUpgradeReadiness";
@@ -722,6 +724,60 @@ function SigningProviderOnboardingReadiness({
   );
 }
 
+function SigningProviderOnboardingPolicyProvenance({
+  diagnostic,
+}: {
+  diagnostic: ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic;
+}) {
+  return (
+    <div className="installed-mcp-onboarding-result installed-mcp-provenance-diagnostic">
+      <div className={`installed-mcp-conformance-state ${
+        diagnostic.provenance_verified ? "conformant" : "blocked"
+      }`}>
+        {diagnostic.provenance_verified
+          ? <ShieldCheck size={18} />
+          : <AlertTriangle size={18} />}
+        <div>
+          <strong>{diagnostic.provenance_verified
+            ? "Policy provenance verified"
+            : `${diagnostic.reason_codes.length} provenance checks blocked`}</strong>
+          <span>{diagnostic.policy_id ?? "No safe policy reference"}</span>
+          <span>{diagnostic.valid_until
+            ? `Valid until ${new Date(diagnostic.valid_until).toLocaleString()}`
+            : "No verified validity horizon"}</span>
+        </div>
+      </div>
+      <dl className="installed-mcp-onboarding-policy">
+        <div><dt>Issuer</dt><dd>{diagnostic.policy_issued_by ?? "Unavailable"}</dd></div>
+        <div><dt>Attestation</dt><dd>{diagnostic.attestation_id ?? "Unavailable"}</dd></div>
+        <div><dt>Trust key</dt><dd>{diagnostic.trust_key_id
+          ? `${diagnostic.trust_key_id} / ${diagnostic.trust_key_version}`
+          : "Unavailable"}</dd></div>
+        <div><dt>Algorithm</dt><dd>{diagnostic.trust_algorithm ?? "Unavailable"}</dd></div>
+        <div><dt>Policy digest</dt><dd><code>{diagnostic.policy_digest?.slice(0, 16) ?? "Unavailable"}</code></dd></div>
+        <div><dt>Diagnostic</dt><dd><code>{diagnostic.canonical_digest.slice(0, 16)}</code></dd></div>
+      </dl>
+      <div className="installed-mcp-onboarding-requirements" role="list">
+        {diagnostic.checks.map((check) => (
+          <div
+            className={`installed-mcp-onboarding-requirement ${check.state}`}
+            key={check.check_id}
+            role="listitem"
+          >
+            {check.state === "verified"
+              ? <ShieldCheck size={15} />
+              : <AlertTriangle size={15} />}
+            <div>
+              <strong>{check.check_id.replaceAll("-", " ")}</strong>
+              <span>{check.reason_code.split(".").at(-1)?.replaceAll("-", " ")}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function InstalledMcpManagementWorkspace({ subjectId }: { subjectId: string }) {
   const queryClient = useQueryClient();
   const [lifecycle, setLifecycle] = useState<LifecycleFilter>("active");
@@ -766,6 +822,10 @@ export default function InstalledMcpManagementWorkspace({ subjectId }: { subject
     queryKey: ["connector-upgrade-signing-provider-onboarding-readiness"],
     queryFn: getConnectorUpgradeSigningProviderOnboardingReadiness,
   });
+  const signingOnboardingProvenanceQuery = useQuery({
+    queryKey: ["connector-upgrade-signing-provider-onboarding-policy-provenance"],
+    queryFn: getConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic,
+  });
   const createMutation = useMutation({
     mutationFn: createConnectorInstance,
     onSuccess: async () => {
@@ -793,6 +853,7 @@ export default function InstalledMcpManagementWorkspace({ subjectId }: { subject
     void signingTrustQuery.refetch();
     void signingConformanceQuery.refetch();
     void signingOnboardingQuery.refetch();
+    void signingOnboardingProvenanceQuery.refetch();
   };
 
   return (
@@ -949,6 +1010,41 @@ export default function InstalledMcpManagementWorkspace({ subjectId }: { subject
           )}
           <p className="installed-mcp-signing-boundary">
             Evidence only. No provider configuration, key management, signing or execution authority.
+          </p>
+        </div>
+        <div className="installed-mcp-onboarding" aria-labelledby="signing-onboarding-provenance-title">
+          <div className="installed-mcp-signing-trust-heading">
+            <div>
+              <p className="eyebrow">TRUST DIAGNOSTIC</p>
+              <h3 id="signing-onboarding-provenance-title">Policy provenance diagnostic</h3>
+            </div>
+            {signingOnboardingProvenanceQuery.data && (
+              <span className={`state-badge ${
+                signingOnboardingProvenanceQuery.data.provenance_verified ? "success" : "neutral"
+              }`}>
+                {signingOnboardingProvenanceQuery.data.state}
+              </span>
+            )}
+          </div>
+          {signingOnboardingProvenanceQuery.isLoading && (
+            <div className="installed-mcp-status">
+              <RefreshCw className="spin" size={17} />
+              <span>Checking policy provenance evidence...</span>
+            </div>
+          )}
+          {signingOnboardingProvenanceQuery.isError && (
+            <div className="installed-mcp-status error-state" role="alert">
+              <AlertTriangle size={17} />
+              <span>Policy provenance diagnostic is unavailable for this scope.</span>
+            </div>
+          )}
+          {signingOnboardingProvenanceQuery.data && (
+            <SigningProviderOnboardingPolicyProvenance
+              diagnostic={signingOnboardingProvenanceQuery.data}
+            />
+          )}
+          <p className="installed-mcp-signing-boundary">
+            Read-only diagnostic. No trust-store, policy, key or provider mutation authority.
           </p>
         </div>
       </section>

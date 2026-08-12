@@ -5,6 +5,7 @@ import {
   isConnectorUpgradeEvidenceReceiptVerification,
   isConnectorUpgradeEvidenceSigningKeyTrustInventory,
   isConnectorUpgradeSigningProviderConformanceAssessment,
+  isConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic,
   isConnectorUpgradeSigningProviderOnboardingReadiness,
   isConnectorUpgradeHandoffReadiness,
   isConnectorUpgradeSignedEvidenceReceipt,
@@ -321,6 +322,96 @@ describe("connector upgrade signing-provider onboarding readiness validation", (
       ...dossier,
       endpoint: "unsafe.example",
     })).toBe(false);
+  });
+});
+
+describe("connector upgrade onboarding-policy provenance diagnostic validation", () => {
+  const diagnostic = {
+    diagnostic_id: "connector-upgrade-onboarding-policy-provenance.test",
+    schema_version:
+      "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v1",
+    version: 1,
+    organization_id: "organization.development",
+    environment_id: "environment.development",
+    evaluated_at: "2026-08-12T12:01:00Z",
+    valid_until: "2026-08-13T12:01:00Z",
+    state: "verified",
+    policy_id: "connector-upgrade-signing-provider-onboarding.default",
+    policy_version: "v2026.08.12.1",
+    policy_digest: "7".repeat(64),
+    policy_issued_by: "subject.security-architecture",
+    attestation_id: "connector-upgrade-onboarding-policy-attestation.test",
+    attestation_digest: "8".repeat(64),
+    trust_key_id: "key.connector-upgrade-onboarding-policy.test",
+    trust_key_version: "version.1",
+    trust_algorithm: "algorithm.hmac-sha256-nonproduction",
+    trust_key_state: "active",
+    checks: [
+      "policy-current", "attestation-current", "attestation-binding-valid",
+      "trust-key-current", "signature-verified",
+    ].map((check_id) => ({
+      check_id,
+      state: "verified",
+      reason_code:
+        `connector.upgrade.signing-provider-onboarding-policy-provenance.${check_id}`,
+      evidence_reference: "evidence.safe-reference",
+    })),
+    reason_codes: [],
+    canonical_digest: "9".repeat(64),
+    provenance_verified: true,
+    diagnostic_only: true,
+    policy_authoring_authorized: false,
+    trust_management_authorized: false,
+    provider_configuration_authorized: false,
+    key_management_authorized: false,
+    receipt_signing_authorized: false,
+    execution_authorized: false,
+    infrastructure_mutation_performed: false,
+  } as const;
+
+  it("accepts exact verified evidence and rejects authority or secret-bearing variants", () => {
+    expect(isConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic(diagnostic))
+      .toBe(true);
+    expect(isConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic({
+      ...diagnostic,
+      trust_management_authorized: true,
+    })).toBe(false);
+    expect(isConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic({
+      ...diagnostic,
+      signature_value: "unsafe",
+    })).toBe(false);
+    expect(isConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic({
+      ...diagnostic,
+      checks: diagnostic.checks.slice(1),
+    })).toBe(false);
+  });
+
+  it("accepts blocked diagnostic evidence with prerequisite-unavailable checks", () => {
+    const blockedChecks = diagnostic.checks.map((check, index) => index === 0
+      ? check
+      : {
+          ...check,
+          state: "unavailable" as const,
+          reason_code: index === 1
+            ? "connector.upgrade.signing-provider-onboarding-policy-provenance.attestation-unavailable"
+            : "connector.upgrade.signing-provider-onboarding-policy-provenance.prerequisite-unavailable",
+          evidence_reference: null,
+        });
+    const reason_codes = blockedChecks.slice(1).map((check) => check.reason_code);
+    expect(isConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic({
+      ...diagnostic,
+      valid_until: null,
+      state: "blocked",
+      attestation_id: null,
+      attestation_digest: null,
+      trust_key_id: null,
+      trust_key_version: null,
+      trust_algorithm: null,
+      trust_key_state: null,
+      checks: blockedChecks,
+      reason_codes,
+      provenance_verified: false,
+    })).toBe(true);
   });
 });
 

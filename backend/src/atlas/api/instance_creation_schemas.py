@@ -27,6 +27,8 @@ from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeSignedEvidenceReceipt,
     ConnectorUpgradeSignedEvidenceReceiptVerification,
     ConnectorUpgradeSigningProviderConformanceAssessment,
+    ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck,
+    ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic,
     ConnectorUpgradeSigningProviderOnboardingReadiness,
     ConnectorUpgradeSigningProviderOnboardingRequirement,
 )
@@ -926,6 +928,76 @@ class ConnectorUpgradeSigningProviderOnboardingReadinessResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: ConnectorUpgradeSigningProviderOnboardingReadinessData
+    meta: ResponseMeta
+
+
+class ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    check_id: str = Field(pattern=STABLE_ID)
+    state: Literal["verified", "blocked", "unavailable"]
+    reason_code: str = Field(pattern=STABLE_ID)
+    evidence_reference: str | None = Field(default=None, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls, check: ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheck
+    ) -> ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckData:
+        return cls(**{field: getattr(check, field) for field in cls.model_fields})
+
+
+class ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnosticData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    diagnostic_id: str = Field(pattern=STABLE_ID)
+    schema_version: Literal[
+        "atlas.connector-upgrade-signing-provider-onboarding-policy-provenance-diagnostic.v1"
+    ]
+    version: Literal[1]
+    organization_id: str = Field(pattern=STABLE_ID)
+    environment_id: str = Field(pattern=STABLE_ID)
+    evaluated_at: datetime
+    valid_until: datetime | None
+    state: Literal["verified", "blocked"]
+    policy_id: str | None = Field(default=None, pattern=STABLE_ID)
+    policy_version: str | None = Field(default=None, pattern=STABLE_ID)
+    policy_digest: str | None = Field(default=None, pattern=DIGEST)
+    policy_issued_by: str | None = Field(default=None, pattern=STABLE_ID)
+    attestation_id: str | None = Field(default=None, pattern=STABLE_ID)
+    attestation_digest: str | None = Field(default=None, pattern=DIGEST)
+    trust_key_id: str | None = Field(default=None, pattern=STABLE_ID)
+    trust_key_version: str | None = Field(default=None, pattern=STABLE_ID)
+    trust_algorithm: str | None = Field(default=None, pattern=STABLE_ID)
+    trust_key_state: Literal["active", "disabled", "revoked"] | None
+    checks: tuple[ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckData, ...]
+    reason_codes: tuple[str, ...]
+    canonical_digest: str = Field(pattern=DIGEST)
+    provenance_verified: bool
+    diagnostic_only: Literal[True]
+    policy_authoring_authorized: Literal[False]
+    trust_management_authorized: Literal[False]
+    provider_configuration_authorized: Literal[False]
+    key_management_authorized: Literal[False]
+    receipt_signing_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_performed: Literal[False]
+
+    @classmethod
+    def from_domain(
+        cls, diagnostic: ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic
+    ) -> ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnosticData:
+        payload = {field: getattr(diagnostic, field) for field in cls.model_fields}
+        payload["checks"] = tuple(
+            ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceCheckData.from_domain(check)
+            for check in diagnostic.checks
+        )
+        return cls(**payload)
+
+
+class ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnosticResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnosticData
     meta: ResponseMeta
 
 
