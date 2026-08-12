@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-165 |
 | Title | Connector upgrade onboarding-policy provenance diagnostic foundation |
-| Status | In Progress |
+| Status | In Review; exact-head CI in progress |
 | Branch | `agent/mcp-onboarding-policy-provenance-diagnostics` |
-| Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-020, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-115, ADR-116, ADR-117, ADR-118, ADR-119, ADR-120 |
+| Pull Request | [#177](https://github.com/ozdemirumit/Project_Atlas/pull/177) |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-020, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-115, ADR-116, ADR-117, ADR-118, ADR-119, ADR-120, ADR-121 |
 | Last Updated | 2026-08-12 |
-| Next Action | Record ADR-121, implement the fail-closed provenance diagnostic boundary and validate it end to end |
+| Next Action | Verify PR #177 exact-head CI, merge it, verify the exact merged commit on `main`, then close IMP-165 and start the next approved slice |
 
 ### ATLAS-IMP-165 Scope Rationale
 
@@ -53,11 +53,32 @@
 
 ### ATLAS-IMP-165 Validation Evidence
 
-- Pending implementation.
+- ADR-121 records the exact-scope diagnostic, one shared evaluator for readiness and presentation,
+  ordered five-check contract, safe-reference-only response, dedicated default-deny C1 permission,
+  required audit, `no-store` delivery and the prohibition on deriving operational authority.
+- Domain and application tests cover verified evidence plus unavailable, missing, ambiguous, future,
+  expired, wrong-scope, integrity-invalid, binding-mismatched, disabled, revoked and signature-
+  unverified states. Readiness continues to fail closed, and audit failure prevents diagnostic
+  disclosure. The focused backend suite passed 35 tests after the final edge-case additions.
+- Backend formatting and lint passed; strict `mypy` passed across 968 source files. The complete
+  backend regression passed with 1,001 tests and three expected Windows symlink skips before the
+  final test-only edge-case additions. Alembic reports one head, `20260812_0101`.
+- Frontend TypeScript and zero-warning ESLint passed. Exact runtime validation rejects malformed,
+  authority-bearing and unsafe-key payloads; the focused API/workspace suites passed 21 tests after
+  the final edge-case additions. The complete frontend regression passed 226 tests across 88 files
+  before those test-only additions, and the production build passed.
+- Live API validation returned HTTP 200 with `Cache-Control: no-store`, overall `verified`, five
+  ordered verified checks, no reason codes, bounded policy/attestation/trust-key references and all
+  seven authority flags false. The unchanged readiness endpoint also returned HTTP 200.
+- Live browser validation at 1,280 x 720 and Chromium device emulation at 390 x 844 rendered the
+  verified provenance panel and all five checks without page, panel or item horizontal overflow,
+  prohibited write controls or a Vite error overlay. The viewport was reset to desktop afterward.
 
 ### ATLAS-IMP-165 Delivery Evidence
 
-- Pending implementation.
+- Source commit `e3ce6f58cffaaf82023d7e790bb09caed595f929` is published in draft PR
+  [#177](https://github.com/ozdemirumit/Project_Atlas/pull/177); exact-head CI run `31632768605` is in
+  progress.
 
 ### ATLAS-IMP-164 Scope Rationale
 
