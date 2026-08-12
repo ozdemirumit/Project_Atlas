@@ -8,7 +8,7 @@
 | Title | Connector upgrade signing-key trust inventory foundation |
 | Status | Review |
 | Branch | `agent/mcp-upgrade-signing-key-inventory` |
-| Pull Request | Pending |
+| Pull Request | [#172](https://github.com/ozdemirumit/Project_Atlas/pull/172) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110, ADR-111, ADR-112, ADR-113, ADR-114, ADR-115 |
 | Last Updated | 2026-08-12 |
 | Next Action | Publish the implementation PR, pass exact-head CI, merge and verify merged-main CI |
@@ -69,7 +69,8 @@
 
 - ADR-116 records the provider-neutral, metadata-only trust inventory, C1 authorization, required
   audit, production browser-session requirement and development-only local UI exception.
-- Pull request and CI evidence pending publication.
+- Source commit `4ab543c` is published in draft PR
+  [#172](https://github.com/ozdemirumit/Project_Atlas/pull/172); exact-head CI is pending.
 
 ### ATLAS-IMP-159 Scope Rationale
 
