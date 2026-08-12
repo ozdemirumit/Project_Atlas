@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import asdict
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import cast
 
@@ -51,7 +52,9 @@ from atlas.modules.connectors.domain.upgrade_approval import (
 )
 
 
-async def approval_fixture() -> tuple[
+async def approval_fixture(
+    *, clock: Callable[[], datetime] | None = None
+) -> tuple[
     ConnectorUpgradeApprovalService,
     ConnectorUpgradeReadinessService,
     ConnectorInstanceCreationService,
@@ -81,6 +84,7 @@ async def approval_fixture() -> tuple[
         current_receipt, current_registration
     )
     now = installation.installed_at + timedelta(hours=2)
+    resolved_clock = clock or (lambda: now)
     upgrade_service = ConnectorUpgradeReadinessService(
         instance_repository=instance_service.repository,
         target_repository=InMemoryConnectorTargetConfigurationRepository(),
@@ -89,7 +93,7 @@ async def approval_fixture() -> tuple[
         ),
         audit_sink=audit,
         environment_id=instance.environment_id,
-        clock=lambda: now,
+        clock=resolved_clock,
     )
     approval_policy = build_development_connector_upgrade_approval_policy(
         organization_id=instance.organization_id,
@@ -103,7 +107,7 @@ async def approval_fixture() -> tuple[
         upgrade_service=upgrade_service,
         audit_sink=audit,
         environment_id=instance.environment_id,
-        clock=lambda: now,
+        clock=resolved_clock,
     )
     return (
         service,
@@ -490,6 +494,221 @@ def test_upgrade_approval_decision_api_restores_plan_record_and_hides_authority(
     for hidden in (
         "request_fingerprint",
         "decision_fingerprint",
+        "idempotency_key",
+        "credential",
+        "target_endpoint",
+    ):
+        assert hidden not in rendered
+
+
+@pytest.mark.asyncio
+async def test_upgrade_approval_revalidation_requires_three_people_and_remains_non_executable() -> (
+    None
+):
+    current_time: list[datetime] = []
+
+    def clock() -> datetime:
+        return current_time[0]
+
+    bootstrap = await instance_fixture()
+    current_time.append(bootstrap[4].installed_at + timedelta(hours=2))
+    service, upgrade_service, _, _, _, _, sources, audit = await approval_fixture(clock=clock)
+    instance, candidate_receipt = sources
+    requester = instance_operator()
+    approver = instance_operator("subject.connector-upgrade-independent-approver")
+    verifier = instance_operator("subject.connector-upgrade-independent-verifier")
+    plan = await upgrade_service.plan(
+        actor=requester,
+        record_id=instance.record_id,
+        candidate_receipt_id=candidate_receipt.receipt_id,
+        correlation_id="correlation.connector-upgrade-revalidation-plan",
+    )
+    request = await service.create(
+        actor=requester,
+        record_id=instance.record_id,
+        candidate_receipt_id=candidate_receipt.receipt_id,
+        source_plan_digest=plan.canonical_digest,
+        purpose="Submit this exact connector upgrade plan for independent human review.",
+        acknowledged_request_is_not_approval_and_grants_no_execution_authority=True,
+        idempotency_key="connector-upgrade-revalidation-request",
+        correlation_id="correlation.connector-upgrade-revalidation-request",
+    )
+    current_time[0] += timedelta(minutes=5)
+    record = await service.decide(
+        actor=approver,
+        record_id=instance.record_id,
+        request_id=request.request_id,
+        expected_request_version=request.version,
+        expected_request_digest=request.canonical_digest,
+        outcome=ConnectorUpgradeApprovalOutcome.APPROVE,
+        rationale="Approve the unchanged plan after independent evidence review.",
+        acknowledged_decision_grants_no_execution_authority=True,
+        idempotency_key="connector-upgrade-revalidation-decision",
+        correlation_id="correlation.connector-upgrade-revalidation-decision",
+    )
+    assert record.decision is not None
+    current_time[0] += timedelta(minutes=5)
+
+    for actor in (requester, approver):
+        with pytest.raises(ConnectorUpgradeApprovalError, match="separation_required"):
+            await service.revalidate(
+                actor=actor,
+                record_id=instance.record_id,
+                request_id=request.request_id,
+                expected_request_digest=request.canonical_digest,
+                expected_decision_digest=record.decision.canonical_digest,
+                purpose="Revalidate the exact approved plan without granting handoff authority.",
+                acknowledged_revalidation_grants_no_handoff_or_execution_authority=True,
+                idempotency_key=f"connector-upgrade-revalidation-self-{actor.subject_id[-8:]}",
+                correlation_id="correlation.connector-upgrade-revalidation-self",
+            )
+
+    revalidation = await service.revalidate(
+        actor=verifier,
+        record_id=instance.record_id,
+        request_id=request.request_id,
+        expected_request_digest=request.canonical_digest,
+        expected_decision_digest=record.decision.canonical_digest,
+        purpose="Revalidate the exact approved plan without granting handoff authority.",
+        acknowledged_revalidation_grants_no_handoff_or_execution_authority=True,
+        idempotency_key="connector-upgrade-revalidation-001",
+        correlation_id="correlation.connector-upgrade-revalidation",
+    )
+    replay = await service.revalidate(
+        actor=verifier,
+        record_id=instance.record_id,
+        request_id=request.request_id,
+        expected_request_digest=request.canonical_digest,
+        expected_decision_digest=record.decision.canonical_digest,
+        purpose="Revalidate the exact approved plan without granting handoff authority.",
+        acknowledged_revalidation_grants_no_handoff_or_execution_authority=True,
+        idempotency_key="connector-upgrade-revalidation-001",
+        correlation_id="correlation.connector-upgrade-revalidation-replay",
+    )
+    latest = await service.get_latest_revalidation(
+        actor=verifier,
+        record_id=instance.record_id,
+        request_id=request.request_id,
+        correlation_id="correlation.connector-upgrade-revalidation-read",
+    )
+
+    assert revalidation.approval_current_at_revalidation
+    assert revalidation.governance_ready and not revalidation.handoff_ready
+    assert not revalidation.target_configured and not revalidation.package_rebound
+    assert not revalidation.configuration_changed and not revalidation.target_contacted
+    assert not revalidation.handoff_artifact_issued
+    assert not revalidation.execution_authorized
+    assert not revalidation.infrastructure_mutation_performed
+    assert len(revalidation.check_ids) == 7
+    assert replay.reused and latest.revalidation_id == revalidation.revalidation_id
+    restored = PostgreSQLConnectorUpgradeApprovalRepository._revalidation_to_domain(
+        cast(
+            dict[str, object],
+            ConnectorUpgradeApprovalService._normalize(asdict(revalidation)),
+        )
+    )
+    assert restored == revalidation
+    assert [item.result_code for item in audit.records].count(
+        "connector_upgrade_approval_revalidated"
+    ) == 1
+
+
+def test_upgrade_approval_revalidation_api_is_no_store_and_hides_custody_metadata(
+    tmp_path: Path,
+) -> None:
+    (
+        approval_service,
+        upgrade_service,
+        instance_service,
+        package_service,
+        registration_service,
+        publication_service,
+        sources,
+        _,
+    ) = asyncio.run(approval_fixture())
+    instance, candidate_receipt = sources
+    requester = instance_operator()
+    approver = instance_operator("subject.connector-upgrade-independent-approver")
+    verifier = instance_operator("subject.connector-upgrade-independent-verifier")
+    plan = asyncio.run(
+        upgrade_service.plan(
+            actor=requester,
+            record_id=instance.record_id,
+            candidate_receipt_id=candidate_receipt.receipt_id,
+            correlation_id="correlation.connector-upgrade-revalidation-api-plan",
+        )
+    )
+    request = asyncio.run(
+        approval_service.create(
+            actor=requester,
+            record_id=instance.record_id,
+            candidate_receipt_id=candidate_receipt.receipt_id,
+            source_plan_digest=plan.canonical_digest,
+            purpose="Submit this exact connector upgrade plan for independent human review.",
+            acknowledged_request_is_not_approval_and_grants_no_execution_authority=True,
+            idempotency_key="connector-upgrade-revalidation-api-request",
+            correlation_id="correlation.connector-upgrade-revalidation-api-request",
+        )
+    )
+    approval = asyncio.run(
+        approval_service.decide(
+            actor=approver,
+            record_id=instance.record_id,
+            request_id=request.request_id,
+            expected_request_version=request.version,
+            expected_request_digest=request.canonical_digest,
+            outcome=ConnectorUpgradeApprovalOutcome.APPROVE,
+            rationale="Approve the exact immutable plan after independent evidence review.",
+            acknowledged_decision_grants_no_execution_authority=True,
+            idempotency_key="connector-upgrade-revalidation-api-decision",
+            correlation_id="correlation.connector-upgrade-revalidation-api-decision",
+        )
+    )
+    assert approval.decision is not None
+    app = create_app(
+        settings(
+            development_subject_id=verifier.subject_id,
+            mcp_builder_generation_root=tmp_path / "mcp-builder-generations",
+        ),
+        identity_provider=BasicTestIdentityProvider(verifier),
+        registry_publication_service=publication_service,
+        package_registration_service=registration_service,
+        package_installation_service=package_service,
+        connector_instance_creation_service=instance_service,
+        connector_upgrade_approval_service=approval_service,
+    )
+    with TestClient(app) as client:
+        app.state.connector_upgrade_readiness_service = upgrade_service
+        login_response = login(client)
+        response = client.post(
+            f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
+            f"{request.request_id}/revalidations",
+            headers={
+                "Idempotency-Key": "connector-upgrade-revalidation-api",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+            json={
+                "schema_version": "atlas.connector-upgrade-approval-revalidation-input.v1",
+                "expected_request_digest": request.canonical_digest,
+                "expected_decision_digest": approval.decision.canonical_digest,
+                "purpose": "Revalidate the exact approved plan without granting handoff authority.",
+                "acknowledged_revalidation_grants_no_handoff_or_execution_authority": True,
+            },
+        )
+        read_response = client.get(
+            f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
+            f"{request.request_id}/revalidations/latest"
+        )
+
+    assert response.status_code == 201, response.text
+    assert read_response.status_code == 200, read_response.text
+    assert response.headers["Cache-Control"] == "no-store"
+    data = response.json()["data"]
+    assert data["governance_ready"] is True and data["handoff_ready"] is False
+    assert data["execution_authorized"] is False
+    rendered = response.text.lower()
+    for hidden in (
+        "revalidation_fingerprint",
         "idempotency_key",
         "credential",
         "target_endpoint",

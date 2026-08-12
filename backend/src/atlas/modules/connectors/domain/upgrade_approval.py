@@ -216,6 +216,125 @@ class ConnectorUpgradeApprovalDecision:
 
 
 @dataclass(frozen=True, slots=True)
+class ConnectorUpgradeApprovalRevalidation:
+    revalidation_id: str
+    schema_version: str
+    version: int
+    source_record_id: str
+    source_record_version: int
+    instance_id: str
+    connector_id: str
+    request_id: str
+    request_version: int
+    request_digest: str
+    decision_id: str
+    decision_version: int
+    decision_digest: str
+    plan_id: str
+    plan_digest: str
+    readiness_digest: str
+    current_receipt_id: str
+    current_receipt_digest: str
+    candidate_receipt_id: str
+    candidate_receipt_digest: str
+    approval_policy_id: str
+    approval_policy_version: str
+    approval_policy_digest: str
+    organization_id: str
+    environment_id: str
+    requester_id: str
+    approver_id: str
+    revalidated_by: str
+    purpose: str
+    check_ids: tuple[str, ...]
+    revalidated_at: datetime
+    valid_until: datetime
+    canonical_digest: str
+    revalidation_fingerprint: str
+    idempotency_key: str
+    approval_current_at_revalidation: bool = True
+    governance_ready: bool = True
+    handoff_ready: bool = False
+    target_configured: bool = False
+    package_rebound: bool = False
+    configuration_changed: bool = False
+    target_contacted: bool = False
+    handoff_artifact_issued: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_performed: bool = False
+    reused: bool = False
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.revalidation_id,
+            self.schema_version,
+            self.source_record_id,
+            self.instance_id,
+            self.connector_id,
+            self.request_id,
+            self.decision_id,
+            self.plan_id,
+            self.current_receipt_id,
+            self.candidate_receipt_id,
+            self.approval_policy_id,
+            self.approval_policy_version,
+            self.organization_id,
+            self.environment_id,
+            self.requester_id,
+            self.approver_id,
+            self.revalidated_by,
+        ):
+            validate_stable_identifier(value, "connector upgrade approval revalidation identifier")
+        for value in (
+            self.request_digest,
+            self.decision_digest,
+            self.plan_digest,
+            self.readiness_digest,
+            self.current_receipt_digest,
+            self.candidate_receipt_digest,
+            self.approval_policy_digest,
+            self.canonical_digest,
+            self.revalidation_fingerprint,
+        ):
+            if _DIGEST.fullmatch(value) is None:
+                raise ValueError("Connector upgrade approval revalidation digest is invalid")
+        if (
+            self.version != 1
+            or self.source_record_version < 1
+            or self.request_version != 1
+            or self.decision_version != 1
+            or not 20 <= len(self.purpose.strip()) <= 1000
+            or not 8 <= len(self.idempotency_key) <= 128
+            or not self.check_ids
+            or len(set(self.check_ids)) != len(self.check_ids)
+            or any(
+                not item.startswith("connector.upgrade.revalidation.") for item in self.check_ids
+            )
+            or self.revalidated_at.tzinfo is None
+            or self.valid_until.tzinfo is None
+            or self.valid_until <= self.revalidated_at
+            or len({self.requester_id, self.approver_id, self.revalidated_by}) != 3
+            or not self.approval_current_at_revalidation
+            or not self.governance_ready
+            or any(
+                (
+                    self.handoff_ready,
+                    self.target_configured,
+                    self.package_rebound,
+                    self.configuration_changed,
+                    self.target_contacted,
+                    self.handoff_artifact_issued,
+                    self.execution_authorized,
+                    self.infrastructure_mutation_performed,
+                )
+            )
+        ):
+            raise ValueError(
+                "Connector upgrade approval revalidation violates the authority boundary"
+            )
+
+
+@dataclass(frozen=True, slots=True)
 class ConnectorUpgradeApprovalRecord:
     request: ConnectorUpgradeApprovalRequest
     decision: ConnectorUpgradeApprovalDecision | None

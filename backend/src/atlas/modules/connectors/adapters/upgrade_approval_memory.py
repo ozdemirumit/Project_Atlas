@@ -6,6 +6,7 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeApprovalDecision,
     ConnectorUpgradeApprovalPolicySnapshot,
     ConnectorUpgradeApprovalRequest,
+    ConnectorUpgradeApprovalRevalidation,
 )
 
 
@@ -13,6 +14,7 @@ class InMemoryConnectorUpgradeApprovalRepository:
     def __init__(self) -> None:
         self._records: dict[str, ConnectorUpgradeApprovalRequest] = {}
         self._decisions: dict[str, ConnectorUpgradeApprovalDecision] = {}
+        self._revalidations: dict[str, ConnectorUpgradeApprovalRevalidation] = {}
         self._lock = asyncio.Lock()
 
     @property
@@ -77,6 +79,42 @@ class InMemoryConnectorUpgradeApprovalRepository:
             ):
                 return False
             self._decisions[decision.request_id] = decision
+            return True
+
+    async def get_revalidation(
+        self, *, revalidation_id: str
+    ) -> ConnectorUpgradeApprovalRevalidation | None:
+        return self._revalidations.get(revalidation_id)
+
+    async def get_latest_revalidation(
+        self, *, request_id: str
+    ) -> ConnectorUpgradeApprovalRevalidation | None:
+        matches = tuple(
+            item for item in self._revalidations.values() if item.request_id == request_id
+        )
+        return max(matches, key=lambda item: item.revalidated_at) if matches else None
+
+    async def get_revalidation_by_key(
+        self, *, revalidated_by: str, idempotency_key: str
+    ) -> ConnectorUpgradeApprovalRevalidation | None:
+        return next(
+            (
+                item
+                for item in self._revalidations.values()
+                if item.revalidated_by == revalidated_by and item.idempotency_key == idempotency_key
+            ),
+            None,
+        )
+
+    async def add_revalidation(self, revalidation: ConnectorUpgradeApprovalRevalidation) -> bool:
+        async with self._lock:
+            if revalidation.revalidation_id in self._revalidations or any(
+                item.revalidated_by == revalidation.revalidated_by
+                and item.idempotency_key == revalidation.idempotency_key
+                for item in self._revalidations.values()
+            ):
+                return False
+            self._revalidations[revalidation.revalidation_id] = revalidation
             return True
 
     async def close(self) -> None:

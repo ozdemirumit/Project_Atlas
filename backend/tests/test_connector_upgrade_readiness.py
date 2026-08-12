@@ -311,6 +311,53 @@ async def test_upgrade_plan_is_deterministic_and_non_executable_for_unconfigured
 
 
 @pytest.mark.asyncio
+async def test_upgrade_plan_identity_is_stable_when_only_generation_time_advances() -> None:
+    audit = CollectingAuditSink()
+    instance_service, package_service, _, _, installation, policy = await instance_fixture()
+    instance = await create_instance(instance_service, installation, policy)
+    (
+        current_receipt,
+        _,
+        current_registration,
+        _,
+    ) = await package_service.connector_instance_creation_source(receipt_id=installation.receipt_id)
+    candidate_receipt, candidate_registration = upgrade_package(
+        current_receipt, current_registration
+    )
+    now = [installation.installed_at + timedelta(hours=2)]
+    service = ConnectorUpgradeReadinessService(
+        instance_repository=instance_service.repository,
+        target_repository=InMemoryConnectorTargetConfigurationRepository(),
+        package_source=UpgradePackageSource(
+            ((current_receipt, current_registration), (candidate_receipt, candidate_registration))
+        ),
+        audit_sink=audit,
+        environment_id=instance.environment_id,
+        clock=lambda: now[0],
+    )
+
+    first = await service.plan(
+        actor=instance_operator(),
+        record_id=instance.record_id,
+        candidate_receipt_id=candidate_receipt.receipt_id,
+        correlation_id="correlation.connector-upgrade-plan-time-first",
+    )
+    now[0] += timedelta(minutes=10)
+    second = await service.plan(
+        actor=instance_operator(),
+        record_id=instance.record_id,
+        candidate_receipt_id=candidate_receipt.receipt_id,
+        correlation_id="correlation.connector-upgrade-plan-time-second",
+    )
+
+    assert second.generated_at > first.generated_at
+    assert second.expires_at > first.expires_at
+    assert second.readiness_digest == first.readiness_digest
+    assert second.plan_id == first.plan_id
+    assert second.canonical_digest == first.canonical_digest
+
+
+@pytest.mark.asyncio
 async def test_upgrade_plan_blocks_configured_target_until_impact_is_established() -> None:
     (
         target_service,

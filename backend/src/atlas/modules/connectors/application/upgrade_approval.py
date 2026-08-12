@@ -26,6 +26,7 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeApprovalPolicySnapshot,
     ConnectorUpgradeApprovalRecord,
     ConnectorUpgradeApprovalRequest,
+    ConnectorUpgradeApprovalRevalidation,
     ConnectorUpgradeApprovalState,
 )
 from atlas.modules.identity.domain.models import (
@@ -38,9 +39,21 @@ from atlas.modules.identity.domain.models import (
 UPGRADE_APPROVAL_POLICY_SCHEMA = "atlas.connector-upgrade-approval-policy.v1"
 UPGRADE_APPROVAL_REQUEST_SCHEMA = "atlas.connector-upgrade-approval-request.v1"
 UPGRADE_APPROVAL_DECISION_SCHEMA = "atlas.connector-upgrade-approval-decision.v1"
+UPGRADE_APPROVAL_REVALIDATION_SCHEMA = "atlas.connector-upgrade-approval-revalidation.v1"
 UPGRADE_APPROVAL_CREATE_PERMISSION = "connectors.upgrade-approval-requests.create"
 UPGRADE_APPROVAL_READ_PERMISSION = "connectors.upgrade-approval-requests.read"
 UPGRADE_APPROVAL_DECIDE_PERMISSION = "connectors.upgrade-approval-decisions.create"
+UPGRADE_APPROVAL_REVALIDATION_CREATE_PERMISSION = "connectors.upgrade-approval-revalidations.create"
+UPGRADE_APPROVAL_REVALIDATION_READ_PERMISSION = "connectors.upgrade-approval-revalidations.read"
+UPGRADE_APPROVAL_REVALIDATION_CHECK_IDS = (
+    "connector.upgrade.revalidation.request-integrity-current",
+    "connector.upgrade.revalidation.decision-integrity-current",
+    "connector.upgrade.revalidation.identity-separation-current",
+    "connector.upgrade.revalidation.policy-current",
+    "connector.upgrade.revalidation.plan-lineage-current",
+    "connector.upgrade.revalidation.expiry-current",
+    "connector.upgrade.revalidation.nonexecution-boundary-intact",
+)
 
 
 class ConnectorUpgradeApprovalService:
@@ -376,6 +389,206 @@ class ConnectorUpgradeApprovalService:
                 return self._reuse_decision(request, raced, actor, fingerprint, now)
         return self._record(request, decision, now)
 
+    async def revalidate(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        record_id: str,
+        request_id: str,
+        expected_request_digest: str,
+        expected_decision_digest: str,
+        purpose: str,
+        acknowledged_revalidation_grants_no_handoff_or_execution_authority: bool,
+        idempotency_key: str,
+        correlation_id: str,
+    ) -> ConnectorUpgradeApprovalRevalidation:
+        self._require_enterprise_human(actor)
+        if not acknowledged_revalidation_grants_no_handoff_or_execution_authority:
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_approval_revalidation_acknowledgement_required"
+            )
+        purpose = purpose.strip()
+        if not 20 <= len(purpose) <= 1000 or not 8 <= len(idempotency_key) <= 128:
+            raise ConnectorUpgradeApprovalError("connector_upgrade_approval_revalidation_invalid")
+        request = await self._repository.get(request_id=request_id)
+        if request is None:
+            raise ConnectorUpgradeApprovalError("connector_upgrade_approval_request_not_found")
+        self._require_request_scope(request, actor, record_id)
+        decision = await self._repository.get_decision(request_id=request.request_id)
+        if decision is None:
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_approval_revalidation_approval_required"
+            )
+        self._verify_decision(decision)
+        if (
+            decision.outcome is not ConnectorUpgradeApprovalOutcome.APPROVE
+            or request.canonical_digest != expected_request_digest
+            or decision.canonical_digest != expected_decision_digest
+        ):
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_approval_revalidation_approval_not_current"
+            )
+        if actor.subject_id in {request.requested_by, decision.decided_by}:
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_approval_revalidation_separation_required"
+            )
+        now = self._clock()
+        if now >= request.expires_at:
+            raise ConnectorUpgradeApprovalError("connector_upgrade_approval_request_expired")
+        policy = await self._active_policy(actor=actor, now=now)
+        if (
+            policy.policy_id != request.approval_policy_id
+            or policy.policy_version != request.approval_policy_version
+            or policy.canonical_digest != request.approval_policy_digest
+            or decision.approval_policy_id != request.approval_policy_id
+            or decision.approval_policy_digest != request.approval_policy_digest
+        ):
+            raise ConnectorUpgradeApprovalError("connector_upgrade_approval_policy_changed")
+        plan = await self._upgrade_service.plan(
+            actor=actor,
+            record_id=request.source_record_id,
+            candidate_receipt_id=request.candidate_receipt_id,
+            correlation_id=correlation_id,
+        )
+        if (
+            plan.source_record_id != request.source_record_id
+            or plan.source_record_version != request.source_record_version
+            or plan.instance_id != request.instance_id
+            or plan.connector_id != request.connector_id
+            or plan.plan_id != request.plan_id
+            or plan.canonical_digest != request.plan_digest
+            or plan.readiness_digest != request.readiness_digest
+            or plan.current_receipt_id != request.current_receipt_id
+            or plan.current_receipt_digest != request.current_receipt_digest
+            or plan.candidate_receipt_id != request.candidate_receipt_id
+            or plan.candidate_receipt_digest != request.candidate_receipt_digest
+            or plan.candidate_digest != request.candidate_digest
+            or plan.target_configured
+            or not plan.plan_eligible
+            or plan.blockers
+            or now >= plan.expires_at
+            or plan.execution_authorized
+            or plan.infrastructure_mutation_performed
+        ):
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_approval_revalidation_plan_drifted"
+            )
+        valid_until = min(request.expires_at, plan.expires_at, policy.expires_at)
+        if valid_until <= now:
+            raise ConnectorUpgradeApprovalError("connector_upgrade_approval_revalidation_expired")
+        fingerprint = self._digest(
+            {
+                "request_digest": request.canonical_digest,
+                "decision_digest": decision.canonical_digest,
+                "plan_digest": plan.canonical_digest,
+                "policy_digest": policy.canonical_digest,
+                "revalidated_by": actor.subject_id,
+                "purpose": purpose,
+            }
+        )
+        replay = await self._repository.get_revalidation_by_key(
+            revalidated_by=actor.subject_id, idempotency_key=idempotency_key
+        )
+        if replay is not None:
+            return self._reuse_revalidation(replay, actor, request, decision, fingerprint)
+        seed = self._digest(
+            [request.canonical_digest, decision.canonical_digest, actor.subject_id, idempotency_key]
+        )
+        revalidation = ConnectorUpgradeApprovalRevalidation(
+            revalidation_id=f"connector-upgrade-approval-revalidation.{seed[:24]}",
+            schema_version=UPGRADE_APPROVAL_REVALIDATION_SCHEMA,
+            version=1,
+            source_record_id=request.source_record_id,
+            source_record_version=request.source_record_version,
+            instance_id=request.instance_id,
+            connector_id=request.connector_id,
+            request_id=request.request_id,
+            request_version=request.version,
+            request_digest=request.canonical_digest,
+            decision_id=decision.decision_id,
+            decision_version=decision.version,
+            decision_digest=decision.canonical_digest,
+            plan_id=request.plan_id,
+            plan_digest=request.plan_digest,
+            readiness_digest=request.readiness_digest,
+            current_receipt_id=request.current_receipt_id,
+            current_receipt_digest=request.current_receipt_digest,
+            candidate_receipt_id=request.candidate_receipt_id,
+            candidate_receipt_digest=request.candidate_receipt_digest,
+            approval_policy_id=policy.policy_id,
+            approval_policy_version=policy.policy_version,
+            approval_policy_digest=policy.canonical_digest,
+            organization_id=request.organization_id,
+            environment_id=request.environment_id,
+            requester_id=request.requested_by,
+            approver_id=decision.decided_by,
+            revalidated_by=actor.subject_id,
+            purpose=purpose,
+            check_ids=UPGRADE_APPROVAL_REVALIDATION_CHECK_IDS,
+            revalidated_at=now,
+            valid_until=valid_until,
+            canonical_digest="0" * 64,
+            revalidation_fingerprint=fingerprint,
+            idempotency_key=idempotency_key,
+        )
+        revalidation = replace(
+            revalidation,
+            canonical_digest=self._digest(self._revalidation_payload(revalidation)),
+        )
+        async with self._mutation_lock:
+            await self._audit_revalidation(
+                actor=actor,
+                correlation_id=correlation_id,
+                revalidation=revalidation,
+                result_code="connector_upgrade_approval_revalidated",
+                permission_id=UPGRADE_APPROVAL_REVALIDATION_CREATE_PERMISSION,
+                idempotency_key=idempotency_key,
+            )
+            if not await self._repository.add_revalidation(revalidation):
+                raced = await self._repository.get_revalidation_by_key(
+                    revalidated_by=actor.subject_id, idempotency_key=idempotency_key
+                )
+                if raced is None:
+                    raise ConnectorUpgradeApprovalError(
+                        "connector_upgrade_approval_revalidation_conflict"
+                    )
+                return self._reuse_revalidation(raced, actor, request, decision, fingerprint)
+        return revalidation
+
+    async def get_latest_revalidation(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        record_id: str,
+        request_id: str,
+        correlation_id: str,
+    ) -> ConnectorUpgradeApprovalRevalidation:
+        self._require_enterprise_human(actor)
+        request = await self._repository.get(request_id=request_id)
+        if request is None:
+            raise ConnectorUpgradeApprovalError("connector_upgrade_approval_request_not_found")
+        self._require_request_scope(request, actor, record_id)
+        revalidation = await self._repository.get_latest_revalidation(request_id=request_id)
+        if revalidation is None:
+            raise ConnectorUpgradeApprovalError("connector_upgrade_approval_revalidation_not_found")
+        self._verify_revalidation(revalidation)
+        if (
+            revalidation.request_id != request.request_id
+            or revalidation.request_digest != request.canonical_digest
+            or revalidation.organization_id != actor.organization_id
+            or revalidation.environment_id != self._environment_id
+        ):
+            raise ConnectorUpgradeApprovalError("connector_upgrade_approval_revalidation_not_found")
+        await self._audit_revalidation(
+            actor=actor,
+            correlation_id=correlation_id,
+            revalidation=revalidation,
+            result_code="connector_upgrade_approval_revalidation_read",
+            permission_id=UPGRADE_APPROVAL_REVALIDATION_READ_PERMISSION,
+            idempotency_key=None,
+        )
+        return revalidation
+
     async def close(self) -> None:
         await self._repository.close()
 
@@ -440,6 +653,24 @@ class ConnectorUpgradeApprovalService:
             raise ConnectorUpgradeApprovalError("connector_upgrade_approval_decision_conflict")
         return self._record(request, replace(decision, reused=True), now)
 
+    def _reuse_revalidation(
+        self,
+        revalidation: ConnectorUpgradeApprovalRevalidation,
+        actor: AuthenticatedSubject,
+        request: ConnectorUpgradeApprovalRequest,
+        decision: ConnectorUpgradeApprovalDecision,
+        fingerprint: str,
+    ) -> ConnectorUpgradeApprovalRevalidation:
+        self._verify_revalidation(revalidation)
+        if (
+            revalidation.revalidated_by != actor.subject_id
+            or revalidation.request_id != request.request_id
+            or revalidation.decision_id != decision.decision_id
+            or revalidation.revalidation_fingerprint != fingerprint
+        ):
+            raise ConnectorUpgradeApprovalError("connector_upgrade_approval_revalidation_conflict")
+        return replace(revalidation, reused=True)
+
     @staticmethod
     def _record(
         request: ConnectorUpgradeApprovalRequest,
@@ -493,6 +724,13 @@ class ConnectorUpgradeApprovalService:
             )
 
     @classmethod
+    def _verify_revalidation(cls, revalidation: ConnectorUpgradeApprovalRevalidation) -> None:
+        if cls._digest(cls._revalidation_payload(revalidation)) != revalidation.canonical_digest:
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_approval_revalidation_integrity_failed"
+            )
+
+    @classmethod
     def _request_payload(cls, request: ConnectorUpgradeApprovalRequest) -> dict[str, object]:
         payload = cast(dict[str, object], asdict(request))
         for field in ("canonical_digest", "request_fingerprint", "idempotency_key", "reused"):
@@ -505,6 +743,57 @@ class ConnectorUpgradeApprovalService:
         for field in ("canonical_digest", "decision_fingerprint", "idempotency_key", "reused"):
             payload.pop(field)
         return cast(dict[str, object], cls._normalize(payload))
+
+    @classmethod
+    def _revalidation_payload(
+        cls, revalidation: ConnectorUpgradeApprovalRevalidation
+    ) -> dict[str, object]:
+        payload = cast(dict[str, object], asdict(revalidation))
+        for field in (
+            "canonical_digest",
+            "revalidation_fingerprint",
+            "idempotency_key",
+            "reused",
+        ):
+            payload.pop(field)
+        return cast(dict[str, object], cls._normalize(payload))
+
+    async def _audit_revalidation(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+        revalidation: ConnectorUpgradeApprovalRevalidation,
+        result_code: str,
+        permission_id: str,
+        idempotency_key: str | None,
+    ) -> None:
+        await self._audit_sink.record(
+            AuditRecord(
+                event_id=f"evt_{uuid4().hex}",
+                event_type="atlas.connector.upgrade-approval-revalidation",
+                schema_version="1.0",
+                producer="project-atlas-api",
+                producer_version=__version__,
+                occurred_at=self._clock(),
+                correlation_id=correlation_id,
+                subject_id=actor.subject_id,
+                actor_type=actor.kind.value,
+                authentication_method=actor.authentication_method.value,
+                assurance_level=actor.assurance_level.value,
+                permission_id=permission_id,
+                resource_type="resource.connector.upgrade-approval-request",
+                scope_reference=revalidation.request_id,
+                decision_id=revalidation.revalidation_id,
+                outcome="succeeded",
+                result_code=result_code,
+                idempotency_key=idempotency_key,
+                target_metadata=(
+                    ("plan_id", revalidation.plan_id),
+                    ("handoff_ready", "false"),
+                ),
+            )
+        )
 
     async def _audit_decision(
         self,

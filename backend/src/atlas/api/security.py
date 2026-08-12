@@ -115,6 +115,8 @@ from atlas.modules.authorization.application.bootstrap import (
     CONNECTOR_UPGRADE_APPROVAL_CREATE,
     CONNECTOR_UPGRADE_APPROVAL_DECIDE,
     CONNECTOR_UPGRADE_APPROVAL_READ,
+    CONNECTOR_UPGRADE_APPROVAL_REVALIDATION_CREATE,
+    CONNECTOR_UPGRADE_APPROVAL_REVALIDATION_READ,
     DEPLOYMENT_CONFIGURATION_PREVIEW,
     GRAPH_STORAGE_IMPACT_READ,
     HEALTH_CHECK_OVERVIEW_READ,
@@ -3395,6 +3397,30 @@ async def authorize_connector_upgrade_approval_decide(
         subject,
         permission_id=CONNECTOR_UPGRADE_APPROVAL_DECIDE,
         capability_class=CapabilityClass.C3_CONTROLLED_CHANGE,
+    )
+
+
+async def authorize_connector_upgrade_approval_revalidation_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_instance(
+        request,
+        subject,
+        permission_id=CONNECTOR_UPGRADE_APPROVAL_REVALIDATION_CREATE,
+        capability_class=CapabilityClass.C3_CONTROLLED_CHANGE,
+    )
+
+
+async def authorize_connector_upgrade_approval_revalidation_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_instance(
+        request,
+        subject,
+        permission_id=CONNECTOR_UPGRADE_APPROVAL_REVALIDATION_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
     )
 
 

@@ -621,6 +621,8 @@ class ConnectorUpgradeReadinessService:
     ) -> dict[str, object]:
         payload = cast(dict[str, object], asdict(value))
         payload.pop("canonical_digest")
+        if isinstance(value, ConnectorUpgradeReadiness):
+            payload.pop("generated_at")
         return cast(dict[str, object], cls._normalize(payload))
 
     @classmethod

@@ -20,6 +20,9 @@ from atlas.api.instance_creation_schemas import (
     ConnectorUpgradeApprovalRecordResponse,
     ConnectorUpgradeApprovalRequestData,
     ConnectorUpgradeApprovalResponse,
+    ConnectorUpgradeApprovalRevalidationData,
+    ConnectorUpgradeApprovalRevalidationInput,
+    ConnectorUpgradeApprovalRevalidationResponse,
     ConnectorUpgradePlanData,
     ConnectorUpgradePlanResponse,
     ConnectorUpgradeReadinessData,
@@ -33,6 +36,8 @@ from atlas.api.security import (
     authorize_connector_upgrade_approval_create,
     authorize_connector_upgrade_approval_decide,
     authorize_connector_upgrade_approval_read,
+    authorize_connector_upgrade_approval_revalidation_create,
+    authorize_connector_upgrade_approval_revalidation_read,
     browser_session_subject,
 )
 from atlas.modules.authorization.domain.models import AuthorizationDecision
@@ -409,6 +414,79 @@ async def decide_connector_upgrade_approval_request(
     response.headers["Cache-Control"] = "no-store"
     return ConnectorUpgradeApprovalRecordResponse(
         data=ConnectorUpgradeApprovalRecordData.from_domain(record),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.post(
+    "/{record_id}/upgrade-approval-requests/{request_id}/revalidations",
+    response_model=ConnectorUpgradeApprovalRevalidationResponse,
+    status_code=201,
+)
+async def revalidate_connector_upgrade_approval(
+    record_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    payload: ConnectorUpgradeApprovalRevalidationInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_connector_upgrade_approval_revalidation_create),
+    ],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> ConnectorUpgradeApprovalRevalidationResponse:
+    service: ConnectorUpgradeApprovalService = request.app.state.connector_upgrade_approval_service
+    try:
+        revalidation = await service.revalidate(
+            actor=subject,
+            record_id=record_id,
+            request_id=request_id,
+            idempotency_key=idempotency_key,
+            correlation_id=str(request.state.correlation_id),
+            **payload.model_dump(exclude={"schema_version"}),
+        )
+    except ConnectorUpgradeApprovalError as error:
+        _raise_upgrade_approval(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorUpgradeApprovalRevalidationResponse(
+        data=ConnectorUpgradeApprovalRevalidationData.from_domain(revalidation),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get(
+    "/{record_id}/upgrade-approval-requests/{request_id}/revalidations/latest",
+    response_model=ConnectorUpgradeApprovalRevalidationResponse,
+)
+async def get_latest_connector_upgrade_approval_revalidation(
+    record_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_connector_upgrade_approval_revalidation_read),
+    ],
+) -> ConnectorUpgradeApprovalRevalidationResponse:
+    service: ConnectorUpgradeApprovalService = request.app.state.connector_upgrade_approval_service
+    try:
+        revalidation = await service.get_latest_revalidation(
+            actor=subject,
+            record_id=record_id,
+            request_id=request_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorUpgradeApprovalError as error:
+        _raise_upgrade_approval(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorUpgradeApprovalRevalidationResponse(
+        data=ConnectorUpgradeApprovalRevalidationData.from_domain(revalidation),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),

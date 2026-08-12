@@ -1461,6 +1461,33 @@ class ConnectorUpgradeApprovalDecisionModel(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
+class ConnectorUpgradeApprovalRevalidationModel(Base):
+    __tablename__ = "connector_upgrade_approval_revalidations"
+    __table_args__ = (
+        UniqueConstraint(
+            "revalidated_by",
+            "idempotency_key",
+            name="uq_connector_upgrade_approval_revalidations_actor_idempotency",
+        ),
+    )
+
+    revalidation_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    decision_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    revalidated_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    revalidated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    valid_until: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class ConnectorCredentialAssignmentModel(Base):
     __tablename__ = "connector_credential_assignments"
     __table_args__ = (

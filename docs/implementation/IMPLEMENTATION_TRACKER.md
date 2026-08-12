@@ -4,14 +4,76 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-149 |
-| Title | Connector upgrade approval decision |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#161](https://github.com/ozdemirumit/Project_Atlas/pull/161) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-102, ADR-103, ADR-104, ADR-105 |
+| Task ID | ATLAS-IMP-150 |
+| Title | Connector upgrade approval revalidation |
+| Status | In Progress |
+| Branch | `agent/mcp-upgrade-approval-revalidation` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-102, ADR-103, ADR-104, ADR-105, ADR-106 |
 | Last Updated | 2026-08-12 |
-| Next Action | Audit the next approved implementation slice from the governing backlog |
+| Next Action | Complete full regression, live validation and governed delivery |
+
+### ATLAS-IMP-150 Scope Rationale
+
+- IMP-149 records an exact approved decision but deliberately creates no revalidation, handoff or
+  execution artifact.
+- ATLAS-037 requires current approval, policy and plan evidence to be revalidated before a future
+  consequential boundary can rely on it.
+- ADR-106 adds an independent evidence receipt while keeping package rebinding, target contact,
+  handoff and execution outside this implementation slice.
+
+### ATLAS-IMP-150 Acceptance Criteria
+
+- A third authorized enterprise human with MFA can revalidate a current approved decision; the
+  requester, approver, development identity and non-human identities fail closed.
+- Exact request, decision, plan, readiness, package-receipt and active-policy lineage is verified
+  against a freshly regenerated plan. Drift, expiry and policy change fail closed.
+- Plan identity remains deterministic when only generation time advances; timestamps continue to
+  bound observation freshness without creating false source drift.
+- The durable repository stores immutable receipts with safe actor-idempotent replay and a latest
+  scoped read. Conflicting replay and integrity failure are rejected.
+- Create/read endpoints are no-store, audited and omit fingerprints, idempotency, credentials,
+  endpoints and artifact-custody metadata.
+- The UI permits only a third person to revalidate, displays checks and bounded validity, and makes
+  the no-handoff/no-execution boundary explicit.
+- `governance_ready` may become true, but handoff, target, package, configuration, execution and
+  infrastructure mutation fields remain false and no related action control is exposed.
+- Focused and full backend/frontend gates, migration checks, production build and live responsive
+  validation pass.
+
+### ATLAS-IMP-150 Initial Evidence
+
+- IMP-149 implementation merged through PR #161 as
+  `6109a67efcc39315934b1eb1ec2460cb51c3adda`; tracker closure
+  `543e696` was the exact branch point for IMP-150.
+- ATLAS-037 requires approval revalidation and maintains a strict distinction between approval,
+  handoff and execution authority.
+- ADR-105 explicitly leaves any future controlled handoff to a separate contract with fresh
+  revalidation.
+
+### ATLAS-IMP-150 Validation Evidence
+
+- The immutable receipt binds the exact request, approved decision, deterministic plan, readiness,
+  current/candidate package receipts, active signed policy and three distinct accountable humans.
+  Its validity ends at the earliest request, regenerated-plan or policy expiry.
+- Requester and approver identities fail closed. A third enterprise human with MFA and scoped
+  permission can revalidate; exact actor-idempotent replay is safe and all drift, expiry, integrity
+  and policy mismatches are rejected.
+- `governance_ready=true` is evidence only. Handoff readiness, artifact issuance, package rebinding,
+  configuration change, target contact, execution authorization and infrastructure mutation remain
+  false in the domain, service, API and UI contracts.
+- Readiness identity excludes generation time, so a ten-minute clock advance preserves exact
+  readiness and plan digests while returning fresh generation and expiry timestamps.
+- Backend formatting and lint passed 1,184 files, mypy passed 1,083 source files, and the complete
+  backend suite passed 977 tests with three environment-specific Windows symlink skips. Alembic
+  reports the single linear `20260812_0099` head.
+- Frontend ESLint and both TypeScript projects passed; all 215 tests in 87 files passed. The
+  2,007-module production build completed; the existing large-chunk advisory remains limited to the
+  transitional `OperationalApplication` chunk.
+- Live Playwright validation displayed the exact approved decision and third-person revalidation at
+  1,280 px and 390 px. Both widths had zero horizontal overflow, the mobile dialog measured
+  390 x 844 px, and no install, apply, execute or handoff control existed. The expected unmocked
+  unrelated-resource 403 entries and initial no-revalidation 404 were the only console responses.
 
 ### ATLAS-IMP-149 Scope Rationale
 
