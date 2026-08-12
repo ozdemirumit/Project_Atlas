@@ -4,14 +4,53 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-157 |
-| Title | Connector upgrade non-executable evidence receipt |
+| Task ID | ATLAS-IMP-158 |
+| Title | Connector upgrade evidence receipt verification |
 | Status | In Progress |
-| Branch | `agent/mcp-upgrade-evidence-receipt` |
-| Pull Request | [#169](https://github.com/ozdemirumit/Project_Atlas/pull/169) |
+| Branch | `agent/mcp-upgrade-evidence-verification` |
+| Pull Request | Pending |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110, ADR-111, ADR-112, ADR-113 |
 | Last Updated | 2026-08-12 |
-| Next Action | Complete exact-head CI and merge PR #169 |
+| Next Action | Define and implement non-executable receipt integrity verification and current-state revalidation |
+
+### ATLAS-IMP-158 Scope Rationale
+
+- IMP-157 creates a minimized, deterministic and downloadable evidence receipt, but a portable JSON
+  record needs an explicit verification workflow before an auditor can safely rely on its digest.
+- A digest alone is not a signature or execution token. Verification must distinguish structural and
+  canonical integrity from current authoritative-state consistency without overstating authenticity.
+- The next safe slice is a read-only verifier and review UI. It must not consume approval, create a
+  handoff artifact, contact a target, change connector state or authorize execution.
+
+### ATLAS-IMP-158 Acceptance Criteria
+
+- Verification rejects malformed, oversized, authority-bearing, non-canonical or digest-mismatched
+  receipts without disclosing hidden connector or evidence data.
+- A structurally valid receipt is classified separately as integrity-valid, current, stale, expired
+  or unverifiable against the caller's exact authorized organization, environment and request scope.
+- Current-state comparison reuses authoritative request, decision, revalidation, plan and evidence
+  checks; no uploaded receipt is accepted as an approval, handoff or runtime credential.
+- The API is authenticated, exactly scoped, no-store, bounded, audited and fail closed. Browser file
+  review parses locally first and uploads only the minimized receipt schema after explicit consent.
+- The UI explains integrity versus current-state verification and exposes no install, apply, execute
+  or handoff control.
+- Focused and full backend/frontend gates, production build and live responsive validation pass.
+
+### ATLAS-IMP-158 Initial Evidence
+
+- IMP-157 merged through PR #169 as `a15931bcdb39cdade8d34b9eff6df4d2263e709e`;
+  final exact-head PR CI run `31582294091` and exact-main push CI run `31582765789` both passed
+  before IMP-158 begins.
+- ADR-113 deliberately defines the receipt as evidence only and reserves any future runtime artifact
+  for a separate schema and validator.
+
+### ATLAS-IMP-158 Validation Evidence
+
+- Pending.
+
+### ATLAS-IMP-158 Delivery Evidence
+
+- Pending.
 
 ### ATLAS-IMP-157 Scope Rationale
 
@@ -68,10 +107,14 @@
 
 ### ATLAS-IMP-157 Delivery Evidence
 
-- Implementation commit `e8dc5c2c6ae8d39c271c53f6b44fc3d9303b28ea` passed exact-head
-  pull-request CI run `31581664954`; backend completed in 7m30s and frontend in 4m28s.
-- PR [#169](https://github.com/ozdemirumit/Project_Atlas/pull/169) remains open until the final
-  tracker-only head commit passes the same required backend and frontend gates.
+- Implementation commits `e8dc5c2c6ae8d39c271c53f6b44fc3d9303b28ea` and
+  `25b3283e24eea35340a70b753c331c9dd497a1be` passed final exact-head pull-request CI run
+  `31582294091`; backend completed in 5m26s and frontend in 4m43s. The implementation-only head had
+  also passed run `31581664954` with backend in 7m30s and frontend in 4m28s.
+- PR [#169](https://github.com/ozdemirumit/Project_Atlas/pull/169) was squash-merged to `main` as
+  `a15931bcdb39cdade8d34b9eff6df4d2263e709e`.
+- The exact merged `main` commit passed independent push CI run `31582765789`; backend completed in
+  7m38s and frontend in 4m35s with every required step successful.
 
 ### ATLAS-IMP-156 Scope Rationale
 
