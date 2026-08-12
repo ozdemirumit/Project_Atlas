@@ -418,17 +418,17 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
                 <small>Valid until {new Date(revalidation.valid_until).toLocaleString()}</small>
                 <ul>{revalidation.check_ids.map((checkId) => <li key={checkId}>{checkId}</li>)}</ul>
                 {handoffReadinessQuery.data && (
-                  <div className="installed-mcp-status error-state" role="status">
-                    <AlertTriangle size={17} />
+                  <div className={`installed-mcp-status ${handoffReadinessQuery.data.assessment_state === "blocked" ? "error-state" : ""}`} role="status">
+                    {handoffReadinessQuery.data.assessment_state === "blocked" ? <AlertTriangle size={17} /> : <ShieldCheck size={17} />}
                     <div>
-                      <strong>Handoff blocked</strong>
+                      <strong>{handoffReadinessQuery.data.assessment_state === "blocked" ? "Handoff blocked" : "Evidence review complete"}</strong>
                       <span>No artifact was issued and the approval remains unconsumed.</span>
-                      <p>Required evidence missing</p>
-                      <ul>{handoffReadinessQuery.data.blocker_ids.map((blockerId) => <li key={blockerId}>{blockerId}</li>)}</ul>
+                      {handoffReadinessQuery.data.blocker_ids.length > 0 && <><p>Required evidence missing</p><ul>{handoffReadinessQuery.data.blocker_ids.map((blockerId) => <li key={blockerId}>{blockerId}</li>)}</ul></>}
                       <p>Satisfied checks</p>
                       <ul>{handoffReadinessQuery.data.satisfied_check_ids.map((checkId) => <li key={checkId}>{checkId}</li>)}</ul>
                       {handoffReadinessQuery.data.audit_readiness_evidence_current && <p>Audit readiness evidence verified and bound to this exact revalidation.</p>}
                       {handoffReadinessQuery.data.itsm_change_evidence_current && <p>Authoritative ITSM change evidence verified and bound to this exact plan.</p>}
+                      {handoffReadinessQuery.data.maintenance_window_evidence_current && <p>Approved maintenance-window evidence is current. No handoff or execution authority was issued.</p>}
                       {handoffReadinessQuery.data.not_applicable_check_ids.length > 0 && <><p>Not applicable in this context</p><ul>{handoffReadinessQuery.data.not_applicable_check_ids.map((checkId) => <li key={checkId}>{checkId}</li>)}</ul></>}
                       <small>Applicability policy {handoffReadinessQuery.data.applicability_policy_version}</small>
                     </div>
@@ -439,7 +439,7 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
                   <div className="installed-mcp-approval-result">
                     <strong>Change-context draft recorded</strong>
                     <span>{(changeContextMutation.data ?? changeContextQuery.data)!.itsm_draft_title}</span>
-                    <p>Not dispatched. Window not approved. Handoff remains blocked.</p>
+                    <p>Not dispatched. This internal draft grants no window or handoff authority.</p>
                     <small>{new Date((changeContextMutation.data ?? changeContextQuery.data)!.proposed_window_start).toLocaleString()} to {new Date((changeContextMutation.data ?? changeContextQuery.data)!.proposed_window_end).toLocaleString()}</small>
                   </div>
                 ) : handoffReadinessQuery.data && canCreateChangeContext ? (

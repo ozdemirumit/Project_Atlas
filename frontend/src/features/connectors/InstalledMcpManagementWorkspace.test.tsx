@@ -282,7 +282,7 @@ const upgradeApprovalRevalidation: ConnectorUpgradeApprovalRevalidation = {
 
 const handoffReadiness: ConnectorUpgradeHandoffReadiness = {
   assessment_id: "connector-upgrade-handoff-readiness.test",
-  schema_version: "atlas.connector-upgrade-handoff-readiness.v4",
+  schema_version: "atlas.connector-upgrade-handoff-readiness.v5",
   source_record_id: instance.record_id,
   source_record_version: instance.version,
   instance_id: instance.instance_id,
@@ -305,9 +305,12 @@ const handoffReadiness: ConnectorUpgradeHandoffReadiness = {
   audit_readiness_evidence_digest: "7".repeat(64),
   itsm_change_evidence_id: "connector-upgrade-itsm-change-evidence.test",
   itsm_change_evidence_digest: "8".repeat(64),
+  maintenance_window_evidence_id: "connector-upgrade-maintenance-window-evidence.test",
+  maintenance_window_evidence_digest: "9".repeat(64),
   required_check_ids: [
     "connector.upgrade.handoff.approval-current",
     "connector.upgrade.handoff.itsm-change-current",
+    "connector.upgrade.handoff.maintenance-window-current",
     "connector.upgrade.handoff.maintenance-window-current",
     "connector.upgrade.handoff.audit-readiness-evidence-current",
     "connector.upgrade.handoff.itsm-change-current",
@@ -321,17 +324,16 @@ const handoffReadiness: ConnectorUpgradeHandoffReadiness = {
     "connector.upgrade.handoff.service-impact-evidence-current",
     "connector.upgrade.handoff.runtime-health-evidence-current",
   ],
-  blocker_ids: [
-    "connector.upgrade.handoff.blocked.maintenance-window-missing",
-  ],
+  blocker_ids: [],
   assessed_at: "2026-08-12T00:41:00Z",
   evidence_valid_until: "2026-08-12T01:00:00Z",
   canonical_digest: "4".repeat(64),
-  assessment_state: "blocked",
+  assessment_state: "evidence_complete",
   approval_current: true,
   revalidation_current: true,
   audit_readiness_evidence_current: true,
   itsm_change_evidence_current: true,
+  maintenance_window_evidence_current: true,
   handoff_ready: false,
   handoff_artifact_issued: false,
   approval_consumed: false,
@@ -530,13 +532,13 @@ describe("InstalledMcpManagementWorkspace", () => {
     await waitFor(() => expect(revalidateConnectorUpgradeApproval).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("Governance ready")).toBeVisible();
     expect(screen.getByText(/Handoff remains blocked/i)).toBeVisible();
-    expect(await screen.findByText("Handoff blocked")).toBeVisible();
+    expect(await screen.findByText("Evidence review complete")).toBeVisible();
     expect(screen.getByText(/No artifact was issued/i)).toBeVisible();
-    expect(screen.getByText("Required evidence missing")).toBeVisible();
-    expect(screen.getByText(/maintenance-window-missing/i)).toBeVisible();
+    expect(screen.queryByText("Required evidence missing")).toBeNull();
     expect(screen.getByText("Satisfied checks")).toBeVisible();
     expect(screen.getByText(/Audit readiness evidence verified/i)).toBeVisible();
     expect(screen.getByText(/Authoritative ITSM change evidence verified/i)).toBeVisible();
+    expect(screen.getByText(/Approved maintenance-window evidence is current/i)).toBeVisible();
     expect(screen.getByText("Not applicable in this context")).toBeVisible();
     expect(screen.getByText(/target-binding-current/i)).toBeVisible();
     expect(screen.getByText(/Applicability policy v2026.08.12.1/i)).toBeVisible();
@@ -547,7 +549,7 @@ describe("InstalledMcpManagementWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Record change-context draft" }));
     await waitFor(() => expect(createConnectorUpgradeChangeContextDraft).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("Change-context draft recorded")).toBeVisible();
-    expect(screen.getByText(/Not dispatched. Window not approved. Handoff remains blocked./i)).toBeVisible();
+    expect(screen.getByText(/Not dispatched. This internal draft grants no window or handoff authority./i)).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|apply|execute|handoff/i })).toBeNull();
   });
 

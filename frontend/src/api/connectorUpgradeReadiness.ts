@@ -236,7 +236,7 @@ export type ConnectorUpgradeApprovalRevalidation = {
 
 export type ConnectorUpgradeHandoffReadiness = {
   assessment_id: string;
-  schema_version: "atlas.connector-upgrade-handoff-readiness.v4";
+  schema_version: "atlas.connector-upgrade-handoff-readiness.v5";
   source_record_id: string;
   source_record_version: number;
   instance_id: string;
@@ -259,6 +259,8 @@ export type ConnectorUpgradeHandoffReadiness = {
   audit_readiness_evidence_digest: string | null;
   itsm_change_evidence_id: string | null;
   itsm_change_evidence_digest: string | null;
+  maintenance_window_evidence_id: string | null;
+  maintenance_window_evidence_digest: string | null;
   required_check_ids: string[];
   satisfied_check_ids: string[];
   not_applicable_check_ids: string[];
@@ -266,11 +268,12 @@ export type ConnectorUpgradeHandoffReadiness = {
   assessed_at: string;
   evidence_valid_until: string;
   canonical_digest: string;
-  assessment_state: "blocked";
+  assessment_state: "blocked" | "evidence_complete";
   approval_current: true;
   revalidation_current: true;
   audit_readiness_evidence_current: boolean;
   itsm_change_evidence_current: boolean;
+  maintenance_window_evidence_current: boolean;
   handoff_ready: false;
   handoff_artifact_issued: false;
   approval_consumed: false;
@@ -602,9 +605,10 @@ export function isConnectorUpgradeHandoffReadiness(
     : null;
   const auditCheck = "connector.upgrade.handoff.audit-readiness-evidence-current";
   const itsmCheck = "connector.upgrade.handoff.itsm-change-current";
+  const windowCheck = "connector.upgrade.handoff.maintenance-window-current";
   return (
-    item.schema_version === "atlas.connector-upgrade-handoff-readiness.v4" &&
-    item.assessment_state === "blocked" &&
+    item.schema_version === "atlas.connector-upgrade-handoff-readiness.v5" &&
+    (item.assessment_state === "blocked" || item.assessment_state === "evidence_complete") &&
     [item.assessment_id, item.source_record_id, item.instance_id, item.connector_id, item.request_id,
       item.decision_id, item.revalidation_id, item.plan_id, item.organization_id, item.environment_id,
       item.assessed_by, item.applicability_policy_id, item.applicability_policy_version,
@@ -627,15 +631,24 @@ export function isConnectorUpgradeHandoffReadiness(
         DIGEST.test(item.itsm_change_evidence_digest) &&
         item.itsm_change_evidence_current === true)) &&
     item.itsm_change_evidence_current === satisfied.has(itsmCheck) &&
+    ((item.maintenance_window_evidence_id === null &&
+      item.maintenance_window_evidence_digest === null &&
+      item.maintenance_window_evidence_current === false) ||
+      (typeof item.maintenance_window_evidence_id === "string" &&
+        typeof item.maintenance_window_evidence_digest === "string" &&
+        DIGEST.test(item.maintenance_window_evidence_digest) &&
+        item.maintenance_window_evidence_current === true)) &&
+    item.maintenance_window_evidence_current === satisfied.has(windowCheck) &&
     requiredItems !== null && required !== null && required.size === requiredItems.length && required.size > 0 &&
     satisfiedItems !== null && satisfied !== null && satisfied.size === satisfiedItems.length && satisfied.size > 0 &&
     [...satisfied].every((checkId) => required.has(checkId)) &&
     notApplicableItems !== null && notApplicable !== null && notApplicable.size === notApplicableItems.length &&
     [...notApplicable].every((checkId) => !required.has(checkId)) &&
-    strings(item.blocker_ids) && item.blocker_ids.length > 0 &&
+    strings(item.blocker_ids) &&
     new Set(item.blocker_ids).size === item.blocker_ids.length &&
     expectedBlockers !== null && item.blocker_ids.length === expectedBlockers.size &&
     item.blocker_ids.every((blockerId) => expectedBlockers.has(blockerId)) &&
+    item.assessment_state === (item.blocker_ids.length > 0 ? "blocked" : "evidence_complete") &&
     item.approval_current === true && item.revalidation_current === true &&
     item.handoff_ready === false && item.handoff_artifact_issued === false &&
     item.approval_consumed === false && item.target_contacted === false &&

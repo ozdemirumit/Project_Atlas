@@ -10,6 +10,7 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeAuditReadinessEvidence,
     ConnectorUpgradeChangeContextDraft,
     ConnectorUpgradeItsmChangeEvidence,
+    ConnectorUpgradeMaintenanceWindowEvidence,
 )
 
 
@@ -35,6 +36,12 @@ class ConnectorUpgradeItsmChangeEvidenceSource(Protocol):
     async def get_current(
         self, *, organization_id: str, environment_id: str, request_id: str
     ) -> ConnectorUpgradeItsmChangeEvidence | None: ...
+
+
+class ConnectorUpgradeMaintenanceWindowEvidenceSource(Protocol):
+    async def get_current(
+        self, *, organization_id: str, environment_id: str, request_id: str
+    ) -> ConnectorUpgradeMaintenanceWindowEvidence | None: ...
 
 
 class ConnectorUpgradeApprovalRepository(Protocol):
