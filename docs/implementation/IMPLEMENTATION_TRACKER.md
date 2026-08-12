@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-150 |
 | Title | Connector upgrade approval revalidation |
-| Status | In Progress |
-| Branch | `agent/mcp-upgrade-approval-revalidation` |
-| Pull Request | Pending |
+| Status | Completed |
+| Branch | `main` |
+| Pull Request | [#162](https://github.com/ozdemirumit/Project_Atlas/pull/162) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-102, ADR-103, ADR-104, ADR-105, ADR-106 |
 | Last Updated | 2026-08-12 |
-| Next Action | Complete full regression, live validation and governed delivery |
+| Next Action | Audit the next approved implementation slice from the governing backlog |
 
 ### ATLAS-IMP-150 Scope Rationale
 
@@ -74,6 +74,15 @@
   1,280 px and 390 px. Both widths had zero horizontal overflow, the mobile dialog measured
   390 x 844 px, and no install, apply, execute or handoff control existed. The expected unmocked
   unrelated-resource 403 entries and initial no-revalidation 404 were the only console responses.
+
+### ATLAS-IMP-150 Delivery Evidence
+
+- Implementation commit `237b63b913c6e71a61ff180bb8a61f38b9ba01c3` passed exact-head
+  pull-request CI run `31551897046`; backend completed in 7m24s and frontend in 4m27s.
+- PR [#162](https://github.com/ozdemirumit/Project_Atlas/pull/162) was squash-merged to `main` as
+  `5cd51380451c899ec579556e96a7f84c13ef1026`.
+- The exact merged `main` commit passed independent push CI run `31552361946`; backend completed in
+  7m27s and frontend completed in 3m31s with every required step successful.
 
 ### ATLAS-IMP-149 Scope Rationale
 
