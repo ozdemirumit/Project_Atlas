@@ -11,7 +11,7 @@ const required = [
 
 const assessment = {
   assessment_id: "connector-upgrade-handoff-readiness.test",
-  schema_version: "atlas.connector-upgrade-handoff-readiness.v4",
+  schema_version: "atlas.connector-upgrade-handoff-readiness.v5",
   source_record_id: "connector-instance-record.test",
   source_record_version: 1,
   instance_id: "connector-instance.test",
@@ -34,6 +34,8 @@ const assessment = {
   audit_readiness_evidence_digest: null,
   itsm_change_evidence_id: null,
   itsm_change_evidence_digest: null,
+  maintenance_window_evidence_id: null,
+  maintenance_window_evidence_digest: null,
   required_check_ids: required,
   satisfied_check_ids: [required[0]],
   not_applicable_check_ids: ["connector.upgrade.handoff.target-binding-current"],
@@ -50,6 +52,7 @@ const assessment = {
   revalidation_current: true,
   audit_readiness_evidence_current: false,
   itsm_change_evidence_current: false,
+  maintenance_window_evidence_current: false,
   handoff_ready: false,
   handoff_artifact_issued: false,
   approval_consumed: false,
@@ -70,6 +73,21 @@ describe("connector upgrade handoff readiness validation", () => {
       audit_readiness_evidence_current: true,
       satisfied_check_ids: [required[0], required[3]],
       blocker_ids: assessment.blocker_ids.slice(0, 2),
+    })).toBe(true);
+    expect(isConnectorUpgradeHandoffReadiness({
+      ...assessment,
+      audit_readiness_evidence_id: "connector-upgrade-audit-readiness-evidence.test",
+      audit_readiness_evidence_digest: "7".repeat(64),
+      audit_readiness_evidence_current: true,
+      itsm_change_evidence_id: "connector-upgrade-itsm-change-evidence.test",
+      itsm_change_evidence_digest: "8".repeat(64),
+      itsm_change_evidence_current: true,
+      maintenance_window_evidence_id: "connector-upgrade-maintenance-window-evidence.test",
+      maintenance_window_evidence_digest: "9".repeat(64),
+      maintenance_window_evidence_current: true,
+      satisfied_check_ids: required,
+      blocker_ids: [],
+      assessment_state: "evidence_complete",
     })).toBe(true);
     expect(isConnectorUpgradeHandoffReadiness({
       ...assessment,

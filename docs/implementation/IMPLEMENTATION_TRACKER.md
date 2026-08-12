@@ -7,11 +7,11 @@
 | Task ID | ATLAS-IMP-156 |
 | Title | Connector upgrade authoritative maintenance-window evidence |
 | Status | In Progress |
-| Branch | Pending |
+| Branch | `agent/mcp-upgrade-maintenance-window-evidence` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110, ADR-111 |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110, ADR-111, ADR-112 |
 | Last Updated | 2026-08-12 |
-| Next Action | Define authoritative maintenance-window evidence scope and ADR |
+| Next Action | Publish through pull request, verify CI, merge and select the next safe slice |
 
 ### ATLAS-IMP-156 Scope Rationale
 
@@ -43,7 +43,26 @@
 
 ### ATLAS-IMP-156 Validation Evidence
 
-- Pending.
+- The v5 handoff-readiness contract accepts only current, digest-valid authoritative maintenance-
+  window evidence bound to the exact organization, environment, approval request, revalidation,
+  immutable plan and authoritative ITSM change evidence. The source version, approved interval,
+  observation time, freeze/conflict/revocation state and exact bindings all fail closed.
+- Valid window evidence satisfies the final evidence check and changes the assessment to
+  `evidence_complete`; handoff readiness, artifact issuance, approval consumption, target contact,
+  package rebinding, configuration change, execution authority and infrastructure mutation remain
+  false. The default application source is empty and no vendor integration is fabricated.
+- Backend Ruff and mypy passed before the final presentation-only wording adjustment; ten focused
+  backend tests passed. Norton terminated or indefinitely delayed repeated local full-suite Python
+  launches, so the complete backend suite is a required PR-CI gate and must pass before merge.
+- Frontend ESLint and both TypeScript projects passed; all 217 tests in 88 files passed. The
+  production build completed with the existing advisory limited to the transitional
+  `OperationalApplication` chunk. The final wording adjustment additionally passed 11 focused
+  tests, ESLint and TypeScript.
+- Live validation rendered the evidence-complete assessment and current maintenance-window
+  evidence at 1,280 px and 390 px. Both widths had zero horizontal document overflow, mobile scroll
+  X remained zero, the dialog measured 390 x 844 px, no browser errors occurred and no install,
+  apply, execute or handoff control existed. The off-canvas mobile sidebar was the only intentionally
+  out-of-viewport element group.
 
 ### ATLAS-IMP-156 Delivery Evidence
 

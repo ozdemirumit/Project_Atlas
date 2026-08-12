@@ -10,6 +10,7 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeAuditReadinessEvidence,
     ConnectorUpgradeChangeContextDraft,
     ConnectorUpgradeItsmChangeEvidence,
+    ConnectorUpgradeMaintenanceWindowEvidence,
 )
 
 
@@ -200,6 +201,28 @@ class InMemoryConnectorUpgradeItsmChangeEvidenceSource:
     async def get_current(
         self, *, organization_id: str, environment_id: str, request_id: str
     ) -> ConnectorUpgradeItsmChangeEvidence | None:
+        matches = tuple(
+            item
+            for item in self._evidence
+            if item.organization_id == organization_id
+            and item.environment_id == environment_id
+            and item.request_id == request_id
+        )
+        return max(matches, key=lambda item: item.observed_at) if matches else None
+
+
+class InMemoryConnectorUpgradeMaintenanceWindowEvidenceSource:
+    def __init__(
+        self, evidence: tuple[ConnectorUpgradeMaintenanceWindowEvidence, ...] = ()
+    ) -> None:
+        self._evidence = evidence
+
+    def replace(self, evidence: tuple[ConnectorUpgradeMaintenanceWindowEvidence, ...]) -> None:
+        self._evidence = evidence
+
+    async def get_current(
+        self, *, organization_id: str, environment_id: str, request_id: str
+    ) -> ConnectorUpgradeMaintenanceWindowEvidence | None:
         matches = tuple(
             item
             for item in self._evidence
