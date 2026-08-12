@@ -4,14 +4,51 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-167 |
-| Title | Inventory and MCP lifecycle action discoverability foundation |
-| Status | In Progress; implementation and local/live validation complete |
-| Branch | `agent/inventory-mcp-action-discoverability` |
+| Task ID | ATLAS-IMP-168 |
+| Title | Governed ITSM handoff human review foundation |
+| Status | In Progress; scope and acceptance recorded |
+| Branch | `main` (start record; implementation branch pending) |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-111, ADR-112, ADR-122, ADR-123 |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-016, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-124 (planned) |
 | Last Updated | 2026-08-13 |
-| Next Action | Commit and push the validated implementation, open its pull request, pass exact-head CI, merge and pass merged-main CI |
+| Next Action | Record ADR-124, implement exact-report ITSM handoff human review, then complete local, live and GitHub validation |
+
+### ATLAS-IMP-168 Scope Rationale
+
+- Atlas generates a source-bound technical report and a review-only ITSM handoff draft, but the
+  embedded review remains permanently pending and no separately attributable human decision can be
+  recorded.
+- ATLAS-036 requires a human or policy-authorized review before consequential outbound submission.
+  Vendor selection, endpoints, credentials, mappings and a sandbox remain deployment inputs, so this
+  slice must establish review evidence before any external dispatch adapter is selected.
+- This slice creates review and readiness evidence only. It does not call an ITSM system, queue an
+  outbound request, mutate a ticket, consume an approval or grant infrastructure execution authority.
+
+### ATLAS-IMP-168 Acceptance Criteria
+
+- An immutable decision binds exact organization/environment/site, report ID/version/digest, handoff
+  draft ID, idempotency key, incident reference, operation and field/artifact mapping digest.
+- Eligible enterprise human MFA reviewers can record accept, needs-evidence or reject with bounded
+  rationale. Self-review, stale/expired source, wrong scope, changed draft and replay with different
+  content fail closed; exact retry is idempotent.
+- Accepted review means only `review_complete`; it does not mean dispatch authorized, external record
+  mutated, ITSM approval satisfied, workflow approved or infrastructure execution authorized.
+- Dedicated default-deny permission, exact-scope authorization, CSRF, attributable audit, no-store
+  responses, optimistic concurrency and durable repository behavior follow existing platform patterns.
+- The Health governance/report UI presents pending and completed review state, explicit no-dispatch
+  boundaries and only eligible controls; no endpoint, credential, arbitrary field or ticket mutation
+  control is exposed.
+- ADR, focused and full backend/frontend gates, one Alembic head, production build and live responsive
+  validation pass before delivery.
+
+### ATLAS-IMP-168 Initial Evidence
+
+- ATLAS-036 requires human review before outbound updates, idempotent binding and preservation of the
+  separation between an ITSM record and infrastructure execution authority.
+- The current `TechnicalReport.review` is always pending; `ItsmHandoffDraft` correctly keeps
+  `dispatch_authorized` and `external_record_mutated` false, and the UI labels it review-only.
+- No ITSM vendor, endpoint, credential, production mapping or sandbox has been selected. Those inputs
+  remain outside this provider-neutral review slice.
 
 ### ATLAS-IMP-167 Scope Rationale
 
@@ -75,6 +112,15 @@
   device registration and governed retirement, retired filtering, visible Add MCP controls and the
   explicit enterprise-MFA boundary. Desktop 1,280 x 720 and mobile 390 x 844 views had no page
   overflow or Vite overlay; the mobile task rail remained scrollable with its scrollbar hidden.
+
+### ATLAS-IMP-167 Delivery Evidence
+
+- Source commit `246f30db92e0258733c57f65adfe424e27ac0175` passed exact-head PR CI run
+  `31643875992`; backend completed in 7m35s and frontend in 4m47s.
+- PR [#179](https://github.com/ozdemirumit/Project_Atlas/pull/179) was squash-merged as
+  `36d36203271191a0dc8916fa99a6579b624cc8f7`.
+- The exact merged commit independently passed `main` CI run `31644484830`; backend completed in
+  7m03s and frontend in 4m38s.
 
 ### ATLAS-IMP-166 Scope Rationale
 
