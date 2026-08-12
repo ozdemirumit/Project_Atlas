@@ -4,14 +4,57 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-158 |
-| Title | Connector upgrade evidence receipt verification |
+| Task ID | ATLAS-IMP-159 |
+| Title | Connector upgrade evidence receipt authenticity foundation |
 | Status | In Progress |
-| Branch | `agent/mcp-upgrade-evidence-verification` |
-| Pull Request | [#170](https://github.com/ozdemirumit/Project_Atlas/pull/170) |
+| Branch | `agent/mcp-upgrade-evidence-authenticity` |
+| Pull Request | Pending |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110, ADR-111, ADR-112, ADR-113, ADR-114 |
 | Last Updated | 2026-08-12 |
-| Next Action | Complete final exact-head CI, merge PR #170 and verify the merged `main` commit |
+| Next Action | Define and implement signed receipt origin authentication and key-lifecycle validation |
+
+### ATLAS-IMP-159 Scope Rationale
+
+- IMP-158 verifies canonical receipt integrity and authoritative-state currency but deliberately
+  reports `authenticity_proven=false` because an unkeyed SHA-256 digest cannot identify its issuer.
+- Enterprise auditors need a separate, cryptographically verifiable origin claim with explicit
+  signer identity, algorithm, key version, validity and revocation semantics.
+- The next safe slice is signed evidence and read-only verification. A valid signature must never be
+  interpreted as approval, handoff, target access, runtime acceptance or execution authority.
+
+### ATLAS-IMP-159 Acceptance Criteria
+
+- A versioned signing envelope binds the exact canonical receipt, organization, environment,
+  request, issuer, algorithm and non-secret key reference without embedding private key material.
+- Signing is performed behind an injected key-provider port. Unsupported algorithms, unknown,
+  disabled, expired, revoked or scope-mismatched keys fail closed and produce attributable audit.
+- Verification distinguishes canonical integrity, cryptographic origin authenticity and current
+  authoritative-state consistency. Signature substitution, payload tampering, wrong-key use,
+  downgrade and replay across scope are rejected.
+- Signed and unsigned legacy receipts have explicit, versioned schemas. Neither form grants
+  approval, handoff, target, configuration, runtime, execution or infrastructure-mutation authority.
+- Authenticated, exactly scoped, no-store APIs and the browser review UI expose signer/key state and
+  verification evidence without exposing key material or adding operational controls.
+- Architecture decision, focused and full backend/frontend gates, production build and live
+  responsive validation pass before delivery.
+
+### ATLAS-IMP-159 Initial Evidence
+
+- IMP-158 merged through PR #170 as `11aecc300a4bf50af26598078dc5e73967d71ce1` after final exact-head
+  CI run `31585669553` passed; the exact merged commit independently passed `main` CI run
+  `31586265591` before IMP-159 begins.
+- ADR-114 explicitly reserves origin authentication for a separate key-management and signing
+  decision and prevents digest verification from overstating authenticity.
+- The connector package pipeline already establishes signer ports, policy snapshots, key references,
+  audit boundaries and non-production adapters that can inform a consistent receipt design.
+
+### ATLAS-IMP-159 Validation Evidence
+
+- Pending.
+
+### ATLAS-IMP-159 Delivery Evidence
+
+- Pending.
 
 ### ATLAS-IMP-158 Scope Rationale
 
@@ -69,7 +112,14 @@
 
 ### ATLAS-IMP-158 Delivery Evidence
 
-- Pending.
+- Implementation commits `361418b7315e550a26f6253abd3caa42a289be64` and
+  `64f7dd193ecc4249c845273726f3c9e857729894` passed final exact-head pull-request CI run
+  `31585669553`; backend completed in 7m21s and frontend in 3m26s. The implementation-only head had
+  also passed run `31584667158` with backend in 6m46s and frontend in 4m29s.
+- PR [#170](https://github.com/ozdemirumit/Project_Atlas/pull/170) was squash-merged to `main` as
+  `11aecc300a4bf50af26598078dc5e73967d71ce1`.
+- The exact merged `main` commit passed independent push CI run `31586265591`; backend completed in
+  7m24s and frontend in 4m40s with every required step successful.
 
 ### ATLAS-IMP-157 Scope Rationale
 
