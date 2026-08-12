@@ -13,6 +13,7 @@ import {
   createConnectorUpgradeApprovalRequest,
   createConnectorUpgradeChangeContextDraft,
   createConnectorUpgradeEvidenceReceipt,
+  createConnectorUpgradeSignedEvidenceReceipt,
   decideConnectorUpgradeApproval,
   getConnectorUpgradeApprovalRecord,
   getConnectorUpgradeHandoffReadiness,
@@ -22,6 +23,7 @@ import {
   getConnectorUpgradeReadiness,
   revalidateConnectorUpgradeApproval,
   verifyConnectorUpgradeEvidenceReceipt,
+  verifyConnectorUpgradeSignedEvidenceReceipt,
   type ConnectorUpgradeApprovalRecord,
   type ConnectorUpgradeApprovalRequest,
   type ConnectorUpgradeApprovalRevalidation,
@@ -29,6 +31,8 @@ import {
   type ConnectorUpgradeChangeContextDraft,
   type ConnectorUpgradeEvidenceReceipt,
   type ConnectorUpgradeEvidenceReceiptVerification,
+  type ConnectorUpgradeSignedEvidenceReceipt,
+  type ConnectorUpgradeSignedEvidenceReceiptVerification,
   type ConnectorUpgradePlan,
   type ConnectorUpgradeReadiness,
 } from "../../api/connectorUpgradeReadiness";
@@ -454,6 +458,74 @@ const evidenceReceiptVerification: ConnectorUpgradeEvidenceReceiptVerification =
   infrastructure_mutation_performed: false,
 };
 
+const signedEvidenceReceipt: ConnectorUpgradeSignedEvidenceReceipt = {
+  signed_receipt_id: "connector-upgrade-signed-evidence-receipt.test",
+  schema_version: "atlas.connector-upgrade-signed-evidence-receipt.v1",
+  version: 1,
+  receipt: evidenceReceipt,
+  signature: {
+    key_id: "key.connector-upgrade-evidence.test",
+    key_version: "v1",
+    signer_profile_id: "signer-profile.nonproduction-hmac",
+    signer_workload_id: "workload.connector-upgrade-evidence-signer",
+    algorithm: "algorithm.hmac-sha256-nonproduction",
+    signed_payload_digest: "c".repeat(64),
+    signature_value: "A".repeat(43),
+    signature_digest: "d".repeat(64),
+    issued_at: "2026-08-12T00:42:00Z",
+    expires_at: "2026-08-12T00:52:00Z",
+  },
+  organization_id: evidenceReceipt.organization_id,
+  environment_id: evidenceReceipt.environment_id,
+  request_id: evidenceReceipt.request_id,
+  canonical_digest: "e".repeat(64),
+  evidence_receipt_only: true,
+  authenticity_claimed: true,
+  runtime_acceptable: false,
+  approval_consumed: false,
+  handoff_ready: false,
+  handoff_artifact_issued: false,
+  target_contacted: false,
+  package_rebound: false,
+  configuration_changed: false,
+  execution_authorized: false,
+  infrastructure_mutation_performed: false,
+};
+
+const signedEvidenceVerification: ConnectorUpgradeSignedEvidenceReceiptVerification = {
+  verification_id: "connector-upgrade-signed-evidence-verification.test",
+  schema_version: "atlas.connector-upgrade-signed-evidence-receipt-verification.v1",
+  signed_receipt_id: signedEvidenceReceipt.signed_receipt_id,
+  signed_receipt_digest: signedEvidenceReceipt.canonical_digest,
+  receipt_id: evidenceReceipt.receipt_id,
+  receipt_digest: evidenceReceipt.canonical_digest,
+  request_id: evidenceReceipt.request_id,
+  organization_id: evidenceReceipt.organization_id,
+  environment_id: evidenceReceipt.environment_id,
+  verified_by: "subject.connector-authenticity-auditor",
+  verified_at: "2026-08-12T00:45:00Z",
+  key_id: signedEvidenceReceipt.signature.key_id,
+  key_version: signedEvidenceReceipt.signature.key_version,
+  signer_workload_id: signedEvidenceReceipt.signature.signer_workload_id,
+  algorithm: "algorithm.hmac-sha256-nonproduction",
+  authenticity_state: "authentic",
+  receipt_verification_state: "current",
+  reason_codes: ["connector.upgrade.signed-evidence-receipt.authentic"],
+  canonical_digest: "f".repeat(64),
+  integrity_valid: true,
+  authenticity_proven: true,
+  current_state_matches: true,
+  evidence_receipt_only: true,
+  approval_consumed: false,
+  handoff_ready: false,
+  handoff_artifact_issued: false,
+  target_contacted: false,
+  package_rebound: false,
+  configuration_changed: false,
+  execution_authorized: false,
+  infrastructure_mutation_performed: false,
+};
+
 vi.mock("../../api/connectorInstances", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorInstances")>();
   return {
@@ -481,7 +553,9 @@ vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
     getLatestConnectorUpgradeChangeContextDraft: vi.fn(),
     createConnectorUpgradeChangeContextDraft: vi.fn(),
     createConnectorUpgradeEvidenceReceipt: vi.fn(),
+    createConnectorUpgradeSignedEvidenceReceipt: vi.fn(),
     verifyConnectorUpgradeEvidenceReceipt: vi.fn(),
+    verifyConnectorUpgradeSignedEvidenceReceipt: vi.fn(),
     getLatestConnectorUpgradeApprovalRevalidation: vi.fn(),
     getConnectorUpgradeReadiness: vi.fn(),
     getConnectorUpgradePlan: vi.fn(),
@@ -514,7 +588,11 @@ beforeEach(() => {
   vi.mocked(getLatestConnectorUpgradeChangeContextDraft).mockResolvedValue(null);
   vi.mocked(createConnectorUpgradeChangeContextDraft).mockResolvedValue(changeContextDraft);
   vi.mocked(createConnectorUpgradeEvidenceReceipt).mockResolvedValue(evidenceReceipt);
+  vi.mocked(createConnectorUpgradeSignedEvidenceReceipt).mockResolvedValue(signedEvidenceReceipt);
   vi.mocked(verifyConnectorUpgradeEvidenceReceipt).mockResolvedValue(evidenceReceiptVerification);
+  vi.mocked(verifyConnectorUpgradeSignedEvidenceReceipt).mockResolvedValue(
+    signedEvidenceVerification,
+  );
   vi.mocked(revalidateConnectorUpgradeApproval).mockResolvedValue(upgradeApprovalRevalidation);
   vi.mocked(createConnectorInstance).mockResolvedValue({ data: instance });
   vi.mocked(retireConnectorInstance).mockResolvedValue({
@@ -638,21 +716,31 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(await screen.findByText("Evidence receipt ready")).toBeVisible();
     expect(screen.getByRole("button", { name: "Download JSON receipt" })).toBeVisible();
     expect(screen.getByText(/Runtime acceptable: no. Approval consumed: no./i)).toBeVisible();
+    const authenticateOrigin = screen.getByRole("button", { name: "Authenticate Atlas origin" });
+    expect(authenticateOrigin).toBeDisabled();
+    fireEvent.click(screen.getByLabelText(/Authenticate Atlas origin only/i));
+    expect(authenticateOrigin).toBeEnabled();
+    fireEvent.click(authenticateOrigin);
+    await waitFor(() => expect(createConnectorUpgradeSignedEvidenceReceipt).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Origin authenticated")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Download signed receipt" })).toBeVisible();
     const verifyReceipt = screen.getByRole("button", { name: "Verify evidence receipt" });
     expect(verifyReceipt).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Receipt JSON"), {
       target: {
-        files: [new File([JSON.stringify(evidenceReceipt)], "receipt.json", {
+        files: [new File([JSON.stringify(signedEvidenceReceipt)], "signed-receipt.json", {
           type: "application/json",
         })],
       },
     });
-    fireEvent.click(screen.getByLabelText(/Digest integrity is not authenticity/i));
-    await waitFor(() => expect(verifyReceipt).toBeEnabled());
-    fireEvent.click(verifyReceipt);
-    await waitFor(() => expect(verifyConnectorUpgradeEvidenceReceipt).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText("Receipt current")).toBeVisible();
-    expect(screen.getByText(/Integrity valid: yes. Current state matches: yes./i)).toBeVisible();
+    fireEvent.click(screen.getByLabelText(/A valid signature authenticates Atlas origin only/i));
+    const verifySignedReceipt = await screen.findByRole("button", { name: "Verify signed receipt" });
+    await waitFor(() => expect(verifySignedReceipt).toBeEnabled());
+    fireEvent.click(verifySignedReceipt);
+    await waitFor(() => expect(verifyConnectorUpgradeSignedEvidenceReceipt).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Signature authentic")).toBeVisible();
+    expect(screen.getByText(/Atlas origin authenticated: yes. Current state matches: yes./i))
+      .toBeVisible();
     expect(screen.getByText("Not applicable in this context")).toBeVisible();
     expect(screen.getByText(/target-binding-current/i)).toBeVisible();
     expect(screen.getByText(/Applicability policy v2026.08.12.1/i)).toBeVisible();

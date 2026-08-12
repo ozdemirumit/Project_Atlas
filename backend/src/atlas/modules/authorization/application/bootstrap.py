@@ -150,6 +150,12 @@ CONNECTOR_UPGRADE_APPROVAL_REVALIDATION_READ = "connectors.upgrade-approval-reva
 CONNECTOR_UPGRADE_HANDOFF_READINESS_READ = "connectors.upgrade-handoff-readiness.read"
 CONNECTOR_UPGRADE_EVIDENCE_RECEIPT_CREATE = "connectors.upgrade-evidence-receipts.create"
 CONNECTOR_UPGRADE_EVIDENCE_RECEIPT_VERIFY = "connectors.upgrade-evidence-receipts.verify"
+CONNECTOR_UPGRADE_SIGNED_EVIDENCE_RECEIPT_CREATE = (
+    "connectors.upgrade-signed-evidence-receipts.create"
+)
+CONNECTOR_UPGRADE_SIGNED_EVIDENCE_RECEIPT_VERIFY = (
+    "connectors.upgrade-signed-evidence-receipts.verify"
+)
 CONNECTOR_UPGRADE_CHANGE_CONTEXT_CREATE = "connectors.upgrade-change-context-drafts.create"
 CONNECTOR_UPGRADE_CHANGE_CONTEXT_READ = "connectors.upgrade-change-context-drafts.read"
 CONNECTOR_TARGET_CONFIGURATION_CREATE = "connectors.target-configuration-bindings.create"
@@ -2111,6 +2117,14 @@ def build_development_authorization_service(
             description="Verify one non-executable connector upgrade evidence receipt.",
         ),
         PermissionDefinition(
+            permission_id=CONNECTOR_UPGRADE_SIGNED_EVIDENCE_RECEIPT_CREATE,
+            description="Authenticate one non-executable connector upgrade evidence receipt.",
+        ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_UPGRADE_SIGNED_EVIDENCE_RECEIPT_VERIFY,
+            description="Verify one signed connector upgrade evidence receipt.",
+        ),
+        PermissionDefinition(
             permission_id=CONNECTOR_UPGRADE_CHANGE_CONTEXT_CREATE,
             description="Create one connector upgrade ITSM/change-context draft without dispatch.",
         ),
@@ -2628,6 +2642,8 @@ def build_development_authorization_service(
                 CONNECTOR_UPGRADE_HANDOFF_READINESS_READ,
                 CONNECTOR_UPGRADE_EVIDENCE_RECEIPT_CREATE,
                 CONNECTOR_UPGRADE_EVIDENCE_RECEIPT_VERIFY,
+                CONNECTOR_UPGRADE_SIGNED_EVIDENCE_RECEIPT_CREATE,
+                CONNECTOR_UPGRADE_SIGNED_EVIDENCE_RECEIPT_VERIFY,
                 CONNECTOR_UPGRADE_CHANGE_CONTEXT_CREATE,
                 CONNECTOR_UPGRADE_CHANGE_CONTEXT_READ,
                 CONNECTOR_TARGET_CONFIGURATION_CREATE,

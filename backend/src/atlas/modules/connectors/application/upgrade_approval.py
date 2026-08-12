@@ -20,6 +20,10 @@ from atlas.modules.connectors.application.upgrade_approval_ports import (
     ConnectorUpgradeItsmChangeEvidenceSource,
     ConnectorUpgradeMaintenanceWindowEvidenceSource,
 )
+from atlas.modules.connectors.application.upgrade_evidence_authenticity_ports import (
+    ConnectorUpgradeEvidenceAuthenticityError,
+    ConnectorUpgradeEvidenceAuthenticityProvider,
+)
 from atlas.modules.connectors.application.upgrade_readiness import (
     ConnectorUpgradeReadinessService,
 )
@@ -39,6 +43,14 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeHandoffReadinessAssessment,
     ConnectorUpgradeItsmChangeEvidence,
     ConnectorUpgradeMaintenanceWindowEvidence,
+)
+from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
+    ConnectorUpgradeEvidenceAuthenticityState,
+    ConnectorUpgradeEvidenceSignature,
+    ConnectorUpgradeEvidenceSigningKey,
+    ConnectorUpgradeEvidenceSigningKeyState,
+    ConnectorUpgradeSignedEvidenceReceipt,
+    ConnectorUpgradeSignedEvidenceReceiptVerification,
 )
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
@@ -72,6 +84,16 @@ UPGRADE_EVIDENCE_RECEIPT_VERIFICATION_SCHEMA = (
     "atlas.connector-upgrade-evidence-receipt-verification.v1"
 )
 UPGRADE_EVIDENCE_RECEIPT_VERIFY_PERMISSION = "connectors.upgrade-evidence-receipts.verify"
+UPGRADE_SIGNED_EVIDENCE_RECEIPT_SCHEMA = "atlas.connector-upgrade-signed-evidence-receipt.v1"
+UPGRADE_SIGNED_EVIDENCE_RECEIPT_CREATE_PERMISSION = (
+    "connectors.upgrade-signed-evidence-receipts.create"
+)
+UPGRADE_SIGNED_EVIDENCE_RECEIPT_VERIFICATION_SCHEMA = (
+    "atlas.connector-upgrade-signed-evidence-receipt-verification.v1"
+)
+UPGRADE_SIGNED_EVIDENCE_RECEIPT_VERIFY_PERMISSION = (
+    "connectors.upgrade-signed-evidence-receipts.verify"
+)
 UPGRADE_HANDOFF_APPLICABILITY_POLICY_ID = "connector-upgrade-handoff-evidence-applicability.default"
 UPGRADE_HANDOFF_APPLICABILITY_POLICY_VERSION = "v2026.08.12.1"
 UPGRADE_HANDOFF_CURRENT_CHECK_IDS = (
@@ -119,6 +141,9 @@ class ConnectorUpgradeApprovalService:
         maintenance_window_evidence_source: (
             ConnectorUpgradeMaintenanceWindowEvidenceSource | None
         ) = None,
+        evidence_authenticity_provider: (
+            ConnectorUpgradeEvidenceAuthenticityProvider | None
+        ) = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
@@ -128,6 +153,7 @@ class ConnectorUpgradeApprovalService:
         self._audit_readiness_source = audit_readiness_source
         self._itsm_change_evidence_source = itsm_change_evidence_source
         self._maintenance_window_evidence_source = maintenance_window_evidence_source
+        self._evidence_authenticity_provider = evidence_authenticity_provider
         self._environment_id = environment_id
         self._clock = clock or (lambda: datetime.now(UTC))
         self._mutation_lock = asyncio.Lock()
@@ -1237,6 +1263,244 @@ class ConnectorUpgradeApprovalService:
         )
         return verification
 
+    async def sign_evidence_receipt(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        record_id: str,
+        request_id: str,
+        receipt: ConnectorUpgradeEvidenceReceipt,
+        acknowledged_signature_authenticates_origin_but_grants_no_authority: bool,
+        correlation_id: str,
+    ) -> ConnectorUpgradeSignedEvidenceReceipt:
+        self._require_enterprise_human(actor)
+        if not acknowledged_signature_authenticates_origin_but_grants_no_authority:
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_signed_evidence_receipt_confirmation_required"
+            )
+        if self._evidence_authenticity_provider is None:
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_evidence_signing_provider_unavailable"
+            )
+        verification = await self.verify_evidence_receipt(
+            actor=actor,
+            record_id=record_id,
+            request_id=request_id,
+            receipt=receipt,
+            acknowledged_digest_integrity_is_not_authenticity_or_execution_authority=True,
+            correlation_id=correlation_id,
+        )
+        if (
+            verification.verification_state
+            is not ConnectorUpgradeEvidenceReceiptVerificationState.CURRENT
+        ):
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_signed_evidence_receipt_not_current"
+            )
+        now = self._clock()
+        try:
+            key = await self._evidence_authenticity_provider.active_key(
+                organization_id=receipt.organization_id,
+                environment_id=receipt.environment_id,
+            )
+        except ConnectorUpgradeEvidenceAuthenticityError as error:
+            raise ConnectorUpgradeApprovalError(error.code) from error
+        expires_at = min(now + timedelta(hours=24), receipt.valid_until, key.expires_at)
+        if expires_at <= now:
+            raise ConnectorUpgradeApprovalError("connector_upgrade_evidence_signing_key_expired")
+        payload = self._signed_evidence_payload(
+            receipt=receipt,
+            key=key,
+            issued_at=now,
+            expires_at=expires_at,
+        )
+        payload_digest = self._digest(payload)
+        try:
+            signature = await self._evidence_authenticity_provider.sign(
+                key=key,
+                payload_digest=payload_digest,
+                issued_at=now,
+                expires_at=expires_at,
+            )
+        except ConnectorUpgradeEvidenceAuthenticityError as error:
+            raise ConnectorUpgradeApprovalError(error.code) from error
+        try:
+            self._verify_evidence_signature(signature, key, payload_digest, now)
+        except ConnectorUpgradeEvidenceAuthenticityError as error:
+            raise ConnectorUpgradeApprovalError(error.code) from error
+        envelope_payload = self._signed_evidence_envelope_payload(receipt, signature)
+        envelope_digest = self._digest(envelope_payload)
+        signed = ConnectorUpgradeSignedEvidenceReceipt(
+            signed_receipt_id=(f"connector-upgrade-signed-evidence-receipt.{envelope_digest[:24]}"),
+            schema_version=UPGRADE_SIGNED_EVIDENCE_RECEIPT_SCHEMA,
+            version=1,
+            receipt=receipt,
+            signature=signature,
+            organization_id=receipt.organization_id,
+            environment_id=receipt.environment_id,
+            request_id=receipt.request_id,
+            canonical_digest=envelope_digest,
+        )
+        self._verify_signed_evidence_receipt(signed)
+        request = await self._repository.get(request_id=request_id)
+        if request is None:
+            raise ConnectorUpgradeApprovalError("connector_upgrade_approval_request_not_found")
+        await self._audit_signed_evidence_receipt(
+            actor=actor,
+            correlation_id=correlation_id,
+            request=request,
+            signed=signed,
+            permission_id=UPGRADE_SIGNED_EVIDENCE_RECEIPT_CREATE_PERMISSION,
+            result_code="connector_upgrade_signed_evidence_receipt_created",
+        )
+        return signed
+
+    async def verify_signed_evidence_receipt(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        record_id: str,
+        request_id: str,
+        signed_receipt: ConnectorUpgradeSignedEvidenceReceipt,
+        acknowledged_signature_is_not_approval_or_execution_authority: bool,
+        correlation_id: str,
+    ) -> ConnectorUpgradeSignedEvidenceReceiptVerification:
+        self._require_enterprise_human(actor)
+        if not acknowledged_signature_is_not_approval_or_execution_authority:
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_signed_evidence_verification_confirmation_required"
+            )
+        request = await self._repository.get(request_id=request_id)
+        if request is None:
+            raise ConnectorUpgradeApprovalError("connector_upgrade_approval_request_not_found")
+        self._require_request_scope(request, actor, record_id)
+        self._verify_request(request)
+        if (
+            signed_receipt.request_id != request.request_id
+            or signed_receipt.organization_id != actor.organization_id
+            or signed_receipt.environment_id != self._environment_id
+        ):
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_signed_evidence_receipt_not_found"
+            )
+        self._verify_signed_evidence_receipt(signed_receipt)
+        now = self._clock()
+        signature = signed_receipt.signature
+        authenticity_state = ConnectorUpgradeEvidenceAuthenticityState.UNVERIFIABLE
+        authenticity_reason = "unverifiable"
+        if now >= signature.expires_at:
+            authenticity_state = ConnectorUpgradeEvidenceAuthenticityState.EXPIRED
+            authenticity_reason = "signature-expired"
+        elif self._evidence_authenticity_provider is None:
+            authenticity_reason = "provider-unavailable"
+        else:
+            try:
+                key = await self._evidence_authenticity_provider.verify(
+                    signature=signature,
+                    payload_digest=signature.signed_payload_digest,
+                    organization_id=signed_receipt.organization_id,
+                    environment_id=signed_receipt.environment_id,
+                )
+                self._verify_evidence_signature(
+                    signature, key, signature.signed_payload_digest, now
+                )
+            except ConnectorUpgradeEvidenceAuthenticityError as error:
+                authenticity_reason = error.code.removeprefix(
+                    "connector_upgrade_evidence_"
+                ).replace("_", "-")
+                if error.code.endswith("key_revoked"):
+                    authenticity_state = ConnectorUpgradeEvidenceAuthenticityState.REVOKED
+                elif error.code.endswith("signature_invalid"):
+                    authenticity_state = ConnectorUpgradeEvidenceAuthenticityState.INVALID
+            else:
+                authenticity_state = ConnectorUpgradeEvidenceAuthenticityState.AUTHENTIC
+                authenticity_reason = "authentic"
+
+        receipt_state = "not_compared"
+        current_matches = False
+        if authenticity_state is ConnectorUpgradeEvidenceAuthenticityState.AUTHENTIC:
+            receipt_verification = await self.verify_evidence_receipt(
+                actor=actor,
+                record_id=record_id,
+                request_id=request_id,
+                receipt=signed_receipt.receipt,
+                acknowledged_digest_integrity_is_not_authenticity_or_execution_authority=True,
+                correlation_id=correlation_id,
+            )
+            receipt_state = receipt_verification.verification_state.value
+            current_matches = receipt_verification.current_state_matches
+        reasons = (
+            f"connector.upgrade.signed-evidence-receipt.{authenticity_reason}",
+            f"connector.upgrade.signed-evidence-receipt.receipt-{receipt_state}",
+        )
+        payload: dict[str, object] = {
+            "schema_version": UPGRADE_SIGNED_EVIDENCE_RECEIPT_VERIFICATION_SCHEMA,
+            "signed_receipt_id": signed_receipt.signed_receipt_id,
+            "signed_receipt_digest": signed_receipt.canonical_digest,
+            "receipt_id": signed_receipt.receipt.receipt_id,
+            "receipt_digest": signed_receipt.receipt.canonical_digest,
+            "request_id": request.request_id,
+            "scope": (request.organization_id, request.environment_id),
+            "verified_by": actor.subject_id,
+            "verified_at": now.isoformat(),
+            "key": (signature.key_id, signature.key_version),
+            "signer_workload_id": signature.signer_workload_id,
+            "algorithm": signature.algorithm,
+            "authenticity_state": authenticity_state.value,
+            "receipt_verification_state": receipt_state,
+            "reason_codes": reasons,
+            "integrity_valid": True,
+            "authenticity_proven": (
+                authenticity_state is ConnectorUpgradeEvidenceAuthenticityState.AUTHENTIC
+            ),
+            "current_state_matches": current_matches,
+            "evidence_receipt_only": True,
+            "approval_consumed": False,
+            "handoff_ready": False,
+            "handoff_artifact_issued": False,
+            "target_contacted": False,
+            "package_rebound": False,
+            "configuration_changed": False,
+            "execution_authorized": False,
+            "infrastructure_mutation_performed": False,
+        }
+        digest = self._digest(payload)
+        result = ConnectorUpgradeSignedEvidenceReceiptVerification(
+            verification_id=f"connector-upgrade-signed-evidence-verification.{digest[:24]}",
+            schema_version=UPGRADE_SIGNED_EVIDENCE_RECEIPT_VERIFICATION_SCHEMA,
+            signed_receipt_id=signed_receipt.signed_receipt_id,
+            signed_receipt_digest=signed_receipt.canonical_digest,
+            receipt_id=signed_receipt.receipt.receipt_id,
+            receipt_digest=signed_receipt.receipt.canonical_digest,
+            request_id=request.request_id,
+            organization_id=request.organization_id,
+            environment_id=request.environment_id,
+            verified_by=actor.subject_id,
+            verified_at=now,
+            key_id=signature.key_id,
+            key_version=signature.key_version,
+            signer_workload_id=signature.signer_workload_id,
+            algorithm=signature.algorithm,
+            authenticity_state=authenticity_state,
+            receipt_verification_state=receipt_state,
+            reason_codes=reasons,
+            canonical_digest=digest,
+            authenticity_proven=(
+                authenticity_state is ConnectorUpgradeEvidenceAuthenticityState.AUTHENTIC
+            ),
+            current_state_matches=current_matches,
+        )
+        await self._audit_signed_evidence_receipt(
+            actor=actor,
+            correlation_id=correlation_id,
+            request=request,
+            signed=signed_receipt,
+            permission_id=UPGRADE_SIGNED_EVIDENCE_RECEIPT_VERIFY_PERMISSION,
+            result_code=f"connector_upgrade_signed_evidence_receipt_{authenticity_state.value}",
+            verification_id=result.verification_id,
+        )
+        return result
+
     @classmethod
     def _verify_audit_readiness_evidence(
         cls, evidence: ConnectorUpgradeAuditReadinessEvidence
@@ -1817,6 +2081,128 @@ class ConnectorUpgradeApprovalService:
             "infrastructure_mutation_performed": receipt.infrastructure_mutation_performed,
         }
 
+    @staticmethod
+    def _signed_evidence_payload(
+        *,
+        receipt: ConnectorUpgradeEvidenceReceipt,
+        key: ConnectorUpgradeEvidenceSigningKey,
+        issued_at: datetime,
+        expires_at: datetime,
+    ) -> dict[str, object]:
+        return {
+            "schema_version": UPGRADE_SIGNED_EVIDENCE_RECEIPT_SCHEMA,
+            "version": 1,
+            "receipt_id": receipt.receipt_id,
+            "receipt_digest": receipt.canonical_digest,
+            "organization_id": receipt.organization_id,
+            "environment_id": receipt.environment_id,
+            "request_id": receipt.request_id,
+            "signer_profile_id": key.signer_profile_id,
+            "signer_workload_id": key.signer_workload_id,
+            "key_id": key.key_id,
+            "key_version": key.key_version,
+            "algorithm": key.algorithm,
+            "issued_at": issued_at.isoformat(),
+            "expires_at": expires_at.isoformat(),
+            "evidence_receipt_only": True,
+            "runtime_acceptable": False,
+            "approval_consumed": False,
+            "handoff_ready": False,
+            "handoff_artifact_issued": False,
+            "target_contacted": False,
+            "package_rebound": False,
+            "configuration_changed": False,
+            "execution_authorized": False,
+            "infrastructure_mutation_performed": False,
+        }
+
+    @classmethod
+    def _signed_evidence_envelope_payload(
+        cls,
+        receipt: ConnectorUpgradeEvidenceReceipt,
+        signature: ConnectorUpgradeEvidenceSignature,
+    ) -> dict[str, object]:
+        return {
+            "schema_version": UPGRADE_SIGNED_EVIDENCE_RECEIPT_SCHEMA,
+            "version": 1,
+            "receipt": cls._normalize(asdict(receipt)),
+            "signature": cls._normalize(asdict(signature)),
+            "organization_id": receipt.organization_id,
+            "environment_id": receipt.environment_id,
+            "request_id": receipt.request_id,
+            "evidence_receipt_only": True,
+            "authenticity_claimed": True,
+            "runtime_acceptable": False,
+            "approval_consumed": False,
+            "handoff_ready": False,
+            "handoff_artifact_issued": False,
+            "target_contacted": False,
+            "package_rebound": False,
+            "configuration_changed": False,
+            "execution_authorized": False,
+            "infrastructure_mutation_performed": False,
+        }
+
+    @classmethod
+    def _verify_signed_evidence_receipt(cls, signed: ConnectorUpgradeSignedEvidenceReceipt) -> None:
+        cls._verify_evidence_receipt(signed.receipt)
+        signature = signed.signature
+        key = ConnectorUpgradeEvidenceSigningKey(
+            key_id=signature.key_id,
+            key_version=signature.key_version,
+            signer_profile_id=signature.signer_profile_id,
+            signer_workload_id=signature.signer_workload_id,
+            algorithm=signature.algorithm,
+            organization_id=signed.organization_id,
+            environment_id=signed.environment_id,
+            state=ConnectorUpgradeEvidenceSigningKeyState.ACTIVE,
+            not_before=signature.issued_at,
+            expires_at=signature.expires_at,
+        )
+        payload_digest = cls._digest(
+            cls._signed_evidence_payload(
+                receipt=signed.receipt,
+                key=key,
+                issued_at=signature.issued_at,
+                expires_at=signature.expires_at,
+            )
+        )
+        envelope_digest = cls._digest(
+            cls._signed_evidence_envelope_payload(signed.receipt, signature)
+        )
+        if (
+            signature.signed_payload_digest != payload_digest
+            or signed.canonical_digest != envelope_digest
+            or signed.signed_receipt_id
+            != f"connector-upgrade-signed-evidence-receipt.{envelope_digest[:24]}"
+        ):
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_signed_evidence_receipt_integrity_invalid"
+            )
+
+    @staticmethod
+    def _verify_evidence_signature(
+        signature: ConnectorUpgradeEvidenceSignature,
+        key: ConnectorUpgradeEvidenceSigningKey,
+        payload_digest: str,
+        now: datetime,
+    ) -> None:
+        if (
+            signature.key_id != key.key_id
+            or signature.key_version != key.key_version
+            or signature.signer_profile_id != key.signer_profile_id
+            or signature.signer_workload_id != key.signer_workload_id
+            or signature.algorithm != key.algorithm
+            or signature.signed_payload_digest != payload_digest
+            or signature.issued_at < key.not_before
+            or signature.expires_at > key.expires_at
+            or signature.issued_at > now
+            or signature.expires_at <= now
+        ):
+            raise ConnectorUpgradeEvidenceAuthenticityError(
+                "connector_upgrade_evidence_signature_invalid"
+            )
+
     @classmethod
     def _request_payload(cls, request: ConnectorUpgradeApprovalRequest) -> dict[str, object]:
         payload = cast(dict[str, object], asdict(request))
@@ -1916,6 +2302,46 @@ class ConnectorUpgradeApprovalService:
                     ("receipt_id", verification.receipt_id),
                     ("integrity_valid", "true"),
                     ("authenticity_proven", "false"),
+                    ("execution_authorized", "false"),
+                ),
+            )
+        )
+
+    async def _audit_signed_evidence_receipt(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+        request: ConnectorUpgradeApprovalRequest,
+        signed: ConnectorUpgradeSignedEvidenceReceipt,
+        permission_id: str,
+        result_code: str,
+        verification_id: str | None = None,
+    ) -> None:
+        await self._audit_sink.record(
+            AuditRecord(
+                event_id=f"evt_{uuid4().hex}",
+                event_type="atlas.connector.upgrade-signed-evidence-receipt",
+                schema_version="1.0",
+                producer="project-atlas-api",
+                producer_version=__version__,
+                occurred_at=self._clock(),
+                correlation_id=correlation_id,
+                subject_id=actor.subject_id,
+                actor_type=actor.kind.value,
+                authentication_method=actor.authentication_method.value,
+                assurance_level=actor.assurance_level.value,
+                permission_id=permission_id,
+                resource_type="resource.connector.upgrade-approval-request",
+                scope_reference=request.request_id,
+                decision_id=verification_id or signed.signed_receipt_id,
+                outcome="succeeded",
+                result_code=result_code,
+                idempotency_key=None,
+                target_metadata=(
+                    ("signed_receipt_id", signed.signed_receipt_id),
+                    ("key_id", signed.signature.key_id),
+                    ("key_version", signed.signature.key_version),
                     ("execution_authorized", "false"),
                 ),
             )

@@ -43,6 +43,8 @@
 - IMP-158 merged through PR #170 as `11aecc300a4bf50af26598078dc5e73967d71ce1` after final exact-head
   CI run `31585669553` passed; the exact merged commit independently passed `main` CI run
   `31586265591` before IMP-159 begins.
+- The IMP-158 closure and IMP-159 start commit `33bd906da01d40c5e1b1b58d09a69caf56fde1ff`
+  passed independent `main` CI run `31586965338` with backend in 6m54s and frontend in 4m33s.
 - ADR-114 explicitly reserves origin authentication for a separate key-management and signing
   decision and prevents digest verification from overstating authenticity.
 - The connector package pipeline already establishes signer ports, policy snapshots, key references,
