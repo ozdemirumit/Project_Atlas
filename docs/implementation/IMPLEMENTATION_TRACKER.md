@@ -4,14 +4,56 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-166 |
-| Title | Connector upgrade onboarding-policy provenance remediation guidance foundation |
-| Status | In Review; exact-head CI in progress |
-| Branch | `agent/mcp-onboarding-policy-provenance-remediation` |
-| Pull Request | [#178](https://github.com/ozdemirumit/Project_Atlas/pull/178) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-020, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-115, ADR-116, ADR-117, ADR-118, ADR-119, ADR-120, ADR-121, ADR-122 |
+| Task ID | ATLAS-IMP-167 |
+| Title | Inventory and MCP lifecycle action discoverability foundation |
+| Status | In Progress; scope and acceptance recorded |
+| Branch | `agent/inventory-mcp-action-discoverability` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-111, ADR-112, ADR-122, ADR-123 (planned) |
 | Last Updated | 2026-08-12 |
-| Next Action | Verify PR #178 exact-head CI, merge it, verify the exact merged commit on `main`, then close IMP-166 and start the next approved slice |
+| Next Action | Record ADR-123, surface existing device and MCP lifecycle actions at predictable entry points, then complete local, live and GitHub validation |
+
+### ATLAS-IMP-167 Scope Rationale
+
+- Governed device registration/retirement and MCP creation/retirement already exist, but the device
+  registry is embedded inside Health Overview and the MCP lifecycle table follows a long signing-
+  governance diagnostic. Operators can reasonably conclude that the requested lifecycle controls do
+  not exist.
+- Live reconciliation also shows that a development identity can render the action shell while the
+  protected inventory query is unavailable, without clearly directing the operator to the enterprise
+  login needed for governed mutations.
+- This slice improves navigation, ordering and authorization-state guidance only. It creates no new
+  lifecycle authority and does not weaken MFA, RBAC, acknowledgement, idempotency, audit or optimistic-
+  concurrency requirements.
+
+### ATLAS-IMP-167 Acceptance Criteria
+
+- Device inventory has a predictable, explicitly named Health task entry point that presents Add
+  device, lifecycle filters and governed retirement without requiring operators to infer that these
+  controls live under a generic overview label.
+- Connector Inventory presents Add MCP, lifecycle filters, inventory status and governed retirement
+  before secondary signing-provider diagnostics; deep links and keyboard navigation land on the
+  intended management surface.
+- Unauthenticated or development-only identities receive concise enterprise-login guidance at the
+  affected management surface. Controls never bypass the existing protected API permissions, MFA,
+  human-subject, audit, acknowledgement or version checks.
+- Existing device and MCP create/retire contracts remain unchanged. No hard delete, infrastructure
+  mutation, runtime activation, target contact, credential handling or signing-provider authority is
+  added.
+- Focused and full backend/frontend quality gates, production build and live desktop/mobile
+  navigation and interaction validation pass before delivery.
+
+### ATLAS-IMP-167 Initial Evidence
+
+- Device lifecycle management was delivered through PR #155 and MCP lifecycle management through PR
+  #156, but live inspection on 2026-08-12 found the device controls nested under `Health > Overview`
+  and the MCP lifecycle table below the signing-provider evidence sections.
+- The live Connector Inventory exposes Add MCP but reports that enterprise connector inventory is
+  unavailable under the active development identity, so the required enterprise-login path needs to
+  be explicit without changing authorization.
+- IMP-166 merged through PR #178 as `f8e5a029b810ca9d16d9a06b108d95d8d2bfd513` after exact-head
+  CI run `31638283275` passed with backend in 7m45s and frontend in 4m38s. The exact merged commit
+  independently passed `main` CI run `31638978354` with backend in 7m19s and frontend in 4m30s.
 
 ### ATLAS-IMP-166 Scope Rationale
 
@@ -76,9 +118,13 @@
 
 ### ATLAS-IMP-166 Delivery Evidence
 
-- Source commit `ad75c4c81d1618f12c710cd3c091aefd52a7a57e` is published in draft PR
-  [#178](https://github.com/ozdemirumit/Project_Atlas/pull/178); exact-head CI is pending the tracker
-  review commit.
+- Source commit `ad75c4c81d1618f12c710cd3c091aefd52a7a57e` and tracker-review commit
+  `0ff9341733791f5daf171170b8752e6e088bda90` were published in PR
+  [#178](https://github.com/ozdemirumit/Project_Atlas/pull/178). Exact-head CI run `31638283275`
+  passed with backend in 7m45s and frontend in 4m38s.
+- PR #178 was squash-merged as `f8e5a029b810ca9d16d9a06b108d95d8d2bfd513`; the exact merged
+  commit independently passed `main` CI run `31638978354` with backend in 7m19s and frontend in
+  4m30s.
 
 ### ATLAS-IMP-165 Scope Rationale
 
