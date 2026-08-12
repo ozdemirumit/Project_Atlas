@@ -34,6 +34,8 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeAuditReadinessEvidence,
     ConnectorUpgradeChangeContextDraft,
     ConnectorUpgradeEvidenceReceipt,
+    ConnectorUpgradeEvidenceReceiptVerification,
+    ConnectorUpgradeEvidenceReceiptVerificationState,
     ConnectorUpgradeHandoffReadinessAssessment,
     ConnectorUpgradeItsmChangeEvidence,
     ConnectorUpgradeMaintenanceWindowEvidence,
@@ -66,6 +68,10 @@ UPGRADE_MAINTENANCE_WINDOW_EVIDENCE_SCHEMA = (
 )
 UPGRADE_EVIDENCE_RECEIPT_SCHEMA = "atlas.connector-upgrade-evidence-receipt.v1"
 UPGRADE_EVIDENCE_RECEIPT_CREATE_PERMISSION = "connectors.upgrade-evidence-receipts.create"
+UPGRADE_EVIDENCE_RECEIPT_VERIFICATION_SCHEMA = (
+    "atlas.connector-upgrade-evidence-receipt-verification.v1"
+)
+UPGRADE_EVIDENCE_RECEIPT_VERIFY_PERMISSION = "connectors.upgrade-evidence-receipts.verify"
 UPGRADE_HANDOFF_APPLICABILITY_POLICY_ID = "connector-upgrade-handoff-evidence-applicability.default"
 UPGRADE_HANDOFF_APPLICABILITY_POLICY_VERSION = "v2026.08.12.1"
 UPGRADE_HANDOFF_CURRENT_CHECK_IDS = (
@@ -1025,6 +1031,7 @@ class ConnectorUpgradeApprovalService:
             valid_until=readiness.evidence_valid_until,
             canonical_digest=digest,
         )
+        self._verify_evidence_receipt(receipt)
         await self._audit_revalidation(
             actor=actor,
             correlation_id=correlation_id,
@@ -1034,6 +1041,201 @@ class ConnectorUpgradeApprovalService:
             idempotency_key=None,
         )
         return receipt
+
+    async def verify_evidence_receipt(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        record_id: str,
+        request_id: str,
+        receipt: ConnectorUpgradeEvidenceReceipt,
+        acknowledged_digest_integrity_is_not_authenticity_or_execution_authority: bool,
+        correlation_id: str,
+    ) -> ConnectorUpgradeEvidenceReceiptVerification:
+        self._require_enterprise_human(actor)
+        if not acknowledged_digest_integrity_is_not_authenticity_or_execution_authority:
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_evidence_receipt_verification_confirmation_required"
+            )
+        request = await self._repository.get(request_id=request_id)
+        if request is None:
+            raise ConnectorUpgradeApprovalError("connector_upgrade_approval_request_not_found")
+        self._require_request_scope(request, actor, record_id)
+        self._verify_request(request)
+        if (
+            receipt.request_id != request.request_id
+            or receipt.organization_id != actor.organization_id
+            or receipt.environment_id != self._environment_id
+        ):
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_evidence_receipt_verification_not_found"
+            )
+        self._verify_evidence_receipt(receipt)
+        now = self._clock()
+        state = ConnectorUpgradeEvidenceReceiptVerificationState.UNVERIFIABLE
+        reasons = ("connector.upgrade.evidence-receipt.current-state-unverifiable",)
+        compared = False
+        matches = False
+        expired = now >= receipt.valid_until
+        if expired:
+            state = ConnectorUpgradeEvidenceReceiptVerificationState.EXPIRED
+            reasons = ("connector.upgrade.evidence-receipt.expired",)
+        else:
+            try:
+                readiness = await self.assess_handoff_readiness(
+                    actor=actor,
+                    record_id=record_id,
+                    request_id=request_id,
+                    correlation_id=correlation_id,
+                )
+            except ConnectorUpgradeApprovalError as error:
+                if error.code == "connector_upgrade_approval_request_not_found":
+                    raise
+                if "integrity" in error.code or error.code.endswith("policy_unavailable"):
+                    state = ConnectorUpgradeEvidenceReceiptVerificationState.UNVERIFIABLE
+                else:
+                    state = ConnectorUpgradeEvidenceReceiptVerificationState.STALE
+                    compared = True
+                reasons = (f"connector.upgrade.evidence-receipt.{state.value}",)
+            else:
+                compared = True
+                current_revalidation = await self._repository.get_latest_revalidation(
+                    request_id=request.request_id
+                )
+                assessment_payload: dict[str, object] = {
+                    "schema_version": readiness.schema_version,
+                    "source_record_id": readiness.source_record_id,
+                    "source_record_version": readiness.source_record_version,
+                    "request_digest": readiness.request_digest,
+                    "decision_digest": readiness.decision_digest,
+                    "revalidation_digest": readiness.revalidation_digest,
+                    "plan_digest": readiness.plan_digest,
+                    "assessed_by": receipt.created_by,
+                    "applicability_policy_id": readiness.applicability_policy_id,
+                    "applicability_policy_version": readiness.applicability_policy_version,
+                    "applicability_policy_digest": readiness.applicability_policy_digest,
+                    "audit_readiness_evidence_id": readiness.audit_readiness_evidence_id,
+                    "audit_readiness_evidence_digest": readiness.audit_readiness_evidence_digest,
+                    "itsm_change_evidence_id": readiness.itsm_change_evidence_id,
+                    "itsm_change_evidence_digest": readiness.itsm_change_evidence_digest,
+                    "maintenance_window_evidence_id": (readiness.maintenance_window_evidence_id),
+                    "maintenance_window_evidence_digest": (
+                        readiness.maintenance_window_evidence_digest
+                    ),
+                    "required_check_ids": readiness.required_check_ids,
+                    "satisfied_check_ids": readiness.satisfied_check_ids,
+                    "not_applicable_check_ids": readiness.not_applicable_check_ids,
+                    "blocker_ids": readiness.blocker_ids,
+                }
+                expected_assessment_digest = self._digest(assessment_payload)
+                current_bindings = (
+                    readiness.request_digest,
+                    readiness.decision_id,
+                    readiness.decision_digest,
+                    readiness.revalidation_id,
+                    readiness.revalidation_digest,
+                    readiness.plan_id,
+                    readiness.plan_digest,
+                    readiness.audit_readiness_evidence_id,
+                    readiness.audit_readiness_evidence_digest,
+                    readiness.itsm_change_evidence_id,
+                    readiness.itsm_change_evidence_digest,
+                    readiness.maintenance_window_evidence_id,
+                    readiness.maintenance_window_evidence_digest,
+                    readiness.required_check_ids,
+                    readiness.satisfied_check_ids,
+                    readiness.not_applicable_check_ids,
+                )
+                receipt_bindings = (
+                    receipt.request_digest,
+                    receipt.decision_id,
+                    receipt.decision_digest,
+                    receipt.revalidation_id,
+                    receipt.revalidation_digest,
+                    receipt.plan_id,
+                    receipt.plan_digest,
+                    receipt.audit_readiness_evidence_id,
+                    receipt.audit_readiness_evidence_digest,
+                    receipt.itsm_change_evidence_id,
+                    receipt.itsm_change_evidence_digest,
+                    receipt.maintenance_window_evidence_id,
+                    receipt.maintenance_window_evidence_digest,
+                    receipt.required_check_ids,
+                    receipt.satisfied_check_ids,
+                    receipt.not_applicable_check_ids,
+                )
+                matches = (
+                    readiness.assessment_state == "evidence_complete"
+                    and not readiness.blocker_ids
+                    and current_revalidation is not None
+                    and current_revalidation.revalidation_id == readiness.revalidation_id
+                    and current_revalidation.canonical_digest == readiness.revalidation_digest
+                    and receipt.created_at == current_revalidation.revalidated_at
+                    and receipt.valid_until == readiness.evidence_valid_until
+                    and receipt.assessment_digest == expected_assessment_digest
+                    and receipt.assessment_id
+                    == f"connector-upgrade-handoff-readiness.{expected_assessment_digest[:24]}"
+                    and current_bindings == receipt_bindings
+                )
+                state = (
+                    ConnectorUpgradeEvidenceReceiptVerificationState.CURRENT
+                    if matches
+                    else ConnectorUpgradeEvidenceReceiptVerificationState.STALE
+                )
+                reasons = (f"connector.upgrade.evidence-receipt.{state.value}",)
+        payload: dict[str, object] = {
+            "schema_version": UPGRADE_EVIDENCE_RECEIPT_VERIFICATION_SCHEMA,
+            "receipt_id": receipt.receipt_id,
+            "receipt_digest": receipt.canonical_digest,
+            "request_id": request.request_id,
+            "organization_id": request.organization_id,
+            "environment_id": request.environment_id,
+            "verified_by": actor.subject_id,
+            "verified_at": now.isoformat(),
+            "receipt_valid_until": receipt.valid_until.isoformat(),
+            "verification_state": state.value,
+            "reason_codes": reasons,
+            "integrity_valid": True,
+            "current_state_compared": compared,
+            "current_state_matches": matches,
+            "receipt_expired": expired,
+            "authenticity_proven": False,
+            "evidence_receipt_only": True,
+            "approval_consumed": False,
+            "handoff_ready": False,
+            "handoff_artifact_issued": False,
+            "target_contacted": False,
+            "package_rebound": False,
+            "configuration_changed": False,
+            "execution_authorized": False,
+            "infrastructure_mutation_performed": False,
+        }
+        digest = self._digest(payload)
+        verification = ConnectorUpgradeEvidenceReceiptVerification(
+            verification_id=f"connector-upgrade-evidence-verification.{digest[:24]}",
+            schema_version=UPGRADE_EVIDENCE_RECEIPT_VERIFICATION_SCHEMA,
+            receipt_id=receipt.receipt_id,
+            receipt_digest=receipt.canonical_digest,
+            request_id=request.request_id,
+            organization_id=request.organization_id,
+            environment_id=request.environment_id,
+            verified_by=actor.subject_id,
+            verified_at=now,
+            receipt_valid_until=receipt.valid_until,
+            verification_state=state,
+            reason_codes=reasons,
+            canonical_digest=digest,
+            current_state_compared=compared,
+            current_state_matches=matches,
+            receipt_expired=expired,
+        )
+        await self._audit_evidence_receipt_verification(
+            actor=actor,
+            correlation_id=correlation_id,
+            request=request,
+            verification=verification,
+        )
+        return verification
 
     @classmethod
     def _verify_audit_readiness_evidence(
@@ -1566,6 +1768,56 @@ class ConnectorUpgradeApprovalService:
             )
 
     @classmethod
+    def _verify_evidence_receipt(cls, receipt: ConnectorUpgradeEvidenceReceipt) -> None:
+        digest = cls._digest(cls._evidence_receipt_payload(receipt))
+        if (
+            digest != receipt.canonical_digest
+            or receipt.receipt_id != f"connector-upgrade-evidence-receipt.{digest[:24]}"
+        ):
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_evidence_receipt_integrity_invalid"
+            )
+
+    @staticmethod
+    def _evidence_receipt_payload(
+        receipt: ConnectorUpgradeEvidenceReceipt,
+    ) -> dict[str, object]:
+        return {
+            "schema_version": receipt.schema_version,
+            "version": receipt.version,
+            "assessment": (receipt.assessment_id, receipt.assessment_digest),
+            "request": (receipt.request_id, receipt.request_digest),
+            "decision": (receipt.decision_id, receipt.decision_digest),
+            "revalidation": (receipt.revalidation_id, receipt.revalidation_digest),
+            "plan": (receipt.plan_id, receipt.plan_digest),
+            "scope": (receipt.organization_id, receipt.environment_id),
+            "created_by": receipt.created_by,
+            "evidence": (
+                receipt.audit_readiness_evidence_id,
+                receipt.audit_readiness_evidence_digest,
+                receipt.itsm_change_evidence_id,
+                receipt.itsm_change_evidence_digest,
+                receipt.maintenance_window_evidence_id,
+                receipt.maintenance_window_evidence_digest,
+            ),
+            "required_check_ids": receipt.required_check_ids,
+            "satisfied_check_ids": receipt.satisfied_check_ids,
+            "not_applicable_check_ids": receipt.not_applicable_check_ids,
+            "created_at": receipt.created_at.isoformat(),
+            "valid_until": receipt.valid_until.isoformat(),
+            "evidence_receipt_only": receipt.evidence_receipt_only,
+            "runtime_acceptable": receipt.runtime_acceptable,
+            "approval_consumed": receipt.approval_consumed,
+            "handoff_ready": receipt.handoff_ready,
+            "handoff_artifact_issued": receipt.handoff_artifact_issued,
+            "target_contacted": receipt.target_contacted,
+            "package_rebound": receipt.package_rebound,
+            "configuration_changed": receipt.configuration_changed,
+            "execution_authorized": receipt.execution_authorized,
+            "infrastructure_mutation_performed": receipt.infrastructure_mutation_performed,
+        }
+
+    @classmethod
     def _request_payload(cls, request: ConnectorUpgradeApprovalRequest) -> dict[str, object]:
         payload = cast(dict[str, object], asdict(request))
         for field in ("canonical_digest", "request_fingerprint", "idempotency_key", "reused"):
@@ -1626,6 +1878,45 @@ class ConnectorUpgradeApprovalService:
                 target_metadata=(
                     ("plan_id", revalidation.plan_id),
                     ("handoff_ready", "false"),
+                ),
+            )
+        )
+
+    async def _audit_evidence_receipt_verification(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+        request: ConnectorUpgradeApprovalRequest,
+        verification: ConnectorUpgradeEvidenceReceiptVerification,
+    ) -> None:
+        await self._audit_sink.record(
+            AuditRecord(
+                event_id=f"evt_{uuid4().hex}",
+                event_type="atlas.connector.upgrade-evidence-receipt-verification",
+                schema_version="1.0",
+                producer="project-atlas-api",
+                producer_version=__version__,
+                occurred_at=self._clock(),
+                correlation_id=correlation_id,
+                subject_id=actor.subject_id,
+                actor_type=actor.kind.value,
+                authentication_method=actor.authentication_method.value,
+                assurance_level=actor.assurance_level.value,
+                permission_id=UPGRADE_EVIDENCE_RECEIPT_VERIFY_PERMISSION,
+                resource_type="resource.connector.upgrade-approval-request",
+                scope_reference=request.request_id,
+                decision_id=verification.verification_id,
+                outcome="succeeded",
+                result_code=(
+                    f"connector_upgrade_evidence_receipt_{verification.verification_state.value}"
+                ),
+                idempotency_key=None,
+                target_metadata=(
+                    ("receipt_id", verification.receipt_id),
+                    ("integrity_valid", "true"),
+                    ("authenticity_proven", "false"),
+                    ("execution_authorized", "false"),
                 ),
             )
         )

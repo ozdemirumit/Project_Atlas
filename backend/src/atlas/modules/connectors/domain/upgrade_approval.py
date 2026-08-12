@@ -26,6 +26,13 @@ class ConnectorUpgradeApprovalState(StrEnum):
     EXPIRED = "expired"
 
 
+class ConnectorUpgradeEvidenceReceiptVerificationState(StrEnum):
+    CURRENT = "current"
+    STALE = "stale"
+    EXPIRED = "expired"
+    UNVERIFIABLE = "unverifiable"
+
+
 @dataclass(frozen=True, slots=True)
 class ConnectorUpgradeApprovalPolicySnapshot:
     policy_id: str
@@ -587,7 +594,8 @@ class ConnectorUpgradeEvidenceReceipt:
         if any(_DIGEST.fullmatch(value) is None for value in digests):
             raise ValueError("Connector upgrade evidence receipt digest is invalid")
         if (
-            self.version != 1
+            self.schema_version != "atlas.connector-upgrade-evidence-receipt.v1"
+            or self.version != 1
             or not self.required_check_ids
             or self.required_check_ids != self.satisfied_check_ids
             or len(set(self.required_check_ids)) != len(self.required_check_ids)
@@ -612,6 +620,105 @@ class ConnectorUpgradeEvidenceReceipt:
             )
         ):
             raise ValueError("Connector upgrade evidence receipt violates the authority boundary")
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorUpgradeEvidenceReceiptVerification:
+    verification_id: str
+    schema_version: str
+    receipt_id: str
+    receipt_digest: str
+    request_id: str
+    organization_id: str
+    environment_id: str
+    verified_by: str
+    verified_at: datetime
+    receipt_valid_until: datetime
+    verification_state: ConnectorUpgradeEvidenceReceiptVerificationState
+    reason_codes: tuple[str, ...]
+    canonical_digest: str
+    integrity_valid: bool = True
+    current_state_compared: bool = False
+    current_state_matches: bool = False
+    receipt_expired: bool = False
+    authenticity_proven: bool = False
+    evidence_receipt_only: bool = True
+    approval_consumed: bool = False
+    handoff_ready: bool = False
+    handoff_artifact_issued: bool = False
+    target_contacted: bool = False
+    package_rebound: bool = False
+    configuration_changed: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_performed: bool = False
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.verification_id,
+            self.schema_version,
+            self.receipt_id,
+            self.request_id,
+            self.organization_id,
+            self.environment_id,
+            self.verified_by,
+        ):
+            validate_stable_identifier(value, "connector upgrade evidence receipt verification")
+        if (
+            self.schema_version != "atlas.connector-upgrade-evidence-receipt-verification.v1"
+            or _DIGEST.fullmatch(self.receipt_digest) is None
+            or _DIGEST.fullmatch(self.canonical_digest) is None
+            or self.verified_at.tzinfo is None
+            or self.receipt_valid_until.tzinfo is None
+            or not self.reason_codes
+            or any(
+                not reason.startswith("connector.upgrade.evidence-receipt.")
+                for reason in self.reason_codes
+            )
+            or not self.integrity_valid
+            or self.authenticity_proven
+            or not self.evidence_receipt_only
+            or any(
+                (
+                    self.approval_consumed,
+                    self.handoff_ready,
+                    self.handoff_artifact_issued,
+                    self.target_contacted,
+                    self.package_rebound,
+                    self.configuration_changed,
+                    self.execution_authorized,
+                    self.infrastructure_mutation_performed,
+                )
+            )
+        ):
+            raise ValueError("Connector upgrade evidence receipt verification is invalid")
+        expected_state = {
+            ConnectorUpgradeEvidenceReceiptVerificationState.CURRENT: (
+                True,
+                True,
+                False,
+            ),
+            ConnectorUpgradeEvidenceReceiptVerificationState.STALE: (
+                True,
+                False,
+                False,
+            ),
+            ConnectorUpgradeEvidenceReceiptVerificationState.EXPIRED: (
+                False,
+                False,
+                True,
+            ),
+            ConnectorUpgradeEvidenceReceiptVerificationState.UNVERIFIABLE: (
+                False,
+                False,
+                False,
+            ),
+        }[self.verification_state]
+        if expected_state != (
+            self.current_state_compared,
+            self.current_state_matches,
+            self.receipt_expired,
+        ):
+            raise ValueError("Connector upgrade evidence receipt verification state is invalid")
 
 
 @dataclass(frozen=True, slots=True)

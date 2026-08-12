@@ -6,6 +6,7 @@ import {
   Boxes,
   ClipboardList,
   Download,
+  FileCheck2,
   PackagePlus,
   RefreshCw,
   Search,
@@ -27,9 +28,12 @@ import {
   getConnectorUpgradeHandoffReadiness,
   getLatestConnectorUpgradeChangeContextDraft,
   getConnectorUpgradeReadiness,
+  isConnectorUpgradeEvidenceReceipt,
   revalidateConnectorUpgradeApproval,
+  verifyConnectorUpgradeEvidenceReceipt,
   type ConnectorUpgradeApprovalOutcome,
   type ConnectorUpgradeCandidate,
+  type ConnectorUpgradeEvidenceReceipt,
   getConnectorUpgradePlan,
   type ConnectorUpgradePlan,
 } from "../../api/connectorUpgradeReadiness";
@@ -314,6 +318,11 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
   const [windowEnd, setWindowEnd] = useState("");
   const [changeAcknowledged, setChangeAcknowledged] = useState(false);
   const [receiptAcknowledged, setReceiptAcknowledged] = useState(false);
+  const [verificationReceipt, setVerificationReceipt] =
+    useState<ConnectorUpgradeEvidenceReceipt | null>(null);
+  const [verificationFileName, setVerificationFileName] = useState("");
+  const [verificationFileError, setVerificationFileError] = useState("");
+  const [verificationAcknowledged, setVerificationAcknowledged] = useState(false);
   const recordQuery = useQuery({
     queryKey,
     queryFn: () => getConnectorUpgradeApprovalRecord(plan),
@@ -373,6 +382,10 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
   const evidenceReceiptMutation = useMutation({
     mutationFn: createConnectorUpgradeEvidenceReceipt,
     onSuccess: () => setReceiptAcknowledged(false),
+  });
+  const evidenceReceiptVerificationMutation = useMutation({
+    mutationFn: verifyConnectorUpgradeEvidenceReceipt,
+    onSuccess: () => setVerificationAcknowledged(false),
   });
   const changeContextQueryKey = ["connector-upgrade-change-context", record?.request.request_id];
   const changeContextQuery = useQuery({
@@ -444,25 +457,67 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
                 )}
                 {handoffReadinessQuery.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><span>Handoff readiness could not be assessed from current governed evidence.</span></div>}
                 {handoffReadinessQuery.data?.assessment_state === "evidence_complete" && (
-                  <div className="installed-mcp-approval-decision">
-                    <strong>Non-executable evidence receipt</strong>
-                    <p>Preserve the exact completed review as a safe JSON record. The receipt cannot be used by a runtime and grants no handoff authority.</p>
-                    {evidenceReceiptMutation.data ? (
-                      <div className="installed-mcp-approval-result">
-                        <strong>Evidence receipt ready</strong>
-                        <span>{evidenceReceiptMutation.data.receipt_id}</span>
-                        <p>Runtime acceptable: no. Approval consumed: no.</p>
-                        <small>Valid until {new Date(evidenceReceiptMutation.data.valid_until).toLocaleString()}</small>
-                        <button className="secondary-button" type="button" onClick={() => downloadConnectorUpgradeEvidenceReceipt(evidenceReceiptMutation.data)}><Download size={16} />Download JSON receipt</button>
-                      </div>
-                    ) : (
-                      <>
-                        <label className="checkbox-row"><input type="checkbox" checked={receiptAcknowledged} onChange={(event) => setReceiptAcknowledged(event.target.checked)} /><span>This receipt is evidence only. It grants no approval, handoff, runtime or execution authority.</span></label>
-                        {evidenceReceiptMutation.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><span>The receipt was rejected because current governed evidence changed.</span></div>}
-                        <button className="primary-button" type="button" disabled={!receiptAcknowledged || evidenceReceiptMutation.isPending} onClick={() => evidenceReceiptMutation.mutate({ record, readiness: handoffReadinessQuery.data! })}><ClipboardList size={16} />{evidenceReceiptMutation.isPending ? "Creating receipt..." : "Create evidence receipt"}</button>
-                      </>
-                    )}
-                  </div>
+                  <>
+                    <div className="installed-mcp-approval-decision">
+                      <strong>Non-executable evidence receipt</strong>
+                      <p>Preserve the exact completed review as a safe JSON record. The receipt cannot be used by a runtime and grants no handoff authority.</p>
+                      {evidenceReceiptMutation.data ? (
+                        <div className="installed-mcp-approval-result">
+                          <strong>Evidence receipt ready</strong>
+                          <span>{evidenceReceiptMutation.data.receipt_id}</span>
+                          <p>Runtime acceptable: no. Approval consumed: no.</p>
+                          <small>Valid until {new Date(evidenceReceiptMutation.data.valid_until).toLocaleString()}</small>
+                          <button className="secondary-button" type="button" onClick={() => downloadConnectorUpgradeEvidenceReceipt(evidenceReceiptMutation.data)}><Download size={16} />Download JSON receipt</button>
+                        </div>
+                      ) : (
+                        <>
+                          <label className="checkbox-row"><input type="checkbox" checked={receiptAcknowledged} onChange={(event) => setReceiptAcknowledged(event.target.checked)} /><span>This receipt is evidence only. It grants no approval, handoff, runtime or execution authority.</span></label>
+                          {evidenceReceiptMutation.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><span>The receipt was rejected because current governed evidence changed.</span></div>}
+                          <button className="primary-button" type="button" disabled={!receiptAcknowledged || evidenceReceiptMutation.isPending} onClick={() => evidenceReceiptMutation.mutate({ record, readiness: handoffReadinessQuery.data! })}><ClipboardList size={16} />{evidenceReceiptMutation.isPending ? "Creating receipt..." : "Create evidence receipt"}</button>
+                        </>
+                      )}
+                    </div>
+                    <div className="installed-mcp-approval-decision">
+                      <strong>Verify evidence receipt</strong>
+                      <label className="installed-mcp-receipt-file"><FileCheck2 size={18} /><span><strong>{verificationFileName || "Select receipt JSON"}</strong><small>JSON, maximum 64 KB</small></span><input aria-label="Receipt JSON" type="file" accept=".json,application/json" onChange={(event) => {
+                        const file = event.currentTarget.files?.[0];
+                        setVerificationFileError("");
+                        setVerificationReceipt(null);
+                        setVerificationFileName(file?.name ?? "");
+                        setVerificationAcknowledged(false);
+                        evidenceReceiptVerificationMutation.reset();
+                        if (!file) return;
+                        if (file.size > 65_536) {
+                          setVerificationFileError("The receipt exceeds the 64 KB verification limit.");
+                          return;
+                        }
+                        void file.text().then((content) => {
+                          try {
+                            const candidate: unknown = JSON.parse(content);
+                            if (!isConnectorUpgradeEvidenceReceipt(candidate) || candidate.request_id !== record.request.request_id) {
+                              throw new Error("unsafe receipt");
+                            }
+                            setVerificationReceipt(candidate);
+                          } catch {
+                            setVerificationFileError("The file is not a safe receipt for this exact approval request.");
+                          }
+                        });
+                      }} /></label>
+                      {verificationFileError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><span>{verificationFileError}</span></div>}
+                      {evidenceReceiptVerificationMutation.data ? (
+                        <div className={`installed-mcp-status ${evidenceReceiptVerificationMutation.data.verification_state === "current" ? "" : "error-state"}`} role="status">
+                          {evidenceReceiptVerificationMutation.data.verification_state === "current" ? <ShieldCheck size={17} /> : <AlertTriangle size={17} />}
+                          <div><strong>Receipt {evidenceReceiptVerificationMutation.data.verification_state}</strong><span>Integrity valid: yes. Current state matches: {evidenceReceiptVerificationMutation.data.current_state_matches ? "yes" : "no"}. Authenticity proven: no.</span></div>
+                        </div>
+                      ) : (
+                        <>
+                          <label className="checkbox-row"><input type="checkbox" checked={verificationAcknowledged} onChange={(event) => setVerificationAcknowledged(event.target.checked)} /><span>Digest integrity is not authenticity, approval, runtime acceptance or execution authority.</span></label>
+                          {evidenceReceiptVerificationMutation.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={17} /><span>The receipt failed integrity or authorized current-state verification.</span></div>}
+                          <button className="secondary-button" type="button" disabled={!verificationReceipt || !verificationAcknowledged || evidenceReceiptVerificationMutation.isPending} onClick={() => { if (verificationReceipt) evidenceReceiptVerificationMutation.mutate({ record, receipt: verificationReceipt }); }}><FileCheck2 size={16} />{evidenceReceiptVerificationMutation.isPending ? "Verifying receipt..." : "Verify evidence receipt"}</button>
+                        </>
+                      )}
+                    </div>
+                  </>
                 )}
                 {handoffReadinessQuery.data && (changeContextMutation.data ?? changeContextQuery.data) ? (
                   <div className="installed-mcp-approval-result">

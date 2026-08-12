@@ -29,6 +29,9 @@ from atlas.api.instance_creation_schemas import (
     ConnectorUpgradeEvidenceReceiptData,
     ConnectorUpgradeEvidenceReceiptInput,
     ConnectorUpgradeEvidenceReceiptResponse,
+    ConnectorUpgradeEvidenceReceiptVerificationData,
+    ConnectorUpgradeEvidenceReceiptVerificationInput,
+    ConnectorUpgradeEvidenceReceiptVerificationResponse,
     ConnectorUpgradeHandoffReadinessData,
     ConnectorUpgradeHandoffReadinessResponse,
     ConnectorUpgradePlanData,
@@ -49,6 +52,7 @@ from atlas.api.security import (
     authorize_connector_upgrade_change_context_create,
     authorize_connector_upgrade_change_context_read,
     authorize_connector_upgrade_evidence_receipt_create,
+    authorize_connector_upgrade_evidence_receipt_verify,
     authorize_connector_upgrade_handoff_readiness_read,
     browser_session_subject,
 )
@@ -572,6 +576,52 @@ async def create_connector_upgrade_evidence_receipt(
     response.headers["Cache-Control"] = "no-store"
     return ConnectorUpgradeEvidenceReceiptResponse(
         data=ConnectorUpgradeEvidenceReceiptData.from_domain(receipt),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.post(
+    "/{record_id}/upgrade-approval-requests/{request_id}/evidence-receipts/verify",
+    response_model=ConnectorUpgradeEvidenceReceiptVerificationResponse,
+)
+async def verify_connector_upgrade_evidence_receipt(
+    record_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    payload: ConnectorUpgradeEvidenceReceiptVerificationInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_connector_upgrade_evidence_receipt_verify),
+    ],
+) -> ConnectorUpgradeEvidenceReceiptVerificationResponse:
+    service: ConnectorUpgradeApprovalService = request.app.state.connector_upgrade_approval_service
+    try:
+        verification = await service.verify_evidence_receipt(
+            actor=subject,
+            record_id=record_id,
+            request_id=request_id,
+            receipt=payload.receipt.to_domain(),
+            correlation_id=str(request.state.correlation_id),
+            acknowledged_digest_integrity_is_not_authenticity_or_execution_authority=(
+                payload.acknowledged_digest_integrity_is_not_authenticity_or_execution_authority
+            ),
+        )
+    except (ConnectorUpgradeApprovalError, ValueError) as error:
+        approval_error = (
+            error
+            if isinstance(error, ConnectorUpgradeApprovalError)
+            else ConnectorUpgradeApprovalError(
+                "connector_upgrade_evidence_receipt_verification_invalid"
+            )
+        )
+        _raise_upgrade_approval(approval_error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorUpgradeEvidenceReceiptVerificationResponse(
+        data=ConnectorUpgradeEvidenceReceiptVerificationData.from_domain(verification),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),

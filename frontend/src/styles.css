@@ -952,6 +952,44 @@ textarea:focus-visible {
   width: fit-content;
 }
 
+.installed-mcp-receipt-file {
+  display: flex;
+  min-width: 0;
+  min-height: 54px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  color: #34544d;
+  background: #f6f9f8;
+  border: 1px dashed #aebfba;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.installed-mcp-receipt-file > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.installed-mcp-receipt-file strong,
+.installed-mcp-receipt-file small {
+  overflow-wrap: anywhere;
+}
+
+.installed-mcp-receipt-file small {
+  color: #6d7c78;
+  font-size: 9px;
+}
+
+.installed-mcp-receipt-file input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
 .installed-mcp-approval-result {
   display: grid;
   gap: 3px;

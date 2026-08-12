@@ -53,6 +53,7 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeApprovalOutcome,
     ConnectorUpgradeApprovalState,
     ConnectorUpgradeAuditReadinessEvidence,
+    ConnectorUpgradeEvidenceReceiptVerificationState,
     ConnectorUpgradeItsmChangeEvidence,
     ConnectorUpgradeMaintenanceWindowEvidence,
 )
@@ -1001,6 +1002,48 @@ async def test_upgrade_approval_revalidation_requires_three_people_and_remains_n
     assert receipt.evidence_receipt_only and not receipt.runtime_acceptable
     assert not receipt.approval_consumed and not receipt.handoff_artifact_issued
     assert not receipt.execution_authorized and not receipt.infrastructure_mutation_performed
+    independent_auditor = instance_operator("subject.connector-upgrade-receipt-auditor")
+    verification = await service.verify_evidence_receipt(
+        actor=independent_auditor,
+        record_id=instance.record_id,
+        request_id=request.request_id,
+        receipt=receipt,
+        acknowledged_digest_integrity_is_not_authenticity_or_execution_authority=True,
+        correlation_id="correlation.connector-upgrade-evidence-receipt-verify",
+    )
+    assert (
+        verification.verification_state is ConnectorUpgradeEvidenceReceiptVerificationState.CURRENT
+    )
+    assert verification.integrity_valid and verification.current_state_matches
+    assert verification.current_state_compared and not verification.receipt_expired
+    assert not verification.authenticity_proven and not verification.execution_authorized
+    assert not verification.handoff_ready and not verification.approval_consumed
+    with pytest.raises(ConnectorUpgradeApprovalError, match="integrity_invalid"):
+        await service.verify_evidence_receipt(
+            actor=independent_auditor,
+            record_id=instance.record_id,
+            request_id=request.request_id,
+            receipt=replace(receipt, plan_digest="0" * 64),
+            acknowledged_digest_integrity_is_not_authenticity_or_execution_authority=True,
+            correlation_id="correlation.connector-upgrade-evidence-receipt-tampered",
+        )
+    saved_time = current_time[0]
+    current_time[0] = receipt.valid_until
+    expired_verification = await service.verify_evidence_receipt(
+        actor=independent_auditor,
+        record_id=instance.record_id,
+        request_id=request.request_id,
+        receipt=receipt,
+        acknowledged_digest_integrity_is_not_authenticity_or_execution_authority=True,
+        correlation_id="correlation.connector-upgrade-evidence-receipt-expired",
+    )
+    assert (
+        expired_verification.verification_state
+        is ConnectorUpgradeEvidenceReceiptVerificationState.EXPIRED
+    )
+    assert expired_verification.receipt_expired
+    assert not expired_verification.current_state_compared
+    current_time[0] = saved_time
     with pytest.raises(ValueError, match="authority boundary"):
         replace(receipt, runtime_acceptable=True)
     with pytest.raises(ConnectorUpgradeApprovalError, match="readiness_not_current"):
@@ -1015,6 +1058,19 @@ async def test_upgrade_approval_revalidation_requires_three_people_and_remains_n
     maintenance_window_evidence_source.replace(
         (replace(window_evidence, canonical_digest="0" * 64),)
     )
+    unverifiable = await service.verify_evidence_receipt(
+        actor=independent_auditor,
+        record_id=instance.record_id,
+        request_id=request.request_id,
+        receipt=receipt,
+        acknowledged_digest_integrity_is_not_authenticity_or_execution_authority=True,
+        correlation_id="correlation.connector-upgrade-evidence-receipt-unverifiable",
+    )
+    assert (
+        unverifiable.verification_state
+        is ConnectorUpgradeEvidenceReceiptVerificationState.UNVERIFIABLE
+    )
+    assert not unverifiable.current_state_compared
     with pytest.raises(ConnectorUpgradeApprovalError, match="window_evidence_integrity"):
         await service.assess_handoff_readiness(
             actor=verifier,
@@ -1022,6 +1078,22 @@ async def test_upgrade_approval_revalidation_requires_three_people_and_remains_n
             request_id=request.request_id,
             correlation_id="correlation.connector-upgrade-window-evidence-integrity",
         )
+    maintenance_window_evidence_source.replace((window_evidence,))
+    maintenance_window_evidence_source.replace(())
+    stale_verification = await service.verify_evidence_receipt(
+        actor=independent_auditor,
+        record_id=instance.record_id,
+        request_id=request.request_id,
+        receipt=receipt,
+        acknowledged_digest_integrity_is_not_authenticity_or_execution_authority=True,
+        correlation_id="correlation.connector-upgrade-evidence-receipt-stale-evidence",
+    )
+    assert (
+        stale_verification.verification_state
+        is ConnectorUpgradeEvidenceReceiptVerificationState.STALE
+    )
+    assert stale_verification.current_state_compared
+    assert not stale_verification.current_state_matches
     maintenance_window_evidence_source.replace((window_evidence,))
     itsm_change_evidence_source.replace((replace(itsm_evidence, canonical_digest="0" * 64),))
     with pytest.raises(ConnectorUpgradeApprovalError, match="itsm_change_evidence_integrity"):
@@ -1171,7 +1243,8 @@ def test_upgrade_approval_revalidation_api_is_no_store_and_hides_custody_metadat
             f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
             f"{request.request_id}/handoff-readiness"
         )
-        readiness_digest = readiness_response.json()["data"]["canonical_digest"]
+        readiness_payload = readiness_response.json()["data"]
+        readiness_digest = readiness_payload["canonical_digest"]
         receipt_without_csrf = client.post(
             f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
             f"{request.request_id}/evidence-receipts",
@@ -1189,6 +1262,70 @@ def test_upgrade_approval_revalidation_api_is_no_store_and_hides_custody_metadat
                 "schema_version": "atlas.connector-upgrade-evidence-receipt-input.v1",
                 "expected_readiness_digest": readiness_digest,
                 "acknowledged_receipt_is_non_executable_and_grants_no_handoff_authority": True,
+            },
+        )
+        uploaded_receipt = {
+            "receipt_id": "connector-upgrade-evidence-receipt.uploaded",
+            "schema_version": "atlas.connector-upgrade-evidence-receipt.v1",
+            "version": 1,
+            "assessment_id": readiness_payload["assessment_id"],
+            "assessment_digest": readiness_payload["canonical_digest"],
+            "request_id": request.request_id,
+            "request_digest": request.canonical_digest,
+            "decision_id": approval.decision.decision_id,
+            "decision_digest": approval.decision.canonical_digest,
+            "revalidation_id": readiness_payload["revalidation_id"],
+            "revalidation_digest": readiness_payload["revalidation_digest"],
+            "plan_id": plan.plan_id,
+            "plan_digest": plan.canonical_digest,
+            "organization_id": request.organization_id,
+            "environment_id": request.environment_id,
+            "created_by": verifier.subject_id,
+            "audit_readiness_evidence_id": "connector-upgrade-audit-evidence.uploaded",
+            "audit_readiness_evidence_digest": "a" * 64,
+            "itsm_change_evidence_id": "connector-upgrade-itsm-evidence.uploaded",
+            "itsm_change_evidence_digest": "b" * 64,
+            "maintenance_window_evidence_id": "connector-upgrade-window-evidence.uploaded",
+            "maintenance_window_evidence_digest": "c" * 64,
+            "required_check_ids": readiness_payload["required_check_ids"],
+            "satisfied_check_ids": readiness_payload["required_check_ids"],
+            "not_applicable_check_ids": readiness_payload["not_applicable_check_ids"],
+            "created_at": response.json()["data"]["revalidated_at"],
+            "valid_until": response.json()["data"]["valid_until"],
+            "canonical_digest": "d" * 64,
+            "evidence_receipt_only": True,
+            "runtime_acceptable": False,
+            "approval_consumed": False,
+            "handoff_ready": False,
+            "handoff_artifact_issued": False,
+            "target_contacted": False,
+            "package_rebound": False,
+            "configuration_changed": False,
+            "execution_authorized": False,
+            "infrastructure_mutation_performed": False,
+        }
+        verify_without_csrf = client.post(
+            f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
+            f"{request.request_id}/evidence-receipts/verify",
+            json={
+                "schema_version": (
+                    "atlas.connector-upgrade-evidence-receipt-verification-input.v1"
+                ),
+                "receipt": uploaded_receipt,
+                ("acknowledged_digest_integrity_is_not_authenticity_or_execution_authority"): True,
+            },
+        )
+        authority_bearing_receipt = {**uploaded_receipt, "runtime_acceptable": True}
+        verify_authority_response = client.post(
+            f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
+            f"{request.request_id}/evidence-receipts/verify",
+            headers={"X-CSRF-Token": login_response.headers["X-CSRF-Token"]},
+            json={
+                "schema_version": (
+                    "atlas.connector-upgrade-evidence-receipt-verification-input.v1"
+                ),
+                "receipt": authority_bearing_receipt,
+                ("acknowledged_digest_integrity_is_not_authenticity_or_execution_authority"): True,
             },
         )
         draft_response = client.post(
@@ -1220,6 +1357,8 @@ def test_upgrade_approval_revalidation_api_is_no_store_and_hides_custody_metadat
     assert receipt_without_csrf.status_code == 403, receipt_without_csrf.text
     assert blocked_receipt_response.status_code == 409, blocked_receipt_response.text
     assert blocked_receipt_response.json()["code"].endswith("readiness_not_current")
+    assert verify_without_csrf.status_code == 403, verify_without_csrf.text
+    assert verify_authority_response.status_code == 422, verify_authority_response.text
     assert draft_response.status_code == 201, draft_response.text
     assert draft_read_response.status_code == 200, draft_read_response.text
     assert response.headers["Cache-Control"] == "no-store"
