@@ -13,6 +13,7 @@ from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeEvidenceSignature,
     ConnectorUpgradeEvidenceSigningKey,
     ConnectorUpgradeEvidenceSigningKeyState,
+    ConnectorUpgradeEvidenceSigningProviderTrust,
 )
 
 
@@ -31,6 +32,25 @@ class NonProductionHmacUpgradeEvidenceAuthenticityProvider:
         self._key = key
         self._key_material = key_material
         self._clock = clock or (lambda: datetime.now(UTC))
+
+    async def trust_inventory(
+        self, *, organization_id: str, environment_id: str
+    ) -> ConnectorUpgradeEvidenceSigningProviderTrust:
+        if (
+            self._key.organization_id != organization_id
+            or self._key.environment_id != environment_id
+        ):
+            raise ConnectorUpgradeEvidenceAuthenticityError(
+                "connector_upgrade_evidence_signing_key_scope_invalid"
+            )
+        return ConnectorUpgradeEvidenceSigningProviderTrust(
+            provider_class="provider.nonproduction-hmac",
+            organization_id=organization_id,
+            environment_id=environment_id,
+            provider_available=True,
+            production_approved=False,
+            keys=(self._key,),
+        )
 
     async def active_key(
         self, *, organization_id: str, environment_id: str
@@ -124,6 +144,18 @@ class NonProductionHmacUpgradeEvidenceAuthenticityProvider:
 
 
 class UnavailableUpgradeEvidenceAuthenticityProvider:
+    async def trust_inventory(
+        self, *, organization_id: str, environment_id: str
+    ) -> ConnectorUpgradeEvidenceSigningProviderTrust:
+        return ConnectorUpgradeEvidenceSigningProviderTrust(
+            provider_class="provider.unavailable",
+            organization_id=organization_id,
+            environment_id=environment_id,
+            provider_available=False,
+            production_approved=False,
+            keys=(),
+        )
+
     async def active_key(
         self, *, organization_id: str, environment_id: str
     ) -> ConnectorUpgradeEvidenceSigningKey:

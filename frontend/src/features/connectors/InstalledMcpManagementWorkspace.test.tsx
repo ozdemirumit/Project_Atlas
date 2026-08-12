@@ -17,6 +17,7 @@ import {
   decideConnectorUpgradeApproval,
   getConnectorUpgradeApprovalRecord,
   getConnectorUpgradeHandoffReadiness,
+  getConnectorUpgradeEvidenceSigningKeyTrustInventory,
   getLatestConnectorUpgradeChangeContextDraft,
   getLatestConnectorUpgradeApprovalRevalidation,
   getConnectorUpgradePlan,
@@ -31,6 +32,7 @@ import {
   type ConnectorUpgradeChangeContextDraft,
   type ConnectorUpgradeEvidenceReceipt,
   type ConnectorUpgradeEvidenceReceiptVerification,
+  type ConnectorUpgradeEvidenceSigningKeyTrustInventory,
   type ConnectorUpgradeSignedEvidenceReceipt,
   type ConnectorUpgradeSignedEvidenceReceiptVerification,
   type ConnectorUpgradePlan,
@@ -55,6 +57,36 @@ const policy: ConnectorInstanceCreationPolicy = {
   maximum_display_name_length: 120,
   expires_at: "2030-01-01T00:00:00Z",
   canonical_digest: "f".repeat(64),
+};
+
+const signingKeyTrustInventory: ConnectorUpgradeEvidenceSigningKeyTrustInventory = {
+  schema_version: "atlas.connector-upgrade-signing-key-trust-inventory.v1",
+  organization_id: installation.organization_id,
+  environment_id: installation.environment_id,
+  provider_class: "provider.nonproduction-hmac",
+  provider_state: "available",
+  generated_at: "2026-08-12T12:00:00Z",
+  keys: [{
+    key_id: "key.connector-upgrade-evidence.test",
+    key_version: "version.1",
+    signer_profile_id: "signer-profile.nonproduction-hmac",
+    signer_workload_id: "workload.connector-upgrade-evidence-signer",
+    algorithm: "algorithm.hmac-sha256-nonproduction",
+    configured_state: "active",
+    effective_state: "active",
+    not_before: "2026-08-01T00:00:00Z",
+    expires_at: "2030-01-01T00:00:00Z",
+    signing_eligible: true,
+    verification_trusted: true,
+    reason_codes: ["connector.upgrade.signing-key-trust.active"],
+  }],
+  canonical_digest: "0".repeat(64),
+  provider_available: true,
+  production_approved: false,
+  key_management_authorized: false,
+  signing_authorized: false,
+  execution_authorized: false,
+  infrastructure_mutation_performed: false,
 };
 
 const upgradeReadiness: ConnectorUpgradeReadiness = {
@@ -550,6 +582,7 @@ vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
     decideConnectorUpgradeApproval: vi.fn(),
     getConnectorUpgradeApprovalRecord: vi.fn(),
     getConnectorUpgradeHandoffReadiness: vi.fn(),
+    getConnectorUpgradeEvidenceSigningKeyTrustInventory: vi.fn(),
     getLatestConnectorUpgradeChangeContextDraft: vi.fn(),
     createConnectorUpgradeChangeContextDraft: vi.fn(),
     createConnectorUpgradeEvidenceReceipt: vi.fn(),
@@ -585,6 +618,9 @@ beforeEach(() => {
   vi.mocked(decideConnectorUpgradeApproval).mockResolvedValue(approvedUpgradeApproval);
   vi.mocked(getLatestConnectorUpgradeApprovalRevalidation).mockResolvedValue(null);
   vi.mocked(getConnectorUpgradeHandoffReadiness).mockResolvedValue(handoffReadiness);
+  vi.mocked(getConnectorUpgradeEvidenceSigningKeyTrustInventory).mockResolvedValue(
+    signingKeyTrustInventory,
+  );
   vi.mocked(getLatestConnectorUpgradeChangeContextDraft).mockResolvedValue(null);
   vi.mocked(createConnectorUpgradeChangeContextDraft).mockResolvedValue(changeContextDraft);
   vi.mocked(createConnectorUpgradeEvidenceReceipt).mockResolvedValue(evidenceReceipt);
@@ -616,11 +652,16 @@ describe("InstalledMcpManagementWorkspace", () => {
     renderWorkspace();
 
     expect(await screen.findByRole("heading", { name: "Installed MCPs" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Signing trust" })).toBeVisible();
+    expect(screen.getByText("key.connector-upgrade-evidence.test")).toBeVisible();
+    expect(screen.getByText("Verification trusted")).toBeVisible();
+    expect(screen.getByText(/No key management or signing authority/i)).toBeVisible();
     expect(await screen.findByText("Storage East")).toBeVisible();
     expect(screen.getByRole("button", { name: "Add MCP" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Retire Storage East" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Review update for Storage East" })).toBeVisible();
     expect(screen.queryByRole("button", { name: /delete/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /rotate|revoke|disable|export key/i })).toBeNull();
   });
 
   it("shows evidence-based upgrade readiness without exposing an update action", async () => {

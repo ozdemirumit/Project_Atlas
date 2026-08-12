@@ -6,6 +6,7 @@ from typing import Protocol
 from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeEvidenceSignature,
     ConnectorUpgradeEvidenceSigningKey,
+    ConnectorUpgradeEvidenceSigningProviderTrust,
 )
 
 
@@ -16,6 +17,10 @@ class ConnectorUpgradeEvidenceAuthenticityError(RuntimeError):
 
 
 class ConnectorUpgradeEvidenceAuthenticityProvider(Protocol):
+    async def trust_inventory(
+        self, *, organization_id: str, environment_id: str
+    ) -> ConnectorUpgradeEvidenceSigningProviderTrust: ...
+
     async def active_key(
         self, *, organization_id: str, environment_id: str
     ) -> ConnectorUpgradeEvidenceSigningKey: ...

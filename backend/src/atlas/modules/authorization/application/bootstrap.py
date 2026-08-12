@@ -156,6 +156,9 @@ CONNECTOR_UPGRADE_SIGNED_EVIDENCE_RECEIPT_CREATE = (
 CONNECTOR_UPGRADE_SIGNED_EVIDENCE_RECEIPT_VERIFY = (
     "connectors.upgrade-signed-evidence-receipts.verify"
 )
+CONNECTOR_UPGRADE_SIGNING_KEY_TRUST_INVENTORY_READ = (
+    "connectors.upgrade-signing-key-trust-inventory.read"
+)
 CONNECTOR_UPGRADE_CHANGE_CONTEXT_CREATE = "connectors.upgrade-change-context-drafts.create"
 CONNECTOR_UPGRADE_CHANGE_CONTEXT_READ = "connectors.upgrade-change-context-drafts.read"
 CONNECTOR_TARGET_CONFIGURATION_CREATE = "connectors.target-configuration-bindings.create"
@@ -2125,6 +2128,10 @@ def build_development_authorization_service(
             description="Verify one signed connector upgrade evidence receipt.",
         ),
         PermissionDefinition(
+            permission_id=CONNECTOR_UPGRADE_SIGNING_KEY_TRUST_INVENTORY_READ,
+            description="Read scoped connector upgrade signing-key trust metadata.",
+        ),
+        PermissionDefinition(
             permission_id=CONNECTOR_UPGRADE_CHANGE_CONTEXT_CREATE,
             description="Create one connector upgrade ITSM/change-context draft without dispatch.",
         ),
@@ -2644,6 +2651,7 @@ def build_development_authorization_service(
                 CONNECTOR_UPGRADE_EVIDENCE_RECEIPT_VERIFY,
                 CONNECTOR_UPGRADE_SIGNED_EVIDENCE_RECEIPT_CREATE,
                 CONNECTOR_UPGRADE_SIGNED_EVIDENCE_RECEIPT_VERIFY,
+                CONNECTOR_UPGRADE_SIGNING_KEY_TRUST_INVENTORY_READ,
                 CONNECTOR_UPGRADE_CHANGE_CONTEXT_CREATE,
                 CONNECTOR_UPGRADE_CHANGE_CONTEXT_READ,
                 CONNECTOR_TARGET_CONFIGURATION_CREATE,

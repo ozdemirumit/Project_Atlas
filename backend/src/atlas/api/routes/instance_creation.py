@@ -32,6 +32,8 @@ from atlas.api.instance_creation_schemas import (
     ConnectorUpgradeEvidenceReceiptVerificationData,
     ConnectorUpgradeEvidenceReceiptVerificationInput,
     ConnectorUpgradeEvidenceReceiptVerificationResponse,
+    ConnectorUpgradeEvidenceSigningKeyTrustInventoryData,
+    ConnectorUpgradeEvidenceSigningKeyTrustInventoryResponse,
     ConnectorUpgradeHandoffReadinessData,
     ConnectorUpgradeHandoffReadinessResponse,
     ConnectorUpgradePlanData,
@@ -62,7 +64,9 @@ from atlas.api.security import (
     authorize_connector_upgrade_handoff_readiness_read,
     authorize_connector_upgrade_signed_evidence_receipt_create,
     authorize_connector_upgrade_signed_evidence_receipt_verify,
+    authorize_connector_upgrade_signing_key_trust_inventory_read,
     browser_session_subject,
+    connector_signing_trust_read_subject,
 )
 from atlas.modules.authorization.domain.models import AuthorizationDecision
 from atlas.modules.connectors.application.instance_creation import (
@@ -217,6 +221,36 @@ async def list_connector_instance_creation_policies(
     response.headers["Cache-Control"] = "no-store"
     return ConnectorInstanceCreationPolicyListResponse(
         data=tuple(ConnectorInstanceCreationPolicyData.from_domain(item) for item in policies),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get(
+    "/upgrade-evidence-signing-key-trust",
+    response_model=ConnectorUpgradeEvidenceSigningKeyTrustInventoryResponse,
+)
+async def get_connector_upgrade_signing_key_trust_inventory(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(connector_signing_trust_read_subject)],
+    _decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_connector_upgrade_signing_key_trust_inventory_read),
+    ],
+) -> ConnectorUpgradeEvidenceSigningKeyTrustInventoryResponse:
+    service: ConnectorUpgradeApprovalService = request.app.state.connector_upgrade_approval_service
+    try:
+        inventory = await service.signing_key_trust_inventory(
+            actor=subject,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorUpgradeApprovalError as error:
+        _raise_upgrade_approval(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorUpgradeEvidenceSigningKeyTrustInventoryResponse(
+        data=ConnectorUpgradeEvidenceSigningKeyTrustInventoryData.from_domain(inventory),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),

@@ -124,6 +124,7 @@ from atlas.modules.authorization.application.bootstrap import (
     CONNECTOR_UPGRADE_HANDOFF_READINESS_READ,
     CONNECTOR_UPGRADE_SIGNED_EVIDENCE_RECEIPT_CREATE,
     CONNECTOR_UPGRADE_SIGNED_EVIDENCE_RECEIPT_VERIFY,
+    CONNECTOR_UPGRADE_SIGNING_KEY_TRUST_INVENTORY_READ,
     DEPLOYMENT_CONFIGURATION_PREVIEW,
     GRAPH_STORAGE_IMPACT_READ,
     HEALTH_CHECK_OVERVIEW_READ,
@@ -480,6 +481,30 @@ async def inventory_device_mutation_subject(
         code="browser_session_required",
         title="Browser session required",
         detail="Use a CSRF-protected browser session for inventory lifecycle management.",
+    )
+
+
+async def connector_signing_trust_read_subject(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthenticatedSubject:
+    if (
+        getattr(request.state, "authenticated_credential_kind", None)
+        is CredentialKind.BROWSER_SESSION
+    ):
+        return subject
+    settings = request.app.state.settings
+    if (
+        settings.environment == "development"
+        and settings.development_identity_enabled
+        and subject.authentication_method is AuthenticationMethod.DEVELOPMENT
+    ):
+        return subject
+    raise AtlasError(
+        status=403,
+        code="browser_session_required",
+        title="Browser session required",
+        detail="Use a browser session to read connector signing trust metadata.",
     )
 
 
@@ -3488,6 +3513,18 @@ async def authorize_connector_upgrade_signed_evidence_receipt_verify(
         subject,
         permission_id=CONNECTOR_UPGRADE_SIGNED_EVIDENCE_RECEIPT_VERIFY,
         capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_connector_upgrade_signing_key_trust_inventory_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(connector_signing_trust_read_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_instance(
+        request,
+        subject,
+        permission_id=CONNECTOR_UPGRADE_SIGNING_KEY_TRUST_INVENTORY_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
     )
 
 

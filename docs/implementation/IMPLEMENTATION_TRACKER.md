@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-160 |
 | Title | Connector upgrade signing-key trust inventory foundation |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/mcp-upgrade-signing-key-inventory` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110, ADR-111, ADR-112, ADR-113, ADR-114, ADR-115 |
 | Last Updated | 2026-08-12 |
-| Next Action | Define ADR-116 and implement exact-scope, read-only signing-key trust inventory |
+| Next Action | Publish the implementation PR, pass exact-head CI, merge and verify merged-main CI |
 
 ### ATLAS-IMP-160 Scope Rationale
 
@@ -51,11 +51,25 @@
 
 ### ATLAS-IMP-160 Validation Evidence
 
-- Pending.
+- Backend formatting and lint passed; strict `mypy` passed across 1,086 source files. Focused
+  connector-upgrade/API tests passed with 18 tests after the final development-session boundary
+  correction.
+- The complete backend regression suite passed with 980 tests and three expected Windows symlink
+  skips before the final narrow security dependency correction; Alembic reports the single
+  `20260812_0100` head. Exact-head CI will repeat the complete suite after that correction.
+- Frontend typecheck and zero-warning lint passed. The focused API/workspace suite passed 15 tests;
+  the complete frontend suite passed 221 tests across 88 files and the production Vite build passed.
+- Live API validation returned login `201`, trust inventory `200` and `Cache-Control: no-store`.
+  The response exposed one active non-production key and kept key-management, signing, execution
+  and infrastructure-mutation authority false.
+- Live browser validation at 1440x1000 and 390x844 showed the read-only trust panel without body,
+  panel or key-row horizontal overflow, without key lifecycle controls and without console errors.
 
 ### ATLAS-IMP-160 Delivery Evidence
 
-- Pending.
+- ADR-116 records the provider-neutral, metadata-only trust inventory, C1 authorization, required
+  audit, production browser-session requirement and development-only local UI exception.
+- Pull request and CI evidence pending publication.
 
 ### ATLAS-IMP-159 Scope Rationale
 

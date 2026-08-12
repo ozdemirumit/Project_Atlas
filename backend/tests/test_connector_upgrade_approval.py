@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from test_browser_sessions import BasicTestIdentityProvider, login, settings
 from test_connector_upgrade_readiness import UpgradePackageSource, upgrade_package
 from test_instance_creation import create_instance, instance_fixture, instance_operator
-from test_package_acquisition import CollectingAuditSink
+from test_package_acquisition import CollectingAuditSink, FailingAuditSink
 from test_target_configuration import bind_target, target_configuration_fixture
 
 from atlas.api.app import create_app
@@ -31,6 +31,7 @@ from atlas.modules.connectors.adapters.upgrade_approval_postgres import (
 )
 from atlas.modules.connectors.adapters.upgrade_evidence_authenticity_memory import (
     NonProductionHmacUpgradeEvidenceAuthenticityProvider,
+    UnavailableUpgradeEvidenceAuthenticityProvider,
 )
 from atlas.modules.connectors.application.instance_creation import (
     ConnectorInstanceCreationService,
@@ -44,6 +45,9 @@ from atlas.modules.connectors.application.upgrade_approval import (
 )
 from atlas.modules.connectors.application.upgrade_approval_ports import (
     ConnectorUpgradeApprovalError,
+)
+from atlas.modules.connectors.application.upgrade_evidence_authenticity_ports import (
+    ConnectorUpgradeEvidenceAuthenticityError,
 )
 from atlas.modules.connectors.application.upgrade_readiness import (
     ConnectorUpgradeReadinessService,
@@ -63,8 +67,11 @@ from atlas.modules.connectors.domain.upgrade_approval import (
 from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeEvidenceAuthenticityState,
     ConnectorUpgradeEvidenceSigningKey,
+    ConnectorUpgradeEvidenceSigningKeyEffectiveState,
     ConnectorUpgradeEvidenceSigningKeyState,
+    ConnectorUpgradeEvidenceSigningKeyTrust,
 )
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticationMethod
 
 
 async def approval_fixture(
@@ -159,6 +166,132 @@ async def approval_fixture(
         (instance, candidate_receipt),
         audit,
     )
+
+
+@pytest.mark.asyncio
+async def test_signing_key_trust_inventory_is_scoped_audited_and_non_authoritative() -> None:
+    service, _, _, _, _, _, sources, audit = await approval_fixture()
+    instance, _ = sources
+    actor = replace(
+        instance_operator("subject.connector-upgrade-trust-auditor"),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    inventory = await service.signing_key_trust_inventory(
+        actor=actor,
+        correlation_id="correlation.connector-upgrade-signing-key-trust",
+    )
+
+    assert inventory.organization_id == instance.organization_id
+    assert inventory.environment_id == instance.environment_id
+    assert inventory.provider_class == "provider.nonproduction-hmac"
+    assert inventory.provider_available and not inventory.production_approved
+    assert len(inventory.keys) == 1
+    key = inventory.keys[0]
+    assert key.effective_state is ConnectorUpgradeEvidenceSigningKeyEffectiveState.ACTIVE
+    assert key.signing_eligible and key.verification_trusted
+    assert not inventory.key_management_authorized and not inventory.signing_authorized
+    assert not inventory.execution_authorized and not inventory.infrastructure_mutation_performed
+    assert audit.records[-1].result_code == "connector_upgrade_signing_provider_available"
+    assert audit.records[-1].target_metadata == (
+        ("provider_class", "provider.nonproduction-hmac"),
+        ("key_count", "1"),
+        ("key_management_authorized", "false"),
+        ("execution_authorized", "false"),
+    )
+
+
+@pytest.mark.asyncio
+async def test_signing_key_trust_inventory_fails_closed_for_scope_provider_and_audit() -> None:
+    service, _, _, _, _, _, sources, _ = await approval_fixture()
+    instance, _ = sources
+    actor = instance_operator("subject.connector-upgrade-trust-fail-closed")
+    provider = service._evidence_authenticity_provider
+    assert provider is not None
+    with pytest.raises(
+        ConnectorUpgradeEvidenceAuthenticityError,
+        match="connector_upgrade_evidence_signing_key_scope_invalid",
+    ):
+        await provider.trust_inventory(
+            organization_id="organization.foreign",
+            environment_id=instance.environment_id,
+        )
+
+    service._evidence_authenticity_provider = UnavailableUpgradeEvidenceAuthenticityProvider()
+    unavailable = await service.signing_key_trust_inventory(
+        actor=actor,
+        correlation_id="correlation.connector-upgrade-signing-key-trust-unavailable",
+    )
+    assert unavailable.provider_state == "unavailable"
+    assert not unavailable.provider_available and not unavailable.production_approved
+    assert unavailable.keys == ()
+
+    service._audit_sink = FailingAuditSink()
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        await service.signing_key_trust_inventory(
+            actor=actor,
+            correlation_id="correlation.connector-upgrade-signing-key-trust-audit-failed",
+        )
+
+
+def test_signing_key_trust_effective_state_precedence_is_deterministic() -> None:
+    now = datetime(2026, 8, 12, 12, 0, tzinfo=instance_operator().authenticated_at.tzinfo)
+    base = ConnectorUpgradeEvidenceSigningKey(
+        key_id="key.connector-upgrade-evidence.state-test",
+        key_version="version.1",
+        signer_profile_id="signer-profile.nonproduction-hmac",
+        signer_workload_id="workload.connector-upgrade-evidence-signer",
+        algorithm="algorithm.hmac-sha256-nonproduction",
+        organization_id="organization.development",
+        environment_id="environment.development",
+        state=ConnectorUpgradeEvidenceSigningKeyState.ACTIVE,
+        not_before=now - timedelta(hours=1),
+        expires_at=now + timedelta(hours=1),
+    )
+    cases = (
+        (base, ConnectorUpgradeEvidenceSigningKeyEffectiveState.ACTIVE),
+        (
+            replace(base, not_before=now + timedelta(hours=1), expires_at=now + timedelta(hours=2)),
+            ConnectorUpgradeEvidenceSigningKeyEffectiveState.NOT_YET_VALID,
+        ),
+        (
+            replace(base, not_before=now - timedelta(hours=2), expires_at=now),
+            ConnectorUpgradeEvidenceSigningKeyEffectiveState.EXPIRED,
+        ),
+        (
+            replace(base, state=ConnectorUpgradeEvidenceSigningKeyState.DISABLED),
+            ConnectorUpgradeEvidenceSigningKeyEffectiveState.DISABLED,
+        ),
+        (
+            replace(base, state=ConnectorUpgradeEvidenceSigningKeyState.REVOKED),
+            ConnectorUpgradeEvidenceSigningKeyEffectiveState.REVOKED,
+        ),
+    )
+    for source, expected in cases:
+        trust = ConnectorUpgradeApprovalService._signing_key_trust(key=source, now=now)
+        assert trust.effective_state is expected
+        assert trust.signing_eligible is (
+            expected is ConnectorUpgradeEvidenceSigningKeyEffectiveState.ACTIVE
+        )
+        assert trust.verification_trusted is trust.signing_eligible
+
+    historical_verification = ConnectorUpgradeEvidenceSigningKeyTrust(
+        key_id=base.key_id,
+        key_version=base.key_version,
+        signer_profile_id=base.signer_profile_id,
+        signer_workload_id=base.signer_workload_id,
+        algorithm=base.algorithm,
+        configured_state=base.state,
+        effective_state=ConnectorUpgradeEvidenceSigningKeyEffectiveState.EXPIRED,
+        not_before=now - timedelta(hours=2),
+        expires_at=now - timedelta(hours=1),
+        signing_eligible=False,
+        verification_trusted=True,
+        reason_codes=("connector.upgrade.signing-key-trust.expired",),
+    )
+    assert not historical_verification.signing_eligible
+    assert historical_verification.verification_trusted
 
 
 @pytest.mark.asyncio
@@ -1299,6 +1432,9 @@ def test_upgrade_approval_revalidation_api_is_no_store_and_hides_custody_metadat
     with TestClient(app) as client:
         app.state.connector_upgrade_readiness_service = upgrade_service
         login_response = login(client)
+        trust_response = client.get(
+            "/api/v1/connectors/instances/upgrade-evidence-signing-key-trust"
+        )
         response = client.post(
             f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
             f"{request.request_id}/revalidations",
@@ -1489,6 +1625,18 @@ def test_upgrade_approval_revalidation_api_is_no_store_and_hides_custody_metadat
             f"{request.request_id}/change-context-drafts/latest"
         )
 
+    assert trust_response.status_code == 200, trust_response.text
+    assert trust_response.headers["Cache-Control"] == "no-store"
+    trust_data = trust_response.json()["data"]
+    assert trust_data["provider_class"] == "provider.nonproduction-hmac"
+    assert trust_data["provider_state"] == "available"
+    assert trust_data["production_approved"] is False
+    assert trust_data["keys"][0]["effective_state"] == "active"
+    assert trust_data["keys"][0]["signing_eligible"] is True
+    assert trust_data["keys"][0]["verification_trusted"] is True
+    trust_rendered = trust_response.text.lower()
+    for hidden in ("private_key", "key_material", "secret", "credential", "token", "endpoint"):
+        assert hidden not in trust_rendered
     assert response.status_code == 201, response.text
     assert read_response.status_code == 200, read_response.text
     assert readiness_response.status_code == 200, readiness_response.text
