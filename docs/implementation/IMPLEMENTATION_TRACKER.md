@@ -4,14 +4,53 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-161 |
-| Title | Connector upgrade signing-provider conformance assessment foundation |
-| Status | Review |
-| Branch | `agent/mcp-signing-provider-conformance` |
-| Pull Request | [#173](https://github.com/ozdemirumit/Project_Atlas/pull/173) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-114, ADR-115, ADR-116, ADR-117 |
+| Task ID | ATLAS-IMP-162 |
+| Title | Connector upgrade production signing-provider onboarding readiness foundation |
+| Status | Planning |
+| Branch | `main` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-020, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-114, ADR-115, ADR-116, ADR-117 |
 | Last Updated | 2026-08-12 |
-| Next Action | Pass exact-head CI, merge PR #173 and verify merged-main CI |
+| Next Action | Record ADR-118 and implement the provider-neutral onboarding-readiness evidence contract |
+
+### ATLAS-IMP-162 Scope Rationale
+
+- IMP-161 proves that one configured adapter can complete the bounded sign-and-verify diagnostic, but
+  conformance alone does not establish that a provider is ready or approved for production onboarding.
+- Concrete KMS/HSM selection, endpoints, workload identities, credentials, keys and lifecycle policy
+  require deployment-owner and security-owner input that is not available in this workspace.
+- The next safe slice is therefore an immutable readiness dossier assembled from current trust and
+  conformance evidence plus explicit deployment requirements. It must remain blocked until every
+  production requirement has authoritative evidence and must not configure or contact a provider.
+
+### ATLAS-IMP-162 Acceptance Criteria
+
+- A versioned exact-scope readiness dossier binds the current trust-inventory digest, unexpired
+  conformance assessment, provider class, algorithm, key reference, policy version and evidence time.
+- Readiness requirements explicitly cover approved provider class, production workload identity,
+  secret-reference ownership, network boundary, key lifecycle and revocation, audit routing,
+  availability/recovery and named security/deployment approval evidence.
+- Missing, stale, non-production, scope-mismatched or policy-ineligible evidence fails closed with
+  stable requirement states and reason codes; callers cannot submit endpoints, credentials, key
+  material, signatures, provider parameters or self-asserted approval facts.
+- Authenticated exact-scope C1 read APIs use dedicated default-deny RBAC, no-store responses,
+  non-disclosing errors and required attributable audit. The result is derived from authoritative
+  state and grants no signing, key-management, provider-configuration or execution authority.
+- The Connector inventory UI shows requirement-by-requirement readiness and the deployment inputs
+  still needed, without add-provider, credential, key, approve, sign, install, apply or execute
+  controls.
+- ADR, focused and full backend/frontend gates, one Alembic head, production build and live responsive
+  validation pass before delivery.
+
+### ATLAS-IMP-162 Initial Evidence
+
+- IMP-161 merged through PR #173 as `25b6c672a03b0e5d47251ab7c39abb8f72586efc` and its exact
+  merged commit passed `main` CI run `31611508904` with backend in 6m54s and frontend in 4m43s.
+- ADR-117 explicitly reserves vendor onboarding, key lifecycle management and production approval for
+  later decisions while providing short-lived adapter-conformance evidence suitable as one input.
+- This workspace contains no approved production KMS/HSM product or deployment credential. The
+  readiness result must therefore remain blocked and explain the required external evidence without
+  inventing production configuration.
 
 ### ATLAS-IMP-161 Scope Rationale
 
@@ -71,8 +110,11 @@
 
 - ADR-117 records the provider-neutral diagnostic contract, adapter-contained raw signature,
   short-lived evidence, C2/C1 authorization, required audit and production fail-closed boundary.
-- Source commit `cc27863` is published in draft PR
-  [#173](https://github.com/ozdemirumit/Project_Atlas/pull/173); exact-head CI is in progress.
+- Source commit `cc27863` and tracker-review commit `305b6d7` passed exact-head CI run `31610771868`
+  with backend in 7m21s and frontend in 4m36s.
+- PR [#173](https://github.com/ozdemirumit/Project_Atlas/pull/173) was squash-merged as
+  `25b6c672a03b0e5d47251ab7c39abb8f72586efc`; the exact merged commit independently passed `main`
+  CI run `31611508904` with backend in 6m54s and frontend in 4m43s.
 
 ### ATLAS-IMP-160 Scope Rationale
 
