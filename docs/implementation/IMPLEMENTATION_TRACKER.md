@@ -8,10 +8,10 @@
 | Title | Connector upgrade production signing-provider onboarding readiness foundation |
 | Status | Review |
 | Branch | `agent/mcp-signing-provider-onboarding-readiness` |
-| Pull Request | Not opened |
+| Pull Request | [#174](https://github.com/ozdemirumit/Project_Atlas/pull/174) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-020, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-114, ADR-115, ADR-116, ADR-117, ADR-118 |
 | Last Updated | 2026-08-12 |
-| Next Action | Publish the implementation branch, open a draft PR and pass exact-head CI |
+| Next Action | Pass exact-head CI, merge PR #174 and verify merged-main CI |
 
 ### ATLAS-IMP-162 Scope Rationale
 
@@ -71,6 +71,12 @@
   evidence boundary and the fail-closed state without page, panel or item horizontal overflow.
   No provider configuration, provider approval, key, signing or execution control was present, and
   browser logs contained no warning or error entries.
+
+### ATLAS-IMP-162 Delivery Evidence
+
+- Source commit `9da952d` is published in draft PR
+  [#174](https://github.com/ozdemirumit/Project_Atlas/pull/174); exact-head CI will include this
+  tracker update before merge review.
 
 ### ATLAS-IMP-161 Scope Rationale
 
