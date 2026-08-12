@@ -236,7 +236,7 @@ export type ConnectorUpgradeApprovalRevalidation = {
 
 export type ConnectorUpgradeHandoffReadiness = {
   assessment_id: string;
-  schema_version: "atlas.connector-upgrade-handoff-readiness.v3";
+  schema_version: "atlas.connector-upgrade-handoff-readiness.v4";
   source_record_id: string;
   source_record_version: number;
   instance_id: string;
@@ -257,6 +257,8 @@ export type ConnectorUpgradeHandoffReadiness = {
   applicability_policy_digest: string;
   audit_readiness_evidence_id: string | null;
   audit_readiness_evidence_digest: string | null;
+  itsm_change_evidence_id: string | null;
+  itsm_change_evidence_digest: string | null;
   required_check_ids: string[];
   satisfied_check_ids: string[];
   not_applicable_check_ids: string[];
@@ -268,6 +270,7 @@ export type ConnectorUpgradeHandoffReadiness = {
   approval_current: true;
   revalidation_current: true;
   audit_readiness_evidence_current: boolean;
+  itsm_change_evidence_current: boolean;
   handoff_ready: false;
   handoff_artifact_issued: false;
   approval_consumed: false;
@@ -598,8 +601,9 @@ export function isConnectorUpgradeHandoffReadiness(
         .replace(/-current$/, "")}-missing`))
     : null;
   const auditCheck = "connector.upgrade.handoff.audit-readiness-evidence-current";
+  const itsmCheck = "connector.upgrade.handoff.itsm-change-current";
   return (
-    item.schema_version === "atlas.connector-upgrade-handoff-readiness.v3" &&
+    item.schema_version === "atlas.connector-upgrade-handoff-readiness.v4" &&
     item.assessment_state === "blocked" &&
     [item.assessment_id, item.source_record_id, item.instance_id, item.connector_id, item.request_id,
       item.decision_id, item.revalidation_id, item.plan_id, item.organization_id, item.environment_id,
@@ -616,6 +620,13 @@ export function isConnectorUpgradeHandoffReadiness(
         item.audit_readiness_evidence_current === true)) &&
     satisfied !== null &&
     item.audit_readiness_evidence_current === satisfied.has(auditCheck) &&
+    ((item.itsm_change_evidence_id === null && item.itsm_change_evidence_digest === null &&
+      item.itsm_change_evidence_current === false) ||
+      (typeof item.itsm_change_evidence_id === "string" &&
+        typeof item.itsm_change_evidence_digest === "string" &&
+        DIGEST.test(item.itsm_change_evidence_digest) &&
+        item.itsm_change_evidence_current === true)) &&
+    item.itsm_change_evidence_current === satisfied.has(itsmCheck) &&
     requiredItems !== null && required !== null && required.size === requiredItems.length && required.size > 0 &&
     satisfiedItems !== null && satisfied !== null && satisfied.size === satisfiedItems.length && satisfied.size > 0 &&
     [...satisfied].every((checkId) => required.has(checkId)) &&

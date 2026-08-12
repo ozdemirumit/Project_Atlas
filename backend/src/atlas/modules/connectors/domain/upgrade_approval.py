@@ -358,6 +358,8 @@ class ConnectorUpgradeHandoffReadinessAssessment:
     applicability_policy_digest: str
     audit_readiness_evidence_id: str | None
     audit_readiness_evidence_digest: str | None
+    itsm_change_evidence_id: str | None
+    itsm_change_evidence_digest: str | None
     required_check_ids: tuple[str, ...]
     satisfied_check_ids: tuple[str, ...]
     not_applicable_check_ids: tuple[str, ...]
@@ -369,6 +371,7 @@ class ConnectorUpgradeHandoffReadinessAssessment:
     approval_current: bool = True
     revalidation_current: bool = True
     audit_readiness_evidence_current: bool = False
+    itsm_change_evidence_current: bool = False
     handoff_ready: bool = False
     handoff_artifact_issued: bool = False
     approval_consumed: bool = False
@@ -418,8 +421,19 @@ class ConnectorUpgradeHandoffReadinessAssessment:
             and _DIGEST.fullmatch(self.audit_readiness_evidence_digest) is None
         ):
             raise ValueError("Connector upgrade audit readiness evidence binding is invalid")
+        if self.itsm_change_evidence_id is not None:
+            validate_stable_identifier(
+                self.itsm_change_evidence_id,
+                "connector upgrade ITSM change evidence identifier",
+            )
+        if (self.itsm_change_evidence_id is None) != (self.itsm_change_evidence_digest is None) or (
+            self.itsm_change_evidence_digest is not None
+            and _DIGEST.fullmatch(self.itsm_change_evidence_digest) is None
+        ):
+            raise ValueError("Connector upgrade ITSM change evidence binding is invalid")
         missing_check_ids = set(self.required_check_ids).difference(self.satisfied_check_ids)
         audit_check_id = "connector.upgrade.handoff.audit-readiness-evidence-current"
+        itsm_check_id = "connector.upgrade.handoff.itsm-change-current"
         expected_blocker_ids = {
             "connector.upgrade.handoff.blocked."
             f"{item.removeprefix('connector.upgrade.handoff.').removesuffix('-current')}-missing"
@@ -462,6 +476,8 @@ class ConnectorUpgradeHandoffReadinessAssessment:
             or self.audit_readiness_evidence_current
             != (self.audit_readiness_evidence_id is not None)
             or self.audit_readiness_evidence_current != (audit_check_id in self.satisfied_check_ids)
+            or self.itsm_change_evidence_current != (self.itsm_change_evidence_id is not None)
+            or self.itsm_change_evidence_current != (itsm_check_id in self.satisfied_check_ids)
             or any(
                 (
                     self.handoff_ready,
@@ -549,6 +565,83 @@ class ConnectorUpgradeAuditReadinessEvidence:
             or self.infrastructure_mutation_performed
         ):
             raise ValueError("Connector upgrade audit readiness evidence is not authoritative")
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorUpgradeItsmChangeEvidence:
+    evidence_id: str
+    schema_version: str
+    organization_id: str
+    environment_id: str
+    request_id: str
+    request_digest: str
+    revalidation_id: str
+    revalidation_digest: str
+    plan_id: str
+    plan_digest: str
+    adapter_id: str
+    adapter_version: str
+    authoritative_instance_id: str
+    external_record_id: str
+    external_record_version: str
+    observed_at: datetime
+    valid_until: datetime
+    canonical_digest: str
+    adapter_validated: bool
+    authoritative_source: bool
+    record_accessible: bool
+    source_version_current: bool
+    exact_plan_binding_verified: bool
+    record_active: bool
+    conflict_free: bool
+    revocation_absent: bool
+    external_record_modified: bool = False
+    infrastructure_mutation_performed: bool = False
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.evidence_id,
+            self.schema_version,
+            self.organization_id,
+            self.environment_id,
+            self.request_id,
+            self.revalidation_id,
+            self.plan_id,
+            self.adapter_id,
+            self.adapter_version,
+            self.authoritative_instance_id,
+            self.external_record_id,
+            self.external_record_version,
+        ):
+            validate_stable_identifier(value, "connector upgrade ITSM change identifier")
+        for value in (
+            self.request_digest,
+            self.revalidation_digest,
+            self.plan_digest,
+            self.canonical_digest,
+        ):
+            if _DIGEST.fullmatch(value) is None:
+                raise ValueError("Connector upgrade ITSM change digest is invalid")
+        if (
+            self.observed_at.tzinfo is None
+            or self.valid_until.tzinfo is None
+            or self.valid_until <= self.observed_at
+            or not all(
+                (
+                    self.adapter_validated,
+                    self.authoritative_source,
+                    self.record_accessible,
+                    self.source_version_current,
+                    self.exact_plan_binding_verified,
+                    self.record_active,
+                    self.conflict_free,
+                    self.revocation_absent,
+                )
+            )
+            or self.external_record_modified
+            or self.infrastructure_mutation_performed
+        ):
+            raise ValueError("Connector upgrade ITSM change evidence is not authoritative")
 
 
 @dataclass(frozen=True, slots=True)

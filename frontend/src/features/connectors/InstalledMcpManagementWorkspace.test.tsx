@@ -282,7 +282,7 @@ const upgradeApprovalRevalidation: ConnectorUpgradeApprovalRevalidation = {
 
 const handoffReadiness: ConnectorUpgradeHandoffReadiness = {
   assessment_id: "connector-upgrade-handoff-readiness.test",
-  schema_version: "atlas.connector-upgrade-handoff-readiness.v3",
+  schema_version: "atlas.connector-upgrade-handoff-readiness.v4",
   source_record_id: instance.record_id,
   source_record_version: instance.version,
   instance_id: instance.instance_id,
@@ -303,11 +303,14 @@ const handoffReadiness: ConnectorUpgradeHandoffReadiness = {
   applicability_policy_digest: "6".repeat(64),
   audit_readiness_evidence_id: "connector-upgrade-audit-readiness-evidence.test",
   audit_readiness_evidence_digest: "7".repeat(64),
+  itsm_change_evidence_id: "connector-upgrade-itsm-change-evidence.test",
+  itsm_change_evidence_digest: "8".repeat(64),
   required_check_ids: [
     "connector.upgrade.handoff.approval-current",
     "connector.upgrade.handoff.itsm-change-current",
     "connector.upgrade.handoff.maintenance-window-current",
     "connector.upgrade.handoff.audit-readiness-evidence-current",
+    "connector.upgrade.handoff.itsm-change-current",
   ],
   satisfied_check_ids: [
     "connector.upgrade.handoff.approval-current",
@@ -319,7 +322,6 @@ const handoffReadiness: ConnectorUpgradeHandoffReadiness = {
     "connector.upgrade.handoff.runtime-health-evidence-current",
   ],
   blocker_ids: [
-    "connector.upgrade.handoff.blocked.itsm-change-missing",
     "connector.upgrade.handoff.blocked.maintenance-window-missing",
   ],
   assessed_at: "2026-08-12T00:41:00Z",
@@ -329,6 +331,7 @@ const handoffReadiness: ConnectorUpgradeHandoffReadiness = {
   approval_current: true,
   revalidation_current: true,
   audit_readiness_evidence_current: true,
+  itsm_change_evidence_current: true,
   handoff_ready: false,
   handoff_artifact_issued: false,
   approval_consumed: false,
@@ -530,9 +533,10 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(await screen.findByText("Handoff blocked")).toBeVisible();
     expect(screen.getByText(/No artifact was issued/i)).toBeVisible();
     expect(screen.getByText("Required evidence missing")).toBeVisible();
-    expect(screen.getByText(/itsm-change-missing/i)).toBeVisible();
+    expect(screen.getByText(/maintenance-window-missing/i)).toBeVisible();
     expect(screen.getByText("Satisfied checks")).toBeVisible();
     expect(screen.getByText(/Audit readiness evidence verified/i)).toBeVisible();
+    expect(screen.getByText(/Authoritative ITSM change evidence verified/i)).toBeVisible();
     expect(screen.getByText("Not applicable in this context")).toBeVisible();
     expect(screen.getByText(/target-binding-current/i)).toBeVisible();
     expect(screen.getByText(/Applicability policy v2026.08.12.1/i)).toBeVisible();

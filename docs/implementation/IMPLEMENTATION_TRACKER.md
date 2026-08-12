@@ -7,11 +7,11 @@
 | Task ID | ATLAS-IMP-155 |
 | Title | Connector upgrade authoritative ITSM change evidence |
 | Status | In Progress |
-| Branch | Pending |
+| Branch | `agent/mcp-upgrade-itsm-change-evidence` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110 |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110, ADR-111 |
 | Last Updated | 2026-08-12 |
-| Next Action | Define authoritative ITSM change evidence scope and ADR |
+| Next Action | Deliver exact implementation through pull-request and main CI |
 
 ### ATLAS-IMP-155 Scope Rationale
 
@@ -41,12 +41,33 @@
 
 - IMP-154 merged through PR #166 as `3e4316d4c8d782e8237408990232642be2eb1dbd`; exact-head PR CI
   run `31565224411` and exact-main push CI run `31565641656` both passed before IMP-155 begins.
+- Tracker closure `5e8e0c74ae0c0c5cf86e9079928bc8e47ec62cd3` passed main CI run
+  `31566094949`; backend completed in 7m36s and frontend in 4m31s.
 - ATLAS-036 explicitly states that a generic ticket state, comment, email or webhook alone is not
   approval and that ITSM unavailability preserves the pending state.
 
 ### ATLAS-IMP-155 Validation Evidence
 
-- Pending.
+- The v4 readiness assessment accepts only digest-valid, exact-scope ITSM evidence bound to the
+  current request, latest revalidation and immutable plan. The evidence identifies a validated
+  adapter, authoritative instance, external record and source version while asserting accessibility,
+  current version, active state, exact-plan binding, no conflict and no revocation.
+- Valid ITSM evidence satisfies only `connector.upgrade.handoff.itsm-change-current`. The
+  maintenance-window check remains blocked; handoff, artifact issuance, approval consumption,
+  target contact, package rebinding, configuration change, execution and infrastructure mutation
+  remain false. The default application source is empty and no vendor integration is fabricated.
+- Backend formatting and lint passed 1,083 files, mypy passed 1,083 source files, and the complete
+  backend suite passed 977 tests with three environment-specific Windows symlink skips. Alembic
+  remains at the single linear `20260812_0100` head because this inbound source contract adds no
+  storage.
+- Frontend ESLint and both TypeScript projects passed; all 217 tests in 88 files passed. The
+  production build completed with the existing advisory limited to the transitional
+  `OperationalApplication` chunk.
+- Live validation rendered verified audit and authoritative ITSM evidence with only the
+  maintenance-window blocker at 1,280 px and 390 px. Both widths had zero horizontal document
+  overflow, mobile scroll X remained zero, the dialog measured 390 x 844 px, no browser errors
+  occurred and no install, apply, execute or handoff control existed. The off-canvas mobile sidebar
+  was the only intentionally out-of-viewport element group.
 
 ### ATLAS-IMP-155 Delivery Evidence
 

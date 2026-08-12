@@ -428,6 +428,7 @@ function UpgradeApprovalRequestPanel({ plan, subjectId }: { plan: ConnectorUpgra
                       <p>Satisfied checks</p>
                       <ul>{handoffReadinessQuery.data.satisfied_check_ids.map((checkId) => <li key={checkId}>{checkId}</li>)}</ul>
                       {handoffReadinessQuery.data.audit_readiness_evidence_current && <p>Audit readiness evidence verified and bound to this exact revalidation.</p>}
+                      {handoffReadinessQuery.data.itsm_change_evidence_current && <p>Authoritative ITSM change evidence verified and bound to this exact plan.</p>}
                       {handoffReadinessQuery.data.not_applicable_check_ids.length > 0 && <><p>Not applicable in this context</p><ul>{handoffReadinessQuery.data.not_applicable_check_ids.map((checkId) => <li key={checkId}>{checkId}</li>)}</ul></>}
                       <small>Applicability policy {handoffReadinessQuery.data.applicability_policy_version}</small>
                     </div>

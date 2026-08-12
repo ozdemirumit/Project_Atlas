@@ -17,6 +17,7 @@ from atlas.modules.connectors.application.upgrade_approval_ports import (
     ConnectorUpgradeApprovalPolicySource,
     ConnectorUpgradeApprovalRepository,
     ConnectorUpgradeAuditReadinessSource,
+    ConnectorUpgradeItsmChangeEvidenceSource,
 )
 from atlas.modules.connectors.application.upgrade_readiness import (
     ConnectorUpgradeReadinessService,
@@ -32,6 +33,7 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeAuditReadinessEvidence,
     ConnectorUpgradeChangeContextDraft,
     ConnectorUpgradeHandoffReadinessAssessment,
+    ConnectorUpgradeItsmChangeEvidence,
 )
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
@@ -49,12 +51,13 @@ UPGRADE_APPROVAL_READ_PERMISSION = "connectors.upgrade-approval-requests.read"
 UPGRADE_APPROVAL_DECIDE_PERMISSION = "connectors.upgrade-approval-decisions.create"
 UPGRADE_APPROVAL_REVALIDATION_CREATE_PERMISSION = "connectors.upgrade-approval-revalidations.create"
 UPGRADE_APPROVAL_REVALIDATION_READ_PERMISSION = "connectors.upgrade-approval-revalidations.read"
-UPGRADE_HANDOFF_READINESS_SCHEMA = "atlas.connector-upgrade-handoff-readiness.v3"
+UPGRADE_HANDOFF_READINESS_SCHEMA = "atlas.connector-upgrade-handoff-readiness.v4"
 UPGRADE_HANDOFF_READINESS_READ_PERMISSION = "connectors.upgrade-handoff-readiness.read"
 UPGRADE_CHANGE_CONTEXT_SCHEMA = "atlas.connector-upgrade-change-context-draft.v1"
 UPGRADE_CHANGE_CONTEXT_CREATE_PERMISSION = "connectors.upgrade-change-context-drafts.create"
 UPGRADE_CHANGE_CONTEXT_READ_PERMISSION = "connectors.upgrade-change-context-drafts.read"
 UPGRADE_AUDIT_READINESS_EVIDENCE_SCHEMA = "atlas.connector-upgrade-audit-readiness-evidence.v1"
+UPGRADE_ITSM_CHANGE_EVIDENCE_SCHEMA = "atlas.connector-upgrade-itsm-change-evidence.v1"
 UPGRADE_HANDOFF_APPLICABILITY_POLICY_ID = "connector-upgrade-handoff-evidence-applicability.default"
 UPGRADE_HANDOFF_APPLICABILITY_POLICY_VERSION = "v2026.08.12.1"
 UPGRADE_HANDOFF_CURRENT_CHECK_IDS = (
@@ -75,6 +78,8 @@ UPGRADE_HANDOFF_CHANGE_CHECK_IDS = (
     "connector.upgrade.handoff.maintenance-window-current",
 )
 UPGRADE_HANDOFF_AUDIT_CHECK_ID = "connector.upgrade.handoff.audit-readiness-evidence-current"
+UPGRADE_HANDOFF_ITSM_CHECK_ID = "connector.upgrade.handoff.itsm-change-current"
+UPGRADE_HANDOFF_WINDOW_CHECK_ID = "connector.upgrade.handoff.maintenance-window-current"
 UPGRADE_APPROVAL_REVALIDATION_CHECK_IDS = (
     "connector.upgrade.revalidation.request-integrity-current",
     "connector.upgrade.revalidation.decision-integrity-current",
@@ -96,6 +101,7 @@ class ConnectorUpgradeApprovalService:
         audit_sink: AuditSink,
         environment_id: str,
         audit_readiness_source: ConnectorUpgradeAuditReadinessSource | None = None,
+        itsm_change_evidence_source: ConnectorUpgradeItsmChangeEvidenceSource | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
@@ -103,6 +109,7 @@ class ConnectorUpgradeApprovalService:
         self._upgrade_service = upgrade_service
         self._audit_sink = audit_sink
         self._audit_readiness_source = audit_readiness_source
+        self._itsm_change_evidence_source = itsm_change_evidence_source
         self._environment_id = environment_id
         self._clock = clock or (lambda: datetime.now(UTC))
         self._mutation_lock = asyncio.Lock()
@@ -689,6 +696,31 @@ class ConnectorUpgradeApprovalService:
             and audit_evidence.verified_at <= now < audit_evidence.valid_until
             else None
         )
+        itsm_evidence = (
+            await self._itsm_change_evidence_source.get_current(
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+                request_id=request.request_id,
+            )
+            if self._itsm_change_evidence_source is not None
+            else None
+        )
+        if itsm_evidence is not None:
+            self._verify_itsm_change_evidence(itsm_evidence)
+        current_itsm_evidence = (
+            itsm_evidence
+            if itsm_evidence is not None
+            and itsm_evidence.organization_id == actor.organization_id
+            and itsm_evidence.environment_id == self._environment_id
+            and itsm_evidence.request_id == request.request_id
+            and itsm_evidence.request_digest == request.canonical_digest
+            and itsm_evidence.revalidation_id == revalidation.revalidation_id
+            and itsm_evidence.revalidation_digest == revalidation.canonical_digest
+            and itsm_evidence.plan_id == plan.plan_id
+            and itsm_evidence.plan_digest == plan.canonical_digest
+            and itsm_evidence.observed_at <= now < itsm_evidence.valid_until
+            else None
+        )
         applicability_policy = {
             "policy_id": UPGRADE_HANDOFF_APPLICABILITY_POLICY_ID,
             "policy_version": UPGRADE_HANDOFF_APPLICABILITY_POLICY_VERSION,
@@ -710,11 +742,13 @@ class ConnectorUpgradeApprovalService:
         not_applicable_check_ids = contextual_not_applicable
         satisfied_check_ids = (
             *UPGRADE_HANDOFF_CURRENT_CHECK_IDS,
+            *((UPGRADE_HANDOFF_ITSM_CHECK_ID,) if current_itsm_evidence is not None else ()),
             *((UPGRADE_HANDOFF_AUDIT_CHECK_ID,) if current_audit_evidence is not None else ()),
         )
         missing_evidence_ids = (
             *contextual_required,
-            *UPGRADE_HANDOFF_CHANGE_CHECK_IDS,
+            *((UPGRADE_HANDOFF_ITSM_CHECK_ID,) if current_itsm_evidence is None else ()),
+            UPGRADE_HANDOFF_WINDOW_CHECK_ID,
             *((UPGRADE_HANDOFF_AUDIT_CHECK_ID,) if current_audit_evidence is None else ()),
         )
         blockers = tuple(
@@ -738,6 +772,12 @@ class ConnectorUpgradeApprovalService:
             ),
             "audit_readiness_evidence_digest": (
                 current_audit_evidence.canonical_digest if current_audit_evidence else None
+            ),
+            "itsm_change_evidence_id": (
+                current_itsm_evidence.evidence_id if current_itsm_evidence else None
+            ),
+            "itsm_change_evidence_digest": (
+                current_itsm_evidence.canonical_digest if current_itsm_evidence else None
             ),
             "required_check_ids": required_check_ids,
             "satisfied_check_ids": satisfied_check_ids,
@@ -772,6 +812,12 @@ class ConnectorUpgradeApprovalService:
             audit_readiness_evidence_digest=(
                 current_audit_evidence.canonical_digest if current_audit_evidence else None
             ),
+            itsm_change_evidence_id=(
+                current_itsm_evidence.evidence_id if current_itsm_evidence else None
+            ),
+            itsm_change_evidence_digest=(
+                current_itsm_evidence.canonical_digest if current_itsm_evidence else None
+            ),
             required_check_ids=required_check_ids,
             satisfied_check_ids=cast(tuple[str, ...], payload["satisfied_check_ids"]),
             not_applicable_check_ids=not_applicable_check_ids,
@@ -786,9 +832,15 @@ class ConnectorUpgradeApprovalService:
                     if current_audit_evidence is not None
                     else ()
                 ),
+                *(
+                    (current_itsm_evidence.valid_until,)
+                    if current_itsm_evidence is not None
+                    else ()
+                ),
             ),
             canonical_digest=digest,
             audit_readiness_evidence_current=current_audit_evidence is not None,
+            itsm_change_evidence_current=current_itsm_evidence is not None,
         )
         await self._audit_revalidation(
             actor=actor,
@@ -838,6 +890,46 @@ class ConnectorUpgradeApprovalService:
         ):
             raise ConnectorUpgradeApprovalError(
                 "connector_upgrade_audit_readiness_evidence_integrity_invalid"
+            )
+
+    @classmethod
+    def _verify_itsm_change_evidence(cls, evidence: ConnectorUpgradeItsmChangeEvidence) -> None:
+        payload = {
+            "schema_version": evidence.schema_version,
+            "organization_id": evidence.organization_id,
+            "environment_id": evidence.environment_id,
+            "request_id": evidence.request_id,
+            "request_digest": evidence.request_digest,
+            "revalidation_id": evidence.revalidation_id,
+            "revalidation_digest": evidence.revalidation_digest,
+            "plan_id": evidence.plan_id,
+            "plan_digest": evidence.plan_digest,
+            "adapter_id": evidence.adapter_id,
+            "adapter_version": evidence.adapter_version,
+            "authoritative_instance_id": evidence.authoritative_instance_id,
+            "external_record_id": evidence.external_record_id,
+            "external_record_version": evidence.external_record_version,
+            "observed_at": evidence.observed_at.isoformat(),
+            "valid_until": evidence.valid_until.isoformat(),
+            "adapter_validated": evidence.adapter_validated,
+            "authoritative_source": evidence.authoritative_source,
+            "record_accessible": evidence.record_accessible,
+            "source_version_current": evidence.source_version_current,
+            "exact_plan_binding_verified": evidence.exact_plan_binding_verified,
+            "record_active": evidence.record_active,
+            "conflict_free": evidence.conflict_free,
+            "revocation_absent": evidence.revocation_absent,
+            "external_record_modified": False,
+            "infrastructure_mutation_performed": False,
+        }
+        digest = cls._digest(payload)
+        if (
+            evidence.schema_version != UPGRADE_ITSM_CHANGE_EVIDENCE_SCHEMA
+            or evidence.evidence_id != f"connector-upgrade-itsm-change-evidence.{digest[:24]}"
+            or evidence.canonical_digest != digest
+        ):
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_itsm_change_evidence_integrity_invalid"
             )
 
     async def create_change_context_draft(

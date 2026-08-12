@@ -23,6 +23,7 @@ from atlas.modules.connectors.adapters.upgrade_approval_memory import (
     InMemoryConnectorUpgradeApprovalPolicySource,
     InMemoryConnectorUpgradeApprovalRepository,
     InMemoryConnectorUpgradeAuditReadinessSource,
+    InMemoryConnectorUpgradeItsmChangeEvidenceSource,
 )
 from atlas.modules.connectors.adapters.upgrade_approval_postgres import (
     PostgreSQLConnectorUpgradeApprovalRepository,
@@ -51,6 +52,7 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeApprovalOutcome,
     ConnectorUpgradeApprovalState,
     ConnectorUpgradeAuditReadinessEvidence,
+    ConnectorUpgradeItsmChangeEvidence,
 )
 
 
@@ -58,6 +60,7 @@ async def approval_fixture(
     *,
     clock: Callable[[], datetime] | None = None,
     audit_readiness_source: InMemoryConnectorUpgradeAuditReadinessSource | None = None,
+    itsm_change_evidence_source: InMemoryConnectorUpgradeItsmChangeEvidenceSource | None = None,
 ) -> tuple[
     ConnectorUpgradeApprovalService,
     ConnectorUpgradeReadinessService,
@@ -112,6 +115,7 @@ async def approval_fixture(
         audit_sink=audit,
         environment_id=instance.environment_id,
         audit_readiness_source=audit_readiness_source,
+        itsm_change_evidence_source=itsm_change_evidence_source,
         clock=resolved_clock,
     )
     return (
@@ -518,9 +522,11 @@ async def test_upgrade_approval_revalidation_requires_three_people_and_remains_n
     bootstrap = await instance_fixture()
     current_time.append(bootstrap[4].installed_at + timedelta(hours=2))
     audit_readiness_source = InMemoryConnectorUpgradeAuditReadinessSource()
+    itsm_change_evidence_source = InMemoryConnectorUpgradeItsmChangeEvidenceSource()
     service, upgrade_service, _, _, _, _, sources, audit = await approval_fixture(
         clock=clock,
         audit_readiness_source=audit_readiness_source,
+        itsm_change_evidence_source=itsm_change_evidence_source,
     )
     instance, candidate_receipt = sources
     requester = instance_operator()
@@ -660,6 +666,63 @@ async def test_upgrade_approval_revalidation_requires_three_people_and_remains_n
         producer_coverage_complete=True,
         consequential_blocking_enabled=True,
     )
+    itsm_evidence_payload = {
+        "schema_version": "atlas.connector-upgrade-itsm-change-evidence.v1",
+        "organization_id": instance.organization_id,
+        "environment_id": instance.environment_id,
+        "request_id": request.request_id,
+        "request_digest": request.canonical_digest,
+        "revalidation_id": revalidation.revalidation_id,
+        "revalidation_digest": revalidation.canonical_digest,
+        "plan_id": plan.plan_id,
+        "plan_digest": plan.canonical_digest,
+        "adapter_id": "itsm-adapter.validated",
+        "adapter_version": "version.1.0.0",
+        "authoritative_instance_id": "itsm-instance.enterprise",
+        "external_record_id": "change-record.chg000154",
+        "external_record_version": "version.42",
+        "observed_at": current_time[0].isoformat(),
+        "valid_until": (current_time[0] + timedelta(minutes=8)).isoformat(),
+        "adapter_validated": True,
+        "authoritative_source": True,
+        "record_accessible": True,
+        "source_version_current": True,
+        "exact_plan_binding_verified": True,
+        "record_active": True,
+        "conflict_free": True,
+        "revocation_absent": True,
+        "external_record_modified": False,
+        "infrastructure_mutation_performed": False,
+    }
+    itsm_evidence_digest = ConnectorUpgradeApprovalService._digest(itsm_evidence_payload)
+    itsm_evidence = ConnectorUpgradeItsmChangeEvidence(
+        evidence_id=f"connector-upgrade-itsm-change-evidence.{itsm_evidence_digest[:24]}",
+        schema_version="atlas.connector-upgrade-itsm-change-evidence.v1",
+        organization_id=instance.organization_id,
+        environment_id=instance.environment_id,
+        request_id=request.request_id,
+        request_digest=request.canonical_digest,
+        revalidation_id=revalidation.revalidation_id,
+        revalidation_digest=revalidation.canonical_digest,
+        plan_id=plan.plan_id,
+        plan_digest=plan.canonical_digest,
+        adapter_id="itsm-adapter.validated",
+        adapter_version="version.1.0.0",
+        authoritative_instance_id="itsm-instance.enterprise",
+        external_record_id="change-record.chg000154",
+        external_record_version="version.42",
+        observed_at=current_time[0],
+        valid_until=current_time[0] + timedelta(minutes=8),
+        canonical_digest=itsm_evidence_digest,
+        adapter_validated=True,
+        authoritative_source=True,
+        record_accessible=True,
+        source_version_current=True,
+        exact_plan_binding_verified=True,
+        record_active=True,
+        conflict_free=True,
+        revocation_absent=True,
+    )
     draft = await service.create_change_context_draft(
         actor=verifier,
         record_id=instance.record_id,
@@ -758,6 +821,8 @@ async def test_upgrade_approval_revalidation_requires_three_people_and_remains_n
     )
     assert readiness.audit_readiness_evidence_id is None
     assert not readiness.audit_readiness_evidence_current
+    assert readiness.itsm_change_evidence_id is None
+    assert not readiness.itsm_change_evidence_current
     audit_readiness_source.replace((audit_evidence,))
     readiness_with_audit = await service.assess_handoff_readiness(
         actor=verifier,
@@ -791,6 +856,32 @@ async def test_upgrade_approval_revalidation_requires_three_people_and_remains_n
             correlation_id="correlation.connector-upgrade-audit-evidence-integrity",
         )
     audit_readiness_source.replace((audit_evidence,))
+    itsm_change_evidence_source.replace((itsm_evidence,))
+    readiness_with_itsm = await service.assess_handoff_readiness(
+        actor=verifier,
+        record_id=instance.record_id,
+        request_id=request.request_id,
+        correlation_id="correlation.connector-upgrade-handoff-readiness-with-itsm",
+    )
+    assert readiness_with_itsm.itsm_change_evidence_id == itsm_evidence.evidence_id
+    assert readiness_with_itsm.itsm_change_evidence_digest == itsm_evidence.canonical_digest
+    assert readiness_with_itsm.itsm_change_evidence_current
+    assert "connector.upgrade.handoff.itsm-change-current" in (
+        readiness_with_itsm.satisfied_check_ids
+    )
+    assert readiness_with_itsm.blocker_ids == (
+        "connector.upgrade.handoff.blocked.maintenance-window-missing",
+    )
+    assert readiness_with_itsm.evidence_valid_until == itsm_evidence.valid_until
+    itsm_change_evidence_source.replace((replace(itsm_evidence, canonical_digest="0" * 64),))
+    with pytest.raises(ConnectorUpgradeApprovalError, match="itsm_change_evidence_integrity"):
+        await service.assess_handoff_readiness(
+            actor=verifier,
+            record_id=instance.record_id,
+            request_id=request.request_id,
+            correlation_id="correlation.connector-upgrade-itsm-evidence-integrity",
+        )
+    itsm_change_evidence_source.replace((itsm_evidence,))
     with pytest.raises(ValueError, match="authority boundary"):
         replace(
             readiness,
@@ -964,7 +1055,7 @@ def test_upgrade_approval_revalidation_api_is_no_store_and_hides_custody_metadat
     assert data["governance_ready"] is True and data["handoff_ready"] is False
     assert data["execution_authorized"] is False
     readiness_data = readiness_response.json()["data"]
-    assert readiness_data["schema_version"] == "atlas.connector-upgrade-handoff-readiness.v3"
+    assert readiness_data["schema_version"] == "atlas.connector-upgrade-handoff-readiness.v4"
     assert readiness_data["assessment_state"] == "blocked"
     assert readiness_data["handoff_ready"] is False
     assert readiness_data["handoff_artifact_issued"] is False
@@ -976,6 +1067,9 @@ def test_upgrade_approval_revalidation_api_is_no_store_and_hides_custody_metadat
     assert readiness_data["audit_readiness_evidence_id"] is None
     assert readiness_data["audit_readiness_evidence_digest"] is None
     assert readiness_data["audit_readiness_evidence_current"] is False
+    assert readiness_data["itsm_change_evidence_id"] is None
+    assert readiness_data["itsm_change_evidence_digest"] is None
+    assert readiness_data["itsm_change_evidence_current"] is False
     draft_data = draft_response.json()["data"]
     assert draft_data["state"] == "draft"
     assert draft_data["readiness_digest"] == readiness_data["canonical_digest"]
