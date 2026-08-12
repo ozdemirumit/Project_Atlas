@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-164 |
 | Title | Connector upgrade signing-provider onboarding policy authenticity foundation |
-| Status | Validated; preparing pull request |
+| Status | In review; exact-head CI pending |
 | Branch | `agent/mcp-signing-provider-onboarding-policy-authenticity` |
-| Pull Request | Not opened |
+| Pull Request | [#176](https://github.com/ozdemirumit/Project_Atlas/pull/176) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-020, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-115, ADR-116, ADR-117, ADR-118, ADR-119, ADR-120 |
 | Last Updated | 2026-08-12 |
-| Next Action | Publish the validated slice, run exact-head CI and complete review |
+| Next Action | Verify exact-head CI for PR #176 and complete review |
 
 ### ATLAS-IMP-164 Scope Rationale
 
@@ -78,6 +78,12 @@
   algorithm and attestation digest without write controls. Chromium device emulation at 390x844
   measured document/body width at exactly 390px with no page or policy-item overflow; a clean browser
   session produced no console warning or error.
+
+### ATLAS-IMP-164 Delivery Evidence
+
+- Source commit `a739e7e` is published in draft PR
+  [#176](https://github.com/ozdemirumit/Project_Atlas/pull/176). Exact-head CI is pending on the
+  tracker-review commit.
 
 ### ATLAS-IMP-163 Scope Rationale
 
