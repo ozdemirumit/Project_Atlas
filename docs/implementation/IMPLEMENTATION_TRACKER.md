@@ -4,14 +4,72 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-150 |
-| Title | Connector upgrade approval revalidation |
-| Status | Completed |
-| Branch | `main` |
-| Pull Request | [#162](https://github.com/ozdemirumit/Project_Atlas/pull/162) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-102, ADR-103, ADR-104, ADR-105, ADR-106 |
+| Task ID | ATLAS-IMP-151 |
+| Title | Connector upgrade handoff readiness assessment |
+| Status | In Progress |
+| Branch | `agent/mcp-upgrade-handoff-readiness` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-102, ADR-103, ADR-104, ADR-105, ADR-106, ADR-107 |
 | Last Updated | 2026-08-12 |
-| Next Action | Audit the next approved implementation slice from the governing backlog |
+| Next Action | Complete full regression, live validation and governed delivery |
+
+### ATLAS-IMP-151 Scope Rationale
+
+- IMP-150 creates a current revalidation receipt but deliberately leaves handoff readiness false.
+- ATLAS-037 requires final current checks and an explicit reason for every mismatch before any
+  future controlled handoff.
+- ADR-107 adds a read-only blocked-readiness assessment while keeping artifact issuance, approval
+  consumption and execution outside this implementation slice.
+
+### ATLAS-IMP-151 Acceptance Criteria
+
+- An authorized enterprise human with MFA can assess handoff readiness only after an exact current
+  approved decision and independent revalidation exist.
+- Request, decision, revalidation, policy and freshly regenerated plan lineage are verified; stale,
+  expired, drifted or cross-scope evidence fails closed.
+- Current satisfied checks and missing authoritative target, impact, ITSM, window, runtime and audit
+  evidence are returned as stable identifiers.
+- The assessment is no-store, audit recorded and excludes tokens, credentials, endpoints and
+  artifact-custody metadata.
+- The UI displays “Handoff blocked,” no-artifact/no-consumption state and every blocker without a
+  continue, issue, install, apply, execute or handoff action.
+- Handoff readiness, artifact issuance, approval consumption, target contact, package rebinding,
+  configuration change, execution and infrastructure mutation remain false.
+- Focused and full backend/frontend gates, production build and live responsive validation pass.
+
+### ATLAS-IMP-151 Initial Evidence
+
+- IMP-150 merged through PR #162 as `5cd51380451c899ec579556e96a7f84c13ef1026`;
+  tracker closure `533236dc7224c7ceea71a140126330f4073aab46` passed main CI run
+  `31552830284` before IMP-151 branched.
+- ATLAS-037 sections 16 and 17 require final revalidation and explicit mismatch reasons before any
+  future handoff artifact can be considered.
+- ADR-106 explicitly preserves `handoff_ready=false` and requires a separate accepted handoff
+  contract.
+
+### ATLAS-IMP-151 Validation Evidence
+
+- The read-only service rechecks exact request, approved decision, latest revalidation, active
+  signed policy and a freshly regenerated plan before returning an assessment. Missing or stale
+  lineage fails closed.
+- Approval, revalidation, identity separation, policy, plan lineage and absence of prior execution
+  are satisfied checks. Target binding, service-impact, ITSM change, maintenance window, runtime
+  health and audit readiness remain explicit blockers because no authoritative current evidence is
+  connected for them.
+- The result is computed on read and persists no artifact. Handoff readiness, artifact issuance,
+  approval consumption, target contact, package rebinding, configuration change, execution and
+  infrastructure mutation remain false across domain, API and UI contracts.
+- Backend formatting and lint passed 1,184 files, mypy passed 1,083 source files, and the complete
+  backend suite passed 977 tests with three environment-specific Windows symlink skips. Alembic
+  remains at the single linear `20260812_0099` head.
+- Frontend ESLint and both TypeScript projects passed; all 215 tests in 87 files passed. The
+  2,007-module production build completed with the existing advisory limited to the transitional
+  `OperationalApplication` chunk.
+- Live Playwright validation displayed “Handoff blocked,” no-artifact/no-consumption state and all
+  six blockers at 1,280 px and 390 px. Both widths had zero horizontal document overflow, mobile
+  scroll X remained zero, the dialog measured 390 x 844 px and no install, apply, execute or
+  handoff control existed. The off-canvas mobile sidebar was the only intentionally out-of-viewport
+  element group.
 
 ### ATLAS-IMP-150 Scope Rationale
 

@@ -591,6 +591,12 @@ async def test_upgrade_approval_revalidation_requires_three_people_and_remains_n
         request_id=request.request_id,
         correlation_id="correlation.connector-upgrade-revalidation-read",
     )
+    readiness = await service.assess_handoff_readiness(
+        actor=verifier,
+        record_id=instance.record_id,
+        request_id=request.request_id,
+        correlation_id="correlation.connector-upgrade-handoff-readiness",
+    )
 
     assert revalidation.approval_current_at_revalidation
     assert revalidation.governance_ready and not revalidation.handoff_ready
@@ -601,6 +607,13 @@ async def test_upgrade_approval_revalidation_requires_three_people_and_remains_n
     assert not revalidation.infrastructure_mutation_performed
     assert len(revalidation.check_ids) == 7
     assert replay.reused and latest.revalidation_id == revalidation.revalidation_id
+    assert readiness.assessment_state == "blocked"
+    assert len(readiness.satisfied_check_ids) == 6 and len(readiness.blocker_ids) == 6
+    assert not readiness.handoff_ready and not readiness.handoff_artifact_issued
+    assert not readiness.approval_consumed and not readiness.target_contacted
+    assert not readiness.package_rebound and not readiness.configuration_changed
+    assert not readiness.execution_authorized
+    assert not readiness.infrastructure_mutation_performed
     restored = PostgreSQLConnectorUpgradeApprovalRepository._revalidation_to_domain(
         cast(
             dict[str, object],
@@ -699,13 +712,24 @@ def test_upgrade_approval_revalidation_api_is_no_store_and_hides_custody_metadat
             f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
             f"{request.request_id}/revalidations/latest"
         )
+        readiness_response = client.get(
+            f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
+            f"{request.request_id}/handoff-readiness"
+        )
 
     assert response.status_code == 201, response.text
     assert read_response.status_code == 200, read_response.text
+    assert readiness_response.status_code == 200, readiness_response.text
     assert response.headers["Cache-Control"] == "no-store"
     data = response.json()["data"]
     assert data["governance_ready"] is True and data["handoff_ready"] is False
     assert data["execution_authorized"] is False
+    readiness_data = readiness_response.json()["data"]
+    assert readiness_data["assessment_state"] == "blocked"
+    assert readiness_data["handoff_ready"] is False
+    assert readiness_data["handoff_artifact_issued"] is False
+    assert readiness_data["approval_consumed"] is False
+    assert len(readiness_data["blocker_ids"]) == 6
     rendered = response.text.lower()
     for hidden in (
         "revalidation_fingerprint",

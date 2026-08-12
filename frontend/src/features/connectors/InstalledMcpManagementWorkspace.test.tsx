@@ -13,6 +13,7 @@ import {
   createConnectorUpgradeApprovalRequest,
   decideConnectorUpgradeApproval,
   getConnectorUpgradeApprovalRecord,
+  getConnectorUpgradeHandoffReadiness,
   getLatestConnectorUpgradeApprovalRevalidation,
   getConnectorUpgradePlan,
   getConnectorUpgradeReadiness,
@@ -20,6 +21,7 @@ import {
   type ConnectorUpgradeApprovalRecord,
   type ConnectorUpgradeApprovalRequest,
   type ConnectorUpgradeApprovalRevalidation,
+  type ConnectorUpgradeHandoffReadiness,
   type ConnectorUpgradePlan,
   type ConnectorUpgradeReadiness,
 } from "../../api/connectorUpgradeReadiness";
@@ -275,6 +277,49 @@ const upgradeApprovalRevalidation: ConnectorUpgradeApprovalRevalidation = {
   reused: false,
 };
 
+const handoffReadiness: ConnectorUpgradeHandoffReadiness = {
+  assessment_id: "connector-upgrade-handoff-readiness.test",
+  schema_version: "atlas.connector-upgrade-handoff-readiness.v1",
+  source_record_id: instance.record_id,
+  source_record_version: instance.version,
+  instance_id: instance.instance_id,
+  connector_id: instance.connector_id,
+  request_id: upgradeApprovalRequest.request_id,
+  request_digest: upgradeApprovalRequest.canonical_digest,
+  decision_id: approvedUpgradeApproval.decision!.decision_id,
+  decision_digest: approvedUpgradeApproval.decision!.canonical_digest,
+  revalidation_id: upgradeApprovalRevalidation.revalidation_id,
+  revalidation_digest: upgradeApprovalRevalidation.canonical_digest,
+  plan_id: upgradePlan.plan_id,
+  plan_digest: upgradePlan.canonical_digest,
+  organization_id: instance.organization_id,
+  environment_id: instance.environment_id,
+  assessed_by: "subject.connector-independent-verifier",
+  satisfied_check_ids: ["connector.upgrade.handoff.approval-current"],
+  blocker_ids: [
+    "connector.upgrade.handoff.blocked.target-binding-missing",
+    "connector.upgrade.handoff.blocked.service-impact-evidence-missing",
+    "connector.upgrade.handoff.blocked.itsm-change-missing",
+    "connector.upgrade.handoff.blocked.maintenance-window-missing",
+    "connector.upgrade.handoff.blocked.runtime-health-evidence-missing",
+    "connector.upgrade.handoff.blocked.audit-readiness-evidence-missing",
+  ],
+  assessed_at: "2026-08-12T00:41:00Z",
+  evidence_valid_until: "2026-08-12T01:00:00Z",
+  canonical_digest: "4".repeat(64),
+  assessment_state: "blocked",
+  approval_current: true,
+  revalidation_current: true,
+  handoff_ready: false,
+  handoff_artifact_issued: false,
+  approval_consumed: false,
+  target_contacted: false,
+  package_rebound: false,
+  configuration_changed: false,
+  execution_authorized: false,
+  infrastructure_mutation_performed: false,
+};
+
 vi.mock("../../api/connectorInstances", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorInstances")>();
   return {
@@ -298,6 +343,7 @@ vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
     createConnectorUpgradeApprovalRequest: vi.fn(),
     decideConnectorUpgradeApproval: vi.fn(),
     getConnectorUpgradeApprovalRecord: vi.fn(),
+    getConnectorUpgradeHandoffReadiness: vi.fn(),
     getLatestConnectorUpgradeApprovalRevalidation: vi.fn(),
     getConnectorUpgradeReadiness: vi.fn(),
     getConnectorUpgradePlan: vi.fn(),
@@ -326,6 +372,7 @@ beforeEach(() => {
   vi.mocked(createConnectorUpgradeApprovalRequest).mockResolvedValue(upgradeApprovalRequest);
   vi.mocked(decideConnectorUpgradeApproval).mockResolvedValue(approvedUpgradeApproval);
   vi.mocked(getLatestConnectorUpgradeApprovalRevalidation).mockResolvedValue(null);
+  vi.mocked(getConnectorUpgradeHandoffReadiness).mockResolvedValue(handoffReadiness);
   vi.mocked(revalidateConnectorUpgradeApproval).mockResolvedValue(upgradeApprovalRevalidation);
   vi.mocked(createConnectorInstance).mockResolvedValue({ data: instance });
   vi.mocked(retireConnectorInstance).mockResolvedValue({
@@ -432,6 +479,9 @@ describe("InstalledMcpManagementWorkspace", () => {
     await waitFor(() => expect(revalidateConnectorUpgradeApproval).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("Governance ready")).toBeVisible();
     expect(screen.getByText(/Handoff remains blocked/i)).toBeVisible();
+    expect(await screen.findByText("Handoff blocked")).toBeVisible();
+    expect(screen.getByText(/No artifact was issued/i)).toBeVisible();
+    expect(screen.getByText(/target-binding-missing/i)).toBeVisible();
     expect(screen.queryByRole("button", { name: /install|apply|execute|handoff/i })).toBeNull();
   });
 

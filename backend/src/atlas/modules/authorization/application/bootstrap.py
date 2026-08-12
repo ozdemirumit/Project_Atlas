@@ -147,6 +147,7 @@ CONNECTOR_UPGRADE_APPROVAL_READ = "connectors.upgrade-approval-requests.read"
 CONNECTOR_UPGRADE_APPROVAL_DECIDE = "connectors.upgrade-approval-decisions.create"
 CONNECTOR_UPGRADE_APPROVAL_REVALIDATION_CREATE = "connectors.upgrade-approval-revalidations.create"
 CONNECTOR_UPGRADE_APPROVAL_REVALIDATION_READ = "connectors.upgrade-approval-revalidations.read"
+CONNECTOR_UPGRADE_HANDOFF_READINESS_READ = "connectors.upgrade-handoff-readiness.read"
 CONNECTOR_TARGET_CONFIGURATION_CREATE = "connectors.target-configuration-bindings.create"
 CONNECTOR_TARGET_CONFIGURATION_READ = "connectors.target-configuration-bindings.read"
 CONNECTOR_CREDENTIAL_ASSIGNMENT_CREATE = "connectors.credential-assignments.create"
@@ -2094,6 +2095,10 @@ def build_development_authorization_service(
             description="Read one minimized connector upgrade approval revalidation receipt.",
         ),
         PermissionDefinition(
+            permission_id=CONNECTOR_UPGRADE_HANDOFF_READINESS_READ,
+            description="Assess connector upgrade handoff readiness without issuing an artifact.",
+        ),
+        PermissionDefinition(
             permission_id=CONNECTOR_TARGET_CONFIGURATION_CREATE,
             description="Bind a disabled connector instance to governed target configuration.",
         ),
@@ -2600,6 +2605,7 @@ def build_development_authorization_service(
                 CONNECTOR_UPGRADE_APPROVAL_DECIDE,
                 CONNECTOR_UPGRADE_APPROVAL_REVALIDATION_CREATE,
                 CONNECTOR_UPGRADE_APPROVAL_REVALIDATION_READ,
+                CONNECTOR_UPGRADE_HANDOFF_READINESS_READ,
                 CONNECTOR_TARGET_CONFIGURATION_CREATE,
                 CONNECTOR_TARGET_CONFIGURATION_READ,
                 CONNECTOR_CREDENTIAL_ASSIGNMENT_CREATE,

@@ -23,6 +23,8 @@ from atlas.api.instance_creation_schemas import (
     ConnectorUpgradeApprovalRevalidationData,
     ConnectorUpgradeApprovalRevalidationInput,
     ConnectorUpgradeApprovalRevalidationResponse,
+    ConnectorUpgradeHandoffReadinessData,
+    ConnectorUpgradeHandoffReadinessResponse,
     ConnectorUpgradePlanData,
     ConnectorUpgradePlanResponse,
     ConnectorUpgradeReadinessData,
@@ -38,6 +40,7 @@ from atlas.api.security import (
     authorize_connector_upgrade_approval_read,
     authorize_connector_upgrade_approval_revalidation_create,
     authorize_connector_upgrade_approval_revalidation_read,
+    authorize_connector_upgrade_handoff_readiness_read,
     browser_session_subject,
 )
 from atlas.modules.authorization.domain.models import AuthorizationDecision
@@ -487,6 +490,40 @@ async def get_latest_connector_upgrade_approval_revalidation(
     response.headers["Cache-Control"] = "no-store"
     return ConnectorUpgradeApprovalRevalidationResponse(
         data=ConnectorUpgradeApprovalRevalidationData.from_domain(revalidation),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get(
+    "/{record_id}/upgrade-approval-requests/{request_id}/handoff-readiness",
+    response_model=ConnectorUpgradeHandoffReadinessResponse,
+)
+async def assess_connector_upgrade_handoff_readiness(
+    record_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_connector_upgrade_handoff_readiness_read),
+    ],
+) -> ConnectorUpgradeHandoffReadinessResponse:
+    service: ConnectorUpgradeApprovalService = request.app.state.connector_upgrade_approval_service
+    try:
+        assessment = await service.assess_handoff_readiness(
+            actor=subject,
+            record_id=record_id,
+            request_id=request_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorUpgradeApprovalError as error:
+        _raise_upgrade_approval(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorUpgradeHandoffReadinessResponse(
+        data=ConnectorUpgradeHandoffReadinessData.from_domain(assessment),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),

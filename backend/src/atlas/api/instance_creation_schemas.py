@@ -14,6 +14,7 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeApprovalRecord,
     ConnectorUpgradeApprovalRequest,
     ConnectorUpgradeApprovalRevalidation,
+    ConnectorUpgradeHandoffReadinessAssessment,
 )
 from atlas.modules.connectors.domain.upgrade_readiness import (
     ConnectorCapabilityChange,
@@ -505,6 +506,57 @@ class ConnectorUpgradeApprovalRevalidationResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: ConnectorUpgradeApprovalRevalidationData
+    meta: ResponseMeta
+
+
+class ConnectorUpgradeHandoffReadinessData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    assessment_id: str
+    schema_version: str
+    source_record_id: str
+    source_record_version: int
+    instance_id: str
+    connector_id: str
+    request_id: str
+    request_digest: str
+    decision_id: str
+    decision_digest: str
+    revalidation_id: str
+    revalidation_digest: str
+    plan_id: str
+    plan_digest: str
+    organization_id: str
+    environment_id: str
+    assessed_by: str
+    satisfied_check_ids: tuple[str, ...]
+    blocker_ids: tuple[str, ...]
+    assessed_at: datetime
+    evidence_valid_until: datetime
+    canonical_digest: str
+    assessment_state: str
+    approval_current: bool
+    revalidation_current: bool
+    handoff_ready: bool
+    handoff_artifact_issued: bool
+    approval_consumed: bool
+    target_contacted: bool
+    package_rebound: bool
+    configuration_changed: bool
+    execution_authorized: bool
+    infrastructure_mutation_performed: bool
+
+    @classmethod
+    def from_domain(
+        cls, assessment: ConnectorUpgradeHandoffReadinessAssessment
+    ) -> ConnectorUpgradeHandoffReadinessData:
+        return cls(**{field: getattr(assessment, field) for field in cls.model_fields})
+
+
+class ConnectorUpgradeHandoffReadinessResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ConnectorUpgradeHandoffReadinessData
     meta: ResponseMeta
 
 

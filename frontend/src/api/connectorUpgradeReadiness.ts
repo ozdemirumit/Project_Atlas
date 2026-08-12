@@ -234,6 +234,42 @@ export type ConnectorUpgradeApprovalRevalidation = {
   reused: boolean;
 };
 
+export type ConnectorUpgradeHandoffReadiness = {
+  assessment_id: string;
+  schema_version: "atlas.connector-upgrade-handoff-readiness.v1";
+  source_record_id: string;
+  source_record_version: number;
+  instance_id: string;
+  connector_id: string;
+  request_id: string;
+  request_digest: string;
+  decision_id: string;
+  decision_digest: string;
+  revalidation_id: string;
+  revalidation_digest: string;
+  plan_id: string;
+  plan_digest: string;
+  organization_id: string;
+  environment_id: string;
+  assessed_by: string;
+  satisfied_check_ids: string[];
+  blocker_ids: string[];
+  assessed_at: string;
+  evidence_valid_until: string;
+  canonical_digest: string;
+  assessment_state: "blocked";
+  approval_current: true;
+  revalidation_current: true;
+  handoff_ready: false;
+  handoff_artifact_issued: false;
+  approval_consumed: false;
+  target_contacted: false;
+  package_rebound: false;
+  configuration_changed: false;
+  execution_authorized: false;
+  infrastructure_mutation_performed: false;
+};
+
 const DIGEST = /^[a-f0-9]{64}$/;
 
 function strings(value: unknown): value is string[] {
@@ -495,6 +531,28 @@ function approvalRevalidation(value: unknown): value is ConnectorUpgradeApproval
   );
 }
 
+function handoffReadiness(value: unknown): value is ConnectorUpgradeHandoffReadiness {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  return (
+    item.schema_version === "atlas.connector-upgrade-handoff-readiness.v1" &&
+    item.assessment_state === "blocked" &&
+    [item.assessment_id, item.source_record_id, item.instance_id, item.connector_id, item.request_id,
+      item.decision_id, item.revalidation_id, item.plan_id, item.organization_id, item.environment_id,
+      item.assessed_by, item.assessed_at, item.evidence_valid_until].every((field) => typeof field === "string") &&
+    [item.request_digest, item.decision_digest, item.revalidation_digest, item.plan_digest,
+      item.canonical_digest].every((digest) => typeof digest === "string" && DIGEST.test(digest)) &&
+    strings(item.satisfied_check_ids) && item.satisfied_check_ids.length > 0 &&
+    strings(item.blocker_ids) && item.blocker_ids.length > 0 &&
+    item.approval_current === true && item.revalidation_current === true &&
+    item.handoff_ready === false && item.handoff_artifact_issued === false &&
+    item.approval_consumed === false && item.target_contacted === false &&
+    item.package_rebound === false && item.configuration_changed === false &&
+    item.execution_authorized === false && item.infrastructure_mutation_performed === false &&
+    !("token" in item || "credential" in item || "target_endpoint" in item)
+  );
+}
+
 export async function getConnectorUpgradeReadiness(
   recordId: string,
 ): Promise<ConnectorUpgradeReadiness> {
@@ -711,6 +769,27 @@ export async function revalidateConnectorUpgradeApproval(input: {
     payload.data.decision_digest !== record.decision.canonical_digest
   ) {
     throw new Error("Connector upgrade approval revalidation does not match the exact decision");
+  }
+  return payload.data;
+}
+
+export async function getConnectorUpgradeHandoffReadiness(
+  record: ConnectorUpgradeApprovalRecord,
+): Promise<ConnectorUpgradeHandoffReadiness> {
+  const response = await apiFetch(
+    `/api/v1/connectors/instances/${encodeURIComponent(record.request.source_record_id)}/upgrade-approval-requests/${encodeURIComponent(record.request.request_id)}/handoff-readiness`,
+    { headers: { Accept: "application/json" }, cache: "no-store" },
+  );
+  if (!response.ok) throw new Error(`Connector upgrade handoff readiness failed with ${response.status}`);
+  const payload: unknown = await response.json();
+  if (!payload || typeof payload !== "object" || !("data" in payload) || !handoffReadiness(payload.data)) {
+    throw new Error("Connector upgrade handoff readiness returned an unsafe assessment");
+  }
+  if (
+    payload.data.request_digest !== record.request.canonical_digest ||
+    payload.data.decision_digest !== record.decision?.canonical_digest
+  ) {
+    throw new Error("Connector upgrade handoff readiness does not match the exact approval");
   }
   return payload.data;
 }
