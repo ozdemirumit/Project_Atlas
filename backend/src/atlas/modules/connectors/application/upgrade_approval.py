@@ -55,6 +55,10 @@ from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeEvidenceSigningProviderTrust,
     ConnectorUpgradeSignedEvidenceReceipt,
     ConnectorUpgradeSignedEvidenceReceiptVerification,
+    ConnectorUpgradeSigningProviderConformanceAssessment,
+)
+from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
+    ConnectorUpgradeSigningProviderConformanceState as ConformanceState,
 )
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
@@ -103,6 +107,26 @@ UPGRADE_SIGNING_KEY_TRUST_INVENTORY_SCHEMA = (
 )
 UPGRADE_SIGNING_KEY_TRUST_INVENTORY_READ_PERMISSION = (
     "connectors.upgrade-signing-key-trust-inventory.read"
+)
+UPGRADE_SIGNING_PROVIDER_CONFORMANCE_SCHEMA = (
+    "atlas.connector-upgrade-signing-provider-conformance-assessment.v1"
+)
+UPGRADE_SIGNING_PROVIDER_CONFORMANCE_CREATE_PERMISSION = (
+    "connectors.upgrade-signing-provider-conformance-assessments.create"
+)
+UPGRADE_SIGNING_PROVIDER_CONFORMANCE_READ_PERMISSION = (
+    "connectors.upgrade-signing-provider-conformance-assessments.read"
+)
+UPGRADE_SIGNING_PROVIDER_CONFORMANCE_POLICY_ID = (
+    "connector-upgrade-signing-provider-conformance.default"
+)
+UPGRADE_SIGNING_PROVIDER_CONFORMANCE_POLICY_VERSION = "v2026.08.12.1"
+UPGRADE_SIGNING_PROVIDER_CONFORMANCE_ALLOWED_ALGORITHMS = frozenset(
+    {
+        "algorithm.hmac-sha256-nonproduction",
+        "algorithm.rsassa-pss-sha256",
+        "algorithm.ecdsa-p256-sha256",
+    }
 )
 UPGRADE_HANDOFF_APPLICABILITY_POLICY_ID = "connector-upgrade-handoff-evidence-applicability.default"
 UPGRADE_HANDOFF_APPLICABILITY_POLICY_VERSION = "v2026.08.12.1"
@@ -1359,6 +1383,299 @@ class ConnectorUpgradeApprovalService:
         )
         return inventory
 
+    async def assess_signing_provider_conformance(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        acknowledged_diagnostic_grants_no_key_receipt_or_execution_authority: bool,
+        idempotency_key: str,
+        correlation_id: str,
+    ) -> ConnectorUpgradeSigningProviderConformanceAssessment:
+        self._require_authenticated_human(actor)
+        if (
+            not acknowledged_diagnostic_grants_no_key_receipt_or_execution_authority
+            or not 8 <= len(idempotency_key) <= 128
+        ):
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_signing_provider_conformance_acknowledgement_required"
+            )
+        fingerprint = self._digest(
+            {
+                "schema_version": UPGRADE_SIGNING_PROVIDER_CONFORMANCE_SCHEMA,
+                "organization_id": actor.organization_id,
+                "environment_id": self._environment_id,
+                "assessed_by": actor.subject_id,
+                "policy_id": UPGRADE_SIGNING_PROVIDER_CONFORMANCE_POLICY_ID,
+                "policy_version": UPGRADE_SIGNING_PROVIDER_CONFORMANCE_POLICY_VERSION,
+                "acknowledged_no_authority": True,
+            }
+        )
+        prior = await self._repository.get_signing_provider_conformance_by_key(
+            assessed_by=actor.subject_id, idempotency_key=idempotency_key
+        )
+        if prior is not None:
+            self._verify_signing_provider_conformance(prior)
+            if prior.request_fingerprint != fingerprint:
+                raise ConnectorUpgradeApprovalError(
+                    "connector_upgrade_signing_provider_conformance_idempotency_conflict"
+                )
+            reused = replace(prior, reused=True)
+            await self._audit_signing_provider_conformance(
+                actor=actor,
+                correlation_id=correlation_id,
+                assessment=reused,
+                permission_id=UPGRADE_SIGNING_PROVIDER_CONFORMANCE_CREATE_PERMISSION,
+                result_code="connector_upgrade_signing_provider_conformance_reused",
+                idempotency_key=idempotency_key,
+            )
+            return reused
+
+        now = self._clock()
+        assessment_seed = f"assessment-seed.{uuid4().hex}"
+        challenge_digest = self._digest(
+            {
+                "schema_version": "atlas.connector-upgrade-signing-provider-challenge.v1",
+                "assessment_seed": assessment_seed,
+                "organization_id": actor.organization_id,
+                "environment_id": self._environment_id,
+                "policy_version": UPGRADE_SIGNING_PROVIDER_CONFORMANCE_POLICY_VERSION,
+            }
+        )
+        provider_class = "provider.unconfigured"
+        production_approved = False
+        key: ConnectorUpgradeEvidenceSigningKey | None = None
+        state = ConformanceState.UNAVAILABLE
+        reason = "provider-unavailable"
+        provider = self._evidence_authenticity_provider
+        if provider is not None:
+            try:
+                trust = await provider.trust_inventory(
+                    organization_id=actor.organization_id,
+                    environment_id=self._environment_id,
+                )
+            except ConnectorUpgradeEvidenceAuthenticityError:
+                trust = None
+            if trust is not None:
+                provider_class = trust.provider_class
+                production_approved = trust.production_approved
+                if (
+                    trust.organization_id != actor.organization_id
+                    or trust.environment_id != self._environment_id
+                ):
+                    state = ConformanceState.POLICY_BLOCKED
+                    reason = "provider-scope-invalid"
+                elif not trust.provider_available:
+                    state = ConformanceState.UNAVAILABLE
+                else:
+                    try:
+                        candidate = await provider.active_key(
+                            organization_id=actor.organization_id,
+                            environment_id=self._environment_id,
+                        )
+                    except ConnectorUpgradeEvidenceAuthenticityError as error:
+                        if error.code.endswith("provider_unavailable"):
+                            state = ConformanceState.UNAVAILABLE
+                        else:
+                            state = ConformanceState.INELIGIBLE_KEY
+                            reason = "eligible-key-unavailable"
+                    else:
+                        key = candidate
+                        trusted_references = {
+                            (item.key_id, item.key_version, item.algorithm) for item in trust.keys
+                        }
+                        if (
+                            candidate.organization_id != actor.organization_id
+                            or candidate.environment_id != self._environment_id
+                            or (candidate.key_id, candidate.key_version, candidate.algorithm)
+                            not in trusted_references
+                        ):
+                            state = ConformanceState.POLICY_BLOCKED
+                            reason = "key-trust-binding-invalid"
+                        elif (
+                            candidate.state is not ConnectorUpgradeEvidenceSigningKeyState.ACTIVE
+                            or now < candidate.not_before
+                            or now >= candidate.expires_at
+                        ):
+                            state = ConformanceState.INELIGIBLE_KEY
+                            reason = "eligible-key-unavailable"
+                        elif (
+                            candidate.algorithm
+                            not in UPGRADE_SIGNING_PROVIDER_CONFORMANCE_ALLOWED_ALGORITHMS
+                        ):
+                            state = ConformanceState.POLICY_BLOCKED
+                            reason = "algorithm-not-allowed"
+                        else:
+                            signature_expires_at = min(
+                                now + timedelta(minutes=5), candidate.expires_at
+                            )
+                            diagnostic = await provider.diagnostic_sign_and_verify(
+                                organization_id=actor.organization_id,
+                                environment_id=self._environment_id,
+                                challenge_digest=challenge_digest,
+                                issued_at=now,
+                                expires_at=signature_expires_at,
+                            )
+                            if (
+                                diagnostic.provider_class != trust.provider_class
+                                or diagnostic.organization_id != actor.organization_id
+                                or diagnostic.environment_id != self._environment_id
+                                or diagnostic.key != candidate
+                            ):
+                                state = ConformanceState.POLICY_BLOCKED
+                                reason = "diagnostic-binding-invalid"
+                            else:
+                                state = diagnostic.state
+                                reason = {
+                                    ConformanceState.CONFORMANT: "conformant",
+                                    ConformanceState.UNAVAILABLE: "provider-unavailable",
+                                    ConformanceState.INELIGIBLE_KEY: "eligible-key-unavailable",
+                                    ConformanceState.SIGN_FAILED: "diagnostic-sign-failed",
+                                    ConformanceState.VERIFY_FAILED: "diagnostic-verify-failed",
+                                }[diagnostic.state]
+
+        valid_until = now + timedelta(minutes=5)
+        if key is not None:
+            valid_until = min(valid_until, key.expires_at)
+        payload = {
+            "schema_version": UPGRADE_SIGNING_PROVIDER_CONFORMANCE_SCHEMA,
+            "version": 1,
+            "organization_id": actor.organization_id,
+            "environment_id": self._environment_id,
+            "assessed_by": actor.subject_id,
+            "provider_class": provider_class,
+            "production_approved": production_approved,
+            "key_id": key.key_id if key else None,
+            "key_version": key.key_version if key else None,
+            "algorithm": key.algorithm if key else None,
+            "challenge_digest": challenge_digest,
+            "policy_id": UPGRADE_SIGNING_PROVIDER_CONFORMANCE_POLICY_ID,
+            "policy_version": UPGRADE_SIGNING_PROVIDER_CONFORMANCE_POLICY_VERSION,
+            "observed_at": now.isoformat(),
+            "valid_until": valid_until.isoformat(),
+            "state": state.value,
+            "reason_codes": (f"connector.upgrade.signing-provider-conformance.{reason}",),
+            "request_fingerprint": fingerprint,
+            "diagnostic_only": True,
+            "signing_provider_conformant": (state is ConformanceState.CONFORMANT),
+            "key_management_authorized": False,
+            "receipt_signing_authorized": False,
+            "execution_authorized": False,
+            "infrastructure_mutation_performed": False,
+        }
+        digest = self._digest(payload)
+        assessment = ConnectorUpgradeSigningProviderConformanceAssessment(
+            assessment_id=f"connector-upgrade-signing-provider-conformance.{digest[:24]}",
+            schema_version=UPGRADE_SIGNING_PROVIDER_CONFORMANCE_SCHEMA,
+            version=1,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+            assessed_by=actor.subject_id,
+            provider_class=provider_class,
+            production_approved=production_approved,
+            key_id=key.key_id if key else None,
+            key_version=key.key_version if key else None,
+            algorithm=key.algorithm if key else None,
+            challenge_digest=challenge_digest,
+            policy_id=UPGRADE_SIGNING_PROVIDER_CONFORMANCE_POLICY_ID,
+            policy_version=UPGRADE_SIGNING_PROVIDER_CONFORMANCE_POLICY_VERSION,
+            observed_at=now,
+            valid_until=valid_until,
+            state=state,
+            reason_codes=(f"connector.upgrade.signing-provider-conformance.{reason}",),
+            request_fingerprint=fingerprint,
+            idempotency_key=idempotency_key,
+            canonical_digest=digest,
+            signing_provider_conformant=(state is ConformanceState.CONFORMANT),
+        )
+        if not await self._repository.add_signing_provider_conformance(assessment):
+            raced = await self._repository.get_signing_provider_conformance_by_key(
+                assessed_by=actor.subject_id, idempotency_key=idempotency_key
+            )
+            if raced is None or raced.request_fingerprint != fingerprint:
+                raise ConnectorUpgradeApprovalError(
+                    "connector_upgrade_signing_provider_conformance_idempotency_conflict"
+                )
+            self._verify_signing_provider_conformance(raced)
+            assessment = replace(raced, reused=True)
+        await self._audit_signing_provider_conformance(
+            actor=actor,
+            correlation_id=correlation_id,
+            assessment=assessment,
+            permission_id=UPGRADE_SIGNING_PROVIDER_CONFORMANCE_CREATE_PERMISSION,
+            result_code=f"connector_upgrade_signing_provider_conformance_{assessment.state.value}",
+            idempotency_key=idempotency_key,
+        )
+        return assessment
+
+    async def latest_signing_provider_conformance(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+    ) -> ConnectorUpgradeSigningProviderConformanceAssessment:
+        self._require_authenticated_human(actor)
+        assessment = await self._repository.get_latest_signing_provider_conformance(
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
+        if assessment is None:
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_signing_provider_conformance_not_found"
+            )
+        self._verify_signing_provider_conformance(assessment)
+        await self._audit_signing_provider_conformance(
+            actor=actor,
+            correlation_id=correlation_id,
+            assessment=assessment,
+            permission_id=UPGRADE_SIGNING_PROVIDER_CONFORMANCE_READ_PERMISSION,
+            result_code="connector_upgrade_signing_provider_conformance_read",
+            idempotency_key=None,
+        )
+        return assessment
+
+    @classmethod
+    def _verify_signing_provider_conformance(
+        cls, assessment: ConnectorUpgradeSigningProviderConformanceAssessment
+    ) -> None:
+        payload = {
+            field: cls._normalize(getattr(assessment, field))
+            for field in (
+                "schema_version",
+                "version",
+                "organization_id",
+                "environment_id",
+                "assessed_by",
+                "provider_class",
+                "production_approved",
+                "key_id",
+                "key_version",
+                "algorithm",
+                "challenge_digest",
+                "policy_id",
+                "policy_version",
+                "observed_at",
+                "valid_until",
+                "state",
+                "reason_codes",
+                "request_fingerprint",
+                "diagnostic_only",
+                "signing_provider_conformant",
+                "key_management_authorized",
+                "receipt_signing_authorized",
+                "execution_authorized",
+                "infrastructure_mutation_performed",
+            )
+        }
+        digest = cls._digest(payload)
+        if (
+            assessment.assessment_id
+            != f"connector-upgrade-signing-provider-conformance.{digest[:24]}"
+            or assessment.canonical_digest != digest
+        ):
+            raise ConnectorUpgradeApprovalError(
+                "connector_upgrade_signing_provider_conformance_integrity_invalid"
+            )
+
     @staticmethod
     def _signing_key_trust(
         *, key: ConnectorUpgradeEvidenceSigningKey, now: datetime
@@ -2506,6 +2823,48 @@ class ConnectorUpgradeApprovalService:
                     ("provider_class", inventory.provider_class),
                     ("key_count", str(len(inventory.keys))),
                     ("key_management_authorized", "false"),
+                    ("execution_authorized", "false"),
+                ),
+            )
+        )
+
+    async def _audit_signing_provider_conformance(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+        assessment: ConnectorUpgradeSigningProviderConformanceAssessment,
+        permission_id: str,
+        result_code: str,
+        idempotency_key: str | None,
+    ) -> None:
+        await self._audit_sink.record(
+            AuditRecord(
+                event_id=f"evt_{uuid4().hex}",
+                event_type="atlas.connector.upgrade-signing-provider-conformance",
+                schema_version="1.0",
+                producer="project-atlas-api",
+                producer_version=__version__,
+                occurred_at=self._clock(),
+                correlation_id=correlation_id,
+                subject_id=actor.subject_id,
+                actor_type=actor.kind.value,
+                authentication_method=actor.authentication_method.value,
+                assurance_level=actor.assurance_level.value,
+                permission_id=permission_id,
+                resource_type=(
+                    "resource.connector.upgrade-signing-provider-conformance-assessment"
+                ),
+                scope_reference=assessment.assessment_id,
+                decision_id=assessment.canonical_digest,
+                outcome="succeeded",
+                result_code=result_code,
+                idempotency_key=idempotency_key,
+                target_metadata=(
+                    ("provider_class", assessment.provider_class),
+                    ("state", assessment.state.value),
+                    ("production_approved", str(assessment.production_approved).lower()),
+                    ("diagnostic_only", "true"),
                     ("execution_authorized", "false"),
                 ),
             )

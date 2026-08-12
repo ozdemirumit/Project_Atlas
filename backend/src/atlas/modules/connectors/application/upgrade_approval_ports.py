@@ -12,6 +12,9 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeItsmChangeEvidence,
     ConnectorUpgradeMaintenanceWindowEvidence,
 )
+from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
+    ConnectorUpgradeSigningProviderConformanceAssessment,
+)
 
 
 class ConnectorUpgradeApprovalError(RuntimeError):
@@ -91,5 +94,17 @@ class ConnectorUpgradeApprovalRepository(Protocol):
     ) -> ConnectorUpgradeChangeContextDraft | None: ...
 
     async def add_change_context_draft(self, draft: ConnectorUpgradeChangeContextDraft) -> bool: ...
+
+    async def get_latest_signing_provider_conformance(
+        self, *, organization_id: str, environment_id: str
+    ) -> ConnectorUpgradeSigningProviderConformanceAssessment | None: ...
+
+    async def get_signing_provider_conformance_by_key(
+        self, *, assessed_by: str, idempotency_key: str
+    ) -> ConnectorUpgradeSigningProviderConformanceAssessment | None: ...
+
+    async def add_signing_provider_conformance(
+        self, assessment: ConnectorUpgradeSigningProviderConformanceAssessment
+    ) -> bool: ...
 
     async def close(self) -> None: ...

@@ -1516,6 +1516,33 @@ class ConnectorUpgradeChangeContextDraftModel(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
+class ConnectorUpgradeSigningProviderConformanceModel(Base):
+    __tablename__ = "connector_upgrade_signing_provider_conformance_assessments"
+    __table_args__ = (
+        UniqueConstraint(
+            "assessed_by",
+            "idempotency_key",
+            name="uq_connector_upgrade_signing_provider_conformance_actor_idempotency",
+        ),
+    )
+
+    assessment_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    assessed_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    provider_class: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    valid_until: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class ConnectorCredentialAssignmentModel(Base):
     __tablename__ = "connector_credential_assignments"
     __table_args__ = (

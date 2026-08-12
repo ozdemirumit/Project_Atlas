@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Activity,
   AlertTriangle,
   Archive,
   ArrowUpCircle,
@@ -18,6 +19,7 @@ import {
 import { useState, type FormEvent } from "react";
 
 import {
+  assessConnectorUpgradeSigningProviderConformance,
   createConnectorUpgradeApprovalRequest,
   createConnectorUpgradeChangeContextDraft,
   createConnectorUpgradeEvidenceReceipt,
@@ -27,6 +29,7 @@ import {
   downloadConnectorUpgradeSignedEvidenceReceipt,
   getConnectorUpgradeApprovalRecord,
   getConnectorUpgradeEvidenceSigningKeyTrustInventory,
+  getLatestConnectorUpgradeSigningProviderConformance,
   getLatestConnectorUpgradeApprovalRevalidation,
   getConnectorUpgradeHandoffReadiness,
   getLatestConnectorUpgradeChangeContextDraft,
@@ -40,6 +43,7 @@ import {
   type ConnectorUpgradeCandidate,
   type ConnectorUpgradeEvidenceReceipt,
   type ConnectorUpgradeSignedEvidenceReceipt,
+  type ConnectorUpgradeSigningProviderConformanceAssessment,
   getConnectorUpgradePlan,
   type ConnectorUpgradePlan,
 } from "../../api/connectorUpgradeReadiness";
@@ -683,6 +687,20 @@ export default function InstalledMcpManagementWorkspace({ subjectId }: { subject
     queryKey: ["connector-upgrade-signing-key-trust"],
     queryFn: getConnectorUpgradeEvidenceSigningKeyTrustInventory,
   });
+  const signingConformanceQuery = useQuery({
+    queryKey: ["connector-upgrade-signing-provider-conformance"],
+    queryFn: getLatestConnectorUpgradeSigningProviderConformance,
+    retry: false,
+  });
+  const signingConformanceMutation = useMutation({
+    mutationFn: assessConnectorUpgradeSigningProviderConformance,
+    onSuccess: (assessment: ConnectorUpgradeSigningProviderConformanceAssessment) => {
+      queryClient.setQueryData(
+        ["connector-upgrade-signing-provider-conformance"],
+        assessment,
+      );
+    },
+  });
   const createMutation = useMutation({
     mutationFn: createConnectorInstance,
     onSuccess: async () => {
@@ -708,6 +726,7 @@ export default function InstalledMcpManagementWorkspace({ subjectId }: { subject
     void policyQuery.refetch();
     void instanceQuery.refetch();
     void signingTrustQuery.refetch();
+    void signingConformanceQuery.refetch();
   };
 
   return (
@@ -750,6 +769,87 @@ export default function InstalledMcpManagementWorkspace({ subjectId }: { subject
           </div>
         ))}
         {signingTrustQuery.data && <p className="installed-mcp-signing-boundary">Read-only metadata. No key management or signing authority.</p>}
+        <div className="installed-mcp-conformance" aria-labelledby="signing-conformance-title">
+          <div className="installed-mcp-conformance-heading">
+            <div>
+              <span>PROVIDER DIAGNOSTIC</span>
+              <strong id="signing-conformance-title">Signing-provider conformance</strong>
+            </div>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={signingConformanceMutation.isPending}
+              onClick={() => signingConformanceMutation.mutate()}
+            >
+              {signingConformanceMutation.isPending
+                ? <RefreshCw className="spin" size={15} />
+                : <Activity size={15} />}
+              Run assessment
+            </button>
+          </div>
+          {signingConformanceQuery.isLoading && (
+            <div className="installed-mcp-status">
+              <RefreshCw className="spin" size={17} />
+              <span>Reading latest provider evidence...</span>
+            </div>
+          )}
+          {(signingConformanceQuery.isError || signingConformanceMutation.isError) && (
+            <div className="installed-mcp-status error-state" role="alert">
+              <AlertTriangle size={17} />
+              <span>Signing-provider conformance evidence is unavailable.</span>
+            </div>
+          )}
+          {!signingConformanceQuery.isLoading && !signingConformanceQuery.data &&
+            !signingConformanceQuery.isError && (
+              <div className="installed-mcp-status">
+                <Activity size={17} />
+                <span>No bounded provider assessment has been recorded for this scope.</span>
+              </div>
+            )}
+          {signingConformanceQuery.data && (
+            <div className="installed-mcp-conformance-result">
+              <div className={
+                `installed-mcp-conformance-state ${
+                  signingConformanceQuery.data.signing_provider_conformant
+                    ? "conformant" : "blocked"
+                }`
+              }>
+                {signingConformanceQuery.data.signing_provider_conformant
+                  ? <ShieldCheck size={18} /> : <AlertTriangle size={18} />}
+                <div>
+                  <strong>{signingConformanceQuery.data.state.replaceAll("_", " ")}</strong>
+                  <span>{signingConformanceQuery.data.provider_class}</span>
+                </div>
+              </div>
+              <dl>
+                <div>
+                  <dt>Key reference</dt>
+                  <dd>{signingConformanceQuery.data.key_id ?? "Unavailable"}</dd>
+                </div>
+                <div>
+                  <dt>Algorithm</dt>
+                  <dd>{signingConformanceQuery.data.algorithm ?? "Not observed"}</dd>
+                </div>
+                <div>
+                  <dt>Policy</dt>
+                  <dd>{signingConformanceQuery.data.policy_version}</dd>
+                </div>
+                <div>
+                  <dt>Valid until</dt>
+                  <dd>{new Date(signingConformanceQuery.data.valid_until).toLocaleString()}</dd>
+                </div>
+              </dl>
+              <p>
+                {signingConformanceQuery.data.production_approved
+                  ? "Provider is approved for production by the active policy."
+                  : "Provider is not approved for production; production remains fail-closed."}
+              </p>
+            </div>
+          )}
+          <p className="installed-mcp-signing-boundary">
+            Server-generated challenge only. No key management, receipt signing or execution authority.
+          </p>
+        </div>
       </section>
       <div className="installed-mcp-toolbar">
         <div className="installed-mcp-filters" aria-label="MCP lifecycle filter">

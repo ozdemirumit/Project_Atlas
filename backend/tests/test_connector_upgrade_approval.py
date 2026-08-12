@@ -66,10 +66,14 @@ from atlas.modules.connectors.domain.upgrade_approval import (
 )
 from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeEvidenceAuthenticityState,
+    ConnectorUpgradeEvidenceSignature,
     ConnectorUpgradeEvidenceSigningKey,
     ConnectorUpgradeEvidenceSigningKeyEffectiveState,
     ConnectorUpgradeEvidenceSigningKeyState,
     ConnectorUpgradeEvidenceSigningKeyTrust,
+    ConnectorUpgradeEvidenceSigningProviderDiagnostic,
+    ConnectorUpgradeEvidenceSigningProviderTrust,
+    ConnectorUpgradeSigningProviderConformanceState,
 )
 from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticationMethod
 
@@ -233,6 +237,259 @@ async def test_signing_key_trust_inventory_fails_closed_for_scope_provider_and_a
             actor=actor,
             correlation_id="correlation.connector-upgrade-signing-key-trust-audit-failed",
         )
+
+
+@pytest.mark.asyncio
+async def test_signing_provider_conformance_is_bounded_idempotent_and_non_authoritative() -> None:
+    service, _, _, _, _, _, sources, audit = await approval_fixture()
+    instance, _ = sources
+    actor = replace(
+        instance_operator("subject.connector-upgrade-conformance-auditor"),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+    assessment = await service.assess_signing_provider_conformance(
+        actor=actor,
+        acknowledged_diagnostic_grants_no_key_receipt_or_execution_authority=True,
+        idempotency_key="connector-upgrade-provider-conformance-test",
+        correlation_id="correlation.connector-upgrade-provider-conformance",
+    )
+    replay = await service.assess_signing_provider_conformance(
+        actor=actor,
+        acknowledged_diagnostic_grants_no_key_receipt_or_execution_authority=True,
+        idempotency_key="connector-upgrade-provider-conformance-test",
+        correlation_id="correlation.connector-upgrade-provider-conformance",
+    )
+    latest = await service.latest_signing_provider_conformance(
+        actor=actor,
+        correlation_id="correlation.connector-upgrade-provider-conformance-read",
+    )
+
+    assert assessment.state is ConnectorUpgradeSigningProviderConformanceState.CONFORMANT
+    assert assessment.organization_id == instance.organization_id
+    assert assessment.environment_id == instance.environment_id
+    assert assessment.provider_class == "provider.nonproduction-hmac"
+    assert not assessment.production_approved
+    assert assessment.key_id == "key.connector-upgrade-evidence.test"
+    assert assessment.algorithm == "algorithm.hmac-sha256-nonproduction"
+    assert assessment.signing_provider_conformant and assessment.diagnostic_only
+    assert not assessment.key_management_authorized
+    assert not assessment.receipt_signing_authorized
+    assert not assessment.execution_authorized
+    assert not assessment.infrastructure_mutation_performed
+    assert replay.reused and replay.canonical_digest == assessment.canonical_digest
+    assert latest == assessment
+    assert "signature" not in asdict(assessment)
+    assert "key_material" not in asdict(assessment)
+    assert [record.result_code for record in audit.records][-3:] == [
+        "connector_upgrade_signing_provider_conformance_conformant",
+        "connector_upgrade_signing_provider_conformance_reused",
+        "connector_upgrade_signing_provider_conformance_read",
+    ]
+    restored = PostgreSQLConnectorUpgradeApprovalRepository._signing_provider_conformance_to_domain(
+        cast(
+            dict[str, object],
+            ConnectorUpgradeApprovalService._normalize(asdict(assessment)),
+        )
+    )
+    assert restored == assessment
+    service._audit_sink = FailingAuditSink()
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        await service.latest_signing_provider_conformance(
+            actor=actor,
+            correlation_id="correlation.connector-upgrade-provider-conformance-audit-failed",
+        )
+
+
+class _FailingConformanceProvider:
+    def __init__(self, delegate: object, phase: str) -> None:
+        self._delegate = cast(NonProductionHmacUpgradeEvidenceAuthenticityProvider, delegate)
+        self._phase = phase
+
+    async def trust_inventory(
+        self, *, organization_id: str, environment_id: str
+    ) -> ConnectorUpgradeEvidenceSigningProviderTrust:
+        return await self._delegate.trust_inventory(
+            organization_id=organization_id, environment_id=environment_id
+        )
+
+    async def active_key(
+        self, *, organization_id: str, environment_id: str
+    ) -> ConnectorUpgradeEvidenceSigningKey:
+        if self._phase == "ineligible":
+            raise ConnectorUpgradeEvidenceAuthenticityError(
+                "connector_upgrade_evidence_signing_key_disabled"
+            )
+        return await self._delegate.active_key(
+            organization_id=organization_id, environment_id=environment_id
+        )
+
+    async def sign(
+        self,
+        *,
+        key: ConnectorUpgradeEvidenceSigningKey,
+        payload_digest: str,
+        issued_at: datetime,
+        expires_at: datetime,
+    ) -> ConnectorUpgradeEvidenceSignature:
+        if self._phase == "sign":
+            raise ConnectorUpgradeEvidenceAuthenticityError("diagnostic_sign_failed")
+        return await self._delegate.sign(
+            key=key,
+            payload_digest=payload_digest,
+            issued_at=issued_at,
+            expires_at=expires_at,
+        )
+
+    async def diagnostic_sign_and_verify(
+        self,
+        *,
+        organization_id: str,
+        environment_id: str,
+        challenge_digest: str,
+        issued_at: datetime,
+        expires_at: datetime,
+    ) -> ConnectorUpgradeEvidenceSigningProviderDiagnostic:
+        del challenge_digest, issued_at, expires_at
+        key = await self._delegate.active_key(
+            organization_id=organization_id, environment_id=environment_id
+        )
+        state = {
+            "sign": ConnectorUpgradeSigningProviderConformanceState.SIGN_FAILED,
+            "verify": ConnectorUpgradeSigningProviderConformanceState.VERIFY_FAILED,
+        }[self._phase]
+        return ConnectorUpgradeEvidenceSigningProviderDiagnostic(
+            provider_class="provider.nonproduction-hmac",
+            organization_id=organization_id,
+            environment_id=environment_id,
+            key=key,
+            state=state,
+        )
+
+    async def verify(
+        self,
+        *,
+        signature: ConnectorUpgradeEvidenceSignature,
+        payload_digest: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorUpgradeEvidenceSigningKey:
+        if self._phase == "verify":
+            raise ConnectorUpgradeEvidenceAuthenticityError("diagnostic_verify_failed")
+        return await self._delegate.verify(
+            signature=signature,
+            payload_digest=payload_digest,
+            organization_id=organization_id,
+            environment_id=environment_id,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider_mode", "expected"),
+    (
+        ("unavailable", ConnectorUpgradeSigningProviderConformanceState.UNAVAILABLE),
+        ("ineligible", ConnectorUpgradeSigningProviderConformanceState.INELIGIBLE_KEY),
+        ("sign", ConnectorUpgradeSigningProviderConformanceState.SIGN_FAILED),
+        ("verify", ConnectorUpgradeSigningProviderConformanceState.VERIFY_FAILED),
+    ),
+)
+async def test_signing_provider_conformance_reports_stable_fail_closed_outcomes(
+    provider_mode: str,
+    expected: ConnectorUpgradeSigningProviderConformanceState,
+) -> None:
+    service, _, _, _, _, _, _, _ = await approval_fixture()
+    if provider_mode == "unavailable":
+        service._evidence_authenticity_provider = UnavailableUpgradeEvidenceAuthenticityProvider()
+    else:
+        service._evidence_authenticity_provider = _FailingConformanceProvider(
+            service._evidence_authenticity_provider, provider_mode
+        )
+    assessment = await service.assess_signing_provider_conformance(
+        actor=instance_operator(f"subject.connector-conformance-{provider_mode}"),
+        acknowledged_diagnostic_grants_no_key_receipt_or_execution_authority=True,
+        idempotency_key=f"connector-conformance-{provider_mode}",
+        correlation_id=f"correlation.connector-conformance-{provider_mode}",
+    )
+
+    assert assessment.state is expected
+    assert not assessment.signing_provider_conformant
+    assert not assessment.execution_authorized
+
+
+def test_signing_provider_conformance_api_requires_csrf_and_exposes_no_signature(
+    tmp_path: Path,
+) -> None:
+    (
+        service,
+        _,
+        instance_service,
+        package_service,
+        registration_service,
+        publication_service,
+        _,
+        _,
+    ) = asyncio.run(approval_fixture())
+    actor = instance_operator("subject.connector-conformance-api")
+    app = create_app(
+        settings(
+            development_subject_id=actor.subject_id,
+            mcp_builder_generation_root=tmp_path / "mcp-builder-generations",
+        ),
+        identity_provider=BasicTestIdentityProvider(actor),
+        registry_publication_service=publication_service,
+        package_registration_service=registration_service,
+        package_installation_service=package_service,
+        connector_instance_creation_service=instance_service,
+        connector_upgrade_approval_service=service,
+    )
+    endpoint = (
+        "/api/v1/connectors/instances/upgrade-evidence-signing-provider-conformance-assessments"
+    )
+    body = {
+        "schema_version": "atlas.connector-upgrade-signing-provider-conformance-input.v1",
+        "acknowledged_diagnostic_grants_no_key_receipt_or_execution_authority": True,
+    }
+    with TestClient(app) as client:
+        login_response = login(client)
+        no_csrf = client.post(
+            endpoint,
+            headers={"Idempotency-Key": "connector-conformance-api-no-csrf"},
+            json=body,
+        )
+        extra_input = client.post(
+            endpoint,
+            headers={
+                "Idempotency-Key": "connector-conformance-api-extra",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+            json={**body, "payload_digest": "a" * 64},
+        )
+        created = client.post(
+            endpoint,
+            headers={
+                "Idempotency-Key": "connector-conformance-api-created",
+                "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+            },
+            json=body,
+        )
+        latest = client.get(f"{endpoint}/latest")
+
+    assert no_csrf.status_code == 403
+    assert no_csrf.json()["code"] == "csrf_validation_failed"
+    assert extra_input.status_code == 422
+    assert created.status_code == 201
+    assert created.headers["Cache-Control"] == "no-store"
+    assert latest.status_code == 200
+    assert latest.headers["Cache-Control"] == "no-store"
+    payload = created.json()["data"]
+    assert payload["state"] == "conformant"
+    assert payload["diagnostic_only"] is True
+    assert payload["receipt_signing_authorized"] is False
+    assert payload["execution_authorized"] is False
+    assert "signature" not in payload
+    assert "signature_value" not in payload
+    assert "key_material" not in payload
 
 
 def test_signing_key_trust_effective_state_precedence_is_deterministic() -> None:

@@ -13,6 +13,7 @@ from atlas.core.persistence.models import (
     ConnectorUpgradeApprovalRequestModel,
     ConnectorUpgradeApprovalRevalidationModel,
     ConnectorUpgradeChangeContextDraftModel,
+    ConnectorUpgradeSigningProviderConformanceModel,
 )
 from atlas.modules.connectors.application.upgrade_approval import ConnectorUpgradeApprovalService
 from atlas.modules.connectors.domain.upgrade_approval import (
@@ -21,6 +22,10 @@ from atlas.modules.connectors.domain.upgrade_approval import (
     ConnectorUpgradeApprovalRequest,
     ConnectorUpgradeApprovalRevalidation,
     ConnectorUpgradeChangeContextDraft,
+)
+from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
+    ConnectorUpgradeSigningProviderConformanceAssessment,
+    ConnectorUpgradeSigningProviderConformanceState,
 )
 
 
@@ -236,6 +241,62 @@ class PostgreSQLConnectorUpgradeApprovalRepository:
             return False
         return True
 
+    async def get_latest_signing_provider_conformance(
+        self, *, organization_id: str, environment_id: str
+    ) -> ConnectorUpgradeSigningProviderConformanceAssessment | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorUpgradeSigningProviderConformanceModel)
+                .where(
+                    ConnectorUpgradeSigningProviderConformanceModel.organization_id
+                    == organization_id,
+                    ConnectorUpgradeSigningProviderConformanceModel.environment_id
+                    == environment_id,
+                )
+                .order_by(ConnectorUpgradeSigningProviderConformanceModel.observed_at.desc())
+                .limit(1)
+            )
+            return self._signing_provider_conformance_to_domain(row.payload) if row else None
+
+    async def get_signing_provider_conformance_by_key(
+        self, *, assessed_by: str, idempotency_key: str
+    ) -> ConnectorUpgradeSigningProviderConformanceAssessment | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorUpgradeSigningProviderConformanceModel).where(
+                    ConnectorUpgradeSigningProviderConformanceModel.assessed_by == assessed_by,
+                    ConnectorUpgradeSigningProviderConformanceModel.idempotency_key
+                    == idempotency_key,
+                )
+            )
+            return self._signing_provider_conformance_to_domain(row.payload) if row else None
+
+    async def add_signing_provider_conformance(
+        self, assessment: ConnectorUpgradeSigningProviderConformanceAssessment
+    ) -> bool:
+        payload = ConnectorUpgradeApprovalService._normalize(asdict(assessment))
+        assert isinstance(payload, dict)
+        try:
+            async with self._sessions.begin() as session:
+                session.add(
+                    ConnectorUpgradeSigningProviderConformanceModel(
+                        assessment_id=assessment.assessment_id,
+                        assessed_by=assessment.assessed_by,
+                        idempotency_key=assessment.idempotency_key,
+                        organization_id=assessment.organization_id,
+                        environment_id=assessment.environment_id,
+                        provider_class=assessment.provider_class,
+                        state=assessment.state,
+                        observed_at=assessment.observed_at,
+                        valid_until=assessment.valid_until,
+                        canonical_digest=assessment.canonical_digest,
+                        payload=payload,
+                    )
+                )
+        except IntegrityError:
+            return False
+        return True
+
     async def close(self) -> None:
         await self._engine.dispose()
 
@@ -267,3 +328,14 @@ class PostgreSQLConnectorUpgradeApprovalRepository:
         for field in ("proposed_window_start", "proposed_window_end", "created_at", "valid_until"):
             payload[field] = datetime.fromisoformat(str(payload[field]))
         return ConnectorUpgradeChangeContextDraft(**cast(Any, payload))
+
+    @staticmethod
+    def _signing_provider_conformance_to_domain(
+        raw: dict[str, object],
+    ) -> ConnectorUpgradeSigningProviderConformanceAssessment:
+        payload = dict(raw)
+        payload["state"] = ConnectorUpgradeSigningProviderConformanceState(str(payload["state"]))
+        payload["reason_codes"] = tuple(cast(list[str], payload["reason_codes"]))
+        payload["observed_at"] = datetime.fromisoformat(str(payload["observed_at"]))
+        payload["valid_until"] = datetime.fromisoformat(str(payload["valid_until"]))
+        return ConnectorUpgradeSigningProviderConformanceAssessment(**cast(Any, payload))

@@ -6,6 +6,7 @@ from typing import Protocol
 from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeEvidenceSignature,
     ConnectorUpgradeEvidenceSigningKey,
+    ConnectorUpgradeEvidenceSigningProviderDiagnostic,
     ConnectorUpgradeEvidenceSigningProviderTrust,
 )
 
@@ -24,6 +25,16 @@ class ConnectorUpgradeEvidenceAuthenticityProvider(Protocol):
     async def active_key(
         self, *, organization_id: str, environment_id: str
     ) -> ConnectorUpgradeEvidenceSigningKey: ...
+
+    async def diagnostic_sign_and_verify(
+        self,
+        *,
+        organization_id: str,
+        environment_id: str,
+        challenge_digest: str,
+        issued_at: datetime,
+        expires_at: datetime,
+    ) -> ConnectorUpgradeEvidenceSigningProviderDiagnostic: ...
 
     async def sign(
         self,

@@ -13,7 +13,9 @@ from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeEvidenceSignature,
     ConnectorUpgradeEvidenceSigningKey,
     ConnectorUpgradeEvidenceSigningKeyState,
+    ConnectorUpgradeEvidenceSigningProviderDiagnostic,
     ConnectorUpgradeEvidenceSigningProviderTrust,
+    ConnectorUpgradeSigningProviderConformanceState,
 )
 
 
@@ -84,6 +86,65 @@ class NonProductionHmacUpgradeEvidenceAuthenticityProvider:
             signature_digest=sha256(raw).hexdigest(),
             issued_at=issued_at,
             expires_at=expires_at,
+        )
+
+    async def diagnostic_sign_and_verify(
+        self,
+        *,
+        organization_id: str,
+        environment_id: str,
+        challenge_digest: str,
+        issued_at: datetime,
+        expires_at: datetime,
+    ) -> ConnectorUpgradeEvidenceSigningProviderDiagnostic:
+        try:
+            key = await self.active_key(
+                organization_id=organization_id, environment_id=environment_id
+            )
+        except ConnectorUpgradeEvidenceAuthenticityError:
+            return ConnectorUpgradeEvidenceSigningProviderDiagnostic(
+                provider_class="provider.nonproduction-hmac",
+                organization_id=organization_id,
+                environment_id=environment_id,
+                key=None,
+                state=ConnectorUpgradeSigningProviderConformanceState.INELIGIBLE_KEY,
+            )
+        try:
+            signature = await self.sign(
+                key=key,
+                payload_digest=challenge_digest,
+                issued_at=issued_at,
+                expires_at=expires_at,
+            )
+        except ConnectorUpgradeEvidenceAuthenticityError:
+            return ConnectorUpgradeEvidenceSigningProviderDiagnostic(
+                provider_class="provider.nonproduction-hmac",
+                organization_id=organization_id,
+                environment_id=environment_id,
+                key=key,
+                state=ConnectorUpgradeSigningProviderConformanceState.SIGN_FAILED,
+            )
+        try:
+            verified_key = await self.verify(
+                signature=signature,
+                payload_digest=challenge_digest,
+                organization_id=organization_id,
+                environment_id=environment_id,
+            )
+        except ConnectorUpgradeEvidenceAuthenticityError:
+            state = ConnectorUpgradeSigningProviderConformanceState.VERIFY_FAILED
+        else:
+            state = (
+                ConnectorUpgradeSigningProviderConformanceState.CONFORMANT
+                if verified_key == key
+                else ConnectorUpgradeSigningProviderConformanceState.VERIFY_FAILED
+            )
+        return ConnectorUpgradeEvidenceSigningProviderDiagnostic(
+            provider_class="provider.nonproduction-hmac",
+            organization_id=organization_id,
+            environment_id=environment_id,
+            key=key,
+            state=state,
         )
 
     async def verify(
@@ -175,6 +236,24 @@ class UnavailableUpgradeEvidenceAuthenticityProvider:
         del key, payload_digest, issued_at, expires_at
         raise ConnectorUpgradeEvidenceAuthenticityError(
             "connector_upgrade_evidence_signing_provider_unavailable"
+        )
+
+    async def diagnostic_sign_and_verify(
+        self,
+        *,
+        organization_id: str,
+        environment_id: str,
+        challenge_digest: str,
+        issued_at: datetime,
+        expires_at: datetime,
+    ) -> ConnectorUpgradeEvidenceSigningProviderDiagnostic:
+        del challenge_digest, issued_at, expires_at
+        return ConnectorUpgradeEvidenceSigningProviderDiagnostic(
+            provider_class="provider.unavailable",
+            organization_id=organization_id,
+            environment_id=environment_id,
+            key=None,
+            state=ConnectorUpgradeSigningProviderConformanceState.UNAVAILABLE,
         )
 
     async def verify(
