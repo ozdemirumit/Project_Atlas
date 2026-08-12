@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   isConnectorUpgradeEvidenceReceipt,
+  isConnectorUpgradeEvidenceReceiptVerification,
   isConnectorUpgradeHandoffReadiness,
 } from "./connectorUpgradeReadiness";
 
@@ -187,5 +188,62 @@ describe("connector upgrade evidence receipt validation", () => {
       satisfied_check_ids: required.slice(1),
     })).toBe(false);
     expect(isConnectorUpgradeEvidenceReceipt({ ...receipt, token: "unsafe" })).toBe(false);
+    expect(isConnectorUpgradeEvidenceReceipt({ ...receipt, note: "unexpected" })).toBe(false);
+    expect(isConnectorUpgradeEvidenceReceipt({
+      ...receipt,
+      valid_until: receipt.created_at,
+    })).toBe(false);
+  });
+
+  it("keeps integrity, current state and authenticity claims separate", () => {
+    const verification = {
+      verification_id: "connector-upgrade-evidence-verification.test",
+      schema_version: "atlas.connector-upgrade-evidence-receipt-verification.v1",
+      receipt_id: receipt.receipt_id,
+      receipt_digest: receipt.canonical_digest,
+      request_id: receipt.request_id,
+      organization_id: receipt.organization_id,
+      environment_id: receipt.environment_id,
+      verified_by: "subject.receipt-auditor",
+      verified_at: "2026-08-12T00:45:00Z",
+      receipt_valid_until: receipt.valid_until,
+      verification_state: "current",
+      reason_codes: ["connector.upgrade.evidence-receipt.current"],
+      canonical_digest: "b".repeat(64),
+      integrity_valid: true,
+      current_state_compared: true,
+      current_state_matches: true,
+      receipt_expired: false,
+      authenticity_proven: false,
+      evidence_receipt_only: true,
+      approval_consumed: false,
+      handoff_ready: false,
+      handoff_artifact_issued: false,
+      target_contacted: false,
+      package_rebound: false,
+      configuration_changed: false,
+      execution_authorized: false,
+      infrastructure_mutation_performed: false,
+    };
+    expect(isConnectorUpgradeEvidenceReceiptVerification(verification)).toBe(true);
+    expect(isConnectorUpgradeEvidenceReceiptVerification({
+      ...verification,
+      authenticity_proven: true,
+    })).toBe(false);
+    expect(isConnectorUpgradeEvidenceReceiptVerification({
+      ...verification,
+      current_state_matches: false,
+    })).toBe(false);
+    expect(isConnectorUpgradeEvidenceReceiptVerification({
+      ...verification,
+      note: "unexpected",
+    })).toBe(false);
+    expect(isConnectorUpgradeEvidenceReceiptVerification({
+      ...verification,
+      verification_state: "expired",
+      current_state_compared: false,
+      current_state_matches: false,
+      receipt_expired: true,
+    })).toBe(true);
   });
 });

@@ -9,7 +9,7 @@
 | Status | In Progress |
 | Branch | `agent/mcp-upgrade-evidence-verification` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110, ADR-111, ADR-112, ADR-113 |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-023, ATLAS-025, ATLAS-031, ATLAS-032, ATLAS-036, ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-107, ADR-108, ADR-109, ADR-110, ADR-111, ADR-112, ADR-113, ADR-114 |
 | Last Updated | 2026-08-12 |
 | Next Action | Define and implement non-executable receipt integrity verification and current-state revalidation |
 
@@ -41,6 +41,8 @@
 - IMP-157 merged through PR #169 as `a15931bcdb39cdade8d34b9eff6df4d2263e709e`;
   final exact-head PR CI run `31582294091` and exact-main push CI run `31582765789` both passed
   before IMP-158 begins.
+- The IMP-157 closure and IMP-158 start commit `ac8479600eff6014a0a0945c4bc1ff15df399f34`
+  passed independent `main` CI run `31583483835` before implementation began.
 - ADR-113 deliberately defines the receipt as evidence only and reserves any future runtime artifact
   for a separate schema and validator.
 

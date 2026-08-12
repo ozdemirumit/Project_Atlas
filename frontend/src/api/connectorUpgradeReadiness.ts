@@ -325,6 +325,36 @@ export type ConnectorUpgradeEvidenceReceipt = {
   infrastructure_mutation_performed: false;
 };
 
+export type ConnectorUpgradeEvidenceReceiptVerification = {
+  verification_id: string;
+  schema_version: "atlas.connector-upgrade-evidence-receipt-verification.v1";
+  receipt_id: string;
+  receipt_digest: string;
+  request_id: string;
+  organization_id: string;
+  environment_id: string;
+  verified_by: string;
+  verified_at: string;
+  receipt_valid_until: string;
+  verification_state: "current" | "stale" | "expired" | "unverifiable";
+  reason_codes: string[];
+  canonical_digest: string;
+  integrity_valid: true;
+  current_state_compared: boolean;
+  current_state_matches: boolean;
+  receipt_expired: boolean;
+  authenticity_proven: false;
+  evidence_receipt_only: true;
+  approval_consumed: false;
+  handoff_ready: false;
+  handoff_artifact_issued: false;
+  target_contacted: false;
+  package_rebound: false;
+  configuration_changed: false;
+  execution_authorized: false;
+  infrastructure_mutation_performed: false;
+};
+
 export type ConnectorUpgradeChangeContextDraft = {
   draft_id: string;
   schema_version: "atlas.connector-upgrade-change-context-draft.v1";
@@ -699,6 +729,34 @@ export function isConnectorUpgradeHandoffReadiness(
   );
 }
 
+const evidenceReceiptKeys = [
+  "receipt_id", "schema_version", "version", "assessment_id", "assessment_digest",
+  "request_id", "request_digest", "decision_id", "decision_digest", "revalidation_id",
+  "revalidation_digest", "plan_id", "plan_digest", "organization_id", "environment_id",
+  "created_by", "audit_readiness_evidence_id", "audit_readiness_evidence_digest",
+  "itsm_change_evidence_id", "itsm_change_evidence_digest", "maintenance_window_evidence_id",
+  "maintenance_window_evidence_digest", "required_check_ids", "satisfied_check_ids",
+  "not_applicable_check_ids", "created_at", "valid_until", "canonical_digest",
+  "evidence_receipt_only", "runtime_acceptable", "approval_consumed", "handoff_ready",
+  "handoff_artifact_issued", "target_contacted", "package_rebound", "configuration_changed",
+  "execution_authorized", "infrastructure_mutation_performed",
+] as const;
+
+const evidenceReceiptVerificationKeys = [
+  "verification_id", "schema_version", "receipt_id", "receipt_digest", "request_id",
+  "organization_id", "environment_id", "verified_by", "verified_at", "receipt_valid_until",
+  "verification_state", "reason_codes", "canonical_digest", "integrity_valid",
+  "current_state_compared", "current_state_matches", "receipt_expired", "authenticity_proven",
+  "evidence_receipt_only", "approval_consumed", "handoff_ready", "handoff_artifact_issued",
+  "target_contacted", "package_rebound", "configuration_changed", "execution_authorized",
+  "infrastructure_mutation_performed",
+] as const;
+
+function hasExactKeys(item: Record<string, unknown>, keys: readonly string[]): boolean {
+  const allowed = new Set(keys);
+  return Object.keys(item).length === keys.length && Object.keys(item).every((key) => allowed.has(key));
+}
+
 export function isConnectorUpgradeEvidenceReceipt(
   value: unknown,
 ): value is ConnectorUpgradeEvidenceReceipt {
@@ -709,7 +767,10 @@ export function isConnectorUpgradeEvidenceReceipt(
   const notApplicable = strings(item.not_applicable_check_ids)
     ? item.not_applicable_check_ids
     : null;
+  const createdAt = typeof item.created_at === "string" ? Date.parse(item.created_at) : Number.NaN;
+  const validUntil = typeof item.valid_until === "string" ? Date.parse(item.valid_until) : Number.NaN;
   return (
+    hasExactKeys(item, evidenceReceiptKeys) &&
     item.schema_version === "atlas.connector-upgrade-evidence-receipt.v1" &&
     item.version === 1 &&
     [item.receipt_id, item.assessment_id, item.request_id, item.decision_id,
@@ -727,11 +788,53 @@ export function isConnectorUpgradeEvidenceReceipt(
     required.length === satisfied.length && required.every((checkId) => satisfied.includes(checkId)) &&
     new Set(notApplicable).size === notApplicable.length &&
     notApplicable.every((checkId) => !required.includes(checkId)) &&
+    Number.isFinite(createdAt) && Number.isFinite(validUntil) && createdAt < validUntil &&
     item.evidence_receipt_only === true && item.runtime_acceptable === false &&
     item.approval_consumed === false && item.handoff_ready === false &&
     item.handoff_artifact_issued === false && item.target_contacted === false &&
     item.package_rebound === false && item.configuration_changed === false &&
     item.execution_authorized === false && item.infrastructure_mutation_performed === false &&
+    !("token" in item || "credential" in item || "target" in item || "endpoint" in item)
+  );
+}
+
+export function isConnectorUpgradeEvidenceReceiptVerification(
+  value: unknown,
+): value is ConnectorUpgradeEvidenceReceiptVerification {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  const state = item.verification_state;
+  const verifiedAt = typeof item.verified_at === "string" ? Date.parse(item.verified_at) : Number.NaN;
+  const receiptValidUntil = typeof item.receipt_valid_until === "string"
+    ? Date.parse(item.receipt_valid_until)
+    : Number.NaN;
+  const expectedState = state === "current"
+    ? [true, true, false]
+    : state === "stale"
+      ? [true, false, false]
+      : state === "expired"
+        ? [false, false, true]
+        : state === "unverifiable"
+          ? [false, false, false]
+          : null;
+  return (
+    hasExactKeys(item, evidenceReceiptVerificationKeys) &&
+    item.schema_version === "atlas.connector-upgrade-evidence-receipt-verification.v1" &&
+    [item.verification_id, item.receipt_id, item.request_id, item.organization_id,
+      item.environment_id, item.verified_by, item.verified_at, item.receipt_valid_until]
+      .every((field) => typeof field === "string") &&
+    [item.receipt_digest, item.canonical_digest]
+      .every((digest) => typeof digest === "string" && DIGEST.test(digest)) &&
+    Number.isFinite(verifiedAt) && Number.isFinite(receiptValidUntil) &&
+    strings(item.reason_codes) && item.reason_codes.length > 0 && expectedState !== null &&
+    item.integrity_valid === true && item.authenticity_proven === false &&
+    item.current_state_compared === expectedState[0] &&
+    item.current_state_matches === expectedState[1] && item.receipt_expired === expectedState[2] &&
+    item.evidence_receipt_only === true && item.approval_consumed === false &&
+    item.handoff_ready === false && item.handoff_artifact_issued === false &&
+    item.target_contacted === false && item.package_rebound === false &&
+    item.configuration_changed === false && item.execution_authorized === false &&
+    item.infrastructure_mutation_performed === false &&
     !("token" in item || "credential" in item || "target" in item || "endpoint" in item)
   );
 }
@@ -1062,6 +1165,42 @@ export function downloadConnectorUpgradeEvidenceReceipt(
   anchor.download = `${receipt.receipt_id}.json`;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+export async function verifyConnectorUpgradeEvidenceReceipt(input: {
+  record: ConnectorUpgradeApprovalRecord;
+  receipt: ConnectorUpgradeEvidenceReceipt;
+}): Promise<ConnectorUpgradeEvidenceReceiptVerification> {
+  const { record, receipt } = input;
+  if (receipt.request_id !== record.request.request_id) {
+    throw new Error("The receipt does not belong to this exact approval request");
+  }
+  const response = await apiFetch(
+    `/api/v1/connectors/instances/${encodeURIComponent(record.request.source_record_id)}/upgrade-approval-requests/${encodeURIComponent(record.request.request_id)}/evidence-receipts/verify`,
+    {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        schema_version: "atlas.connector-upgrade-evidence-receipt-verification-input.v1",
+        receipt,
+        acknowledged_digest_integrity_is_not_authenticity_or_execution_authority: true,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Connector upgrade evidence receipt verification failed with ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  if (!payload || typeof payload !== "object" || !("data" in payload) ||
+      !isConnectorUpgradeEvidenceReceiptVerification(payload.data)) {
+    throw new Error("Connector upgrade evidence receipt verification returned an unsafe payload");
+  }
+  if (payload.data.receipt_id !== receipt.receipt_id ||
+      payload.data.receipt_digest !== receipt.canonical_digest ||
+      payload.data.request_id !== record.request.request_id) {
+    throw new Error("Connector upgrade evidence receipt verification does not match the upload");
+  }
+  return payload.data;
 }
 
 export async function createConnectorUpgradeChangeContextDraft(input: {

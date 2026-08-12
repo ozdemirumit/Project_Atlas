@@ -21,12 +21,14 @@ import {
   getConnectorUpgradePlan,
   getConnectorUpgradeReadiness,
   revalidateConnectorUpgradeApproval,
+  verifyConnectorUpgradeEvidenceReceipt,
   type ConnectorUpgradeApprovalRecord,
   type ConnectorUpgradeApprovalRequest,
   type ConnectorUpgradeApprovalRevalidation,
   type ConnectorUpgradeHandoffReadiness,
   type ConnectorUpgradeChangeContextDraft,
   type ConnectorUpgradeEvidenceReceipt,
+  type ConnectorUpgradeEvidenceReceiptVerification,
   type ConnectorUpgradePlan,
   type ConnectorUpgradeReadiness,
 } from "../../api/connectorUpgradeReadiness";
@@ -422,6 +424,36 @@ const evidenceReceipt: ConnectorUpgradeEvidenceReceipt = {
   infrastructure_mutation_performed: false,
 };
 
+const evidenceReceiptVerification: ConnectorUpgradeEvidenceReceiptVerification = {
+  verification_id: "connector-upgrade-evidence-verification.test",
+  schema_version: "atlas.connector-upgrade-evidence-receipt-verification.v1",
+  receipt_id: evidenceReceipt.receipt_id,
+  receipt_digest: evidenceReceipt.canonical_digest,
+  request_id: evidenceReceipt.request_id,
+  organization_id: evidenceReceipt.organization_id,
+  environment_id: evidenceReceipt.environment_id,
+  verified_by: "subject.connector-independent-verifier",
+  verified_at: "2026-08-12T00:45:00Z",
+  receipt_valid_until: evidenceReceipt.valid_until,
+  verification_state: "current",
+  reason_codes: ["connector.upgrade.evidence-receipt.current"],
+  canonical_digest: "b".repeat(64),
+  integrity_valid: true,
+  current_state_compared: true,
+  current_state_matches: true,
+  receipt_expired: false,
+  authenticity_proven: false,
+  evidence_receipt_only: true,
+  approval_consumed: false,
+  handoff_ready: false,
+  handoff_artifact_issued: false,
+  target_contacted: false,
+  package_rebound: false,
+  configuration_changed: false,
+  execution_authorized: false,
+  infrastructure_mutation_performed: false,
+};
+
 vi.mock("../../api/connectorInstances", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorInstances")>();
   return {
@@ -449,6 +481,7 @@ vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
     getLatestConnectorUpgradeChangeContextDraft: vi.fn(),
     createConnectorUpgradeChangeContextDraft: vi.fn(),
     createConnectorUpgradeEvidenceReceipt: vi.fn(),
+    verifyConnectorUpgradeEvidenceReceipt: vi.fn(),
     getLatestConnectorUpgradeApprovalRevalidation: vi.fn(),
     getConnectorUpgradeReadiness: vi.fn(),
     getConnectorUpgradePlan: vi.fn(),
@@ -481,6 +514,7 @@ beforeEach(() => {
   vi.mocked(getLatestConnectorUpgradeChangeContextDraft).mockResolvedValue(null);
   vi.mocked(createConnectorUpgradeChangeContextDraft).mockResolvedValue(changeContextDraft);
   vi.mocked(createConnectorUpgradeEvidenceReceipt).mockResolvedValue(evidenceReceipt);
+  vi.mocked(verifyConnectorUpgradeEvidenceReceipt).mockResolvedValue(evidenceReceiptVerification);
   vi.mocked(revalidateConnectorUpgradeApproval).mockResolvedValue(upgradeApprovalRevalidation);
   vi.mocked(createConnectorInstance).mockResolvedValue({ data: instance });
   vi.mocked(retireConnectorInstance).mockResolvedValue({
@@ -604,6 +638,21 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(await screen.findByText("Evidence receipt ready")).toBeVisible();
     expect(screen.getByRole("button", { name: "Download JSON receipt" })).toBeVisible();
     expect(screen.getByText(/Runtime acceptable: no. Approval consumed: no./i)).toBeVisible();
+    const verifyReceipt = screen.getByRole("button", { name: "Verify evidence receipt" });
+    expect(verifyReceipt).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Receipt JSON"), {
+      target: {
+        files: [new File([JSON.stringify(evidenceReceipt)], "receipt.json", {
+          type: "application/json",
+        })],
+      },
+    });
+    fireEvent.click(screen.getByLabelText(/Digest integrity is not authenticity/i));
+    await waitFor(() => expect(verifyReceipt).toBeEnabled());
+    fireEvent.click(verifyReceipt);
+    await waitFor(() => expect(verifyConnectorUpgradeEvidenceReceipt).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Receipt current")).toBeVisible();
+    expect(screen.getByText(/Integrity valid: yes. Current state matches: yes./i)).toBeVisible();
     expect(screen.getByText("Not applicable in this context")).toBeVisible();
     expect(screen.getByText(/target-binding-current/i)).toBeVisible();
     expect(screen.getByText(/Applicability policy v2026.08.12.1/i)).toBeVisible();
