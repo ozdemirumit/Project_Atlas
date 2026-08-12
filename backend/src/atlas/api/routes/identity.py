@@ -20,7 +20,16 @@ async def current_identity(
 ) -> CurrentIdentityResponse:
     scope = current_identity_scope(subject.organization_id, request.app.state.settings.environment)
     return CurrentIdentityResponse(
-        data=CurrentIdentityData.from_domain(subject, scope, decision),
+        data=CurrentIdentityData.from_domain(
+            subject,
+            scope,
+            decision,
+            credential_kind=getattr(
+                request.state,
+                "authenticated_credential_kind",
+                "identity_provider",
+            ),
+        ),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id),
             generated_at=datetime.now(UTC),

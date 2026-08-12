@@ -35,6 +35,18 @@ button {
   color: inherit;
 }
 
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -266,6 +278,7 @@ textarea:focus-visible {
 }
 
 .installed-mcp-heading {
+  order: 1;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
@@ -309,6 +322,60 @@ textarea:focus-visible {
   border: 1px solid #cbd7d3;
   border-radius: 6px;
   background: #f7faf9;
+}
+
+.connector-workspace-navigation,
+.health-workspace-navigation {
+  scrollbar-width: none;
+}
+
+.connector-workspace-navigation::-webkit-scrollbar,
+.health-workspace-navigation::-webkit-scrollbar {
+  display: none;
+}
+
+.installed-mcp-signing-diagnostics {
+  order: 5;
+  min-width: 0;
+}
+
+.installed-mcp-signing-diagnostics > summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #cbd7d3;
+  border-radius: 6px;
+  color: #315f54;
+  background: #f7faf9;
+  cursor: pointer;
+  list-style: none;
+}
+
+.installed-mcp-signing-diagnostics > summary::-webkit-details-marker {
+  display: none;
+}
+
+.installed-mcp-signing-diagnostics > summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.installed-mcp-signing-diagnostics > summary small {
+  color: #687772;
+  font-size: 11px;
+  text-align: right;
+}
+
+.installed-mcp-signing-diagnostics[open] > summary {
+  margin-bottom: 9px;
+  border-color: #9fbab1;
+  background: #edf6f2;
 }
 
 .installed-mcp-signing-trust-heading,
@@ -563,6 +630,7 @@ textarea:focus-visible {
 }
 
 .installed-mcp-toolbar {
+  order: 2;
   min-width: 0;
   justify-content: space-between;
   gap: 12px;
@@ -659,6 +727,7 @@ textarea:focus-visible {
 }
 
 .installed-mcp-table-wrap {
+  order: 3;
   min-width: 0;
   overflow-x: auto;
   border: 1px solid #d5dfdc;
@@ -732,10 +801,38 @@ textarea:focus-visible {
 }
 
 .installed-mcp-footnote {
+  order: 4;
   justify-content: space-between;
   gap: 12px;
   color: #61716d;
   font-size: 11px;
+}
+
+.installed-mcp-workspace > .installed-mcp-status,
+.installed-mcp-workspace > .installed-mcp-empty {
+  order: 3;
+}
+
+.installed-mcp-status.enterprise-login-required,
+.inventory-device-status.enterprise-login-required {
+  border-style: solid;
+  border-color: #c8b27a;
+  color: #705517;
+  background: #fffaf0;
+}
+
+.installed-mcp-status.enterprise-login-required > button,
+.inventory-device-status.enterprise-login-required > button {
+  display: inline-flex;
+  min-height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-left: auto;
+  border-color: #87691f;
+  color: #654d13;
+  background: #fff;
 }
 
 .installed-mcp-dialog-backdrop {
@@ -2781,6 +2878,22 @@ textarea:focus-visible {
 .login-submit:disabled {
   cursor: not-allowed;
   opacity: 0.58;
+}
+
+.login-development-return {
+  width: 100%;
+  min-height: 38px;
+  margin-top: 10px;
+  border: 0;
+  color: #52635d;
+  background: transparent;
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.login-development-return:hover {
+  color: #1d5e4d;
+  background: #f3f7f5;
 }
 
 .login-error {
@@ -10515,6 +10628,14 @@ tbody tr.selected {
   color: #fff;
 }
 
+.inventory-device-heading-actions button:disabled,
+.inventory-device-row-action:disabled,
+.installed-mcp-heading-actions button:disabled,
+.installed-mcp-row-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .inventory-persistence {
   display: inline-flex;
   min-height: 30px;
@@ -10872,6 +10993,18 @@ tbody tr.selected {
   .inventory-device-segments {
     width: 100%;
     max-width: none;
+  }
+
+  .installed-mcp-status.enterprise-login-required,
+  .inventory-device-status.enterprise-login-required {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .installed-mcp-status.enterprise-login-required > button,
+  .inventory-device-status.enterprise-login-required > button {
+    width: 100%;
+    margin-left: 0;
   }
 
   .inventory-device-dialog {

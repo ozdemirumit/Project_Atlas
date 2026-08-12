@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Clock3,
   Database,
+  LogIn,
   Plus,
   Search,
   Server,
@@ -212,7 +213,13 @@ function DeviceRetireDialog({
   );
 }
 
-export default function InventoryDeviceRegistryWorkspace() {
+export default function InventoryDeviceRegistryWorkspace({
+  governedSessionAvailable = true,
+  onRequestEnterpriseLogin,
+}: {
+  governedSessionAvailable?: boolean;
+  onRequestEnterpriseLogin?: () => void;
+}) {
   const queryClient = useQueryClient();
   const [lifecycle, setLifecycle] = useState<LifecycleFilter>("active");
   const [query, setQuery] = useState("");
@@ -258,7 +265,16 @@ export default function InventoryDeviceRegistryWorkspace() {
               <Database size={14} /> {inventory.durable ? "Durable store" : "Development memory"}
             </span>
           )}
-          <button type="button" onClick={() => { createMutation.reset(); setCreating(true); }}>
+          <button
+            type="button"
+            disabled={!governedSessionAvailable}
+            title={
+              governedSessionAvailable
+                ? "Add infrastructure device"
+                : "Signed browser session required"
+            }
+            onClick={() => { createMutation.reset(); setCreating(true); }}
+          >
             <Plus size={15} /> Add device
           </button>
         </div>
@@ -278,6 +294,21 @@ export default function InventoryDeviceRegistryWorkspace() {
           <input value={query} maxLength={160} placeholder="Search devices" onChange={(event) => setQuery(event.target.value)} />
         </label>
       </div>
+
+      {!governedSessionAvailable && (
+        <div className="inventory-device-status enterprise-login-required" role="status">
+          <LogIn size={17} />
+          <div>
+            <strong>Signed browser session required for device lifecycle changes</strong>
+            <span>Development mode remains read-only and cannot register or retire devices.</span>
+          </div>
+          {onRequestEnterpriseLogin && (
+            <button type="button" onClick={onRequestEnterpriseLogin}>
+              <LogIn size={15} /> Sign in to manage
+            </button>
+          )}
+        </div>
+      )}
 
       {inventoryQuery.isLoading && <div className="inventory-device-status"><Clock3 size={17} /> Loading device registry</div>}
       {inventoryQuery.isError && <div className="inventory-device-status error-state" role="alert"><AlertTriangle size={17} /> Device registry is unavailable.</div>}
@@ -302,7 +333,7 @@ export default function InventoryDeviceRegistryWorkspace() {
                   <td><span className="inventory-device-management">{device.management_address ?? "Not declared"}</span><small>{device.serial_number ?? "No serial"}</small></td>
                   <td><span className={`inventory-device-lifecycle ${device.lifecycle}`}>{device.lifecycle === "active" ? <CheckCircle2 size={14} /> : <Archive size={14} />}{device.lifecycle}</span></td>
                   <td>{formatTimestamp(device.updated_at)}</td>
-                  <td>{device.lifecycle === "active" && <button className="inventory-device-row-action" type="button" title="Retire device" aria-label={`Retire ${device.display_name}`} onClick={() => { retireMutation.reset(); setRetiring(device); }}><Archive size={16} /></button>}</td>
+                  <td>{device.lifecycle === "active" && <button className="inventory-device-row-action" type="button" disabled={!governedSessionAvailable} title={governedSessionAvailable ? "Retire device" : "Signed browser session required"} aria-label={`Retire ${device.display_name}`} onClick={() => { retireMutation.reset(); setRetiring(device); }}><Archive size={16} /></button>}</td>
                 </tr>
               ))}
             </tbody>

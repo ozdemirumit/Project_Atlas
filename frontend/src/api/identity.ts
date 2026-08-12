@@ -3,6 +3,7 @@ export type CurrentIdentity = {
   display_name: string;
   subject_kind: string;
   organization_id: string;
+  credential_kind: "identity_provider" | "browser_session" | "api_token";
   role_ids: string[];
   group_ids: string[];
   authentication: {

@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-167 |
 | Title | Inventory and MCP lifecycle action discoverability foundation |
-| Status | In Progress; scope and acceptance recorded |
+| Status | In Progress; implementation and local/live validation complete |
 | Branch | `agent/inventory-mcp-action-discoverability` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-111, ADR-112, ADR-122, ADR-123 (planned) |
-| Last Updated | 2026-08-12 |
-| Next Action | Record ADR-123, surface existing device and MCP lifecycle actions at predictable entry points, then complete local, live and GitHub validation |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-111, ADR-112, ADR-122, ADR-123 |
+| Last Updated | 2026-08-13 |
+| Next Action | Commit and push the validated implementation, open its pull request, pass exact-head CI, merge and pass merged-main CI |
 
 ### ATLAS-IMP-167 Scope Rationale
 
@@ -34,9 +34,11 @@
 - Connector Inventory presents Add MCP, lifecycle filters, inventory status and governed retirement
   before secondary signing-provider diagnostics; deep links and keyboard navigation land on the
   intended management surface.
-- Unauthenticated or development-only identities receive concise enterprise-login guidance at the
-  affected management surface. Controls never bypass the existing protected API permissions, MFA,
-  human-subject, audit, acknowledgement or version checks.
+- Current identity distinguishes ambient provider fallback from a signed browser session. Ambient
+  development identity remains read-only; a local browser session can exercise device lifecycle,
+  while MCP create/retire remains locked to directory-backed MFA or hardware-backed human identity.
+- Controls never bypass the existing protected API permissions, human-subject, audit,
+  acknowledgement, idempotency or version checks.
 - Existing device and MCP create/retire contracts remain unchanged. No hard delete, infrastructure
   mutation, runtime activation, target contact, credential handling or signing-provider authority is
   added.
@@ -54,6 +56,25 @@
 - IMP-166 merged through PR #178 as `f8e5a029b810ca9d16d9a06b108d95d8d2bfd513` after exact-head
   CI run `31638283275` passed with backend in 7m45s and frontend in 4m38s. The exact merged commit
   independently passed `main` CI run `31638978354` with backend in 7m19s and frontend in 4m30s.
+
+### ATLAS-IMP-167 Validation Evidence
+
+- ADR-123 records the discoverability, credential-kind and unchanged authority boundaries. Health
+  now names its stable overview route Inventory; Connector Inventory places lifecycle controls ahead
+  of a closed security-diagnostics disclosure.
+- The identity response distinguishes provider fallback, browser session and API token. Ambient
+  development identity cannot mutate inventory; a local signed browser session can exercise the
+  existing governed device contract. MCP lifecycle actions remain disabled unless the existing
+  directory-backed MFA or hardware-backed human requirement is satisfied.
+- Backend formatting and lint passed; strict `mypy` passed across 968 source files. The complete
+  regression passed 1,005 tests with three expected Windows symlink skips, and Alembic reports one
+  head, `20260812_0101`.
+- Frontend TypeScript and zero-warning ESLint passed. The complete suite passed 229 tests across 88
+  files and the production build passed with only the existing large-chunk advisory.
+- Live browser validation covered a local browser-session login, enabled Add device dialog, synthetic
+  device registration and governed retirement, retired filtering, visible Add MCP controls and the
+  explicit enterprise-MFA boundary. Desktop 1,280 x 720 and mobile 390 x 844 views had no page
+  overflow or Vite overlay; the mobile task rail remained scrollable with its scrollbar hidden.
 
 ### ATLAS-IMP-166 Scope Rationale
 

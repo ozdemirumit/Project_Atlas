@@ -110,6 +110,7 @@ class CurrentIdentityData(BaseModel):
     display_name: str
     subject_kind: str
     organization_id: str
+    credential_kind: str
     role_ids: list[str]
     group_ids: list[str]
     authentication: AuthenticationContextSchema
@@ -124,12 +125,14 @@ class CurrentIdentityData(BaseModel):
         subject: AuthenticatedSubject,
         scope: ResourceScope,
         decision: AuthorizationDecision,
+        credential_kind: str,
     ) -> CurrentIdentityData:
         return cls(
             subject_id=subject.subject_id,
             display_name=subject.display_name,
             subject_kind=subject.kind.value,
             organization_id=subject.organization_id,
+            credential_kind=credential_kind,
             role_ids=list(subject.role_ids),
             group_ids=list(subject.group_ids),
             authentication=AuthenticationContextSchema(

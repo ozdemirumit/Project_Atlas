@@ -11,7 +11,7 @@ describe("HealthWorkspaceNavigation", () => {
     const onNavigate = vi.fn();
     render(<HealthWorkspaceNavigation activeView="overview" onNavigate={onNavigate} />);
 
-    expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: "Inventory" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
@@ -22,6 +22,9 @@ describe("HealthWorkspaceNavigation", () => {
   });
 
   it("provides stable heading copy for each view", () => {
+    expect(healthViewDescriptor("overview").title).toBe(
+      "Infrastructure inventory and health",
+    );
     expect(healthViewDescriptor("investigate").title).toBe("Investigate infrastructure");
     expect(healthViewDescriptor("governance").description).toContain("Human review");
   });
@@ -30,7 +33,7 @@ describe("HealthWorkspaceNavigation", () => {
     const onNavigate = vi.fn();
     render(<HealthWorkspaceNavigation activeView="overview" onNavigate={onNavigate} />);
 
-    const overview = screen.getByRole("tab", { name: "Overview" });
+    const overview = screen.getByRole("tab", { name: "Inventory" });
     overview.focus();
     fireEvent.keyDown(overview, { key: "ArrowRight" });
     expect(onNavigate).toHaveBeenLastCalledWith("investigate");

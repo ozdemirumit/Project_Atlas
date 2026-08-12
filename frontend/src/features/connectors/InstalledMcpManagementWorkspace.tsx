@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Download,
   FileCheck2,
+  LogIn,
   PackagePlus,
   RefreshCw,
   Search,
@@ -798,7 +799,15 @@ function SigningProviderOnboardingPolicyProvenance({
   );
 }
 
-export default function InstalledMcpManagementWorkspace({ subjectId }: { subjectId: string }) {
+export default function InstalledMcpManagementWorkspace({
+  enterpriseMfaAvailable = true,
+  onRequestEnterpriseLogin,
+  subjectId,
+}: {
+  enterpriseMfaAvailable?: boolean;
+  onRequestEnterpriseLogin?: () => void;
+  subjectId: string;
+}) {
   const queryClient = useQueryClient();
   const [lifecycle, setLifecycle] = useState<LifecycleFilter>("active");
   const [search, setSearch] = useState("");
@@ -887,9 +896,14 @@ export default function InstalledMcpManagementWorkspace({ subjectId }: { subject
         <div className="installed-mcp-heading-actions">
           <span className="state-badge neutral"><ShieldCheck size={14} /> no runtime authority</span>
           <button className="icon-button" type="button" title="Refresh MCP inventory" aria-label="Refresh MCP inventory" onClick={refresh}><RefreshCw size={17} /></button>
-          <button className="primary-button" type="button" disabled={packageQuery.isLoading || policyQuery.isLoading} onClick={() => { createMutation.reset(); setAdding(true); }}><PackagePlus size={16} />Add MCP</button>
+          <button className="primary-button" type="button" disabled={!enterpriseMfaAvailable || packageQuery.isLoading || policyQuery.isLoading} title={enterpriseMfaAvailable ? "Add MCP" : "Directory-backed MFA session required"} onClick={() => { createMutation.reset(); setAdding(true); }}><PackagePlus size={16} />Add MCP</button>
         </div>
       </div>
+      <details className="installed-mcp-signing-diagnostics">
+        <summary>
+          <span><ShieldCheck size={16} /> Security and onboarding diagnostics</span>
+          <small>Signing trust, provider readiness and policy provenance</small>
+        </summary>
       <section className="installed-mcp-signing-trust" aria-labelledby="signing-trust-title">
         <div className="installed-mcp-signing-trust-heading">
           <div>
@@ -1068,6 +1082,7 @@ export default function InstalledMcpManagementWorkspace({ subjectId }: { subject
           </p>
         </div>
       </section>
+      </details>
       <div className="installed-mcp-toolbar">
         <div className="installed-mcp-filters" aria-label="MCP lifecycle filter">
           {(["active", "retired", "all"] as const).map((value) => (
@@ -1076,6 +1091,20 @@ export default function InstalledMcpManagementWorkspace({ subjectId }: { subject
         </div>
         <label className="installed-mcp-search"><Search size={16} /><span className="sr-only">Search installed MCPs</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search MCPs" maxLength={200} /></label>
       </div>
+      {!enterpriseMfaAvailable && (
+        <div className="installed-mcp-status enterprise-login-required" role="status">
+          <LogIn size={18} />
+          <div>
+            <strong>Enterprise MFA required for MCP lifecycle changes</strong>
+            <span>Local development sessions remain read-only for MCP creation and retirement.</span>
+          </div>
+          {onRequestEnterpriseLogin && (
+            <button type="button" onClick={onRequestEnterpriseLogin}>
+              <LogIn size={15} /> Sign in to manage
+            </button>
+          )}
+        </div>
+      )}
       {(instanceQuery.isError || packageQuery.isError || policyQuery.isError) && (
         <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={18} /><div><strong>Enterprise connector inventory is unavailable</strong><span>Sign in with an authorized MFA browser session and refresh.</span></div></div>
       )}
@@ -1100,7 +1129,7 @@ export default function InstalledMcpManagementWorkspace({ subjectId }: { subject
                     </span>
                     {new Date(instance.retired_at ?? instance.created_at).toLocaleString()}
                   </td>
-                  <td>{instance.instance_state === "disabled_unconfigured" && <div className="installed-mcp-row-actions"><button className="icon-button" type="button" title="Review update" aria-label={`Review update for ${instance.display_name}`} onClick={() => setReviewing(instance)}><ArrowUpCircle size={16} /></button><button className="icon-button" type="button" title="Retire MCP" aria-label={`Retire ${instance.display_name}`} onClick={() => { retireMutation.reset(); setRetiring(instance); }}><Archive size={16} /></button></div>}</td>
+                  <td>{instance.instance_state === "disabled_unconfigured" && <div className="installed-mcp-row-actions"><button className="icon-button" type="button" disabled={!enterpriseMfaAvailable} title={enterpriseMfaAvailable ? "Review update" : "Directory-backed MFA session required"} aria-label={`Review update for ${instance.display_name}`} onClick={() => setReviewing(instance)}><ArrowUpCircle size={16} /></button><button className="icon-button" type="button" disabled={!enterpriseMfaAvailable} title={enterpriseMfaAvailable ? "Retire MCP" : "Directory-backed MFA session required"} aria-label={`Retire ${instance.display_name}`} onClick={() => { retireMutation.reset(); setRetiring(instance); }}><Archive size={16} /></button></div>}</td>
                 </tr>
               ))}
             </tbody>

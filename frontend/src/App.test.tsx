@@ -192,6 +192,7 @@ const identityResponse = {
     display_name: "Local Operator",
     subject_kind: "human",
     organization_id: "organization.development",
+    credential_kind: "identity_provider",
     role_ids: ["role.development.operator"],
     group_ids: [],
     authentication: {
@@ -1302,7 +1303,7 @@ describe("Atlas application shell", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "Health overview" }),
+      await screen.findByRole("heading", { name: "Infrastructure inventory and health" }),
     ).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /^Workspace$/ }));
     expect(
@@ -1311,7 +1312,7 @@ describe("Atlas application shell", () => {
     expect(window.location.hash).toBe("#/workspace");
     fireEvent.click(screen.getByRole("button", { name: /^Health$/ }));
     expect(
-      await screen.findByRole("heading", { name: "Health overview" }),
+      await screen.findByRole("heading", { name: "Infrastructure inventory and health" }),
     ).toBeVisible();
     expect(window.location.hash).toBe("#/health/overview");
     expect(screen.getByText("Human decision required")).toBeVisible();
@@ -1336,7 +1337,7 @@ describe("Atlas application shell", () => {
     expect(
       await screen.findByText(/Transport handoff recorded. SIEM ingestion remains unconfirmed/),
     ).toBeVisible();
-    fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Inventory" }));
     expect(await screen.findAllByText("VSP One B28")).not.toHaveLength(0);
     expect(screen.getByText("VSP G400")).toBeVisible();
     expect(screen.getAllByText("CTL01").length).toBeGreaterThan(0);
@@ -1416,6 +1417,7 @@ describe("Atlas application shell", () => {
       ...identityResponse,
       data: {
         ...identityResponse.data,
+        credential_kind: "browser_session" as const,
         display_name: "Directory Operator",
         authentication: {
           ...identityResponse.data.authentication,
@@ -1564,6 +1566,7 @@ describe("Atlas application shell", () => {
       ...identityResponse,
       data: {
         ...identityResponse.data,
+        credential_kind: "browser_session" as const,
         subject_id: "subject.enterprise.admin",
         display_name: "Security Administrator",
         role_ids: ["role.security-administrator"],

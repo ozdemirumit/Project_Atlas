@@ -10,6 +10,7 @@ const identity: CurrentIdentity = {
   display_name: "Atlas Operator",
   subject_kind: "human",
   organization_id: "organization.test",
+  credential_kind: "browser_session",
   role_ids: ["role.operator"],
   group_ids: [],
   authentication: {
