@@ -19,6 +19,7 @@ import { listOperationalConversations } from "../../api/conversations";
 import {
   cancelWorkflowPlan,
   createWorkflowPlan,
+  getWorkflowOrchestrationLease,
   listWorkflowDefinitions,
   listWorkflowPlans,
   WORKFLOW_PLAN_SAFETY_NOTICE,
@@ -36,6 +37,18 @@ interface WorkflowPlanningWorkspaceProps {
 
 function readableKind(kind: string): string {
   return kind.replaceAll("_", " ");
+}
+
+function shortDigest(value: string): string {
+  return `${value.slice(0, 12)}...${value.slice(-8)}`;
+}
+
+function safeHolderIdentifier(value: string): string {
+  return value.length <= 24 ? value : `${value.slice(0, 14)}...${value.slice(-6)}`;
+}
+
+function formatTimestamp(value: string): string {
+  return new Date(value).toLocaleString();
 }
 
 export default function WorkflowPlanningWorkspace({
@@ -85,6 +98,26 @@ export default function WorkflowPlanningWorkspace({
     queryKey: ["workflow-plans", organizationId, environmentId, siteId, authorizedTargetIds],
     queryFn: () => listWorkflowPlans({ scope, authorizedTargetIds }),
     enabled: targetQuery.isSuccess,
+    retry: false,
+  });
+  const leaseQuery = useQuery({
+    queryKey: [
+      "workflow-orchestration-lease",
+      selectedPlan?.plan_id,
+      selectedPlan?.canonical_digest,
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () => {
+      if (!selectedPlan) throw new ApiRequestError("No workflow plan is selected", 422);
+      return getWorkflowOrchestrationLease({
+        plan: selectedPlan,
+        scope,
+        authorizedTargetIds,
+      });
+    },
+    enabled: Boolean(selectedPlan),
     retry: false,
   });
   const definitions = definitionQuery.data?.definitions ?? [];
@@ -138,6 +171,8 @@ export default function WorkflowPlanningWorkspace({
   );
   const cancellationSessionExpired =
     cancelMutation.error instanceof ApiRequestError && cancelMutation.error.status === 401;
+  const leaseErrorStatus =
+    leaseQuery.error instanceof ApiRequestError ? leaseQuery.error.status : undefined;
 
   const selectPlan = (plan: WorkflowRunPlan) => {
     setSelectedPlan(plan);
@@ -241,6 +276,67 @@ export default function WorkflowPlanningWorkspace({
               <div className="workflow-section-heading"><div><p className="eyebrow">EXACT PLAN</p><h2 id="workflow-plan-detail-title">{selectedPlan.plan_id}</h2></div><button className="icon-button" type="button" aria-label="Close plan detail" onClick={() => setSelectedPlan(null)}><X size={17} /></button></div>
               <dl><div><dt>State</dt><dd>{selectedPlan.state}</dd></div><div><dt>Target</dt><dd>{selectedPlan.target_id}</dd></div><div><dt>Definition</dt><dd>{selectedPlan.definition_id} v{selectedPlan.definition_version}</dd></div><div><dt>Storage</dt><dd>{selectedPlan.durable ? "durable" : "development memory"}</dd></div></dl>
               <ol className="workflow-step-preview">{selectedPlan.steps.map((step) => <li key={step.step_id}><CheckCircle2 size={17} /><div><strong>{step.step_id}</strong><small>{readableKind(step.kind)} | {step.state}</small></div></li>)}</ol>
+
+              <div aria-labelledby="workflow-lease-status-title">
+                <div className="workflow-section-heading">
+                  <div><p className="eyebrow">READ-ONLY COORDINATION</p><h3 id="workflow-lease-status-title">Orchestration lease</h3></div>
+                  <span>No human controls</span>
+                </div>
+                {leaseQuery.isLoading && (
+                  <div className="workspace-message" role="status">
+                    <RefreshCw className="spin" size={17} />
+                    <span>Loading authoritative lease status...</span>
+                  </div>
+                )}
+                {leaseQuery.isError && (
+                  <div className="workspace-message error-state" role="alert">
+                    <div>
+                      <strong>
+                        {leaseErrorStatus === 401
+                          ? "Your session has expired"
+                          : leaseErrorStatus === 403
+                            ? "Lease status permission is missing"
+                            : "Lease status is unavailable"}
+                      </strong>
+                      <p>
+                        {leaseErrorStatus === 401
+                          ? "Sign in again to continue."
+                          : leaseErrorStatus === 403
+                            ? "Your current role cannot inspect orchestration lease status."
+                            : "No lease state is inferred. Retry the read-only request."}
+                      </p>
+                    </div>
+                    {leaseErrorStatus !== 401 && leaseErrorStatus !== 403 && (
+                      <button type="button" onClick={() => void leaseQuery.refetch()}>
+                        <RefreshCw size={15} /> Retry
+                      </button>
+                    )}
+                  </div>
+                )}
+                {leaseQuery.isSuccess && leaseQuery.data.lease === null && (
+                  <div className="workflow-empty-state">
+                    <LockKeyhole size={19} /> No orchestration lease is recorded for this plan.
+                  </div>
+                )}
+                {leaseQuery.isSuccess && leaseQuery.data.lease !== null && (
+                  <>
+                    <dl>
+                      <div><dt>Status</dt><dd><span className="state-badge neutral">{leaseQuery.data.lease.effective_state}</span></dd></div>
+                      <div><dt>Holder identifier</dt><dd><code title={leaseQuery.data.lease.worker_subject_id}>{safeHolderIdentifier(leaseQuery.data.lease.worker_subject_id)}</code></dd></div>
+                      <div><dt>Fencing token</dt><dd>{leaseQuery.data.lease.fencing_token}</dd></div>
+                      <div><dt>Plan digest binding</dt><dd><code title={leaseQuery.data.lease.plan_digest}>{shortDigest(leaseQuery.data.lease.plan_digest)}</code></dd></div>
+                      <div><dt>Acquired</dt><dd>{formatTimestamp(leaseQuery.data.lease.acquired_at)}</dd></div>
+                      <div><dt>Last heartbeat</dt><dd>{formatTimestamp(leaseQuery.data.lease.last_heartbeat_at)}</dd></div>
+                      <div><dt>Expires</dt><dd>{formatTimestamp(leaseQuery.data.lease.expires_at)}</dd></div>
+                      <div><dt>Observed</dt><dd>{formatTimestamp(leaseQuery.data.server_time)}</dd></div>
+                    </dl>
+                    <div className="workflow-safety-boundary" role="note">
+                      <LockKeyhole size={18} />
+                      <span>This lease coordinates ownership only. It grants no execution authority and did not run any plan step.</span>
+                    </div>
+                  </>
+                )}
+              </div>
 
               {selectedPlan.state === "planned" && (
                 <div className="workflow-plan-composer" aria-labelledby="workflow-cancel-title">

@@ -64,6 +64,17 @@ class WorkflowPlanStepState(StrEnum):
     NOT_STARTED = "not_started"
 
 
+class WorkflowOrchestrationLeaseState(StrEnum):
+    ACTIVE = "active"
+    RELEASED = "released"
+
+
+class WorkflowOrchestrationLeaseEffectiveState(StrEnum):
+    ACTIVE = "active"
+    EXPIRED = "expired"
+    RELEASED = "released"
+
+
 @dataclass(frozen=True, slots=True)
 class WorkflowScope:
     organization_id: str
@@ -81,6 +92,84 @@ class WorkflowScope:
             "organization_id": self.organization_id,
             "site_id": self.site_id,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowOrchestrationLease:
+    """Fenced ownership record that deliberately grants no execution authority."""
+
+    lease_id: str
+    plan_id: str
+    plan_digest: str
+    scope: WorkflowScope
+    target_id: str
+    target_type: str
+    worker_subject_id: str
+    acquired_at: datetime
+    last_heartbeat_at: datetime
+    expires_at: datetime
+    fencing_token: int
+    state: WorkflowOrchestrationLeaseState
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        _require_identifier(self.lease_id, name="lease_id")
+        _require_identifier(self.plan_id, name="lease plan_id")
+        _require_digest(self.plan_digest, name="lease plan_digest")
+        _require_identifier(self.target_id, name="lease target_id")
+        if self.target_type != "storage":
+            raise ValueError("workflow orchestration leases support only storage targets")
+        _require_identifier(self.worker_subject_id, name="lease worker_subject_id")
+        if any(
+            timestamp.tzinfo is None
+            for timestamp in (self.acquired_at, self.last_heartbeat_at, self.expires_at)
+        ):
+            raise ValueError("workflow orchestration lease timestamps must be timezone-aware")
+        if self.last_heartbeat_at < self.acquired_at:
+            raise ValueError("lease heartbeat cannot precede acquisition")
+        if self.expires_at <= self.last_heartbeat_at:
+            raise ValueError("lease expiry must follow the latest heartbeat")
+        if self.fencing_token < 1:
+            raise ValueError("lease fencing_token must be at least one")
+        if not isinstance(self.state, WorkflowOrchestrationLeaseState):
+            raise ValueError("workflow orchestration lease state is unsupported")
+        _require_digest(self.canonical_digest, name="lease canonical_digest")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("workflow orchestration lease canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "acquired_at": self.acquired_at.isoformat(),
+            "expires_at": self.expires_at.isoformat(),
+            "fencing_token": self.fencing_token,
+            "last_heartbeat_at": self.last_heartbeat_at.isoformat(),
+            "lease_id": self.lease_id,
+            "plan_digest": self.plan_digest,
+            "plan_id": self.plan_id,
+            "scope": self.scope.canonical_value(),
+            "state": self.state.value,
+            "target_id": self.target_id,
+            "target_type": self.target_type,
+            "worker_subject_id": self.worker_subject_id,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    def effective_state(
+        self, *, requested_at: datetime
+    ) -> WorkflowOrchestrationLeaseEffectiveState:
+        if requested_at.tzinfo is None:
+            raise ValueError("lease effective-state time must be timezone-aware")
+        if self.state is WorkflowOrchestrationLeaseState.RELEASED:
+            return WorkflowOrchestrationLeaseEffectiveState.RELEASED
+        if requested_at >= self.expires_at:
+            return WorkflowOrchestrationLeaseEffectiveState.EXPIRED
+        return WorkflowOrchestrationLeaseEffectiveState.ACTIVE
+
+    @property
+    def grants_execution_authority(self) -> bool:
+        return False
 
 
 @dataclass(frozen=True, slots=True)

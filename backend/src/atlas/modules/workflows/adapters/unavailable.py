@@ -3,6 +3,11 @@ from __future__ import annotations
 from typing import NoReturn
 
 from atlas.modules.workflows.application import (
+    WorkflowLeaseAcquireIdempotencyRecord,
+    WorkflowLeaseAcquireRequest,
+    WorkflowLeaseAcquireResult,
+    WorkflowLeaseMutationRequest,
+    WorkflowLeaseMutationResult,
     WorkflowPlanCancellationIdempotencyRecord,
     WorkflowPlanCancellationRequest,
     WorkflowPlanCancellationResult,
@@ -10,7 +15,11 @@ from atlas.modules.workflows.application import (
     WorkflowPlanMutationResult,
     WorkflowPlanningError,
 )
-from atlas.modules.workflows.domain import WorkflowRunPlan, WorkflowScope
+from atlas.modules.workflows.domain import (
+    WorkflowOrchestrationLease,
+    WorkflowRunPlan,
+    WorkflowScope,
+)
 
 
 class UnavailableWorkflowPlanRepository:
@@ -69,6 +78,33 @@ class UnavailableWorkflowPlanRepository:
     async def cancel(
         self, request: WorkflowPlanCancellationRequest
     ) -> WorkflowPlanCancellationResult:
+        self._raise()
+
+    async def get_lease_by_plan_id(self, *, plan_id: str) -> WorkflowOrchestrationLease | None:
+        self._raise()
+
+    async def get_lease_acquire_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        worker_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowLeaseAcquireIdempotencyRecord | None:
+        self._raise()
+
+    async def acquire_lease(
+        self, request: WorkflowLeaseAcquireRequest
+    ) -> WorkflowLeaseAcquireResult:
+        self._raise()
+
+    async def heartbeat_lease(
+        self, request: WorkflowLeaseMutationRequest
+    ) -> WorkflowLeaseMutationResult:
+        self._raise()
+
+    async def release_lease(
+        self, request: WorkflowLeaseMutationRequest
+    ) -> WorkflowLeaseMutationResult:
         self._raise()
 
     async def close(self) -> None:

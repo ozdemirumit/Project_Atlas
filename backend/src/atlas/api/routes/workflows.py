@@ -13,13 +13,22 @@ from atlas.api.security import (
     authorize_workflow_plan_cancel,
     authorize_workflow_plan_create,
     authorize_workflow_plan_read,
+    browser_session_subject,
+    workflow_worker_subject,
 )
 from atlas.api.workflow_schemas import (
+    AcquireWorkflowOrchestrationLeaseInput,
     CancelWorkflowPlanInput,
     CreateWorkflowPlanInput,
+    HeartbeatWorkflowOrchestrationLeaseInput,
+    ReleaseWorkflowOrchestrationLeaseInput,
     WorkflowDefinitionData,
     WorkflowDefinitionInventoryData,
     WorkflowDefinitionInventoryResponse,
+    WorkflowOrchestrationLeaseData,
+    WorkflowOrchestrationLeaseResponse,
+    WorkflowOrchestrationLeaseStatusData,
+    WorkflowOrchestrationLeaseStatusResponse,
     WorkflowPlanInventoryData,
     WorkflowPlanInventoryResponse,
     WorkflowRunPlanData,
@@ -33,11 +42,20 @@ from atlas.modules.conversations.application.ports import (
 from atlas.modules.conversations.domain.models import ConversationScope
 from atlas.modules.identity.domain.models import AuthenticatedSubject
 from atlas.modules.workflows.application import (
+    WORKFLOW_WORKER_AUDIENCE,
     WorkflowAccessContext,
+    WorkflowOrchestrationLeaseError,
+    WorkflowOrchestrationLeaseRepository,
+    WorkflowOrchestrationLeaseService,
     WorkflowPlanningError,
     WorkflowPlanningService,
+    WorkflowWorkerContext,
 )
-from atlas.modules.workflows.domain import WorkflowRunPlan, WorkflowScope
+from atlas.modules.workflows.domain import (
+    WorkflowOrchestrationLease,
+    WorkflowRunPlan,
+    WorkflowScope,
+)
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 IDEMPOTENCY = Header(
@@ -135,6 +153,115 @@ def _raise(error: WorkflowPlanningError) -> NoReturn:
         detail=error.detail,
         retryable=status == 503,
     ) from error
+
+
+def _raise_lease(error: WorkflowOrchestrationLeaseError) -> NoReturn:
+    if error.code.endswith("_invalid"):
+        status = 422
+    elif "repository" in error.code:
+        status = 503
+    elif error.code.endswith("_not_found"):
+        status = 404
+    else:
+        status = 409
+    raise AtlasError(
+        status=status,
+        code=(
+            "workflow_lease_request_invalid"
+            if status == 422
+            else "workflow_lease_service_unavailable"
+            if status == 503
+            else "workflow_resource_unavailable"
+            if status == 404
+            else "workflow_lease_conflict"
+        ),
+        title=(
+            "Workflow lease request invalid"
+            if status == 422
+            else "Workflow lease service unavailable"
+            if status == 503
+            else "Workflow resource unavailable"
+            if status == 404
+            else "Workflow lease conflict"
+        ),
+        detail=(
+            "The workflow lease request did not satisfy the bounded contract."
+            if status == 422
+            else "The workflow lease operation is unavailable."
+        ),
+        retryable=status == 503,
+    ) from error
+
+
+async def _worker_context(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    target_id: str,
+) -> WorkflowWorkerContext:
+    settings = request.app.state.settings
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{settings.environment}",
+        site_id="site.local",
+    )
+    source: ConversationTargetAccessSource = request.app.state.conversation_target_access_source
+    try:
+        targets = await source.authorized_storage_targets(
+            ConversationTargetAccessRequest(
+                subject_id=subject.subject_id,
+                principal_ids=frozenset((*subject.role_ids, *subject.group_ids)),
+                scope=ConversationScope(
+                    organization_id=scope.organization_id,
+                    environment_id=scope.environment_id,
+                    site_id=scope.site_id,
+                ),
+            )
+        )
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_target_authority_unavailable",
+            title="Workflow target authority unavailable",
+            detail="Authorized workflow targets could not be resolved safely.",
+            retryable=True,
+        ) from error
+    target_ids = tuple(target.target_id for target in targets)
+    if (
+        len(target_ids) > 100
+        or len(target_ids) != len(set(target_ids))
+        or target_id not in target_ids
+    ):
+        raise AtlasError(
+            status=404,
+            code="workflow_resource_unavailable",
+            title="Workflow resource unavailable",
+            detail="The requested workflow resource is unavailable.",
+        )
+    return WorkflowWorkerContext(
+        subject_id=subject.subject_id,
+        actor_type=subject.kind.value,
+        authentication_method=subject.authentication_method.value,
+        credential_audience=WORKFLOW_WORKER_AUDIENCE,
+        scope=scope,
+        authorized_target_ids=frozenset(target_ids),
+        correlation_id=str(request.state.correlation_id),
+        decision_id="decision.workflow-worker-authenticated",
+        requested_at=datetime.now(UTC),
+    )
+
+
+def _lease_response(
+    lease: WorkflowOrchestrationLease,
+    request: Request,
+    response: Response,
+) -> WorkflowOrchestrationLeaseResponse:
+    requested_at = datetime.now(UTC)
+    _no_store(response)
+    return WorkflowOrchestrationLeaseResponse(
+        data=WorkflowOrchestrationLeaseData.from_domain(lease, requested_at=requested_at),
+        meta=_meta(request),
+    )
 
 
 def _plan_response(
@@ -239,6 +366,161 @@ async def cancel_workflow_plan(
     except WorkflowPlanningError as error:
         _raise(error)
     return _plan_response(plan, request, response)
+
+
+@router.get(
+    "/plans/{plan_id}/orchestration-lease",
+    response_model=WorkflowOrchestrationLeaseStatusResponse,
+)
+async def get_workflow_orchestration_lease_status(
+    plan_id: Annotated[str, SAFE_ID],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[AuthorizationDecision, Depends(authorize_workflow_plan_read)],
+) -> WorkflowOrchestrationLeaseStatusResponse:
+    planning_service: WorkflowPlanningService = request.app.state.workflow_planning_service
+    try:
+        plan = await planning_service.get_plan(
+            plan_id=plan_id,
+            context=await _context(request, subject, decision),
+        )
+    except WorkflowPlanningError as error:
+        _raise(error)
+    repository: WorkflowOrchestrationLeaseRepository = (
+        request.app.state.workflow_orchestration_lease_repository
+    )
+    try:
+        lease = await repository.get_lease_by_plan_id(plan_id=plan.plan_id)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_lease_service_unavailable",
+            title="Workflow lease service unavailable",
+            detail="The workflow lease status is unavailable.",
+            retryable=True,
+        ) from error
+    if lease is not None and (
+        lease.plan_id != plan.plan_id
+        or lease.plan_digest != plan.canonical_digest
+        or lease.scope != plan.scope
+        or lease.target_id != plan.target_id
+        or lease.target_type != plan.target_type
+        or lease.grants_execution_authority
+    ):
+        raise AtlasError(
+            status=503,
+            code="workflow_lease_service_unavailable",
+            title="Workflow lease service unavailable",
+            detail="The workflow lease status is unavailable.",
+            retryable=True,
+        )
+    server_time = datetime.now(UTC)
+    _no_store(response)
+    return WorkflowOrchestrationLeaseStatusResponse(
+        data=WorkflowOrchestrationLeaseStatusData(
+            plan_id=plan.plan_id,
+            lease=(
+                None
+                if lease is None
+                else WorkflowOrchestrationLeaseData.from_domain(
+                    lease,
+                    requested_at=server_time,
+                )
+            ),
+            server_time=server_time,
+            durable=repository.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/plans/{plan_id}/orchestration-lease/acquisition",
+    response_model=WorkflowOrchestrationLeaseResponse,
+    status_code=201,
+)
+async def acquire_workflow_orchestration_lease(
+    plan_id: Annotated[str, SAFE_ID],
+    payload: AcquireWorkflowOrchestrationLeaseInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(workflow_worker_subject)],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> WorkflowOrchestrationLeaseResponse:
+    service: WorkflowOrchestrationLeaseService = (
+        request.app.state.workflow_orchestration_lease_service
+    )
+    try:
+        lease = await service.acquire(
+            plan_id=plan_id,
+            plan_digest=payload.plan_digest,
+            lease_seconds=payload.lease_duration_seconds,
+            idempotency_key=idempotency_key,
+            context=await _worker_context(request, subject, target_id=payload.target_id),
+        )
+    except WorkflowOrchestrationLeaseError as error:
+        _raise_lease(error)
+    return _lease_response(lease, request, response)
+
+
+@router.post(
+    "/plans/{plan_id}/orchestration-lease/{lease_id}/heartbeat",
+    response_model=WorkflowOrchestrationLeaseResponse,
+)
+async def heartbeat_workflow_orchestration_lease(
+    plan_id: Annotated[str, SAFE_ID],
+    lease_id: Annotated[str, SAFE_ID],
+    payload: HeartbeatWorkflowOrchestrationLeaseInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(workflow_worker_subject)],
+) -> WorkflowOrchestrationLeaseResponse:
+    service: WorkflowOrchestrationLeaseService = (
+        request.app.state.workflow_orchestration_lease_service
+    )
+    try:
+        lease = await service.heartbeat(
+            plan_id=plan_id,
+            plan_digest=payload.plan_digest,
+            lease_id=lease_id,
+            lease_digest=payload.lease_digest,
+            fencing_token=payload.fencing_token,
+            lease_seconds=payload.lease_duration_seconds,
+            context=await _worker_context(request, subject, target_id=payload.target_id),
+        )
+    except WorkflowOrchestrationLeaseError as error:
+        _raise_lease(error)
+    return _lease_response(lease, request, response)
+
+
+@router.post(
+    "/plans/{plan_id}/orchestration-lease/{lease_id}/release",
+    response_model=WorkflowOrchestrationLeaseResponse,
+)
+async def release_workflow_orchestration_lease(
+    plan_id: Annotated[str, SAFE_ID],
+    lease_id: Annotated[str, SAFE_ID],
+    payload: ReleaseWorkflowOrchestrationLeaseInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(workflow_worker_subject)],
+) -> WorkflowOrchestrationLeaseResponse:
+    service: WorkflowOrchestrationLeaseService = (
+        request.app.state.workflow_orchestration_lease_service
+    )
+    try:
+        lease = await service.release(
+            plan_id=plan_id,
+            plan_digest=payload.plan_digest,
+            lease_id=lease_id,
+            lease_digest=payload.lease_digest,
+            fencing_token=payload.fencing_token,
+            context=await _worker_context(request, subject, target_id=payload.target_id),
+        )
+    except WorkflowOrchestrationLeaseError as error:
+        _raise_lease(error)
+    return _lease_response(lease, request, response)
 
 
 @router.get("/plans/{plan_id}", response_model=WorkflowRunPlanResponse)

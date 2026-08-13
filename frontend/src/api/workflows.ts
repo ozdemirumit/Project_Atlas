@@ -107,6 +107,33 @@ export type WorkflowPlanInventory = {
   truncated: boolean;
 };
 
+export type WorkflowOrchestrationLeaseEffectiveState = "active" | "expired" | "released";
+
+export type WorkflowOrchestrationLease = {
+  lease_id: string;
+  plan_id: string;
+  plan_digest: string;
+  scope: WorkflowRunPlan["scope"];
+  target_id: string;
+  target_type: "storage";
+  worker_subject_id: string;
+  acquired_at: string;
+  last_heartbeat_at: string;
+  expires_at: string;
+  fencing_token: number;
+  state: "active" | "released";
+  effective_state: WorkflowOrchestrationLeaseEffectiveState;
+  canonical_digest: string;
+  grants_execution_authority: false;
+};
+
+export type WorkflowOrchestrationLeaseStatus = {
+  plan_id: string;
+  server_time: string;
+  durable: boolean;
+  lease: WorkflowOrchestrationLease | null;
+};
+
 const digest = /^[a-f0-9]{64}$/;
 const capabilityClasses = new Set<WorkflowCapabilityClass>(["C0", "C1", "C2"]);
 const stepKinds = new Set<WorkflowStepKind>([
@@ -139,6 +166,19 @@ function isText(value: unknown, maximum: number): value is string {
 
 function isDigest(value: unknown): value is string {
   return typeof value === "string" && digest.test(value);
+}
+
+function isTimestamp(value: unknown): value is string {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value));
+}
+
+function isScope(value: unknown): value is WorkflowRunPlan["scope"] {
+  return (
+    isObject(value) &&
+    isIdentifier(value.organization_id) &&
+    isIdentifier(value.environment_id) &&
+    isIdentifier(value.site_id)
+  );
 }
 
 function isCapabilityClass(value: unknown): value is WorkflowCapabilityClass {
@@ -232,6 +272,41 @@ function isBoundToScope(value: WorkflowRunPlan, scope: WorkflowScope): boolean {
     value.scope.organization_id === scope.organizationId &&
     value.scope.environment_id === scope.environmentId &&
     value.scope.site_id === scope.siteId
+  );
+}
+
+function isLeaseBoundToPlan(
+  value: unknown,
+  plan: WorkflowRunPlan,
+): value is WorkflowOrchestrationLease {
+  if (!isObject(value) || !isScope(value.scope)) return false;
+  const effectiveState = value.effective_state;
+  const stateIsConsistent =
+    (value.state === "active" && (effectiveState === "active" || effectiveState === "expired")) ||
+    (value.state === "released" && effectiveState === "released");
+  return (
+    isIdentifier(value.lease_id) &&
+    value.plan_id === plan.plan_id &&
+    value.plan_digest === plan.canonical_digest &&
+    value.scope.organization_id === plan.scope.organization_id &&
+    value.scope.environment_id === plan.scope.environment_id &&
+    value.scope.site_id === plan.scope.site_id &&
+    value.target_id === plan.target_id &&
+    value.target_type === plan.target_type &&
+    isIdentifier(value.worker_subject_id) &&
+    isTimestamp(value.acquired_at) &&
+    isTimestamp(value.last_heartbeat_at) &&
+    isTimestamp(value.expires_at) &&
+    Date.parse(value.acquired_at) <= Date.parse(value.last_heartbeat_at) &&
+    Date.parse(value.last_heartbeat_at) < Date.parse(value.expires_at) &&
+    Number.isSafeInteger(value.fencing_token) &&
+    Number(value.fencing_token) >= 1 &&
+    stateIsConsistent &&
+    isDigest(value.canonical_digest) &&
+    value.grants_execution_authority === false &&
+    !("token" in value) &&
+    !("credential" in value) &&
+    !("secret" in value)
   );
 }
 
@@ -350,6 +425,34 @@ export async function getWorkflowPlan(input: {
     throw new ApiRequestError("Workflow plan response was unsafe", response.status);
   }
   return data;
+}
+
+export async function getWorkflowOrchestrationLease(input: {
+  plan: WorkflowRunPlan;
+  scope: WorkflowScope;
+  authorizedTargetIds: readonly string[];
+}): Promise<WorkflowOrchestrationLeaseStatus> {
+  if (
+    !isBoundToScope(input.plan, input.scope) ||
+    !input.authorizedTargetIds.includes(input.plan.target_id)
+  ) {
+    throw new ApiRequestError("Workflow plan is outside the authorized lease scope", 403);
+  }
+  const response = await apiFetch(
+    `/api/v1/workflows/plans/${encodeURIComponent(input.plan.plan_id)}/orchestration-lease`,
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(response, "Workflow orchestration lease retrieval failed");
+  if (
+    !isObject(data) ||
+    data.plan_id !== input.plan.plan_id ||
+    !isTimestamp(data.server_time) ||
+    typeof data.durable !== "boolean" ||
+    !(data.lease === null || isLeaseBoundToPlan(data.lease, input.plan))
+  ) {
+    throw new ApiRequestError("Workflow orchestration lease response was unsafe", response.status);
+  }
+  return data as WorkflowOrchestrationLeaseStatus;
 }
 
 export async function createWorkflowPlan(input: {

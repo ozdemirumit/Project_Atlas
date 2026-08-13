@@ -83,6 +83,10 @@ class WorkflowPlanningService:
     def durable(self) -> bool:
         return self._repository.durable
 
+    @property
+    def repository(self) -> WorkflowPlanRepository:
+        return self._repository
+
     async def close(self) -> None:
         await self._repository.close()
 

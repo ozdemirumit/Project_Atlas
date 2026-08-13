@@ -3,6 +3,13 @@ from __future__ import annotations
 import asyncio
 
 from atlas.modules.workflows.application import (
+    WorkflowLeaseAcquireIdempotencyRecord,
+    WorkflowLeaseAcquireRequest,
+    WorkflowLeaseAcquireResult,
+    WorkflowLeaseAcquireStatus,
+    WorkflowLeaseMutationRequest,
+    WorkflowLeaseMutationResult,
+    WorkflowLeaseMutationStatus,
     WorkflowPlanCancellationIdempotencyRecord,
     WorkflowPlanCancellationRequest,
     WorkflowPlanCancellationResult,
@@ -11,7 +18,13 @@ from atlas.modules.workflows.application import (
     WorkflowPlanMutationResult,
     WorkflowPlanMutationStatus,
 )
-from atlas.modules.workflows.domain import WorkflowRunPlan, WorkflowScope
+from atlas.modules.workflows.domain import (
+    WorkflowOrchestrationLease,
+    WorkflowOrchestrationLeaseEffectiveState,
+    WorkflowPlanState,
+    WorkflowRunPlan,
+    WorkflowScope,
+)
 
 
 class InMemoryWorkflowPlanRepository:
@@ -22,6 +35,10 @@ class InMemoryWorkflowPlanRepository:
         self._requests: dict[tuple[WorkflowScope, str, str], WorkflowPlanIdempotencyRecord] = {}
         self._cancellation_requests: dict[
             tuple[WorkflowScope, str, str], WorkflowPlanCancellationIdempotencyRecord
+        ] = {}
+        self._leases_by_plan: dict[str, WorkflowOrchestrationLease] = {}
+        self._lease_acquire_requests: dict[
+            tuple[WorkflowScope, str, str], WorkflowLeaseAcquireIdempotencyRecord
         ] = {}
         self._lock = asyncio.Lock()
 
@@ -139,6 +156,132 @@ class InMemoryWorkflowPlanRepository:
             return WorkflowPlanCancellationResult(
                 status=WorkflowPlanCancellationStatus.CANCELLED,
                 plan=plan,
+            )
+
+    async def get_lease_by_plan_id(self, *, plan_id: str) -> WorkflowOrchestrationLease | None:
+        async with self._lock:
+            return self._leases_by_plan.get(plan_id)
+
+    async def get_lease_acquire_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        worker_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowLeaseAcquireIdempotencyRecord | None:
+        async with self._lock:
+            return self._lease_acquire_requests.get((scope, worker_subject_id, idempotency_key))
+
+    async def acquire_lease(
+        self, request: WorkflowLeaseAcquireRequest
+    ) -> WorkflowLeaseAcquireResult:
+        """Atomically checks the exact plan and replaces only an expired lease."""
+        async with self._lock:
+            candidate = request.candidate
+            key = (candidate.scope, candidate.worker_subject_id, request.idempotency_key)
+            prior = self._lease_acquire_requests.get(key)
+            if prior is not None:
+                status = (
+                    WorkflowLeaseAcquireStatus.REPLAY
+                    if prior.request_fingerprint == request.request_fingerprint
+                    else WorkflowLeaseAcquireStatus.IDEMPOTENCY_CONFLICT
+                )
+                return WorkflowLeaseAcquireResult(status=status, lease=prior.lease)
+            plan = self._plans.get(candidate.plan_id)
+            if (
+                plan is None
+                or plan.state is not WorkflowPlanState.PLANNED
+                or plan.canonical_digest != request.expected_plan_digest
+                or plan.canonical_digest != candidate.plan_digest
+                or plan.scope != candidate.scope
+                or plan.target_id != candidate.target_id
+                or plan.target_type != candidate.target_type
+            ):
+                return WorkflowLeaseAcquireResult(
+                    status=WorkflowLeaseAcquireStatus.PLAN_CONFLICT, lease=None
+                )
+            current = self._leases_by_plan.get(candidate.plan_id)
+            if current is None:
+                if (
+                    request.expected_current_lease_digest is not None
+                    or request.expected_current_fencing_token is not None
+                    or candidate.fencing_token != 1
+                ):
+                    return WorkflowLeaseAcquireResult(
+                        status=WorkflowLeaseAcquireStatus.CONTENDED, lease=None
+                    )
+            else:
+                if (
+                    current.canonical_digest != request.expected_current_lease_digest
+                    or current.fencing_token != request.expected_current_fencing_token
+                    or current.effective_state(requested_at=request.requested_at)
+                    is WorkflowOrchestrationLeaseEffectiveState.ACTIVE
+                    or candidate.fencing_token != current.fencing_token + 1
+                ):
+                    return WorkflowLeaseAcquireResult(
+                        status=WorkflowLeaseAcquireStatus.CONTENDED, lease=current
+                    )
+            self._leases_by_plan[candidate.plan_id] = candidate
+            self._lease_acquire_requests[key] = WorkflowLeaseAcquireIdempotencyRecord(
+                request_fingerprint=request.request_fingerprint,
+                lease=candidate,
+            )
+            return WorkflowLeaseAcquireResult(
+                status=WorkflowLeaseAcquireStatus.ACQUIRED, lease=candidate
+            )
+
+    async def heartbeat_lease(
+        self, request: WorkflowLeaseMutationRequest
+    ) -> WorkflowLeaseMutationResult:
+        return await self._mutate_lease(request)
+
+    async def release_lease(
+        self, request: WorkflowLeaseMutationRequest
+    ) -> WorkflowLeaseMutationResult:
+        return await self._mutate_lease(request)
+
+    async def _mutate_lease(
+        self, request: WorkflowLeaseMutationRequest
+    ) -> WorkflowLeaseMutationResult:
+        async with self._lock:
+            updated = request.updated_lease
+            plan = self._plans.get(updated.plan_id)
+            if (
+                plan is None
+                or plan.state is not WorkflowPlanState.PLANNED
+                or plan.canonical_digest != request.expected_plan_digest
+                or plan.canonical_digest != updated.plan_digest
+            ):
+                return WorkflowLeaseMutationResult(
+                    status=WorkflowLeaseMutationStatus.PLAN_CONFLICT, lease=None
+                )
+            current = self._leases_by_plan.get(updated.plan_id)
+            if current is None:
+                return WorkflowLeaseMutationResult(
+                    status=WorkflowLeaseMutationStatus.NOT_FOUND, lease=None
+                )
+            if (
+                current.lease_id != request.expected_lease_id
+                or current.canonical_digest != request.expected_lease_digest
+                or current.fencing_token != request.expected_fencing_token
+                or current.worker_subject_id != request.worker_subject_id
+                or current.effective_state(requested_at=request.requested_at)
+                is not WorkflowOrchestrationLeaseEffectiveState.ACTIVE
+                or updated.lease_id != current.lease_id
+                or updated.plan_id != current.plan_id
+                or updated.plan_digest != current.plan_digest
+                or updated.scope != current.scope
+                or updated.target_id != current.target_id
+                or updated.target_type != current.target_type
+                or updated.worker_subject_id != current.worker_subject_id
+                or updated.fencing_token != current.fencing_token
+            ):
+                return WorkflowLeaseMutationResult(
+                    status=WorkflowLeaseMutationStatus.LEASE_CONFLICT, lease=current
+                )
+            self._leases_by_plan[updated.plan_id] = updated
+            return WorkflowLeaseMutationResult(
+                status=WorkflowLeaseMutationStatus.UPDATED, lease=updated
             )
 
     async def close(self) -> None:
