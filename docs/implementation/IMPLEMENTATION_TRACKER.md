@@ -4,14 +4,77 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-175 |
-| Title | Operator lifecycle entrypoint reconciliation and stale-runtime guard |
-| Status | Validation complete; GitHub delivery pending |
-| Branch | `agent/operator-lifecycle-controls` |
+| Task ID | ATLAS-IMP-176 |
+| Title | Durable chat-centered storage investigation workspace |
+| Status | Validation complete; delivery pending |
+| Branch | `agent/durable-operations-chat` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-030, ADR-100, ADR-101, ADR-123 |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-014, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-041, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-123, ADR-131, ADR-132, ADR-133 |
 | Last Updated | 2026-08-13 |
-| Next Action | Commit the verified slice, open its PR, pass CI, merge and verify exact merged `main` |
+| Next Action | Publish the verified IMP-176 branch, complete PR CI and merge the exact passing head |
+
+### ATLAS-IMP-176 Scope Rationale
+
+- FR-001 requires an authenticated chat-centered workspace where operators can track durable work
+  and move among evidence, inventory, topology, investigation, recommendation, approval and reports
+  without losing context. The current Workspace is a capability landing page and protected queries
+  are one-shot requests.
+- Existing grounded-query, investigation, graph, RCA and recommendation contracts already establish
+  the evidence and reasoning boundaries. This slice adds a durable conversation authority around
+  those boundaries instead of creating another infrastructure-data source.
+- Conversation text remains decision-support input only. This slice adds no MCP invocation, target
+  contact, credential access, approval, ITSM mutation, workflow dispatch, runbook execution or
+  infrastructure-change authority.
+
+### ATLAS-IMP-176 Acceptance Criteria
+
+- An authenticated operator can create, list, reopen and continue an open conversation bound to one
+  exact organization, environment, site, owner subject and authorized storage target.
+- Conversation and ordered turns are versioned and durable in PostgreSQL. Explicit development
+  memory is labeled non-durable; production cannot silently fall back to memory.
+- Create and append operations require unique idempotency keys and exact expected versions. Replay,
+  content conflict, stale version, wrong owner, wrong scope and unknown target fail closed without
+  record-existence leakage.
+- Assistant outcomes preserve authorized evidence references, assumptions, unknowns, confidence
+  basis, partial or failure state and the no-execution-authority notice. Callers cannot submit those
+  assertions.
+- The Workspace makes conversation history the primary experience and supports loading, empty,
+  partial, failure, retry, reload/resume, keyboard and responsive states without losing canonical
+  navigation context.
+- Logout clears identity-bound conversation caches. Required audit failure blocks protected mutation
+  or response and ordinary payloads expose no credentials, tokens, provider secrets or raw prompts.
+- ADR, focused/full backend and frontend gates, one Alembic head, production build and live
+  desktop/mobile validation pass before delivery.
+
+### ATLAS-IMP-176 Validation Evidence
+
+- The conversation aggregate, ordered turns, exact owner/scope/target binding, idempotent create and
+  append transitions, immutable audit, PostgreSQL repository and Alembic migration `0106` are
+  implemented. Historical replay returns the exact claim-time snapshot after later appends.
+- Production never falls back to memory. Without a configured durable database, health and session
+  surfaces can start for diagnosis while the conversation repository remains explicitly unavailable
+  and fails protected operations closed.
+- Authorized storage targets come only from the server-side subject, role/group and scope authority.
+  Turn append separately requires conversation-mutation and grounded-generation authorization.
+- Grounded answers preserve opaque vendor artifact versions, source type/reference, observation
+  time, evidence citations, unknowns, confidence basis and the no-execution authority statement.
+- The chat-centered Workspace supports create, list, select, reopen, append, stale-session recovery,
+  identity-bound cache isolation, keyboard modal handling and navigation context. It does not expose
+  unimplemented evidence or artifact actions.
+- Backend Ruff format/lint and strict mypy passed across 1,002 source files. The complete backend
+  suite passed 1,113 tests; three Windows-host symlink tests were skipped by their existing platform
+  guard. Alembic reports one head: `20260813_0106`.
+- Frontend zero-warning ESLint, TypeScript and production build passed. The complete frontend suite
+  passed 279 tests across 94 files and Vite transformed 2,012 modules; only the existing large-chunk
+  advisory remains.
+- Live development validation at `http://127.0.0.1:5253/` created and reopened a VSP G400-bound
+  conversation, appended a completed answer with two authorized vendor-documentation citations and
+  preserved the explicit no-execution boundary. Desktop 1,280 x 720 and mobile 390 x 844 views had
+  no horizontal overflow or incoherent overlap; browser warning/error logs were empty.
+- ADR-132 fixes Active Directory at authentication-only with bounded read-only group mapping and no
+  AD MCP or management surface. ADR-133 records that Atlas-owned MFA is not required; assurance is
+  an optional deployment policy input and cannot replace RBAC, audit, acknowledgement or separation
+  of duties.
 
 ### ATLAS-IMP-175 Scope Rationale
 
@@ -69,6 +132,16 @@
 - At 1,280 x 720 and 390 x 844 the live pages had no document-level horizontal overflow. Mobile
   Device Registry exposed two Add device entrypoints, lifecycle filters and the retirement boundary;
   Installed MCPs exposed Add MCP, prerequisite diagnostics and preserved-history guidance.
+
+### ATLAS-IMP-175 Delivery Evidence
+
+- Source commit `71c4b3fba61013aa4ad520142280b2e98283ffb0` passed exact-head PR CI run
+  `31675366754`; backend completed in 7m57s and frontend in 3m25s.
+- PR [#187](https://github.com/ozdemirumit/Project_Atlas/pull/187) was squash-merged as
+  `979149cfe327ca57e1fbf5395105108b541dddb0`.
+- The exact merged commit independently passed `main` CI run `31675901375`; backend completed in
+  7m10s and frontend in 4m56s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-176 branched.
 
 ### ATLAS-IMP-174 Scope Rationale
 

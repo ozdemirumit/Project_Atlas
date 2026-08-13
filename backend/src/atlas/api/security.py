@@ -129,6 +129,9 @@ from atlas.modules.authorization.application.bootstrap import (
     CONNECTOR_UPGRADE_SIGNING_PROVIDER_CONFORMANCE_READ,
     CONNECTOR_UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_PROVENANCE_DIAGNOSTIC_READ,
     CONNECTOR_UPGRADE_SIGNING_PROVIDER_ONBOARDING_READINESS_READ,
+    CONVERSATION_CREATE,
+    CONVERSATION_READ,
+    CONVERSATION_TURN_APPEND,
     DEPLOYMENT_CONFIGURATION_PREVIEW,
     GRAPH_STORAGE_IMPACT_READ,
     HEALTH_CHECK_OVERVIEW_READ,
@@ -295,6 +298,7 @@ from atlas.modules.authorization.application.bootstrap import (
     connector_secret_brokerage_scope,
     connector_target_configuration_scope,
     connector_target_session_scope,
+    conversation_scope,
     current_identity_scope,
     deployment_configuration_scope,
     graph_storage_impact_scope,
@@ -1747,6 +1751,60 @@ async def authorize_ai_grounded_query(
         )
     request.state.authorization_decision = decision
     return decision
+
+
+async def _authorize_conversation(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.conversation",
+            scope=conversation_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_conversation_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_conversation(request, subject, permission_id=CONVERSATION_READ)
+
+
+async def authorize_conversation_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_conversation(request, subject, permission_id=CONVERSATION_CREATE)
+
+
+async def authorize_conversation_turn_append(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_conversation(
+        request,
+        subject,
+        permission_id=CONVERSATION_TURN_APPEND,
+    )
 
 
 async def authorize_graph_storage_impact_read(

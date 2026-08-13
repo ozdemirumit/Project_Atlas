@@ -39,3 +39,6 @@ ADR numbers are permanent and never reused. Material changes require a new ADR r
 | [ADR-022](ADR-022_Connector_Isolated_Lab_Self_Test_Contract.md) | Connector isolated lab self-test contract | Accepted |
 | [ADR-023](ADR-023_Connector_Final_Validation_Contract.md) | Connector final validation contract | Accepted |
 | [ADR-024](ADR-024_Connector_Package_Human_Approval_Contract.md) | Connector package human approval contract | Accepted |
+| [ADR-131](ADR-131_Durable_Chat_Centered_Operations_Workspace.md) | Durable chat-centered operations workspace | Accepted |
+| [ADR-132](ADR-132_Active_Directory_Authentication_Only_Boundary.md) | Active Directory authentication-only boundary | Accepted |
+| [ADR-133](ADR-133_Optional_Policy_Based_Step_Up_Authentication.md) | Optional policy-based step-up authentication | Accepted |

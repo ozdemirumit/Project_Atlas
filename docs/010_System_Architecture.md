@@ -97,12 +97,16 @@ flowchart LR
     Enterprise["Enterprise Integrations<br/>ITSM, SIEM, Syslog, Notifications"]
 
     Users -->|"HTTPS and approved clients"| Atlas
-    Atlas <-->|"Authentication and group claims"| IdP
+    Atlas -->|"Authentication and bounded read-only group lookup"| IdP
     Atlas <-->|"Policy-filtered model context"| Models
     Atlas <-->|"Governed ingestion and retrieval"| Knowledge
     Atlas <-->|"MCP connector capabilities"| Infra
     Atlas <-->|"Tickets, events, audit, and notifications"| Enterprise
 ```
+
+The identity-provider relationship is authentication-only. Active Directory is not an Atlas-managed
+infrastructure target and is never represented by an MCP connector. Atlas does not perform directory
+administration or write operations; see ADR-132.
 
 ### 5.1 External Actors and Systems
 

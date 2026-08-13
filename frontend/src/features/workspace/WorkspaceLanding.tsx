@@ -8,9 +8,9 @@ import {
   ApplicationTopbar,
 } from "../shell/ApplicationShell";
 import type { WorkspaceCapabilityDestination, WorkspaceId } from "../shell/workspace";
+import OperationsConversationWorkspace from "./OperationsConversationWorkspace";
 import { WorkspaceOverview } from "./WorkspaceOverview";
 import { useState } from "react";
-import { ShieldCheck } from "lucide-react";
 
 interface WorkspaceLandingProps {
   identity: CurrentIdentity;
@@ -47,6 +47,24 @@ export function WorkspaceLanding({
     ? "unavailable"
     : statusQuery.data?.data.status;
 
+  function navigateConversationContext(input: {
+    destination: "inventory" | "topology";
+    targetId: string;
+    conversationId: string | null;
+  }) {
+    const url = new URL(window.location.href);
+    if (input.targetId) url.searchParams.set("target_id", input.targetId);
+    else url.searchParams.delete("target_id");
+    if (input.conversationId) url.searchParams.set("conversation_id", input.conversationId);
+    else url.searchParams.delete("conversation_id");
+    window.history.replaceState(window.history.state, "", url);
+    onNavigateCapability(
+      input.destination === "inventory"
+        ? { workspace: "Connectors", view: "inventory" }
+        : { workspace: "Health", view: "overview" },
+    );
+  }
+
   return (
     <div className="app-frame">
       <ApplicationSidebar
@@ -75,23 +93,31 @@ export function WorkspaceLanding({
 
         <div className="workspace-grid">
           <section className="conversation" aria-label="Workspace workspace">
-            <div className="conversation-heading">
-              <div>
-                <p className="eyebrow">OPERATIONS WORKSPACE</p>
-                <h1>Enterprise operations</h1>
-                <p>Available operational capabilities by control domain.</p>
-              </div>
-              <span className="decision-badge">
-                <ShieldCheck size={15} /> Human-controlled operations
-              </span>
-            </div>
-
             {logoutMutation.isError && (
               <div className="workspace-message error-state" role="alert">
                 Sign-out was not completed. Your current session remains authoritative.
               </div>
             )}
-            <WorkspaceOverview onNavigate={onNavigateCapability} />
+            <OperationsConversationWorkspace
+              organizationId={identity.organization_id}
+              environmentId={identity.scope.environment_id}
+              siteId={identity.scope.site_id}
+              ownerSubjectId={identity.subject_id}
+              governedSessionAvailable
+              onRequestEnterpriseLogin={() => {
+                queryClient.removeQueries({ queryKey: ["operational-conversation"] });
+                queryClient.removeQueries({ queryKey: ["operational-conversations"] });
+                void queryClient.invalidateQueries({ queryKey: ["current-identity"] });
+              }}
+              onNavigateContext={navigateConversationContext}
+            />
+            <div className="workspace-capability-directory">
+              <div className="workspace-capability-directory-heading">
+                <p className="eyebrow">OPERATION DIRECTORY</p>
+                <h2>Platform capabilities</h2>
+              </div>
+              <WorkspaceOverview onNavigate={onNavigateCapability} />
+            </div>
           </section>
         </div>
       </main>

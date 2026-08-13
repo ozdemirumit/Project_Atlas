@@ -1307,7 +1307,7 @@ describe("Atlas application shell", () => {
     ).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /^Workspace$/ }));
     expect(
-      await screen.findByRole("heading", { name: "Enterprise operations" }),
+      await screen.findByRole("heading", { name: "Storage conversations" }),
     ).toBeVisible();
     expect(window.location.hash).toBe("#/workspace");
     fireEvent.click(screen.getByRole("button", { name: /^Health$/ }));

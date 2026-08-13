@@ -142,6 +142,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def enforce_production_security_defaults(self) -> Self:
+        if self.environment == "production":
+            self.database_required = True
         if self.environment == "production" and self.development_identity_enabled:
             raise ValueError("development identity cannot be enabled in production")
         if self.development_identity_enabled and self.directory_identity_enabled:

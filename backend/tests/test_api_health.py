@@ -44,6 +44,21 @@ def test_required_database_without_url_is_not_ready() -> None:
     assert response.json()["components"][0]["code"] == "database_url_missing"
 
 
+def test_production_without_database_is_not_ready_without_memory_fallback() -> None:
+    settings = Settings(
+        environment="production",
+        enable_api_docs=False,
+        database_required=False,
+    )
+    assert settings.database_required is True
+
+    with TestClient(create_app(settings)) as client:
+        response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    assert response.json()["components"][0]["code"] == "database_url_missing"
+
+
 def test_platform_status_uses_api_envelope() -> None:
     with TestClient(create_app(Settings(environment="test"))) as client:
         response = client.get(
