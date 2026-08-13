@@ -18,6 +18,8 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from atlas.core.persistence.models import (
+    WorkflowAttemptMaterializationClaimModel,
+    WorkflowExecutionAttemptModel,
     WorkflowExecutionRunModel,
     WorkflowExecutionStepRunModel,
     WorkflowIdempotencyModel,
@@ -28,6 +30,11 @@ from atlas.core.persistence.models import (
     WorkflowRunPlanModel,
 )
 from atlas.modules.workflows.application import (
+    WorkflowAttemptMaterializationError,
+    WorkflowAttemptMaterializationIdempotencyRecord,
+    WorkflowAttemptMaterializationRequest,
+    WorkflowAttemptMaterializationResult,
+    WorkflowAttemptMaterializationStatus,
     WorkflowLeaseAcquireIdempotencyRecord,
     WorkflowLeaseAcquireRequest,
     WorkflowLeaseAcquireResult,
@@ -51,6 +58,8 @@ from atlas.modules.workflows.application import (
 )
 from atlas.modules.workflows.domain import (
     WorkflowCapabilityClass,
+    WorkflowExecutionAttempt,
+    WorkflowExecutionAttemptState,
     WorkflowExecutionRun,
     WorkflowExecutionRunState,
     WorkflowExecutionStepRun,
@@ -416,6 +425,130 @@ class PostgreSQLWorkflowPlanRepository:
                 return replay
         return WorkflowRunMaterializationResult(
             WorkflowRunMaterializationStatus.STATE_CONFLICT,
+            None,
+        )
+
+    async def list_attempts_by_run_id(self, *, run_id: str) -> tuple[WorkflowExecutionAttempt, ...]:
+        statement = (
+            select(WorkflowExecutionAttemptModel)
+            .where(WorkflowExecutionAttemptModel.run_id == run_id)
+            .order_by(
+                WorkflowExecutionAttemptModel.created_at,
+                WorkflowExecutionAttemptModel.attempt_id,
+            )
+        )
+        async with self._sessions() as session:
+            rows = tuple((await session.scalars(statement)).all())
+            return tuple(self._attempt_from_row(row) for row in rows)
+
+    async def get_attempt_materialization_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        worker_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowAttemptMaterializationIdempotencyRecord | None:
+        async with self._sessions() as session:
+            claim = await self._load_attempt_materialization_claim(
+                session,
+                scope=scope,
+                worker_subject_id=worker_subject_id,
+                idempotency_key=idempotency_key,
+            )
+            if claim is None:
+                return None
+            return WorkflowAttemptMaterializationIdempotencyRecord(
+                request_fingerprint=claim.request_fingerprint,
+                attempt=self._attempt_from_claim(claim),
+            )
+
+    async def materialize_attempt(
+        self, request: WorkflowAttemptMaterializationRequest
+    ) -> WorkflowAttemptMaterializationResult:
+        self._validate_attempt_materialization_request(request)
+        attempt = request.candidate
+        async with self._sessions() as session:
+            replay = await self._attempt_materialization_replay(session, request=request)
+            if replay is not None:
+                return replay
+
+            plan_row = cast(
+                WorkflowRunPlanModel | None,
+                await session.scalar(
+                    select(WorkflowRunPlanModel)
+                    .where(WorkflowRunPlanModel.plan_id == attempt.plan_id)
+                    .with_for_update()
+                ),
+            )
+            lease_row = cast(
+                WorkflowOrchestrationLeaseModel | None,
+                await session.scalar(
+                    select(WorkflowOrchestrationLeaseModel)
+                    .where(WorkflowOrchestrationLeaseModel.plan_id == attempt.plan_id)
+                    .with_for_update()
+                ),
+            )
+            run_row = cast(
+                WorkflowExecutionRunModel | None,
+                await session.scalar(
+                    select(WorkflowExecutionRunModel)
+                    .where(WorkflowExecutionRunModel.run_id == attempt.run_id)
+                    .with_for_update()
+                ),
+            )
+            step_row = cast(
+                WorkflowExecutionStepRunModel | None,
+                await session.scalar(
+                    select(WorkflowExecutionStepRunModel)
+                    .where(WorkflowExecutionStepRunModel.step_run_id == attempt.step_run_id)
+                    .with_for_update()
+                ),
+            )
+            if not self._attempt_materialization_sources_match(
+                plan_row=plan_row,
+                lease_row=lease_row,
+                run_row=run_row,
+                step_row=step_row,
+                request=request,
+            ):
+                await session.rollback()
+                return WorkflowAttemptMaterializationResult(
+                    WorkflowAttemptMaterializationStatus.STATE_CONFLICT,
+                    None,
+                )
+
+            existing = cast(
+                WorkflowExecutionAttemptModel | None,
+                await session.scalar(
+                    select(WorkflowExecutionAttemptModel)
+                    .where(WorkflowExecutionAttemptModel.step_run_id == attempt.step_run_id)
+                    .with_for_update()
+                ),
+            )
+            if existing is not None:
+                await session.rollback()
+                return WorkflowAttemptMaterializationResult(
+                    WorkflowAttemptMaterializationStatus.STATE_CONFLICT,
+                    self._attempt_from_row(existing),
+                )
+
+            try:
+                session.add(self._attempt_model(attempt))
+                session.add(self._attempt_materialization_claim_model(request))
+                await session.commit()
+                return WorkflowAttemptMaterializationResult(
+                    WorkflowAttemptMaterializationStatus.CREATED,
+                    attempt,
+                )
+            except IntegrityError:
+                await session.rollback()
+
+        async with self._sessions() as session:
+            replay = await self._attempt_materialization_replay(session, request=request)
+            if replay is not None:
+                return replay
+        return WorkflowAttemptMaterializationResult(
+            WorkflowAttemptMaterializationStatus.STATE_CONFLICT,
             None,
         )
 
@@ -879,6 +1012,367 @@ class PostgreSQLWorkflowPlanRepository:
         raise WorkflowPlanningError(
             "workflow_run_materialization_repository_contract_violation",
             "The workflow run materialization record does not match its canonical payload.",
+        )
+
+    async def _attempt_materialization_replay(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowAttemptMaterializationRequest,
+    ) -> WorkflowAttemptMaterializationResult | None:
+        attempt = request.candidate
+        claim = cast(
+            WorkflowAttemptMaterializationClaimModel | None,
+            await session.scalar(
+                select(WorkflowAttemptMaterializationClaimModel).where(
+                    WorkflowAttemptMaterializationClaimModel.idempotency_scope_id
+                    == self._attempt_materialization_scope_id(attempt),
+                    WorkflowAttemptMaterializationClaimModel.idempotency_key
+                    == request.idempotency_key,
+                    WorkflowAttemptMaterializationClaimModel.organization_id
+                    == attempt.scope.organization_id,
+                    WorkflowAttemptMaterializationClaimModel.environment_id
+                    == attempt.scope.environment_id,
+                    WorkflowAttemptMaterializationClaimModel.site_id == attempt.scope.site_id,
+                    WorkflowAttemptMaterializationClaimModel.worker_subject_id
+                    == attempt.materialized_by_subject_id,
+                )
+            ),
+        )
+        if claim is None:
+            return None
+        result = self._attempt_from_claim(claim)
+        status = (
+            WorkflowAttemptMaterializationStatus.REPLAY
+            if claim.request_fingerprint == request.request_fingerprint
+            else WorkflowAttemptMaterializationStatus.IDEMPOTENCY_CONFLICT
+        )
+        return WorkflowAttemptMaterializationResult(status, result)
+
+    @classmethod
+    async def _load_attempt_materialization_claim(
+        cls,
+        session: AsyncSession,
+        *,
+        scope: WorkflowScope,
+        worker_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowAttemptMaterializationClaimModel | None:
+        scope_id = canonical_digest(
+            {
+                "scope": scope.canonical_value(),
+                "worker_subject_id": worker_subject_id,
+            }
+        )
+        return cast(
+            WorkflowAttemptMaterializationClaimModel | None,
+            await session.scalar(
+                select(WorkflowAttemptMaterializationClaimModel).where(
+                    WorkflowAttemptMaterializationClaimModel.idempotency_scope_id == scope_id,
+                    WorkflowAttemptMaterializationClaimModel.idempotency_key == idempotency_key,
+                    WorkflowAttemptMaterializationClaimModel.organization_id
+                    == scope.organization_id,
+                    WorkflowAttemptMaterializationClaimModel.environment_id == scope.environment_id,
+                    WorkflowAttemptMaterializationClaimModel.site_id == scope.site_id,
+                    WorkflowAttemptMaterializationClaimModel.worker_subject_id == worker_subject_id,
+                )
+            ),
+        )
+
+    @classmethod
+    def _attempt_from_row(cls, row: WorkflowExecutionAttemptModel) -> WorkflowExecutionAttempt:
+        try:
+            attempt = cls._attempt_to_domain(row.payload)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowAttemptMaterializationError(
+                "workflow_attempt_materialization_repository_contract_violation",
+                "The workflow attempt repository contains an invalid attempt.",
+            ) from exc
+        if (
+            row.attempt_id != attempt.attempt_id
+            or row.run_id != attempt.run_id
+            or row.run_digest != attempt.run_digest
+            or row.step_run_id != attempt.step_run_id
+            or row.step_run_digest != attempt.step_run_digest
+            or row.step_id != attempt.step_id
+            or row.attempt_number != attempt.attempt_number
+            or row.plan_id != attempt.plan_id
+            or row.plan_digest != attempt.plan_digest
+            or row.definition_id != attempt.definition_id
+            or row.definition_version != attempt.definition_version
+            or row.definition_digest != attempt.definition_digest
+            or row.organization_id != attempt.scope.organization_id
+            or row.environment_id != attempt.scope.environment_id
+            or row.site_id != attempt.scope.site_id
+            or row.target_type != attempt.target_type
+            or row.target_id != attempt.target_id
+            or row.lease_id != attempt.lease_id
+            or row.lease_digest != attempt.lease_digest
+            or row.lease_fencing_token != attempt.fencing_token
+            or row.materialized_by_subject_id != attempt.materialized_by_subject_id
+            or row.created_at != attempt.created_at
+            or row.state != attempt.state.value
+            or row.canonical_digest != attempt.canonical_digest
+        ):
+            cls._attempt_contract_violation()
+        return attempt
+
+    @classmethod
+    def _attempt_from_claim(
+        cls, claim: WorkflowAttemptMaterializationClaimModel
+    ) -> WorkflowExecutionAttempt:
+        raw = claim.payload.get("result_attempt")
+        if not isinstance(raw, dict):
+            cls._attempt_contract_violation()
+        try:
+            attempt = cls._attempt_to_domain(cast(dict[str, Any], raw))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowAttemptMaterializationError(
+                "workflow_attempt_materialization_repository_contract_violation",
+                "The workflow attempt repository contains an invalid idempotency result.",
+            ) from exc
+        attempt_payload = cls._attempt_payload(attempt)
+        scope_id = cls._attempt_materialization_scope_id(attempt)
+        expected: dict[str, Any] = {
+            "idempotency_key": claim.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": claim.request_fingerprint,
+            "result_attempt": attempt_payload,
+            "result_digest": attempt.canonical_digest,
+        }
+        if (
+            claim.idempotency_scope_id != scope_id
+            or claim.result_digest != attempt.canonical_digest
+            or claim.attempt_id != attempt.attempt_id
+            or claim.run_id != attempt.run_id
+            or claim.plan_id != attempt.plan_id
+            or claim.organization_id != attempt.scope.organization_id
+            or claim.environment_id != attempt.scope.environment_id
+            or claim.site_id != attempt.scope.site_id
+            or claim.worker_subject_id != attempt.materialized_by_subject_id
+            or claim.payload != expected
+            or claim.canonical_digest != canonical_digest(expected)
+        ):
+            cls._attempt_contract_violation()
+        return attempt
+
+    @classmethod
+    def _attempt_model(cls, attempt: WorkflowExecutionAttempt) -> WorkflowExecutionAttemptModel:
+        return WorkflowExecutionAttemptModel(
+            attempt_id=attempt.attempt_id,
+            run_id=attempt.run_id,
+            run_digest=attempt.run_digest,
+            step_run_id=attempt.step_run_id,
+            step_run_digest=attempt.step_run_digest,
+            step_id=attempt.step_id,
+            attempt_number=attempt.attempt_number,
+            plan_id=attempt.plan_id,
+            plan_digest=attempt.plan_digest,
+            definition_id=attempt.definition_id,
+            definition_version=attempt.definition_version,
+            definition_digest=attempt.definition_digest,
+            organization_id=attempt.scope.organization_id,
+            environment_id=attempt.scope.environment_id,
+            site_id=attempt.scope.site_id,
+            target_type=attempt.target_type,
+            target_id=attempt.target_id,
+            lease_id=attempt.lease_id,
+            lease_digest=attempt.lease_digest,
+            lease_fencing_token=attempt.fencing_token,
+            materialized_by_subject_id=attempt.materialized_by_subject_id,
+            created_at=attempt.created_at,
+            state=attempt.state.value,
+            canonical_digest=attempt.canonical_digest,
+            payload=cls._attempt_payload(attempt),
+        )
+
+    @classmethod
+    def _attempt_materialization_claim_model(
+        cls, request: WorkflowAttemptMaterializationRequest
+    ) -> WorkflowAttemptMaterializationClaimModel:
+        attempt = request.candidate
+        scope_id = cls._attempt_materialization_scope_id(attempt)
+        payload: dict[str, Any] = {
+            "idempotency_key": request.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": request.request_fingerprint,
+            "result_attempt": cls._attempt_payload(attempt),
+            "result_digest": attempt.canonical_digest,
+        }
+        digest = canonical_digest(payload)
+        return WorkflowAttemptMaterializationClaimModel(
+            claim_id=f"workflow_attempt_mat_claim_{sha256(digest.encode()).hexdigest()[:32]}",
+            idempotency_scope_id=scope_id,
+            idempotency_key=request.idempotency_key,
+            request_fingerprint=request.request_fingerprint,
+            result_digest=attempt.canonical_digest,
+            attempt_id=attempt.attempt_id,
+            run_id=attempt.run_id,
+            plan_id=attempt.plan_id,
+            organization_id=attempt.scope.organization_id,
+            environment_id=attempt.scope.environment_id,
+            site_id=attempt.scope.site_id,
+            worker_subject_id=attempt.materialized_by_subject_id,
+            created_at=request.requested_at,
+            canonical_digest=digest,
+            payload=payload,
+        )
+
+    @classmethod
+    def _validate_attempt_materialization_request(
+        cls, request: WorkflowAttemptMaterializationRequest
+    ) -> None:
+        attempt = request.candidate
+        if (
+            attempt.state is not WorkflowExecutionAttemptState.CREATED
+            or attempt.attempt_number != 1
+            or attempt.grants_execution_authority
+        ):
+            raise ValueError("workflow attempt materialization payload is unsafe")
+        if len(request.idempotency_key) > 128 or not request.idempotency_key:
+            raise ValueError("workflow attempt materialization idempotency key is invalid")
+        if len(request.request_fingerprint) != 64:
+            raise ValueError("workflow attempt materialization request fingerprint is invalid")
+        if request.requested_at.tzinfo is None:
+            raise ValueError("workflow attempt materialization time must be timezone-aware")
+
+    @classmethod
+    def _attempt_materialization_sources_match(
+        cls,
+        *,
+        plan_row: WorkflowRunPlanModel | None,
+        lease_row: WorkflowOrchestrationLeaseModel | None,
+        run_row: WorkflowExecutionRunModel | None,
+        step_row: WorkflowExecutionStepRunModel | None,
+        request: WorkflowAttemptMaterializationRequest,
+    ) -> bool:
+        if plan_row is None or lease_row is None or run_row is None or step_row is None:
+            return False
+        attempt = request.candidate
+        try:
+            run = cls._materialized_run_from_row(run_row)
+            step = cls._materialized_step_from_row(step_row)
+        except (WorkflowAttemptMaterializationError, WorkflowPlanningError) as exc:
+            raise WorkflowAttemptMaterializationError(
+                "workflow_attempt_materialization_repository_contract_violation",
+                "Workflow run evidence is inconsistent during attempt materialization.",
+            ) from exc
+        return bool(
+            plan_row.plan_id == attempt.plan_id
+            and plan_row.state == WorkflowPlanState.PLANNED.value
+            and plan_row.canonical_digest == request.expected_plan_digest == attempt.plan_digest
+            and plan_row.definition_id == attempt.definition_id
+            and plan_row.definition_version == attempt.definition_version
+            and plan_row.definition_digest == attempt.definition_digest
+            and plan_row.organization_id == attempt.scope.organization_id
+            and plan_row.environment_id == attempt.scope.environment_id
+            and plan_row.site_id == attempt.scope.site_id
+            and plan_row.target_type == attempt.target_type
+            and plan_row.target_id == attempt.target_id
+            and run.run_id == attempt.run_id
+            and run.canonical_digest == request.expected_run_digest == attempt.run_digest
+            and run.plan_id == attempt.plan_id
+            and run.plan_digest == attempt.plan_digest
+            and run.definition_id == attempt.definition_id
+            and run.definition_version == attempt.definition_version
+            and run.definition_digest == attempt.definition_digest
+            and run.scope == attempt.scope
+            and run.target_type == attempt.target_type
+            and run.target_id == attempt.target_id
+            and run.lease_id == attempt.lease_id
+            and run.fencing_token == attempt.fencing_token
+            and run.materialized_by_subject_id == attempt.materialized_by_subject_id
+            and run.state is WorkflowExecutionRunState.CREATED
+            and not run.grants_execution_authority
+            and step in run.step_runs
+            and step.step_run_id == attempt.step_run_id
+            and step.canonical_digest == request.expected_step_run_digest == attempt.step_run_digest
+            and step.run_id == attempt.run_id
+            and step.step_id == attempt.step_id
+            and step.state is WorkflowExecutionStepRunState.NOT_STARTED
+            and not step.depends_on
+            and lease_row.plan_id == attempt.plan_id
+            and lease_row.plan_digest == attempt.plan_digest
+            and lease_row.organization_id == attempt.scope.organization_id
+            and lease_row.environment_id == attempt.scope.environment_id
+            and lease_row.site_id == attempt.scope.site_id
+            and lease_row.target_type == attempt.target_type
+            and lease_row.target_id == attempt.target_id
+            and lease_row.lease_id == request.expected_lease_id == attempt.lease_id
+            and lease_row.canonical_digest == request.expected_lease_digest == attempt.lease_digest
+            and lease_row.fencing_token == request.expected_fencing_token == attempt.fencing_token
+            and lease_row.worker_subject_id
+            == request.worker_subject_id
+            == attempt.materialized_by_subject_id
+            and lease_row.state == WorkflowOrchestrationLeaseState.ACTIVE.value
+            and lease_row.expires_at > request.requested_at
+        )
+
+    @staticmethod
+    def _attempt_materialization_scope_id(attempt: WorkflowExecutionAttempt) -> str:
+        return canonical_digest(
+            {
+                "scope": attempt.scope.canonical_value(),
+                "worker_subject_id": attempt.materialized_by_subject_id,
+            }
+        )
+
+    @staticmethod
+    def _attempt_payload(attempt: WorkflowExecutionAttempt) -> dict[str, Any]:
+        return cast(dict[str, Any], attempt.canonical_value())
+
+    @staticmethod
+    def _attempt_to_domain(raw: dict[str, Any]) -> WorkflowExecutionAttempt:
+        payload = dict(raw)
+        payload["scope"] = WorkflowScope(**cast(Any, payload["scope"]))
+        payload["created_at"] = datetime.fromisoformat(str(payload["created_at"]))
+        payload["state"] = WorkflowExecutionAttemptState(str(payload["state"]))
+        payload["authority"] = WorkflowPlanAuthority(**cast(Any, payload["authority"]))
+        return WorkflowExecutionAttempt(**cast(Any, payload))
+
+    @staticmethod
+    def _materialized_step_from_row(
+        row: WorkflowExecutionStepRunModel,
+    ) -> WorkflowExecutionStepRun:
+        try:
+            raw = row.payload
+            step = WorkflowExecutionStepRun(
+                step_run_id=str(raw["step_run_id"]),
+                run_id=str(raw["run_id"]),
+                step_id=str(raw["step_id"]),
+                ordinal=int(raw["ordinal"]),
+                kind=WorkflowStepKind(str(raw["kind"])),
+                capability_class=WorkflowCapabilityClass(str(raw["capability_class"])),
+                timeout_seconds=int(raw["timeout_seconds"]),
+                depends_on=tuple(str(value) for value in raw["depends_on"]),
+                state=WorkflowExecutionStepRunState(str(raw["state"])),
+                canonical_digest=str(raw["canonical_digest"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowAttemptMaterializationError(
+                "workflow_attempt_materialization_repository_contract_violation",
+                "The workflow step-run repository contains invalid materialization evidence.",
+            ) from exc
+        if (
+            row.step_run_id != step.step_run_id
+            or row.run_id != step.run_id
+            or row.step_id != step.step_id
+            or row.ordinal != step.ordinal
+            or row.kind != step.kind.value
+            or row.capability_class != step.capability_class.value
+            or row.timeout_seconds != step.timeout_seconds
+            or row.depends_on != list(step.depends_on)
+            or row.state != step.state.value
+            or row.canonical_digest != step.canonical_digest
+        ):
+            PostgreSQLWorkflowPlanRepository._attempt_contract_violation()
+        return step
+
+    @staticmethod
+    def _attempt_contract_violation() -> None:
+        raise WorkflowAttemptMaterializationError(
+            "workflow_attempt_materialization_repository_contract_violation",
+            "The workflow attempt materialization record does not match its canonical payload.",
         )
 
     async def _lease_acquire_after_integrity(

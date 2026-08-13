@@ -3,6 +3,10 @@ from __future__ import annotations
 import asyncio
 
 from atlas.modules.workflows.application import (
+    WorkflowAttemptMaterializationIdempotencyRecord,
+    WorkflowAttemptMaterializationRequest,
+    WorkflowAttemptMaterializationResult,
+    WorkflowAttemptMaterializationStatus,
     WorkflowLeaseAcquireIdempotencyRecord,
     WorkflowLeaseAcquireRequest,
     WorkflowLeaseAcquireResult,
@@ -23,7 +27,11 @@ from atlas.modules.workflows.application import (
     WorkflowRunMaterializationStatus,
 )
 from atlas.modules.workflows.domain import (
+    WorkflowExecutionAttempt,
+    WorkflowExecutionAttemptState,
     WorkflowExecutionRun,
+    WorkflowExecutionRunState,
+    WorkflowExecutionStepRunState,
     WorkflowOrchestrationLease,
     WorkflowOrchestrationLeaseEffectiveState,
     WorkflowPlanState,
@@ -48,6 +56,10 @@ class InMemoryWorkflowPlanRepository:
         self._runs_by_plan: dict[str, WorkflowExecutionRun] = {}
         self._run_materialization_requests: dict[
             tuple[WorkflowScope, str, str], WorkflowRunMaterializationIdempotencyRecord
+        ] = {}
+        self._attempts_by_step_run: dict[str, WorkflowExecutionAttempt] = {}
+        self._attempt_materialization_requests: dict[
+            tuple[WorkflowScope, str, str], WorkflowAttemptMaterializationIdempotencyRecord
         ] = {}
         self._lock = asyncio.Lock()
 
@@ -244,6 +256,109 @@ class InMemoryWorkflowPlanRepository:
                 run=run,
             )
             return WorkflowRunMaterializationResult(WorkflowRunMaterializationStatus.CREATED, run)
+
+    async def list_attempts_by_run_id(self, *, run_id: str) -> tuple[WorkflowExecutionAttempt, ...]:
+        async with self._lock:
+            return tuple(
+                sorted(
+                    (
+                        attempt
+                        for attempt in self._attempts_by_step_run.values()
+                        if attempt.run_id == run_id
+                    ),
+                    key=lambda item: (item.attempt_number, item.step_run_id),
+                )
+            )
+
+    async def get_attempt_materialization_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        worker_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowAttemptMaterializationIdempotencyRecord | None:
+        async with self._lock:
+            return self._attempt_materialization_requests.get(
+                (scope, worker_subject_id, idempotency_key)
+            )
+
+    async def materialize_attempt(
+        self, request: WorkflowAttemptMaterializationRequest
+    ) -> WorkflowAttemptMaterializationResult:
+        async with self._lock:
+            attempt = request.candidate
+            key = (attempt.scope, request.worker_subject_id, request.idempotency_key)
+            prior = self._attempt_materialization_requests.get(key)
+            if prior is not None:
+                status = (
+                    WorkflowAttemptMaterializationStatus.REPLAY
+                    if prior.request_fingerprint == request.request_fingerprint
+                    else WorkflowAttemptMaterializationStatus.IDEMPOTENCY_CONFLICT
+                )
+                return WorkflowAttemptMaterializationResult(status, prior.attempt)
+            plan = self._plans.get(attempt.plan_id)
+            run = self._runs_by_plan.get(attempt.plan_id)
+            lease = self._leases_by_plan.get(attempt.plan_id)
+            step = (
+                None
+                if run is None
+                else next(
+                    (item for item in run.step_runs if item.step_run_id == attempt.step_run_id),
+                    None,
+                )
+            )
+            if (
+                plan is None
+                or plan.state is not WorkflowPlanState.PLANNED
+                or plan.canonical_digest != request.expected_plan_digest
+                or request.expected_plan_digest != attempt.plan_digest
+                or run is None
+                or run.state is not WorkflowExecutionRunState.CREATED
+                or run.canonical_digest != request.expected_run_digest
+                or request.expected_run_digest != attempt.run_digest
+                or run.scope != attempt.scope
+                or run.target_id != attempt.target_id
+                or run.target_type != attempt.target_type
+                or step is None
+                or step.state is not WorkflowExecutionStepRunState.NOT_STARTED
+                or step.depends_on
+                or step.canonical_digest != request.expected_step_run_digest
+                or request.expected_step_run_digest != attempt.step_run_digest
+                or step.step_id != attempt.step_id
+                or lease is None
+                or lease.lease_id != request.expected_lease_id
+                or request.expected_lease_id != attempt.lease_id
+                or lease.canonical_digest != request.expected_lease_digest
+                or request.expected_lease_digest != attempt.lease_digest
+                or lease.fencing_token != request.expected_fencing_token
+                or request.expected_fencing_token != attempt.fencing_token
+                or lease.worker_subject_id != request.worker_subject_id
+                or request.worker_subject_id != attempt.materialized_by_subject_id
+                or lease.effective_state(requested_at=request.requested_at)
+                is not WorkflowOrchestrationLeaseEffectiveState.ACTIVE
+                or lease.grants_execution_authority
+                or attempt.attempt_number != 1
+                or attempt.state is not WorkflowExecutionAttemptState.CREATED
+                or attempt.grants_execution_authority
+            ):
+                return WorkflowAttemptMaterializationResult(
+                    WorkflowAttemptMaterializationStatus.STATE_CONFLICT, None
+                )
+            current = self._attempts_by_step_run.get(step.step_run_id)
+            if current is not None:
+                return WorkflowAttemptMaterializationResult(
+                    WorkflowAttemptMaterializationStatus.STATE_CONFLICT, current
+                )
+            self._attempts_by_step_run[step.step_run_id] = attempt
+            self._attempt_materialization_requests[key] = (
+                WorkflowAttemptMaterializationIdempotencyRecord(
+                    request_fingerprint=request.request_fingerprint,
+                    attempt=attempt,
+                )
+            )
+            return WorkflowAttemptMaterializationResult(
+                WorkflowAttemptMaterializationStatus.CREATED, attempt
+            )
 
     async def acquire_lease(
         self, request: WorkflowLeaseAcquireRequest

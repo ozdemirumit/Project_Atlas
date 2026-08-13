@@ -83,6 +83,10 @@ class WorkflowExecutionStepRunState(StrEnum):
     NOT_STARTED = "not_started"
 
 
+class WorkflowExecutionAttemptState(StrEnum):
+    CREATED = "created"
+
+
 @dataclass(frozen=True, slots=True)
 class WorkflowScope:
     organization_id: str
@@ -320,6 +324,107 @@ class WorkflowExecutionRun:
             "scope": self.scope.canonical_value(),
             "state": self.state.value,
             "step_runs": [step.canonical_value() for step in self.step_runs],
+            "target_id": self.target_id,
+            "target_type": self.target_type,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    @property
+    def grants_execution_authority(self) -> bool:
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowExecutionAttempt:
+    """Durable pre-dispatch attempt identity with no execution authority."""
+
+    attempt_id: str
+    run_id: str
+    run_digest: str
+    step_run_id: str
+    step_run_digest: str
+    step_id: str
+    attempt_number: int
+    plan_id: str
+    plan_digest: str
+    definition_id: str
+    definition_version: int
+    definition_digest: str
+    scope: WorkflowScope
+    target_id: str
+    target_type: str
+    lease_id: str
+    lease_digest: str
+    fencing_token: int
+    materialized_by_subject_id: str
+    created_at: datetime
+    state: WorkflowExecutionAttemptState
+    authority: WorkflowPlanAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.attempt_id, "attempt_id"),
+            (self.run_id, "attempt run_id"),
+            (self.step_run_id, "attempt step_run_id"),
+            (self.step_id, "attempt step_id"),
+            (self.plan_id, "attempt plan_id"),
+            (self.definition_id, "attempt definition_id"),
+            (self.target_id, "attempt target_id"),
+            (self.lease_id, "attempt lease_id"),
+            (self.materialized_by_subject_id, "attempt materialized_by_subject_id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.run_digest, "attempt run_digest"),
+            (self.step_run_digest, "attempt step_run_digest"),
+            (self.plan_digest, "attempt plan_digest"),
+            (self.definition_digest, "attempt definition_digest"),
+            (self.lease_digest, "attempt lease_digest"),
+            (self.canonical_digest, "attempt canonical_digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.attempt_number != 1:
+            raise ValueError("pre-dispatch attempt number must be one")
+        if self.definition_version < 1:
+            raise ValueError("attempt definition_version must be positive")
+        if self.target_type != "storage":
+            raise ValueError("workflow execution attempts support only storage targets")
+        if self.fencing_token < 1:
+            raise ValueError("attempt fencing_token must be at least one")
+        if self.created_at.tzinfo is None:
+            raise ValueError("attempt created_at must be timezone-aware")
+        if self.state is not WorkflowExecutionAttemptState.CREATED:
+            raise ValueError("pre-dispatch attempts must remain created")
+        if any(self.authority.canonical_value().values()):
+            raise ValueError("workflow execution attempts cannot grant operational authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("workflow execution attempt canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "attempt_id": self.attempt_id,
+            "attempt_number": self.attempt_number,
+            "authority": self.authority.canonical_value(),
+            "created_at": self.created_at.isoformat(),
+            "definition_digest": self.definition_digest,
+            "definition_id": self.definition_id,
+            "definition_version": self.definition_version,
+            "fencing_token": self.fencing_token,
+            "lease_digest": self.lease_digest,
+            "lease_id": self.lease_id,
+            "materialized_by_subject_id": self.materialized_by_subject_id,
+            "plan_digest": self.plan_digest,
+            "plan_id": self.plan_id,
+            "run_digest": self.run_digest,
+            "run_id": self.run_id,
+            "scope": self.scope.canonical_value(),
+            "state": self.state.value,
+            "step_id": self.step_id,
+            "step_run_digest": self.step_run_digest,
+            "step_run_id": self.step_run_id,
             "target_id": self.target_id,
             "target_type": self.target_type,
         }

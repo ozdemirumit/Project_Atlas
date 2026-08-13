@@ -4,14 +4,70 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-187 |
-| Title | Durable workflow run materialization without dispatch authority |
-| Status | Implementation complete; delivery gates in progress |
-| Branch | `agent/workflow-run-materialization` |
+| Task ID | ATLAS-IMP-188 |
+| Title | Durable workflow step attempt materialization without dispatch authority |
+| Status | Implementation and local validation complete; delivery gates in progress |
+| Branch | `agent/workflow-attempt-materialization` |
 | Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ADR-134, ADR-135, ADR-136, ADR-137 |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ADR-134, ADR-135, ADR-136, ADR-137, ADR-138 |
 | Last Updated | 2026-08-14 |
-| Next Action | Open PR, pass exact-head CI, merge and verify main CI |
+| Next Action | Open the exact-head pull request, pass CI, merge and verify `main` |
+
+### ATLAS-IMP-188 Scope Rationale
+
+- IMP-187 creates an immutable run and logical step runs but intentionally creates no attempt or
+  dispatch record. The next smallest durable boundary is attempt number one for an exact eligible
+  root step under the current fenced lease.
+- Attempt materialization persists identity before dispatch and leaves the attempt `created`; it
+  does not change run or step state. Until completed step transitions exist, dependency-bearing
+  steps fail closed as ineligible.
+- Queue delivery, worker dispatch, running states, results, retries, timers, signals,
+  connector/model calls, approvals, ITSM, runbooks and infrastructure actions remain deferred.
+
+### ATLAS-IMP-188 Acceptance Criteria
+
+- A dedicated workflow workload identity can idempotently materialize exactly one attempt for an
+  exact eligible root step under the active unexpired lease; competing, stale or changed requests
+  fail closed without revealing unauthorized state.
+- The attempt remains `created`, attempt number is exactly one, run and step-run states remain
+  unchanged, and every authority field remains structurally false.
+- PostgreSQL locks and revalidates plan, lease, run and step run, then writes the attempt and its
+  immutable idempotency claim in one transaction. Production never falls back to memory.
+- Human UI exposes authoritative read-only attempt state with no materialize, dispatch or execution
+  controls, no credential material, no second-login or MFA prompt and no implication that work ran.
+
+### ATLAS-IMP-188 Validation Evidence
+
+- Domain and application services materialize deterministic attempt number one only for the exact
+  eligible dependency-free root step under the current active fenced lease. Exact replay returns
+  the same immutable `created` attempt; stale, expired, changed, competing, dependent-step or
+  mismatched requests fail closed.
+- PostgreSQL locks and revalidates the plan, current lease, run and step run, then persists the
+  attempt and immutable idempotency claim atomically. Historical lease evidence is retained without
+  an unsafe foreign key to the replaceable lease row. Alembic has one head at `20260814_0111`.
+- API and frontend tests prove workload-only materialization and human read-only presentation. The
+  run remains `created`, every step run remains `not_started`, every authority field remains false,
+  and no attempt, materialize, dispatch or execution control is exposed to the browser session.
+- Ruff format/lint passed across 1,281 files and strict mypy passed across 1,169 source files. The
+  full backend suite passed 1,642 tests with three expected Windows symlink skips. The full frontend
+  suite passed 313 tests across 95 files; ESLint, TypeScript and the production build passed with
+  only the pre-existing chunk-size advisory.
+- Live validation at `http://127.0.0.1:5253/#/workspace/workflows` restarted the backend from this
+  branch, then used one `atlas-demo` / `local-demo` username/password login. Plan
+  `workflow-plan.0682110f26e4755cd3772220` displayed read-only lease and run evidence, no human
+  controls and no infrastructure action. No MFA or additional authorized-browser login was
+  requested; a new login was needed only because restarting the in-memory development backend
+  intentionally cleared its previous session.
+
+### ATLAS-IMP-187 Delivery Evidence
+
+- Source head `14e6bc0` passed exact-head PR CI run `31749833891`; frontend completed in 5m20s and
+  backend in 7m09s.
+- PR [#199](https://github.com/ozdemirumit/Project_Atlas/pull/199) was squash-merged as
+  `574745d10fcc959dcad091b31c579f0976c63d38`.
+- The exact merged commit independently passed `main` CI run `31750370415`; frontend completed in
+  4m52s and backend in 6m51s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-188 branched.
 
 ### ATLAS-IMP-187 Scope Rationale
 

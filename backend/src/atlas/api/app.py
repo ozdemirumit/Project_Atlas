@@ -1530,6 +1530,8 @@ from atlas.modules.workflows.adapters.memory import InMemoryWorkflowPlanReposito
 from atlas.modules.workflows.adapters.postgres import PostgreSQLWorkflowPlanRepository
 from atlas.modules.workflows.adapters.unavailable import UnavailableWorkflowPlanRepository
 from atlas.modules.workflows.application import (
+    WorkflowAttemptMaterializationRepository,
+    WorkflowAttemptMaterializationService,
     WorkflowOrchestrationLeaseRepository,
     WorkflowOrchestrationLeaseService,
     WorkflowPlanningService,
@@ -1563,6 +1565,7 @@ def create_app(
     workflow_planning_service: WorkflowPlanningService | None = None,
     workflow_orchestration_lease_service: WorkflowOrchestrationLeaseService | None = None,
     workflow_run_materialization_service: WorkflowRunMaterializationService | None = None,
+    workflow_attempt_materialization_service: WorkflowAttemptMaterializationService | None = None,
     security_export_service: SecurityExportService | None = None,
     session_service: SessionService | None = None,
     api_credential_service: ApiCredentialService | None = None,
@@ -5355,6 +5358,33 @@ def create_app(
         )
     else:
         resolved_workflow_run_materialization_service = workflow_run_materialization_service
+    if workflow_attempt_materialization_service is None:
+        attempt_repository_methods = (
+            "list_attempts_by_run_id",
+            "get_attempt_materialization_request",
+            "materialize_attempt",
+        )
+        if not all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in attempt_repository_methods
+        ):
+            raise ValueError(
+                "workflow planning repository does not implement attempt materialization; "
+                "inject workflow_attempt_materialization_service explicitly"
+            )
+        workflow_attempt_repository = cast(
+            WorkflowAttemptMaterializationRepository,
+            workflow_repository,
+        )
+        resolved_workflow_attempt_materialization_service = WorkflowAttemptMaterializationService(
+            plan_repository=workflow_repository,
+            lease_repository=resolved_workflow_orchestration_lease_service.repository,
+            run_repository=resolved_workflow_run_materialization_service.repository,
+            attempt_repository=workflow_attempt_repository,
+            audit_sink=resolved_audit_sink,
+        )
+    else:
+        resolved_workflow_attempt_materialization_service = workflow_attempt_materialization_service
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -5585,6 +5615,12 @@ def create_app(
         )
         app.state.workflow_run_materialization_repository = (
             resolved_workflow_run_materialization_service.repository
+        )
+        app.state.workflow_attempt_materialization_service = (
+            resolved_workflow_attempt_materialization_service
+        )
+        app.state.workflow_attempt_materialization_repository = (
+            resolved_workflow_attempt_materialization_service.repository
         )
         yield
         await resolved_workflow_planning_service.close()

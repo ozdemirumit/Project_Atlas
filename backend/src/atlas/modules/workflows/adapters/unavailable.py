@@ -3,6 +3,10 @@ from __future__ import annotations
 from typing import NoReturn
 
 from atlas.modules.workflows.application import (
+    WorkflowAttemptMaterializationError,
+    WorkflowAttemptMaterializationIdempotencyRecord,
+    WorkflowAttemptMaterializationRequest,
+    WorkflowAttemptMaterializationResult,
     WorkflowLeaseAcquireIdempotencyRecord,
     WorkflowLeaseAcquireRequest,
     WorkflowLeaseAcquireResult,
@@ -20,6 +24,7 @@ from atlas.modules.workflows.application import (
     WorkflowRunMaterializationResult,
 )
 from atlas.modules.workflows.domain import (
+    WorkflowExecutionAttempt,
     WorkflowExecutionRun,
     WorkflowOrchestrationLease,
     WorkflowRunPlan,
@@ -105,6 +110,23 @@ class UnavailableWorkflowPlanRepository:
     ) -> WorkflowRunMaterializationResult:
         self._raise_run()
 
+    async def list_attempts_by_run_id(self, *, run_id: str) -> tuple[WorkflowExecutionAttempt, ...]:
+        self._raise_attempt()
+
+    async def get_attempt_materialization_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        worker_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowAttemptMaterializationIdempotencyRecord | None:
+        self._raise_attempt()
+
+    async def materialize_attempt(
+        self, request: WorkflowAttemptMaterializationRequest
+    ) -> WorkflowAttemptMaterializationResult:
+        self._raise_attempt()
+
     async def get_lease_acquire_request(
         self,
         *,
@@ -137,4 +159,11 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowRunMaterializationError(
             "workflow_run_repository_unavailable",
             "Durable workflow run materialization storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_attempt() -> NoReturn:
+        raise WorkflowAttemptMaterializationError(
+            "workflow_attempt_repository_unavailable",
+            "Durable workflow attempt materialization storage is not configured.",
         )

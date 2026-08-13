@@ -10,6 +10,7 @@ import {
   listWorkflowPlans,
   WORKFLOW_PLAN_SAFETY_NOTICE,
   type WorkflowDefinition,
+  type WorkflowExecutionAttempt,
   type WorkflowExecutionRun,
   type WorkflowOrchestrationLease,
   type WorkflowRunPlan,
@@ -164,6 +165,33 @@ const materializedRun: WorkflowExecutionRun = {
   canonical_digest: "1".repeat(64),
 };
 
+const materializedAttempt: WorkflowExecutionAttempt = {
+  attempt_id: "workflow-attempt.1234567890abcdef",
+  run_id: materializedRun.run_id,
+  run_digest: materializedRun.canonical_digest,
+  step_run_id: materializedRun.step_runs[0]!.step_run_id,
+  step_run_digest: materializedRun.step_runs[0]!.canonical_digest,
+  step_id: materializedRun.step_runs[0]!.step_id,
+  attempt_number: 1,
+  plan_id: materializedRun.plan_id,
+  plan_digest: materializedRun.plan_digest,
+  definition_id: materializedRun.definition_id,
+  definition_version: materializedRun.definition_version,
+  definition_digest: materializedRun.definition_digest,
+  scope: materializedRun.scope,
+  target_id: materializedRun.target_id,
+  target_type: "storage",
+  lease_id: materializedRun.lease_id,
+  lease_digest: materializedRun.lease_digest,
+  fencing_token: materializedRun.fencing_token,
+  materialized_by_subject_id: materializedRun.materialized_by_subject_id,
+  created_at: "2026-08-13T10:05:00Z",
+  state: "created",
+  authority: { ...materializedRun.authority },
+  grants_execution_authority: false,
+  canonical_digest: "2".repeat(64),
+};
+
 function leaseResponse(lease: WorkflowOrchestrationLease | null, status = 200): Response {
   return new Response(
     JSON.stringify({
@@ -202,14 +230,39 @@ function materializedRunResponse(run: WorkflowExecutionRun | null, status = 200)
   );
 }
 
+function attemptResponse(attempts: unknown[], status = 200): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            run_id: materializedRun.run_id,
+            attempts,
+            server_time: "2026-08-13T10:06:00Z",
+            durable: false,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.attempt",
+            generated_at: "2026-08-13T10:06:00Z",
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function mockReadResponses(input: {
   lease?: WorkflowOrchestrationLease | null;
   run?: WorkflowExecutionRun | null;
+  attempts?: unknown[];
   leaseStatus?: number;
   runStatus?: number;
+  attemptStatus?: number;
 }) {
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/attempts")) {
+      return Promise.resolve(attemptResponse(input.attempts ?? [], input.attemptStatus ?? 200));
+    }
     return Promise.resolve(
       url.endsWith("/materialized-run")
         ? materializedRunResponse(input.run ?? null, input.runStatus ?? 200)
@@ -426,6 +479,11 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(
       await screen.findByText("No materialized run is recorded for this plan."),
     ).toBeVisible();
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith("/attempts"),
+      ),
+    ).toBe(false);
     expect(screen.queryByRole("button", { name: /materialize|start|execute|dispatch/i })).toBeNull();
     expect(screen.queryByText(/authorized browser session|MFA/i)).toBeNull();
   });
@@ -527,5 +585,158 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(screen.getByText(new RegExp(detail, "i"))).toBeVisible();
     expect(screen.queryByRole("button", { name: "Retry run record" })).toBeNull();
     expect(screen.queryByText(/authorized browser session|MFA/i)).toBeNull();
+  });
+
+  it("presents an empty attempt inventory only after a materialized run exists", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    mockReadResponses({ run: materializedRun, attempts: [] });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Materialized attempt records" }),
+    ).toBeVisible();
+    expect(
+      await screen.findByText("No materialized attempts are recorded for this run."),
+    ).toBeVisible();
+    expect(screen.getAllByText("No human controls").length).toBeGreaterThan(0);
+    expect(screen.getByText(/No action ran, and no execution authority/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /attempt|materialize|dispatch|execute/i })).toBeNull();
+  });
+
+  it("shows read-only loading state while authoritative attempt evidence is pending", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    vi.mocked(fetch).mockImplementation((request) => {
+      const url = request instanceof Request ? request.url : request.toString();
+      if (url.endsWith("/attempts")) return new Promise<Response>(() => undefined);
+      if (url.endsWith("/materialized-run")) {
+        return Promise.resolve(materializedRunResponse(materializedRun));
+      }
+      return Promise.resolve(leaseResponse(null));
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    expect(await screen.findByText("Loading authoritative attempt records...")).toBeVisible();
+    expect(screen.getAllByText("No human controls").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /attempt|materialize|dispatch|execute/i })).toBeNull();
+  });
+
+  it("renders an exact run-bound root-step attempt as read-only evidence", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    mockReadResponses({ run: materializedRun, attempts: [materializedAttempt] });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const records = await screen.findByRole("list", { name: "Materialized attempt records" });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          `/api/v1/workflows/plans/${plan.plan_id}/runs/${materializedRun.run_id}/attempts`,
+        ),
+      ),
+    ).toBe(true);
+    expect(await screen.findByTitle(materializedAttempt.attempt_id)).toBeVisible();
+    expect(records).toHaveTextContent("root step query-authorized-evidence");
+    expect(records).toHaveTextContent("created");
+    expect(records).toHaveTextContent("fence 7");
+    expect(records).toHaveTextContent("run 111111111111...11111111");
+    expect(records).toHaveTextContent("step 999999999999...99999999");
+    expect(records).toHaveTextContent("attempt 222222222222...22222222");
+    expect(screen.getByText(/No action ran, and no execution authority/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /attempt|materialize|dispatch|execute/i })).toBeNull();
+    expect(screen.queryByText(/authorized browser session|MFA/i)).toBeNull();
+  });
+
+  it("fails closed on unsafe or unbound attempt evidence", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [{ ...materializedAttempt, step_run_digest: "0".repeat(64), password: "unsafe" }],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    expect(await screen.findByText("Attempt evidence is unavailable")).toBeVisible();
+    expect(screen.getByText(/No attempt state is inferred/i)).toBeVisible();
+    expect(screen.queryByText(/workflow-attempt.1234567890abcdef/i)).toBeNull();
+    expect(screen.queryByText(/unsafe/i)).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [403, "Attempt evidence permission is missing", "current role cannot inspect materialized"],
+    [503, "Attempt evidence is unavailable", "No attempt state is inferred"],
+  ])("handles attempt read status %s without exposing an action", async (status, title, detail) => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    mockReadResponses({ run: materializedRun, attemptStatus: status });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    expect(await screen.findByText(title)).toBeVisible();
+    expect(screen.getByText(new RegExp(detail, "i"))).toBeVisible();
+    expect(screen.queryByText(/authorized browser session|MFA/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /materialize|dispatch|execute/i })).toBeNull();
+    if (status === 503) {
+      expect(screen.getByRole("button", { name: "Retry attempt evidence" })).toBeVisible();
+    } else {
+      expect(screen.queryByRole("button", { name: "Retry attempt evidence" })).toBeNull();
+    }
+  });
+
+  it("retries a generic attempt read failure and keeps the panel control-free", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    let attemptReads = 0;
+    vi.mocked(fetch).mockImplementation((request) => {
+      const url = request instanceof Request ? request.url : request.toString();
+      if (url.endsWith("/attempts")) {
+        attemptReads += 1;
+        return Promise.resolve(attemptResponse([], attemptReads === 1 ? 503 : 200));
+      }
+      if (url.endsWith("/materialized-run")) {
+        return Promise.resolve(materializedRunResponse(materializedRun));
+      }
+      return Promise.resolve(leaseResponse(null));
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retry attempt evidence" }));
+
+    expect(
+      await screen.findByText("No materialized attempts are recorded for this run."),
+    ).toBeVisible();
+    expect(attemptReads).toBe(2);
+    expect(screen.queryByRole("button", { name: /attempt|materialize|dispatch|execute/i })).toBeNull();
+    expect(screen.getByText(/No action ran, and no execution authority/i)).toBeVisible();
   });
 });
