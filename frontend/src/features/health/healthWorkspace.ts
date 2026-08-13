@@ -13,7 +13,7 @@ export interface HealthViewDescriptor {
 export const healthViewDescriptors: readonly HealthViewDescriptor[] = [
   {
     id: "overview",
-    label: "Inventory",
+    label: "Device registry",
     title: "Infrastructure inventory and health",
     description: "Register or retire devices, then review evidence-linked health and impact.",
     icon: Server,

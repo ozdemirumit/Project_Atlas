@@ -72,12 +72,14 @@ function AddMcpDialog({
   policies,
   pending,
   onCancel,
+  onOpenBuilder,
   onSubmit,
 }: {
   packages: ConnectorPackageInstallationReceipt[];
   policies: ConnectorInstanceCreationPolicy[];
   pending: boolean;
   onCancel: () => void;
+  onOpenBuilder: () => void;
   onSubmit: (input: Parameters<typeof createConnectorInstance>[0]) => void;
 }) {
   const [receiptId, setReceiptId] = useState(packages[0]?.receipt_id ?? "");
@@ -190,7 +192,10 @@ function AddMcpDialog({
         ) : (
           <div className="installed-mcp-empty compact">
             <AlertTriangle size={20} />
-            <div><strong>No governed package is installed</strong><span>Complete the Builder, assurance, approval and package installation workflow below first.</span></div>
+            <div><strong>No governed package is installed</strong><span>Complete the Builder, assurance, approval and package installation workflow first.</span></div>
+            <button type="button" className="secondary-button" onClick={onOpenBuilder}>
+              <PackagePlus size={15} /> Open Builder workflow
+            </button>
           </div>
         )}
         <footer>
@@ -223,8 +228,8 @@ function RetireMcpDialog({
     <div className="installed-mcp-dialog-backdrop" role="presentation">
       <form className="installed-mcp-dialog retirement" role="dialog" aria-modal="true" aria-labelledby="retire-mcp-title" onSubmit={(event) => { event.preventDefault(); if (valid) onSubmit(reason); }}>
         <header>
-          <div><p className="eyebrow">PRESERVE HISTORY</p><h3 id="retire-mcp-title">Retire {instance.display_name}</h3></div>
-          <button className="icon-button" type="button" aria-label="Close retire MCP" onClick={onCancel}><X size={17} /></button>
+          <div><p className="eyebrow">GOVERNED RETIREMENT</p><h3 id="retire-mcp-title">Remove {instance.display_name}</h3></div>
+          <button className="icon-button" type="button" aria-label="Close remove MCP" onClick={onCancel}><X size={17} /></button>
         </header>
         <div className="installed-mcp-retirement-impact">
           <Archive size={20} />
@@ -234,7 +239,7 @@ function RetireMcpDialog({
         <label className="approval-check"><input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} /><span>I understand that history is preserved and no runtime or infrastructure action is performed.</span></label>
         <footer>
           <button type="button" className="secondary-button" onClick={onCancel}>Cancel</button>
-          <button type="submit" className="installed-mcp-retire" disabled={!valid || pending}>{pending ? <RefreshCw className="spin" size={16} /> : <Archive size={16} />}Retire MCP</button>
+          <button type="submit" className="installed-mcp-retire" disabled={!valid || pending}>{pending ? <RefreshCw className="spin" size={16} /> : <Archive size={16} />}Confirm retirement</button>
         </footer>
       </form>
     </div>
@@ -801,10 +806,12 @@ function SigningProviderOnboardingPolicyProvenance({
 
 export default function InstalledMcpManagementWorkspace({
   enterpriseMfaAvailable = true,
+  onOpenBuilder,
   onRequestEnterpriseLogin,
   subjectId,
 }: {
   enterpriseMfaAvailable?: boolean;
+  onOpenBuilder?: () => void;
   onRequestEnterpriseLogin?: () => void;
   subjectId: string;
 }) {
@@ -875,6 +882,17 @@ export default function InstalledMcpManagementWorkspace({
   const activeCount = instances.filter(
     (item) => item.instance_state === "disabled_unconfigured",
   ).length;
+  const openBuilder = () => {
+    setAdding(false);
+    if (onOpenBuilder) {
+      onOpenBuilder();
+      return;
+    }
+    document.getElementById("connector-view-builder")?.scrollIntoView?.({
+      behavior: "smooth",
+      block: "start",
+    });
+  };
   const refresh = () => {
     void packageQuery.refetch();
     void policyQuery.refetch();
@@ -898,6 +916,37 @@ export default function InstalledMcpManagementWorkspace({
           <button className="icon-button" type="button" title="Refresh MCP inventory" aria-label="Refresh MCP inventory" onClick={refresh}><RefreshCw size={17} /></button>
           <button className="primary-button" type="button" disabled={!enterpriseMfaAvailable || packageQuery.isLoading || policyQuery.isLoading} title={enterpriseMfaAvailable ? "Add MCP" : "Directory-backed MFA session required"} onClick={() => { createMutation.reset(); setAdding(true); }}><PackagePlus size={16} />Add MCP</button>
         </div>
+      </div>
+      <div className="installed-mcp-readiness" aria-label="MCP lifecycle prerequisites">
+        <span data-ready={enterpriseMfaAvailable}>
+          {enterpriseMfaAvailable ? <ShieldCheck size={15} /> : <AlertTriangle size={15} />}
+          {enterpriseMfaAvailable ? "Enterprise MFA present" : "Enterprise MFA required"}
+        </span>
+        <span data-ready={!packageQuery.isLoading && !packageQuery.isError && packages.length > 0}>
+          {packageQuery.isLoading ? <RefreshCw className="spin" size={15} /> : <PackagePlus size={15} />}
+          {packageQuery.isLoading
+            ? "Checking packages"
+            : packageQuery.isError
+              ? "Package inventory unavailable"
+            : packages.length > 0
+              ? `${packages.length} governed package${packages.length === 1 ? "" : "s"}`
+              : "Governed package required"}
+        </span>
+        <span data-ready={!policyQuery.isLoading && !policyQuery.isError && policies.length > 0}>
+          {policyQuery.isLoading ? <RefreshCw className="spin" size={15} /> : <FileCheck2 size={15} />}
+          {policyQuery.isLoading
+            ? "Checking policy"
+            : policyQuery.isError
+              ? "Policy inventory unavailable"
+            : policies.length > 0
+              ? `${policies.length} creation polic${policies.length === 1 ? "y" : "ies"}`
+              : "Creation policy required"}
+        </span>
+        {!packageQuery.isLoading && !packageQuery.isError && packages.length === 0 && (
+          <button type="button" className="secondary-button" onClick={openBuilder}>
+            <PackagePlus size={15} /> Open Builder workflow
+          </button>
+        )}
       </div>
       <details className="installed-mcp-signing-diagnostics">
         <summary>
@@ -1108,14 +1157,17 @@ export default function InstalledMcpManagementWorkspace({
       {(instanceQuery.isError || packageQuery.isError || policyQuery.isError) && (
         <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={18} /><div><strong>Enterprise connector inventory is unavailable</strong><span>Sign in with an authorized MFA browser session and refresh.</span></div></div>
       )}
+      {instanceQuery.isLoading && (
+        <div className="installed-mcp-status" role="status"><RefreshCw className="spin" size={18} /><span>Loading MCP lifecycle inventory...</span></div>
+      )}
       {createMutation.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={18} />MCP creation failed. Review the exact package, identity key and policy boundary.</div>}
       {retireMutation.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={18} />MCP retirement failed. Configured instances require governed decommissioning first.</div>}
       {!instanceQuery.isError && !instanceQuery.isLoading && instances.length === 0 ? (
-        <div className="installed-mcp-empty"><Boxes size={24} /><div><strong>No {lifecycle === "all" ? "" : lifecycle} MCP instances</strong><span>{packages.length ? "Select Add MCP to create a disabled instance from a governed package." : "Complete package installation in the Builder workflow below, then return here to add an MCP."}</span></div></div>
-      ) : (
+        <div className="installed-mcp-empty"><Boxes size={24} /><div><strong>No {lifecycle === "all" ? "" : lifecycle} MCP instances</strong><span>{packages.length ? "Select Add MCP to create a disabled instance from a governed package." : "Complete package installation in the Builder workflow, then return here to add an MCP."}</span></div></div>
+      ) : !instanceQuery.isLoading && !instanceQuery.isError ? (
         <div className="installed-mcp-table-wrap">
           <table className="installed-mcp-table">
-            <thead><tr><th>MCP</th><th>Package</th><th>State</th><th>Owner</th><th>Lifecycle event</th><th><span className="sr-only">Actions</span></th></tr></thead>
+            <thead><tr><th>MCP</th><th>Package</th><th>State</th><th>Owner</th><th>Lifecycle event</th><th>Actions</th></tr></thead>
             <tbody>
               {instances.map((instance) => (
                 <tr key={instance.record_id}>
@@ -1129,15 +1181,15 @@ export default function InstalledMcpManagementWorkspace({
                     </span>
                     {new Date(instance.retired_at ?? instance.created_at).toLocaleString()}
                   </td>
-                  <td>{instance.instance_state === "disabled_unconfigured" && <div className="installed-mcp-row-actions"><button className="icon-button" type="button" disabled={!enterpriseMfaAvailable} title={enterpriseMfaAvailable ? "Review update" : "Directory-backed MFA session required"} aria-label={`Review update for ${instance.display_name}`} onClick={() => setReviewing(instance)}><ArrowUpCircle size={16} /></button><button className="icon-button" type="button" disabled={!enterpriseMfaAvailable} title={enterpriseMfaAvailable ? "Retire MCP" : "Directory-backed MFA session required"} aria-label={`Retire ${instance.display_name}`} onClick={() => { retireMutation.reset(); setRetiring(instance); }}><Archive size={16} /></button></div>}</td>
+                  <td>{instance.instance_state === "disabled_unconfigured" && <div className="installed-mcp-row-actions"><button className="secondary-button installed-mcp-row-action" type="button" disabled={!enterpriseMfaAvailable} title={enterpriseMfaAvailable ? "Review governed update evidence" : "Directory-backed MFA session required"} aria-label={`Review update for ${instance.display_name}`} onClick={() => setReviewing(instance)}><ArrowUpCircle size={15} /><span>Review update</span></button><button className="secondary-button installed-mcp-row-action danger" type="button" disabled={!enterpriseMfaAvailable} title={enterpriseMfaAvailable ? "Remove from active management and preserve history" : "Directory-backed MFA session required"} aria-label={`Remove ${instance.display_name}`} onClick={() => { retireMutation.reset(); setRetiring(instance); }}><Archive size={15} /><span>Remove</span></button></div>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      )}
-      <div className="installed-mcp-footnote"><span>{activeCount} active in this result</span><span>Packages and lifecycle history are preserved.</span></div>
-      {adding && <AddMcpDialog packages={packages} policies={policies} pending={createMutation.isPending} onCancel={() => setAdding(false)} onSubmit={(input) => createMutation.mutate(input)} />}
+      ) : null}
+      <div className="installed-mcp-footnote"><span>{activeCount} active in this result</span><span>Remove preserves history. Updates remain review-only.</span></div>
+      {adding && <AddMcpDialog packages={packages} policies={policies} pending={createMutation.isPending} onCancel={() => setAdding(false)} onOpenBuilder={openBuilder} onSubmit={(input) => createMutation.mutate(input)} />}
       {retiring && <RetireMcpDialog instance={retiring} pending={retireMutation.isPending} onCancel={() => setRetiring(null)} onSubmit={(reason) => retireMutation.mutate({ instance: retiring, reason })} />}
       {reviewing && <UpgradeReadinessDialog instance={reviewing} subjectId={subjectId} onCancel={() => setReviewing(null)} />}
     </section>

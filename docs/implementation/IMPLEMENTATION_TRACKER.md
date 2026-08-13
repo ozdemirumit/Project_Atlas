@@ -4,14 +4,71 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-174 |
-| Title | Provider-neutral ITSM onboarding policy provenance and authenticity |
-| Status | In Progress; implementation and local validation complete, delivery pending |
-| Branch | `agent/itsm-onboarding-policy-authenticity` |
+| Task ID | ATLAS-IMP-175 |
+| Title | Operator lifecycle entrypoint reconciliation and stale-runtime guard |
+| Status | Validation complete; GitHub delivery pending |
+| Branch | `agent/operator-lifecycle-controls` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-124, ADR-125, ADR-126, ADR-127, ADR-128, ADR-129, ADR-130 |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-030, ADR-100, ADR-101, ADR-123 |
 | Last Updated | 2026-08-13 |
-| Next Action | Publish the validated IMP-174 branch, pass exact-head CI, merge, and validate main |
+| Next Action | Commit the verified slice, open its PR, pass CI, merge and verify exact merged `main` |
+
+### ATLAS-IMP-175 Scope Rationale
+
+- Governed device registration/retirement and MCP creation/retirement/update planning are already
+  implemented, authorized and audited. Live operator feedback nevertheless reported the actions as
+  absent while an older Vite process remained open on port 5252 and the current verified UI ran on
+  port 5253.
+- The Device Registry render path is coupled to storage-overview evidence, so an unavailable overview
+  can hide an otherwise independent inventory lifecycle surface. MCP actions are present but their MFA
+  and package prerequisites can still read as an absent capability rather than an actionable boundary.
+- This slice reconciles entrypoints, runtime freshness and prerequisite guidance only. It adds no hard
+  delete, package bypass, runtime activation, target contact, credential access, execution or
+  infrastructure-mutation authority.
+
+### ATLAS-IMP-175 Acceptance Criteria
+
+- Device Registry is directly reachable from the Health Inventory task and remains visible when
+  storage overview evidence is loading or unavailable. Add and governed retirement controls retain
+  their browser-session, RBAC, acknowledgement, idempotency, version and audit boundaries.
+- Connector Inventory presents installed MCP records and Add, retire and update-review entrypoints
+  before secondary diagnostics. Missing package, policy or enterprise-MFA prerequisites provide a
+  direct and accurate next step without weakening server authorization.
+- Canonical nested routes, browser history, keyboard navigation, loading/error/empty states and
+  responsive behavior remain stable; the UI does not duplicate lifecycle records or invent an API.
+- Local validation uses one declared current frontend URL and verifies that stale development server
+  processes cannot be mistaken for the delivered build.
+- Focused/full gates, production build and live desktop/mobile validation pass before delivery.
+
+### ATLAS-IMP-175 Validation Evidence
+
+- Parallel implementation reconciled the Health navigation, independent Device Registry render
+  boundary, Inventory lifecycle surface and Installed MCP lifecycle surface. An independent review
+  then identified stale logout cache, insufficient request/response binding, fail-open list scope
+  and Builder focus risks; all four were corrected before the final gates.
+- Device Registry now mounts for an authenticated identity even when storage-overview evidence is
+  unavailable. Add and governed Retire actions, active/retired/all filtering, search, durable versus
+  development persistence, empty/error/retry states and the no-infrastructure-change boundary remain
+  visible without coupling lifecycle records to synthetic storage evidence.
+- Inventory list, create and retire responses fail closed on exact organization, environment and
+  site scope, requested lifecycle, stable identity, version progression and an allowlisted response
+  schema. Logout clears identity-bound inventory and connector lifecycle caches.
+- Installed MCPs is the first connector task view. Add MCP, update-review and governed Remove
+  entrypoints appear before secondary diagnostics; package, policy and enterprise-MFA prerequisites
+  state why an action is unavailable. Remove remains retirement with preserved history and no hard
+  delete, runtime activation or infrastructure-operation authority.
+- TypeScript and zero-warning ESLint passed. The final focused gate passed 34 scenarios across App,
+  Inventory API, Device Registry and Installed MCP workspaces; the complete frontend suite passed
+  252 tests across 92 files.
+- The production build transformed 2,009 modules successfully. The Device Registry and Installed MCP
+  workspaces remain separately loaded chunks; only the existing OperationalApplication large-chunk
+  advisory remains.
+- The stale frontend formerly listening on port 5252 was stopped. Live validation used only
+  `http://127.0.0.1:5253/` against backend port 8000 and confirmed the current Device Registry and
+  Installed MCP entrypoints.
+- At 1,280 x 720 and 390 x 844 the live pages had no document-level horizontal overflow. Mobile
+  Device Registry exposed two Add device entrypoints, lifecycle filters and the retirement boundary;
+  Installed MCPs exposed Add MCP, prerequisite diagnostics and preserved-history guidance.
 
 ### ATLAS-IMP-174 Scope Rationale
 
@@ -79,6 +136,16 @@
 - The Health governance workspace had no page-level horizontal overflow at 1,280 x 720 or
   390 x 844. It exposed no policy upload/edit/sign/approval, trust, key rotation/revocation, adapter
   configuration, dispatch, ticket mutation or execution control.
+
+### ATLAS-IMP-174 Delivery Evidence
+
+- Source commit `1d5031d96d6a6c7d65715cd10fcf3fbd174f0edc` passed exact-head PR CI run
+  `31671878375`; backend completed in 7m44s and frontend in 4m49s.
+- PR [#186](https://github.com/ozdemirumit/Project_Atlas/pull/186) was squash-merged as
+  `29568fdff6886cf7780c74ecc80a91bed7eaf47d`.
+- The exact merged commit independently passed `main` CI run `31672354764`; backend completed in
+  7m39s and frontend in 4m15s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-175 branched.
 
 ### ATLAS-IMP-173 Scope Rationale
 

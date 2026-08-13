@@ -1321,6 +1321,12 @@ describe("Atlas application shell", () => {
     expect(screen.getByLabelText("Health inventory and evidence")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /^Connectors$/ }));
     expect(await screen.findByRole("heading", { name: "Governed connector analysis" })).toBeVisible();
+    expect(screen.getByRole("tab", { name: "Installed MCPs" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(await screen.findByRole("heading", { name: "Installed MCPs" })).toBeVisible();
+    expect(window.location.hash).toBe("#/connectors/inventory");
     expect(screen.queryByLabelText("Health inventory and evidence")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /^Health$/ }));
     expect(await screen.findByLabelText("Health inventory and evidence")).toBeVisible();
@@ -1337,7 +1343,7 @@ describe("Atlas application shell", () => {
     expect(
       await screen.findByText(/Transport handoff recorded. SIEM ingestion remains unconfirmed/),
     ).toBeVisible();
-    fireEvent.click(screen.getByRole("tab", { name: "Inventory" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Device registry" }));
     expect(await screen.findAllByText("VSP One B28")).not.toHaveLength(0);
     expect(screen.getByText("VSP G400")).toBeVisible();
     expect(screen.getAllByText("CTL01").length).toBeGreaterThan(0);
@@ -1403,6 +1409,63 @@ describe("Atlas application shell", () => {
     expect(screen.getByText("No external mutation authority")).toBeVisible();
     expect(screen.getByRole("button", { name: "Download technical report" })).toBeEnabled();
     expect(screen.getByText(/mutate an external ticket/)).toBeVisible();
+  });
+
+  it("keeps the device registry reachable when storage overview evidence is unavailable", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(identityResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/storage/overview")) {
+        return Promise.resolve(new Response(null, { status: 503 }));
+      }
+      if (url.includes("/inventory/devices")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: { devices: [], durable: true, truncated: false },
+              meta: {
+                correlation_id: "test-device-registry-correlation",
+                generated_at: "2026-08-13T10:00:00Z",
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+      if (url.includes("/platform/status")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(platformResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(new Response(null, { status: 404 }));
+    });
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByRole("tab", { name: "Device registry" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(await screen.findByRole("heading", { name: "Registered infrastructure" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Storage overview unavailable" })).toBeVisible();
+    expect(window.location.hash).toBe("#/health/overview");
   });
 
   it("signs in through the browser session and signs out with CSRF", async () => {
@@ -1505,6 +1568,17 @@ describe("Atlas application shell", () => {
     });
 
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(
+      [
+        "inventory-devices",
+        "organization.development",
+        "environment.test",
+        "site.local",
+        "active",
+        "",
+      ],
+      { devices: [{ device_id: "inventory-device.previous-user" }] },
+    );
     render(
       <QueryClientProvider client={client}>
         <App />
@@ -1555,6 +1629,7 @@ describe("Atlas application shell", () => {
     const logoutHeaders = new Headers(logoutRequest?.headers);
     expect(logoutRequest?.method).toBe("DELETE");
     expect(logoutHeaders.get("X-CSRF-Token")).toBe("csrf_browser_test");
+    expect(client.getQueriesData({ queryKey: ["inventory-devices"] })).toEqual([]);
   }, 15_000);
 
   it("discovers authorized identity governance and revokes exact foreign access", async () => {

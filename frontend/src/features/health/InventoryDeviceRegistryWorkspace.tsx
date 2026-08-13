@@ -7,6 +7,7 @@ import {
   Database,
   LogIn,
   Plus,
+  RefreshCw,
   Search,
   Server,
   ShieldCheck,
@@ -19,9 +20,12 @@ import {
   getInventoryDevices,
   retireInventoryDevice,
   type InventoryDevice,
+  type InventoryDeviceCreateInput,
   type InventoryDeviceLifecycle,
+  type InventoryDeviceScope,
   type InventoryDeviceType,
 } from "../../api/inventoryDevices";
+import { ApiRequestError } from "../../api/client";
 
 const DEVICE_TYPE_LABELS: Record<InventoryDeviceType, string> = {
   storage: "Storage",
@@ -49,7 +53,7 @@ function DeviceCreateDialog({
 }: {
   pending: boolean;
   onCancel: () => void;
-  onSubmit: (input: Parameters<typeof createInventoryDevice>[0]) => void;
+  onSubmit: (input: InventoryDeviceCreateInput) => void;
 }) {
   const [deviceKey, setDeviceKey] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -214,42 +218,58 @@ function DeviceRetireDialog({
 }
 
 export default function InventoryDeviceRegistryWorkspace({
+  environmentId,
   governedSessionAvailable = true,
   onRequestEnterpriseLogin,
+  organizationId,
+  siteId,
 }: {
+  environmentId: string;
   governedSessionAvailable?: boolean;
   onRequestEnterpriseLogin?: () => void;
+  organizationId: string;
+  siteId: string;
 }) {
   const queryClient = useQueryClient();
   const [lifecycle, setLifecycle] = useState<LifecycleFilter>("active");
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [retiring, setRetiring] = useState<InventoryDevice | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const scope: InventoryDeviceScope = { organizationId, environmentId, siteId };
   const inventoryQuery = useQuery({
-    queryKey: ["inventory-devices", lifecycle, query],
-    queryFn: () => getInventoryDevices({ lifecycle, query }),
+    queryKey: ["inventory-devices", organizationId, environmentId, siteId, lifecycle, query],
+    queryFn: () => getInventoryDevices({ lifecycle, query, scope }),
   });
   const refresh = async () => {
     await queryClient.invalidateQueries({ queryKey: ["inventory-devices"] });
   };
   const createMutation = useMutation({
-    mutationFn: createInventoryDevice,
-    onSuccess: async () => {
+    mutationFn: (input: InventoryDeviceCreateInput) => createInventoryDevice({ ...input, scope }),
+    onSuccess: async (registeredDevice) => {
       setCreating(false);
       setLifecycle("active");
+      setSuccessMessage(`${registeredDevice.display_name} was added to active inventory.`);
       await refresh();
     },
   });
   const retireMutation = useMutation({
     mutationFn: ({ device, reason }: { device: InventoryDevice; reason: string }) =>
       retireInventoryDevice({ device, reason }),
-    onSuccess: async () => {
+    onSuccess: async (retiredDevice) => {
       setRetiring(null);
+      setSuccessMessage(
+        `${retiredDevice.display_name} was removed from active inventory and retained as retired.`,
+      );
       await refresh();
     },
   });
   const inventory = inventoryQuery.data;
   const activeCount = inventory?.devices.filter((item) => item.lifecycle === "active").length ?? 0;
+  const lifecycleError = createMutation.error ?? retireMutation.error;
+  const lifecycleAccessDenied =
+    lifecycleError instanceof ApiRequestError &&
+    (lifecycleError.status === 401 || lifecycleError.status === 403);
 
   return (
     <section className="workspace-section inventory-device-registry" aria-labelledby="inventory-device-title">
@@ -273,7 +293,11 @@ export default function InventoryDeviceRegistryWorkspace({
                 ? "Add infrastructure device"
                 : "Signed browser session required"
             }
-            onClick={() => { createMutation.reset(); setCreating(true); }}
+            onClick={() => {
+              createMutation.reset();
+              setSuccessMessage(null);
+              setCreating(true);
+            }}
           >
             <Plus size={15} /> Add device
           </button>
@@ -311,29 +335,88 @@ export default function InventoryDeviceRegistryWorkspace({
       )}
 
       {inventoryQuery.isLoading && <div className="inventory-device-status"><Clock3 size={17} /> Loading device registry</div>}
-      {inventoryQuery.isError && <div className="inventory-device-status error-state" role="alert"><AlertTriangle size={17} /> Device registry is unavailable.</div>}
-      {createMutation.isError && <div className="inventory-device-status error-state" role="alert"><AlertTriangle size={17} /> Device registration failed. Review the scope and unique device key.</div>}
-      {retireMutation.isError && <div className="inventory-device-status error-state" role="alert"><AlertTriangle size={17} /> Device retirement failed. Refresh and review the current version.</div>}
+      {inventoryQuery.isError && (
+        <div className="inventory-device-status error-state" role="alert">
+          <AlertTriangle size={17} />
+          <span>Device registry is unavailable.</span>
+          <button type="button" onClick={() => void inventoryQuery.refetch()}>
+            <RefreshCw size={15} /> Retry
+          </button>
+        </div>
+      )}
+      {lifecycleAccessDenied && (
+        <div className="inventory-device-status error-state" role="alert">
+          <LogIn size={17} />
+          <span>Your session can no longer manage inventory devices.</span>
+          {onRequestEnterpriseLogin && (
+            <button type="button" onClick={onRequestEnterpriseLogin}>
+              <LogIn size={15} /> Sign in again
+            </button>
+          )}
+        </div>
+      )}
+      {createMutation.isError && !lifecycleAccessDenied && <div className="inventory-device-status error-state" role="alert"><AlertTriangle size={17} /> Device registration failed. Review the scope and unique device key.</div>}
+      {retireMutation.isError && !lifecycleAccessDenied && <div className="inventory-device-status error-state" role="alert"><AlertTriangle size={17} /> Device retirement failed. Refresh and review the current version.</div>}
+      {successMessage && (
+        <div className="inventory-device-status success-state" role="status" aria-live="polite">
+          <CheckCircle2 size={17} /> {successMessage}
+        </div>
+      )}
 
       {inventory && inventory.devices.length === 0 && (
         <div className="inventory-device-empty">
           <Server size={20} />
           <div><strong>No matching registered devices</strong><p>Add a device or change the lifecycle filter.</p></div>
+          {governedSessionAvailable ? (
+            <button
+              type="button"
+              onClick={() => {
+                createMutation.reset();
+                setSuccessMessage(null);
+                setCreating(true);
+              }}
+            >
+              <Plus size={15} /> Add device
+            </button>
+          ) : null}
         </div>
       )}
       {inventory && inventory.devices.length > 0 && (
         <div className="table-wrap inventory-device-table-wrap">
           <table className="inventory-device-table">
-            <thead><tr><th>Device</th><th>Type</th><th>Management</th><th>Lifecycle</th><th>Updated</th><th><span className="sr-only">Actions</span></th></tr></thead>
+            <thead><tr><th>Device</th><th>Type</th><th>Management</th><th>Lifecycle</th><th>Updated</th><th>Manage</th></tr></thead>
             <tbody>
               {inventory.devices.map((device) => (
                 <tr key={device.device_id}>
-                  <td><div className="inventory-device-identity"><Server size={17} /><span><strong>{device.display_name}</strong><small>{device.vendor} {device.model}</small><code>{device.device_key}</code></span></div></td>
-                  <td>{DEVICE_TYPE_LABELS[device.device_type]}</td>
-                  <td><span className="inventory-device-management">{device.management_address ?? "Not declared"}</span><small>{device.serial_number ?? "No serial"}</small></td>
-                  <td><span className={`inventory-device-lifecycle ${device.lifecycle}`}>{device.lifecycle === "active" ? <CheckCircle2 size={14} /> : <Archive size={14} />}{device.lifecycle}</span></td>
-                  <td>{formatTimestamp(device.updated_at)}</td>
-                  <td>{device.lifecycle === "active" && <button className="inventory-device-row-action" type="button" disabled={!governedSessionAvailable} title={governedSessionAvailable ? "Retire device" : "Signed browser session required"} aria-label={`Retire ${device.display_name}`} onClick={() => { retireMutation.reset(); setRetiring(device); }}><Archive size={16} /></button>}</td>
+                  <td data-label="Device"><div className="inventory-device-identity"><Server size={17} /><span><strong>{device.display_name}</strong><small>{device.vendor} {device.model}</small><code>{device.device_key}</code></span></div></td>
+                  <td data-label="Type">{DEVICE_TYPE_LABELS[device.device_type]}</td>
+                  <td data-label="Management"><span className="inventory-device-management">{device.management_address ?? "Not declared"}</span><small>{device.serial_number ?? "No serial"}</small></td>
+                  <td data-label="Lifecycle"><span className={`inventory-device-lifecycle ${device.lifecycle}`}>{device.lifecycle === "active" ? <CheckCircle2 size={14} /> : <Archive size={14} />}{device.lifecycle}</span></td>
+                  <td data-label="Updated">{formatTimestamp(device.updated_at)}</td>
+                  <td data-label="Manage">
+                    {device.lifecycle === "active" ? (
+                      <button
+                        className="inventory-device-row-action"
+                        type="button"
+                        disabled={!governedSessionAvailable}
+                        title={
+                          governedSessionAvailable
+                            ? "Remove from active inventory and preserve audit history"
+                            : "Signed browser session required"
+                        }
+                        aria-label={`Retire ${device.display_name}`}
+                        onClick={() => {
+                          retireMutation.reset();
+                          setSuccessMessage(null);
+                          setRetiring(device);
+                        }}
+                      >
+                        <Archive size={15} /> Retire
+                      </button>
+                    ) : (
+                      <span className="inventory-device-retired-label">History retained</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

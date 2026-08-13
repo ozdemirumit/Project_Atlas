@@ -9,7 +9,7 @@ interface ConnectorViewDescriptor {
 }
 
 const connectorViewDescriptors: readonly ConnectorViewDescriptor[] = [
-  { id: "inventory", label: "Inventory", icon: Boxes },
+  { id: "inventory", label: "Installed MCPs", icon: Boxes },
   { id: "builder", label: "Builder", icon: Blocks },
   { id: "runtime", label: "Runtime", icon: ShieldCheck },
   { id: "knowledge", label: "Knowledge", icon: BrainCircuit },

@@ -284,6 +284,44 @@ textarea:focus-visible {
   gap: 16px;
 }
 
+.installed-mcp-readiness {
+  display: flex;
+  order: 2;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid #d5dfdc;
+  border-radius: 6px;
+  background: #f8faf9;
+}
+
+.installed-mcp-readiness > span {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid #d3ddda;
+  border-radius: 5px;
+  color: #6b5a28;
+  background: #fffaf0;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.installed-mcp-readiness > span[data-ready="true"] {
+  border-color: #a9cdc3;
+  color: #286b5b;
+  background: #f2f9f7;
+}
+
+.installed-mcp-readiness > button {
+  min-height: 30px;
+  margin-left: auto;
+}
+
 .installed-mcp-heading > div:first-child {
   min-width: 0;
 }
@@ -335,7 +373,7 @@ textarea:focus-visible {
 }
 
 .installed-mcp-signing-diagnostics {
-  order: 5;
+  order: 6;
   min-width: 0;
 }
 
@@ -630,7 +668,7 @@ textarea:focus-visible {
 }
 
 .installed-mcp-toolbar {
-  order: 2;
+  order: 3;
   min-width: 0;
   justify-content: space-between;
   gap: 12px;
@@ -727,7 +765,7 @@ textarea:focus-visible {
 }
 
 .installed-mcp-table-wrap {
-  order: 3;
+  order: 4;
   min-width: 0;
   overflow-x: auto;
   border: 1px solid #d5dfdc;
@@ -789,19 +827,34 @@ textarea:focus-visible {
 
 .installed-mcp-table th:last-child,
 .installed-mcp-table td:last-child {
-  width: 94px;
-  text-align: center;
+  width: 270px;
+  text-align: right;
 }
 
 .installed-mcp-row-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 5px;
+  gap: 7px;
+}
+
+.installed-mcp-row-action {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.installed-mcp-row-action.danger {
+  border-color: #d7aaa4;
+  color: #823f39;
+  background: #fffafa;
 }
 
 .installed-mcp-footnote {
-  order: 4;
+  order: 5;
   justify-content: space-between;
   gap: 12px;
   color: #61716d;
@@ -810,7 +863,7 @@ textarea:focus-visible {
 
 .installed-mcp-workspace > .installed-mcp-status,
 .installed-mcp-workspace > .installed-mcp-empty {
-  order: 3;
+  order: 4;
 }
 
 .installed-mcp-status.enterprise-login-required,
@@ -10984,6 +11037,24 @@ tbody tr.selected {
   background: #fff7f6;
 }
 
+.inventory-device-status.success-state {
+  border-style: solid;
+  border-color: #9bbdaf;
+  color: #205c49;
+  background: #edf7f2;
+}
+
+.inventory-device-status > button,
+.inventory-device-empty > button {
+  display: inline-flex;
+  min-height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
 .inventory-device-empty p {
   margin: 3px 0 0;
   color: #6a7874;
@@ -11002,8 +11073,8 @@ tbody tr.selected {
 
 .inventory-device-table th:last-child,
 .inventory-device-table td:last-child {
-  width: 52px;
-  text-align: center;
+  width: 112px;
+  text-align: left;
 }
 
 .inventory-device-identity {
@@ -11060,20 +11131,30 @@ tbody tr.selected {
 }
 
 .inventory-device-row-action {
-  display: inline-grid;
-  width: 32px;
+  display: inline-flex;
+  width: auto;
   height: 32px;
-  place-items: center;
-  padding: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
   border: 1px solid #d0d9d6;
   border-radius: 5px;
   color: #6e5b3d;
   background: #fff;
+  font-size: 11px;
+  font-weight: 740;
 }
 
 .inventory-device-row-action:hover {
   border-color: #b89b6b;
   background: #fffaf0;
+}
+
+.inventory-device-retired-label {
+  color: #697570;
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .inventory-device-boundary {
@@ -11245,6 +11326,86 @@ tbody tr.selected {
   .inventory-device-segments {
     width: 100%;
     max-width: none;
+  }
+
+  .inventory-device-status > button,
+  .inventory-device-empty > button {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .inventory-device-empty {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inventory-device-table-wrap {
+    overflow: visible;
+    border: 0;
+  }
+
+  .inventory-device-table {
+    min-width: 0;
+  }
+
+  .inventory-device-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    clip-path: inset(50%);
+  }
+
+  .inventory-device-table tbody {
+    display: grid;
+    gap: 10px;
+  }
+
+  .inventory-device-table tr {
+    display: grid;
+    min-width: 0;
+    gap: 0;
+    padding: 2px 12px;
+    border: 1px solid #d5dfdc;
+    border-radius: 6px;
+    background: #fff;
+  }
+
+  .inventory-device-table td,
+  .inventory-device-table td:last-child {
+    display: grid;
+    width: auto;
+    min-width: 0;
+    align-items: center;
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 10px;
+    padding: 10px 0;
+    border: 0;
+    border-bottom: 1px solid #e2e9e7;
+    text-align: left;
+  }
+
+  .inventory-device-table td:last-child {
+    border-bottom: 0;
+  }
+
+  .inventory-device-table td::before {
+    content: attr(data-label);
+    color: #6b7974;
+    font-size: 10px;
+    font-weight: 760;
+    text-transform: uppercase;
+  }
+
+  .inventory-device-identity {
+    min-width: 0;
+  }
+
+  .inventory-device-row-action {
+    width: max-content;
+    max-width: 100%;
   }
 
   .installed-mcp-status.enterprise-login-required,

@@ -45,6 +45,23 @@ export type InventoryDeviceInventory = {
   truncated: boolean;
 };
 
+export type InventoryDeviceScope = {
+  organizationId: string;
+  environmentId: string;
+  siteId: string;
+};
+
+export type InventoryDeviceCreateInput = {
+  deviceKey: string;
+  displayName: string;
+  deviceType: InventoryDeviceType;
+  vendor: string;
+  model: string;
+  serialNumber: string;
+  managementAddress: string;
+  purpose: string;
+};
+
 const deviceTypes = new Set<InventoryDeviceType>([
   "storage",
   "san_switch",
@@ -55,26 +72,102 @@ const deviceTypes = new Set<InventoryDeviceType>([
   "other",
 ]);
 
+const stableIdentifier = /^[a-z][a-z0-9_.:-]{2,127}$/;
+const canonicalDigest = /^[a-f0-9]{64}$/;
+const inventoryDeviceFields = new Set([
+  "device_id",
+  "schema_version",
+  "version",
+  "organization_id",
+  "environment_id",
+  "site_id",
+  "device_key",
+  "display_name",
+  "device_type",
+  "vendor",
+  "model",
+  "serial_number",
+  "management_address",
+  "source",
+  "lifecycle",
+  "purpose",
+  "created_by",
+  "created_at",
+  "updated_by",
+  "updated_at",
+  "retired_by",
+  "retired_at",
+  "retirement_reason",
+  "canonical_digest",
+  "reused",
+]);
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || isNonEmptyString(value);
+}
+
+function isTimestamp(value: unknown): value is string {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value));
+}
+
 function isInventoryDevice(value: unknown): value is InventoryDevice {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
+  const active = record.lifecycle === "active";
+  const retired = record.lifecycle === "retired";
   return (
     record.schema_version === "atlas.inventory-device-record.v1" &&
     typeof record.device_id === "string" &&
-    typeof record.version === "number" &&
+    stableIdentifier.test(record.device_id) &&
+    Number.isInteger(record.version) &&
+    Number(record.version) >= 1 &&
+    typeof record.organization_id === "string" &&
+    stableIdentifier.test(record.organization_id) &&
+    typeof record.environment_id === "string" &&
+    stableIdentifier.test(record.environment_id) &&
+    typeof record.site_id === "string" &&
+    stableIdentifier.test(record.site_id) &&
     typeof record.device_key === "string" &&
-    typeof record.display_name === "string" &&
+    stableIdentifier.test(record.device_key) &&
+    isNonEmptyString(record.display_name) &&
     deviceTypes.has(record.device_type as InventoryDeviceType) &&
-    (record.lifecycle === "active" || record.lifecycle === "retired") &&
+    isNonEmptyString(record.vendor) &&
+    isNonEmptyString(record.model) &&
+    isNullableString(record.serial_number) &&
+    isNullableString(record.management_address) &&
+    record.source === "manual" &&
+    (active || retired) &&
+    isNonEmptyString(record.purpose) &&
+    typeof record.created_by === "string" &&
+    stableIdentifier.test(record.created_by) &&
+    isTimestamp(record.created_at) &&
+    typeof record.updated_by === "string" &&
+    stableIdentifier.test(record.updated_by) &&
+    isTimestamp(record.updated_at) &&
+    (active
+      ? record.retired_by === null &&
+        record.retired_at === null &&
+        record.retirement_reason === null
+      : typeof record.retired_by === "string" &&
+        stableIdentifier.test(record.retired_by) &&
+        isTimestamp(record.retired_at) &&
+        isNonEmptyString(record.retirement_reason)) &&
     typeof record.canonical_digest === "string" &&
-    /^[a-f0-9]{64}$/.test(record.canonical_digest) &&
-    !(
-      "create_idempotency_key" in record ||
-      "retirement_idempotency_key" in record ||
-      "request_fingerprint" in record ||
-      "credential" in record ||
-      "password" in record
-    )
+    canonicalDigest.test(record.canonical_digest) &&
+    typeof record.reused === "boolean" &&
+    Object.keys(record).every((field) => inventoryDeviceFields.has(field))
+  );
+}
+
+function hasScope(device: InventoryDevice, scope: InventoryDeviceScope): boolean {
+  return (
+    device.organization_id === scope.organizationId &&
+    device.environment_id === scope.environmentId &&
+    device.site_id === scope.siteId
   );
 }
 
@@ -92,6 +185,7 @@ function readDeviceResponse(value: unknown): InventoryDevice {
 export async function getInventoryDevices(input: {
   lifecycle: InventoryDeviceLifecycle | "all";
   query: string;
+  scope: InventoryDeviceScope;
 }): Promise<InventoryDeviceInventory> {
   const parameters = new URLSearchParams({ limit: "100" });
   if (input.lifecycle !== "all") parameters.set("lifecycle", input.lifecycle);
@@ -112,24 +206,26 @@ export async function getInventoryDevices(input: {
   if (
     !Array.isArray(inventory.devices) ||
     !inventory.devices.every(isInventoryDevice) ||
+    !inventory.devices.every(
+      (device) =>
+        hasScope(device, input.scope) &&
+        (input.lifecycle === "all" || device.lifecycle === input.lifecycle),
+    ) ||
     typeof inventory.durable !== "boolean" ||
-    typeof inventory.truncated !== "boolean"
+    typeof inventory.truncated !== "boolean" ||
+    !Object.keys(inventory).every((field) =>
+      ["devices", "durable", "truncated"].includes(field),
+    )
   ) {
     throw new ApiRequestError("Inventory device list was unsafe", response.status);
   }
   return inventory as InventoryDeviceInventory;
 }
 
-export async function createInventoryDevice(input: {
-  deviceKey: string;
-  displayName: string;
-  deviceType: InventoryDeviceType;
-  vendor: string;
-  model: string;
-  serialNumber: string;
-  managementAddress: string;
-  purpose: string;
-}): Promise<InventoryDevice> {
+export async function createInventoryDevice(
+  input: InventoryDeviceCreateInput & { scope: InventoryDeviceScope },
+): Promise<InventoryDevice> {
+  const expectedDeviceKey = input.deviceKey.trim().toLowerCase();
   const response = await apiFetch("/api/v1/inventory/devices", {
     method: "POST",
     headers: {
@@ -139,7 +235,7 @@ export async function createInventoryDevice(input: {
     },
     body: JSON.stringify({
       schema_version: "atlas.inventory-device-create-input.v1",
-      device_key: input.deviceKey.trim().toLowerCase(),
+      device_key: expectedDeviceKey,
       display_name: input.displayName.trim(),
       device_type: input.deviceType,
       vendor: input.vendor.trim(),
@@ -151,7 +247,15 @@ export async function createInventoryDevice(input: {
     }),
   });
   if (!response.ok) throw new ApiRequestError("Inventory device creation failed", response.status);
-  return readDeviceResponse(await response.json());
+  const device = readDeviceResponse(await response.json());
+  if (
+    !hasScope(device, input.scope) ||
+    device.device_key !== expectedDeviceKey ||
+    device.lifecycle !== "active"
+  ) {
+    throw new ApiRequestError("Inventory device creation response was not bound", 500);
+  }
+  return device;
 }
 
 export async function retireInventoryDevice(input: {
@@ -176,5 +280,17 @@ export async function retireInventoryDevice(input: {
     },
   );
   if (!response.ok) throw new ApiRequestError("Inventory device retirement failed", response.status);
-  return readDeviceResponse(await response.json());
+  const retired = readDeviceResponse(await response.json());
+  if (
+    retired.device_id !== input.device.device_id ||
+    retired.device_key !== input.device.device_key ||
+    retired.organization_id !== input.device.organization_id ||
+    retired.environment_id !== input.device.environment_id ||
+    retired.site_id !== input.device.site_id ||
+    retired.version !== input.device.version + 1 ||
+    retired.lifecycle !== "retired"
+  ) {
+    throw new ApiRequestError("Inventory device retirement response was not bound", 500);
+  }
+  return retired;
 }
