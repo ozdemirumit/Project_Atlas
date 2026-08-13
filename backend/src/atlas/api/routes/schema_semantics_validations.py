@@ -36,7 +36,7 @@ IDEMPOTENCY = Header(
 
 
 def _raise(error: PackageSchemaSemanticsValidationError) -> NoReturn:
-    if error.code == "package_schema_semantics_enterprise_human_mfa_required":
+    if error.code == "package_schema_semantics_human_required":
         status = 403
     elif error.code.endswith("not_found"):
         status = 404

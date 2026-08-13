@@ -65,7 +65,11 @@ class ConnectorPackageApprovalPolicySnapshot:
             or not 1 <= self.maximum_final_validation_age_hours <= 87600
             or not 5 <= self.request_lifetime_minutes <= 10080
             or self.required_assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or self.stage_count != 1
             or self.quorum != 1
             or self.permitted_outcomes != tuple(PackageApprovalOutcome)

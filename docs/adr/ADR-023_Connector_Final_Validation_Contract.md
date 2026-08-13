@@ -4,6 +4,14 @@
 
 Accepted
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. This stage still
+requires a dedicated, authenticated, authorized human and every existing RBAC, scope,
+acknowledgement, separation, audit, and no-discovery control. The default policy requires no MFA;
+an optional named step-up policy may add assurance checks when configured, but assurance is not
+authorization.
+
 ## Context
 
 ADR-022 defines a plan-bound, read-only laboratory self-test for one exact connector candidate.
@@ -126,11 +134,13 @@ browser state.
 
 ## Separation Of Duties
 
-Only a dedicated multi-factor human final-validation operator may create or read a report in the
-exact organization and environment. The operator must be distinct from every upstream acquisition,
+Only a dedicated, authenticated, authorized human final-validation operator may create or read a
+report in the exact organization and environment. The operator must be distinct from every upstream
+acquisition,
 validation, analysis, review, runner, lab, plan-approval, and credential-custody actor represented
-in the complete lineage. AI, workload, service, anonymous, wrong-scope, disabled, and insufficient-
-assurance identities fail closed without report discovery.
+in the complete lineage. AI, workload, service, anonymous, wrong-scope, disabled, unauthorized
+identities, and identities that do not satisfy an optional configured `package_final_validation`
+step-up policy fail closed without report discovery.
 
 The final-validation operator cannot supply a waiver, approve risk, approve the package, or invoke a
 later lifecycle action through this surface.
@@ -188,7 +198,8 @@ contains no approval, signing, registration, installation, enablement, or execut
 
 - Exact 13-stage lineage, digest, package, inventory, tenant, environment, actor-set, and policy tests
 - Missing, duplicated, reordered, stale, tampered, unsupported, failed, and cross-tenant evidence tests
-- Full separation-of-duties, MFA human identity, scope, CSRF, acknowledgement, and no-discovery tests
+- Full separation-of-duties, authorized single-factor human identity, scope, CSRF,
+  acknowledgement, no-discovery, and optional named step-up policy tests
 - Deterministic finding/limitation aggregation, blocking policy, disclosure, and no-waiver tests
 - One-to-one idempotency, concurrency, audit-before-persist, memory/PostgreSQL equivalence, and one
   Alembic-head tests

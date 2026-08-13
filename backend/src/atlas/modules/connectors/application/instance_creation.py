@@ -34,6 +34,7 @@ from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 INSTANCE_CREATE_PERMISSION = "connectors.instances.create"
@@ -449,7 +450,7 @@ class ConnectorInstanceCreationService:
             or not installation.eligible_for_instance_governance
             or installation.instance_created
             or installation.promotion_blocked
-            or not ConnectorInstanceCreationService._assurance_satisfies(
+            or not assurance_satisfies_policy(
                 actor.assurance_level, policy.required_assurance_level
             )
         ):
@@ -501,23 +502,6 @@ class ConnectorInstanceCreationService:
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
         if actor.kind is not SubjectKind.HUMAN:
             raise ConnectorInstanceCreationError("connector_instance_human_required")
-
-    @staticmethod
-    def _assurance_satisfies(actual: AssuranceLevel, required: AssuranceLevel) -> bool:
-        if required is AssuranceLevel.SINGLE_FACTOR:
-            return actual in {
-                AssuranceLevel.DEVELOPMENT,
-                AssuranceLevel.SINGLE_FACTOR,
-                AssuranceLevel.MULTI_FACTOR,
-                AssuranceLevel.HARDWARE_BACKED,
-            }
-        order = {
-            AssuranceLevel.DEVELOPMENT: 0,
-            AssuranceLevel.SINGLE_FACTOR: 1,
-            AssuranceLevel.MULTI_FACTOR: 2,
-            AssuranceLevel.HARDWARE_BACKED: 3,
-        }
-        return order[actual] >= order[required]
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str

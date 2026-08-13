@@ -92,12 +92,7 @@ from atlas.modules.connectors.domain.validation_intake import ConnectorPackageVa
 from atlas.modules.connectors.domain.vulnerability_analysis import (
     ConnectorPackageVulnerabilityAnalysis,
 )
-from atlas.modules.identity.domain.models import (
-    AssuranceLevel,
-    AuthenticatedSubject,
-    AuthenticationMethod,
-    SubjectKind,
-)
+from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 from atlas.modules.mcp_builder.domain.candidate_handoff import McpBuilderCandidateHandoff
 
 FINAL_VALIDATION_CREATE_PERMISSION = "connectors.package-final-validations.create"
@@ -837,13 +832,8 @@ class PackageFinalValidationService:
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise PackageFinalValidationError("package_final_enterprise_human_mfa_required")
+        if actor.kind is not SubjectKind.HUMAN:
+            raise PackageFinalValidationError("package_final_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str

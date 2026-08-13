@@ -4,6 +4,14 @@
 **Date:** 2026-08-06  
 **Decision Owners:** Product Owner, Solution Architecture, Security Architecture
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. This stage still
+requires a dedicated, authenticated, authorized human and every existing RBAC, scope,
+acknowledgement, separation, audit, and no-discovery control. The default policy requires no MFA;
+an optional named step-up policy may add assurance checks when configured, but assurance is not
+authorization.
+
 ## Context
 
 ADR-027 permits one exact signed package to be copied into immutable internal registry custody. Its
@@ -27,7 +35,8 @@ following rules.
 
 ### 1. Minimal Request Contract
 
-Only an authenticated, exact-tenant MFA human with the dedicated registration permission may submit:
+Only an authenticated, authorized, exact-tenant human with the dedicated registration permission
+may submit:
 
 - exact registry-publication receipt ID and canonical digest;
 - exact package digest;
@@ -85,8 +94,10 @@ The inspector rejects:
 
 The signed registration policy fixes all accepted schemas, archive and manifest bounds, manifest
 path, SDK profile, accepted source states, capability classes, declaration limits, registry profile,
-reader workload, record schema, assurance, evidence age, and separation requirements. Customer
-configuration cannot weaken mandatory platform controls.
+reader workload, record schema, evidence age, separation requirements, and an optional named
+`package_registration` step-up policy disabled by default. When configured, the step-up policy
+fixes accepted external assurance values and freshness. Customer configuration cannot weaken
+mandatory platform controls.
 
 ### 5. Immutable Registration Record
 
@@ -116,6 +127,10 @@ enable capabilities, grant runtime trust, authorize execution, approve deploymen
 code, contact infrastructure, or mutate infrastructure. AI and service identities cannot request
 registration. Later lifecycle stages require independent contracts, permissions, policies, evidence,
 and human decisions.
+
+An authorized single-factor human is eligible by default. An identity that does not satisfy the
+optional configured `package_registration` step-up policy is denied only this operation;
+authentication assurance does not grant registration permission.
 
 ### 7. Separation of Duties and Audit
 

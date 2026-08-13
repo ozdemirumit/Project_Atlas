@@ -7,6 +7,14 @@
   ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051,
   ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-018
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. This stage still
+requires a dedicated, authenticated, authorized human and every existing RBAC, scope,
+acknowledgement, separation, audit, and no-discovery control. The default policy requires no MFA;
+an optional named step-up policy may add assurance checks when configured, but assurance is not
+authorization.
+
 ## Context
 
 ADR-018 establishes that the exact connector archive and files contain no indicator known to one
@@ -33,12 +41,12 @@ source redistribution flag into bounded `pyproject.toml` metadata. Builder stati
 that these values exactly match the immutable project record. They are bound transitively through
 generation, review, handoff, acquisition, archive, inventory, and all later canonical digests.
 
-A dedicated authenticated multi-factor human license-analysis operator initiates the stage in the
+A dedicated authenticated authorized human license-analysis operator initiates the stage in the
 exact package organization and environment. The operator differs from every Builder, acquisition,
 manifest-validation, inventory, content-policy, schema-semantics, authority-behavior,
 static-dependency, vulnerability-analysis, and malware-analysis actor. AI, service, prior-stage,
-wrong-scope, insufficient-assurance, and unauthorized identities fail closed without package,
-policy, or report discovery.
+wrong-scope, unauthorized identities, and identities that do not satisfy an optional configured
+`package_license_analysis` step-up policy fail closed without package, policy, or report discovery.
 
 The stage accepts only the exact passed ADR-018 report with `promotion_blocked=false`,
 `vulnerability_scan_completed=true`, and `malware_scan_completed=true`. Atlas verifies its complete
@@ -142,7 +150,8 @@ without raw terms, private identifiers, dependency identities, or later-stage ac
 - Standard TOML parsing, exact metadata, distribution-mode, and no-package-execution tests
 - Safe-finding and non-disclosure tests for raw terms, private identifiers, paths, dependency values,
   policy bodies, reviewer notes, and exception rationale
-- Dedicated permission, MFA, human identity, acknowledgement, scope, and separation tests
+- Dedicated permission, authorized single-factor human identity, acknowledgement, scope,
+  separation, and optional named step-up policy tests
 - Passed and failed immutable reports, idempotency, concurrency, and audit-before-persist
 - Memory and PostgreSQL repository equivalence with one Alembic head
 - Strict create/read API, CSRF, no-store, safe-error, and response-minimization tests

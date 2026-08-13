@@ -978,8 +978,8 @@ describe("InstalledMcpManagementWorkspace", () => {
       .mockRejectedValue(new ApiRequestError("Connector instance inventory failed", 401));
     renderWorkspace("subject.connector-operator", onRequestEnterpriseLogin);
 
-    expect(await screen.findByText("Your session has expired")).toBeVisible();
-    expect(screen.getByText(/Sign in again to renew the authorized browser session/i))
+    expect(await screen.findByText("Your signed-in session has expired")).toBeVisible();
+    expect(screen.getByText(/Sign in again; the MCP inventory will refresh automatically/i))
       .toBeVisible();
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
 

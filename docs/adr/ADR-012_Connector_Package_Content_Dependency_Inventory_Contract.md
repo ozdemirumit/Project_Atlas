@@ -7,6 +7,14 @@
   ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051,
   ATLAS-053, ATLAS-055, ATLAS-056, ADR-009, ADR-010, ADR-011
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. This stage still
+requires a dedicated, authenticated, authorized human and every existing RBAC, scope,
+acknowledgement, separation, audit, and no-discovery control. The default policy requires no MFA;
+an optional named step-up policy may add assurance checks when configured, but assurance is not
+authorization.
+
 ## Context
 
 ADR-011 independently verifies the exact acquired archive, Builder handoff envelope, canonical
@@ -24,12 +32,12 @@ Atlas adopts inventory profile `atlas.connector-supply-chain-inventory.python312
 version `atlas.connector-content-dependency-inspector.v1` for passed reports produced by
 `atlas.connector-validation-intake.builder-v1`.
 
-A dedicated authenticated multi-factor human supply-chain inventory operator initiates the stage
+A dedicated authenticated authorized human supply-chain inventory operator initiates the stage
 in the exact package organization and environment. The operator differs from the acquisition and
 manifest/schema validation operators and every Builder custodian, domain reviewer, security
-reviewer, and lab operator in the lineage. AI, service, wrong-scope, insufficient-assurance,
-prior-stage, and unauthorized identities fail closed without package, file, dependency, or finding
-discovery.
+reviewer, and lab operator in the lineage. AI, service, wrong-scope, prior-stage, unauthorized
+identities, and identities that do not satisfy an optional configured `package_inventory` step-up
+policy fail closed without package, file, dependency, or finding discovery.
 
 Before inventory, Atlas verifies the prior validation report canonical digest, passed outcome,
 supported profile and validator, exact acquisition and package lineage, no-authority invariants,
@@ -109,7 +117,8 @@ or mutate a connector or infrastructure.
 - Exact prior-report, acquisition, package, archive, path, digest, and tenant binding
 - Missing, duplicate, empty, case-colliding, unclassified, extraneous, malformed TOML, extension-key,
   dependency, stale, changed, corrupt, and oversized adversarial fixtures
-- Dedicated permission, MFA, human identity, acknowledgement, scope, and full-lineage separation tests
+- Dedicated permission, authorized single-factor human identity, acknowledgement, scope,
+  full-lineage separation, and optional named step-up policy tests
 - Passed and failed immutable reports, idempotency, concurrency, and audit-before-persist
 - Memory and PostgreSQL repository equivalence with one Alembic head
 - Strict create/read API, CSRF, safe error, no-store, and response-minimization tests

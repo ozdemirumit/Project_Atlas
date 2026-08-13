@@ -7,6 +7,14 @@
 | Owners | MCP Platform Architecture, Security Architecture |
 | Related | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ADR-009, ADR-023, ADR-024 |
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. This stage still
+requires a dedicated, authenticated, authorized human and every existing RBAC, scope,
+acknowledgement, separation, audit, and no-discovery control. The default policy requires no MFA;
+an optional named step-up policy may add assurance checks when configured, but assurance is not
+authorization.
+
 ## Context
 
 ADR-024 records an accountable human decision for one exact validated connector package. Approval
@@ -48,25 +56,27 @@ references an existing claim and cannot author, edit, sign, or override it.
 ## Attestation Policy
 
 Platform policy selects one immutable, signed, verified, unexpired, tenant-scoped snapshot that
-fixes accepted approval and claim schemas, maximum evidence age, minimum identity assurance,
-required publisher assertions, allowed issuer trust domains, support-validity minimum, actor
-separation, canonicalization, and report schema.
+fixes accepted approval and claim schemas, maximum evidence age, an optional named
+`publisher_attestation` step-up policy disabled by default, required publisher assertions, allowed
+issuer trust domains, support-validity minimum, actor separation, canonicalization, and report
+schema. When configured, the step-up policy fixes accepted external assurance values and freshness.
 
 Customer policy may strengthen but cannot weaken exact binding, independent verification,
 separation, no-authority, audit-before-persist, or fail-closed behavior.
 
 ## Independent Verification
 
-Only an exact-tenant, multi-factor human with dedicated verification permission may create or read
-a report. The verifier must be distinct from:
+Only an authenticated, authorized, exact-tenant human with dedicated verification permission may
+create or read a report. The verifier must be distinct from:
 
 - the package-approval requester and approver;
 - every acquisition, review, validation, analysis, runner, lab, plan-approval, and credential-
   custody actor in the exact package lineage;
 - the approval-policy signer, claim issuer, attestation-policy signer, and publisher identity.
 
-AI, workload, service, shared, anonymous, wrong-scope, disabled, insufficient-assurance, or
-ineligible identities fail closed without record discovery.
+AI, workload, service, shared, anonymous, wrong-scope, disabled, unauthorized, ineligible
+identities, and identities that do not satisfy the optional configured `publisher_attestation`
+step-up policy fail closed without record discovery.
 
 Verification independently reloads and checks the complete approval lineage, exact package and
 digest binding, current approval validity, claim signature and freshness, publisher and release
@@ -104,9 +114,10 @@ authority. Package signing and registry publication require later independent AD
 
 ## API And Web Contract
 
-Strict create/read APIs require dedicated default-deny RBAC, browser sessions, CSRF on mutation,
-exact tenant scope, MFA human identity, correlation, acknowledgement, bounded schemas, safe errors,
-non-disclosing lookup, and `no-store` responses.
+Strict create/read APIs require a dedicated authorized human identity, default-deny RBAC, browser
+sessions, CSRF on mutation, exact tenant scope, correlation, acknowledgement, bounded schemas, safe
+errors, non-disclosing lookup, and `no-store` responses. The optional named
+`publisher_attestation` step-up policy is evaluated only when configured.
 
 The web view presents exact approval, package, publisher claim, policy, verifier, checks, outcome,
 expiry, and no-authority scope. It has no signing, registry, install, enable, target, secret,
@@ -137,6 +148,7 @@ execution, or deployment control and uses no persuasive or urgency language.
 - Approval/claim/policy freshness, signature, assertion, issuer-trust, support-validity, tamper,
   replay, conflict, and fail-closed tests
 - Verifier separation from every upstream, approval, claim, publisher, and policy actor
+- Authorized single-factor verifier and optional named step-up policy tests
 - Immutable, idempotent, concurrent, audit-before-persist, memory/PostgreSQL, and Alembic-head tests
 - Proof that no result signs, publishes, registers, installs, configures, enables, accesses targets
   or secrets, executes, deploys, or mutates infrastructure

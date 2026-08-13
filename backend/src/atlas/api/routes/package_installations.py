@@ -32,7 +32,7 @@ IDEMPOTENCY = Header(
 
 def _raise(error: PackageInstallationError) -> NoReturn:
     code = str(error)
-    if code.endswith(("mfa_required", "separation_required")):
+    if code.endswith(("human_required", "mfa_required", "separation_required")):
         status = 403
     elif code.endswith("not_found"):
         status = 404

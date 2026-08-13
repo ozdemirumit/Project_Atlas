@@ -3,6 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Status | Accepted |
+| Assurance Amendment | Fixed MFA requirements are superseded by ADR-133; optional named step-up policies may add assurance without replacing authorization. |
 | Decision Date | 2026-08-05 |
 | Decision Owner | Project Atlas Architecture |
 | Related Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-032, ATLAS-047, ATLAS-050, ATLAS-055, ATLAS-056, ADR-004 |
@@ -73,6 +74,6 @@ remain later isolated gates.
 - Deterministic passed, failed, and skipped check reports with canonical report digests
 - Artifact tamper, unsafe Python, manifest authority, permission, traceability, secret, and prohibited
   file tests
-- Audit-before-persist, idempotency, concurrency, scope, MFA, and PostgreSQL parity tests
+- Audit-before-persist, idempotency, concurrency, scope, optional step-up policy, and PostgreSQL parity tests
 - Explicit proof that model, network, subprocess, dynamic execution, package, registration, runtime
   trust, and infrastructure authority remain false

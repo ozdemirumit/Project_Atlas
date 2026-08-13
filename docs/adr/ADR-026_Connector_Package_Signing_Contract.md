@@ -7,6 +7,14 @@
 | Owners | MCP Platform Architecture, Security Architecture |
 | Related | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ADR-009, ADR-024, ADR-025 |
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. This stage still
+requires a dedicated, authenticated, authorized human and every existing RBAC, scope,
+acknowledgement, separation, audit, and no-discovery control. The default policy requires no MFA;
+an optional named step-up policy may add assurance checks when configured, but assurance is not
+authorization.
+
 ## Context
 
 ADR-025 independently verifies publisher identity, ownership, support responsibility, and release
@@ -47,22 +55,25 @@ payloads, model context, raw evidence, and unrestricted contact data are exclude
 ## Signing Policy
 
 One immutable, signed, verified, unexpired, tenant-scoped policy fixes accepted attestation schema,
-maximum evidence age, minimum human assurance, signer profile, key ID, algorithm, envelope schema,
-signature lifetime, actor separation, required no-authority declarations, and receipt schema.
+maximum evidence age, an optional named `package_signing` step-up policy disabled by default,
+signer profile, key ID, algorithm, envelope schema, signature lifetime, actor separation, required
+no-authority declarations, and receipt schema. When configured, the step-up policy fixes accepted
+external assurance values and freshness.
 
 Customer policy may strengthen but cannot weaken exact binding, key isolation, signer allowlisting,
 separation, audit, no-authority, deterministic replay, or fail-closed behavior.
 
 ## Identity And Separation
 
-Only an exact-tenant, multi-factor human with dedicated request permission may request signing. The
-requester must be distinct from every acquisition, validation, review, approval, publisher claim,
-attestation verification, and policy-signing actor in the lineage. The signer is a dedicated
-workload identity selected by policy and cannot be supplied by the requester.
+Only an authenticated, authorized, exact-tenant human with dedicated request permission may request
+signing. The requester must be distinct from every acquisition, validation, review, approval,
+publisher claim, attestation verification, and policy-signing actor in the lineage. The signer is a
+dedicated workload identity selected by policy and cannot be supplied by the requester.
 
 The signing-policy signer, package-signing requester, signing workload, key custodian, publisher,
 claim issuer, approver, and attestation verifier remain distinguishable identities. AI, anonymous,
-shared, wrong-scope, disabled, insufficient-assurance, or ineligible identities fail closed.
+shared, wrong-scope, disabled, unauthorized, ineligible identities, and identities that do not
+satisfy the optional configured `package_signing` step-up policy fail closed.
 
 ## Signer Port
 
@@ -102,9 +113,10 @@ runtime token, target reference, credential handle, command, deployment approval
 
 ## API And Web Contract
 
-Strict create/read APIs require dedicated default-deny RBAC, browser sessions, CSRF on mutation,
-exact tenant scope, MFA, acknowledgement, correlation, bounded schemas, safe errors, no-store, and
-non-disclosing lookup. Responses never expose signature bytes or key material.
+Strict create/read APIs require a dedicated authorized human identity, default-deny RBAC, browser
+sessions, CSRF on mutation, exact tenant scope, acknowledgement, correlation, bounded schemas,
+safe errors, no-store, and non-disclosing lookup. The optional named `package_signing` step-up
+policy is evaluated only when configured. Responses never expose signature bytes or key material.
 
 The web view shows exact attestation/package/publisher/policy/envelope/signer/signature-digest
 evidence and explicit no-authority scope. It contains no registry, install, enable, target, secret,
@@ -130,8 +142,8 @@ execution, or deployment control.
 
 - Exact attestation, approval, package, publisher, claim, provenance, policy, envelope, signer,
   algorithm, key, tenant, environment, timestamp, signature, and digest binding tests
-- Complete actor separation, MFA, scope, no-discovery, signer failure, tamper, replay, concurrency,
-  partial-failure, and fail-closed tests
+- Complete actor separation, authorized single-factor human, scope, no-discovery, signer failure,
+  tamper, replay, concurrency, partial-failure, fail-closed, and optional named step-up policy tests
 - Required audit intent before signer and completion audit before persistence
 - Immutable, idempotent, memory/PostgreSQL, minimized API, CSRF, no-store, and Alembic-head tests
 - Proof that keys/signature bytes do not reach API/log/model and that no result registers, installs,

@@ -3,6 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Status | Accepted |
+| Assurance Amendment | Fixed MFA requirements are superseded by ADR-133; authorization and reviewer separation remain mandatory while step-up is optional deployment policy. |
 | Decision Date | 2026-08-05 |
 | Decision Owner | Project Atlas Architecture |
 | Related Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-055, ATLAS-056, ADR-004, ADR-005 |
@@ -26,8 +27,9 @@ version `mcp-builder-domain-review.v1`.
 
 A review is bound to the exact project and source digests, design checkpoint, generation and artifact
 digests, static-validation report and validator versions, capability set, organization, environment,
-and authenticated multi-factor human reviewer. Creation requires the dedicated domain-review
-permission; AI, service, wrong-scope, insufficient-assurance, and unassigned identities fail closed.
+and authenticated authorized human reviewer. Creation requires the dedicated domain-review
+permission; AI, service, wrong-scope, and unassigned identities fail closed. A configured named
+step-up policy may additionally require current provider assurance.
 
 Each generation-eligible capability receives one of three decisions:
 
@@ -80,7 +82,8 @@ execution, deployment, or infrastructure mutation.
 
 ## Validation
 
-- Exact project, checkpoint, generation, artifact, static-report, capability, scope, MFA, and reviewer
+- Exact project, checkpoint, generation, artifact, static-report, capability, scope, optional
+  step-up policy, and reviewer
   permission binding
 - Capability-level accepted, needs-evidence, and rejected derivation with bounded evidence citations
 - Immutable canonical digest, idempotent replay, concurrency, audit-before-persist, and PostgreSQL

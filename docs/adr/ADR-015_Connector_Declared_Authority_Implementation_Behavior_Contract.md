@@ -7,6 +7,14 @@
   ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051,
   ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-014
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. This stage still
+requires a dedicated, authenticated, authorized human and every existing RBAC, scope,
+acknowledgement, separation, audit, and no-discovery control. The default policy requires no MFA;
+an optional named step-up policy may add assurance checks when configured, but assurance is not
+authorization.
+
 ## Context
 
 ADR-014 proves that configuration and capability schemas are complete, restrictive, and bound to
@@ -24,11 +32,12 @@ stage therefore fails closed on ambiguity and never upgrades static evidence int
 Atlas adopts comparison profile `atlas.connector-authority-behavior.python312.v1` and analyzer
 version `atlas.connector-declared-authority-ast-analyzer.v1`.
 
-A dedicated authenticated multi-factor human behavior-validation operator initiates the stage in
+A dedicated authenticated authorized human behavior-validation operator initiates the stage in
 the exact package organization and environment. The operator differs from every Builder,
 acquisition, manifest-validation, inventory, content-policy, and schema-semantics actor. AI,
-service, prior-stage, wrong-scope, insufficient-assurance, and unauthorized identities fail closed
-without package or report discovery.
+service, prior-stage, wrong-scope, unauthorized identities, and identities that do not satisfy an
+optional configured `package_authority_behavior_validation` step-up policy fail closed without
+package or report discovery.
 
 The stage accepts only the exact passed ADR-014 report with `promotion_blocked=false`. Atlas
 verifies the complete upstream canonical lineage and no-authority flags, independently rereads the
@@ -105,7 +114,8 @@ or later-stage action controls.
 - Python AST tests for network, process, filesystem, mutation, dynamic execution, and ambiguity
 - Capability-class, required-permission, network-enablement, and destination comparison tests
 - Safe finding and non-disclosure tests for source, literals, URLs, credentials, and arguments
-- Dedicated permission, MFA, human identity, acknowledgement, scope, and separation tests
+- Dedicated permission, authorized single-factor human identity, acknowledgement, scope,
+  separation, and optional named step-up policy tests
 - Passed and failed immutable reports, idempotency, concurrency, and audit-before-persist
 - Memory and PostgreSQL repository equivalence with one Alembic head
 - Strict create/read API, CSRF, no-store, safe-error, and response-minimization tests

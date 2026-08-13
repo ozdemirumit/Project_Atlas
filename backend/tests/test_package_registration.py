@@ -45,7 +45,12 @@ from atlas.modules.connectors.domain.package_registration import (
 from atlas.modules.connectors.domain.registry_publication import (
     ConnectorInternalRegistryPublicationReceipt,
 )
-from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 
 class FailSecondAuditSink:
@@ -67,7 +72,7 @@ def registration_operator(
 async def registration_fixture(
     *,
     audit_sink: CollectingAuditSink | FailingAuditSink | FailSecondAuditSink | None = None,
-    required_assurance_level: AssuranceLevel = AssuranceLevel.MULTI_FACTOR,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     PackageRegistrationService,
     RegistryPublicationService,
@@ -156,6 +161,45 @@ async def test_registration_grants_only_installation_governance_eligibility() ->
         "connector_package_registration_requested",
         "connector_package_registration_completed",
     ]
+
+
+@pytest.mark.asyncio
+async def test_registration_optional_step_up_policy_and_human_boundary() -> None:
+    service, _, publication, policy, _ = await registration_fixture()
+    development_actor = replace(
+        registration_operator(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    record = await register_package(service, publication, policy, actor=development_actor)
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.registered_by == development_actor.subject_id
+
+    hardware_service, _, hardware_publication, hardware_policy, _ = await registration_fixture(
+        required_assurance_level=AssuranceLevel.HARDWARE_BACKED
+    )
+    with pytest.raises(PackageRegistrationError, match="binding_invalid"):
+        await register_package(
+            hardware_service,
+            hardware_publication,
+            hardware_policy,
+            actor=development_actor,
+        )
+
+    non_human_service, _, non_human_publication, non_human_policy, _ = await registration_fixture()
+    with pytest.raises(PackageRegistrationError, match="human_required"):
+        await register_package(
+            non_human_service,
+            non_human_publication,
+            non_human_policy,
+            actor=replace(
+                registration_operator(),
+                kind=SubjectKind.SERVICE,
+                authentication_method=AuthenticationMethod.WORKLOAD_TOKEN,
+            ),
+        )
 
 
 @pytest.mark.asyncio

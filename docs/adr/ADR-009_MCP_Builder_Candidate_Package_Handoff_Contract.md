@@ -1,6 +1,8 @@
 # ADR-009: MCP Builder Candidate Package Handoff Contract
 
 - Status: Accepted
+- Assurance amendment: Fixed MFA requirements are superseded by ADR-133; authorization and
+  separation remain mandatory while step-up is optional deployment policy.
 - Date: 2026-08-05
 - Decision owners: Product Owner, Architecture Owner, Security Owner
 - Governing documents: ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025,
@@ -24,7 +26,7 @@ archive contract `mcp-builder-candidate-zip.v1`.
 
 A handoff requires a passed `atlas.lab-validation.python312.v1` result and binds the exact project,
 source, design checkpoint, generation, generated artifact, static validation, domain review,
-security review, lab validation, organization, environment, and authenticated multi-factor human
+security review, lab validation, organization, environment, and authenticated authorized human
 package custodian. Creation, read, and artifact download use dedicated permissions. The custodian
 must differ from the domain reviewer, security reviewer, and lab operator. AI, service, wrong-scope,
 insufficient-assurance, self-custody, and unassigned identities fail closed.
@@ -91,5 +93,5 @@ runtime trust, execution approval, deployment approval, and infrastructure mutat
 - Artifact tamper, stale evidence, failed lab, unsupported profile, and missing archive tests
 - Idempotency, concurrent replay, audit-before-persist, memory/PostgreSQL equivalence, and migration tests
 - Content-addressed filesystem publication, integrity reread, confinement, and cleanup tests
-- Strict create/read/download API, CSRF, RBAC, MFA, tenant, acknowledgement, and separation tests
+- Strict create/read/download API, CSRF, RBAC, optional step-up policy, tenant, acknowledgement, and separation tests
 - Desktop, 390-pixel mobile, browser-log, live API, and downloaded archive inspection

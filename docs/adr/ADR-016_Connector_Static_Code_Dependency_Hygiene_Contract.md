@@ -7,6 +7,14 @@
   ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051,
   ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-015
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. This stage still
+requires a dedicated, authenticated, authorized human and every existing RBAC, scope,
+acknowledgement, separation, audit, and no-discovery control. The default policy requires no MFA;
+an optional named step-up policy may add assurance checks when configured, but assurance is not
+authorization.
+
 ## Context
 
 ADR-015 proves that bounded implementation evidence matches declared authority. It does not prove
@@ -23,11 +31,12 @@ own freshness, availability, failure, and approval semantics.
 Atlas adopts profile `atlas.connector-static-dependency.python312.v1` and analyzer version
 `atlas.connector-static-dependency-analyzer.v1`.
 
-A dedicated authenticated multi-factor human static-analysis operator initiates the stage in the
+A dedicated authenticated authorized human static-analysis operator initiates the stage in the
 exact package organization and environment. The operator differs from every Builder, acquisition,
 manifest-validation, inventory, content-policy, schema-semantics, and authority-behavior actor.
-AI, service, prior-stage, wrong-scope, insufficient-assurance, and unauthorized identities fail
-closed without package or report discovery.
+AI, service, prior-stage, wrong-scope, unauthorized identities, and identities that do not satisfy
+an optional configured `package_static_dependency_analysis` step-up policy fail closed without
+package or report discovery.
 
 The stage accepts only the exact passed ADR-015 report with `promotion_blocked=false`. Atlas
 verifies complete upstream canonical lineage and no-authority flags, independently rereads the
@@ -116,7 +125,8 @@ dependency values, or later-stage action controls.
   ambiguity, and resource-bound tests
 - Empty, exact-pinned, unbounded, conflicting, undeclared, unmapped, and lock-required dependency tests
 - Safe-finding and non-disclosure tests for source, import targets, constraints, URLs, and indexes
-- Dedicated permission, MFA, human identity, acknowledgement, scope, and separation tests
+- Dedicated permission, authorized single-factor human identity, acknowledgement, scope,
+  separation, and optional named step-up policy tests
 - Passed and failed immutable reports, idempotency, concurrency, and audit-before-persist
 - Memory and PostgreSQL repository equivalence with one Alembic head
 - Strict create/read API, CSRF, no-store, safe-error, and response-minimization tests

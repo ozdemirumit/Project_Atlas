@@ -345,6 +345,29 @@ async def test_validates_manifest_and_schemas_idempotently_without_authority() -
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "assurance"),
+    [
+        (AuthenticationMethod.DEVELOPMENT, AssuranceLevel.DEVELOPMENT),
+        (AuthenticationMethod.LDAP, AssuranceLevel.SINGLE_FACTOR),
+    ],
+)
+async def test_allows_human_validator_without_fixed_assurance(
+    method: AuthenticationMethod,
+    assurance: AssuranceLevel,
+) -> None:
+    service, acquisition, _, _ = await service_fixture()
+
+    report = await validate(
+        service,
+        acquisition,
+        subject=validator(method=method, assurance=assurance),
+    )
+
+    assert report.outcome is PackageValidationOutcome.PASSED
+
+
+@pytest.mark.asyncio
 async def test_invalid_manifest_creates_a_failed_bounded_report() -> None:
     service, acquisition, repository, _ = await service_fixture(invalid_manifest=True)
 
@@ -383,17 +406,26 @@ async def test_archive_corruption_fails_without_creating_a_report() -> None:
         validator("subject.domain.reviewer"),
         validator("subject.security.reviewer"),
         validator("subject.lab.operator"),
-        validator(method=AuthenticationMethod.DEVELOPMENT, assurance=AssuranceLevel.DEVELOPMENT),
-        validator(kind=SubjectKind.SERVICE),
     ],
 )
-async def test_rejects_non_independent_or_non_enterprise_validator(
+async def test_rejects_non_independent_validator(
     subject: AuthenticatedSubject,
 ) -> None:
     service, acquisition, _, _ = await service_fixture()
 
     with pytest.raises(PackageValidationError):
         await validate(service, acquisition, subject=subject)
+
+
+@pytest.mark.asyncio
+async def test_rejects_non_human_validator() -> None:
+    service, acquisition, repository, _ = await service_fixture()
+
+    with pytest.raises(PackageValidationError) as caught:
+        await validate(service, acquisition, subject=validator(kind=SubjectKind.SERVICE))
+
+    assert caught.value.code == "package_validation_human_required"
+    assert repository._records == {}
 
 
 @pytest.mark.asyncio

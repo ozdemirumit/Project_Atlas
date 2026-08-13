@@ -58,7 +58,12 @@ from atlas.modules.connectors.domain.license_analysis import (
     LicenseSubjectScope,
 )
 from atlas.modules.connectors.domain.malware_analysis import ConnectorPackageMalwareAnalysis
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 
 def license_operator(subject_id: str = "subject.license.analyst") -> AuthenticatedSubject:
@@ -242,6 +247,35 @@ async def test_complete_permitted_policy_passes_without_runtime_authority() -> N
     assert not first.execution_authorized
     assert second == replace(first, reused=True)
     assert [item.result_code for item in audit.records] == ["connector_license_analysis_passed"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "assurance"),
+    [
+        (AuthenticationMethod.DEVELOPMENT, AssuranceLevel.DEVELOPMENT),
+        (AuthenticationMethod.LDAP, AssuranceLevel.SINGLE_FACTOR),
+    ],
+)
+async def test_human_eligibility_does_not_require_fixed_assurance(
+    method: AuthenticationMethod,
+    assurance: AssuranceLevel,
+) -> None:
+    service, _, source = await license_fixture()
+    subject = replace(license_operator(), authentication_method=method, assurance_level=assurance)
+
+    report = await analyze(service, source, subject=subject)
+
+    assert report.outcome is LicenseOutcome.PASSED
+
+
+@pytest.mark.asyncio
+async def test_license_analysis_rejects_non_human_actor() -> None:
+    service, _, source = await license_fixture()
+    subject = replace(license_operator(), kind=SubjectKind.SERVICE)
+
+    with pytest.raises(PackageLicenseAnalysisError, match="package_license_human_required"):
+        await analyze(service, source, subject=subject)
 
 
 @pytest.mark.asyncio

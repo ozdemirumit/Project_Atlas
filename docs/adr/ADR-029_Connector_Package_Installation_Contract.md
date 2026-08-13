@@ -7,6 +7,14 @@
   ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-047, ATLAS-050,
   ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-028
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. This stage still
+requires a dedicated, authenticated, authorized human and every existing RBAC, scope,
+acknowledgement, separation, audit, and no-discovery control. The default policy requires no MFA;
+an optional named step-up policy may add assurance checks when configured, but assurance is not
+authorization.
+
 ## Context
 
 ADR-028 admits one exact published package into the governed connector catalog. Its immutable
@@ -28,8 +36,8 @@ simulator aid and is not a production installation authority.
 
 ### 1. Exact Human Request
 
-Only a dedicated, authenticated, exact-tenant human with MFA and the installation permission may
-request installation. The request contains only:
+Only a dedicated, authenticated, authorized, exact-tenant human with the installation permission
+may request installation. The request contains only:
 
 - exact package-registration record ID and canonical digest;
 - exact package digest;
@@ -89,7 +97,8 @@ The immutable policy fixes at least:
 
 - accepted registration, publication, manifest, package, and installation schemas;
 - maximum registration age and package size;
-- required authentication assurance;
+- optional named `package_installation` step-up policy, disabled by default, with accepted external
+  assurance values and freshness only when configured;
 - registry profile, reader workload, and artifact-reference schema;
 - installer profile, installer workload, installation custodian, and installation-store profile;
 - installation artifact-reference and receipt schemas;
@@ -140,13 +149,15 @@ persistence. Audit failure stops progress and cannot fabricate installation stat
 
 The installer human is distinct from every upstream validation, approval, publisher, signing,
 registry, registration, policy, reader, installer-workload, and custody actor. Shared, AI, service,
-wrong-tenant, wrong-environment, and insufficient-assurance identities fail closed without resource
-discovery.
+wrong-tenant, wrong-environment, unauthorized identities, and identities that do not satisfy the
+optional configured `package_installation` step-up policy fail closed without resource discovery.
 
 ### 9. API and Web Boundary
 
-Create/read APIs use strict extra-field rejection, exact scope, dedicated RBAC, browser-session CSRF,
-MFA, bounded identifiers, no-store responses, safe errors, and non-disclosing lookup behavior.
+Create/read APIs use strict extra-field rejection, exact scope, a dedicated authorized human
+identity, dedicated RBAC, browser-session CSRF, bounded identifiers, no-store responses, safe
+errors, and non-disclosing lookup behavior. The optional named `package_installation` step-up
+policy is evaluated only when configured.
 
 The web view may show bounded lineage, package/manifest digest, connector/release, policy, store
 profile, installer, time, and explicit no-authority state. It provides no path, package, dependency,

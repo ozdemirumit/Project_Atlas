@@ -7,6 +7,14 @@
 | Owners | MCP Platform Architecture, Security Architecture |
 | Related | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-047, ADR-009, ADR-025, ADR-026 |
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. This stage still
+requires a dedicated, authenticated, authorized human and every existing RBAC, scope,
+acknowledgement, separation, audit, and no-discovery control. The default policy requires no MFA;
+an optional named step-up policy may add assurance checks when configured, but assurance is not
+authorization.
+
 ## Context
 
 ADR-026 signs one exact approved and publisher-attested connector package. Its receipt sets only
@@ -60,13 +68,14 @@ HTTP responses, audit metadata, logs, model context, workflow variables, or data
 
 ## Identity And Separation
 
-Only an exact-tenant, multi-factor human with dedicated publication permission may request the
-operation. The requester must be distinct from every upstream acquisition, validation, review,
-approval, attestation, signing, policy, key-custody, registry-custody, and publisher actor.
+Only an authenticated, authorized, exact-tenant human with dedicated publication permission may
+request the operation. The requester must be distinct from every upstream acquisition, validation,
+review, approval, attestation, signing, policy, key-custody, registry-custody, and publisher actor.
 
 The registry publisher is a dedicated workload selected by policy. AI, anonymous, shared,
-wrong-scope, disabled, insufficient-assurance, or ineligible identities fail closed without
-revealing whether a protected receipt or package exists.
+wrong-scope, disabled, unauthorized, ineligible identities, and identities that do not satisfy the
+optional configured `registry_publication` step-up policy fail closed without revealing whether a
+protected receipt or package exists. This named policy is disabled by default.
 
 ## Registry Publisher Port
 
@@ -106,10 +115,12 @@ target reference, credential handle, command, deployment approval, or infrastruc
 
 ## API And Web Contract
 
-Strict create/read APIs require dedicated default-deny RBAC, browser sessions, CSRF on mutation,
-exact tenant scope, MFA, acknowledgement, correlation, bounded schemas, safe errors, no-store, and
-non-disclosing lookup. Responses expose only safe registry profile/workload/reference and digest
-evidence; package bytes, signature bytes, keys, custody paths, and registry coordinates are hidden.
+Strict create/read APIs require a dedicated authorized human identity, default-deny RBAC, browser
+sessions, CSRF on mutation, exact tenant scope, acknowledgement, correlation, bounded schemas,
+safe errors, no-store, and non-disclosing lookup. The optional named `registry_publication`
+step-up policy is evaluated only when configured. Responses expose only safe registry
+profile/workload/reference and digest evidence; package bytes, signature bytes, keys, custody paths,
+and registry coordinates are hidden.
 
 The web view shows exact signing/package/policy/publication evidence and the explicit no-authority
 scope. It contains no registration, install, enable, target, secret, execution, deployment,
@@ -138,8 +149,9 @@ overwrite, deletion, tag, channel, or promotion control.
 
 - Exact signing, attestation, approval, final-validation, acquisition, archive, policy, signature,
   registry result, tenant, environment, package, publisher, and digest binding tests
-- Complete actor separation, MFA, scope, no-discovery, verifier/publisher failure, tamper, expiry,
-  replay, concurrency, partial-failure, immutable conflict, and fail-closed tests
+- Complete actor separation, authorized single-factor human, scope, no-discovery,
+  verifier/publisher failure, tamper, expiry, replay, concurrency, partial-failure, immutable
+  conflict, fail-closed, and optional named step-up policy tests
 - Required audit intent before publisher and completion audit before persistence
 - Immutable, idempotent, memory/PostgreSQL, minimized API, CSRF, no-store, and Alembic-head tests
 - Proof that bytes, signature values, keys, custody paths, and registry coordinates do not reach API,

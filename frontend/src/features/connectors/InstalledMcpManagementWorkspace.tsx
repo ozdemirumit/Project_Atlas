@@ -825,31 +825,36 @@ export default function InstalledMcpManagementWorkspace({
   const [retiring, setRetiring] = useState<ConnectorInstanceRecord | null>(null);
   const [reviewing, setReviewing] = useState<ConnectorInstanceRecord | null>(null);
   const packageQuery = useQuery({
-    queryKey: ["connector-package-installations"],
+    queryKey: ["connector-package-installations", subjectId],
     queryFn: getConnectorPackageInstallations,
+    enabled: Boolean(subjectId),
   });
   const policyQuery = useQuery({
-    queryKey: ["connector-instance-creation-policies"],
+    queryKey: ["connector-instance-creation-policies", subjectId],
     queryFn: getConnectorInstanceCreationPolicies,
+    enabled: Boolean(subjectId),
   });
   const instanceQuery = useQuery({
-    queryKey: ["connector-instances", lifecycle, search],
+    queryKey: ["connector-instances", subjectId, lifecycle, search],
     queryFn: () => getConnectorInstances({ lifecycle, query: search }),
+    enabled: Boolean(subjectId),
   });
   const signingTrustQuery = useQuery({
-    queryKey: ["connector-upgrade-signing-key-trust"],
+    queryKey: ["connector-upgrade-signing-key-trust", subjectId],
     queryFn: getConnectorUpgradeEvidenceSigningKeyTrustInventory,
+    enabled: Boolean(subjectId),
   });
   const signingConformanceQuery = useQuery({
-    queryKey: ["connector-upgrade-signing-provider-conformance"],
+    queryKey: ["connector-upgrade-signing-provider-conformance", subjectId],
     queryFn: getLatestConnectorUpgradeSigningProviderConformance,
+    enabled: Boolean(subjectId),
     retry: false,
   });
   const signingConformanceMutation = useMutation({
     mutationFn: assessConnectorUpgradeSigningProviderConformance,
     onSuccess: (assessment: ConnectorUpgradeSigningProviderConformanceAssessment) => {
       queryClient.setQueryData(
-        ["connector-upgrade-signing-provider-conformance"],
+        ["connector-upgrade-signing-provider-conformance", subjectId],
         assessment,
       );
       void queryClient.invalidateQueries({
@@ -858,12 +863,14 @@ export default function InstalledMcpManagementWorkspace({
     },
   });
   const signingOnboardingQuery = useQuery({
-    queryKey: ["connector-upgrade-signing-provider-onboarding-readiness"],
+    queryKey: ["connector-upgrade-signing-provider-onboarding-readiness", subjectId],
     queryFn: getConnectorUpgradeSigningProviderOnboardingReadiness,
+    enabled: Boolean(subjectId),
   });
   const signingOnboardingProvenanceQuery = useQuery({
-    queryKey: ["connector-upgrade-signing-provider-onboarding-policy-provenance"],
+    queryKey: ["connector-upgrade-signing-provider-onboarding-policy-provenance", subjectId],
     queryFn: getConnectorUpgradeSigningProviderOnboardingPolicyProvenanceDiagnostic,
+    enabled: Boolean(subjectId),
   });
   const createMutation = useMutation({
     mutationFn: createConnectorInstance,
@@ -1156,12 +1163,12 @@ export default function InstalledMcpManagementWorkspace({
           <AlertTriangle size={18} />
           <div>
             <strong>{sessionAuthenticationFailed
-              ? "Your session has expired"
+              ? "Your signed-in session has expired"
               : lifecycleAuthorizationFailed
                 ? "Connector lifecycle permission is required"
                 : "Connector lifecycle data is unavailable"}</strong>
             <span>{sessionAuthenticationFailed
-              ? "Sign in again to renew the authorized browser session."
+              ? "Sign in again; the MCP inventory will refresh automatically."
               : lifecycleAuthorizationFailed
                 ? "This signed-in account is missing a required role or scope."
                 : "The instance, package or policy inventory could not be loaded. Retry the request."}</span>

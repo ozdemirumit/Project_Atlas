@@ -43,12 +43,7 @@ from atlas.modules.connectors.domain.validation_intake import (
     ConnectorPackageValidation,
     PackageValidationOutcome,
 )
-from atlas.modules.identity.domain.models import (
-    AssuranceLevel,
-    AuthenticatedSubject,
-    AuthenticationMethod,
-    SubjectKind,
-)
+from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 
 INVENTORY_CREATE_PERMISSION = "connectors.package-supply-chain-inventories.create"
 INVENTORY_READ_PERMISSION = "connectors.package-supply-chain-inventories.read"
@@ -103,7 +98,7 @@ class PackageSupplyChainInventoryService:
         idempotency_key: str,
         correlation_id: str,
     ) -> ConnectorPackageSupplyChainInventory:
-        self._require_enterprise_human(actor)
+        self._require_human_actor(actor)
         if not acknowledged_untrusted_package_content:
             raise PackageSupplyChainInventoryError("package_inventory_acknowledgement_required")
         if inventory_profile != INVENTORY_PROFILE:
@@ -265,7 +260,7 @@ class PackageSupplyChainInventoryService:
         inventory_id: str,
         correlation_id: str,
     ) -> ConnectorPackageSupplyChainInventory:
-        self._require_enterprise_human(actor)
+        self._require_human_actor(actor)
         inventory = await self._repository.get_by_id(inventory_id=inventory_id)
         if inventory is None:
             raise PackageSupplyChainInventoryError("package_inventory_not_found")
@@ -706,16 +701,9 @@ class PackageSupplyChainInventoryService:
         return sha256(encoded).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise PackageSupplyChainInventoryError(
-                "package_inventory_enterprise_human_mfa_required"
-            )
+    def _require_human_actor(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
+            raise PackageSupplyChainInventoryError("package_inventory_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str

@@ -31,9 +31,7 @@ from atlas.modules.connectors.domain.acquisition import (
     PublisherAttestationState,
 )
 from atlas.modules.identity.domain.models import (
-    AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
 )
 from atlas.modules.mcp_builder.application.ports import McpBuilderArtifactError
@@ -494,13 +492,8 @@ class PackageAcquisitionService:
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise PackageAcquisitionError("package_acquisition_enterprise_human_mfa_required")
+        if actor.kind is not SubjectKind.HUMAN:
+            raise PackageAcquisitionError("package_acquisition_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str

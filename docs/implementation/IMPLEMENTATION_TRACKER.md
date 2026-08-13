@@ -4,14 +4,75 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-177 |
-| Title | Optional step-up authentication migration |
+| Task ID | ATLAS-IMP-178 |
+| Title | Package supply-chain optional step-up migration |
 | Status | Validation complete; delivery pending |
-| Branch | `agent/optional-step-up-authentication` |
+| Branch | `agent/package-supply-chain-optional-step-up` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ADR-132, ADR-133 |
 | Last Updated | 2026-08-13 |
-| Next Action | Publish the verified IMP-177 branch, complete PR CI and merge the exact passing head |
+| Next Action | Publish the verified IMP-178 branch, complete PR CI and merge the exact passing head |
+
+### ATLAS-IMP-178 Scope Rationale
+
+- IMP-177 removed fixed assurance gates from Installed MCP lifecycle operations but intentionally
+  left package acquisition, validation, analysis, signing, approval, registration, publication and
+  installation for a coordinated follow-up because they share signed policies and actor-separation
+  contracts.
+- ADR-133 prohibits global MFA or hardware-backed checks embedded directly in product services. A
+  deployment may still request step-up through an explicit policy, while the default policy must
+  allow an authorized username/password identity and the local development session.
+- This slice centralizes assurance ordering, changes package policy defaults to single factor, and
+  removes assurance from service-level human eligibility checks. RBAC, exact scope, immutable source
+  binding, acknowledgement, idempotency, audit, package trust, quarantine and separation of duties
+  remain independent mandatory controls.
+
+### ATLAS-IMP-178 Acceptance Criteria
+
+- An authorized single-factor or local username/password human can complete every package
+  supply-chain stage without a fabricated MFA claim.
+- Services do not treat assurance as role, permission or approval. Human eligibility checks reject
+  non-human identities but do not reject an authentication method or assurance level by themselves.
+- Signed policies that explicitly request stronger assurance remain enforceable through one shared
+  helper; default development policies require no MFA claim.
+- Domain policy validation accepts single-factor as the minimum configurable level and continues to
+  reject malformed, unsigned, expired or scope-mismatched policies.
+- Static regression coverage prevents hard-coded package supply-chain MFA gates from returning.
+- Focused and complete backend/frontend gates plus live Builder validation pass before delivery.
+
+### ATLAS-IMP-178 Validation Evidence
+
+- The shared identity helper evaluates only an explicit policy requirement. Development identities
+  satisfy the default single-factor policy, while named multi-factor and hardware-backed policies
+  still deny insufficient provider assurance without granting role, scope or approval.
+- MCP Builder and 20 package supply-chain application services contain no hard-coded development,
+  multi-factor or hardware-backed eligibility gate. Static tests cover both services and API routes.
+- Focused package and Builder validation passed 285 tests; the additional registration,
+  installation and signing policy tests passed 20 tests. Ruff format/lint and strict mypy passed.
+- The complete backend suite passed 1,202 tests with three expected Windows symlink skips. The
+  complete frontend suite passed 282 tests; TypeScript, zero-warning ESLint and production build
+  passed with only the pre-existing operational chunk-size advisory.
+- Live validation at `http://127.0.0.1:5253/#/connectors/builder` used the local
+  `atlas-demo` username/password session. A bounded read-only OpenAPI source produced the
+  `getSystems` candidate without an MFA prompt, network request error or browser console error.
+- Successful username/password sign-in now refreshes every active authorization-bound query, and
+  Installed MCP caches are isolated by subject. A pre-login or expired-session `401` can no longer
+  remain visible after a valid sign-in or leak stale lifecycle data across identities. The focused
+  application and Installed MCP regression suites passed 23 tests; live Inventory validation showed
+  the signed-in local identity, enabled Add MCP entrypoint and no stale session warning.
+- ADR-005 through ADR-029 retain their historical decisions while explicitly recording that fixed
+  assurance requirements are superseded by ADR-133. Runtime, target, knowledge, AI and review
+  assurance gates remain outside this slice and are the next bounded migrations.
+
+### ATLAS-IMP-177 Delivery Evidence
+
+- Source commit `3a15e590a03df32c7e814af4b376df81741b79fe` passed exact-head PR CI run
+  `31695264758`; frontend completed in 4m56s and backend in 5m54s.
+- PR [#189](https://github.com/ozdemirumit/Project_Atlas/pull/189) was squash-merged as
+  `630b9a9bc3b68154834f25246777f54347970cdb`.
+- The exact merged commit independently passed `main` CI run `31695718855`; frontend completed in
+  4m52s and backend in 7m13s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-178 branched.
 
 ### ATLAS-IMP-177 Scope Rationale
 

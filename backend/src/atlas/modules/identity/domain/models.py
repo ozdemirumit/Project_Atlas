@@ -36,6 +36,21 @@ class AssuranceLevel(StrEnum):
     HARDWARE_BACKED = "hardware_backed"
 
 
+_ASSURANCE_ORDER = {
+    AssuranceLevel.DEVELOPMENT: 0,
+    AssuranceLevel.SINGLE_FACTOR: 1,
+    AssuranceLevel.MULTI_FACTOR: 2,
+    AssuranceLevel.HARDWARE_BACKED: 3,
+}
+
+
+def assurance_satisfies_policy(actual: AssuranceLevel, required: AssuranceLevel) -> bool:
+    """Evaluate an explicit step-up policy without making assurance an authorization grant."""
+    if required is AssuranceLevel.SINGLE_FACTOR and actual is AssuranceLevel.DEVELOPMENT:
+        return True
+    return _ASSURANCE_ORDER[actual] >= _ASSURANCE_ORDER[required]
+
+
 class IdentityProviderFailure(RuntimeError):
     def __init__(
         self,

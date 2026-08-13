@@ -54,12 +54,7 @@ from atlas.modules.connectors.domain.supply_chain_inventory import (
     DependencyKind,
     InventoryOutcome,
 )
-from atlas.modules.identity.domain.models import (
-    AssuranceLevel,
-    AuthenticatedSubject,
-    AuthenticationMethod,
-    SubjectKind,
-)
+from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 
 LICENSE_ANALYSIS_CREATE_PERMISSION = "connectors.package-license-analyses.create"
 LICENSE_ANALYSIS_READ_PERMISSION = "connectors.package-license-analyses.read"
@@ -1000,13 +995,8 @@ class PackageLicenseAnalysisService:
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise PackageLicenseAnalysisError("package_license_enterprise_human_mfa_required")
+        if actor.kind is not SubjectKind.HUMAN:
+            raise PackageLicenseAnalysisError("package_license_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
