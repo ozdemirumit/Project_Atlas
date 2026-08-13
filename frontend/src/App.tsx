@@ -2021,10 +2021,7 @@ export function OperationalApplication({
     canReadItsmHandoffReview &&
       identity?.credential_kind === "browser_session" &&
       identity.subject_kind === "human" &&
-      identity.role_ids.includes("role.itsm-reviewer") &&
-      ["multi_factor", "hardware_backed"].includes(
-        identity.authentication.assurance_level,
-      ),
+      identity.role_ids.includes("role.itsm-reviewer"),
   );
   const itsmHandoffReviewQuery = useQuery({
     queryKey: [
@@ -2206,18 +2203,7 @@ export function OperationalApplication({
                     }
                   >
                     <InstalledMcpManagementWorkspace
-                      enterpriseMfaAvailable={
-                        identity?.credential_kind === "browser_session" &&
-                        identity.authentication.method !== "development" &&
-                        ["multi_factor", "hardware_backed"].includes(
-                          identity.authentication.assurance_level,
-                        )
-                      }
-                      onRequestEnterpriseLogin={
-                        identity?.credential_kind === "browser_session"
-                          ? undefined
-                          : () => setEnterpriseLoginRequested(true)
-                      }
+                      onRequestEnterpriseLogin={() => setEnterpriseLoginRequested(true)}
                       onOpenBuilder={() => {
                         connectorFocusTarget.current = "builder";
                         onNavigateConnectorView("builder");
@@ -4848,7 +4834,7 @@ export function OperationalApplication({
                                                                         The acquisition operator and prior
                                                                         package custodians or reviewers cannot
                                                                         validate this intake. Continue with a
-                                                                        different authorized MFA session.
+                                                                        different authorized session.
                                                                       </p>
                                                                     </div>
                                                                   </div>
@@ -5059,7 +5045,7 @@ export function OperationalApplication({
                                                                       <p>
                                                                         The validator and prior package actors
                                                                         cannot inventory this package. Continue
-                                                                        with a different authorized MFA session.
+                                                                        with a different authorized session.
                                                                       </p>
                                                                     </div>
                                                                   </div>
@@ -5882,7 +5868,7 @@ export function OperationalApplication({
                                                                           <p>
                                                                             Prior package validators cannot analyze
                                                                             this stage. Continue with a different
-                                                                            authorized MFA session.
+                                                                            authorized session.
                                                                           </p>
                                                                         </div>
                                                                       </div>
@@ -6133,7 +6119,7 @@ export function OperationalApplication({
                                                                           <p>
                                                                             Prior package and static-analysis actors
                                                                             cannot perform this stage. Continue with
-                                                                            a different authorized MFA session.
+                                                                            a different authorized session.
                                                                           </p>
                                                                         </div>
                                                                       </div>
@@ -6411,7 +6397,7 @@ export function OperationalApplication({
                                                                           <p>
                                                                             Every prior package-analysis actor is
                                                                             excluded. Continue with a different
-                                                                            authorized MFA session.
+                                                                            authorized session.
                                                                           </p>
                                                                         </div>
                                                                       </div>
@@ -6684,7 +6670,7 @@ export function OperationalApplication({
                                                                       <p>
                                                                         Every prior package-analysis actor is
                                                                         excluded. Continue with a different
-                                                                        authorized MFA session.
+                                                                        authorized session.
                                                                       </p>
                                                                     </div>
                                                                   </div>
@@ -6921,7 +6907,7 @@ export function OperationalApplication({
                                                                       <p>
                                                                         License and prior package actors cannot
                                                                         validate this contract. Continue with a
-                                                                        different authorized MFA session.
+                                                                        different authorized session.
                                                                       </p>
                                                                     </div>
                                                                   </div>
@@ -7149,7 +7135,7 @@ export function OperationalApplication({
                                                                       <p>
                                                                         Contract and prior package actors cannot
                                                                         run this package. Continue with a
-                                                                        different authorized MFA session.
+                                                                        different authorized session.
                                                                       </p>
                                                                     </div>
                                                                   </div>
@@ -7368,7 +7354,7 @@ export function OperationalApplication({
                                                                       <p>
                                                                         Runner and prior package actors cannot
                                                                         perform this lab self-test. Continue with a
-                                                                        different authorized MFA session.
+                                                                        different authorized session.
                                                                       </p>
                                                                     </div>
                                                                   </div>
@@ -7898,7 +7884,7 @@ export function OperationalApplication({
                                                                       <p>
                                                                         Inventory and prior package actors cannot
                                                                         scan this content. Continue with a
-                                                                        different authorized MFA session.
+                                                                        different authorized session.
                                                                       </p>
                                                                     </div>
                                                                   </div>

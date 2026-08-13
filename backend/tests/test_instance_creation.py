@@ -41,7 +41,7 @@ from atlas.modules.connectors.domain.instance_creation import (
 from atlas.modules.connectors.domain.package_installation import (
     ConnectorPackageInstallationReceipt,
 )
-from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject, SubjectKind
 
 
 class FailSecondAuditSink:
@@ -63,7 +63,7 @@ def instance_operator(
 async def instance_fixture(
     *,
     audit_sink: CollectingAuditSink | FailingAuditSink | FailSecondAuditSink | None = None,
-    required_assurance_level: AssuranceLevel = AssuranceLevel.MULTI_FACTOR,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     ConnectorInstanceCreationService,
     PackageInstallationService,
@@ -179,6 +179,28 @@ async def test_instance_creation_grants_only_configuration_governance_eligibilit
         "connector_instance_creation_requested",
         "connector_instance_creation_completed",
     ]
+
+
+@pytest.mark.asyncio
+async def test_instance_creation_default_policy_accepts_single_factor_enterprise_human() -> None:
+    service, _, _, _, installation, policy = await instance_fixture()
+    actor = replace(instance_operator(), assurance_level=AssuranceLevel.SINGLE_FACTOR)
+
+    record = await create_instance(service, installation, policy, actor=actor)
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.created_by == actor.subject_id
+    assert record.instance_state == "disabled_unconfigured"
+    assert not record.execution_authorized and not record.infrastructure_mutation_performed
+
+
+@pytest.mark.asyncio
+async def test_instance_creation_still_rejects_non_human_identity() -> None:
+    service, _, _, _, installation, policy = await instance_fixture()
+    actor = replace(instance_operator(), kind=SubjectKind.SERVICE)
+
+    with pytest.raises(ConnectorInstanceCreationError, match="connector_instance_human_required"):
+        await create_instance(service, installation, policy, actor=actor)
 
 
 @pytest.mark.asyncio

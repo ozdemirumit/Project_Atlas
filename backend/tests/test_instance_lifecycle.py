@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -24,13 +25,19 @@ from atlas.modules.connectors.application.instance_creation_ports import (
 from atlas.modules.connectors.application.instance_lifecycle import (
     ConnectorInstanceLifecycleService,
 )
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticationMethod
 
 
 @pytest.mark.asyncio
-async def test_instance_lifecycle_lists_and_retires_without_runtime_authority() -> None:
+async def test_development_password_session_supports_instance_lifecycle() -> None:
     audit = CollectingAuditSink()
     service, _, _, _, installation, policy = await instance_fixture()
-    record = await create_instance(service, installation, policy)
+    actor = replace(
+        instance_operator(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+    record = await create_instance(service, installation, policy, actor=actor)
     lifecycle = ConnectorInstanceLifecycleService(
         repository=service.repository,
         target_repository=InMemoryConnectorTargetConfigurationRepository(),
@@ -38,8 +45,6 @@ async def test_instance_lifecycle_lists_and_retires_without_runtime_authority() 
         environment_id=record.environment_id,
         clock=lambda: record.created_at,
     )
-    actor = instance_operator()
-
     active = await lifecycle.list(
         actor=actor,
         lifecycle="active",

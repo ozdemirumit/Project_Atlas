@@ -63,7 +63,11 @@ class ConnectorUpgradeApprovalPolicySnapshot:
             self.version != 1
             or not 15 <= self.request_lifetime_minutes <= 1440
             or self.required_assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or not self.signature_verified
             or self.issued_at.tzinfo is None
             or self.expires_at.tzinfo is None

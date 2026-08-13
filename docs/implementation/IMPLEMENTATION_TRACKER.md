@@ -4,14 +4,70 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-176 |
-| Title | Durable chat-centered storage investigation workspace |
+| Task ID | ATLAS-IMP-177 |
+| Title | Optional step-up authentication migration |
 | Status | Validation complete; delivery pending |
-| Branch | `agent/durable-operations-chat` |
+| Branch | `agent/optional-step-up-authentication` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-014, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-041, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ADR-123, ADR-131, ADR-132, ADR-133 |
+| Governing Documents | ATLAS-003, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ADR-132, ADR-133 |
 | Last Updated | 2026-08-13 |
-| Next Action | Publish the verified IMP-176 branch, complete PR CI and merge the exact passing head |
+| Next Action | Publish the verified IMP-177 branch, complete PR CI and merge the exact passing head |
+
+### ATLAS-IMP-177 Scope Rationale
+
+- ADR-133 records the product-owner decision that Atlas does not implement or globally require MFA.
+  Identity-provider assurance remains an optional policy input and its absence must not hide or
+  disable otherwise authorized product functions.
+- The Installed MCP workspace currently hard-disables create, update-review and retirement when the
+  browser identity does not report `multi_factor` or `hardware_backed`. Related connector lifecycle
+  policies encode the same fixed prerequisite.
+- The first migration removes assurance as a standalone gate only for this bounded lifecycle. RBAC,
+  exact tenant and target scope, browser/CSRF binding, acknowledgements, idempotency, optimistic
+  concurrency, signed policy, audit, package trust and separation of duties remain mandatory.
+
+### ATLAS-IMP-177 Acceptance Criteria
+
+- An authorized single-factor enterprise human can reach Installed MCP create, update-review and
+  governed retirement flows without a fabricated MFA claim.
+- Frontend controls do not infer authorization from assurance level and do not present MFA as an
+  Atlas prerequisite. Backend authorization and policy responses remain authoritative.
+- Connector lifecycle services no longer reject an otherwise eligible actor solely because their
+  assurance is single-factor; all unrelated eligibility and safety checks remain unchanged.
+- Atlas contains no OTP enrollment, factor secret, recovery-code or authenticator implementation.
+- Focused backend/frontend tests cover single-factor access plus denial on missing RBAC, scope,
+  acknowledgement, policy, separation-of-duty and audit conditions.
+- The tracker explicitly records any fixed assurance gates that remain outside this bounded migration
+  for subsequent slices; they are not silently treated as compliant with ADR-133.
+
+### ATLAS-IMP-177 Remaining Assurance-Gate Inventory
+
+- The Installed MCP create/list/retire, upgrade-readiness and upgrade-approval paths are the first
+  completed migration slice. Their local username/password sessions are not rejected solely because
+  the authentication method is `development` or the assurance level is below MFA.
+- Package supply-chain services still contain fixed multi-factor or hardware-backed gates across
+  acquisition, validation, analysis, approval, signing, publication, registration and installation.
+  These will be migrated as a separate bounded slice because they share actor-separation and signed
+  policy contracts that require coordinated tests.
+- Runtime and target services still contain fixed hardware-backed gates across configuration,
+  credentials, trust, activation, target sessions, invocation authorization and invocation evidence.
+  These will be migrated separately while preserving deny-by-default execution policy and explicit
+  human approval.
+- Identity assurance enum values remain valid interoperability metadata. Their presence does not
+  mean Atlas implements MFA or uses assurance as a global authorization gate.
+
+### ATLAS-IMP-177 Validation Evidence
+
+- Backend formatting, Ruff and mypy passed. The focused connector lifecycle package passed 56 tests;
+  the complete backend suite passed 1,116 tests with three expected Windows symlink skips.
+- Frontend typecheck, ESLint and production build passed. The focused Installed MCP workspace suite
+  passed 15 tests and the complete frontend suite passed 282 tests. The production build retains the
+  pre-existing warning that the operational application chunk exceeds 500 kB.
+- Live validation on `http://127.0.0.1:5253/#/connectors/inventory` used the development
+  username/password browser session. After sign-in, no re-login prompt remained, connector lifecycle
+  data loaded, and no browser console errors were present.
+- HTTP 401 now produces an expired-session re-login action. HTTP 403 reports missing role or scope
+  without implying that another login will repair authorization. Network and service failures offer
+  retry without sign-in guidance.
 
 ### ATLAS-IMP-176 Scope Rationale
 
@@ -75,6 +131,16 @@
   AD MCP or management surface. ADR-133 records that Atlas-owned MFA is not required; assurance is
   an optional deployment policy input and cannot replace RBAC, audit, acknowledgement or separation
   of duties.
+
+### ATLAS-IMP-176 Delivery Evidence
+
+- Source commit `d188648` passed exact-head PR CI run `31691033239`; backend completed in 7m39s and
+  frontend in 4m56s.
+- PR [#188](https://github.com/ozdemirumit/Project_Atlas/pull/188) was squash-merged as
+  `45ba5b781cf0519720d20fcb6daa5a1755038332`.
+- The exact merged commit independently passed `main` CI run `31691637722`; backend completed in
+  7m47s and frontend in 5m01s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-177 branched.
 
 ### ATLAS-IMP-175 Scope Rationale
 

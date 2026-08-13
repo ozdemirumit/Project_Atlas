@@ -33,7 +33,6 @@ from atlas.modules.connectors.domain.package_registration import ConnectorPackag
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
 )
 
@@ -450,9 +449,8 @@ class ConnectorInstanceCreationService:
             or not installation.eligible_for_instance_governance
             or installation.instance_created
             or installation.promotion_blocked
-            or (
-                policy.required_assurance_level is AssuranceLevel.HARDWARE_BACKED
-                and actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or not ConnectorInstanceCreationService._assurance_satisfies(
+                actor.assurance_level, policy.required_assurance_level
             )
         ):
             raise ConnectorInstanceCreationError("connector_instance_binding_invalid")
@@ -501,13 +499,25 @@ class ConnectorInstanceCreationService:
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise ConnectorInstanceCreationError("connector_instance_enterprise_human_mfa_required")
+        if actor.kind is not SubjectKind.HUMAN:
+            raise ConnectorInstanceCreationError("connector_instance_human_required")
+
+    @staticmethod
+    def _assurance_satisfies(actual: AssuranceLevel, required: AssuranceLevel) -> bool:
+        if required is AssuranceLevel.SINGLE_FACTOR:
+            return actual in {
+                AssuranceLevel.DEVELOPMENT,
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
+        order = {
+            AssuranceLevel.DEVELOPMENT: 0,
+            AssuranceLevel.SINGLE_FACTOR: 1,
+            AssuranceLevel.MULTI_FACTOR: 2,
+            AssuranceLevel.HARDWARE_BACKED: 3,
+        }
+        return order[actual] >= order[required]
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -563,7 +573,7 @@ def build_development_connector_instance_creation_policy(
         policy_version="version.1.0",
         required_installation_receipt_schema="atlas.connector-package-installation-receipt.v1",
         maximum_installation_age_hours=168,
-        required_assurance_level=AssuranceLevel.MULTI_FACTOR,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         required_installation_store_profile_id="installation-store.nonproduction-immutable",
         required_installation_artifact_reference_schema=(
             "atlas.connector-installation-artifact-reference.v1"

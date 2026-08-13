@@ -1,4 +1,4 @@
-import { apiFetch } from "./client";
+import { apiFetch, ApiRequestError } from "./client";
 import type { ConnectorPackageRegistrationRecord } from "./packageRegistrations";
 
 export type ConnectorPackageInstallationReceipt = {
@@ -109,7 +109,7 @@ export async function getConnectorPackageInstallations(): Promise<
     headers: { Accept: "application/json" },
   });
   if (!response.ok) {
-    throw new Error(`Connector package inventory failed with ${response.status}`);
+    throw new ApiRequestError("Connector package inventory failed", response.status);
   }
   const payload: unknown = await response.json();
   if (!payload || typeof payload !== "object" || !("data" in payload)) {

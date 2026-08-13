@@ -35,6 +35,11 @@ Agents must preserve these principles:
 - The architecture is modular by design.
 - Risky or infrastructure-changing actions require explicit human approval and policy control.
 - Everything required to build, test, validate, and deploy should be reproducible from the repository.
+- Active Directory and LDAP are authentication-only identity providers; agents must not add an AD
+  MCP or directory-management capability.
+- Atlas does not implement or globally require MFA. Identity-provider assurance is an optional
+  policy input and must not replace RBAC, scope, acknowledgement, approval, separation of duties or
+  audit.
 
 ## 4. Scope Control
 
