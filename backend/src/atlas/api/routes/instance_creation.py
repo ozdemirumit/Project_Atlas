@@ -111,7 +111,7 @@ IDEMPOTENCY = Header(
 
 def _raise(error: ConnectorInstanceCreationError) -> NoReturn:
     code = str(error)
-    if code.endswith(("mfa_required", "separation_required")):
+    if code.endswith("separation_required"):
         status = 403
     elif code.endswith("not_found"):
         status = 404
@@ -141,9 +141,7 @@ def _response(
 
 def _raise_upgrade_approval(error: ConnectorUpgradeApprovalError) -> NoReturn:
     code = error.code
-    if code.endswith(
-        ("mfa_required", "assurance_insufficient", "separation_required", "verifier_required")
-    ):
+    if code.endswith(("assurance_insufficient", "separation_required", "verifier_required")):
         status = 403
     elif code.endswith("not_found"):
         status = 404

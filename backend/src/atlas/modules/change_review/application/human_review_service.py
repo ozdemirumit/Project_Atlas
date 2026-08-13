@@ -36,7 +36,12 @@ STAGE_IDS = (
     "stage.change-authority",
 )
 ELIGIBLE_ASSURANCE = frozenset(
-    {AssuranceLevel.SINGLE_FACTOR, AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
+    {
+        AssuranceLevel.DEVELOPMENT,
+        AssuranceLevel.SINGLE_FACTOR,
+        AssuranceLevel.MULTI_FACTOR,
+        AssuranceLevel.HARDWARE_BACKED,
+    }
 )
 MAX_INBOX_SCAN = 500
 

@@ -57,9 +57,9 @@ def reviewer(**overrides: object) -> AuthenticatedSubject:
         "subject_id": "subject.itsm.reviewer",
         "display_name": "ITSM Reviewer",
         "kind": SubjectKind.HUMAN,
-        "provider_id": "provider.ldap.test",
-        "authentication_method": AuthenticationMethod.LDAP,
-        "assurance_level": AssuranceLevel.MULTI_FACTOR,
+        "provider_id": "provider.development.test",
+        "authentication_method": AuthenticationMethod.DEVELOPMENT,
+        "assurance_level": AssuranceLevel.SINGLE_FACTOR,
         "authenticated_at": NOW,
         "organization_id": "organization.development",
         "role_ids": (ITSM_REVIEWER_ROLE_ID,),
@@ -124,7 +124,9 @@ def review_payload(report: dict[str, object], **overrides: object) -> dict[str, 
     return values
 
 
-def test_itsm_handoff_review_api_requires_mfa_role_csrf_and_exact_source() -> None:
+def test_itsm_handoff_review_api_accepts_single_factor_and_requires_role_csrf_exact_source() -> (
+    None
+):
     sink = CollectingAuditSink()
     actor = reviewer()
     app = create_app(settings(), audit_sink=sink)
@@ -221,7 +223,7 @@ def test_review_outcomes_are_immutable_and_never_authorize_dispatch(outcome) -> 
     )
 
 
-def test_review_rejects_self_review_insufficient_assurance_and_source_change() -> None:
+def test_review_rejects_nonhuman_missing_role_self_review_and_source_change() -> None:
     sink = CollectingAuditSink()
     app = create_app(settings(), audit_sink=sink)
     with TestClient(app) as client:
@@ -251,10 +253,15 @@ def test_review_rejects_self_review_insufficient_assurance_and_source_change() -
                 )
             )
 
-        with pytest.raises(ItsmHandoffReviewError, match="assurance_insufficient"):
+        with pytest.raises(ItsmHandoffReviewError, match="human_required"):
             decide(
-                replace(reviewer(), assurance_level=AssuranceLevel.SINGLE_FACTOR),
-                "review-denied-assurance",
+                replace(reviewer(), kind=SubjectKind.SERVICE),
+                "review-denied-nonhuman",
+            )
+        with pytest.raises(ItsmHandoffReviewError, match="role_required"):
+            decide(
+                replace(reviewer(), role_ids=()),
+                "review-denied-role",
             )
         with pytest.raises(ItsmHandoffReviewError, match="separation_required"):
             decide(
@@ -271,7 +278,8 @@ def test_review_rejects_self_review_insufficient_assurance_and_source_change() -
         and record.outcome == "denied"
     }
     assert {
-        "itsm_handoff_review_assurance_insufficient",
+        "itsm_handoff_review_human_required",
+        "itsm_handoff_review_role_required",
         "itsm_handoff_review_separation_required",
         "itsm_handoff_review_source_changed",
     } <= denied_codes

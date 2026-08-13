@@ -34,7 +34,12 @@ from atlas.modules.identity.domain.models import (
 
 RECEIPT_SCHEMA = "atlas.upgrade-human-review-completion-receipt.v1"
 ELIGIBLE_ASSURANCE = frozenset(
-    {AssuranceLevel.SINGLE_FACTOR, AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
+    {
+        AssuranceLevel.DEVELOPMENT,
+        AssuranceLevel.SINGLE_FACTOR,
+        AssuranceLevel.MULTI_FACTOR,
+        AssuranceLevel.HARDWARE_BACKED,
+    }
 )
 
 

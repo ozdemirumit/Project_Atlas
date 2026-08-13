@@ -168,21 +168,16 @@ async def test_review_rejects_self_wrong_role_duplicate_reviewer_and_stale_versi
             idempotency_key="human-review-service-0001",
             **common,
         )
-    with pytest.raises(ChangeReviewError, match="assurance_insufficient"):
-        await service.decide(
-            actor=replace(
-                reviewer(1, stage.required_role_id),
-                assurance_level=AssuranceLevel.DEVELOPMENT,
-            ),
-            idempotency_key="human-review-assurance-0001",
-            **common,
-        )
-    first_reviewer = reviewer(1, stage.required_role_id)
+    first_reviewer = replace(
+        reviewer(1, stage.required_role_id),
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
     updated = await service.decide(
         actor=first_reviewer,
-        idempotency_key="human-review-first-0001",
+        idempotency_key="human-review-development-assurance-0001",
         **common,
     )
+    assert updated.decisions[-1].reviewer_id == first_reviewer.subject_id
     with pytest.raises(ChangeReviewError, match="distinct_reviewer_required"):
         await service.decide(
             actor=replace(first_reviewer, role_ids=(updated.stages[1].required_role_id,)),

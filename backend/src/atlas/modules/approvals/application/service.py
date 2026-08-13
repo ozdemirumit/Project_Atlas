@@ -25,7 +25,7 @@ from atlas.modules.recommendations.domain.models import OptionState, Recommendat
 
 APPROVAL_RESOURCE_ID = "resource.approval.storage.synthetic"
 CANONICALIZATION_VERSION = "atlas-approval-packet.v1"
-ELIGIBLE_ASSURANCE = frozenset({"single_factor", "multi_factor", "hardware_backed"})
+ELIGIBLE_ASSURANCE = frozenset({"development", "single_factor", "multi_factor", "hardware_backed"})
 
 
 @dataclass(frozen=True, slots=True)
