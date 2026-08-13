@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import timedelta
 
 import pytest
@@ -15,7 +15,7 @@ from test_target_session import target_session_operator
 from atlas.api.recommendation_correction_resubmission_schemas import (
     RecommendationCorrectionInput,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject
 from atlas.modules.recommendations.adapters.correction_resubmission_memory import (
     InMemoryRecommendationCorrectionPolicySource,
     InMemoryRecommendationCorrectionRepository,
@@ -190,6 +190,69 @@ async def correct(
         idempotency_key=idempotency_key,
         correlation_id="cor_recommendation_correction",
     )
+
+
+@pytest.mark.asyncio
+async def test_default_policy_allows_single_factor_human_correction() -> None:
+    service, _, decisions, artifact, policy, actor, *_ = await correction_fixture()
+    single_factor_actor = replace(actor, assurance_level=AssuranceLevel.SINGLE_FACTOR)
+
+    record = await correct(
+        service,
+        decisions,
+        artifact,
+        policy,
+        single_factor_actor,
+    )
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.correction_created
+    assert not record.final_disposition_recorded
+    assert not record.infrastructure_mutated
+
+
+@pytest.mark.asyncio
+async def test_stronger_policy_denies_single_factor_human_correction() -> None:
+    (
+        service,
+        repository,
+        decisions,
+        artifact,
+        policy,
+        actor,
+        adapter,
+        *_,
+    ) = await correction_fixture()
+    stronger = replace(
+        policy,
+        required_assurance_level=AssuranceLevel.MULTI_FACTOR,
+        canonical_digest="0" * 64,
+    )
+    payload = asdict(stronger)
+    payload.pop("canonical_digest")
+    stronger = replace(
+        stronger,
+        canonical_digest=service._digest(service._normalize(payload)),
+    )
+    service._policy_source = InMemoryRecommendationCorrectionPolicySource((stronger,))
+    single_factor_actor = replace(actor, assurance_level=AssuranceLevel.SINGLE_FACTOR)
+
+    with pytest.raises(RecommendationCorrectionError, match="assurance_required"):
+        await correct(
+            service,
+            decisions,
+            artifact,
+            stronger,
+            single_factor_actor,
+        )
+
+    assert (
+        await repository.get_claim_by_source_request(
+            source_review_request_id=decisions[0].review_request_id
+        )
+        is None
+    )
+    assert not adapter.calls
 
 
 @pytest.mark.asyncio

@@ -8,7 +8,7 @@
   ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027,
   ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042,
   ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053,
-  ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-076
+  ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-076, ADR-133
 
 ## Context
 
@@ -66,10 +66,13 @@ or mutation fields. Corrected recommendation content never crosses the ordinary 
 
 The actor must be the original accountable recommendation consumer represented by the immutable
 promotion and readiness lineage, in the exact tenant, using a current enterprise human identity with
-recent hardware-backed MFA and dedicated C2 correction-create plus lineage-read permissions. The
-actor cannot be either track reviewer, a policy signer, trusted adapter identity, service, shared,
-AI or break-glass identity. The normal browser session, mutation CSRF and signed policy are current;
-the correction operation receives a new browser binding and never reuses reviewer lease cookies.
+dedicated C2 correction-create plus lineage-read permissions. Per ADR-133, the default assurance
+requirement is `SINGLE_FACTOR`; only the verified signed correction policy may require
+`MULTI_FACTOR` or `HARDWARE_BACKED` assurance and bounded authentication freshness for this
+operation. The actor cannot be either track reviewer, a policy signer, trusted adapter identity,
+service, shared, AI or break-glass identity. The normal browser session, mutation CSRF and signed
+policy are current; the correction operation receives a new browser binding and never reuses
+reviewer lease cookies. Stronger assurance does not replace actor separation or any other control.
 
 ### Trusted Correction Boundary
 
@@ -129,8 +132,8 @@ Responses use strict `no-store`, `nosniff`, no-referrer and restrictive content-
 
 Intent, claim, trusted-adapter completion, persistence completion and read are separately audited.
 Audit excludes findings, corrected content, artifact coordinates, cookies, raw identity and secrets.
-Policy, lineage, permission, MFA, separation, browser, adapter, receipt, artifact rehydration,
-persistence, audit, concurrency or integrity uncertainty fails closed.
+Policy, lineage, permission, configured assurance/freshness, separation, browser, adapter, receipt,
+artifact rehydration, persistence, audit, concurrency or integrity uncertainty fails closed.
 
 ## Consequences
 

@@ -8,7 +8,7 @@
   ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027,
   ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042,
   ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053,
-  ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-077
+  ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-077, ADR-133
 
 ## Context
 
@@ -78,9 +78,11 @@ fields.
 
 ### Identity And Separation
 
-The actor must be a current enterprise human in the exact tenant with recent hardware-backed MFA,
-dedicated C2 final-disposition-create and lineage-read permissions, a normal browser session,
-mutation CSRF and a current signed policy. The actor must be distinct from:
+The actor must be a current enterprise human in the exact tenant with dedicated C2
+final-disposition-create and lineage-read permissions, a normal browser session, mutation CSRF and
+a current signed policy. Per ADR-133, the default assurance requirement is `SINGLE_FACTOR`; only
+the verified signed final-disposition policy may require `MULTI_FACTOR` or `HARDWARE_BACKED`
+assurance and bounded authentication freshness for this operation. The actor must be distinct from:
 
 - the original accountable recommendation consumer;
 - both technical and service-impact reviewers;
@@ -88,7 +90,8 @@ mutation CSRF and a current signed policy. The actor must be distinct from:
 - every service, shared, AI and break-glass identity.
 
 Reviewer lease cookies grant no final-disposition authority. The operation uses only the approver's
-normal authenticated browser binding.
+normal authenticated browser binding. Stronger assurance never replaces approver separation,
+permission, tenant scope, acknowledgement, audit or immutable lineage controls.
 
 ### Trusted Attestation Boundary
 
@@ -135,8 +138,9 @@ policy, browser and permission authority remain current. Responses use strict `n
 
 Intent, claim, attestation, persistence completion and read are separately audited. Audit excludes
 recommendation content, findings, free-form rationale, risk narrative, artifact coordinates,
-cookies, raw identity and secrets. Policy, lineage, permission, MFA, separation, browser, attestor,
-persistence, audit, concurrency or integrity uncertainty fails closed.
+cookies, raw identity and secrets. Policy, lineage, permission, configured assurance/freshness,
+separation, browser, attestor, persistence, audit, concurrency or integrity uncertainty fails
+closed.
 
 ## Consequences
 
@@ -151,7 +155,8 @@ persistence, audit, concurrency or integrity uncertainty fails closed.
 ### Costs
 
 - Production requires an approved trusted final-disposition attestor.
-- A separate eligible approver and recent hardware MFA are required after both reviews pass.
+- A separate eligible approver is required after both reviews pass; stronger authentication
+  assurance is required only when the signed final-disposition policy explicitly configures it.
 - Rejected generations require a later explicit revision lifecycle rather than silent reuse.
 
 ## Rejected Alternatives

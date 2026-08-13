@@ -22,7 +22,11 @@ from atlas.modules.authorization.application.bootstrap import (
     RECOMMENDATION_REVIEWER_ASSIGNMENT_CREATE,
     RECOMMENDATION_REVIEWER_ASSIGNMENT_READ,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+)
 from atlas.modules.recommendations.adapters.reviewer_assignment_memory import (
     InMemoryRecommendationReviewerAssignmentPolicySource,
     MemoryRecommendationReviewerAssignmentRepository,
@@ -111,7 +115,10 @@ class TamperingReviewerAssignmentAdapter(SyntheticTrustedRecommendationReviewerA
 
 
 async def assignment_fixture(
-    *, deny: bool = False, unavailable: bool = False
+    *,
+    deny: bool = False,
+    unavailable: bool = False,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     GovernedRecommendationReviewerAssignmentService,
     MemoryRecommendationReviewerAssignmentRepository,
@@ -127,6 +134,17 @@ async def assignment_fixture(
         environment_id=review_request.record.environment_id,
         issued_at=review_request.record.requested_at - timedelta(hours=1),
         expires_at=review_request.record.requested_at + timedelta(days=1),
+    )
+    policy = replace(
+        policy,
+        required_assurance_level=required_assurance_level,
+        canonical_digest="0" * 64,
+    )
+    policy = replace(
+        policy,
+        canonical_digest=GovernedProtectedModelInvocationService._digest(
+            GovernedProtectedModelInvocationService._payload(policy)
+        ),
     )
     permission = RecordingReviewerAssignmentPermissionAuthorizer(deny=deny)
     repository = MemoryRecommendationReviewerAssignmentRepository()
@@ -202,6 +220,36 @@ async def test_assignment_creates_distinct_policy_owned_reviewers_and_exact_repl
     assert repeated.record.reused and replay.record.reused
     assert permission.calls[0][2] == RECOMMENDATION_REVIEWER_ASSIGNMENT_CREATE
     assert permission.calls[-1][2] == RECOMMENDATION_REVIEWER_ASSIGNMENT_READ
+
+
+@pytest.mark.asyncio
+async def test_default_policy_allows_development_authentication() -> None:
+    service, _, policy, source, actor, _ = await assignment_fixture()
+    actor = replace(
+        actor,
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    result = await create_assignment(service, policy, source, actor)
+
+    assert result.record.reviewer_assigned
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+
+
+@pytest.mark.asyncio
+async def test_explicit_stronger_policy_rejects_development_authentication() -> None:
+    service, _, policy, source, actor, _ = await assignment_fixture(
+        required_assurance_level=AssuranceLevel.MULTI_FACTOR
+    )
+    actor = replace(
+        actor,
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    with pytest.raises(RecommendationReviewerAssignmentError, match="policy_assurance_required"):
+        await create_assignment(service, policy, source, actor)
 
 
 @pytest.mark.asyncio

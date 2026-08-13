@@ -78,7 +78,12 @@ class RecommendationCorrectionPolicySnapshot:
             or {self.technical_track_code, self.service_impact_track_code} != TRACKS
             or not 1 <= self.maximum_authentication_age_minutes <= 60
             or not 1 <= self.retention_minutes <= 1440
-            or self.required_assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or self.required_assurance_level
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or not self.signature_verified
             or self.issued_at.tzinfo is None
             or self.expires_at.tzinfo is None

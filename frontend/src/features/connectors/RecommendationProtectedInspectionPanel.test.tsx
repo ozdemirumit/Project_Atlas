@@ -130,6 +130,49 @@ afterEach(() => {
 });
 
 describe("RecommendationProtectedInspectionPanel", () => {
+  it("explains optional policy-driven step-up without weakening assignment constraints", async () => {
+    document.cookie = "atlas_csrf=test-csrf; path=/";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(JSON.stringify({ detail: "inspection denied" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <RecommendationProtectedInspectionPanel assignmentResult={assignmentResult} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(
+      screen.getByLabelText(
+        "Only the exact assigned reviewer may open the selected review track.",
+      ),
+    );
+    fireEvent.click(
+      screen.getByLabelText("The short-lived lease returns no content or secret in JSON."),
+    );
+    fireEvent.click(
+      screen.getByLabelText(
+        "The lease records no finding, decision, approval, workflow, or operation.",
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open assigned inspection lease" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("A normal signed-in human session is sufficient by default.");
+    expect(alert).toHaveTextContent(
+      "Stronger assurance is required only when the selected signed policy explicitly requests it.",
+    );
+    expect(alert).toHaveTextContent("this track's exact unexpired assignee");
+    expect(alert).toHaveTextContent("access cannot be delegated or refreshed");
+    expect(alert).not.toHaveTextContent(/hardware MFA/i);
+  });
+
   it("opens only the selected assigned track without sending content or authority", async () => {
     document.cookie = "atlas_csrf=test-csrf; path=/";
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(

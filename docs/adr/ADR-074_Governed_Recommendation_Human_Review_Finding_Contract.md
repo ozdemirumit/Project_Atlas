@@ -8,7 +8,7 @@
   ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027,
   ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042,
   ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053,
-  ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-073
+  ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-073, ADR-133
 
 ## Context
 
@@ -66,11 +66,14 @@ severity cannot become an automatic decision.
 
 Before claim creation Atlas revalidates the complete promotion, readiness, request, assignment,
 inspection lease and protected-content presentation lineage; all canonical digests and signed
-policies; current enterprise human identity with recent hardware MFA; exact tenant and C2
-finding-create/C1 source-read scope; salted assignee digest; browser binding; selected track
-cookie; lease expiry; and absence of later review, approval, workflow, ITSM or operational
-authority. Any missing, changed, expired, transferred or cross-track proof fails before claim and
-before finding text crosses the recorder boundary.
+policies; current enterprise human identity; exact tenant and C2 finding-create/C1 source-read
+scope; salted assignee digest; browser binding; selected track cookie; lease expiry; and absence of
+later review, approval, workflow, ITSM or operational authority. Per ADR-133, the default assurance
+requirement is `SINGLE_FACTOR`; only the verified signed finding policy may require
+`MULTI_FACTOR` or `HARDWARE_BACKED` assurance and bounded authentication freshness for this
+operation. Any missing, changed, expired, transferred or cross-track proof fails before claim and
+before finding text crosses the recorder boundary. Stronger assurance never replaces permission,
+assignee/track separation, protected-content proof, audit or source integrity.
 
 ### Atomic Claim And Trusted Recorder
 

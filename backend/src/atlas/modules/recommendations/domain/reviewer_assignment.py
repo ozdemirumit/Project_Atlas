@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from atlas.modules.identity.domain.models import AssuranceLevel
+
 TECHNICAL_TRACK = "review-track.technical"
 SERVICE_IMPACT_TRACK = "review-track.service-impact"
 ASSIGNED = "assigned"
@@ -38,6 +40,7 @@ class RecommendationReviewerAssignmentPolicySnapshot:
     assignment_ttl_minutes: int
     retention_minutes: int
     browser_binding_key_digest: str
+    required_assurance_level: AssuranceLevel
     signed_by: str
     signature_verified: bool
     issued_at: datetime
@@ -51,6 +54,12 @@ class RecommendationReviewerAssignmentPolicySnapshot:
             or len(self.queue_ids) != 2
             or len(set(self.queue_ids)) != 2
             or len(self.eligibility_profile_digests) != 2
+            or self.required_assurance_level
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or min(
                 self.maximum_source_age_minutes,
                 self.assignment_ttl_minutes,

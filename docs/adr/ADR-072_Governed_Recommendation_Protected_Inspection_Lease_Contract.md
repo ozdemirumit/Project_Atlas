@@ -6,7 +6,7 @@
 | Date | 2026-08-10 |
 | Owners | Product Owner, Architecture Owner, Security Architecture, Identity Governance, Governance and Workflow Owner |
 | Decision Scope | Assignee-bound, short-lived browser access to one recommendation review track |
-| Related Documents | ATLAS-003, ATLAS-014, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-056, ADR-045, ADR-063 through ADR-071 |
+| Related Documents | ATLAS-003, ATLAS-014, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-056, ADR-045, ADR-063 through ADR-071, ADR-133 |
 
 ## Context
 
@@ -42,9 +42,11 @@ rationale, correction, approval, workflow, ITSM, target, capability, command or 
 
 ### Authorization And Assignee Binding
 
-Creation requires a current enterprise human with hardware-backed MFA, recent authentication, the
-exact tenant, environment and browser binding, and a dedicated default-deny C2 permission. Reading
-minimized lease state requires a dedicated C1 permission.
+Creation requires a current enterprise human with the exact tenant, environment and browser
+binding, and a dedicated default-deny C2 permission. Reading minimized lease state requires a
+dedicated C1 permission. Per ADR-133, `SINGLE_FACTOR` is the default assurance requirement; only
+the verified signed inspection policy may require `MULTI_FACTOR` or `HARDWARE_BACKED` assurance
+and a bounded authentication-freshness window for this operation.
 
 The trusted identity boundary derives the current actor digest with the exact subject-digest
 profile bound to the assignment policy. It must equal the selected track's assigned reviewer
@@ -61,9 +63,11 @@ The source must be one exact, unexpired and integrity-valid ADR-071 record with
 and subject digests, complete protected lineage, and all inspection or later lifecycle flags false.
 
 The signed inspection policy defines the accepted source/output schemas, eligible tracks, maximum
-TTL, recent-authentication window, browser and cookie bindings, subject-digest profile, trusted
-identity and broker IDs, retention and cleanup proofs. The effective TTL is never greater than ten
-minutes and cannot be supplied by the caller.
+TTL, optional assurance level and authentication-freshness window, browser and cookie bindings,
+subject-digest profile, trusted identity and broker IDs, retention and cleanup proofs. The
+effective TTL is never greater than ten minutes and cannot be supplied by the caller. Stronger
+assurance supplements and never replaces assignee proof, permission, scope, browser/cookie binding,
+audit or lineage verification.
 
 ### Atomic One-Way Claim And Replay
 
@@ -109,7 +113,7 @@ Authorization denial occurs before source rehydration or broker access. Intent a
 claim; claim audit follows claim persistence; completion audit precedes lease persistence; every
 replay emits a separate read audit.
 
-Policy, source, identity, assignee, browser, recent-authentication, broker, cookie, audit,
+Policy, source, identity, assignee, browser, configured assurance/freshness, broker, cookie, audit,
 persistence, cleanup, integrity or replay uncertainty fails closed. Failure returns no secret,
 partial lease or protected content.
 

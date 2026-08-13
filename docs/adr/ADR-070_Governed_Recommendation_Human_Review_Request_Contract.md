@@ -6,7 +6,7 @@
 | Date | 2026-08-09 |
 | Owners | Product Owner, Architecture Owner, Security Architecture, Governance and Workflow Owner |
 | Decision Scope | Creation of one non-decisional human-review request from an exact ready recommendation |
-| Related Documents | ATLAS-003, ATLAS-014, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-056, ADR-063 through ADR-069 |
+| Related Documents | ATLAS-003, ATLAS-014, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-056, ADR-063 through ADR-069, ADR-133 |
 
 ## Context
 
@@ -50,8 +50,11 @@ execution, deployment or mutation fields.
 ### Authorization And Actor Separation
 
 Only the same current enterprise human consumer bound to the recommendation and readiness lineage
-may create or read the request. The consumer requires hardware-backed MFA, a current browser-bound
-session, exact tenant and environment scope and dedicated default-deny C1 create/read permissions.
+may create or read the request. The consumer requires a current browser-bound session, exact tenant
+and environment scope and dedicated default-deny C1 create/read permissions. Per ADR-133, the
+default assurance requirement is `SINGLE_FACTOR`; only the verified signed review-request policy
+may require `MULTI_FACTOR` or `HARDWARE_BACKED` assurance and authentication freshness for this
+operation.
 
 The requester may initiate review orchestration because request creation is not a review decision.
 The request does not make the requester a reviewer, approver or operator. Later assignment and
@@ -83,8 +86,12 @@ The immutable policy defines:
 - trusted orchestration adapter and attestor identities;
 - required review-track codes, opaque queue IDs, routing profile and SLA class;
 - supported source outcomes and maximum track count;
-- browser, tenant, consumer and no-authority bindings; and
-- required receipt, immutable-storage and audit proofs.
+- browser, tenant, consumer and no-authority bindings;
+- required receipt, immutable-storage and audit proofs; and
+- any optional operation-specific authentication-assurance level and freshness window.
+
+Stronger assurance denies only this policy-governed request operation when unsatisfied. It does
+not replace RBAC, tenant scope, actor separation, acknowledgement, audit or lineage controls.
 
 Track and queue routing is policy-owned. The caller, model and source recommendation cannot choose
 or remove a review track.

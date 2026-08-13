@@ -18,8 +18,8 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 from atlas.modules.recommendations.application.protected_inspection_ports import (
     RecommendationProtectedInspectionBroker,
@@ -92,7 +92,7 @@ class RecommendationProtectedInspectionService:
         idempotency_key: str,
         correlation_id: str,
     ) -> RecommendationProtectedInspectionGrant:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         if not lease_only_acknowledged:
             raise RecommendationProtectedInspectionError(
                 "recommendation_protected_inspection_acknowledgement_required"
@@ -127,6 +127,7 @@ class RecommendationProtectedInspectionService:
                 "recommendation_protected_inspection_policy_not_found"
             )
         self._verify_snapshot(policy)
+        self._require_assurance(actor, policy)
         now = self._clock()
         self._verify_source(
             source=source,
@@ -316,13 +317,20 @@ class RecommendationProtectedInspectionService:
     async def get(
         self, *, actor: AuthenticatedSubject, lease_id: str, correlation_id: str
     ) -> RecommendationProtectedInspectionRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         record = await self._repository.get(lease_id=lease_id)
         if record is None:
             raise RecommendationProtectedInspectionError(
                 "recommendation_protected_inspection_record_not_found"
             )
         self._verify_record(record)
+        policy = await self._policy_source.get_by_id(policy_id=record.inspection_policy_id)
+        if policy is None or policy.canonical_digest != record.inspection_policy_digest:
+            raise RecommendationProtectedInspectionError(
+                "recommendation_protected_inspection_record_not_found"
+            )
+        self._verify_snapshot(policy)
+        self._require_assurance(actor, policy)
         self._require_scope(actor, record.organization_id, record.environment_id)
         await self._audit(
             actor,
@@ -602,14 +610,20 @@ class RecommendationProtectedInspectionService:
         ).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
+    def _require_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
             raise RecommendationProtectedInspectionError(
-                "recommendation_protected_inspection_enterprise_human_hardware_mfa_required"
+                "recommendation_protected_inspection_human_required"
+            )
+
+    @staticmethod
+    def _require_assurance(
+        actor: AuthenticatedSubject,
+        policy: RecommendationProtectedInspectionPolicySnapshot,
+    ) -> None:
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
+            raise RecommendationProtectedInspectionError(
+                "recommendation_protected_inspection_assurance_required"
             )
 
     def _require_scope(
@@ -690,7 +704,7 @@ def build_development_recommendation_protected_inspection_policy(
         maximum_concurrent_leases=1,
         require_browser_session_binding=True,
         require_exact_assignee=True,
-        required_assurance_level=AssuranceLevel.HARDWARE_BACKED,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         signed_by="subject.recommendation-protected-inspection-policy-signer",
         signature_verified=True,
         issued_at=issued_at,

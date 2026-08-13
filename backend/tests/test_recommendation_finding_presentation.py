@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -42,7 +42,7 @@ from atlas.modules.authorization.domain.models import (
     RoleAssignment,
     RoleDefinition,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject
 from atlas.modules.recommendations.adapters.finding_presentation_memory import (
     InMemoryRecommendationFindingPresentationPolicySource,
     InMemoryRecommendationFindingPresentationRepository,
@@ -197,6 +197,81 @@ async def present_findings(
         lease_secrets={lease.record.track_code: str(lease.lease_secret)},
         idempotency_key=key,
         correlation_id="cor_recommendation_finding_presentation",
+    )
+
+
+@pytest.mark.asyncio
+async def test_default_policy_allows_single_factor_human_presentation() -> None:
+    (
+        service,
+        _,
+        _,
+        _,
+        assignment,
+        lease,
+        presentation,
+        finding,
+        policy,
+        actor,
+    ) = await presentation_fixture()
+    single_factor_actor = replace(actor, assurance_level=AssuranceLevel.SINGLE_FACTOR)
+
+    grant = await present_findings(
+        service,
+        assignment,
+        lease,
+        presentation,
+        finding,
+        policy,
+        single_factor_actor,
+    )
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert grant.record.human_findings_presented
+    assert not grant.record.recommendation_approved
+    assert not grant.record.infrastructure_mutated
+
+
+@pytest.mark.asyncio
+async def test_stronger_policy_denies_single_factor_human_presentation() -> None:
+    (
+        service,
+        repository,
+        _,
+        _,
+        assignment,
+        lease,
+        presentation,
+        finding,
+        policy,
+        actor,
+    ) = await presentation_fixture()
+    stronger = replace(
+        policy,
+        required_assurance_level=AssuranceLevel.MULTI_FACTOR,
+        canonical_digest="0" * 64,
+    )
+    stronger = replace(
+        stronger,
+        canonical_digest=service._digest(service._policy_payload(stronger)),
+    )
+    service._policy_source = InMemoryRecommendationFindingPresentationPolicySource((stronger,))
+    single_factor_actor = replace(actor, assurance_level=AssuranceLevel.SINGLE_FACTOR)
+
+    with pytest.raises(RecommendationFindingPresentationError, match="assurance_required"):
+        await present_findings(
+            service,
+            assignment,
+            lease,
+            presentation,
+            finding,
+            stronger,
+            single_factor_actor,
+        )
+
+    assert (
+        await repository.get_by_source_finding(source_finding_packet_id=finding.finding_packet_id)
+        is None
     )
 
 

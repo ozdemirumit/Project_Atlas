@@ -17,8 +17,8 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 from atlas.modules.recommendations.application.review_request import (
     GovernedRecommendationReviewRequestService,
@@ -112,6 +112,7 @@ class GovernedRecommendationReviewerAssignmentService:
         policy = await self._policy_source.get_by_id(policy_id=assignment_policy_id)
         self._verify_policy(policy, assignment_policy_digest, actor, self._environment_id, now)
         assert policy is not None
+        self._require_policy_assurance(actor, policy)
         await self._permission_authorizer.authorize(
             actor=actor,
             organization_id=actor.organization_id,
@@ -312,6 +313,7 @@ class GovernedRecommendationReviewerAssignmentService:
             raise RecommendationReviewerAssignmentError(
                 "recommendation_reviewer_assignment_not_found"
             )
+        self._require_policy_assurance(actor, policy)
         await self._permission_authorizer.authorize(
             actor=actor,
             organization_id=record.organization_id,
@@ -662,13 +664,18 @@ class GovernedRecommendationReviewerAssignmentService:
 
     @staticmethod
     def _require_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
+        if actor.kind is not SubjectKind.HUMAN:
             raise RecommendationReviewerAssignmentError(
-                "recommendation_reviewer_assignment_enterprise_human_hardware_mfa_required"
+                "recommendation_reviewer_assignment_human_required"
+            )
+
+    @staticmethod
+    def _require_policy_assurance(
+        actor: AuthenticatedSubject, policy: RecommendationReviewerAssignmentPolicySnapshot
+    ) -> None:
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
+            raise RecommendationReviewerAssignmentError(
+                "recommendation_reviewer_assignment_policy_assurance_required"
             )
 
     def _require_scope(
@@ -803,6 +810,7 @@ def build_development_recommendation_reviewer_assignment_policy(
         assignment_ttl_minutes=10,
         retention_minutes=10,
         browser_binding_key_digest=digest(["recommendation-reviewer-assignment-browser-key"]),
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         signed_by="subject.recommendation-reviewer-assignment-policy-signer",
         signature_verified=True,
         issued_at=issued_at,
