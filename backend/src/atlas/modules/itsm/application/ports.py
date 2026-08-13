@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from atlas.modules.itsm.domain.models import ItsmIntegrationProfile, ItsmProfileLifecycle
+from atlas.modules.itsm.domain.models import (
+    ItsmIntegrationProfile,
+    ItsmProfileLifecycle,
+    ItsmSandboxConformanceAssessment,
+    ItsmSandboxDiagnostic,
+)
 
 
 class ItsmIntegrationProfileRepository(Protocol):
@@ -35,4 +40,31 @@ class ItsmIntegrationProfileRepository(Protocol):
 
     async def update(self, profile: ItsmIntegrationProfile, *, expected_version: int) -> bool: ...
 
+    async def get_latest_sandbox_conformance(
+        self,
+        *,
+        organization_id: str,
+        environment_id: str,
+        site_id: str,
+        profile_id: str,
+    ) -> ItsmSandboxConformanceAssessment | None: ...
+
+    async def get_sandbox_conformance_by_key(
+        self, *, assessed_by: str, idempotency_key: str
+    ) -> ItsmSandboxConformanceAssessment | None: ...
+
+    async def add_sandbox_conformance(
+        self, assessment: ItsmSandboxConformanceAssessment
+    ) -> bool: ...
+
     async def close(self) -> None: ...
+
+
+class ItsmSandboxConformanceAdapter(Protocol):
+    async def assess(
+        self,
+        *,
+        profile: ItsmIntegrationProfile,
+        challenge_digest: str,
+        diagnostic_contract_version: str,
+    ) -> ItsmSandboxDiagnostic: ...

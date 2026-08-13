@@ -6,6 +6,7 @@ import {
   Clock3,
   Database,
   FileKey2,
+  FlaskConical,
   Link2,
   LogIn,
   Plus,
@@ -17,13 +18,16 @@ import {
 import { type FormEvent, useState } from "react";
 
 import {
+  assessItsmSandboxConformance,
   createItsmIntegrationProfile,
+  getLatestItsmSandboxConformance,
   getItsmIntegrationProfiles,
   retireItsmIntegrationProfile,
   type CreateItsmIntegrationInput,
   type ItsmIntegrationProfile,
   type ItsmLifecycle,
   type ItsmProviderFamily,
+  type ItsmSandboxConformanceAssessment,
 } from "../../api/itsmIntegrations";
 
 const PROVIDERS: Record<ItsmProviderFamily, string> = {
@@ -221,6 +225,33 @@ function RetireProfileDialog({
   );
 }
 
+function SandboxConformanceDialog({
+  profile,
+  pending,
+  onCancel,
+  onSubmit,
+}: {
+  profile: ItsmIntegrationProfile;
+  pending: boolean;
+  onCancel: () => void;
+  onSubmit: () => void;
+}) {
+  const [acknowledged, setAcknowledged] = useState(false);
+  return (
+    <div className="inventory-device-dialog" role="dialog" aria-modal="true" aria-labelledby="assess-itsm-sandbox-title">
+      <form onSubmit={(event) => { event.preventDefault(); if (acknowledged && !pending) onSubmit(); }}>
+        <div className="inventory-device-dialog-heading">
+          <div><p className="eyebrow">BOUNDED DIAGNOSTIC</p><h3 id="assess-itsm-sandbox-title">Assess {profile.display_name}</h3></div>
+          <button className="icon-button" type="button" aria-label="Close sandbox assessment" onClick={onCancel}><X size={17} /></button>
+        </div>
+        <div className="inventory-device-retirement-impact"><FlaskConical size={18} /><p>The fixed diagnostic is bound to profile version {profile.version}. Endpoint overrides, custom payloads, ticket writes, and dispatch are unavailable.</p></div>
+        <label className="inventory-device-acknowledgement"><input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} /><span>This assessment is diagnostic evidence only and grants no production, dispatch, workflow, or execution authority.</span></label>
+        <div className="inventory-device-dialog-actions"><button type="button" disabled={pending} onClick={onCancel}>Cancel</button><button className="inventory-device-primary" type="submit" disabled={!acknowledged || pending}>{pending ? <Clock3 size={15} /> : <FlaskConical size={15} />} Run diagnostic</button></div>
+      </form>
+    </div>
+  );
+}
+
 export default function ItsmIntegrationReadinessWorkspace({
   governedSessionAvailable = true,
   onRequestEnterpriseLogin,
@@ -233,6 +264,7 @@ export default function ItsmIntegrationReadinessWorkspace({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [retiring, setRetiring] = useState<ItsmIntegrationProfile | null>(null);
+  const [assessing, setAssessing] = useState<ItsmIntegrationProfile | null>(null);
   const inventoryQuery = useQuery({
     queryKey: ["itsm-integration-profiles", lifecycle],
     queryFn: () => getItsmIntegrationProfiles(lifecycle),
@@ -248,6 +280,21 @@ export default function ItsmIntegrationReadinessWorkspace({
   });
   const inventory = inventoryQuery.data;
   const selected = inventory?.profiles.find((profile) => profile.profile_id === selectedId) ?? inventory?.profiles[0];
+  const conformanceQuery = useQuery({
+    queryKey: ["itsm-sandbox-conformance", selected?.profile_id],
+    queryFn: () => getLatestItsmSandboxConformance(selected!.profile_id),
+    enabled: Boolean(selected),
+  });
+  const conformanceMutation = useMutation({
+    mutationFn: assessItsmSandboxConformance,
+    onSuccess: (assessment: ItsmSandboxConformanceAssessment) => {
+      queryClient.setQueryData(
+        ["itsm-sandbox-conformance", assessment.profile_id],
+        assessment,
+      );
+      setAssessing(null);
+    },
+  });
 
   return (
     <section className="workspace-section itsm-readiness-workspace" aria-labelledby="itsm-readiness-title">
@@ -271,14 +318,19 @@ export default function ItsmIntegrationReadinessWorkspace({
       {inventoryQuery.isError && <div className="inventory-device-status error-state" role="alert"><AlertTriangle size={17} /> ITSM integration inventory is unavailable.</div>}
       {createMutation.isError && <div className="inventory-device-status error-state" role="alert"><AlertTriangle size={17} /> Profile registration failed. Review identifiers, sandbox evidence, and the unique profile key.</div>}
       {retireMutation.isError && <div className="inventory-device-status error-state" role="alert"><AlertTriangle size={17} /> Profile retirement failed. Refresh and review the current version.</div>}
+      {conformanceQuery.isError && <div className="inventory-device-status error-state" role="alert"><AlertTriangle size={17} /> Sandbox conformance evidence is unavailable.</div>}
+      {conformanceMutation.isError && <div className="inventory-device-status error-state" role="alert"><AlertTriangle size={17} /> The bounded sandbox diagnostic could not be completed.</div>}
 
       {inventory?.profiles.length === 0 && <div className="inventory-device-empty"><Link2 size={20} /><div><strong>No ITSM profiles in this lifecycle</strong><p>Register a provider-neutral sandbox profile to evaluate readiness.</p></div></div>}
       {inventory && inventory.profiles.length > 0 && <div className="table-wrap inventory-device-table-wrap"><table className="inventory-device-table itsm-profile-table"><thead><tr><th>Profile</th><th>Provider</th><th>Readiness</th><th>Lifecycle</th><th>Updated</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{inventory.profiles.map((profile) => <tr key={profile.profile_id} className={selected?.profile_id === profile.profile_id ? "selected" : undefined} onClick={() => setSelectedId(profile.profile_id)}><td><div className="inventory-device-identity"><Link2 size={17} /><span><strong>{profile.display_name}</strong><code>{profile.profile_key}</code></span></div></td><td>{PROVIDERS[profile.provider_family]}</td><td><span className={`itsm-readiness-state ${profile.readiness.state}`}>{profile.readiness.state === "ready_for_sandbox" ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}{profile.readiness.state === "ready_for_sandbox" ? "Sandbox ready" : "Blocked"}</span></td><td><span className={`inventory-device-lifecycle ${profile.lifecycle}`}>{profile.lifecycle === "active" ? <CheckCircle2 size={14} /> : <Archive size={14} />}{profile.lifecycle}</span></td><td>{formatTimestamp(profile.updated_at)}</td><td>{profile.lifecycle === "active" && <button className="inventory-device-row-action" type="button" disabled={!governedSessionAvailable} title="Retire profile" aria-label={`Retire ${profile.display_name}`} onClick={(event) => { event.stopPropagation(); retireMutation.reset(); setRetiring(profile); }}><Archive size={16} /></button>}</td></tr>)}</tbody></table></div>}
 
       {selected && <div className="itsm-readiness-detail"><div className="itsm-readiness-summary"><div><span>Endpoint origin</span><strong>{selected.endpoint_origin}</strong></div><div><span>Accountable owner</span><strong>{selected.owner_id}</strong></div><div><span>Credential binding</span><strong><FileKey2 size={15} /> Configured reference</strong></div><div><span>Mapping contract</span><strong>Version {selected.mapping_version}</strong></div></div><div className="itsm-readiness-checks" aria-label="ITSM readiness checks">{selected.readiness.checks.map((check) => <div key={check.check_id} className={check.state}><span>{check.state === "satisfied" ? <CheckCircle2 size={16} /> : <XCircle size={16} />}{CHECK_LABELS[check.check_id] ?? check.check_id}</span><small>{check.state === "satisfied" ? "Satisfied" : check.reason_code.split(".").at(-1)?.replaceAll("_", " ")}</small></div>)}</div><div className="itsm-mapping-table"><div className="itsm-detail-heading"><div><p className="eyebrow">ALLOWLISTED FIELD CONTRACT</p><h3>Mapping version {selected.mapping_version}</h3></div><span>{selected.field_mappings.length} fields</span></div><table><thead><tr><th>Atlas source</th><th>Provider field</th><th>Semantics</th></tr></thead><tbody>{selected.field_mappings.map((mapping) => <tr key={mapping.source_field}><td><code>{mapping.source_field}</code></td><td><code>{mapping.provider_field}</code></td><td>{mapping.write_semantics === "append_only" ? "Append only" : "Reference only"}</td></tr>)}</tbody></table></div><div className="inventory-device-boundary"><ShieldCheck size={15} /><span>Readiness does not authorize dispatch, ticket mutation, workflow approval, or infrastructure execution.</span></div></div>}
 
+      {selected && <div className="itsm-conformance-panel"><div className="itsm-detail-heading"><div><p className="eyebrow">SANDBOX CONFORMANCE</p><h3>Bounded adapter diagnostic</h3></div><button type="button" disabled={!governedSessionAvailable || selected.lifecycle !== "active" || conformanceMutation.isPending} title="Run fixed sandbox diagnostic" onClick={() => { conformanceMutation.reset(); setAssessing(selected); }}><FlaskConical size={15} /> Assess sandbox</button></div>{conformanceQuery.isLoading && <div className="inventory-device-status"><Clock3 size={16} /> Loading latest assessment</div>}{!conformanceQuery.isLoading && !conformanceQuery.data && <div className="inventory-device-empty compact"><FlaskConical size={18} /><div><strong>No conformance assessment</strong><p>The profile has no short-lived adapter diagnostic evidence.</p></div></div>}{conformanceQuery.data && <div className="itsm-conformance-evidence"><div><span>Outcome</span><strong className={conformanceQuery.data.state === "conformant" ? "conformant" : "blocked"}>{conformanceQuery.data.state === "conformant" ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}{conformanceQuery.data.state.replaceAll("_", " ")}</strong></div><div><span>Adapter</span><code>{conformanceQuery.data.adapter_id}</code></div><div><span>Profile binding</span><strong>Version {conformanceQuery.data.profile_version} / mapping {conformanceQuery.data.mapping_version}</strong></div><div><span>Valid until</span><strong>{formatTimestamp(conformanceQuery.data.valid_until)}</strong></div></div>}<div className="inventory-device-boundary"><ShieldCheck size={15} /><span>Conformance is diagnostic evidence only. Production readiness, dispatch, external mutation, workflow approval, and execution remain unavailable.</span></div></div>}
+
       {creating && <CreateProfileDialog pending={createMutation.isPending} onCancel={() => setCreating(false)} onSubmit={(input) => createMutation.mutate(input)} />}
       {retiring && <RetireProfileDialog profile={retiring} pending={retireMutation.isPending} onCancel={() => setRetiring(null)} onSubmit={(reason) => retireMutation.mutate({ profile: retiring, reason })} />}
+      {assessing && <SandboxConformanceDialog profile={assessing} pending={conformanceMutation.isPending} onCancel={() => setAssessing(null)} onSubmit={() => conformanceMutation.mutate(assessing)} />}
     </section>
   );
 }

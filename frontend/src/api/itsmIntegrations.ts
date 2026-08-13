@@ -4,6 +4,15 @@ export type ItsmProviderFamily = "service_now" | "jira_service_management" | "ge
 export type ItsmLifecycle = "active" | "retired";
 export type ItsmReadinessState = "ready_for_sandbox" | "blocked";
 export type ItsmWriteSemantics = "append_only" | "reference_only";
+export type ItsmSandboxConformanceState =
+  | "conformant"
+  | "unavailable"
+  | "profile_blocked"
+  | "trust_failed"
+  | "credential_failed"
+  | "permission_failed"
+  | "mapping_failed"
+  | "round_trip_failed";
 
 export type ItsmFieldMapping = {
   source_field: string;
@@ -65,10 +74,53 @@ export type ItsmIntegrationInventory = {
   truncated: boolean;
 };
 
+export type ItsmSandboxConformanceAssessment = {
+  assessment_id: string;
+  schema_version: "atlas.itsm-sandbox-conformance-assessment.v1";
+  version: 1;
+  organization_id: string;
+  environment_id: string;
+  site_id: string;
+  profile_id: string;
+  profile_version: number;
+  profile_digest: string;
+  mapping_version: number;
+  assessed_by: string;
+  adapter_id: string;
+  adapter_version: string;
+  adapter_production_eligible: boolean;
+  diagnostic_contract_version: string;
+  challenge_digest: string;
+  observed_at: string;
+  valid_until: string;
+  state: ItsmSandboxConformanceState;
+  reason_codes: string[];
+  canonical_digest: string;
+  diagnostic_only: true;
+  sandbox_conformant: boolean;
+  production_ready: false;
+  dispatch_authorized: false;
+  external_record_mutation_authorized: false;
+  workflow_approved: false;
+  execution_authorized: false;
+  infrastructure_mutation_performed: false;
+  reused: boolean;
+};
+
 const providerFamilies = new Set<ItsmProviderFamily>([
   "service_now",
   "jira_service_management",
   "generic_rest",
+]);
+const sandboxStates = new Set<ItsmSandboxConformanceState>([
+  "conformant",
+  "unavailable",
+  "profile_blocked",
+  "trust_failed",
+  "credential_failed",
+  "permission_failed",
+  "mapping_failed",
+  "round_trip_failed",
 ]);
 
 function isProfile(value: unknown): value is ItsmIntegrationProfile {
@@ -97,6 +149,45 @@ function isProfile(value: unknown): value is ItsmIntegrationProfile {
 function readProfileResponse(value: unknown): ItsmIntegrationProfile {
   if (!value || typeof value !== "object" || !("data" in value) || !isProfile(value.data)) {
     throw new ApiRequestError("ITSM integration response was unsafe", 500);
+  }
+  return value.data;
+}
+
+export function isSandboxConformance(
+  value: unknown,
+): value is ItsmSandboxConformanceAssessment {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return (
+    record.schema_version === "atlas.itsm-sandbox-conformance-assessment.v1" &&
+    typeof record.assessment_id === "string" &&
+    typeof record.profile_id === "string" &&
+    typeof record.profile_version === "number" &&
+    typeof record.profile_digest === "string" &&
+    typeof record.adapter_id === "string" &&
+    typeof record.valid_until === "string" &&
+    sandboxStates.has(record.state as ItsmSandboxConformanceState) &&
+    Array.isArray(record.reason_codes) &&
+    record.diagnostic_only === true &&
+    typeof record.sandbox_conformant === "boolean" &&
+    record.production_ready === false &&
+    record.dispatch_authorized === false &&
+    record.external_record_mutation_authorized === false &&
+    record.workflow_approved === false &&
+    record.execution_authorized === false &&
+    record.infrastructure_mutation_performed === false &&
+    !("idempotency_key" in record || "request_fingerprint" in record || "secret_reference_id" in record)
+  );
+}
+
+function readSandboxConformanceResponse(value: unknown): ItsmSandboxConformanceAssessment {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !("data" in value) ||
+    !isSandboxConformance(value.data)
+  ) {
+    throw new ApiRequestError("ITSM sandbox conformance response was unsafe", 500);
   }
   return value.data;
 }
@@ -206,4 +297,43 @@ export async function retireItsmIntegrationProfile(input: {
   );
   if (!response.ok) throw new ApiRequestError("ITSM profile retirement failed", response.status);
   return readProfileResponse(await response.json());
+}
+
+export async function assessItsmSandboxConformance(
+  profile: ItsmIntegrationProfile,
+): Promise<ItsmSandboxConformanceAssessment> {
+  const response = await apiFetch(
+    `/api/v1/itsm/integrations/${encodeURIComponent(profile.profile_id)}/sandbox-conformance-assessments`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": `itsm-sandbox-conformance.${crypto.randomUUID()}`,
+      },
+      body: JSON.stringify({
+        schema_version: "atlas.itsm-sandbox-conformance-input.v1",
+        expected_profile_version: profile.version,
+        acknowledged_diagnostic_only_and_no_dispatch: true,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new ApiRequestError("ITSM sandbox conformance assessment failed", response.status);
+  }
+  return readSandboxConformanceResponse(await response.json());
+}
+
+export async function getLatestItsmSandboxConformance(
+  profileId: string,
+): Promise<ItsmSandboxConformanceAssessment | null> {
+  const response = await apiFetch(
+    `/api/v1/itsm/integrations/${encodeURIComponent(profileId)}/sandbox-conformance-assessments/latest`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new ApiRequestError("ITSM sandbox conformance lookup failed", response.status);
+  }
+  return readSandboxConformanceResponse(await response.json());
 }

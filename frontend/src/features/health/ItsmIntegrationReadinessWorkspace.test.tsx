@@ -3,16 +3,21 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  assessItsmSandboxConformance,
   createItsmIntegrationProfile,
+  getLatestItsmSandboxConformance,
   getItsmIntegrationProfiles,
   retireItsmIntegrationProfile,
   type ItsmIntegrationProfile,
+  type ItsmSandboxConformanceAssessment,
 } from "../../api/itsmIntegrations";
 import ItsmIntegrationReadinessWorkspace from "./ItsmIntegrationReadinessWorkspace";
 
 vi.mock("../../api/itsmIntegrations", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../api/itsmIntegrations")>()),
   createItsmIntegrationProfile: vi.fn(),
+  assessItsmSandboxConformance: vi.fn(),
+  getLatestItsmSandboxConformance: vi.fn(),
   getItsmIntegrationProfiles: vi.fn(),
   retireItsmIntegrationProfile: vi.fn(),
 }));
@@ -70,6 +75,39 @@ const profile: ItsmIntegrationProfile = {
   reused: false,
 };
 
+const conformance: ItsmSandboxConformanceAssessment = {
+  assessment_id: "itsm-sandbox-conformance.test-01",
+  schema_version: "atlas.itsm-sandbox-conformance-assessment.v1",
+  version: 1,
+  organization_id: "organization.development",
+  environment_id: "environment.test",
+  site_id: "site.local",
+  profile_id: profile.profile_id,
+  profile_version: profile.version,
+  profile_digest: profile.canonical_digest,
+  mapping_version: profile.mapping_version,
+  assessed_by: "subject.test",
+  adapter_id: "adapter.itsm.synthetic-no-network",
+  adapter_version: "version.1",
+  adapter_production_eligible: false,
+  diagnostic_contract_version: "contract.itsm-sandbox-conformance.v1",
+  challenge_digest: "c".repeat(64),
+  observed_at: "2026-08-13T05:00:00Z",
+  valid_until: "2026-08-13T05:10:00Z",
+  state: "conformant",
+  reason_codes: ["itsm.sandbox-conformance.synthetic_contract_conformant"],
+  canonical_digest: "d".repeat(64),
+  diagnostic_only: true,
+  sandbox_conformant: true,
+  production_ready: false,
+  dispatch_authorized: false,
+  external_record_mutation_authorized: false,
+  workflow_approved: false,
+  execution_authorized: false,
+  infrastructure_mutation_performed: false,
+  reused: false,
+};
+
 function renderWorkspace(governedSessionAvailable = true) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -88,6 +126,8 @@ beforeEach(() => {
     truncated: false,
   });
   vi.mocked(createItsmIntegrationProfile).mockResolvedValue(profile);
+  vi.mocked(getLatestItsmSandboxConformance).mockResolvedValue(null);
+  vi.mocked(assessItsmSandboxConformance).mockResolvedValue(conformance);
   vi.mocked(retireItsmIntegrationProfile).mockResolvedValue({
     ...profile,
     version: 2,
@@ -121,6 +161,7 @@ describe("ItsmIntegrationReadinessWorkspace", () => {
     expect(await screen.findByText("Primary ITSM sandbox")).toBeVisible();
     expect(screen.getByRole("button", { name: "Add profile" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Retire Primary ITSM sandbox" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Assess sandbox" })).toBeDisabled();
   });
 
   it("requires the configuration-only acknowledgement before registration", async () => {
@@ -144,5 +185,23 @@ describe("ItsmIntegrationReadinessWorkspace", () => {
     fireEvent.click(submit);
 
     await waitFor(() => expect(createItsmIntegrationProfile).toHaveBeenCalledTimes(1));
+  });
+
+  it("runs only the acknowledged profile-bound diagnostic and presents no authority", async () => {
+    renderWorkspace();
+    const assess = await screen.findByRole("button", { name: "Assess sandbox" });
+    fireEvent.click(assess);
+
+    const run = screen.getByRole("button", { name: "Run diagnostic" });
+    expect(run).toBeDisabled();
+    fireEvent.click(screen.getByLabelText(/diagnostic evidence only/i));
+    expect(run).toBeEnabled();
+    fireEvent.click(run);
+
+    await waitFor(() => expect(assessItsmSandboxConformance).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(assessItsmSandboxConformance).mock.calls[0]?.[0]).toEqual(profile);
+    expect(await screen.findByText("conformant")).toBeVisible();
+    expect(screen.getByText("adapter.itsm.synthetic-no-network")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /dispatch|create ticket|execute/i })).toBeNull();
   });
 });

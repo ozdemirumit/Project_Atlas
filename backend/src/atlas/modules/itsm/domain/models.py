@@ -54,6 +54,17 @@ class ItsmCheckState(StrEnum):
     BLOCKED = "blocked"
 
 
+class ItsmSandboxConformanceState(StrEnum):
+    CONFORMANT = "conformant"
+    UNAVAILABLE = "unavailable"
+    PROFILE_BLOCKED = "profile_blocked"
+    TRUST_FAILED = "trust_failed"
+    CREDENTIAL_FAILED = "credential_failed"
+    PERMISSION_FAILED = "permission_failed"
+    MAPPING_FAILED = "mapping_failed"
+    ROUND_TRIP_FAILED = "round_trip_failed"
+
+
 @dataclass(frozen=True, slots=True)
 class ItsmFieldMapping:
     source_field: str
@@ -238,3 +249,118 @@ class ItsmIntegrationProfile:
             or not 8 <= len(self.retirement_idempotency_key) <= 128
         ):
             raise ValueError("ITSM profile retirement metadata is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class ItsmSandboxDiagnostic:
+    adapter_id: str
+    adapter_version: str
+    organization_id: str
+    environment_id: str
+    site_id: str
+    profile_id: str
+    profile_version: int
+    challenge_digest: str
+    state: ItsmSandboxConformanceState
+    reason_code: str
+    production_eligible: bool = False
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.adapter_id,
+            self.adapter_version,
+            self.organization_id,
+            self.environment_id,
+            self.site_id,
+            self.profile_id,
+            self.reason_code,
+        ):
+            validate_stable_identifier(value, "ITSM sandbox diagnostic identifier")
+        if (
+            self.profile_version < 1
+            or _DIGEST.fullmatch(self.challenge_digest) is None
+            or not self.reason_code.startswith("itsm.sandbox-conformance.")
+        ):
+            raise ValueError("ITSM sandbox diagnostic is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class ItsmSandboxConformanceAssessment:
+    assessment_id: str
+    schema_version: str
+    version: int
+    organization_id: str
+    environment_id: str
+    site_id: str
+    profile_id: str
+    profile_version: int
+    profile_digest: str
+    mapping_version: int
+    assessed_by: str
+    adapter_id: str
+    adapter_version: str
+    adapter_production_eligible: bool
+    diagnostic_contract_version: str
+    challenge_digest: str
+    observed_at: datetime
+    valid_until: datetime
+    state: ItsmSandboxConformanceState
+    reason_codes: tuple[str, ...]
+    request_fingerprint: str
+    idempotency_key: str
+    canonical_digest: str
+    diagnostic_only: bool = True
+    sandbox_conformant: bool = False
+    production_ready: bool = False
+    dispatch_authorized: bool = False
+    external_record_mutation_authorized: bool = False
+    workflow_approved: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_performed: bool = False
+    reused: bool = False
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.assessment_id,
+            self.schema_version,
+            self.organization_id,
+            self.environment_id,
+            self.site_id,
+            self.profile_id,
+            self.assessed_by,
+            self.adapter_id,
+            self.adapter_version,
+            self.diagnostic_contract_version,
+        ):
+            validate_stable_identifier(value, "ITSM sandbox conformance identifier")
+        if (
+            self.schema_version != "atlas.itsm-sandbox-conformance-assessment.v1"
+            or self.version != 1
+            or self.profile_version < 1
+            or self.mapping_version < 1
+            or _DIGEST.fullmatch(self.profile_digest) is None
+            or _DIGEST.fullmatch(self.challenge_digest) is None
+            or _DIGEST.fullmatch(self.request_fingerprint) is None
+            or _DIGEST.fullmatch(self.canonical_digest) is None
+            or self.observed_at.tzinfo is None
+            or self.valid_until.tzinfo is None
+            or self.valid_until <= self.observed_at
+            or not self.reason_codes
+            or any(
+                not reason.startswith("itsm.sandbox-conformance.") for reason in self.reason_codes
+            )
+            or not 8 <= len(self.idempotency_key) <= 128
+            or not self.diagnostic_only
+            or self.sandbox_conformant != (self.state is ItsmSandboxConformanceState.CONFORMANT)
+            or self.production_ready
+            or any(
+                (
+                    self.dispatch_authorized,
+                    self.external_record_mutation_authorized,
+                    self.workflow_approved,
+                    self.execution_authorized,
+                    self.infrastructure_mutation_performed,
+                )
+            )
+        ):
+            raise ValueError("ITSM sandbox conformance assessment is invalid")

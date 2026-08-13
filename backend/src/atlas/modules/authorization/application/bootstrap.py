@@ -35,6 +35,8 @@ INVENTORY_DEVICE_RETIRE = "inventory.devices.retire"
 ITSM_INTEGRATION_READ = "itsm.integrations.read"
 ITSM_INTEGRATION_CREATE = "itsm.integrations.create"
 ITSM_INTEGRATION_RETIRE = "itsm.integrations.retire"
+ITSM_SANDBOX_CONFORMANCE_READ = "itsm.integrations.sandbox-conformance.read"
+ITSM_SANDBOX_CONFORMANCE_CREATE = "itsm.integrations.sandbox-conformance.create"
 AI_GROUNDED_QUERY_CREATE = "ai.grounded-query.create"
 GRAPH_STORAGE_IMPACT_READ = "graph.storage-impact.read"
 HEALTH_CHECK_OVERVIEW_READ = "health-check.overview.read"
@@ -425,6 +427,14 @@ def itsm_integration_permission_definitions() -> tuple[PermissionDefinition, ...
         PermissionDefinition(
             permission_id=ITSM_INTEGRATION_RETIRE,
             description="Retire one ITSM integration profile while preserving history.",
+        ),
+        PermissionDefinition(
+            permission_id=ITSM_SANDBOX_CONFORMANCE_READ,
+            description="Read minimized ITSM sandbox conformance evidence.",
+        ),
+        PermissionDefinition(
+            permission_id=ITSM_SANDBOX_CONFORMANCE_CREATE,
+            description="Run one fixed diagnostic against an exact ITSM sandbox profile.",
         ),
     )
 
@@ -2655,6 +2665,8 @@ def build_development_authorization_service(
                 ITSM_INTEGRATION_READ,
                 ITSM_INTEGRATION_CREATE,
                 ITSM_INTEGRATION_RETIRE,
+                ITSM_SANDBOX_CONFORMANCE_READ,
+                ITSM_SANDBOX_CONFORMANCE_CREATE,
                 AI_GROUNDED_QUERY_CREATE,
                 GRAPH_STORAGE_IMPACT_READ,
                 HEALTH_CHECK_OVERVIEW_READ,

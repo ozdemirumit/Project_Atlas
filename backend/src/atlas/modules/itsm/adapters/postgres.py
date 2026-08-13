@@ -10,7 +10,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from atlas.core.classification import DataClassification
-from atlas.core.persistence.models import ItsmIntegrationProfileModel
+from atlas.core.persistence.models import (
+    ItsmIntegrationProfileModel,
+    ItsmSandboxConformanceModel,
+)
 from atlas.modules.itsm.application.service import ItsmIntegrationService
 from atlas.modules.itsm.domain.models import (
     ItsmAllowedOperation,
@@ -22,6 +25,8 @@ from atlas.modules.itsm.domain.models import (
     ItsmReadinessAssessment,
     ItsmReadinessCheck,
     ItsmReadinessState,
+    ItsmSandboxConformanceAssessment,
+    ItsmSandboxConformanceState,
     ItsmWriteSemantics,
 )
 
@@ -138,6 +143,71 @@ class PostgreSQLItsmIntegrationProfileRepository:
                 return False
         return True
 
+    async def get_latest_sandbox_conformance(
+        self,
+        *,
+        organization_id: str,
+        environment_id: str,
+        site_id: str,
+        profile_id: str,
+    ) -> ItsmSandboxConformanceAssessment | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ItsmSandboxConformanceModel)
+                .where(
+                    ItsmSandboxConformanceModel.organization_id == organization_id,
+                    ItsmSandboxConformanceModel.environment_id == environment_id,
+                    ItsmSandboxConformanceModel.site_id == site_id,
+                    ItsmSandboxConformanceModel.profile_id == profile_id,
+                )
+                .order_by(
+                    ItsmSandboxConformanceModel.observed_at.desc(),
+                    ItsmSandboxConformanceModel.assessment_id.desc(),
+                )
+                .limit(1)
+            )
+            return self._sandbox_to_domain(row.payload) if row else None
+
+    async def get_sandbox_conformance_by_key(
+        self, *, assessed_by: str, idempotency_key: str
+    ) -> ItsmSandboxConformanceAssessment | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ItsmSandboxConformanceModel).where(
+                    ItsmSandboxConformanceModel.assessed_by == assessed_by,
+                    ItsmSandboxConformanceModel.idempotency_key == idempotency_key,
+                )
+            )
+            return self._sandbox_to_domain(row.payload) if row else None
+
+    async def add_sandbox_conformance(self, assessment: ItsmSandboxConformanceAssessment) -> bool:
+        payload = ItsmIntegrationService._normalize(asdict(assessment))
+        assert isinstance(payload, dict)
+        async with self._sessions() as session:
+            try:
+                session.add(
+                    ItsmSandboxConformanceModel(
+                        assessment_id=assessment.assessment_id,
+                        organization_id=assessment.organization_id,
+                        environment_id=assessment.environment_id,
+                        site_id=assessment.site_id,
+                        profile_id=assessment.profile_id,
+                        profile_version=assessment.profile_version,
+                        state=assessment.state.value,
+                        assessed_by=assessment.assessed_by,
+                        idempotency_key=assessment.idempotency_key,
+                        observed_at=assessment.observed_at,
+                        valid_until=assessment.valid_until,
+                        canonical_digest=assessment.canonical_digest,
+                        payload=cast(dict[str, Any], payload),
+                    )
+                )
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+                return False
+        return True
+
     async def close(self) -> None:
         await self._engine.dispose()
 
@@ -213,3 +283,12 @@ class PostgreSQLItsmIntegrationProfileRepository:
         payload["readiness"] = ItsmReadinessAssessment(**cast(Any, readiness))
         payload["lifecycle"] = ItsmProfileLifecycle(str(payload["lifecycle"]))
         return ItsmIntegrationProfile(**cast(Any, payload))
+
+    @staticmethod
+    def _sandbox_to_domain(raw: dict[str, Any]) -> ItsmSandboxConformanceAssessment:
+        payload = dict(raw)
+        for field in ("observed_at", "valid_until"):
+            payload[field] = datetime.fromisoformat(str(payload[field]))
+        payload["state"] = ItsmSandboxConformanceState(str(payload["state"]))
+        payload["reason_codes"] = tuple(str(item) for item in payload["reason_codes"])
+        return ItsmSandboxConformanceAssessment(**cast(Any, payload))

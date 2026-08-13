@@ -15,6 +15,9 @@ from atlas.modules.identity.domain.models import (
 )
 from atlas.modules.itsm.adapters.memory import InMemoryItsmIntegrationProfileRepository
 from atlas.modules.itsm.adapters.postgres import PostgreSQLItsmIntegrationProfileRepository
+from atlas.modules.itsm.adapters.sandbox import (
+    DeterministicNoNetworkItsmSandboxConformanceAdapter,
+)
 from atlas.modules.itsm.application.service import ItsmIntegrationError, ItsmIntegrationService
 from atlas.modules.itsm.domain.models import (
     ItsmAllowedOperation,
@@ -22,6 +25,7 @@ from atlas.modules.itsm.domain.models import (
     ItsmProfileLifecycle,
     ItsmProviderFamily,
     ItsmReadinessState,
+    ItsmSandboxConformanceState,
     ItsmWriteSemantics,
 )
 
@@ -201,3 +205,143 @@ async def test_postgres_payload_round_trip_preserves_readiness_and_no_authority(
     assert restored.secret_reference_id == "secret.itsm.sandbox.writer"
     assert restored.readiness.dispatch_authorized is False
     assert restored.readiness.external_record_mutation_authorized is False
+
+
+@pytest.mark.asyncio
+async def test_sandbox_conformance_is_exact_profile_bound_idempotent_and_diagnostic_only() -> None:
+    repository = InMemoryItsmIntegrationProfileRepository()
+    service = ItsmIntegrationService(
+        repository=repository,
+        audit_sink=CollectingAuditSink(),
+        environment_id="environment.test",
+        sandbox_conformance_adapter=DeterministicNoNetworkItsmSandboxConformanceAdapter(),
+        clock=lambda: NOW,
+    )
+    profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
+    values = {
+        "actor": actor(),
+        "profile_id": profile.profile_id,
+        "expected_profile_version": profile.version,
+        "acknowledged_diagnostic_only_and_no_dispatch": True,
+        "idempotency_key": "itsm-sandbox-assessment-0001",
+        "correlation_id": "correlation.itsm.sandbox.assessment",
+    }
+
+    assessment = await service.assess_sandbox_conformance(**values)  # type: ignore[arg-type]
+    replay = await service.assess_sandbox_conformance(**values)  # type: ignore[arg-type]
+    latest = await service.latest_sandbox_conformance(
+        actor=actor(),
+        profile_id=profile.profile_id,
+        correlation_id="correlation.itsm.sandbox.latest",
+    )
+
+    assert assessment.state is ItsmSandboxConformanceState.CONFORMANT
+    assert assessment.profile_digest == profile.canonical_digest
+    assert assessment.mapping_version == profile.mapping_version
+    assert assessment.adapter_id == "adapter.itsm.synthetic-no-network"
+    assert replay.assessment_id == assessment.assessment_id
+    assert replay.reused is True
+    assert latest == assessment
+    assert assessment.sandbox_conformant is True
+    assert not any(
+        (
+            assessment.production_ready,
+            assessment.dispatch_authorized,
+            assessment.external_record_mutation_authorized,
+            assessment.workflow_approved,
+            assessment.execution_authorized,
+            assessment.infrastructure_mutation_performed,
+        )
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "adapter_state",
+    [
+        ItsmSandboxConformanceState.UNAVAILABLE,
+        ItsmSandboxConformanceState.TRUST_FAILED,
+        ItsmSandboxConformanceState.CREDENTIAL_FAILED,
+        ItsmSandboxConformanceState.PERMISSION_FAILED,
+        ItsmSandboxConformanceState.MAPPING_FAILED,
+        ItsmSandboxConformanceState.ROUND_TRIP_FAILED,
+    ],
+)
+async def test_sandbox_adapter_outcomes_remain_bounded(
+    adapter_state: ItsmSandboxConformanceState,
+) -> None:
+    service = ItsmIntegrationService(
+        repository=InMemoryItsmIntegrationProfileRepository(),
+        audit_sink=CollectingAuditSink(),
+        environment_id="environment.test",
+        sandbox_conformance_adapter=DeterministicNoNetworkItsmSandboxConformanceAdapter(
+            state=adapter_state
+        ),
+        clock=lambda: NOW,
+    )
+    profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
+    assessment = await service.assess_sandbox_conformance(
+        actor=actor(),
+        profile_id=profile.profile_id,
+        expected_profile_version=profile.version,
+        acknowledged_diagnostic_only_and_no_dispatch=True,
+        idempotency_key=f"itsm-sandbox-{adapter_state.value}",
+        correlation_id="correlation.itsm.sandbox.failure",
+    )
+
+    assert assessment.state is adapter_state
+    assert assessment.sandbox_conformant is False
+    assert assessment.reason_codes[0].startswith("itsm.sandbox-conformance.")
+
+
+@pytest.mark.asyncio
+async def test_sandbox_conformance_blocks_incomplete_profile_before_adapter() -> None:
+    service = ItsmIntegrationService(
+        repository=InMemoryItsmIntegrationProfileRepository(),
+        audit_sink=CollectingAuditSink(),
+        environment_id="environment.test",
+        sandbox_conformance_adapter=DeterministicNoNetworkItsmSandboxConformanceAdapter(),
+        clock=lambda: NOW,
+    )
+    profile = await service.create(
+        actor=actor(),
+        **create_values(field_mappings=(mappings()[0],)),  # type: ignore[arg-type]
+    )
+    assessment = await service.assess_sandbox_conformance(
+        actor=actor(),
+        profile_id=profile.profile_id,
+        expected_profile_version=profile.version,
+        acknowledged_diagnostic_only_and_no_dispatch=True,
+        idempotency_key="itsm-sandbox-profile-blocked",
+        correlation_id="correlation.itsm.sandbox.blocked",
+    )
+
+    assert assessment.state is ItsmSandboxConformanceState.PROFILE_BLOCKED
+    assert assessment.adapter_id == "adapter.itsm.application"
+
+
+@pytest.mark.asyncio
+async def test_sandbox_assessment_postgres_payload_round_trip_preserves_boundaries() -> None:
+    service = ItsmIntegrationService(
+        repository=InMemoryItsmIntegrationProfileRepository(),
+        audit_sink=CollectingAuditSink(),
+        environment_id="environment.test",
+        sandbox_conformance_adapter=DeterministicNoNetworkItsmSandboxConformanceAdapter(),
+        clock=lambda: NOW,
+    )
+    profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
+    assessment = await service.assess_sandbox_conformance(
+        actor=actor(),
+        profile_id=profile.profile_id,
+        expected_profile_version=profile.version,
+        acknowledged_diagnostic_only_and_no_dispatch=True,
+        idempotency_key="itsm-sandbox-postgres-roundtrip",
+        correlation_id="correlation.itsm.sandbox.postgres",
+    )
+    payload = ItsmIntegrationService._normalize(asdict(assessment))
+    assert isinstance(payload, dict)
+    restored = PostgreSQLItsmIntegrationProfileRepository._sandbox_to_domain(payload)
+
+    assert restored == assessment
+    assert restored.profile_digest == profile.canonical_digest
+    assert restored.dispatch_authorized is False

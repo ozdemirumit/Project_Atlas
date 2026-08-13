@@ -770,6 +770,10 @@ from atlas.modules.investigations.adapters.synthetic import SyntheticInvestigati
 from atlas.modules.investigations.application.service import InvestigationService
 from atlas.modules.itsm.adapters.memory import InMemoryItsmIntegrationProfileRepository
 from atlas.modules.itsm.adapters.postgres import PostgreSQLItsmIntegrationProfileRepository
+from atlas.modules.itsm.adapters.sandbox import (
+    DeterministicNoNetworkItsmSandboxConformanceAdapter,
+    UnavailableItsmSandboxConformanceAdapter,
+)
 from atlas.modules.itsm.application.service import ItsmIntegrationService
 from atlas.modules.knowledge.adapters.correction_resubmission_memory import (
     InMemoryOperationalKnowledgeCorrectionPolicySource,
@@ -5038,6 +5042,11 @@ def create_app(
         ),
         audit_sink=resolved_audit_sink,
         environment_id=f"environment.{resolved_settings.environment}",
+        sandbox_conformance_adapter=(
+            UnavailableItsmSandboxConformanceAdapter()
+            if is_production
+            else DeterministicNoNetworkItsmSandboxConformanceAdapter()
+        ),
     )
     resolved_graph_impact_service = graph_impact_service or GraphImpactService(
         analyzer=resolved_graph_analyzer,

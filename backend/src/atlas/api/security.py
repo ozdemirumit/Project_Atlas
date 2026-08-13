@@ -145,6 +145,8 @@ from atlas.modules.authorization.application.bootstrap import (
     ITSM_INTEGRATION_CREATE,
     ITSM_INTEGRATION_READ,
     ITSM_INTEGRATION_RETIRE,
+    ITSM_SANDBOX_CONFORMANCE_CREATE,
+    ITSM_SANDBOX_CONFORMANCE_READ,
     KNOWLEDGE_CORRECTION_RESUBMISSION_CREATE,
     KNOWLEDGE_CORRECTION_RESUBMISSION_READ,
     KNOWLEDGE_DETERMINISTIC_CHUNKING_CREATE,
@@ -1155,6 +1157,30 @@ async def authorize_itsm_integration_retire(
         request,
         subject,
         permission_id=ITSM_INTEGRATION_RETIRE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_itsm_sandbox_conformance_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_itsm_integration(
+        request,
+        subject,
+        permission_id=ITSM_SANDBOX_CONFORMANCE_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def authorize_itsm_sandbox_conformance_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(itsm_integration_mutation_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_itsm_integration(
+        request,
+        subject,
+        permission_id=ITSM_SANDBOX_CONFORMANCE_CREATE,
         capability_class=CapabilityClass.C2_DIAGNOSTIC,
     )
 
