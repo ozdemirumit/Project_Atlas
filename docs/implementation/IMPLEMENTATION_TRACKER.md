@@ -4,14 +4,45 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-169 |
-| Title | Durable technical reports and post-restart ITSM review revalidation |
-| Status | In Progress; implementation and local validation complete, delivery pending |
-| Branch | `agent/durable-technical-reports` |
+| Task ID | ATLAS-IMP-170 |
+| Title | Provider-neutral ITSM adapter readiness and sandbox configuration contracts |
+| Status | In Progress; scope and acceptance recorded |
+| Branch | `main` (start record; implementation branch pending) |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-016, ATLAS-032, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-124, ADR-125 (planned) |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-124, ADR-125, ADR-126 (planned) |
 | Last Updated | 2026-08-13 |
-| Next Action | Publish the validated exact head, pass PR CI, merge, verify independent `main` CI and record delivery evidence |
+| Next Action | Record ADR-126 and implement provider-neutral ITSM profile, mapping and sandbox-readiness evidence without dispatch or external mutation |
+
+### ATLAS-IMP-170 Scope Rationale
+
+- IMP-168 through IMP-169 establish durable report-bound handoff drafts and exact human-review
+  evidence, but Atlas has no governed model for an ITSM provider profile, endpoint trust boundary,
+  secret reference, field-mapping version or sandbox-validation evidence.
+- ATLAS-036 requires those deployment inputs and lifecycle controls before outbound operations can
+  be considered. No ITSM vendor or production endpoint has been selected, so the next safe slice is
+  provider-neutral readiness rather than dispatch.
+- This slice records configuration and readiness evidence only. It does not contact an ITSM endpoint,
+  retrieve a secret, create or update a ticket, enqueue outbound work, approve a workflow or grant
+  infrastructure execution authority.
+
+### ATLAS-IMP-170 Acceptance Criteria
+
+- An immutable ITSM adapter profile binds organization, environment, provider family, instance and
+  purpose, endpoint origin, trust-boundary reference, secret reference, data classification ceiling,
+  allowed operation set and lifecycle without returning secret material.
+- Versioned field mappings bind normalized Atlas fields to provider fields, declare append-only versus
+  create semantics and reject arbitrary fields, credentials, unsupported mutations or authority
+  escalation.
+- A deterministic readiness assessment reports exact blockers for ownership, network/trust,
+  credential reference, mapping, sandbox and audit prerequisites. Readiness does not authorize
+  dispatch and cannot be inferred from human handoff review alone.
+- Dedicated default-deny permissions, exact-scope authorization, attributable audit, idempotency,
+  optimistic concurrency, no-store responses and durable PostgreSQL repositories follow existing
+  platform patterns; in-memory development behavior remains available.
+- The UI presents profile inventory, mapping version and readiness blockers while exposing no secret,
+  arbitrary endpoint test, dispatch, ticket mutation, workflow approval or execution control.
+- ADR, focused and full backend/frontend gates, one Alembic head, production build and live responsive
+  validation pass before delivery.
 
 ### ATLAS-IMP-169 Scope Rationale
 
@@ -66,6 +97,15 @@
   horizontal overflow; no dispatch or execute button was present. The local no-database profile
   remains explicitly process-memory-only, while restart persistence is covered by reconstructed
   shared-repository tests and the PostgreSQL adapter contract.
+
+### ATLAS-IMP-169 Delivery Evidence
+
+- Source head `8f29ffcc85229bc93c07422cb55a71f3fa738e95` passed exact-head PR CI run
+  `31653596573`; backend completed in 7m39s and frontend in 3m56s.
+- PR [#181](https://github.com/ozdemirumit/Project_Atlas/pull/181) was squash-merged as
+  `75cb7fef5286a7c559ca54b3fa20105924ba726c`.
+- The exact merged commit independently passed `main` CI run `31654072049`; backend completed in
+  7m49s and frontend in 3m40s.
 
 ### ATLAS-IMP-168 Scope Rationale
 
