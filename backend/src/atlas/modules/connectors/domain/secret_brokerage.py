@@ -144,7 +144,12 @@ class ConnectorSecretBrokeragePolicySnapshot:
             or not 1 <= self.minimum_rotation_window_hours <= 8760
             or not 1 <= self.maximum_runtime_trust_age_hours <= 8760
             or not 1 <= self.maximum_profile_age_hours <= 8760
-            or self.required_assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or self.required_assurance_level
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or self.required_effective_state != ENABLED_SECRET_BROKERAGE_GOVERNED
             or not self.signature_verified
             or self.issued_at.tzinfo is None

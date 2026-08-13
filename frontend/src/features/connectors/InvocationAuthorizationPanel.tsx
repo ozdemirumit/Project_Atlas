@@ -174,8 +174,8 @@ export function InvocationAuthorizationPanel({
           <div>
             <h3>Invocation authorization unavailable</h3>
             <p>
-              Session lineage, enabled capability, exact permission, signed evidence, scope,
-              hardware-backed assurance, or separation failed.
+              Session lineage, enabled capability, exact permission, signed authorization-policy
+              evidence, requested scope, or separation of duties failed.
             </p>
           </div>
         </div>

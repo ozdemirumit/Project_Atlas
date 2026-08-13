@@ -35,7 +35,7 @@ IDEMPOTENCY = Header(
 
 def _raise(error: ConnectorRuntimeActivationError) -> NoReturn:
     code = str(error)
-    if code.endswith(("required", "mfa_required", "separation_required")):
+    if code.endswith(("required", "human_required", "separation_required")):
         status = 403
     elif code.endswith("not_found"):
         status = 404

@@ -44,8 +44,8 @@ from atlas.modules.connectors.domain.secret_brokerage import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 SECRET_BROKERAGE_CREATE_PERMISSION = "connectors.secret-brokerage-authorizations.create"
@@ -96,7 +96,7 @@ class ConnectorSecretBrokerageService:
         idempotency_key: str,
         correlation_id: str,
     ) -> ConnectorSecretBrokerageAuthorizationRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         if not authorization_only_acknowledged:
             raise ConnectorSecretBrokerageError("secret_brokerage_acknowledgement_required")
         purpose = purpose.strip()
@@ -253,7 +253,7 @@ class ConnectorSecretBrokerageService:
     async def get(
         self, *, actor: AuthenticatedSubject, authorization_id: str, correlation_id: str
     ) -> ConnectorSecretBrokerageAuthorizationRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         record = await self._repository.get(authorization_id=authorization_id)
         if record is None:
             raise ConnectorSecretBrokerageError("secret_brokerage_record_not_found")
@@ -445,7 +445,9 @@ class ConnectorSecretBrokerageService:
             or now - runtime_trust.granted_at
             > timedelta(hours=policy.maximum_runtime_trust_age_hours)
             or now - profile.issued_at > timedelta(hours=policy.maximum_profile_age_hours)
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or not assurance_satisfies_policy(
+                actor.assurance_level, policy.required_assurance_level
+            )
         ):
             raise ConnectorSecretBrokerageError("secret_brokerage_invalid")
 
@@ -484,15 +486,9 @@ class ConnectorSecretBrokerageService:
         ).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
-            raise ConnectorSecretBrokerageError(
-                "secret_brokerage_enterprise_human_hardware_mfa_required"
-            )
+    def _require_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
+            raise ConnectorSecretBrokerageError("secret_brokerage_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -608,7 +604,7 @@ def build_development_connector_secret_brokerage_policy(
         minimum_rotation_window_hours=24,
         maximum_runtime_trust_age_hours=720,
         maximum_profile_age_hours=168,
-        required_assurance_level=AssuranceLevel.HARDWARE_BACKED,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         required_effective_state=ENABLED_SECRET_BROKERAGE_GOVERNED,
         authorization_schema=SECRET_BROKERAGE_AUTHORIZATION_SCHEMA,
         signed_by="subject.connector-secret-brokerage-policy-signer",

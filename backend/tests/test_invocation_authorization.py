@@ -12,6 +12,7 @@ from test_package_acquisition import CollectingAuditSink
 from test_runtime_activation import FailSecondAuditSink
 from test_secret_brokerage import RuntimeFixture
 from test_target_session import (
+    development_target_session_operator,
     target_session_fixture,
     target_session_operator,
     verify_target_session,
@@ -29,6 +30,7 @@ from atlas.modules.connectors.adapters.invocation_authorization_postgres import 
 )
 from atlas.modules.connectors.application.invocation_authorization import (
     ConnectorInvocationAuthorizationService,
+    _signed_snapshot,
     build_connector_invocation_input_envelope,
     build_connector_invocation_profile,
     build_development_connector_invocation_authorization_policy,
@@ -52,7 +54,7 @@ from atlas.modules.connectors.domain.invocation_authorization import (
 from atlas.modules.connectors.domain.target_session import (
     ConnectorTargetSessionVerificationRecord,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject, SubjectKind
 
 ACKNOWLEDGEMENT_FIELD = (
     "acknowledged_single_use_authorization_grants_no_invocation_schedule_execution_or_deployment"
@@ -87,6 +89,7 @@ async def invocation_fixture(
     *,
     audit_sink: CollectingAuditSink | FailSecondAuditSink | None = None,
     permission_authorizer: RecordingPermissionAuthorizer | None = None,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     ConnectorInvocationAuthorizationService,
     ConnectorTargetSessionService,
@@ -135,6 +138,13 @@ async def invocation_fixture(
         issued_at=target_session.verified_at - timedelta(hours=1),
         expires_at=target_session.verified_at + timedelta(days=1),
     )
+    if policy.required_assurance_level is not required_assurance_level:
+        policy = replace(
+            policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        policy = replace(policy, canonical_digest=_signed_snapshot(policy))
     authorizer = permission_authorizer or RecordingPermissionAuthorizer()
     service = ConnectorInvocationAuthorizationService(
         repository=InMemoryConnectorInvocationAuthorizationRepository(),
@@ -225,6 +235,66 @@ async def test_invocation_authorization_is_single_use_bounded_and_idempotent() -
         "connector_invocation_authorization_requested",
         "connector_invocation_authorization_completed",
     ]
+
+
+@pytest.mark.asyncio
+async def test_invocation_authorization_accepts_development_identity_under_default_policy() -> None:
+    service, _, _, _, _, source, profile, envelope, policy, _ = await invocation_fixture()
+    actor = development_target_session_operator(
+        "subject.connector-independent-invocation-authorizer"
+    )
+
+    record = await authorize_invocation(service, source, profile, envelope, policy, actor=actor)
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.authorized_by == actor.subject_id
+    assert record.single_use and not record.consumed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    (AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED),
+)
+async def test_invocation_authorization_enforces_explicit_step_up_policy(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    service, _, _, _, _, source, profile, envelope, policy, authorizer = await invocation_fixture(
+        required_assurance_level=required_assurance_level
+    )
+
+    with pytest.raises(
+        ConnectorInvocationAuthorizationError, match="invocation_authorization_invalid"
+    ):
+        await authorize_invocation(
+            service,
+            source,
+            profile,
+            envelope,
+            policy,
+            actor=development_target_session_operator(
+                "subject.connector-independent-invocation-authorizer"
+            ),
+        )
+
+    assert authorizer.calls == []
+
+
+@pytest.mark.asyncio
+async def test_invocation_authorization_denies_non_human_identity() -> None:
+    service, _, _, _, _, source, profile, envelope, policy, authorizer = await invocation_fixture()
+    actor = replace(
+        development_target_session_operator("subject.connector-independent-invocation-authorizer"),
+        kind=SubjectKind.SERVICE,
+    )
+
+    with pytest.raises(
+        ConnectorInvocationAuthorizationError,
+        match="invocation_authorization_human_required",
+    ):
+        await authorize_invocation(service, source, profile, envelope, policy, actor=actor)
+
+    assert authorizer.calls == []
 
 
 @pytest.mark.asyncio
@@ -336,7 +406,9 @@ def test_invocation_authorization_api_is_csrf_protected_and_minimized(tmp_path: 
         registration_service,
         *_rest,
     ) = runtime_fixture
-    subject = target_session_operator("subject.connector-independent-invocation-authorizer")
+    subject = development_target_session_operator(
+        "subject.connector-independent-invocation-authorizer"
+    )
     app_settings = settings(
         development_subject_id=subject.subject_id,
         mcp_builder_generation_root=tmp_path / "mcp-builder-generations",

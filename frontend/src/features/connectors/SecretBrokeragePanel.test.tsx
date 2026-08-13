@@ -105,4 +105,18 @@ describe("SecretBrokeragePanel", () => {
     for (const forbidden of ["credential_profile_id", "secret_reference_id", "secret_store_profile_id", "broker_id", "lease_policy_id", "maximum_lease_seconds", "runner_workload_identity_id", "delivery_policy_id", "target_profile_id", "endpoint_url", "host", "port", "command", "parameters", "execution_authorized", "deployment_approved"]) expect(body).not.toHaveProperty(forbidden);
     expect(new Headers(init?.headers).get("X-CSRF-Token")).toBe("test-csrf");
   });
+
+  it("reports delivery policy failures without presenting MFA as a prerequisite", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockRejectedValue(new Error("policy rejected")));
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(<QueryClientProvider client={client}><SecretBrokeragePanel runtimeTrust={runtimeTrustGrant} /></QueryClientProvider>);
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Brokerage profile digest" }), { target: { value: profileDigest } });
+    fireEvent.click(screen.getByLabelText(/Authorization grants no lease issuance/));
+    fireEvent.click(screen.getByRole("button", { name: "Authorize brokerage" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/credential posture.*signed delivery-policy evidence.*requested scope.*separation of duties/i);
+    expect(alert).not.toHaveTextContent(/MFA|multi[- ]factor|hardware|assurance/i);
+  });
 });

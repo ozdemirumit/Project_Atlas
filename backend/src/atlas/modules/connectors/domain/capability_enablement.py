@@ -123,7 +123,11 @@ class ConnectorCapabilityEnablementPolicySnapshot:
             or not 1 <= self.maximum_validation_age_hours <= 8760
             or not 1 <= self.maximum_profile_age_hours <= 8760
             or self.required_assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or self.required_effective_state != ENABLED_CAPABILITIES_GOVERNED
             or not self.signature_verified
             or self.issued_at.tzinfo is None

@@ -43,8 +43,8 @@ from atlas.modules.connectors.domain.secret_brokerage import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 RUNTIME_ACTIVATION_CREATE_PERMISSION = "connectors.runtime-activations.create"
@@ -95,7 +95,7 @@ class ConnectorRuntimeActivationService:
         idempotency_key: str,
         correlation_id: str,
     ) -> ConnectorRuntimeActivationRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         if not activation_boundary_acknowledged:
             raise ConnectorRuntimeActivationError("runtime_activation_acknowledgement_required")
         purpose = purpose.strip()
@@ -237,7 +237,7 @@ class ConnectorRuntimeActivationService:
     async def get(
         self, *, actor: AuthenticatedSubject, activation_id: str, correlation_id: str
     ) -> ConnectorRuntimeActivationRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         record = await self._repository.get(activation_id=activation_id)
         if record is None:
             raise ConnectorRuntimeActivationError("runtime_activation_record_not_found")
@@ -451,7 +451,9 @@ class ConnectorRuntimeActivationService:
             or not profile.issued_at <= now < profile.expires_at
             or now - source.authorized_at > timedelta(hours=policy.maximum_brokerage_age_hours)
             or now - profile.issued_at > timedelta(hours=policy.maximum_profile_age_hours)
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or not assurance_satisfies_policy(
+                actor.assurance_level, policy.required_assurance_level
+            )
         ):
             raise ConnectorRuntimeActivationError("runtime_activation_invalid")
 
@@ -544,15 +546,9 @@ class ConnectorRuntimeActivationService:
         return sha256(value.encode("ascii")).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
-            raise ConnectorRuntimeActivationError(
-                "runtime_activation_enterprise_human_hardware_mfa_required"
-            )
+    def _require_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
+            raise ConnectorRuntimeActivationError("runtime_activation_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -686,7 +682,7 @@ def build_development_connector_runtime_activation_policy(
         required_health_probe_ids=("health.package-loaded", "health.runtime-responsive"),
         maximum_brokerage_age_hours=24,
         maximum_profile_age_hours=24,
-        required_assurance_level=AssuranceLevel.HARDWARE_BACKED,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         required_source_state=ENABLED_SECRET_BROKERAGE_GOVERNED,
         activation_schema=RUNTIME_ACTIVATION_SCHEMA,
         signed_by="subject.connector-runtime-activation-policy-signer",

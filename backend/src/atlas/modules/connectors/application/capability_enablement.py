@@ -39,8 +39,8 @@ from atlas.modules.connectors.domain.package_registration import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 CAPABILITY_ENABLEMENT_CREATE_PERMISSION = "connectors.capability-enablements.create"
@@ -89,7 +89,7 @@ class ConnectorCapabilityEnablementService:
         idempotency_key: str,
         correlation_id: str,
     ) -> ConnectorCapabilityEnablementRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         if not acknowledged_enablement_grants_no_secret_runtime_execution_or_deployment_authority:
             raise ConnectorCapabilityEnablementError(
                 "capability_enablement_acknowledgement_required"
@@ -237,7 +237,7 @@ class ConnectorCapabilityEnablementService:
     async def get(
         self, *, actor: AuthenticatedSubject, enablement_id: str, correlation_id: str
     ) -> ConnectorCapabilityEnablementRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         record = await self._repository.get(enablement_id=enablement_id)
         if record is None:
             raise ConnectorCapabilityEnablementError("capability_enablement_record_not_found")
@@ -422,9 +422,8 @@ class ConnectorCapabilityEnablementService:
             or not profile.issued_at <= now < profile.expires_at
             or now - validation.validated_at > timedelta(hours=policy.maximum_validation_age_hours)
             or now - profile.issued_at > timedelta(hours=policy.maximum_profile_age_hours)
-            or (
-                policy.required_assurance_level is AssuranceLevel.HARDWARE_BACKED
-                and actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or not assurance_satisfies_policy(
+                actor.assurance_level, policy.required_assurance_level
             )
         ):
             raise ConnectorCapabilityEnablementError("capability_enablement_invalid")
@@ -464,16 +463,9 @@ class ConnectorCapabilityEnablementService:
         ).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise ConnectorCapabilityEnablementError(
-                "capability_enablement_enterprise_human_mfa_required"
-            )
+    def _require_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
+            raise ConnectorCapabilityEnablementError("capability_enablement_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -581,7 +573,7 @@ def build_development_connector_capability_enablement_policy(
         maximum_capabilities=100,
         maximum_validation_age_hours=8760,
         maximum_profile_age_hours=8760,
-        required_assurance_level=AssuranceLevel.MULTI_FACTOR,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         required_effective_state=ENABLED_CAPABILITIES_GOVERNED,
         enablement_record_schema=CAPABILITY_ENABLEMENT_SCHEMA,
         signed_by="human.connector-capability-enablement-policy-owner",

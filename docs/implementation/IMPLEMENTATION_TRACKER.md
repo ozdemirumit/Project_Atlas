@@ -4,14 +4,79 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-178 |
-| Title | Package supply-chain optional step-up migration |
+| Task ID | ATLAS-IMP-179 |
+| Title | Connector runtime and target optional step-up migration |
 | Status | Validation complete; delivery pending |
-| Branch | `agent/package-supply-chain-optional-step-up` |
+| Branch | `agent/runtime-target-optional-step-up` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ADR-132, ADR-133 |
 | Last Updated | 2026-08-13 |
-| Next Action | Publish the verified IMP-178 branch, complete PR CI and merge the exact passing head |
+| Next Action | Publish the verified IMP-179 branch, complete exact-head PR CI, merge and verify the resulting main commit |
+
+### ATLAS-IMP-179 Scope Rationale
+
+- IMP-178 removed fixed assurance gates through package installation. The next contiguous lifecycle
+  boundary is target configuration, credential metadata assignment, configuration validation,
+  capability enablement, runtime trust, secret brokerage, activation, target session, invocation
+  authorization, bounded invocation and immutable invocation-evidence ingestion.
+- These stages currently reject development or single-factor humans independently of RBAC and signed
+  policy, and their development policies hard-code multi-factor or hardware-backed assurance.
+- This slice removes assurance as an implicit authorization grant or global prerequisite. Explicitly
+  configured stronger step-up policies remain enforceable through the shared identity helper. Exact
+  capability permission, tenant and resource scope, actor separation, signed lineage and freshness,
+  secret non-disclosure, single-use authority, no uncertain retry and required audit remain mandatory.
+
+### ATLAS-IMP-179 Acceptance Criteria
+
+- An authorized local username/password or single-factor human can complete the target and runtime
+  evidence chain under the default policy without a fabricated MFA claim.
+- Service eligibility checks require the correct human actor, permission and scope but do not reject
+  an authentication method or assurance level by themselves.
+- A signed policy may explicitly require multi-factor or hardware-backed assurance; insufficient
+  assurance then fails through the shared helper without granting any role or operational authority.
+- Development policy defaults use single-factor, and domain policy validation accepts single-factor
+  while continuing to reject malformed, unsigned, expired, stale or scope-mismatched policy evidence.
+- Runtime activation and bounded invocation retain exact capability permission, target and workload
+  lineage, separation, single-use authorization, no automatic retry on uncertainty and fail-closed
+  audit. No new infrastructure-mutation authority is introduced.
+- Static regression tests cover all 11 application services and API routes. Focused/full backend and
+  frontend gates, live Runtime validation, ADR reconciliation and exact-head PR/main CI must pass.
+
+### ATLAS-IMP-179 Validation Evidence
+
+- Target configuration, credential assignment, configuration validation, capability enablement,
+  runtime trust, secret brokerage, activation, target session, invocation authorization, bounded
+  invocation and invocation-evidence services now require the correct human actor without embedding
+  development, MFA or hardware-backed eligibility gates.
+- All 11 development policies use `SINGLE_FACTOR`. Domain contracts accept single-factor,
+  multi-factor and hardware-backed requirements, and services apply the shared assurance helper only
+  to an explicitly signed policy. Tests prove development/default success, explicit stronger-policy
+  rejection and non-human denial without weakening RBAC, scope, separation, lineage or audit.
+- Static application, route and domain regression coverage passed 33 tests. The combined runtime and
+  target package passed 143 tests. Ruff format/lint and strict mypy passed across 1,002 source files.
+- The complete backend suite passed 1,279 tests with three expected Windows symlink skips. The
+  complete frontend suite passed 287 tests across 94 files; zero-warning ESLint, TypeScript and the
+  production build passed with only the pre-existing operational chunk-size advisory.
+- Runtime error surfaces no longer claim MFA, multi-factor, hardware-backed assurance or generic
+  assurance as an Atlas prerequisite. Five focused component suites passed 10 tests.
+- Live validation at `http://127.0.0.1:5253/#/connectors/runtime` used the local
+  `atlas-demo` username/password session against the IMP-179 backend. The Runtime task view loaded
+  with the authenticated local identity, no fixed-assurance prompt, visible no-runtime-authority
+  boundary and no browser warning/error log. No installed MCP exists in the current development
+  dataset, so no target contact or runtime invocation was fabricated for live evidence.
+- ADR-030 through ADR-041 preserve historical decisions while recording that ADR-133 supersedes
+  fixed MFA and hardware prerequisites. Optional named step-up remains deployment policy; exact
+  authorization and every operational safety boundary remain mandatory.
+
+### ATLAS-IMP-178 Delivery Evidence
+
+- Source commit `675bad3de2d4128f9f75649afa50e1d57cc3fb4b` passed exact-head PR CI run
+  `31700385001`; frontend completed in 5m00s and backend in 8m14s.
+- PR [#190](https://github.com/ozdemirumit/Project_Atlas/pull/190) was squash-merged as
+  `4b1dd25269daf74a84a2346e28064c4a5f370485`.
+- The exact merged commit independently passed `main` CI run `31701078189`; frontend completed in
+  4m49s and backend in 6m14s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-179 branched.
 
 ### ATLAS-IMP-178 Scope Rationale
 

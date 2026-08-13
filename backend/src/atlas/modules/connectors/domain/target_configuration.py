@@ -147,7 +147,11 @@ class ConnectorTargetConfigurationPolicySnapshot:
             or not 1 <= self.maximum_instance_age_hours <= 87600
             or not 1 <= self.maximum_target_profile_age_hours <= 87600
             or self.required_assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or not self.allowed_target_types
             or not self.allowed_target_products
             or any(

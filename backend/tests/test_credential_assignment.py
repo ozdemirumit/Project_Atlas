@@ -42,7 +42,12 @@ from atlas.modules.connectors.domain.credential_assignment import (
     ConnectorCredentialProfileSnapshot,
 )
 from atlas.modules.connectors.domain.target_configuration import ConnectorTargetConfigurationBinding
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 
 def credential_assigner(
@@ -52,7 +57,9 @@ def credential_assigner(
 
 
 async def credential_assignment_fixture(
-    *, audit_sink: CollectingAuditSink | FailingAuditSink | None = None
+    *,
+    audit_sink: CollectingAuditSink | FailingAuditSink | None = None,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     ConnectorCredentialAssignmentService,
     ConnectorTargetConfigurationService,
@@ -85,6 +92,13 @@ async def credential_assignment_fixture(
         issued_at=binding.bound_at - timedelta(hours=1),
         expires_at=binding.bound_at + timedelta(days=10),
     )
+    if required_assurance_level is not policy.required_assurance_level:
+        policy = replace(
+            policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        policy = replace(policy, canonical_digest=_signed_snapshot(policy))
     service = ConnectorCredentialAssignmentService(
         repository=InMemoryConnectorCredentialAssignmentRepository(),
         target_source=target_service,
@@ -153,6 +167,54 @@ async def test_assignment_grants_only_configuration_validation_eligibility() -> 
     rendered_audit = repr(audit.records).lower()
     assert profile.secret_reference_id not in rendered_audit
     assert profile.secret_store_profile_id not in rendered_audit
+
+
+@pytest.mark.asyncio
+async def test_assignment_default_policy_accepts_development_password_human() -> None:
+    service, _, _, _, _, binding, profile, policy = await credential_assignment_fixture()
+    actor = replace(
+        credential_assigner(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    record = await assign_credential(service, binding, profile, policy, actor=actor)
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.assigned_by == actor.subject_id
+    assert not record.runtime_trust_granted and not record.execution_authorized
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    (AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED),
+)
+async def test_assignment_enforces_explicit_stronger_assurance_policy(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    service, _, _, _, _, binding, profile, policy = await credential_assignment_fixture(
+        required_assurance_level=required_assurance_level
+    )
+    actor = replace(
+        credential_assigner(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    with pytest.raises(ConnectorCredentialAssignmentError, match="assignment_invalid"):
+        await assign_credential(service, binding, profile, policy, actor=actor)
+
+
+@pytest.mark.asyncio
+async def test_assignment_rejects_non_human_identity() -> None:
+    service, _, _, _, _, binding, profile, policy = await credential_assignment_fixture()
+    actor = replace(credential_assigner(), kind=SubjectKind.SERVICE)
+
+    with pytest.raises(
+        ConnectorCredentialAssignmentError, match="credential_assignment_human_required"
+    ):
+        await assign_credential(service, binding, profile, policy, actor=actor)
 
 
 @pytest.mark.asyncio

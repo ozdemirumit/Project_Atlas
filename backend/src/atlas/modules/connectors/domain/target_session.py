@@ -169,7 +169,12 @@ class ConnectorTargetSessionPolicySnapshot:
             or not 1 <= self.maximum_session_timeout_seconds <= 120
             or not 1 <= self.maximum_activation_age_hours <= 8760
             or not 1 <= self.maximum_profile_age_hours <= 8760
-            or self.required_assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or self.required_assurance_level
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or not self.signature_verified
             or self.issued_at.tzinfo is None
             or self.expires_at.tzinfo is None

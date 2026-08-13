@@ -38,8 +38,8 @@ from atlas.modules.connectors.domain.runtime_trust import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 RUNTIME_TRUST_CREATE_PERMISSION = "connectors.runtime-trust-grants.create"
@@ -88,7 +88,7 @@ class ConnectorRuntimeTrustService:
         idempotency_key: str,
         correlation_id: str,
     ) -> ConnectorRuntimeTrustGrantRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         if not boundary_only_acknowledged:
             raise ConnectorRuntimeTrustError("runtime_trust_acknowledgement_required")
         purpose = purpose.strip()
@@ -241,7 +241,7 @@ class ConnectorRuntimeTrustService:
     async def get(
         self, *, actor: AuthenticatedSubject, grant_id: str, correlation_id: str
     ) -> ConnectorRuntimeTrustGrantRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         record = await self._repository.get(grant_id=grant_id)
         if record is None:
             raise ConnectorRuntimeTrustError("runtime_trust_record_not_found")
@@ -393,9 +393,8 @@ class ConnectorRuntimeTrustService:
             or not profile.issued_at <= now < profile.expires_at
             or now - enablement.enabled_at > timedelta(hours=policy.maximum_enablement_age_hours)
             or now - profile.issued_at > timedelta(hours=policy.maximum_profile_age_hours)
-            or (
-                policy.required_assurance_level is AssuranceLevel.HARDWARE_BACKED
-                and actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or not assurance_satisfies_policy(
+                actor.assurance_level, policy.required_assurance_level
             )
         ):
             raise ConnectorRuntimeTrustError("runtime_trust_invalid")
@@ -433,14 +432,9 @@ class ConnectorRuntimeTrustService:
         ).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise ConnectorRuntimeTrustError("runtime_trust_enterprise_human_mfa_required")
+    def _require_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
+            raise ConnectorRuntimeTrustError("runtime_trust_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -565,7 +559,7 @@ def build_development_connector_runtime_trust_policy(
         required_resource_limit_profile_id="resource-limit-profile.connector-read-only",
         maximum_enablement_age_hours=720,
         maximum_profile_age_hours=168,
-        required_assurance_level=AssuranceLevel.HARDWARE_BACKED,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         required_effective_state=ENABLED_RUNTIME_TRUSTED,
         trust_grant_schema=RUNTIME_TRUST_GRANT_SCHEMA,
         signed_by="subject.connector-runtime-trust-policy-signer",

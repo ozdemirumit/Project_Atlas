@@ -46,8 +46,8 @@ from atlas.modules.connectors.domain.target_session import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 TARGET_SESSION_CREATE_PERMISSION = "connectors.target-session-verifications.create"
@@ -419,7 +419,9 @@ class ConnectorTargetSessionService:
             or not profile.issued_at <= now < profile.expires_at
             or now - activation.healthy_at > timedelta(hours=policy.maximum_activation_age_hours)
             or now - profile.issued_at > timedelta(hours=policy.maximum_profile_age_hours)
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or not assurance_satisfies_policy(
+                actor.assurance_level, policy.required_assurance_level
+            )
         ):
             raise ConnectorTargetSessionError("target_session_invalid")
 
@@ -513,14 +515,8 @@ class ConnectorTargetSessionService:
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
-            raise ConnectorTargetSessionError(
-                "target_session_enterprise_human_hardware_mfa_required"
-            )
+        if actor.kind is not SubjectKind.HUMAN:
+            raise ConnectorTargetSessionError("target_session_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -658,7 +654,7 @@ def build_development_connector_target_session_policy(
         ),
         maximum_activation_age_hours=24,
         maximum_profile_age_hours=24,
-        required_assurance_level=AssuranceLevel.HARDWARE_BACKED,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         required_source_state=ENABLED_RUNTIME_HEALTHY,
         verification_schema=TARGET_SESSION_SCHEMA,
         signed_by="subject.connector-target-session-policy-signer",

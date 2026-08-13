@@ -15,7 +15,10 @@ from test_invocation_authorization import (
 from test_package_acquisition import CollectingAuditSink
 from test_runtime_activation import FailSecondAuditSink
 from test_secret_brokerage import RuntimeFixture
-from test_target_session import target_session_operator
+from test_target_session import (
+    development_target_session_operator,
+    target_session_operator,
+)
 
 from atlas.api.app import create_app
 from atlas.modules.connectors.adapters.bounded_invocation_memory import (
@@ -30,6 +33,7 @@ from atlas.modules.connectors.adapters.bounded_invocation_synthetic import (
 )
 from atlas.modules.connectors.application.bounded_invocation import (
     ConnectorBoundedInvocationService,
+    _signed_policy,
     build_development_connector_bounded_invocation_policy,
 )
 from atlas.modules.connectors.application.bounded_invocation_ports import (
@@ -55,7 +59,7 @@ from atlas.modules.connectors.domain.bounded_invocation import (
 from atlas.modules.connectors.domain.invocation_authorization import (
     ConnectorInvocationAuthorizationRecord,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject, SubjectKind
 
 ACKNOWLEDGEMENT_FIELD = (
     "acknowledged_authorization_is_consumed_once_without_retry_on_uncertain_outcome"
@@ -130,6 +134,7 @@ async def bounded_fixture(
     | AlteredReceiptAdapter
     | BlockingAdapter
     | None = None,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     ConnectorBoundedInvocationService,
     ConnectorInvocationAuthorizationService,
@@ -170,6 +175,13 @@ async def bounded_fixture(
         issued_at=authorization.authorized_at - timedelta(hours=1),
         expires_at=authorization.authorized_at + timedelta(days=1),
     )
+    if policy.required_assurance_level is not required_assurance_level:
+        policy = replace(
+            policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        policy = replace(policy, canonical_digest=_signed_policy(policy))
     authorizer = permission_authorizer or RecordingPermissionAuthorizer()
     resolved_adapter = adapter or SyntheticConnectorBoundedInvocationAdapter(
         clock=lambda: authorization.authorized_at
@@ -259,6 +271,59 @@ async def test_bounded_invocation_consumes_once_closes_resources_and_is_idempote
             key="bounded-invocation-key-different",
         )
     assert len(adapter.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_bounded_invocation_accepts_development_identity_under_default_policy() -> None:
+    service, _, _, _, _, _, authorization, policy, _, _ = await bounded_fixture()
+    actor = development_target_session_operator("subject.connector-independent-bounded-invoker")
+
+    record = await invoke_bounded(service, authorization, policy, actor=actor)
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.invoked_by == actor.subject_id
+    assert record.authorization_consumed and not record.reusable_session_available
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    (AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED),
+)
+async def test_bounded_invocation_enforces_explicit_step_up_policy(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    service, _, _, _, _, _, authorization, policy, authorizer, adapter = await bounded_fixture(
+        required_assurance_level=required_assurance_level
+    )
+
+    with pytest.raises(ConnectorBoundedInvocationError, match="source_invalid"):
+        await invoke_bounded(
+            service,
+            authorization,
+            policy,
+            actor=development_target_session_operator(
+                "subject.connector-independent-bounded-invoker"
+            ),
+        )
+
+    assert authorizer.calls == []
+    assert getattr(adapter, "calls", []) in ([], 0)
+
+
+@pytest.mark.asyncio
+async def test_bounded_invocation_denies_non_human_identity() -> None:
+    service, _, _, _, _, _, authorization, policy, authorizer, adapter = await bounded_fixture()
+    actor = replace(
+        development_target_session_operator("subject.connector-independent-bounded-invoker"),
+        kind=SubjectKind.SERVICE,
+    )
+
+    with pytest.raises(ConnectorBoundedInvocationError, match="human_required"):
+        await invoke_bounded(service, authorization, policy, actor=actor)
+
+    assert authorizer.calls == []
+    assert getattr(adapter, "calls", []) in ([], 0)
 
 
 @pytest.mark.asyncio
@@ -432,7 +497,7 @@ def test_bounded_invocation_api_is_csrf_protected_forbids_controls_and_is_minimi
         registration_service,
         *_rest,
     ) = runtime_fixture
-    subject = target_session_operator("subject.connector-independent-bounded-invoker")
+    subject = development_target_session_operator("subject.connector-independent-bounded-invoker")
     app_settings = settings(
         development_subject_id=subject.subject_id,
         mcp_builder_generation_root=tmp_path / "mcp-builder-generations",

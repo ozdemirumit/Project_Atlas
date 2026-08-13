@@ -4,6 +4,17 @@
 - Date: 2026-08-06
 - Owners: Product Owner, Solution Architecture, Security Architecture
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. Configuration and
+connectivity validation still requires a dedicated, authenticated, authorized human and every
+existing RBAC, exact-scope, acknowledgement, separation, signed-policy, lineage/freshness,
+idempotency, audit, evidence-isolation, and no-execution control. The default policy requires no
+MFA and uses `SINGLE_FACTOR`; an optional named step-up policy may add assurance checks only when
+explicitly configured, but assurance is not authorization.
+Development username/password identities satisfy the default. Explicitly configured
+`MULTI_FACTOR` or `HARDWARE_BACKED` policies still fail closed when assurance is insufficient.
+
 ## Context
 
 ADR-032 assigns governed credential metadata to an exact disabled connector instance without
@@ -49,9 +60,12 @@ allowed runner/network zone, expected target/product identity, read-only authent
 authorization classifications, required checks, policy signature/freshness, and no-later-authority
 state.
 
-Only a dedicated exact-tenant MFA human with C3 permission may create the record. The actor must be
-distinct from every upstream actor plus evidence and policy signers. AI, service, shared,
-wrong-scope, and insufficient-assurance identities fail closed without discovery.
+Only a dedicated, authenticated, authorized, exact-tenant human with C3 permission may create the
+record. The actor must be distinct from every upstream actor plus evidence and policy signers. AI,
+service, shared, wrong-scope, unauthorized identities, and identities that do not satisfy the
+optional configured `connector_configuration_validation` step-up policy fail closed without
+discovery. The signed validation policy defaults to `SINGLE_FACTOR`; it defines accepted external
+assurance values and freshness only when that named step-up policy is explicitly configured.
 
 ### Resulting Authority
 
@@ -67,8 +81,9 @@ runtime grant, capability grant, execution approval, deployment approval, or cha
 
 Records are immutable, one-to-one per credential assignment for version one, deterministic,
 idempotent, concurrency-safe, and equivalent in memory/PostgreSQL. Required intent and completion
-audit succeed before persistence. APIs use dedicated default-deny RBAC, exact scope, MFA, browser
-session, CSRF on mutation, strict schemas, no-store responses, safe errors, and minimized evidence.
+audit succeed before persistence. APIs use dedicated default-deny RBAC, exact scope, browser
+session, CSRF on mutation, strict schemas, no-store responses, safe errors, minimized evidence, and
+the optional named `connector_configuration_validation` step-up policy only when configured.
 
 Audit and web output exclude target coordinates, secret/reference/store internals, credential or
 session material, raw probe data, signatures, request fingerprints, and idempotency keys.

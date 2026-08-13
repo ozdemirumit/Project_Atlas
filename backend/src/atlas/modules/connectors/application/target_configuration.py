@@ -39,8 +39,8 @@ from atlas.modules.connectors.domain.target_configuration import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 TARGET_BINDING_CREATE_PERMISSION = "connectors.target-configuration-bindings.create"
@@ -89,7 +89,7 @@ class ConnectorTargetConfigurationService:
         idempotency_key: str,
         correlation_id: str,
     ) -> ConnectorTargetConfigurationBinding:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         if not acknowledged_binding_grants_no_credentials_enablement_or_runtime_authority:
             raise ConnectorTargetConfigurationError("target_configuration_acknowledgement_required")
         purpose = purpose.strip()
@@ -230,7 +230,7 @@ class ConnectorTargetConfigurationService:
     async def get(
         self, *, actor: AuthenticatedSubject, binding_id: str, correlation_id: str
     ) -> ConnectorTargetConfigurationBinding:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         binding = await self._repository.get(binding_id=binding_id)
         if binding is None:
             raise ConnectorTargetConfigurationError("target_configuration_record_not_found")
@@ -378,9 +378,8 @@ class ConnectorTargetConfigurationService:
             or not profile.issued_at <= now < profile.expires_at
             or now - instance.created_at > timedelta(hours=policy.maximum_instance_age_hours)
             or now - profile.issued_at > timedelta(hours=policy.maximum_target_profile_age_hours)
-            or (
-                policy.required_assurance_level is AssuranceLevel.HARDWARE_BACKED
-                and actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or not assurance_satisfies_policy(
+                actor.assurance_level, policy.required_assurance_level
             )
         ):
             raise ConnectorTargetConfigurationError("target_configuration_binding_invalid")
@@ -418,16 +417,9 @@ class ConnectorTargetConfigurationService:
         ).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise ConnectorTargetConfigurationError(
-                "target_configuration_enterprise_human_mfa_required"
-            )
+    def _require_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
+            raise ConnectorTargetConfigurationError("target_configuration_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -525,7 +517,7 @@ def build_development_connector_target_configuration_policy(
         required_target_profile_schema="atlas.connector-target-profile.v1",
         maximum_instance_age_hours=168,
         maximum_target_profile_age_hours=168,
-        required_assurance_level=AssuranceLevel.MULTI_FACTOR,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         required_target_profile_signer_id="subject.connector-target-profile-owner",
         allowed_target_types=("target-type.storage-management",),
         allowed_target_products=("Synthetic Storage",),

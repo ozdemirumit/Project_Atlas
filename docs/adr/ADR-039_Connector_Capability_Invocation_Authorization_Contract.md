@@ -4,6 +4,17 @@
 - Date: 2026-08-06
 - Owners: Product Owner, Solution Architecture, Security Architecture
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA, hardware-backed, and minimum-assurance prerequisite.
+Capability-invocation authorization still requires a dedicated, authenticated, authorized human
+and every existing exact capability permission, RBAC, exact-scope, acknowledgement, separation,
+signed-policy, lineage/freshness, idempotency, audit, single-use, and no-invocation control. The
+default policy requires no MFA and uses `SINGLE_FACTOR`; an optional named step-up policy may add
+assurance checks only when explicitly configured, but assurance is not authorization.
+Development username/password identities satisfy the default. Explicitly configured
+`MULTI_FACTOR` or `HARDWARE_BACKED` policies still fail closed when assurance is insufficient.
+
 ## Context
 
 ADR-038 proves that one exact healthy connector runtime can establish and close a bounded
@@ -68,11 +79,14 @@ profile, envelope, and policy integrity and freshness, package and instance pari
 the capability is uniquely enabled as C0 or C1, required permission parity, input/output contract
 parity, one-use and expiry limits, actor separation, and no invocation or later authority.
 
-Only a dedicated exact-tenant hardware-backed MFA human with the capability's own required
+Only a dedicated, authenticated, authorized, exact-tenant human with the capability's own required
 permission and dedicated C3 authorization-record permission may request authorization. The actor
 must be distinct from every upstream lifecycle actor, profile, envelope, and policy signer,
-invocation-adapter attestor, and workload identity. AI, service, shared, wrong-scope, expired, and
-insufficient-assurance identities fail closed without discovery.
+invocation-adapter attestor, and workload identity. AI, service, shared, wrong-scope, expired,
+unauthorized identities, and identities that do not satisfy the optional configured
+`connector_invocation_authorization` step-up policy fail closed without discovery. The signed
+authorization policy defaults to `SINGLE_FACTOR`; it defines accepted external assurance values
+and freshness only when that named step-up policy is explicitly configured.
 
 ### No Invocation During Authorization
 
@@ -105,9 +119,10 @@ in memory and PostgreSQL. Version one allows one authorization per target-sessio
 Required intent audit succeeds before authorization construction; required completion audit
 succeeds before persistence.
 
-APIs use dedicated default-deny RBAC, exact capability permission evaluation, hardware MFA,
-browser session, CSRF on mutation, strict schemas, no-store responses, safe errors, and minimized
-evidence. Persistence, audit, logs, and web output exclude raw input values, target coordinates,
+APIs use dedicated default-deny RBAC, exact capability permission evaluation, browser session,
+CSRF on mutation, strict schemas, no-store responses, safe errors, minimized evidence, and the
+optional named `connector_invocation_authorization` step-up policy only when configured.
+Persistence, audit, logs, and web output exclude raw input values, target coordinates,
 credential and secret identities, lease/session identity, invocation tokens, signatures, request
 fingerprints, idempotency keys, commands, output, and mutable runtime data.
 

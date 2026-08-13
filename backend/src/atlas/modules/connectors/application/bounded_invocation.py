@@ -38,8 +38,8 @@ from atlas.modules.connectors.domain.invocation_authorization import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 BOUNDED_INVOCATION_CREATE_PERMISSION = "connectors.bounded-invocations.create"
@@ -128,6 +128,7 @@ class ConnectorBoundedInvocationService:
         now = self._clock()
         self._require_scope(actor, source.organization_id, source.environment_id)
         self._verify_source(
+            actor=actor,
             source=source,
             policy=policy,
             source_digest=source_authorization_digest,
@@ -440,6 +441,7 @@ class ConnectorBoundedInvocationService:
     @staticmethod
     def _verify_source(
         *,
+        actor: AuthenticatedSubject,
         source: ConnectorInvocationAuthorizationRecord,
         policy: ConnectorBoundedInvocationPolicySnapshot,
         source_digest: str,
@@ -472,6 +474,9 @@ class ConnectorBoundedInvocationService:
             or now - source.authorized_at
             > timedelta(minutes=policy.maximum_authorization_age_minutes)
             or not policy.issued_at <= now < policy.expires_at
+            or not assurance_satisfies_policy(
+                actor.assurance_level, policy.required_assurance_level
+            )
         ):
             raise ConnectorBoundedInvocationError("bounded_invocation_source_invalid")
 
@@ -559,14 +564,8 @@ class ConnectorBoundedInvocationService:
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
-            raise ConnectorBoundedInvocationError(
-                "bounded_invocation_enterprise_human_hardware_mfa_required"
-            )
+        if actor.kind is not SubjectKind.HUMAN:
+            raise ConnectorBoundedInvocationError("bounded_invocation_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -636,7 +635,7 @@ def build_development_connector_bounded_invocation_policy(
         required_adapter_id="connector-bounded-invocation-adapter.synthetic",
         required_adapter_attestor_id=("subject.connector-bounded-invocation-adapter-attestor"),
         required_receipt_schema="atlas.connector-bounded-invocation-receipt.v1",
-        required_assurance_level=AssuranceLevel.HARDWARE_BACKED,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         signed_by="subject.connector-bounded-invocation-policy-signer",
         signature_verified=True,
         issued_at=issued_at,

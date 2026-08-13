@@ -4,6 +4,17 @@
 - Date: 2026-08-06
 - Owners: Product Owner, Solution Architecture, Security Architecture
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA, hardware-backed, and minimum-assurance prerequisite.
+Target-session verification still requires a dedicated, authenticated, authorized human and every
+existing RBAC, exact-scope, acknowledgement, separation, signed-policy, lineage/freshness,
+idempotency, audit, secret/session isolation, cleanup, and no-capability-execution control. The
+default policy requires no MFA and uses `SINGLE_FACTOR`; an optional named step-up policy may add
+assurance checks only when explicitly configured, but assurance is not authorization.
+Development username/password identities satisfy the default. Explicitly configured
+`MULTI_FACTOR` or `HARDWARE_BACKED` policies still fail closed when assurance is insufficient.
+
 ## Context
 
 ADR-037 activates one exact signed connector runtime and proves bounded local health. It grants no
@@ -54,10 +65,13 @@ profile/policy integrity and freshness, target/product and workload parity, curr
 rotation/revocation posture, exact approved network and TLS controls, read-only privilege, bounded
 handshake checks, actor separation, and no capability or later authority.
 
-Only a dedicated exact-tenant hardware-backed MFA human with C3 permission may request target
-verification. The actor must be distinct from every upstream actor, profile/policy signer,
-target-session adapter attestor, and workload identity. AI, service, shared, wrong-scope, and
-insufficient-assurance identities fail closed without discovery.
+Only a dedicated, authenticated, authorized, exact-tenant human with C3 permission may request
+target verification. The actor must be distinct from every upstream actor, profile/policy signer,
+target-session adapter attestor, and workload identity. AI, service, shared, wrong-scope,
+unauthorized identities, and identities that do not satisfy the optional configured
+`connector_target_session_verification` step-up policy fail closed without discovery. The signed
+target-session policy defaults to `SINGLE_FACTOR`; it defines accepted external assurance values
+and freshness only when that named step-up policy is explicitly configured.
 
 ### Trusted Target Session Boundary
 
@@ -97,8 +111,9 @@ or infrastructure mutation.
 Verification records are immutable, one-to-one per runtime activation for version one,
 deterministic, idempotent, concurrency-safe, and equivalent in memory/PostgreSQL. Required intent
 audit succeeds before the handshake; required completion audit succeeds before persistence. APIs
-use dedicated default-deny RBAC, exact scope, hardware MFA, browser session, CSRF on mutation,
-strict schemas, no-store responses, safe errors, and minimized evidence.
+use dedicated default-deny RBAC, exact scope, browser session, CSRF on mutation, strict schemas,
+no-store responses, safe errors, minimized evidence, and the optional named
+`connector_target_session_verification` step-up policy only when configured.
 
 Persistence, audit, and web output exclude target ID and coordinates, credential profile identity,
 secret/store/broker identity, lease/session identity or timing, certificate body, network route,

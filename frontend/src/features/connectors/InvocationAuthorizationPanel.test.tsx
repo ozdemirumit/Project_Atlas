@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ConnectorInvocationAuthorization } from "../../api/invocationAuthorizations";
@@ -196,5 +196,32 @@ describe("InvocationAuthorizationPanel", () => {
     ])
       expect(body).not.toHaveProperty(forbidden);
     expect(new Headers(init?.headers).get("X-CSRF-Token")).toBe("test-csrf");
+  });
+
+  it("reports authorization policy failures without presenting MFA as a prerequisite", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockRejectedValue(new Error("policy rejected")));
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <InvocationAuthorizationPanel targetSession={targetSession} />
+      </QueryClientProvider>,
+    );
+    const panel = within(view.container);
+
+    fireEvent.change(panel.getByRole("textbox", { name: "Invocation profile digest" }), {
+      target: { value: profileDigest },
+    });
+    fireEvent.change(panel.getByRole("textbox", { name: "Input envelope digest" }), {
+      target: { value: envelopeDigest },
+    });
+    fireEvent.change(panel.getByRole("textbox", { name: "Signed policy digest" }), {
+      target: { value: policyDigest },
+    });
+    fireEvent.click(panel.getByLabelText(/Authorization is short-lived, single-use/));
+    fireEvent.click(panel.getByRole("button", { name: "Authorize invocation" }));
+
+    const alert = await panel.findByRole("alert");
+    expect(alert).toHaveTextContent(/signed authorization-policy evidence.*requested scope.*separation of duties/i);
+    expect(alert).not.toHaveTextContent(/MFA|multi[- ]factor|hardware|assurance/i);
   });
 });

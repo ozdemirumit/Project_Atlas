@@ -48,7 +48,12 @@ from atlas.modules.connectors.domain.runtime_trust import ConnectorRuntimeTrustG
 from atlas.modules.connectors.domain.secret_brokerage import (
     ConnectorSecretBrokerageAuthorizationRecord,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 ACKNOWLEDGEMENT_FIELD = (
     "acknowledged_activation_grants_no_target_connection_invocation_execution_or_deployment"
@@ -73,7 +78,9 @@ def runtime_activation_operator(
 
 
 async def runtime_activation_fixture(
-    *, audit_sink: CollectingAuditSink | FailSecondAuditSink | None = None
+    *,
+    audit_sink: CollectingAuditSink | FailSecondAuditSink | None = None,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     ConnectorRuntimeActivationService,
     ConnectorSecretBrokerageService,
@@ -106,6 +113,13 @@ async def runtime_activation_fixture(
         issued_at=runtime_trust.granted_at - timedelta(hours=1),
         expires_at=runtime_trust.granted_at + timedelta(days=10),
     )
+    if required_assurance_level is not policy.required_assurance_level:
+        policy = replace(
+            policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        policy = replace(policy, canonical_digest=_signed_snapshot(policy))
     activator = SyntheticConnectorRuntimeActivator(clock=lambda: runtime_trust.granted_at)
     service = ConnectorRuntimeActivationService(
         repository=InMemoryConnectorRuntimeActivationRepository(),
@@ -176,6 +190,55 @@ async def test_runtime_activation_proves_health_without_target_authority() -> No
         "connector_runtime_activation_requested",
         "connector_runtime_activation_completed",
     ]
+
+
+@pytest.mark.asyncio
+async def test_runtime_activation_accepts_development_identity_under_default_policy() -> None:
+    service, _, _, _, brokerage, profile, policy, _ = await runtime_activation_fixture()
+    development_actor = replace(
+        runtime_activation_operator(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    record = await activate_runtime(service, brokerage, profile, policy, actor=development_actor)
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.activated_by == development_actor.subject_id
+
+
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    [AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED],
+)
+@pytest.mark.asyncio
+async def test_runtime_activation_enforces_explicit_stronger_assurance_policy(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    service, _, _, _, brokerage, profile, policy, _ = await runtime_activation_fixture(
+        required_assurance_level=required_assurance_level
+    )
+    development_actor = replace(
+        runtime_activation_operator(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    with pytest.raises(ConnectorRuntimeActivationError, match="invalid"):
+        await activate_runtime(service, brokerage, profile, policy, actor=development_actor)
+
+
+@pytest.mark.asyncio
+async def test_runtime_activation_rejects_non_human_actor() -> None:
+    service, _, _, _, brokerage, profile, policy, _ = await runtime_activation_fixture()
+    service_actor = replace(
+        runtime_activation_operator(),
+        kind=SubjectKind.SERVICE,
+        authentication_method=AuthenticationMethod.WORKLOAD_TOKEN,
+    )
+
+    with pytest.raises(ConnectorRuntimeActivationError, match="human_required"):
+        await activate_runtime(service, brokerage, profile, policy, actor=service_actor)
 
 
 @pytest.mark.asyncio

@@ -48,4 +48,18 @@ describe("RuntimeTrustPanel", () => {
     for (const forbidden of ["runner_runtime_id", "runner_pool_id", "runner_image_digest", "runner_workload_identity_id", "isolation_profile_id", "filesystem_policy_id", "egress_policy_id", "secret_delivery_policy_id", "target_profile_id", "credential_profile_id", "endpoint_url", "host", "port", "secret_reference_id", "command", "parameters", "execution_authorized", "deployment_approved"]) expect(body).not.toHaveProperty(forbidden);
     expect(new Headers(init?.headers).get("X-CSRF-Token")).toBe("test-csrf");
   });
+
+  it("reports policy evidence failures without presenting MFA as a prerequisite", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockRejectedValue(new Error("policy rejected")));
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(<QueryClientProvider client={client}><RuntimeTrustPanel enablement={enablement} /></QueryClientProvider>);
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Runtime profile digest" }), { target: { value: profileDigest } });
+    fireEvent.click(screen.getByLabelText(/Trust binds only the signed isolated runtime boundary/));
+    fireEvent.click(screen.getByRole("button", { name: "Grant runtime trust" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/signed runtime controls.*trust-policy evidence.*requested scope.*separation of duties/i);
+    expect(alert).not.toHaveTextContent(/MFA|multi[- ]factor|hardware|assurance/i);
+  });
 });

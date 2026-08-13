@@ -38,8 +38,8 @@ from atlas.modules.connectors.domain.target_configuration import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 CREDENTIAL_ASSIGNMENT_CREATE_PERMISSION = "connectors.credential-assignments.create"
@@ -88,7 +88,7 @@ class ConnectorCredentialAssignmentService:
         idempotency_key: str,
         correlation_id: str,
     ) -> ConnectorCredentialAssignmentRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         if not acknowledged_assignment_grants_no_secret_access_enablement_or_runtime_authority:
             raise ConnectorCredentialAssignmentError(
                 "credential_assignment_acknowledgement_required"
@@ -235,7 +235,7 @@ class ConnectorCredentialAssignmentService:
     async def get(
         self, *, actor: AuthenticatedSubject, assignment_id: str, correlation_id: str
     ) -> ConnectorCredentialAssignmentRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         record = await self._repository.get(assignment_id=assignment_id)
         if record is None:
             raise ConnectorCredentialAssignmentError("credential_assignment_record_not_found")
@@ -416,9 +416,8 @@ class ConnectorCredentialAssignmentService:
             > timedelta(hours=policy.maximum_credential_profile_age_hours)
             or profile.next_rotation_at - now
             < timedelta(hours=policy.minimum_rotation_window_hours)
-            or (
-                policy.required_assurance_level is AssuranceLevel.HARDWARE_BACKED
-                and actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or not assurance_satisfies_policy(
+                actor.assurance_level, policy.required_assurance_level
             )
         ):
             raise ConnectorCredentialAssignmentError("credential_assignment_invalid")
@@ -458,16 +457,9 @@ class ConnectorCredentialAssignmentService:
         ).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise ConnectorCredentialAssignmentError(
-                "credential_assignment_enterprise_human_mfa_required"
-            )
+    def _require_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
+            raise ConnectorCredentialAssignmentError("credential_assignment_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -569,7 +561,7 @@ def build_development_connector_credential_assignment_policy(
         required_credential_profile_schema="atlas.connector-credential-profile.v1",
         maximum_target_binding_age_hours=168,
         maximum_credential_profile_age_hours=168,
-        required_assurance_level=AssuranceLevel.MULTI_FACTOR,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         required_credential_profile_signer_id="subject.connector-credential-profile-owner",
         allowed_secret_store_profile_ids=("secret-store-profile.enterprise",),
         allowed_credential_classes=("credential.vendor-api",),
