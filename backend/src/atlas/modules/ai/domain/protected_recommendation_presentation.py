@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from atlas.modules.identity.domain.models import AssuranceLevel
+
 
 def _aware(*values: datetime) -> bool:
     return all(value.tzinfo is not None for value in values)
@@ -27,6 +29,7 @@ class ProtectedRecommendationPresentationPolicySnapshot:
     maximum_text_items_per_option: int
     maximum_output_bytes: int
     retention_minutes: int
+    required_assurance_level: AssuranceLevel
     browser_binding_key_digest: str
     rendering_profile_digest: str
     prohibited_output_profile_digest: str
@@ -48,6 +51,12 @@ class ProtectedRecommendationPresentationPolicySnapshot:
                 self.retention_minutes,
             )
             < 1
+            or self.required_assurance_level
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
         ):
             raise ValueError("invalid protected recommendation presentation policy")
 

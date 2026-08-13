@@ -41,8 +41,10 @@ choice, create a workflow, authorize execution, deploy anything, or mutate infra
 ### Entry Contract
 
 Only the same eligible enterprise human consumer may enter adjudication. The consumer must use a
-current browser-bound session with hardware-backed MFA and current C1 create permission in the
-same organization and environment.
+current browser-bound session with authentication assurance satisfying the current signed policy
+and current C1 create permission in the same organization and environment. The default
+`SINGLE_FACTOR` policy accepts a signed-in username/password development browser session;
+`MULTI_FACTOR` or `HARDWARE_BACKED` is required only when that explicit signed policy requests it.
 
 The source must be one exact, completed, unexpired, integrity-valid risk-recovery result. The
 service rehydrates and verifies the unchanged:

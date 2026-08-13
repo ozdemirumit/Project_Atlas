@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import asdict
-from datetime import timedelta
+from dataclasses import asdict, replace
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
 from test_model_context_assembly import context_fixture, create_context
 from test_package_acquisition import CollectingAuditSink
+from test_target_session import development_target_session_operator
 
 from atlas.api.protected_model_invocation_schemas import (
     ProtectedModelInvocationInput,
@@ -34,7 +35,7 @@ from atlas.modules.ai.domain.protected_model_invocation import (
     ProtectedModelInvocationPolicySnapshot,
     ProtectedModelInvocationResult,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject, SubjectKind
 from atlas.modules.knowledge.adapters.model_context_assembly_synthetic import (
     SyntheticTrustedProtectedModelContextAssembler,
 )
@@ -133,6 +134,80 @@ async def create_invocation(
         idempotency_key=idempotency_key,
         correlation_id="cor_protected_model_invocation",
     )
+
+
+def _signed_invocation_policy(
+    service: GovernedProtectedModelInvocationService,
+    policy: ProtectedModelInvocationPolicySnapshot,
+    required_assurance_level: AssuranceLevel,
+) -> ProtectedModelInvocationPolicySnapshot:
+    updated = replace(
+        policy,
+        required_assurance_level=required_assurance_level,
+        canonical_digest="0" * 64,
+    )
+    return replace(
+        updated,
+        canonical_digest=service._digest(service._payload(updated)),
+    )
+
+
+def test_invocation_policy_supports_governed_assurance_levels() -> None:
+    now = datetime.now(UTC)
+    policy = build_development_protected_model_invocation_policy(
+        organization_id="org.atlas",
+        environment_id="environment.development",
+        issued_at=now,
+        expires_at=now + timedelta(hours=1),
+    )
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    for level in (
+        AssuranceLevel.SINGLE_FACTOR,
+        AssuranceLevel.MULTI_FACTOR,
+        AssuranceLevel.HARDWARE_BACKED,
+    ):
+        assert replace(policy, required_assurance_level=level).required_assurance_level is level
+
+
+@pytest.mark.asyncio
+async def test_invocation_requires_step_up_only_when_signed_policy_requests_it() -> None:
+    (
+        service,
+        repository,
+        context,
+        policy,
+        actor,
+        gateway,
+        permission,
+        audit,
+    ) = await invocation_fixture()
+    stronger = _signed_invocation_policy(service, policy, AssuranceLevel.MULTI_FACTOR)
+    service = GovernedProtectedModelInvocationService(
+        repository=repository,
+        context_source=service._context_source,
+        context_vault=service._context_vault,
+        policy_source=InMemoryProtectedModelInvocationPolicySource((stronger,)),
+        permission_authorizer=permission,
+        gateway=gateway,
+        audit_sink=audit,
+        environment_id=context.record.environment_id,
+        clock=lambda: context.record.assembled_at,
+    )
+    actor = development_target_session_operator(actor.subject_id)
+    with pytest.raises(ProtectedModelInvocationError, match="policy_assurance_required"):
+        await create_invocation(service, context, stronger, actor)
+
+
+@pytest.mark.asyncio
+async def test_invocation_rejects_non_human_actor() -> None:
+    service, _, context, policy, actor, *_ = await invocation_fixture()
+    with pytest.raises(ProtectedModelInvocationError, match="human_required"):
+        await create_invocation(
+            service,
+            context,
+            policy,
+            replace(actor, kind=SubjectKind.SERVICE),
+        )
 
 
 @pytest.mark.asyncio

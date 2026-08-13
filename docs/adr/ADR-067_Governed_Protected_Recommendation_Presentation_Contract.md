@@ -46,8 +46,11 @@ remain false.
 ### Entry Contract
 
 Only the same eligible enterprise human consumer may request or read the presentation. The
-consumer must use the same current browser-bound session with hardware-backed MFA, current C1
-create/read permissions and the same organization and environment.
+consumer must use the same current browser-bound session with authentication assurance satisfying
+the current signed policy, current C1 create/read permissions, and the same organization and
+environment. The default `SINGLE_FACTOR` policy accepts a signed-in username/password development
+browser session; `MULTI_FACTOR` or `HARDWARE_BACKED` is required only when that explicit signed
+policy requests it.
 
 The source must be one exact, completed, unexpired, integrity-valid protected adjudication. The
 service rehydrates and verifies the unchanged:

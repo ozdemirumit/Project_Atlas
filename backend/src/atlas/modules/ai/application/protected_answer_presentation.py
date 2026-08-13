@@ -48,8 +48,8 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 from atlas.modules.knowledge.domain.model_context_assembly import ProtectedModelContextPackage
 
@@ -137,6 +137,7 @@ class GovernedProtectedAnswerPresentationService:
             purpose,
             now,
         )
+        self._require_assurance(actor, policy)
         self._require_scope(
             actor, adjudication_record.organization_id, adjudication_record.environment_id
         )
@@ -388,6 +389,7 @@ class GovernedProtectedAnswerPresentationService:
             or not policy.issued_at <= now < policy.expires_at
         ):
             raise ProtectedAnswerPresentationError("protected_answer_presentation_not_found")
+        self._require_assurance(actor, policy)
         await self._permission_authorizer.authorize(
             actor=actor,
             organization_id=record.organization_id,
@@ -464,6 +466,7 @@ class GovernedProtectedAnswerPresentationService:
             or not policy.issued_at <= now < policy.expires_at
         ):
             raise ProtectedAnswerPresentationError("protected_answer_presentation_not_found")
+        self._require_assurance(actor, policy)
         return record
 
     async def close(self) -> None:
@@ -605,13 +608,17 @@ class GovernedProtectedAnswerPresentationService:
 
     @staticmethod
     def _require_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
+        if actor.kind is not SubjectKind.HUMAN:
+            raise ProtectedAnswerPresentationError("protected_answer_presentation_human_required")
+
+    @staticmethod
+    def _require_assurance(
+        actor: AuthenticatedSubject,
+        policy: ProtectedAnswerPresentationPolicySnapshot,
+    ) -> None:
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
             raise ProtectedAnswerPresentationError(
-                "protected_answer_presentation_enterprise_human_hardware_mfa_required"
+                "protected_answer_presentation_assurance_required"
             )
 
     def _require_scope(
@@ -709,6 +716,7 @@ def build_development_protected_answer_presentation_policy(
         maximum_unknown_count=25,
         maximum_output_bytes=16_384,
         retention_minutes=10,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         signed_by="subject.protected-answer-presentation-policy-signer",
         signature_verified=True,
         issued_at=issued_at,

@@ -4,14 +4,84 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-180 |
-| Title | Knowledge curation and retrieval optional step-up migration |
-| Status | PR validation in progress |
-| Branch | `agent/knowledge-optional-step-up` |
-| Pull Request | [#192](https://github.com/ozdemirumit/Project_Atlas/pull/192) |
+| Task ID | ATLAS-IMP-181 |
+| Title | AI context and recommendation optional step-up migration |
+| Status | Ready for review |
+| Branch | `agent/ai-context-optional-step-up` |
+| Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ADR-132, ADR-133 |
 | Last Updated | 2026-08-13 |
-| Next Action | Complete exact-head PR CI, squash-merge PR #192, verify merged main CI, and synchronize local main |
+| Next Action | Push the verified branch, open the IMP-181 pull request, and complete exact-head PR/main CI |
+
+### ATLAS-IMP-181 Scope Rationale
+
+- IMP-180 completed governed Knowledge curation, protected publication and retrieval through
+  ADR-058. The next contiguous lifecycle boundary is protected model-context assembly, bounded
+  model invocation, draft adjudication, answer presentation, recommendation candidate generation,
+  impact/risk/recovery completion and recommendation adjudication/presentation through ADR-067.
+- These services still embed development and hardware-backed assurance rejection independently of
+  RBAC or a named signed policy. ADR-133 requires the default username/password path to remain
+  usable while allowing an explicit deployment policy to request stronger step-up.
+- Evidence grounding, citation and unknown handling, prompt-injection boundaries, no-store model
+  content, exact browser/session scope, separation of duties, impact and recovery completeness,
+  deterministic recommendation lineage, audit and no operational authority remain mandatory.
+- Recommendation domain promotion and separated human review begin at ADR-068 and are intentionally
+  deferred to IMP-182 so model/recommendation generation and accountable disposition remain
+  independently reviewable.
+
+### ATLAS-IMP-181 Acceptance Criteria
+
+- Authorized local username/password and single-factor humans can complete the default protected
+  AI and recommendation lifecycle without a fabricated MFA claim.
+- An explicit signed policy can still require multi-factor or hardware-backed step-up through the
+  shared helper; insufficient assurance fails closed without granting role, approval or execution.
+- Human eligibility, exact tenant/session/track scope, source freshness, no-store presentation,
+  separation, citation and unknown preservation, impact/risk/recovery completeness, idempotency,
+  audit and no-execution boundaries remain enforced independently of assurance.
+- Static coverage spans ADR-059 through ADR-067 application, route and policy-domain modules.
+  Focused/full backend and frontend gates, live AI/recommendation validation, ADR reconciliation and
+  exact PR/main CI must pass before delivery.
+
+### ATLAS-IMP-181 Validation Evidence
+
+- Model context, bounded model invocation, protected draft adjudication, answer presentation,
+  recommendation candidate generation, impact enrichment, risk/recovery completion, recommendation
+  adjudication and presentation now require the correct human actor without embedding development,
+  MFA or hardware-backed eligibility gates.
+- Every ADR-059 through ADR-067 signed policy carries `required_assurance_level`, defaults to
+  `SINGLE_FACTOR`, includes assurance in canonical signing, and accepts single-factor, multi-factor
+  or hardware-backed policy requirements. Explicit stronger policies still deny insufficient
+  assurance through the shared helper before permission or protected processing.
+- Grounding, citation and unknown preservation, prompt-injection defenses, exact tenant and browser
+  binding, protected/no-store content, source freshness, separation, impact/risk/interruption/
+  recovery completeness, deterministic lineage, idempotency, audit and no operational authority
+  remain independently enforced.
+- Static application, route and domain coverage passed 27 tests. The combined protected AI and
+  recommendation package passed 126 tests. Ruff format/lint and strict mypy passed across 1,002
+  source files.
+- The complete backend suite passed 1,437 tests with three expected Windows symlink skips. The
+  complete frontend suite passed 288 tests across 94 files on clean rerun; zero-warning ESLint,
+  TypeScript and the production build passed with only the pre-existing chunk-size advisory. One
+  unrelated MCP Builder test hit its 30-second limit during the parallel backend load and passed
+  both in isolation and in the clean full rerun.
+- Live validation at `http://127.0.0.1:5253/#/connectors/knowledge` used the local `atlas-demo`
+  username/password session against the IMP-181 backend. The AI context capability chain loaded
+  with the authenticated development identity and no fixed MFA or hardware prompt. No published
+  retrieval/model context exists in the current development dataset, so no model invocation or
+  recommendation evidence was fabricated.
+- ADR-059 through ADR-067 preserve protected-AI governance while recording that ADR-133 supersedes
+  fixed assurance prerequisites. Recommendation promotion and accountable human disposition remain
+  deferred to IMP-182.
+
+### ATLAS-IMP-180 Delivery Evidence
+
+- Source head `811f474e118021579147cd99fc1d4d311e256d03` passed exact-head PR CI run
+  `31711415093`; frontend completed in 5m11s and backend in 8m04s.
+- PR [#192](https://github.com/ozdemirumit/Project_Atlas/pull/192) was squash-merged as
+  `47d7926f6eba1d77901cbdbe5b9297ba2b663be4`.
+- The exact merged commit independently passed `main` CI run `31712222623`; frontend completed in
+  5m00s and backend in 8m26s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-181 branched.
 
 ### ATLAS-IMP-180 Scope Rationale
 

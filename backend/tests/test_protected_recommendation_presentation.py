@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -46,7 +46,12 @@ from atlas.modules.ai.domain.protected_recommendation_presentation import (
     ProtectedRecommendationPresentationPolicySnapshot,
     ProtectedRecommendationPresentationResult,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 
 class RecordingPresentationPermissionAuthorizer:
@@ -71,7 +76,10 @@ class RecordingPresentationPermissionAuthorizer:
 
 
 async def presentation_fixture(
-    *, deny: bool = False, unavailable: bool = False
+    *,
+    deny: bool = False,
+    unavailable: bool = False,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     GovernedProtectedRecommendationPresentationService,
     MemoryProtectedRecommendationPresentationRepository,
@@ -98,6 +106,17 @@ async def presentation_fixture(
         environment_id=adjudication.record.environment_id,
         issued_at=adjudication.record.adjudicated_at - timedelta(hours=1),
         expires_at=adjudication.record.adjudicated_at + timedelta(days=1),
+    )
+    unsigned_policy = replace(
+        policy,
+        required_assurance_level=required_assurance_level,
+        canonical_digest="0" * 64,
+    )
+    policy = replace(
+        unsigned_policy,
+        canonical_digest=GovernedProtectedModelInvocationService._digest(
+            GovernedProtectedModelInvocationService._payload(unsigned_policy)
+        ),
     )
     presenter = (
         UnavailableTrustedProtectedRecommendationPresenter()
@@ -168,6 +187,91 @@ async def test_presentation_is_inert_bounded_and_idempotent() -> None:
     assert len(presenter.calls) == 1
     assert result.record.presentation_id in presenter._vault
     assert len(permission.calls) == 4
+
+
+@pytest.mark.asyncio
+async def test_development_human_satisfies_default_presentation_policy() -> None:
+    service, _, adjudication, policy, actor, *_ = await presentation_fixture()
+    development_actor = replace(
+        actor,
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    result = await create_presentation(service, adjudication, policy, development_actor)
+
+    assert result.record.presentation_policy_digest == policy.canonical_digest
+
+
+@pytest.mark.asyncio
+async def test_explicit_stronger_presentation_policy_rejects_development_assurance() -> None:
+    service, repository, adjudication, policy, actor, *_, permission = await presentation_fixture(
+        required_assurance_level=AssuranceLevel.MULTI_FACTOR
+    )
+    development_actor = replace(
+        actor,
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    with pytest.raises(
+        ProtectedRecommendationPresentationError,
+        match="protected_recommendation_presentation_assurance_required",
+    ):
+        await create_presentation(service, adjudication, policy, development_actor)
+
+    assert not permission.calls
+    assert not repository._claims
+
+
+@pytest.mark.asyncio
+async def test_presentation_rejects_non_human_subject() -> None:
+    service, repository, adjudication, policy, actor, *_ = await presentation_fixture()
+    service_actor = replace(actor, kind=SubjectKind.SERVICE)
+
+    with pytest.raises(
+        ProtectedRecommendationPresentationError,
+        match="protected_recommendation_presentation_human_required",
+    ):
+        await create_presentation(service, adjudication, policy, service_actor)
+
+    assert not repository._claims
+
+
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    (
+        AssuranceLevel.SINGLE_FACTOR,
+        AssuranceLevel.MULTI_FACTOR,
+        AssuranceLevel.HARDWARE_BACKED,
+    ),
+)
+def test_presentation_policy_supports_explicit_assurance_levels(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    issued_at = datetime.now(UTC)
+    base_policy = build_development_protected_recommendation_presentation_policy(
+        organization_id="org.atlas",
+        environment_id="env.lab",
+        issued_at=issued_at,
+        expires_at=issued_at + timedelta(hours=1),
+    )
+    unsigned_policy = replace(
+        base_policy,
+        required_assurance_level=required_assurance_level,
+        canonical_digest="0" * 64,
+    )
+    policy = replace(
+        unsigned_policy,
+        canonical_digest=GovernedProtectedModelInvocationService._digest(
+            GovernedProtectedModelInvocationService._payload(unsigned_policy)
+        ),
+    )
+
+    assert policy.required_assurance_level is required_assurance_level
+    assert policy.canonical_digest == GovernedProtectedModelInvocationService._digest(
+        GovernedProtectedModelInvocationService._payload(policy)
+    )
 
 
 @pytest.mark.asyncio

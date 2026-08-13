@@ -42,8 +42,8 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 POLICY_SCHEMA = "atlas.protected-recommendation-candidate-policy.v1"
@@ -125,6 +125,7 @@ class GovernedProtectedRecommendationCandidateService:
             purpose,
             now,
         )
+        self._require_assurance(actor, policy)
         self._require_scope(actor, presentation.organization_id, presentation.environment_id)
         if actor.subject_id in {
             policy.signed_by,
@@ -398,6 +399,7 @@ class GovernedProtectedRecommendationCandidateService:
             raise ProtectedRecommendationCandidateError(
                 "protected_recommendation_candidate_not_found"
             )
+        self._require_assurance(actor, policy)
         await self._permission_authorizer.authorize(
             actor=actor,
             organization_id=record.organization_id,
@@ -512,6 +514,7 @@ class GovernedProtectedRecommendationCandidateService:
             raise ProtectedRecommendationCandidateError(
                 "protected_recommendation_candidate_not_found"
             )
+        self._require_assurance(actor, policy)
         await self._permission_authorizer.authorize(
             actor=actor,
             organization_id=record.organization_id,
@@ -786,13 +789,19 @@ class GovernedProtectedRecommendationCandidateService:
 
     @staticmethod
     def _require_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
+        if actor.kind is not SubjectKind.HUMAN:
             raise ProtectedRecommendationCandidateError(
-                "protected_recommendation_candidate_enterprise_human_hardware_mfa_required"
+                "protected_recommendation_candidate_human_required"
+            )
+
+    @staticmethod
+    def _require_assurance(
+        actor: AuthenticatedSubject,
+        policy: ProtectedRecommendationCandidatePolicySnapshot,
+    ) -> None:
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
+            raise ProtectedRecommendationCandidateError(
+                "protected_recommendation_candidate_assurance_required"
             )
 
     def _require_scope(
@@ -908,6 +917,7 @@ def build_development_protected_recommendation_candidate_policy(
         ),
         browser_binding_key_digest=digest(["protected-recommendation-candidate-browser-key"]),
         classification_ceiling="classification.internal",
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         signed_by="subject.protected-recommendation-candidate-policy-signer",
         signature_verified=True,
         issued_at=issued_at,

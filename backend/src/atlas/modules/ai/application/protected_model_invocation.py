@@ -37,8 +37,8 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 from atlas.modules.knowledge.application.model_context_assembly import (
     GovernedProtectedModelContextService,
@@ -99,7 +99,7 @@ class GovernedProtectedModelInvocationService:
         idempotency_key: str,
         correlation_id: str,
     ) -> ProtectedModelInvocationResult:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         purpose = purpose.strip()
         if (
             not 20 <= len(purpose) <= 1_000
@@ -122,6 +122,7 @@ class GovernedProtectedModelInvocationService:
         self._verify_context(
             context.record, policy, context_digest, invocation_policy_digest, purpose, now
         )
+        self._require_policy_assurance(actor, policy)
         self._require_scope(actor, context.record.organization_id, context.record.environment_id)
         if actor.subject_id in {
             policy.signed_by,
@@ -289,7 +290,7 @@ class GovernedProtectedModelInvocationService:
         browser_session_id: str,
         correlation_id: str,
     ) -> ProtectedModelInvocationResult:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         record = await self._repository.get(invocation_id=invocation_id)
         if record is None or record.canonical_digest != self._digest(self._payload(record)):
             raise ProtectedModelInvocationError("protected_model_invocation_not_found")
@@ -308,6 +309,7 @@ class GovernedProtectedModelInvocationService:
             record.purpose,
             now,
         )
+        self._require_policy_assurance(actor, policy)
         self._require_scope(actor, record.organization_id, record.environment_id)
         browser_digest = self._digest([policy.browser_binding_key_digest, browser_session_id])
         authorization_digest = self._authorization_digest(actor, context.record, policy)
@@ -508,14 +510,17 @@ class GovernedProtectedModelInvocationService:
         )
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
+    def _require_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
+            raise ProtectedModelInvocationError("protected_model_invocation_human_required")
+
+    @staticmethod
+    def _require_policy_assurance(
+        actor: AuthenticatedSubject, policy: ProtectedModelInvocationPolicySnapshot
+    ) -> None:
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
             raise ProtectedModelInvocationError(
-                "protected_model_invocation_enterprise_human_hardware_mfa_required"
+                "protected_model_invocation_policy_assurance_required"
             )
 
     def _require_scope(
@@ -661,6 +666,7 @@ def build_development_protected_model_invocation_policy(
         timeout_seconds=10,
         retention_minutes=15,
         accepted_finish_reasons=("stop",),
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         signed_by="subject.protected-model-invocation-policy-signer",
         signature_verified=True,
         endpoint_active=True,

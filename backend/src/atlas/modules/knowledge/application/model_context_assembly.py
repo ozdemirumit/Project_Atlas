@@ -18,8 +18,8 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 from atlas.modules.knowledge.application.model_context_assembly_ports import (
     ProtectedModelContextError,
@@ -95,7 +95,7 @@ class GovernedProtectedModelContextService:
         idempotency_key: str,
         correlation_id: str,
     ) -> ProtectedModelContextResult:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         objective, purpose = objective.strip(), purpose.strip()
         if (
             not 3 <= len(objective) <= 4_000
@@ -128,6 +128,7 @@ class GovernedProtectedModelContextService:
             policy_digest=context_policy_digest,
             now=now,
         )
+        self._require_policy_assurance(actor, policy)
         if (
             len(objective) > policy.maximum_objective_characters
             or purpose != retrieval.record.purpose
@@ -330,7 +331,7 @@ class GovernedProtectedModelContextService:
         browser_session_id: str,
         correlation_id: str,
     ) -> ProtectedModelContextResult:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         record = await self._repository.get(context_id=context_id)
         if record is None or record.canonical_digest != self._digest(self._payload(record)):
             raise ProtectedModelContextError("protected_model_context_not_found")
@@ -356,6 +357,7 @@ class GovernedProtectedModelContextService:
             policy_digest=record.context_policy_digest,
             now=now,
         )
+        self._require_policy_assurance(actor, policy)
         self._require_scope(actor, record.organization_id, record.environment_id)
         browser_digest = self._digest([policy.browser_binding_key_digest, browser_session_id])
         if (
@@ -522,15 +524,16 @@ class GovernedProtectedModelContextService:
             raise ProtectedModelContextError("protected_model_context_receipt_invalid")
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
-            raise ProtectedModelContextError(
-                "protected_model_context_enterprise_human_hardware_mfa_required"
-            )
+    def _require_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
+            raise ProtectedModelContextError("protected_model_context_human_required")
+
+    @staticmethod
+    def _require_policy_assurance(
+        actor: AuthenticatedSubject, policy: ProtectedModelContextPolicySnapshot
+    ) -> None:
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
+            raise ProtectedModelContextError("protected_model_context_policy_assurance_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -686,7 +689,7 @@ def build_development_protected_model_context_policy(
         maximum_estimated_tokens=2_000,
         maximum_evidence_items=5,
         retention_minutes=20,
-        required_assurance_level=AssuranceLevel.HARDWARE_BACKED,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         signed_by="subject.protected-model-context-policy-signer",
         signature_verified=True,
         issued_at=issued_at,
