@@ -7,9 +7,11 @@ import {
   createItsmIntegrationProfile,
   getLatestItsmSandboxConformance,
   getItsmIntegrationProfiles,
+  getItsmSandboxOnboardingReadiness,
   retireItsmIntegrationProfile,
   type ItsmIntegrationProfile,
   type ItsmSandboxConformanceAssessment,
+  type ItsmSandboxOnboardingReadiness,
 } from "../../api/itsmIntegrations";
 import ItsmIntegrationReadinessWorkspace from "./ItsmIntegrationReadinessWorkspace";
 
@@ -19,6 +21,7 @@ vi.mock("../../api/itsmIntegrations", async (importOriginal) => ({
   assessItsmSandboxConformance: vi.fn(),
   getLatestItsmSandboxConformance: vi.fn(),
   getItsmIntegrationProfiles: vi.fn(),
+  getItsmSandboxOnboardingReadiness: vi.fn(),
   retireItsmIntegrationProfile: vi.fn(),
 }));
 
@@ -108,6 +111,53 @@ const conformance: ItsmSandboxConformanceAssessment = {
   reused: false,
 };
 
+const onboarding: ItsmSandboxOnboardingReadiness = {
+  schema_version: "atlas.itsm-sandbox-onboarding-readiness.v1",
+  version: 1,
+  organization_id: "organization.development",
+  environment_id: "environment.test",
+  site_id: "site.local",
+  profile_id: profile.profile_id,
+  profile_version: 1,
+  profile_digest: profile.canonical_digest,
+  mapping_version: 1,
+  conformance_assessment_id: conformance.assessment_id,
+  conformance_assessment_digest: conformance.canonical_digest,
+  adapter_id: conformance.adapter_id,
+  adapter_version: conformance.adapter_version,
+  policy_version: "policy.itsm-sandbox-onboarding.v1",
+  assessed_at: "2026-08-13T05:00:00Z",
+  evidence_observed_at: "2026-08-13T05:00:00Z",
+  evidence_valid_until: "2026-08-13T05:10:00Z",
+  state: "blocked",
+  requirements: [
+    ["profile-current", "satisfied", "satisfied"],
+    ["conformance-current", "satisfied", "satisfied"],
+    ["adapter-registered", "satisfied", "satisfied"],
+    ["adapter-sandbox-approved", "blocked", "adapter_not_onboarding_eligible"],
+    ["workload-identity", "satisfied", "satisfied"],
+    ["credential-ownership", "satisfied", "satisfied"],
+    ["network-trust", "satisfied", "satisfied"],
+    ["mapping-change-control", "satisfied", "satisfied"],
+    ["rate-backpressure", "satisfied", "satisfied"],
+    ["audit-routing", "satisfied", "satisfied"],
+    ["availability-recovery", "satisfied", "satisfied"],
+    ["owner-approvals", "blocked", "owner_approvals_missing"],
+  ].map(([id, state, reason]) => ({
+    requirement_id: `itsm.sandbox-onboarding.${id}`,
+    state: state as "satisfied" | "blocked",
+    reason_code: `itsm.sandbox-onboarding.${reason}`,
+  })),
+  canonical_digest: "e".repeat(64),
+  sandbox_onboarding_ready: false,
+  production_ready: false,
+  dispatch_authorized: false,
+  external_record_mutation_authorized: false,
+  workflow_approved: false,
+  execution_authorized: false,
+  infrastructure_mutation_performed: false,
+};
+
 function renderWorkspace(governedSessionAvailable = true) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -127,6 +177,7 @@ beforeEach(() => {
   });
   vi.mocked(createItsmIntegrationProfile).mockResolvedValue(profile);
   vi.mocked(getLatestItsmSandboxConformance).mockResolvedValue(null);
+  vi.mocked(getItsmSandboxOnboardingReadiness).mockResolvedValue(onboarding);
   vi.mocked(assessItsmSandboxConformance).mockResolvedValue(conformance);
   vi.mocked(retireItsmIntegrationProfile).mockResolvedValue({
     ...profile,
@@ -152,6 +203,11 @@ describe("ItsmIntegrationReadinessWorkspace", () => {
     expect(screen.getByText("Append only")).toBeVisible();
     expect(screen.queryByText(/secret\.itsm/i)).toBeNull();
     expect(screen.queryByRole("button", { name: /dispatch|create ticket|test endpoint/i })).toBeNull();
+    expect(await screen.findByRole("heading", { name: "Deployment readiness dossier" })).toBeVisible();
+    expect(screen.getByText("Fail closed")).toBeVisible();
+    expect(screen.getByText("Sandbox adapter approval")).toBeVisible();
+    expect(screen.getByText("adapter not onboarding eligible")).toBeVisible();
+    expect(screen.getByText("Security and deployment approvals")).toBeVisible();
   });
 
   it("keeps profile lifecycle changes behind a governed browser session", async () => {
@@ -201,7 +257,7 @@ describe("ItsmIntegrationReadinessWorkspace", () => {
     await waitFor(() => expect(assessItsmSandboxConformance).toHaveBeenCalledTimes(1));
     expect(vi.mocked(assessItsmSandboxConformance).mock.calls[0]?.[0]).toEqual(profile);
     expect(await screen.findByText("conformant")).toBeVisible();
-    expect(screen.getByText("adapter.itsm.synthetic-no-network")).toBeVisible();
+    expect(screen.getAllByText("adapter.itsm.synthetic-no-network")).toHaveLength(2);
     expect(screen.queryByRole("button", { name: /dispatch|create ticket|execute/i })).toBeNull();
   });
 });

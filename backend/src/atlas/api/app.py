@@ -769,6 +769,10 @@ from atlas.modules.inventory.application.service import InventoryDeviceService
 from atlas.modules.investigations.adapters.synthetic import SyntheticInvestigationAssembler
 from atlas.modules.investigations.application.service import InvestigationService
 from atlas.modules.itsm.adapters.memory import InMemoryItsmIntegrationProfileRepository
+from atlas.modules.itsm.adapters.onboarding import (
+    DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource,
+    EmptyItsmSandboxOnboardingEvidenceSource,
+)
 from atlas.modules.itsm.adapters.postgres import PostgreSQLItsmIntegrationProfileRepository
 from atlas.modules.itsm.adapters.sandbox import (
     DeterministicNoNetworkItsmSandboxConformanceAdapter,
@@ -5046,6 +5050,11 @@ def create_app(
             UnavailableItsmSandboxConformanceAdapter()
             if is_production
             else DeterministicNoNetworkItsmSandboxConformanceAdapter()
+        ),
+        sandbox_onboarding_evidence_source=(
+            EmptyItsmSandboxOnboardingEvidenceSource()
+            if is_production
+            else DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource()
         ),
     )
     resolved_graph_impact_service = graph_impact_service or GraphImpactService(

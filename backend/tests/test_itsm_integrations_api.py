@@ -23,6 +23,9 @@ from atlas.modules.identity.domain.models import (
     SubjectKind,
 )
 from atlas.modules.itsm.adapters.memory import InMemoryItsmIntegrationProfileRepository
+from atlas.modules.itsm.adapters.onboarding import (
+    DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource,
+)
 from atlas.modules.itsm.adapters.sandbox import (
     DeterministicNoNetworkItsmSandboxConformanceAdapter,
 )
@@ -108,6 +111,9 @@ class ItsmFixture:
             audit_sink=self.sink,
             environment_id="environment.test",
             sandbox_conformance_adapter=DeterministicNoNetworkItsmSandboxConformanceAdapter(),
+            sandbox_onboarding_evidence_source=(
+                DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource()
+            ),
             clock=lambda: NOW,
         )
         self.app = create_app(
@@ -333,3 +339,59 @@ def test_sandbox_conformance_requires_csrf_and_returns_secret_free_evidence() ->
     assert "secret_reference" not in assessed.text
     assert "endpoint" not in assessed.text
     assert "idempotency" not in assessed.text
+
+
+def test_sandbox_onboarding_readiness_is_read_only_blocked_and_non_disclosing() -> None:
+    fixture = ItsmFixture()
+    with TestClient(fixture.app) as client:
+        csrf = login(client)
+        created = client.post(
+            "/api/v1/itsm/integrations",
+            json=create_payload(),
+            headers={"X-CSRF-Token": csrf, "Idempotency-Key": "itsm-create-onboarding"},
+        )
+        profile = created.json()["data"]
+        assessments = (
+            f"/api/v1/itsm/integrations/{profile['profile_id']}/sandbox-conformance-assessments"
+        )
+        assessed = client.post(
+            assessments,
+            json={
+                "schema_version": "atlas.itsm-sandbox-conformance-input.v1",
+                "expected_profile_version": profile["version"],
+                "acknowledged_diagnostic_only_and_no_dispatch": True,
+            },
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "itsm-sandbox-onboarding-api",
+            },
+        )
+        readiness = client.get(
+            f"/api/v1/itsm/integrations/{profile['profile_id']}/sandbox-onboarding-readiness"
+        )
+
+    assert assessed.status_code == 201
+    assert readiness.status_code == 200
+    assert readiness.headers["Cache-Control"] == "no-store"
+    data = readiness.json()["data"]
+    assert data["schema_version"] == "atlas.itsm-sandbox-onboarding-readiness.v1"
+    assert data["state"] == "blocked"
+    assert data["profile_digest"] == profile["canonical_digest"]
+    assert data["conformance_assessment_id"] == assessed.json()["data"]["assessment_id"]
+    assert len(data["requirements"]) == 12
+    assert all(
+        data[field] is False
+        for field in (
+            "sandbox_onboarding_ready",
+            "production_ready",
+            "dispatch_authorized",
+            "external_record_mutation_authorized",
+            "workflow_approved",
+            "execution_authorized",
+            "infrastructure_mutation_performed",
+        )
+    )
+    assert "secret_reference" not in readiness.text
+    assert "endpoint_origin" not in readiness.text
+    assert "idempotency" not in readiness.text
+    assert fixture.sink.records[-1].permission_id == ("itsm.integrations.sandbox-onboarding.read")

@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-172 |
 | Title | Provider-neutral ITSM sandbox adapter onboarding readiness |
-| Status | In Progress; architecture and implementation pending |
+| Status | In Progress; implementation and validation complete |
 | Branch | `agent/itsm-sandbox-onboarding-readiness` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-124, ADR-125, ADR-126, ADR-127, ADR-128 (planned) |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-124, ADR-125, ADR-126, ADR-127, ADR-128 |
 | Last Updated | 2026-08-13 |
-| Next Action | Record ADR-128 and implement the exact-profile sandbox onboarding readiness dossier |
+| Next Action | Complete exact-head delivery through PR, CI, merge and independent main validation |
 
 ### ATLAS-IMP-172 Scope Rationale
 
@@ -45,6 +45,32 @@
   approval or execution control.
 - ADR, focused and full backend/frontend gates, one Alembic head, production build and responsive
   live validation pass before delivery. The dossier remains computed on read and grants no authority.
+
+### ATLAS-IMP-172 Validation Evidence
+
+- ADR-128 records the exact-profile derived dossier, injected authoritative deployment-evidence
+  source, dedicated C1 read, attributable audit and unchanged no-dispatch/no-execution boundary.
+  Production uses an empty evidence source; deterministic development evidence is explicitly
+  non-production and cannot satisfy sandbox adapter onboarding.
+- The immutable dossier binds profile and mapping versions, latest conformance identity and digest,
+  adapter identity, policy version and evidence interval. Twelve stable requirements cover profile
+  integrity, conformance, registration, adapter approval, workload identity, credential ownership,
+  network/trust, mapping control, rate/backpressure, audit, recovery and named owner approvals.
+- Missing, expired, mismatched, nonconformant, non-production and incomplete evidence fails closed.
+  The API accepts only a path-scoped profile ID, returns `no-store` and omits endpoint, credential,
+  secret, token, payload, provider-operation and caller approval fields.
+- Focused backend formatting, lint and strict typing passed; 24 ITSM service/API scenarios passed,
+  including distinct missing versus integrity-failed conformance reasons. The exact final complete
+  regression passed 1,038 tests with three expected Windows symlink skips in 9m56s. Alembic remains
+  at the single `20260813_0105` head.
+- Frontend TypeScript and zero-warning ESLint passed. The complete suite passed 241 tests across 91
+  files and the production build passed with only the existing large-chunk advisory. The ITSM lazy
+  workspace remains separately loaded at 30.42 kB.
+- Live browser validation registered an exact profile, distinguished missing conformance, ran the
+  acknowledgement-gated no-network diagnostic and displayed all 12 onboarding requirements. The
+  synthetic adapter and absent security/deployment approvals remained fail-closed after reload.
+  Desktop 1,280 x 720 and mobile 390 x 844 had no page-level horizontal overflow, alert, console
+  warning/error or dispatch, ticket-mutation, adapter-configuration or execution control.
 
 ### ATLAS-IMP-171 Scope Rationale
 

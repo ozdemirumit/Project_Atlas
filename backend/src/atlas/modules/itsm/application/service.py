@@ -17,6 +17,7 @@ from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKi
 from atlas.modules.itsm.application.ports import (
     ItsmIntegrationProfileRepository,
     ItsmSandboxConformanceAdapter,
+    ItsmSandboxOnboardingEvidenceSource,
 )
 from atlas.modules.itsm.domain.models import (
     ItsmAllowedOperation,
@@ -31,6 +32,11 @@ from atlas.modules.itsm.domain.models import (
     ItsmSandboxConformanceAssessment,
     ItsmSandboxConformanceState,
     ItsmSandboxDiagnostic,
+    ItsmSandboxOnboardingEvidence,
+    ItsmSandboxOnboardingReadiness,
+    ItsmSandboxOnboardingRequirement,
+    ItsmSandboxOnboardingRequirementState,
+    ItsmSandboxOnboardingState,
 )
 
 ITSM_PROFILE_SCHEMA = "atlas.itsm-integration-profile.v1"
@@ -41,6 +47,8 @@ ITSM_CREATE = "itsm.integrations.create"
 ITSM_RETIRE = "itsm.integrations.retire"
 ITSM_SANDBOX_CONFORMANCE_READ = "itsm.integrations.sandbox-conformance.read"
 ITSM_SANDBOX_CONFORMANCE_CREATE = "itsm.integrations.sandbox-conformance.create"
+ITSM_SANDBOX_ONBOARDING_READ = "itsm.integrations.sandbox-onboarding.read"
+ITSM_SANDBOX_ONBOARDING_POLICY = "policy.itsm-sandbox-onboarding.v1"
 
 
 class ItsmIntegrationError(RuntimeError):
@@ -56,6 +64,7 @@ class ItsmIntegrationService:
         environment_id: str,
         site_id: str = "site.local",
         sandbox_conformance_adapter: ItsmSandboxConformanceAdapter | None = None,
+        sandbox_onboarding_evidence_source: ItsmSandboxOnboardingEvidenceSource | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
@@ -63,6 +72,7 @@ class ItsmIntegrationService:
         self._environment_id = environment_id
         self._site_id = site_id
         self._sandbox_conformance_adapter = sandbox_conformance_adapter
+        self._sandbox_onboarding_evidence_source = sandbox_onboarding_evidence_source
         self._clock = clock or (lambda: datetime.now(UTC))
         self._lock = asyncio.Lock()
 
@@ -509,6 +519,70 @@ class ItsmIntegrationService:
         )
         return assessment
 
+    async def sandbox_onboarding_readiness(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        profile_id: str,
+        correlation_id: str,
+    ) -> ItsmSandboxOnboardingReadiness:
+        profile = await self._repository.get(profile_id=profile_id)
+        if profile is None:
+            raise ItsmIntegrationError("itsm_integration_not_found")
+        self._validate_record(profile)
+        self._require_scope(actor, profile)
+        now = self._clock()
+        assessment = await self._repository.get_latest_sandbox_conformance(
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+            site_id=self._site_id,
+            profile_id=profile_id,
+        )
+        assessment_integrity_valid = True
+        if assessment is not None:
+            try:
+                self._validate_sandbox_assessment(assessment, profile=profile)
+            except ItsmIntegrationError:
+                assessment_integrity_valid = False
+
+        evidence = None
+        evidence_source_failed = False
+        if self._sandbox_onboarding_evidence_source is not None:
+            try:
+                evidence = await self._sandbox_onboarding_evidence_source.get(
+                    profile=profile,
+                    assessment=assessment if assessment_integrity_valid else None,
+                )
+            except Exception:
+                evidence_source_failed = True
+        if evidence_source_failed:
+            evidence_valid = False
+            evidence_reason = "itsm.sandbox-onboarding.evidence_source_unavailable"
+        else:
+            evidence_valid, evidence_reason = self._validate_onboarding_evidence(
+                evidence,
+                profile=profile,
+                assessment=assessment if assessment_integrity_valid else None,
+                assessed_at=now,
+            )
+        dossier = self._build_onboarding_readiness(
+            profile=profile,
+            assessment=assessment if assessment_integrity_valid else None,
+            assessment_integrity_valid=assessment_integrity_valid,
+            evidence=evidence if evidence_valid else None,
+            evidence_reason=evidence_reason,
+            assessed_at=now,
+        )
+        await self._audit(
+            actor,
+            correlation_id=correlation_id,
+            permission_id=ITSM_SANDBOX_ONBOARDING_READ,
+            result_code=f"itsm_sandbox_onboarding_{dossier.state.value}",
+            scope_reference=profile.profile_id,
+            idempotency_key=None,
+        )
+        return dossier
+
     async def close(self) -> None:
         await self._repository.close()
 
@@ -621,6 +695,220 @@ class ItsmIntegrationService:
         for field in ("assessment_id", "idempotency_key", "canonical_digest", "reused"):
             payload.pop(field)
         return cast(dict[str, object], cls._normalize(payload))
+
+    @classmethod
+    def _validate_onboarding_evidence(
+        cls,
+        evidence: ItsmSandboxOnboardingEvidence | None,
+        *,
+        profile: ItsmIntegrationProfile,
+        assessment: ItsmSandboxConformanceAssessment | None,
+        assessed_at: datetime,
+    ) -> tuple[bool, str]:
+        if evidence is None:
+            return False, "itsm.sandbox-onboarding.evidence_missing"
+        if cls._digest(cls._onboarding_evidence_payload(evidence)) != evidence.canonical_digest:
+            return False, "itsm.sandbox-onboarding.evidence_integrity_failed"
+        if (
+            assessment is None
+            or evidence.organization_id != profile.organization_id
+            or evidence.environment_id != profile.environment_id
+            or evidence.site_id != profile.site_id
+            or evidence.profile_id != profile.profile_id
+            or evidence.profile_version != profile.version
+            or evidence.profile_digest != profile.canonical_digest
+            or evidence.mapping_version != profile.mapping_version
+            or evidence.adapter_id != assessment.adapter_id
+            or evidence.adapter_version != assessment.adapter_version
+        ):
+            return False, "itsm.sandbox-onboarding.evidence_binding_invalid"
+        if evidence.valid_until <= assessed_at:
+            return False, "itsm.sandbox-onboarding.evidence_expired"
+        return True, "itsm.sandbox-onboarding.satisfied"
+
+    @classmethod
+    def _onboarding_evidence_payload(
+        cls, evidence: ItsmSandboxOnboardingEvidence
+    ) -> dict[str, object]:
+        payload = cast(dict[str, object], asdict(evidence))
+        payload.pop("canonical_digest")
+        return cast(dict[str, object], cls._normalize(payload))
+
+    @classmethod
+    def _build_onboarding_readiness(
+        cls,
+        *,
+        profile: ItsmIntegrationProfile,
+        assessment: ItsmSandboxConformanceAssessment | None,
+        assessment_integrity_valid: bool,
+        evidence: ItsmSandboxOnboardingEvidence | None,
+        evidence_reason: str,
+        assessed_at: datetime,
+    ) -> ItsmSandboxOnboardingReadiness:
+        profile_current = profile.lifecycle is ItsmProfileLifecycle.ACTIVE
+        if assessment is None:
+            conformance_reason = (
+                "itsm.sandbox-onboarding.conformance_integrity_failed"
+                if not assessment_integrity_valid
+                else "itsm.sandbox-onboarding.conformance_missing"
+            )
+            conformance_current = False
+        elif assessment.state is not ItsmSandboxConformanceState.CONFORMANT:
+            conformance_reason = "itsm.sandbox-onboarding.conformance_not_conformant"
+            conformance_current = False
+        elif assessment.valid_until <= assessed_at:
+            conformance_reason = "itsm.sandbox-onboarding.conformance_expired"
+            conformance_current = False
+        else:
+            conformance_reason = "itsm.sandbox-onboarding.satisfied"
+            conformance_current = True
+
+        def evidence_condition(value: bool, missing_reason: str) -> tuple[bool, str]:
+            if evidence is None:
+                return False, evidence_reason
+            return (True, "itsm.sandbox-onboarding.satisfied") if value else (False, missing_reason)
+
+        adapter_eligible = bool(
+            evidence
+            and assessment
+            and evidence.adapter_sandbox_approved
+            and evidence.production_eligible
+            and assessment.adapter_production_eligible
+        )
+        conditions = (
+            (
+                "itsm.sandbox-onboarding.profile-current",
+                profile_current,
+                "itsm.sandbox-onboarding.profile_not_active",
+            ),
+            (
+                "itsm.sandbox-onboarding.conformance-current",
+                conformance_current,
+                conformance_reason,
+            ),
+            (
+                "itsm.sandbox-onboarding.adapter-registered",
+                *evidence_condition(
+                    bool(evidence and evidence.adapter_registered),
+                    "itsm.sandbox-onboarding.adapter_not_registered",
+                ),
+            ),
+            (
+                "itsm.sandbox-onboarding.adapter-sandbox-approved",
+                *evidence_condition(
+                    adapter_eligible,
+                    "itsm.sandbox-onboarding.adapter_not_onboarding_eligible",
+                ),
+            ),
+            (
+                "itsm.sandbox-onboarding.workload-identity",
+                *evidence_condition(
+                    bool(evidence and evidence.workload_identity_configured),
+                    "itsm.sandbox-onboarding.workload_identity_missing",
+                ),
+            ),
+            (
+                "itsm.sandbox-onboarding.credential-ownership",
+                *evidence_condition(
+                    bool(evidence and evidence.credential_reference_owned),
+                    "itsm.sandbox-onboarding.credential_ownership_missing",
+                ),
+            ),
+            (
+                "itsm.sandbox-onboarding.network-trust",
+                *evidence_condition(
+                    bool(evidence and evidence.network_trust_approved),
+                    "itsm.sandbox-onboarding.network_trust_missing",
+                ),
+            ),
+            (
+                "itsm.sandbox-onboarding.mapping-change-control",
+                *evidence_condition(
+                    bool(evidence and evidence.mapping_change_control_configured),
+                    "itsm.sandbox-onboarding.mapping_change_control_missing",
+                ),
+            ),
+            (
+                "itsm.sandbox-onboarding.rate-backpressure",
+                *evidence_condition(
+                    bool(evidence and evidence.rate_limit_and_backpressure_configured),
+                    "itsm.sandbox-onboarding.rate_backpressure_missing",
+                ),
+            ),
+            (
+                "itsm.sandbox-onboarding.audit-routing",
+                *evidence_condition(
+                    bool(evidence and evidence.audit_routing_configured),
+                    "itsm.sandbox-onboarding.audit_routing_missing",
+                ),
+            ),
+            (
+                "itsm.sandbox-onboarding.availability-recovery",
+                *evidence_condition(
+                    bool(evidence and evidence.availability_and_recovery_configured),
+                    "itsm.sandbox-onboarding.availability_recovery_missing",
+                ),
+            ),
+            (
+                "itsm.sandbox-onboarding.owner-approvals",
+                *evidence_condition(
+                    bool(
+                        evidence
+                        and evidence.security_approval_reference
+                        and evidence.deployment_approval_reference
+                    ),
+                    "itsm.sandbox-onboarding.owner_approvals_missing",
+                ),
+            ),
+        )
+        requirements = tuple(
+            ItsmSandboxOnboardingRequirement(
+                requirement_id=requirement_id,
+                state=(
+                    ItsmSandboxOnboardingRequirementState.SATISFIED
+                    if satisfied
+                    else ItsmSandboxOnboardingRequirementState.BLOCKED
+                ),
+                reason_code=reason,
+            )
+            for requirement_id, satisfied, reason in conditions
+        )
+        ready = all(
+            item.state is ItsmSandboxOnboardingRequirementState.SATISFIED for item in requirements
+        )
+        payload: dict[str, object] = {
+            "schema_version": "atlas.itsm-sandbox-onboarding-readiness.v1",
+            "version": 1,
+            "organization_id": profile.organization_id,
+            "environment_id": profile.environment_id,
+            "site_id": profile.site_id,
+            "profile_id": profile.profile_id,
+            "profile_version": profile.version,
+            "profile_digest": profile.canonical_digest,
+            "mapping_version": profile.mapping_version,
+            "conformance_assessment_id": assessment.assessment_id if assessment else None,
+            "conformance_assessment_digest": assessment.canonical_digest if assessment else None,
+            "adapter_id": assessment.adapter_id if assessment else None,
+            "adapter_version": assessment.adapter_version if assessment else None,
+            "policy_version": ITSM_SANDBOX_ONBOARDING_POLICY,
+            "assessed_at": assessed_at,
+            "evidence_observed_at": evidence.observed_at if evidence else None,
+            "evidence_valid_until": evidence.valid_until if evidence else None,
+            "state": ItsmSandboxOnboardingState.READY
+            if ready
+            else ItsmSandboxOnboardingState.BLOCKED,
+            "requirements": requirements,
+            "sandbox_onboarding_ready": ready,
+            "production_ready": False,
+            "dispatch_authorized": False,
+            "external_record_mutation_authorized": False,
+            "workflow_approved": False,
+            "execution_authorized": False,
+            "infrastructure_mutation_performed": False,
+        }
+        return ItsmSandboxOnboardingReadiness(
+            **cast(dict[str, Any], payload), canonical_digest=cls._digest(payload)
+        )
 
     def _require_scope(self, actor: AuthenticatedSubject, record: ItsmIntegrationProfile) -> None:
         if (

@@ -7,6 +7,7 @@ from atlas.modules.itsm.domain.models import (
     ItsmProfileLifecycle,
     ItsmSandboxConformanceAssessment,
     ItsmSandboxDiagnostic,
+    ItsmSandboxOnboardingEvidence,
 )
 
 
@@ -68,3 +69,12 @@ class ItsmSandboxConformanceAdapter(Protocol):
         challenge_digest: str,
         diagnostic_contract_version: str,
     ) -> ItsmSandboxDiagnostic: ...
+
+
+class ItsmSandboxOnboardingEvidenceSource(Protocol):
+    async def get(
+        self,
+        *,
+        profile: ItsmIntegrationProfile,
+        assessment: ItsmSandboxConformanceAssessment | None,
+    ) -> ItsmSandboxOnboardingEvidence | None: ...
