@@ -31,7 +31,7 @@ from atlas.modules.authorization.domain.models import (
     RoleAssignment,
     RoleDefinition,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject
 from atlas.modules.recommendations.adapters.protected_content_memory import (
     InMemoryRecommendationProtectedContentPolicySource,
     InMemoryRecommendationProtectedContentRepository,
@@ -196,6 +196,8 @@ async def test_exact_assignee_receives_bounded_content_and_exact_replay() -> Non
     first = await create_content(service, assignment, lease, policy, actor)
     repeated = await create_content(service, assignment, lease, policy, actor)
 
+    assert actor.assurance_level is AssuranceLevel.DEVELOPMENT
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
     assert "Recommendation review snapshot" in first.content
     assert first.record.content_disclosed
     assert first.record.protected_content_bytes_returned == len(first.content.encode("utf-8"))
@@ -209,6 +211,26 @@ async def test_exact_assignee_receives_bounded_content_and_exact_replay() -> Non
     assert not first.record.deployment_authorized
     assert not first.record.infrastructure_mutated
     assert "content" not in asdict(next(iter(repository._records.values())))
+
+
+@pytest.mark.asyncio
+async def test_explicit_stronger_assurance_policy_denies_development_session() -> None:
+    service, repository, _, assignment, _, lease, policy, actor = await content_fixture()
+    stronger_policy = replace(
+        policy,
+        required_assurance_level=AssuranceLevel.MULTI_FACTOR,
+        canonical_digest="0" * 64,
+    )
+    stronger_policy = replace(
+        stronger_policy,
+        canonical_digest=service._digest(service._policy_payload(stronger_policy)),
+    )
+    service._policy_source = InMemoryRecommendationProtectedContentPolicySource((stronger_policy,))
+
+    with pytest.raises(RecommendationProtectedContentError, match="assurance_required"):
+        await create_content(service, assignment, lease, stronger_policy, actor)
+
+    assert not repository._claims_by_lease
 
 
 @pytest.mark.asyncio

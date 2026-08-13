@@ -69,7 +69,12 @@ class RecommendationFindingPresentationPolicySnapshot:
             or not 1 <= self.maximum_findings <= 20
             or not 1024 <= self.maximum_packet_bytes <= 32768
             or self.permitted_media_type != "media-type.application-json"
-            or self.required_assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or self.required_assurance_level
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or not self.signature_verified
             or self.issued_at.tzinfo is None
             or self.expires_at.tzinfo is None

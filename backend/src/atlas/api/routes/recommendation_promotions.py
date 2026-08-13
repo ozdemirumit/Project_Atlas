@@ -41,7 +41,7 @@ def _raise(error: RecommendationPromotionError) -> NoReturn:
         503
         if isinstance(error, RecommendationPromotionUncertainError)
         else 403
-        if code.endswith(("required", "denied", "mfa_required"))
+        if code.endswith(("required", "denied"))
         else 404
         if code.endswith(("not_found", "unavailable"))
         else 422

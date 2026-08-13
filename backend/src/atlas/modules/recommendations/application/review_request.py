@@ -17,8 +17,8 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 from atlas.modules.recommendations.application.readiness import (
     GovernedRecommendationReadinessService,
@@ -110,6 +110,7 @@ class GovernedRecommendationReviewRequestService:
         policy = await self._policy_source.get_by_id(policy_id=review_request_policy_id)
         self._verify_policy(policy, review_request_policy_digest, actor, self._environment_id, now)
         assert policy is not None
+        self._require_policy_assurance(actor, policy)
         await self._permission_authorizer.authorize(
             actor=actor,
             organization_id=actor.organization_id,
@@ -309,6 +310,7 @@ class GovernedRecommendationReviewRequestService:
             or policy.canonical_digest != self._digest(self._payload(policy))
         ):
             raise RecommendationReviewRequestError("recommendation_review_request_not_found")
+        self._require_policy_assurance(actor, policy)
         await self._permission_authorizer.authorize(
             actor=actor,
             organization_id=record.organization_id,
@@ -588,13 +590,16 @@ class GovernedRecommendationReviewRequestService:
 
     @staticmethod
     def _require_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
+        if actor.kind is not SubjectKind.HUMAN:
+            raise RecommendationReviewRequestError("recommendation_review_request_human_required")
+
+    @staticmethod
+    def _require_policy_assurance(
+        actor: AuthenticatedSubject, policy: RecommendationReviewRequestPolicySnapshot
+    ) -> None:
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
             raise RecommendationReviewRequestError(
-                "recommendation_review_request_enterprise_human_hardware_mfa_required"
+                "recommendation_review_request_policy_assurance_required"
             )
 
     def _require_scope(
@@ -724,6 +729,7 @@ def build_development_recommendation_review_request_policy(
         no_authority_profile_digest=digest(
             ["no-assignment-review-approval-workflow-execution-authority-v1"]
         ),
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         issued_at=issued_at,
         expires_at=expires_at,
         canonical_digest="0" * 64,

@@ -18,7 +18,11 @@ from atlas.core.config import Settings
 from atlas.modules.ai.application.protected_model_invocation import (
     GovernedProtectedModelInvocationService,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+)
 from atlas.modules.recommendations.adapters.review_request_memory import (
     InMemoryRecommendationReviewRequestPolicySource,
     MemoryRecommendationReviewRequestRepository,
@@ -94,7 +98,10 @@ class TamperingReviewRequestOrchestrator(SyntheticTrustedRecommendationReviewReq
 
 
 async def review_request_fixture(
-    *, deny: bool = False, unavailable: bool = False
+    *,
+    deny: bool = False,
+    unavailable: bool = False,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     GovernedRecommendationReviewRequestService,
     MemoryRecommendationReviewRequestRepository,
@@ -110,6 +117,17 @@ async def review_request_fixture(
         environment_id=readiness.assessment.environment_id,
         issued_at=readiness.assessment.assessed_at - timedelta(hours=1),
         expires_at=readiness.assessment.assessed_at + timedelta(days=1),
+    )
+    policy = replace(
+        policy,
+        required_assurance_level=required_assurance_level,
+        canonical_digest="0" * 64,
+    )
+    policy = replace(
+        policy,
+        canonical_digest=GovernedProtectedModelInvocationService._digest(
+            GovernedProtectedModelInvocationService._payload(policy)
+        ),
     )
     permission = RecordingReviewRequestPermissionAuthorizer(deny=deny)
     repository = MemoryRecommendationReviewRequestRepository()
@@ -188,6 +206,36 @@ async def test_request_creates_policy_routed_manifest_and_exact_replay() -> None
     assert not record.infrastructure_mutated
     assert repeated.record.reused and replay.record.reused
     assert len(permission.calls) == 4
+
+
+@pytest.mark.asyncio
+async def test_default_policy_allows_development_authentication() -> None:
+    service, _, policy, readiness, actor, _ = await review_request_fixture()
+    actor = replace(
+        actor,
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    result = await create_review_request(service, policy, readiness, actor)
+
+    assert result.record.review_requested
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+
+
+@pytest.mark.asyncio
+async def test_explicit_stronger_policy_rejects_development_authentication() -> None:
+    service, _, policy, readiness, actor, _ = await review_request_fixture(
+        required_assurance_level=AssuranceLevel.MULTI_FACTOR
+    )
+    actor = replace(
+        actor,
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    with pytest.raises(RecommendationReviewRequestError, match="policy_assurance_required"):
+        await create_review_request(service, policy, readiness, actor)
 
 
 @pytest.mark.asyncio

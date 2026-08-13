@@ -41,7 +41,7 @@ def _raise(error: FinalRecommendationDispositionError) -> NoReturn:
     code = str(error)
     if isinstance(error, FinalRecommendationDispositionUncertainError):
         status = 503
-    elif code.endswith(("required", "denied", "mfa_required")):
+    elif code.endswith(("required", "denied")):
         status = 403
     elif code.endswith("not_found"):
         status = 404

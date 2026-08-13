@@ -41,7 +41,7 @@ def _raise(error: RecommendationCorrectionError) -> NoReturn:
     code = str(error)
     if isinstance(error, RecommendationCorrectionUncertainError):
         status = 503
-    elif code.endswith(("required", "denied", "mfa_required")):
+    elif code.endswith(("required", "denied")):
         status = 403
     elif code.endswith("not_found"):
         status = 404

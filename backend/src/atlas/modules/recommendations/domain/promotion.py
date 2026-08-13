@@ -6,6 +6,7 @@ from datetime import datetime
 from atlas.modules.ai.domain.protected_recommendation_presentation import (
     PresentedRecommendationOption,
 )
+from atlas.modules.identity.domain.models import AssuranceLevel
 
 
 def _aware(*values: datetime) -> bool:
@@ -32,6 +33,7 @@ class RecommendationPromotionPolicySnapshot:
     browser_binding_key_digest: str
     promotion_profile_digest: str
     prohibited_content_profile_digest: str
+    required_assurance_level: AssuranceLevel
     issued_at: datetime
     expires_at: datetime
     canonical_digest: str
@@ -41,6 +43,12 @@ class RecommendationPromotionPolicySnapshot:
             self.version != 1
             or not _aware(self.issued_at, self.expires_at)
             or self.expires_at <= self.issued_at
+            or self.required_assurance_level
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or min(
                 self.maximum_option_count,
                 self.maximum_output_bytes,

@@ -18,8 +18,8 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 from atlas.modules.recommendations.application.finding_presentation_ports import (
     RecommendationFindingPresentationError,
@@ -485,6 +485,7 @@ class RecommendationFindingPresentationService:
                 "recommendation_finding_presentation_policy_not_found"
             )
         self._verify_policy(policy)
+        self._require_assurance(actor, policy)
         now = self._clock()
         later_authority = (
             finding.human_review_completed,
@@ -891,13 +892,19 @@ class RecommendationFindingPresentationService:
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
+        if actor.kind is not SubjectKind.HUMAN:
             raise RecommendationFindingPresentationError(
-                "recommendation_finding_presentation_enterprise_human_hardware_mfa_required"
+                "recommendation_finding_presentation_human_required"
+            )
+
+    @staticmethod
+    def _require_assurance(
+        actor: AuthenticatedSubject,
+        policy: RecommendationFindingPresentationPolicySnapshot,
+    ) -> None:
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
+            raise RecommendationFindingPresentationError(
+                "recommendation_finding_presentation_assurance_required"
             )
 
     def _require_scope(
@@ -963,7 +970,7 @@ def build_development_recommendation_finding_presentation_policy(
         maximum_findings=20,
         maximum_packet_bytes=32768,
         permitted_media_type="media-type.application-json",
-        required_assurance_level=AssuranceLevel.HARDWARE_BACKED,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         signed_by="subject.recommendation-finding-presentation-policy-signer",
         signature_verified=True,
         issued_at=issued_at,

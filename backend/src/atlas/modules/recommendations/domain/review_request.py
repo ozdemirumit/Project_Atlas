@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from atlas.modules.identity.domain.models import AssuranceLevel
+
 
 def _aware(*values: datetime) -> bool:
     return all(value.tzinfo is not None for value in values)
@@ -33,6 +35,7 @@ class RecommendationReviewRequestPolicySnapshot:
     browser_binding_key_digest: str
     routing_profile_digest: str
     no_authority_profile_digest: str
+    required_assurance_level: AssuranceLevel
     issued_at: datetime
     expires_at: datetime
     canonical_digest: str
@@ -47,6 +50,12 @@ class RecommendationReviewRequestPolicySnapshot:
             or len(set(self.track_codes)) != len(self.track_codes)
             or len(set(self.queue_ids)) != len(self.queue_ids)
             or len(self.track_codes) > self.maximum_track_count
+            or self.required_assurance_level
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or min(self.maximum_track_count, self.retention_minutes) < 1
             or not _aware(self.issued_at, self.expires_at)
             or self.expires_at <= self.issued_at

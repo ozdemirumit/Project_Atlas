@@ -18,7 +18,11 @@ from atlas.core.config import Settings
 from atlas.modules.ai.application.protected_model_invocation import (
     GovernedProtectedModelInvocationService,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+)
 from atlas.modules.recommendations.adapters.readiness_memory import (
     InMemoryRecommendationReadinessPolicySource,
     MemoryRecommendationReadinessRepository,
@@ -88,7 +92,10 @@ class TamperingReadinessEvaluator(SyntheticTrustedRecommendationReadinessEvaluat
 
 
 async def readiness_fixture(
-    *, deny: bool = False, unavailable: bool = False
+    *,
+    deny: bool = False,
+    unavailable: bool = False,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     GovernedRecommendationReadinessService,
     MemoryRecommendationReadinessRepository,
@@ -104,6 +111,17 @@ async def readiness_fixture(
         environment_id=promotion.artifact.environment_id,
         issued_at=promotion.artifact.promoted_at - timedelta(hours=1),
         expires_at=promotion.artifact.promoted_at + timedelta(days=1),
+    )
+    policy = replace(
+        policy,
+        required_assurance_level=required_assurance_level,
+        canonical_digest="0" * 64,
+    )
+    policy = replace(
+        policy,
+        canonical_digest=GovernedProtectedModelInvocationService._digest(
+            GovernedProtectedModelInvocationService._payload(policy)
+        ),
     )
     permission = RecordingReadinessPermissionAuthorizer(deny=deny)
     repository = MemoryRecommendationReadinessRepository()
@@ -175,6 +193,36 @@ async def test_readiness_creates_ready_assessment_and_exact_replay() -> None:
     assert not assessment.infrastructure_mutated
     assert repeated.assessment.reused and replay.assessment.reused
     assert len(permission.calls) == 4
+
+
+@pytest.mark.asyncio
+async def test_default_policy_allows_development_authentication() -> None:
+    service, _, policy, promotion, actor, _ = await readiness_fixture()
+    actor = replace(
+        actor,
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    result = await create_readiness(service, policy, promotion, actor)
+
+    assert result.assessment.recommendation_ready_for_review
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+
+
+@pytest.mark.asyncio
+async def test_explicit_stronger_policy_rejects_development_authentication() -> None:
+    service, _, policy, promotion, actor, _ = await readiness_fixture(
+        required_assurance_level=AssuranceLevel.MULTI_FACTOR
+    )
+    actor = replace(
+        actor,
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    with pytest.raises(RecommendationReadinessError, match="policy_assurance_required"):
+        await create_readiness(service, policy, promotion, actor)
 
 
 @pytest.mark.asyncio

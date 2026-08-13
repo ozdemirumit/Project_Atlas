@@ -18,8 +18,8 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 from atlas.modules.recommendations.application.review_decision_ports import (
     RecommendationTrackReviewDecisionAttestor,
@@ -472,6 +472,7 @@ class RecommendationTrackReviewDecisionService:
                 "recommendation_track_review_decision_policy_not_found"
             )
         self._verify_policy(policy)
+        self._require_assurance(actor, policy)
         now = self._clock()
         later_authority = (
             presentation.correction_created,
@@ -843,13 +844,19 @@ class RecommendationTrackReviewDecisionService:
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
+        if actor.kind is not SubjectKind.HUMAN:
             raise RecommendationTrackReviewDecisionError(
-                "recommendation_track_review_decision_enterprise_human_hardware_mfa_required"
+                "recommendation_track_review_decision_human_required"
+            )
+
+    @staticmethod
+    def _require_assurance(
+        actor: AuthenticatedSubject,
+        policy: RecommendationTrackReviewDecisionPolicySnapshot,
+    ) -> None:
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
+            raise RecommendationTrackReviewDecisionError(
+                "recommendation_track_review_decision_assurance_required"
             )
 
     def _require_scope(
@@ -926,7 +933,7 @@ def build_development_recommendation_track_review_decision_policy(
             "review-basis.business-continuity",
         ),
         maximum_basis_codes=4,
-        required_assurance_level=AssuranceLevel.HARDWARE_BACKED,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         signed_by="subject.recommendation-track-review-decision-policy-signer",
         signature_verified=True,
         issued_at=issued_at,

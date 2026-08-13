@@ -8,7 +8,7 @@
   ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027,
   ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042,
   ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053,
-  ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-074
+  ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-074, ADR-133
 
 ## Context
 
@@ -56,9 +56,11 @@ Before artifact access the service revalidates:
   digests, policy catalogs, classification, access, retention, encryption and cleanup labels;
 - a signed presentation policy with trusted presenter identity and attestor, required source
   state and schema, receipt schema, item and byte limits, permitted media type and cleanup rules;
-- a current enterprise human identity with recent hardware-backed MFA, exact tenant scope and
-  dedicated C2 finding-presentation plus C1 finding-metadata, content-presentation and lease-read
-  permissions;
+- a current enterprise human identity, exact tenant scope and dedicated C2 finding-presentation
+  plus C1 finding-metadata, content-presentation and lease-read permissions; the default assurance
+  requirement is `SINGLE_FACTOR`, while only the verified signed finding-presentation policy may
+  require `MULTI_FACTOR` or `HARDWARE_BACKED` assurance and bounded authentication freshness for
+  this operation, as defined by ADR-133;
 - the salted current-subject digest equals the exact lease holder and assigned reviewer;
 - the browser session hashes to the lease browser binding and the track-specific HttpOnly lease
   cookie hashes to the stored lease-secret digest;
@@ -67,6 +69,9 @@ Before artifact access the service revalidates:
 
 Missing, malformed, expired, revoked, transferred, cross-track or mismatched proofs fail before
 claim creation and before finding content crosses the trusted presenter boundary.
+
+Any stronger assurance is an operation-specific addition and does not replace RBAC, exact tenant
+scope, assignee/track separation, lease/cookie proof, audit or protected-artifact integrity.
 
 ### Atomic Presentation Claim
 
@@ -155,8 +160,9 @@ or authorization uncertainty fails closed.
 
 Claims and records are immutable, deterministic, concurrency-safe and equivalent in memory and
 PostgreSQL. The API uses the normal browser session, track-specific lease cookie, mutation CSRF
-for first presentation, strict schemas, dedicated default-deny RBAC, C2 classification, recent
-hardware MFA, exact tenant and assignee scope, minimized no-store responses and safe errors.
+for first presentation, strict schemas, dedicated default-deny RBAC, C2 classification, the
+policy-selected assurance requirement (default `SINGLE_FACTOR`), exact tenant and assignee scope,
+minimized no-store responses and safe errors.
 
 ## Consequences
 

@@ -8,7 +8,7 @@
   ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027,
   ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042,
   ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053,
-  ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-075
+  ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-075, ADR-133
 
 ## Context
 
@@ -70,8 +70,10 @@ Before claim creation the service revalidates:
   version, classification, access, retention, encryption and track;
 - the signed decision policy, allowed dispositions and track-specific basis codes, required attestor
   identity, receipt schema, assurance level and authentication age;
-- a current enterprise human identity with recent hardware-backed MFA, exact tenant scope and
-  dedicated C2 decision-create plus protected lineage-read permissions;
+- a current enterprise human identity, exact tenant scope and dedicated C2 decision-create plus
+  protected lineage-read permissions; per ADR-133, the default assurance requirement is
+  `SINGLE_FACTOR`, while only the verified signed decision policy may require `MULTI_FACTOR` or
+  `HARDWARE_BACKED` assurance and bounded authentication freshness for this operation;
 - the salted current-subject digest equals the lease holder and exact assigned reviewer;
 - the normal browser session and track-specific HttpOnly lease cookie match the active lease; and
 - the finding presentation remains unexpired and no prior decision, correction, approval, workflow,
@@ -80,6 +82,9 @@ Before claim creation the service revalidates:
 Missing, expired, revoked, transferred, cross-track, malformed or mismatched proof fails before
 claim creation. The service never accepts identity, track, completion or authority flags from the
 caller.
+
+Any stronger assurance supplements and never replaces permission, tenant scope, assignee/track
+separation, lease/cookie proof, acknowledgement, audit or immutable lineage verification.
 
 ### Atomic Decision Claim
 
@@ -151,8 +156,9 @@ concurrency or integrity uncertainty fails closed.
 
 Claims and records are immutable, deterministic, concurrency-safe and equivalent in memory and
 PostgreSQL. The API uses the normal browser session, track-specific lease cookie, mutation CSRF,
-strict schemas, dedicated default-deny RBAC, C2 create and C1 read classification, recent hardware
-MFA, exact tenant and assignee scope, minimized responses and safe errors.
+strict schemas, dedicated default-deny RBAC, C2 create and C1 read classification, the
+policy-selected assurance requirement (default `SINGLE_FACTOR`), exact tenant and assignee scope,
+minimized responses and safe errors.
 
 ## Consequences
 

@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from test_browser_sessions import BasicTestIdentityProvider, login, settings
 from test_package_acquisition import CollectingAuditSink
 from test_recommendation_reviewer_assignment import assignment_fixture, create_assignment
-from test_target_session import target_session_operator
+from test_target_session import development_target_session_operator
 
 from atlas.api.app import create_app
 from atlas.api.recommendation_protected_inspection_schemas import (
@@ -28,7 +28,7 @@ from atlas.modules.authorization.domain.models import (
     RoleAssignment,
     RoleDefinition,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject
 from atlas.modules.recommendations.adapters.protected_inspection_memory import (
     InMemoryRecommendationProtectedInspectionPolicySource,
     InMemoryRecommendationProtectedInspectionRepository,
@@ -100,7 +100,7 @@ async def inspection_fixture(
         expires_at=assignment.assigned_at + timedelta(days=1),
     )
     actor = replace(
-        target_session_operator("subject.synthetic-technical-reviewer"),
+        development_target_session_operator("subject.synthetic-technical-reviewer"),
         organization_id=assignment.organization_id,
         authenticated_at=assignment.assigned_at,
     )
@@ -161,6 +161,8 @@ async def test_exact_assignee_receives_cookie_only_grant_and_replay_has_no_secre
     first = await create_lease(service, assignment, policy, actor)
     repeated = await create_lease(service, assignment, policy, actor)
 
+    assert actor.assurance_level is AssuranceLevel.DEVELOPMENT
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
     assert first.lease_secret is not None
     assert repeated.lease_secret is None and repeated.record.reused
     assert first.record.content_inspection_opened
@@ -175,6 +177,31 @@ async def test_exact_assignee_receives_cookie_only_grant_and_replay_has_no_secre
     assert not first.record.infrastructure_mutated
     assert permission.calls
     assert getattr(broker, "call_count", 0) == 1
+
+
+@pytest.mark.asyncio
+async def test_explicit_stronger_assurance_policy_denies_development_session() -> None:
+    service, repository, assignment, policy, actor, _, broker = await inspection_fixture()
+    stronger_policy = replace(
+        policy,
+        required_assurance_level=AssuranceLevel.MULTI_FACTOR,
+        canonical_digest="0" * 64,
+    )
+    payload = asdict(stronger_policy)
+    payload.pop("canonical_digest")
+    stronger_policy = replace(
+        stronger_policy,
+        canonical_digest=service._digest(service._normalize(payload)),
+    )
+    service._policy_source = InMemoryRecommendationProtectedInspectionPolicySource(
+        (stronger_policy,)
+    )
+
+    with pytest.raises(RecommendationProtectedInspectionError, match="assurance_required"):
+        await create_lease(service, assignment, stronger_policy, actor)
+
+    assert not repository._claims_by_idempotency
+    assert getattr(broker, "call_count", 0) == 0
 
 
 @pytest.mark.asyncio

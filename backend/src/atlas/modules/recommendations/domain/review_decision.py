@@ -72,7 +72,12 @@ class RecommendationTrackReviewDecisionPolicySnapshot:
             or not 1 <= self.maximum_basis_codes <= 8
             or not self.technical_basis_codes
             or not self.service_impact_basis_codes
-            or self.required_assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or self.required_assurance_level
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or not self.signature_verified
             or self.issued_at.tzinfo is None
             or self.expires_at.tzinfo is None

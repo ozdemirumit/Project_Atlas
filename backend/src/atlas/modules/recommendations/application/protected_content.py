@@ -18,8 +18,8 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 from atlas.modules.recommendations.application.protected_content_ports import (
     RecommendationProtectedContentError,
@@ -402,7 +402,7 @@ class RecommendationProtectedContentService:
         PromotedRecommendationArtifact,
         RecommendationProtectedContentPolicySnapshot,
     ]:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         try:
             (
                 source,
@@ -423,6 +423,7 @@ class RecommendationProtectedContentService:
                 "recommendation_protected_content_policy_not_found"
             )
         self._verify_policy(policy)
+        self._require_assurance(actor, policy)
         now = self._clock()
         if (
             source.canonical_digest != source_lease_digest
@@ -759,14 +760,20 @@ class RecommendationProtectedContentService:
         ).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
+    def _require_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
             raise RecommendationProtectedContentError(
-                "recommendation_protected_content_enterprise_human_hardware_mfa_required"
+                "recommendation_protected_content_human_required"
+            )
+
+    @staticmethod
+    def _require_assurance(
+        actor: AuthenticatedSubject,
+        policy: RecommendationProtectedContentPolicySnapshot,
+    ) -> None:
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
+            raise RecommendationProtectedContentError(
+                "recommendation_protected_content_assurance_required"
             )
 
     def _require_scope(
@@ -837,7 +844,7 @@ def build_development_recommendation_protected_content_policy(
         maximum_content_bytes=32_768,
         require_exact_replay=True,
         require_plain_text=True,
-        required_assurance_level=AssuranceLevel.HARDWARE_BACKED,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         signed_by="subject.recommendation-protected-content-policy-signer",
         signature_verified=True,
         issued_at=issued_at,

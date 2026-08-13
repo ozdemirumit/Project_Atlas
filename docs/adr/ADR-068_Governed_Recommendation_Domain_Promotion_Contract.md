@@ -6,7 +6,7 @@
 | Date | 2026-08-09 |
 | Owners | Product Owner, Architecture Owner, AI Architecture, Security Architecture |
 | Decision Scope | Promotion of one protected recommendation presentation into the recommendation domain |
-| Related Documents | ATLAS-003, ATLAS-010, ATLAS-014, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-056, ADR-063 through ADR-067 |
+| Related Documents | ATLAS-003, ATLAS-010, ATLAS-014, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-056, ADR-063 through ADR-067, ADR-133 |
 
 ## Context
 
@@ -34,8 +34,10 @@ or executable. A later independent contract may evaluate review readiness.
 ### Entry Contract
 
 Only the same eligible enterprise human consumer may request or read the promoted artifact. The
-consumer must use the same current browser-bound session with hardware-backed MFA, current C1
-create/read permissions and unchanged organization, environment and purpose.
+consumer must use the same current browser-bound session, current C1 create/read permissions and
+unchanged organization, environment and purpose. In accordance with ADR-133, the default
+assurance requirement is `SINGLE_FACTOR`; only the verified signed promotion policy may require
+`MULTI_FACTOR` or `HARDWARE_BACKED` assurance and a freshness window for this operation.
 
 The source must be one exact, completed, unexpired, integrity-valid presentation. The service
 rehydrates and verifies the unchanged:
@@ -56,7 +58,10 @@ capability, approval, workflow, command, execution and mutation controls are for
 
 The immutable signed policy defines required source schemas and states, trusted promoter identity,
 allowed outcomes, domain schema version, redaction and classification rules, count and size limits,
-retention, expiry, source binding and browser binding. Caller values never weaken policy.
+retention, expiry, source binding, browser binding and any optional authentication-assurance and
+freshness requirement. Caller values never weaken policy. A stronger assurance requirement denies
+only this promotion operation when unsatisfied and does not replace RBAC, tenant scope, browser
+binding, acknowledgement, audit or lineage verification.
 
 Production has no synthetic policy or promoter fallback and fails closed when an approved signed
 policy or trusted promoter is unavailable.

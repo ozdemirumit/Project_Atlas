@@ -6,7 +6,7 @@
 | Date | 2026-08-09 |
 | Owners | Product Owner, Architecture Owner, AI Architecture, Security Architecture |
 | Decision Scope | Deterministic review-readiness evaluation of one promoted recommendation draft |
-| Related Documents | ATLAS-003, ATLAS-014, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-056, ADR-063 through ADR-068 |
+| Related Documents | ATLAS-003, ATLAS-014, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-056, ADR-063 through ADR-068, ADR-133 |
 
 ## Context
 
@@ -33,8 +33,10 @@ or authorize execution, deployment or infrastructure mutation.
 ### Entry Contract
 
 Only the same eligible enterprise human consumer may request or read an assessment. The consumer
-must use the same current browser-bound session with hardware-backed MFA, current C1 create/read
-permissions and unchanged organization, environment and purpose.
+must use the same current browser-bound session, current C1 create/read permissions and unchanged
+organization, environment and purpose. Per ADR-133, `SINGLE_FACTOR` is the default assurance
+requirement. Only the verified signed readiness policy may require `MULTI_FACTOR` or
+`HARDWARE_BACKED` assurance and a bounded authentication-freshness window for this operation.
 
 The source must be one exact, unexpired, integrity-valid promoted recommendation artifact in
 `draft`. The service rehydrates and verifies the unchanged:
@@ -55,8 +57,10 @@ execution and mutation controls are forbidden.
 
 The immutable signed policy defines required source schemas and state, trusted evaluator and
 attestor identities, supported outcomes, required option and evidence fields, freshness and
-retention limits, bounded reason taxonomy, browser binding, and output schema. Caller values never
-weaken policy.
+retention limits, bounded reason taxonomy, browser binding, output schema and any optional
+authentication-assurance requirement. Caller values never weaken policy. Stronger assurance is an
+additional operation-specific gate and never substitutes for permission, scope, browser, source,
+audit or integrity controls.
 
 Production has no synthetic policy or evaluator fallback and fails closed when an approved signed
 policy or trusted evaluator is unavailable.

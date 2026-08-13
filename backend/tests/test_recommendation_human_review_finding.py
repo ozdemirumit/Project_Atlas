@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -36,7 +36,7 @@ from atlas.modules.authorization.domain.models import (
     RoleAssignment,
     RoleDefinition,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject
 from atlas.modules.recommendations.adapters.human_review_finding_memory import (
     InMemoryRecommendationHumanReviewFindingPolicySource,
     InMemoryRecommendationHumanReviewFindingRepository,
@@ -184,6 +184,8 @@ async def test_exact_assignee_records_metadata_only_finding_and_replay() -> None
     first = await record_finding(service, assignment, lease, presentation, policy, actor)
     repeated = await record_finding(service, assignment, lease, presentation, policy, actor)
 
+    assert actor.assurance_level is AssuranceLevel.DEVELOPMENT
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
     assert first.human_findings_recorded and first.technical_finding_recorded
     assert not first.service_impact_finding_recorded
     assert repeated.reused and repeated.canonical_digest == first.canonical_digest
@@ -204,6 +206,45 @@ async def test_exact_assignee_records_metadata_only_finding_and_replay() -> None
     )
     assert isinstance(recorder, SyntheticRecommendationHumanReviewFindingRecorder)
     assert recorder.read_artifact(finding_artifact_id=first.finding_artifact_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_explicit_stronger_assurance_policy_denies_development_session() -> None:
+    (
+        service,
+        repository,
+        _,
+        _,
+        assignment,
+        lease,
+        presentation,
+        policy,
+        actor,
+    ) = await finding_fixture()
+    stronger_policy = replace(
+        policy,
+        required_assurance_level=AssuranceLevel.MULTI_FACTOR,
+        canonical_digest="0" * 64,
+    )
+    stronger_policy = replace(
+        stronger_policy,
+        canonical_digest=service._digest(service._policy_payload(stronger_policy)),
+    )
+    service._policy_source = InMemoryRecommendationHumanReviewFindingPolicySource(
+        (stronger_policy,)
+    )
+
+    with pytest.raises(RecommendationHumanReviewFindingError, match="assurance_required"):
+        await record_finding(
+            service,
+            assignment,
+            lease,
+            presentation,
+            stronger_policy,
+            actor,
+        )
+
+    assert not repository._claims_by_idempotency
 
 
 @pytest.mark.asyncio

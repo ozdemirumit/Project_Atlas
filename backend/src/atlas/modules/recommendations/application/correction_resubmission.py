@@ -18,8 +18,8 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 from atlas.modules.recommendations.application.correction_resubmission_ports import (
     RecommendationCorrectionAdapter,
@@ -140,6 +140,7 @@ class RecommendationCorrectionService:
         if policy is None:
             raise RecommendationCorrectionError("recommendation_correction_policy_not_found")
         self._verify_policy(policy)
+        self._require_assurance(actor, policy)
         now = self._clock()
         ordered = self._verify_source(
             actor=actor,
@@ -789,14 +790,16 @@ class RecommendationCorrectionService:
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
-            raise RecommendationCorrectionError(
-                "recommendation_correction_enterprise_human_hardware_mfa_required"
-            )
+        if actor.kind is not SubjectKind.HUMAN:
+            raise RecommendationCorrectionError("recommendation_correction_human_required")
+
+    @staticmethod
+    def _require_assurance(
+        actor: AuthenticatedSubject,
+        policy: RecommendationCorrectionPolicySnapshot,
+    ) -> None:
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
+            raise RecommendationCorrectionError("recommendation_correction_assurance_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -867,7 +870,7 @@ def build_development_recommendation_correction_policy(
         browser_binding_key_digest=digest(["recommendation-correction-browser-key.v1"]),
         maximum_authentication_age_minutes=15,
         retention_minutes=10,
-        required_assurance_level=AssuranceLevel.HARDWARE_BACKED,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         signed_by="subject.recommendation-correction-policy-signer",
         signature_verified=True,
         issued_at=issued_at,

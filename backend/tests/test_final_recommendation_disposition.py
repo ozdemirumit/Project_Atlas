@@ -15,7 +15,7 @@ from atlas.api.final_recommendation_disposition_schemas import (
     FinalRecommendationDispositionData,
     FinalRecommendationDispositionInput,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject
 from atlas.modules.recommendations.adapters.final_disposition_memory import (
     InMemoryFinalRecommendationDispositionPolicySource,
     InMemoryFinalRecommendationDispositionRepository,
@@ -279,6 +279,77 @@ async def dispose(
         browser_session_id="session_final_recommendation_disposition_001",
         idempotency_key=idempotency_key,
         correlation_id="cor_final_recommendation_disposition",
+    )
+
+
+@pytest.mark.asyncio
+async def test_default_policy_allows_single_factor_accountable_human_disposition() -> None:
+    (
+        service,
+        _,
+        decisions,
+        request,
+        _,
+        artifact,
+        policy,
+        actor,
+        *_,
+    ) = await final_disposition_fixture()
+    single_factor_actor = replace(actor, assurance_level=AssuranceLevel.SINGLE_FACTOR)
+
+    record = await dispose(
+        service,
+        decisions,
+        request,
+        artifact,
+        policy,
+        single_factor_actor,
+    )
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.final_disposition_recorded
+    assert not record.workflow_created
+    assert not record.infrastructure_mutated
+
+
+@pytest.mark.asyncio
+async def test_stronger_policy_denies_single_factor_accountable_human_disposition() -> None:
+    (
+        service,
+        repository,
+        decisions,
+        request,
+        _,
+        artifact,
+        policy,
+        actor,
+        *_,
+    ) = await final_disposition_fixture()
+    stronger = replace(
+        policy,
+        required_assurance_level=AssuranceLevel.MULTI_FACTOR,
+        canonical_digest="0" * 64,
+    )
+    stronger = replace(
+        stronger,
+        canonical_digest=service._digest(service._payload(stronger)),
+    )
+    service._policy_source = InMemoryFinalRecommendationDispositionPolicySource((stronger,))
+    single_factor_actor = replace(actor, assurance_level=AssuranceLevel.SINGLE_FACTOR)
+
+    with pytest.raises(FinalRecommendationDispositionError, match="assurance_required"):
+        await dispose(
+            service,
+            decisions,
+            request,
+            artifact,
+            stronger,
+            single_factor_actor,
+        )
+
+    assert (
+        await repository.get_claim_by_review_request(review_request_id=request.review_request_id)
+        is None
     )
 
 

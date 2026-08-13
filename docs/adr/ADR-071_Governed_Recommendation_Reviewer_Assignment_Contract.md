@@ -6,7 +6,7 @@
 | Date | 2026-08-10 |
 | Owners | Product Owner, Architecture Owner, Security Architecture, Identity Governance, Governance and Workflow Owner |
 | Decision Scope | Assignment of distinct accountable humans to one exact recommendation review request |
-| Related Documents | ATLAS-003, ATLAS-014, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-056, ADR-063 through ADR-070 |
+| Related Documents | ATLAS-003, ATLAS-014, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-056, ADR-063 through ADR-070, ADR-133 |
 
 ## Context
 
@@ -47,9 +47,11 @@ target, capability, command, execution, deployment or mutation fields.
 
 ### Authorization And Actor Separation
 
-Creation requires a current enterprise human with hardware-backed MFA, exact browser, tenant and
-environment scope and a dedicated default-deny C3 permission. Reading minimized assignment state
-requires a dedicated C1 permission.
+Creation requires a current enterprise human with exact browser, tenant and environment scope and
+a dedicated default-deny C3 permission. Reading minimized assignment state requires a dedicated C1
+permission. Per ADR-133, `SINGLE_FACTOR` is the default assurance requirement; only the verified
+signed assignment policy may require `MULTI_FACTOR` or `HARDWARE_BACKED` assurance and bounded
+authentication freshness for this operation.
 
 The request creator may ask Atlas to run policy-controlled assignment because this action does not
 select a person or perform review. The adapter must exclude the recommendation consumer, review
@@ -82,7 +84,8 @@ The immutable policy defines:
 - directory snapshot source, freshness, eligibility, competence, clearance and workload limits;
 - requester, upstream actor, signer, attestor, conflict and cross-track separation rules;
 - assignment strategy, TTL, retention, browser binding and subject-digest salt;
-- trusted adapter and attestor IDs, receipt schema and required cleanup proofs.
+- trusted adapter and attestor IDs, receipt schema and required cleanup proofs; and
+- any optional operation-specific authentication-assurance level and freshness window.
 
 Policy owns every selection input. The caller, model and source recommendation cannot alter the
 candidate pool or influence which eligible person is chosen.
@@ -106,7 +109,7 @@ credentials, prompts, model output and infrastructure coordinates never enter th
 The adapter must:
 
 1. verify the exact instruction, request manifest, policy and routing bindings;
-2. resolve a current directory snapshot of eligible hardware-MFA humans for each queue;
+2. resolve a current directory snapshot of policy-eligible enterprise humans for each queue;
 3. enforce tenant, identity status, role, competence, clearance, workload and conflict rules;
 4. exclude every requester, upstream, policy and attestation actor digest;
 5. select one technical and one service-impact reviewer deterministically and prove distinction;

@@ -8,7 +8,7 @@
   ATLAS-016, ATLAS-020, ATLAS-021, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-026, ATLAS-027,
   ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-037, ATLAS-040, ATLAS-041, ATLAS-042,
   ATLAS-043, ATLAS-044, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-052, ATLAS-053,
-  ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-072
+  ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-072, ADR-133
 
 ## Context
 
@@ -59,8 +59,10 @@ Before any content access, the service revalidates:
   assignment bindings and canonical digests;
 - the active lease, signed inspection and presentation policies, trusted presenter identity,
   classification, output format, maximum bytes, redaction profile and replay requirements;
-- a current enterprise human identity with hardware-backed MFA, exact tenant scope, dedicated C2
-  presentation and lease-read permissions, and authentication no older than policy permits;
+- a current enterprise human identity, exact tenant scope and dedicated C2 presentation and
+  lease-read permissions; the default assurance requirement is `SINGLE_FACTOR`, while only the
+  verified signed presentation policy may require `MULTI_FACTOR` or `HARDWARE_BACKED` assurance
+  and authentication no older than its bounded freshness window, as defined by ADR-133;
 - the salted current-subject digest equals the lease holder and selected-track assignee;
 - the browser session hashes to the lease binding and the track cookie hashes to the stored secret;
 - source records remain current and no later finding, decision, approval, workflow, ITSM,
@@ -68,6 +70,9 @@ Before any content access, the service revalidates:
 
 Missing, malformed, expired, transferred, cross-track or mismatched proof fails closed without
 content. A technical cookie cannot open service-impact content and vice versa.
+
+Any stronger authentication assurance is operation-specific and supplements, but never replaces,
+RBAC, tenant scope, assignee/track separation, lease and cookie proof, audit or source integrity.
 
 ### Atomic Presentation Claim
 

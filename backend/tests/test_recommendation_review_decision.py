@@ -13,7 +13,7 @@ from test_target_session import target_session_operator
 from atlas.api.recommendation_review_decision_schemas import (
     RecommendationTrackReviewDecisionData,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject
 from atlas.modules.recommendations.adapters.review_decision_memory import (
     InMemoryRecommendationTrackReviewDecisionPolicySource,
     InMemoryRecommendationTrackReviewDecisionRepository,
@@ -221,6 +221,76 @@ async def decide(
         correlation_id="cor_recommendation_track_review_decision",
     )
     return grant.record
+
+
+@pytest.mark.asyncio
+async def test_default_policy_allows_single_factor_human_review_decision() -> None:
+    service, _, content, finding, presentation, secret, policy, *_ = await review_decision_fixture()
+    actor = replace(
+        technical_reviewer(presentation),
+        assurance_level=AssuranceLevel.SINGLE_FACTOR,
+    )
+
+    record = await decide(
+        service,
+        content,
+        finding,
+        presentation,
+        secret,
+        policy,
+        actor=actor,
+    )
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.technical_review_completed
+    assert not record.recommendation_approved
+    assert not record.infrastructure_mutated
+
+
+@pytest.mark.asyncio
+async def test_stronger_policy_denies_single_factor_human_review_decision() -> None:
+    (
+        service,
+        repository,
+        content,
+        finding,
+        presentation,
+        secret,
+        policy,
+        *_,
+    ) = await review_decision_fixture()
+    stronger = replace(
+        policy,
+        required_assurance_level=AssuranceLevel.MULTI_FACTOR,
+        canonical_digest="0" * 64,
+    )
+    stronger = replace(
+        stronger,
+        canonical_digest=service._digest(service._policy_payload(stronger)),
+    )
+    service._policy_source = InMemoryRecommendationTrackReviewDecisionPolicySource((stronger,))
+    actor = replace(
+        technical_reviewer(presentation),
+        assurance_level=AssuranceLevel.SINGLE_FACTOR,
+    )
+
+    with pytest.raises(RecommendationTrackReviewDecisionError, match="assurance_required"):
+        await decide(
+            service,
+            content,
+            finding,
+            presentation,
+            secret,
+            stronger,
+            actor=actor,
+        )
+
+    assert (
+        await repository.get_claim_by_source_presentation(
+            source_finding_presentation_id=presentation.finding_presentation_id
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio

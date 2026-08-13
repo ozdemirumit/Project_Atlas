@@ -21,7 +21,11 @@ from atlas.core.config import Settings
 from atlas.modules.ai.application.protected_model_invocation import (
     GovernedProtectedModelInvocationService,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+)
 from atlas.modules.recommendations.adapters.promotion_memory import (
     InMemoryRecommendationPromotionPolicySource,
     MemoryRecommendationPromotionRepository,
@@ -83,7 +87,10 @@ class TamperingPromotionPromoter(SyntheticTrustedRecommendationPromoter):
 
 
 async def promotion_fixture(
-    *, deny: bool = False, unavailable: bool = False
+    *,
+    deny: bool = False,
+    unavailable: bool = False,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     GovernedRecommendationPromotionService,
     MemoryRecommendationPromotionRepository,
@@ -108,6 +115,17 @@ async def promotion_fixture(
         environment_id=presentation.record.environment_id,
         issued_at=presentation.record.presented_at - timedelta(hours=1),
         expires_at=presentation.record.presented_at + timedelta(days=1),
+    )
+    policy = replace(
+        policy,
+        required_assurance_level=required_assurance_level,
+        canonical_digest="0" * 64,
+    )
+    policy = replace(
+        policy,
+        canonical_digest=GovernedProtectedModelInvocationService._digest(
+            GovernedProtectedModelInvocationService._payload(policy)
+        ),
     )
     permission = RecordingPromotionPermissionAuthorizer(deny=deny)
     repository = MemoryRecommendationPromotionRepository()
@@ -179,6 +197,36 @@ async def test_promotion_creates_draft_and_exact_replay() -> None:
     assert not artifact.infrastructure_mutated
     assert repeated.artifact.reused and replay.artifact.reused
     assert len(permission.calls) == 4
+
+
+@pytest.mark.asyncio
+async def test_default_policy_allows_development_authentication() -> None:
+    service, _, presentation, policy, actor, _ = await promotion_fixture()
+    actor = replace(
+        actor,
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    result = await create_promotion(service, presentation, policy, actor)
+
+    assert result.artifact.recommendation_promoted
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+
+
+@pytest.mark.asyncio
+async def test_explicit_stronger_policy_rejects_development_authentication() -> None:
+    service, _, presentation, policy, actor, _ = await promotion_fixture(
+        required_assurance_level=AssuranceLevel.MULTI_FACTOR
+    )
+    actor = replace(
+        actor,
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    with pytest.raises(RecommendationPromotionError, match="policy_assurance_required"):
+        await create_promotion(service, presentation, policy, actor)
 
 
 @pytest.mark.asyncio

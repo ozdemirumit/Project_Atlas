@@ -26,8 +26,8 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 from atlas.modules.recommendations.application.promotion_ports import (
     RecommendationPromotionError,
@@ -109,6 +109,7 @@ class GovernedRecommendationPromotionService:
             now,
         )
         assert policy is not None
+        self._require_policy_assurance(actor, policy)
         await self._permission_authorizer.authorize(
             actor=actor,
             organization_id=actor.organization_id,
@@ -275,6 +276,7 @@ class GovernedRecommendationPromotionService:
             or policy.canonical_digest != self._digest(self._payload(policy))
         ):
             raise RecommendationPromotionError("recommendation_promotion_not_found")
+        self._require_policy_assurance(actor, policy)
         await self._permission_authorizer.authorize(
             actor=actor,
             organization_id=artifact.organization_id,
@@ -490,14 +492,15 @@ class GovernedRecommendationPromotionService:
 
     @staticmethod
     def _require_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
-            raise RecommendationPromotionError(
-                "recommendation_promotion_enterprise_human_hardware_mfa_required"
-            )
+        if actor.kind is not SubjectKind.HUMAN:
+            raise RecommendationPromotionError("recommendation_promotion_human_required")
+
+    @staticmethod
+    def _require_policy_assurance(
+        actor: AuthenticatedSubject, policy: RecommendationPromotionPolicySnapshot
+    ) -> None:
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
+            raise RecommendationPromotionError("recommendation_promotion_policy_assurance_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -596,6 +599,7 @@ def build_development_recommendation_promotion_policy(
         prohibited_content_profile_digest=digest(
             ["prohibited-content.no-identifiers-tools-operations-v1"]
         ),
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         issued_at=issued_at,
         expires_at=expires_at,
         canonical_digest="0" * 64,

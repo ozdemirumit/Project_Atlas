@@ -131,8 +131,9 @@ export function RecommendationProtectedInspectionPanel({
           <div>
             <h3>Assigned inspection unavailable</h3>
             <p>
-              The signed-in identity must be this track&apos;s exact unexpired assignee with recent
-              hardware MFA. Access cannot be delegated or refreshed.
+              A normal signed-in human session is sufficient by default. Stronger assurance is
+              required only when the selected signed policy explicitly requests it. You must still
+              be this track&apos;s exact unexpired assignee; access cannot be delegated or refreshed.
             </p>
           </div>
         </div>
