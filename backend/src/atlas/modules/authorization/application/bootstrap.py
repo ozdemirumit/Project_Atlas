@@ -47,6 +47,7 @@ HEALTH_CHECK_OVERVIEW_READ = "health-check.overview.read"
 HEALTH_CHECK_RUN_CREATE = "health-check.run.create"
 WORKFLOW_DEFINITION_READ = "workflow.definitions.read"
 WORKFLOW_PLAN_CREATE = "workflow.plans.create"
+WORKFLOW_PLAN_CANCEL = "workflow.plans.cancel"
 WORKFLOW_PLAN_READ = "workflow.plans.read"
 INVESTIGATION_CREATE = "investigation.create"
 RCA_CREATE = "rca.create"
@@ -1866,6 +1867,10 @@ def build_development_authorization_service(
             description="Create a durable non-executable workflow run plan.",
         ),
         PermissionDefinition(
+            permission_id=WORKFLOW_PLAN_CANCEL,
+            description="Cancel an exact-scope non-executable workflow run plan.",
+        ),
+        PermissionDefinition(
             permission_id=WORKFLOW_PLAN_READ,
             description="Read exact-scope non-executable workflow run plans.",
         ),
@@ -2738,6 +2743,7 @@ def build_development_authorization_service(
                 HEALTH_CHECK_RUN_CREATE,
                 WORKFLOW_DEFINITION_READ,
                 WORKFLOW_PLAN_CREATE,
+                WORKFLOW_PLAN_CANCEL,
                 WORKFLOW_PLAN_READ,
                 INVESTIGATION_CREATE,
                 RCA_CREATE,

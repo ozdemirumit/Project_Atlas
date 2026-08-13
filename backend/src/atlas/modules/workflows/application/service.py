@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from hashlib import sha256
 from uuid import uuid4
@@ -10,6 +10,8 @@ from uuid import uuid4
 from atlas import __version__
 from atlas.core.audit import AuditRecord, AuditSink
 from atlas.modules.workflows.application.ports import (
+    WorkflowPlanCancellationRequest,
+    WorkflowPlanCancellationStatus,
     WorkflowPlanMutationStatus,
     WorkflowPlanningError,
     WorkflowPlanRepository,
@@ -21,6 +23,7 @@ from atlas.modules.workflows.domain import (
     WorkflowPlanAuthority,
     WorkflowPlanState,
     WorkflowPlanStep,
+    WorkflowPlanTransition,
     WorkflowRunPlan,
     WorkflowScope,
     canonical_digest,
@@ -242,6 +245,146 @@ class WorkflowPlanningService:
         )
         return plans
 
+    async def cancel_plan(
+        self,
+        *,
+        plan_id: str,
+        reason: str,
+        acknowledge_no_external_undo: bool,
+        idempotency_key: str,
+        context: WorkflowAccessContext,
+    ) -> WorkflowRunPlan:
+        self._require_human(context)
+        normalized_plan_id = self._identifier(plan_id, name="plan_id")
+        normalized_reason = self._cancellation_reason(reason)
+        normalized_key = self._idempotency_key(idempotency_key)
+        if acknowledge_no_external_undo is not True:
+            raise WorkflowPlanningError(
+                "workflow_cancellation_acknowledgement_required",
+                "Cancellation requires acknowledgement that it cannot undo external work.",
+            )
+        current = await self._repository.get_by_id(plan_id=normalized_plan_id)
+        if current is None or not self._is_visible(current, context):
+            await self._audit_cancellation_denial(
+                context,
+                result_code="workflow_plan_not_found",
+                idempotency_key=normalized_key,
+            )
+            raise WorkflowPlanningError(
+                "workflow_plan_not_found", "The requested workflow plan is unavailable."
+            )
+        fingerprint = canonical_digest(
+            {
+                "acknowledge_no_external_undo": True,
+                "actor_subject_id": context.subject_id,
+                "operation": "workflow.plan.cancel",
+                "plan_id": current.plan_id,
+                "reason": normalized_reason,
+                "scope": context.scope.canonical_value(),
+                "target_id": current.target_id,
+                "target_type": current.target_type,
+            }
+        )
+        prior = await self._repository.get_cancellation_request(
+            scope=context.scope,
+            actor_subject_id=context.subject_id,
+            idempotency_key=normalized_key,
+        )
+        if prior is not None:
+            if prior.request_fingerprint != fingerprint:
+                await self._audit_cancellation_denial(
+                    context,
+                    result_code="workflow_cancellation_idempotency_conflict",
+                    idempotency_key=normalized_key,
+                    plan=current,
+                )
+                raise WorkflowPlanningError(
+                    "workflow_cancellation_idempotency_conflict",
+                    "The idempotency key was already used for a different cancellation.",
+                )
+            self._validate_visible(prior.plan, context)
+            await self._audit(
+                context,
+                event_type="atlas.workflow.plan.cancel.replayed",
+                permission_id="workflow.plan.cancel",
+                outcome="succeeded",
+                result_code="workflow_plan_cancellation_replayed",
+                idempotency_key=normalized_key,
+                plan=prior.plan,
+            )
+            return prior.plan
+        if current.state is not WorkflowPlanState.PLANNED:
+            await self._audit_cancellation_denial(
+                context,
+                result_code="workflow_plan_not_cancellable",
+                idempotency_key=normalized_key,
+                plan=current,
+            )
+            raise WorkflowPlanningError(
+                "workflow_plan_not_cancellable", "The workflow plan is already terminal."
+            )
+        cancelled = self._build_cancelled_plan(
+            current=current,
+            reason=normalized_reason,
+            idempotency_key=normalized_key,
+            fingerprint=fingerprint,
+            context=context,
+        )
+        result = await self._repository.cancel(
+            WorkflowPlanCancellationRequest(
+                expected_plan_digest=current.canonical_digest,
+                cancelled_plan=cancelled,
+                actor_subject_id=context.subject_id,
+                idempotency_key=normalized_key,
+                request_fingerprint=fingerprint,
+            )
+        )
+        if result.status in {
+            WorkflowPlanCancellationStatus.CANCELLED,
+            WorkflowPlanCancellationStatus.REPLAY,
+        }:
+            if result.plan is None:
+                raise WorkflowPlanningError(
+                    "workflow_repository_contract_violation",
+                    "The workflow repository returned an incomplete cancellation result.",
+                )
+            self._validate_visible(result.plan, context)
+            await self._audit(
+                context,
+                event_type=(
+                    "atlas.workflow.plan.cancel.replayed"
+                    if result.status is WorkflowPlanCancellationStatus.REPLAY
+                    else "atlas.workflow.plan.cancelled"
+                ),
+                permission_id="workflow.plan.cancel",
+                outcome="succeeded",
+                result_code=(
+                    "workflow_plan_cancellation_replayed"
+                    if result.status is WorkflowPlanCancellationStatus.REPLAY
+                    else "workflow_plan_cancelled"
+                ),
+                idempotency_key=normalized_key,
+                plan=result.plan,
+                metadata=(("reason_digest", result.plan.transition_history[-1].reason_digest),),
+            )
+            return result.plan
+        if result.status is WorkflowPlanCancellationStatus.IDEMPOTENCY_CONFLICT:
+            code = "workflow_cancellation_idempotency_conflict"
+            detail = "The idempotency key was already used for a different cancellation."
+        elif result.status is WorkflowPlanCancellationStatus.STATE_CONFLICT:
+            code = "workflow_cancellation_state_conflict"
+            detail = "The workflow plan changed; reload it before cancelling."
+        else:
+            code = "workflow_plan_not_found"
+            detail = "The requested workflow plan is unavailable."
+        await self._audit_cancellation_denial(
+            context,
+            result_code=code,
+            idempotency_key=normalized_key,
+            plan=result.plan,
+        )
+        raise WorkflowPlanningError(code, detail)
+
     async def get_plan(self, *, plan_id: str, context: WorkflowAccessContext) -> WorkflowRunPlan:
         self._require_human(context)
         normalized_plan_id = self._identifier(plan_id, name="plan_id")
@@ -329,6 +472,60 @@ class WorkflowPlanningService:
         )
 
     @staticmethod
+    def _build_cancelled_plan(
+        *,
+        current: WorkflowRunPlan,
+        reason: str,
+        idempotency_key: str,
+        fingerprint: str,
+        context: WorkflowAccessContext,
+    ) -> WorkflowRunPlan:
+        transition_id = (
+            "workflow-transition."
+            + sha256(
+                f"{current.plan_id}:{context.subject_id}:{idempotency_key}:{fingerprint}".encode()
+            ).hexdigest()[:24]
+        )
+        reason_digest = canonical_digest({"reason": reason})
+        transition_payload = {
+            "actor_subject_id": context.subject_id,
+            "correlation_id": context.correlation_id,
+            "new_state": WorkflowPlanState.CANCELLED.value,
+            "occurred_at": context.requested_at.isoformat(),
+            "prior_state": WorkflowPlanState.PLANNED.value,
+            "reason": reason,
+            "reason_digest": reason_digest,
+            "scope": current.scope.canonical_value(),
+            "target_id": current.target_id,
+            "target_type": current.target_type,
+            "transition_id": transition_id,
+        }
+        transition = WorkflowPlanTransition(
+            transition_id=transition_id,
+            prior_state=WorkflowPlanState.PLANNED,
+            new_state=WorkflowPlanState.CANCELLED,
+            actor_subject_id=context.subject_id,
+            scope=current.scope,
+            target_id=current.target_id,
+            target_type=current.target_type,
+            reason=reason,
+            reason_digest=reason_digest,
+            correlation_id=context.correlation_id,
+            occurred_at=context.requested_at,
+            canonical_digest=canonical_digest(transition_payload),
+        )
+        history = (*current.transition_history, transition)
+        payload = current.digest_payload()
+        payload["state"] = WorkflowPlanState.CANCELLED.value
+        payload["transition_history"] = [item.canonical_value() for item in history]
+        return replace(
+            current,
+            state=WorkflowPlanState.CANCELLED,
+            transition_history=history,
+            canonical_digest=canonical_digest(payload),
+        )
+
+    @staticmethod
     def _input_digest(inputs: Mapping[str, object]) -> str:
         if not isinstance(inputs, Mapping):
             raise WorkflowPlanningError(
@@ -370,6 +567,16 @@ class WorkflowPlanningService:
         return normalized
 
     @staticmethod
+    def _cancellation_reason(value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized or len(normalized) > 500:
+            raise WorkflowPlanningError(
+                "workflow_cancellation_reason_invalid",
+                "Cancellation reason must contain 1 to 500 normalized characters.",
+            )
+        return normalized
+
+    @staticmethod
     def _require_human(context: WorkflowAccessContext) -> None:
         if context.actor_type != "human":
             raise WorkflowPlanningError(
@@ -405,6 +612,24 @@ class WorkflowPlanningService:
             outcome="denied",
             result_code=result_code,
             idempotency_key=idempotency_key,
+        )
+
+    async def _audit_cancellation_denial(
+        self,
+        context: WorkflowAccessContext,
+        *,
+        result_code: str,
+        idempotency_key: str | None = None,
+        plan: WorkflowRunPlan | None = None,
+    ) -> None:
+        await self._audit(
+            context,
+            event_type="atlas.workflow.plan.cancel.denied",
+            permission_id="workflow.plan.cancel",
+            outcome="denied",
+            result_code=result_code,
+            idempotency_key=idempotency_key,
+            plan=plan,
         )
 
     async def _audit(

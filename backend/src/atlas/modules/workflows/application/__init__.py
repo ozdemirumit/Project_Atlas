@@ -1,4 +1,8 @@
 from atlas.modules.workflows.application.ports import (
+    WorkflowPlanCancellationIdempotencyRecord,
+    WorkflowPlanCancellationRequest,
+    WorkflowPlanCancellationResult,
+    WorkflowPlanCancellationStatus,
     WorkflowPlanIdempotencyRecord,
     WorkflowPlanMutationResult,
     WorkflowPlanMutationStatus,
@@ -12,6 +16,10 @@ from atlas.modules.workflows.application.service import (
 
 __all__ = [
     "WorkflowAccessContext",
+    "WorkflowPlanCancellationIdempotencyRecord",
+    "WorkflowPlanCancellationRequest",
+    "WorkflowPlanCancellationResult",
+    "WorkflowPlanCancellationStatus",
     "WorkflowPlanIdempotencyRecord",
     "WorkflowPlanMutationResult",
     "WorkflowPlanMutationStatus",

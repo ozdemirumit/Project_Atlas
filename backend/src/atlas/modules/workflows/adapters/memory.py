@@ -3,6 +3,10 @@ from __future__ import annotations
 import asyncio
 
 from atlas.modules.workflows.application import (
+    WorkflowPlanCancellationIdempotencyRecord,
+    WorkflowPlanCancellationRequest,
+    WorkflowPlanCancellationResult,
+    WorkflowPlanCancellationStatus,
     WorkflowPlanIdempotencyRecord,
     WorkflowPlanMutationResult,
     WorkflowPlanMutationStatus,
@@ -16,6 +20,9 @@ class InMemoryWorkflowPlanRepository:
     def __init__(self) -> None:
         self._plans: dict[str, WorkflowRunPlan] = {}
         self._requests: dict[tuple[WorkflowScope, str, str], WorkflowPlanIdempotencyRecord] = {}
+        self._cancellation_requests: dict[
+            tuple[WorkflowScope, str, str], WorkflowPlanCancellationIdempotencyRecord
+        ] = {}
         self._lock = asyncio.Lock()
 
     @property
@@ -84,6 +91,53 @@ class InMemoryWorkflowPlanRepository:
             )
             return WorkflowPlanMutationResult(
                 status=WorkflowPlanMutationStatus.CREATED,
+                plan=plan,
+            )
+
+    async def get_cancellation_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        actor_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowPlanCancellationIdempotencyRecord | None:
+        async with self._lock:
+            return self._cancellation_requests.get((scope, actor_subject_id, idempotency_key))
+
+    async def cancel(
+        self, request: WorkflowPlanCancellationRequest
+    ) -> WorkflowPlanCancellationResult:
+        async with self._lock:
+            plan = request.cancelled_plan
+            key = (plan.scope, request.actor_subject_id, request.idempotency_key)
+            prior = self._cancellation_requests.get(key)
+            if prior is not None:
+                status = (
+                    WorkflowPlanCancellationStatus.REPLAY
+                    if prior.request_fingerprint == request.request_fingerprint
+                    else WorkflowPlanCancellationStatus.IDEMPOTENCY_CONFLICT
+                )
+                return WorkflowPlanCancellationResult(status=status, plan=prior.plan)
+            current = self._plans.get(plan.plan_id)
+            if current is None:
+                return WorkflowPlanCancellationResult(
+                    status=WorkflowPlanCancellationStatus.NOT_FOUND, plan=None
+                )
+            if (
+                current.canonical_digest != request.expected_plan_digest
+                or current.state.value != "planned"
+            ):
+                return WorkflowPlanCancellationResult(
+                    status=WorkflowPlanCancellationStatus.STATE_CONFLICT,
+                    plan=current,
+                )
+            self._plans[plan.plan_id] = plan
+            self._cancellation_requests[key] = WorkflowPlanCancellationIdempotencyRecord(
+                request_fingerprint=request.request_fingerprint,
+                plan=plan,
+            )
+            return WorkflowPlanCancellationResult(
+                status=WorkflowPlanCancellationStatus.CANCELLED,
                 plan=plan,
             )
 

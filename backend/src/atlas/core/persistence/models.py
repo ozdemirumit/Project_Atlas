@@ -4211,7 +4211,11 @@ class WorkflowRunPlanModel(Base):
     __tablename__ = "workflow_run_plans"
     __table_args__ = (
         CheckConstraint("definition_version >= 1", name="ck_workflow_run_plan_definition_version"),
-        CheckConstraint("state = 'planned'", name="ck_workflow_run_plan_state"),
+        CheckConstraint(
+            "state IN ('planned', 'cancelled')",
+            name="ck_workflow_run_plan_state",
+        ),
+        CheckConstraint("state_version >= 1", name="ck_workflow_run_plan_state_version"),
         UniqueConstraint("canonical_digest", name="uq_workflow_run_plan_digest"),
     )
 
@@ -4228,6 +4232,49 @@ class WorkflowRunPlanModel(Base):
     target_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     canonical_input_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    state_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowPlanTransitionModel(Base):
+    __tablename__ = "workflow_plan_transitions"
+    __table_args__ = (
+        UniqueConstraint(
+            "plan_id",
+            "sequence",
+            name="uq_workflow_plan_transition_sequence",
+        ),
+        UniqueConstraint(
+            "canonical_digest",
+            name="uq_workflow_plan_transition_digest",
+        ),
+        CheckConstraint("sequence >= 1", name="ck_workflow_plan_transition_sequence"),
+        CheckConstraint(
+            "from_state = 'planned' AND to_state = 'cancelled'",
+            name="ck_workflow_plan_transition_states",
+        ),
+    )
+
+    transition_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    plan_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_run_plans.plan_id"),
+        nullable=False,
+        index=True,
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    from_state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    to_state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    actor_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    target_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    target_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    reason_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 

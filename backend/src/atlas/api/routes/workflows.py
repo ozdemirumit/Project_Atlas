@@ -10,10 +10,12 @@ from atlas.api.schemas import ResponseMeta
 from atlas.api.security import (
     authenticated_subject,
     authorize_workflow_definition_read,
+    authorize_workflow_plan_cancel,
     authorize_workflow_plan_create,
     authorize_workflow_plan_read,
 )
 from atlas.api.workflow_schemas import (
+    CancelWorkflowPlanInput,
     CreateWorkflowPlanInput,
     WorkflowDefinitionData,
     WorkflowDefinitionInventoryData,
@@ -213,6 +215,30 @@ async def list_workflow_plans(
         ),
         meta=_meta(request),
     )
+
+
+@router.post("/plans/{plan_id}/cancellation", response_model=WorkflowRunPlanResponse)
+async def cancel_workflow_plan(
+    plan_id: Annotated[str, SAFE_ID],
+    payload: CancelWorkflowPlanInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+    decision: Annotated[AuthorizationDecision, Depends(authorize_workflow_plan_cancel)],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> WorkflowRunPlanResponse:
+    service: WorkflowPlanningService = request.app.state.workflow_planning_service
+    try:
+        plan = await service.cancel_plan(
+            plan_id=plan_id,
+            reason=payload.reason,
+            acknowledge_no_external_undo=payload.acknowledge_no_external_undo,
+            idempotency_key=idempotency_key,
+            context=await _context(request, subject, decision),
+        )
+    except WorkflowPlanningError as error:
+        _raise(error)
+    return _plan_response(plan, request, response)
 
 
 @router.get("/plans/{plan_id}", response_model=WorkflowRunPlanResponse)

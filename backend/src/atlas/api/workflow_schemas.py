@@ -23,6 +23,14 @@ class CreateWorkflowPlanInput(BaseModel):
     acknowledged_planning_only_no_execution_authority: Literal[True]
 
 
+class CancelWorkflowPlanInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["atlas.workflow-run-plan-cancellation-input.v1"]
+    reason: str = Field(min_length=1, max_length=500)
+    acknowledge_no_external_undo: Literal[True]
+
+
 class WorkflowStepDefinitionData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -101,6 +109,23 @@ class WorkflowScopeData(BaseModel):
     site_id: str
 
 
+class WorkflowPlanTransitionData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    transition_id: str
+    prior_state: Literal["planned"]
+    new_state: Literal["cancelled"]
+    actor_subject_id: str
+    scope: WorkflowScopeData
+    target_id: str
+    target_type: Literal["storage"]
+    reason: str
+    reason_digest: str
+    correlation_id: str
+    occurred_at: datetime
+    canonical_digest: str
+
+
 class WorkflowRunPlanData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -114,18 +139,19 @@ class WorkflowRunPlanData(BaseModel):
     canonical_input_digest: str
     creator_subject_id: str
     created_at: datetime
-    state: Literal["planned"]
+    state: Literal["planned", "cancelled"]
     steps: list[WorkflowPlanStepData]
     durable: bool
     authority: WorkflowPlanAuthorityData
     safety_notice: str
     canonical_digest: str
+    transition_history: list[WorkflowPlanTransitionData]
 
     @classmethod
     def from_domain(cls, plan: WorkflowRunPlan) -> WorkflowRunPlanData:
-        return cls.model_validate(
-            plan.digest_payload() | {"canonical_digest": plan.canonical_digest}
-        )
+        payload = plan.digest_payload() | {"canonical_digest": plan.canonical_digest}
+        payload.setdefault("transition_history", [])
+        return cls.model_validate(payload)
 
 
 class WorkflowDefinitionInventoryData(BaseModel):
