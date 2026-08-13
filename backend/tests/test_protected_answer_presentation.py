@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import asdict
-from datetime import timedelta
+from dataclasses import asdict, replace
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
@@ -39,7 +39,12 @@ from atlas.modules.ai.domain.protected_answer_presentation import (
 from atlas.modules.ai.domain.protected_draft_adjudication import (
     ProtectedDraftAdjudicationResult,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 
 class RecordingPresentationPermissionAuthorizer:
@@ -64,7 +69,10 @@ class RecordingPresentationPermissionAuthorizer:
 
 
 async def presentation_fixture(
-    *, deny: bool = False, unavailable: bool = False
+    *,
+    deny: bool = False,
+    unavailable: bool = False,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     GovernedProtectedAnswerPresentationService,
     MemoryProtectedAnswerPresentationRepository,
@@ -90,6 +98,13 @@ async def presentation_fixture(
         environment_id=adjudication.record.environment_id,
         issued_at=adjudication.record.adjudicated_at - timedelta(hours=1),
         expires_at=adjudication.record.adjudicated_at + timedelta(days=1),
+    )
+    policy = replace(policy, required_assurance_level=required_assurance_level)
+    policy = replace(
+        policy,
+        canonical_digest=GovernedProtectedModelInvocationService._digest(
+            GovernedProtectedModelInvocationService._payload(policy)
+        ),
     )
     presenter = (
         UnavailableTrustedProtectedAnswerPresenter()
@@ -190,6 +205,68 @@ async def test_presentation_production_boundary_fails_closed() -> None:
         await create_presentation(service, adjudication, policy, actor)
     assert repository._claims and not repository._records
     assert isinstance(presenter, UnavailableTrustedProtectedAnswerPresenter)
+
+
+@pytest.mark.asyncio
+async def test_default_policy_allows_development_authentication() -> None:
+    service, _, adjudication, policy, actor, *_ = await presentation_fixture()
+    development_actor = replace(
+        actor,
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    result = await create_presentation(service, adjudication, policy, development_actor)
+
+    assert result.record.answer_presented
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+
+
+@pytest.mark.asyncio
+async def test_explicit_stronger_policy_rejects_development_authentication() -> None:
+    service, _, adjudication, policy, actor, *_ = await presentation_fixture(
+        required_assurance_level=AssuranceLevel.MULTI_FACTOR
+    )
+    development_actor = replace(
+        actor,
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    with pytest.raises(ProtectedAnswerPresentationError, match="assurance_required"):
+        await create_presentation(service, adjudication, policy, development_actor)
+
+
+@pytest.mark.asyncio
+async def test_non_human_actor_is_rejected() -> None:
+    service, _, adjudication, policy, actor, *_ = await presentation_fixture()
+
+    with pytest.raises(ProtectedAnswerPresentationError, match="human_required"):
+        await create_presentation(
+            service,
+            adjudication,
+            policy,
+            replace(actor, kind=SubjectKind.SERVICE),
+        )
+
+
+def test_policy_accepts_only_supported_assurance_levels() -> None:
+    issued_at = datetime(2026, 1, 1, tzinfo=UTC)
+    policy = build_development_protected_answer_presentation_policy(
+        organization_id="organization.test",
+        environment_id="environment.test",
+        issued_at=issued_at,
+        expires_at=issued_at + timedelta(days=1),
+    )
+
+    for level in (
+        AssuranceLevel.SINGLE_FACTOR,
+        AssuranceLevel.MULTI_FACTOR,
+        AssuranceLevel.HARDWARE_BACKED,
+    ):
+        assert replace(policy, required_assurance_level=level).required_assurance_level is level
+    with pytest.raises(ValueError, match="policy is invalid"):
+        replace(policy, required_assurance_level=AssuranceLevel.DEVELOPMENT)
 
 
 def test_presentation_input_is_strict() -> None:

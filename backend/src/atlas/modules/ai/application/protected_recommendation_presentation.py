@@ -44,8 +44,8 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 POLICY_SCHEMA = "atlas.protected-recommendation-presentation-policy.v1"
@@ -120,6 +120,7 @@ class GovernedProtectedRecommendationPresentationService:
             raise ProtectedRecommendationPresentationError(
                 "protected_recommendation_presentation_policy_invalid"
             )
+        self._require_assurance(actor, policy)
         await self._permission_authorizer.authorize(
             actor=actor,
             organization_id=actor.organization_id,
@@ -328,10 +329,12 @@ class GovernedProtectedRecommendationPresentationService:
             or now >= record.expires_at
             or policy.canonical_digest != record.presentation_policy_digest
             or policy.canonical_digest != self._digest(self._payload(policy))
+            or not policy.issued_at <= now < policy.expires_at
         ):
             raise ProtectedRecommendationPresentationError(
                 "protected_recommendation_presentation_not_found"
             )
+        self._require_assurance(actor, policy)
         await self._permission_authorizer.authorize(
             actor=actor,
             organization_id=record.organization_id,
@@ -549,13 +552,19 @@ class GovernedProtectedRecommendationPresentationService:
 
     @staticmethod
     def _require_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
+        if actor.kind is not SubjectKind.HUMAN:
             raise ProtectedRecommendationPresentationError(
-                "protected_recommendation_presentation_enterprise_human_hardware_mfa_required"
+                "protected_recommendation_presentation_human_required"
+            )
+
+    @staticmethod
+    def _require_assurance(
+        actor: AuthenticatedSubject,
+        policy: ProtectedRecommendationPresentationPolicySnapshot,
+    ) -> None:
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
+            raise ProtectedRecommendationPresentationError(
+                "protected_recommendation_presentation_assurance_required"
             )
 
     def _require_scope(
@@ -652,6 +661,7 @@ def build_development_protected_recommendation_presentation_policy(
         maximum_text_items_per_option=25,
         maximum_output_bytes=65_536,
         retention_minutes=10,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         browser_binding_key_digest=digest(["protected-recommendation-presentation-browser-key"]),
         rendering_profile_digest=digest(["rendering-profile.inert-recommendation-v1"]),
         prohibited_output_profile_digest=digest(

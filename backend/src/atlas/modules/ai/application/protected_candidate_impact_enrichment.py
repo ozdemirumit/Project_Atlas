@@ -52,8 +52,8 @@ from atlas.modules.graph.domain.models import StorageImpactResult
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 POLICY_SCHEMA = "atlas.protected-candidate-impact-policy.v1"
@@ -131,6 +131,7 @@ class GovernedProtectedCandidateImpactService:
             or not policy.issued_at <= now < policy.expires_at
         ):
             raise ProtectedCandidateImpactError("protected_candidate_impact_policy_invalid")
+        self._require_assurance(actor, policy)
         await self._permission_authorizer.authorize(
             actor=actor,
             organization_id=actor.organization_id,
@@ -323,6 +324,7 @@ class GovernedProtectedCandidateImpactService:
             or not policy.issued_at <= now < policy.expires_at
         ):
             raise ProtectedCandidateImpactError("protected_candidate_impact_not_found")
+        self._require_assurance(actor, policy)
         await self._permission_authorizer.authorize(
             actor=actor,
             organization_id=record.organization_id,
@@ -409,6 +411,7 @@ class GovernedProtectedCandidateImpactService:
             or not policy.issued_at <= now < policy.expires_at
         ):
             raise ProtectedCandidateImpactError("protected_candidate_impact_not_found")
+        self._require_assurance(actor, policy)
         await self._permission_authorizer.authorize(
             actor=actor,
             organization_id=record.organization_id,
@@ -733,14 +736,16 @@ class GovernedProtectedCandidateImpactService:
 
     @staticmethod
     def _require_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
-            raise ProtectedCandidateImpactError(
-                "protected_candidate_impact_enterprise_human_hardware_mfa_required"
-            )
+        if actor.kind is not SubjectKind.HUMAN:
+            raise ProtectedCandidateImpactError("protected_candidate_impact_human_required")
+
+    @staticmethod
+    def _require_assurance(
+        actor: AuthenticatedSubject,
+        policy: ProtectedCandidateImpactPolicySnapshot,
+    ) -> None:
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
+            raise ProtectedCandidateImpactError("protected_candidate_impact_assurance_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -844,6 +849,7 @@ def build_development_protected_candidate_impact_policy(
         classification_ceiling="classification.internal",
         browser_binding_key_digest=digest(["protected-candidate-impact-browser-key"]),
         safety_profile_digest=digest(["reachability-not-outage-no-authority-v1"]),
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         signed_by="subject.protected-candidate-impact-policy-signer",
         signature_verified=True,
         issued_at=issued_at,

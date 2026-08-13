@@ -82,9 +82,11 @@ credential, command, model, endpoint, workflow, approval, deployment, or mutatio
 ### Identity And Access
 
 The actor must be the same current enterprise human consumer that owns the protected candidate
-lineage, in the exact tenant and environment, with recent hardware-backed MFA, browser binding,
-CSRF, dedicated C1 impact create and read permissions, graph-read authority, and current source and
-classification access.
+lineage, in the exact tenant and environment, with authentication assurance satisfying the current
+signed policy, browser binding, CSRF, dedicated C1 impact create and read permissions, graph-read
+authority, and current source and classification access. The default `SINGLE_FACTOR` policy accepts
+a signed-in username/password development browser session; `MULTI_FACTOR` or `HARDWARE_BACKED` is
+required only when that explicit signed policy requests it.
 
 Service, shared, AI, break-glass, cross-tenant, policy-signer, graph-source, analyzer, candidate
 generator, attestor, recommendation reviewer, workflow, and execution identities cannot act as the

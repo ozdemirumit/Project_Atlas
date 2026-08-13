@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from atlas.modules.identity.domain.models import AssuranceLevel
+
 
 def _ids(*values: str) -> bool:
     return all(3 <= len(value.strip()) <= 256 for value in values)
@@ -40,6 +42,7 @@ class ProtectedAnswerPresentationPolicySnapshot:
     maximum_unknown_count: int
     maximum_output_bytes: int
     retention_minutes: int
+    required_assurance_level: AssuranceLevel
     signed_by: str
     signature_verified: bool
     issued_at: datetime
@@ -74,6 +77,12 @@ class ProtectedAnswerPresentationPolicySnapshot:
             or not 1 <= self.maximum_unknown_count <= 1_000
             or not 256 <= self.maximum_output_bytes <= 1_000_000
             or not 1 <= self.retention_minutes <= 1_440
+            or self.required_assurance_level
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or self.issued_at.tzinfo is None
             or self.expires_at.tzinfo is None
             or not self.issued_at < self.expires_at

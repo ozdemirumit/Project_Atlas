@@ -92,9 +92,11 @@ separate validated and attributable boundary.
 ### Identity And Access
 
 The actor must be the same current enterprise human consumer that owns the protected invocation,
-adjudication, and presentation, in the exact tenant and environment, with recent hardware-backed
-MFA, browser binding, CSRF, dedicated C1 generation and lineage-read permissions, and current
-source and classification access.
+adjudication, and presentation, in the exact tenant and environment, with authentication assurance
+satisfying the current signed policy, browser binding, CSRF, dedicated C1 generation and
+lineage-read permissions, and current source and classification access. The default `SINGLE_FACTOR`
+policy accepts a signed-in username/password development browser session; `MULTI_FACTOR` or
+`HARDWARE_BACKED` is required only when that explicit signed policy requests it.
 
 Service, shared, AI, break-glass, cross-tenant, policy-signer, model gateway, endpoint owner or
 evaluator, context assembler, adjudicator, presenter, candidate generator, generator attestor, and

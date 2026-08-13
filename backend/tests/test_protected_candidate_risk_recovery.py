@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import asdict
-from datetime import timedelta
+from dataclasses import asdict, replace
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
@@ -41,7 +41,12 @@ from atlas.modules.ai.domain.protected_candidate_risk_recovery_completion import
     ProtectedCandidateRiskRecoveryPolicySnapshot,
     ProtectedCandidateRiskRecoveryResult,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 
 class RecordingRiskRecoveryPermissionAuthorizer:
@@ -66,7 +71,10 @@ class RecordingRiskRecoveryPermissionAuthorizer:
 
 
 async def completion_fixture(
-    *, deny: bool = False, unavailable: bool = False
+    *,
+    deny: bool = False,
+    unavailable: bool = False,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     GovernedProtectedCandidateRiskRecoveryService,
     MemoryProtectedCandidateRiskRecoveryRepository,
@@ -84,6 +92,17 @@ async def completion_fixture(
         environment_id=impact.record.environment_id,
         issued_at=impact.record.analyzed_at - timedelta(hours=1),
         expires_at=impact.record.analyzed_at + timedelta(days=1),
+    )
+    unsigned_policy = replace(
+        policy,
+        required_assurance_level=required_assurance_level,
+        canonical_digest="0" * 64,
+    )
+    policy = replace(
+        unsigned_policy,
+        canonical_digest=GovernedProtectedModelInvocationService._digest(
+            GovernedProtectedModelInvocationService._payload(unsigned_policy)
+        ),
     )
     evidence = build_development_operational_evidence_snapshot(
         organization_id=impact.record.organization_id,
@@ -166,6 +185,91 @@ async def test_completion_is_private_bounded_and_idempotent() -> None:
     assert isinstance(assessor, SyntheticTrustedProtectedCandidateRiskRecoveryAssessor)
     assert len(assessor.calls) == 1
     assert len(permission.calls) == 4
+
+
+@pytest.mark.asyncio
+async def test_development_human_satisfies_default_completion_policy() -> None:
+    service, _, impact, policy, actor, *_ = await completion_fixture()
+    development_actor = replace(
+        actor,
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    result = await create_completion(service, impact, policy, development_actor)
+
+    assert result.record.completion_policy_digest == policy.canonical_digest
+
+
+@pytest.mark.asyncio
+async def test_explicit_stronger_completion_policy_rejects_development_assurance() -> None:
+    service, repository, impact, policy, actor, *_, permission = await completion_fixture(
+        required_assurance_level=AssuranceLevel.MULTI_FACTOR
+    )
+    development_actor = replace(
+        actor,
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    with pytest.raises(
+        ProtectedCandidateRiskRecoveryError,
+        match="protected_candidate_risk_recovery_assurance_required",
+    ):
+        await create_completion(service, impact, policy, development_actor)
+
+    assert not permission.calls
+    assert not repository._claims
+
+
+@pytest.mark.asyncio
+async def test_completion_rejects_non_human_subject() -> None:
+    service, repository, impact, policy, actor, *_ = await completion_fixture()
+    service_actor = replace(actor, kind=SubjectKind.SERVICE)
+
+    with pytest.raises(
+        ProtectedCandidateRiskRecoveryError,
+        match="protected_candidate_risk_recovery_human_required",
+    ):
+        await create_completion(service, impact, policy, service_actor)
+
+    assert not repository._claims
+
+
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    (
+        AssuranceLevel.SINGLE_FACTOR,
+        AssuranceLevel.MULTI_FACTOR,
+        AssuranceLevel.HARDWARE_BACKED,
+    ),
+)
+def test_completion_policy_supports_explicit_assurance_levels(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    issued_at = datetime.now(UTC)
+    base_policy = build_development_protected_candidate_risk_recovery_policy(
+        organization_id="org.atlas",
+        environment_id="env.lab",
+        issued_at=issued_at,
+        expires_at=issued_at + timedelta(hours=1),
+    )
+    unsigned_policy = replace(
+        base_policy,
+        required_assurance_level=required_assurance_level,
+        canonical_digest="0" * 64,
+    )
+    policy = replace(
+        unsigned_policy,
+        canonical_digest=GovernedProtectedModelInvocationService._digest(
+            GovernedProtectedModelInvocationService._payload(unsigned_policy)
+        ),
+    )
+
+    assert policy.required_assurance_level is required_assurance_level
+    assert policy.canonical_digest == GovernedProtectedModelInvocationService._digest(
+        GovernedProtectedModelInvocationService._payload(policy)
+    )
 
 
 @pytest.mark.asyncio

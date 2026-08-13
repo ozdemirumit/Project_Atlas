@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from atlas.modules.identity.domain.models import AssuranceLevel
+
 
 def _ids(*values: str) -> bool:
     return all(value.strip() and len(value) <= 256 for value in values)
@@ -43,6 +45,7 @@ class ProtectedCandidateImpactPolicySnapshot:
     classification_ceiling: str
     browser_binding_key_digest: str
     safety_profile_digest: str
+    required_assurance_level: AssuranceLevel
     signed_by: str
     signature_verified: bool
     issued_at: datetime
@@ -86,6 +89,12 @@ class ProtectedCandidateImpactPolicySnapshot:
             or self.expires_at.tzinfo is None
             or not self.issued_at < self.expires_at
             or not self.signature_verified
+            or self.required_assurance_level
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or not _digests(
                 self.browser_binding_key_digest,
                 self.safety_profile_digest,

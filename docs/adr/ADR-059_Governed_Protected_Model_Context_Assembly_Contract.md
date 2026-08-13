@@ -37,7 +37,8 @@ Assembly proceeds only when:
   publication, staging, embedding, chunking, materialization, preparation, approval, review,
   knowledge-item, source, governance, model, projection, route, access, and policy lineage;
 - the protected evidence artifact can be rehydrated through the approved retrieval boundary after
-  current consumer, tenant, MFA, browser, purpose, permission, source, classification, lifecycle,
+  current consumer, tenant, authentication-assurance, browser, purpose, permission, source,
+  classification, lifecycle,
   retention, and integrity checks;
 - knowledge, retrieval publication, and protected retrieval are true while model invocation,
   answer publication, graph update, scheduling, workflow, execution, deployment, and infrastructure
@@ -69,8 +70,11 @@ sanitization, and evidence allocation are policy-derived.
 ### Identity And Access
 
 The actor must be the same current enterprise human consumer that owns the retrieval, in the exact
-tenant and environment, with recent hardware-backed MFA, dedicated C1 context-assembly and
-lineage-read permissions, browser binding, CSRF, and a current signed policy. Service, shared, AI,
+tenant and environment, with authentication assurance satisfying the current signed policy,
+dedicated C1 context-assembly and lineage-read permissions, browser binding, and CSRF. The default
+`SINGLE_FACTOR` policy accepts a signed-in username/password development browser session;
+`MULTI_FACTOR` or `HARDWARE_BACKED` is required only when that explicit signed policy requests it.
+Service, shared, AI,
 break-glass, cross-tenant, retrieval supply-chain, policy-signer, and trusted-assembler identities
 cannot act as the human caller.
 
@@ -137,7 +141,8 @@ or secret.
 ### Record, Replay, And Retention
 
 Required intent audit and a unique immutable request claim precede protected artifact creation.
-Exact completed replay may rehydrate the same manifest only after current identity, MFA, browser,
+Exact completed replay may rehydrate the same manifest only after current identity,
+authentication assurance, browser,
 permission, source, classification, purpose, policy, lifecycle, retention, and integrity checks.
 It cannot rebuild, widen, reorder, or silently truncate context. Conflicting idempotency reuse
 fails. Failure or uncertainty after assembly begins is recorded and never retried automatically.
@@ -158,7 +163,8 @@ workflow, authorize an operation, approve deployment, or mutate infrastructure.
 ### Read, Failure, And Audit
 
 Only the accountable retrieval consumer may read the minimized manifest while current identity,
-tenant, MFA, browser, permission, source, classification, purpose, policy, lifecycle, retention,
+tenant, authentication assurance, browser, permission, source, classification, purpose, policy,
+lifecycle, retention,
 and integrity authority remain valid. Responses use strict `no-store`, `nosniff`, no-referrer, and
 restrictive content-security headers.
 

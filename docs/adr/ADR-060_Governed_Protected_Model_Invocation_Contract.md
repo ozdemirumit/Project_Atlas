@@ -43,7 +43,8 @@ Invocation proceeds only when:
   retrieval, publication, source, access, classification, purpose, policy, citation, safety,
   budget, destination, and protected-artifact lineage;
 - the protected context package can be rehydrated through the approved context boundary after
-  current consumer, tenant, MFA, browser, permission, lifecycle, retention, and integrity checks;
+  current consumer, tenant, authentication-assurance, browser, permission, lifecycle, retention,
+  and integrity checks;
 - a signed invocation policy resolves exactly one active endpoint profile and approved model,
   provider contract, task class, output schema, network boundary, classification ceiling, context
   limit, output limit, timeout, and secret reference;
@@ -74,8 +75,11 @@ All model and request controls are derived from signed local policy and the appr
 ### Identity And Access
 
 The actor must be the same current enterprise human consumer that owns the context, in the exact
-tenant and environment, with recent hardware-backed MFA, dedicated C1 invocation and lineage-read
-permissions, browser binding, CSRF, and current source and classification access. Service, shared,
+tenant and environment, with authentication assurance satisfying the current signed policy,
+dedicated C1 invocation and lineage-read permissions, browser binding, CSRF, and current source and
+classification access. The default `SINGLE_FACTOR` policy accepts a signed-in username/password
+development browser session; `MULTI_FACTOR` or `HARDWARE_BACKED` is required only when that
+explicit signed policy requests it. Service, shared,
 AI, break-glass, cross-tenant, context-supply-chain, policy-signer, endpoint-owner, evaluator,
 gateway, and result-vault identities cannot act as the human caller.
 
@@ -135,7 +139,8 @@ credential, cookie, token, and raw identity.
 
 Required intent audit and a unique immutable request claim precede context rehydration or model
 disclosure. Exact completed replay may return the same minimized manifest only after current
-identity, MFA, browser, permission, context, source, classification, purpose, policy, endpoint,
+identity, authentication assurance, browser, permission, context, source, classification, purpose,
+policy, endpoint,
 evaluation, retention, and integrity checks. It never calls the model again. Conflicting
 idempotency reuse fails. An uncertain provider outcome is recorded and is not automatically
 retried because duplicate invocation cannot be proven safe.

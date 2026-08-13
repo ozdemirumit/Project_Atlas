@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from atlas.modules.identity.domain.models import AssuranceLevel
+
 
 def _aware(*values: datetime) -> bool:
     return all(value.tzinfo is not None for value in values)
@@ -32,6 +34,7 @@ class ProtectedRecommendationAdjudicationPolicySnapshot:
     maximum_unknown_count: int
     maximum_output_bytes: int
     retention_minutes: int
+    required_assurance_level: AssuranceLevel
     browser_binding_key_digest: str
     preference_profile_digest: str
     safety_profile_digest: str
@@ -58,6 +61,12 @@ class ProtectedRecommendationAdjudicationPolicySnapshot:
             < 1
             or self.maximum_exclusion_count < 0
             or self.maximum_unknown_count < 0
+            or self.required_assurance_level
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
         ):
             raise ValueError("invalid protected recommendation adjudication policy")
 

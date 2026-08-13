@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import asdict
-from datetime import timedelta
+from dataclasses import asdict, replace
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
@@ -39,7 +39,12 @@ from atlas.modules.ai.domain.protected_recommendation_adjudication import (
     ProtectedRecommendationAdjudicationPolicySnapshot,
     ProtectedRecommendationAdjudicationResult,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 BROWSER_SESSION_ID = "session_protected_knowledge_retrieval_001"
 
@@ -66,7 +71,10 @@ class RecordingAdjudicationPermissionAuthorizer:
 
 
 async def adjudication_fixture(
-    *, deny: bool = False, unavailable: bool = False
+    *,
+    deny: bool = False,
+    unavailable: bool = False,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     GovernedProtectedRecommendationAdjudicationService,
     MemoryProtectedRecommendationAdjudicationRepository,
@@ -89,6 +97,17 @@ async def adjudication_fixture(
         environment_id=completion.record.environment_id,
         issued_at=completion.record.completed_at - timedelta(hours=1),
         expires_at=completion.record.completed_at + timedelta(days=1),
+    )
+    unsigned_policy = replace(
+        policy,
+        required_assurance_level=required_assurance_level,
+        canonical_digest="0" * 64,
+    )
+    policy = replace(
+        unsigned_policy,
+        canonical_digest=GovernedProtectedModelInvocationService._digest(
+            GovernedProtectedModelInvocationService._payload(unsigned_policy)
+        ),
     )
     adjudicator = (
         UnavailableTrustedProtectedRecommendationAdjudicator()
@@ -167,6 +186,91 @@ async def test_adjudication_is_private_bounded_and_idempotent() -> None:
     assert isinstance(adjudicator, SyntheticTrustedProtectedRecommendationAdjudicator)
     assert len(adjudicator.calls) == 1
     assert len(permission.calls) == 4
+
+
+@pytest.mark.asyncio
+async def test_development_human_satisfies_default_adjudication_policy() -> None:
+    service, _, completion, policy, actor, *_ = await adjudication_fixture()
+    development_actor = replace(
+        actor,
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    result = await create_adjudication(service, completion, policy, development_actor)
+
+    assert result.record.adjudication_policy_digest == policy.canonical_digest
+
+
+@pytest.mark.asyncio
+async def test_explicit_stronger_adjudication_policy_rejects_development_assurance() -> None:
+    service, repository, completion, policy, actor, *_, permission = await adjudication_fixture(
+        required_assurance_level=AssuranceLevel.HARDWARE_BACKED
+    )
+    development_actor = replace(
+        actor,
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    with pytest.raises(
+        ProtectedRecommendationAdjudicationError,
+        match="protected_recommendation_adjudication_assurance_required",
+    ):
+        await create_adjudication(service, completion, policy, development_actor)
+
+    assert not permission.calls
+    assert not repository._claims
+
+
+@pytest.mark.asyncio
+async def test_adjudication_rejects_non_human_subject() -> None:
+    service, repository, completion, policy, actor, *_ = await adjudication_fixture()
+    service_actor = replace(actor, kind=SubjectKind.SERVICE)
+
+    with pytest.raises(
+        ProtectedRecommendationAdjudicationError,
+        match="protected_recommendation_adjudication_human_required",
+    ):
+        await create_adjudication(service, completion, policy, service_actor)
+
+    assert not repository._claims
+
+
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    (
+        AssuranceLevel.SINGLE_FACTOR,
+        AssuranceLevel.MULTI_FACTOR,
+        AssuranceLevel.HARDWARE_BACKED,
+    ),
+)
+def test_adjudication_policy_supports_explicit_assurance_levels(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    issued_at = datetime.now(UTC)
+    base_policy = build_development_protected_recommendation_adjudication_policy(
+        organization_id="org.atlas",
+        environment_id="env.lab",
+        issued_at=issued_at,
+        expires_at=issued_at + timedelta(hours=1),
+    )
+    unsigned_policy = replace(
+        base_policy,
+        required_assurance_level=required_assurance_level,
+        canonical_digest="0" * 64,
+    )
+    policy = replace(
+        unsigned_policy,
+        canonical_digest=GovernedProtectedModelInvocationService._digest(
+            GovernedProtectedModelInvocationService._payload(unsigned_policy)
+        ),
+    )
+
+    assert policy.required_assurance_level is required_assurance_level
+    assert policy.canonical_digest == GovernedProtectedModelInvocationService._digest(
+        GovernedProtectedModelInvocationService._payload(policy)
+    )
 
 
 @pytest.mark.asyncio

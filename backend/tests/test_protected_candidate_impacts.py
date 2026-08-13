@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import asdict
-from datetime import timedelta
+from dataclasses import asdict, replace
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
@@ -41,7 +41,12 @@ from atlas.modules.ai.domain.protected_recommendation_candidate_generation impor
 )
 from atlas.modules.graph.adapters.synthetic import build_synthetic_graph_snapshot
 from atlas.modules.graph.application.engine import InMemoryGraphImpactAnalyzer
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 
 class RecordingImpactPermissionAuthorizer:
@@ -64,7 +69,10 @@ class RecordingImpactPermissionAuthorizer:
 
 
 async def impact_fixture(
-    *, deny: bool = False, unavailable: bool = False
+    *,
+    deny: bool = False,
+    unavailable: bool = False,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     GovernedProtectedCandidateImpactService,
     MemoryProtectedCandidateImpactRepository,
@@ -82,6 +90,13 @@ async def impact_fixture(
         environment_id=candidates.record.environment_id,
         issued_at=candidates.record.generated_at - timedelta(hours=1),
         expires_at=candidates.record.generated_at + timedelta(days=1),
+    )
+    policy = replace(policy, required_assurance_level=required_assurance_level)
+    policy = replace(
+        policy,
+        canonical_digest=GovernedProtectedModelInvocationService._digest(
+            GovernedProtectedModelInvocationService._payload(policy)
+        ),
     )
     analyzer = (
         UnavailableTrustedProtectedCandidateImpactAnalyzer()
@@ -159,6 +174,68 @@ async def test_impact_is_private_bounded_and_idempotent() -> None:
     assert isinstance(analyzer, SyntheticTrustedProtectedCandidateImpactAnalyzer)
     assert len(analyzer.calls) == 1
     assert len(permission.calls) == 4
+
+
+@pytest.mark.asyncio
+async def test_default_policy_allows_development_authentication() -> None:
+    service, _, candidates, policy, actor, *_ = await impact_fixture()
+    development_actor = replace(
+        actor,
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    result = await create_impact(service, candidates, policy, development_actor)
+
+    assert result.record.service_impact_analyzed
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+
+
+@pytest.mark.asyncio
+async def test_explicit_stronger_policy_rejects_development_authentication() -> None:
+    service, _, candidates, policy, actor, *_ = await impact_fixture(
+        required_assurance_level=AssuranceLevel.MULTI_FACTOR
+    )
+    development_actor = replace(
+        actor,
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    with pytest.raises(ProtectedCandidateImpactError, match="assurance_required"):
+        await create_impact(service, candidates, policy, development_actor)
+
+
+@pytest.mark.asyncio
+async def test_non_human_actor_is_rejected() -> None:
+    service, _, candidates, policy, actor, *_ = await impact_fixture()
+
+    with pytest.raises(ProtectedCandidateImpactError, match="human_required"):
+        await create_impact(
+            service,
+            candidates,
+            policy,
+            replace(actor, kind=SubjectKind.SERVICE),
+        )
+
+
+def test_policy_accepts_only_supported_assurance_levels() -> None:
+    issued_at = datetime(2026, 1, 1, tzinfo=UTC)
+    policy = build_development_protected_candidate_impact_policy(
+        organization_id="organization.test",
+        environment_id="environment.test",
+        issued_at=issued_at,
+        expires_at=issued_at + timedelta(days=1),
+    )
+
+    for level in (
+        AssuranceLevel.SINGLE_FACTOR,
+        AssuranceLevel.MULTI_FACTOR,
+        AssuranceLevel.HARDWARE_BACKED,
+    ):
+        assert replace(policy, required_assurance_level=level).required_assurance_level is level
+    with pytest.raises(ValueError, match="policy is invalid"):
+        replace(policy, required_assurance_level=AssuranceLevel.DEVELOPMENT)
 
 
 @pytest.mark.asyncio

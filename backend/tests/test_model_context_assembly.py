@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import asdict, replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
 from test_package_acquisition import CollectingAuditSink
 from test_protected_retrieval import create_retrieval, retrieval_fixture
+from test_target_session import development_target_session_operator
 
 from atlas.api.model_context_assembly_schemas import (
     ProtectedModelContextInput,
     ProtectedModelContextResultData,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject, SubjectKind
 from atlas.modules.knowledge.adapters.model_context_assembly_memory import (
     InMemoryProtectedModelContextPolicySource,
     MemoryProtectedModelContextRepository,
@@ -146,6 +147,73 @@ async def create_context(
         idempotency_key=idempotency_key,
         correlation_id="cor_protected_model_context",
     )
+
+
+def _signed_context_policy(
+    service: GovernedProtectedModelContextService,
+    policy: ProtectedModelContextPolicySnapshot,
+    required_assurance_level: AssuranceLevel,
+) -> ProtectedModelContextPolicySnapshot:
+    updated = replace(
+        policy,
+        required_assurance_level=required_assurance_level,
+        canonical_digest="0" * 64,
+    )
+    return replace(
+        updated,
+        canonical_digest=service._digest(service._payload(updated)),
+    )
+
+
+def test_context_policy_supports_governed_assurance_levels() -> None:
+    policy = build_development_protected_model_context_policy(
+        organization_id="org.atlas",
+        environment_id="environment.development",
+        issued_at=datetime.now(UTC),
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    for level in (
+        AssuranceLevel.SINGLE_FACTOR,
+        AssuranceLevel.MULTI_FACTOR,
+        AssuranceLevel.HARDWARE_BACKED,
+    ):
+        assert replace(policy, required_assurance_level=level).required_assurance_level is level
+
+
+@pytest.mark.asyncio
+async def test_context_requires_step_up_only_when_signed_policy_requests_it() -> None:
+    (
+        service,
+        repository,
+        retrieval,
+        policy,
+        actor,
+        assembler,
+        permission,
+        audit,
+    ) = await context_fixture()
+    stronger = _signed_context_policy(service, policy, AssuranceLevel.MULTI_FACTOR)
+    service = GovernedProtectedModelContextService(
+        repository=repository,
+        retrieval_source=service._retrieval_source,
+        policy_source=InMemoryProtectedModelContextPolicySource((stronger,)),
+        permission_authorizer=permission,
+        assembler=assembler,
+        audit_sink=audit,
+        environment_id=retrieval.record.environment_id,
+        clock=lambda: retrieval.record.retrieved_at,
+    )
+    actor = development_target_session_operator(actor.subject_id)
+    with pytest.raises(ProtectedModelContextError, match="policy_assurance_required"):
+        await create_context(service, retrieval, stronger, actor)
+
+
+@pytest.mark.asyncio
+async def test_context_rejects_non_human_actor() -> None:
+    service, _, retrieval, policy, actor, *_ = await context_fixture()
+    with pytest.raises(ProtectedModelContextError, match="human_required"):
+        await create_context(service, retrieval, policy, replace(actor, kind=SubjectKind.SERVICE))
 
 
 @pytest.mark.asyncio

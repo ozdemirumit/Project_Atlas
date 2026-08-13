@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import asdict
-from datetime import timedelta
+from dataclasses import asdict, replace
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
 from test_package_acquisition import CollectingAuditSink
 from test_protected_model_invocation import create_invocation, invocation_fixture
+from test_target_session import development_target_session_operator
 
 from atlas.api.protected_draft_adjudication_schemas import (
     ProtectedDraftAdjudicationInput,
@@ -38,7 +39,7 @@ from atlas.modules.ai.domain.protected_draft_adjudication import (
     ProtectedDraftAdjudicationResult,
 )
 from atlas.modules.ai.domain.protected_model_invocation import ProtectedModelInvocationResult
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject, SubjectKind
 
 
 class RecordingAdjudicationPermissionAuthorizer:
@@ -131,6 +132,81 @@ async def create_adjudication(
         idempotency_key="protected-draft-adjudication-001",
         correlation_id="cor_protected_draft_adjudication",
     )
+
+
+def _signed_adjudication_policy(
+    service: GovernedProtectedDraftAdjudicationService,
+    policy: ProtectedDraftAdjudicationPolicySnapshot,
+    required_assurance_level: AssuranceLevel,
+) -> ProtectedDraftAdjudicationPolicySnapshot:
+    updated = replace(
+        policy,
+        required_assurance_level=required_assurance_level,
+        canonical_digest="0" * 64,
+    )
+    return replace(
+        updated,
+        canonical_digest=service._digest(service._payload(updated)),
+    )
+
+
+def test_adjudication_policy_supports_governed_assurance_levels() -> None:
+    now = datetime.now(UTC)
+    policy = build_development_protected_draft_adjudication_policy(
+        organization_id="org.atlas",
+        environment_id="environment.development",
+        issued_at=now,
+        expires_at=now + timedelta(hours=1),
+    )
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    for level in (
+        AssuranceLevel.SINGLE_FACTOR,
+        AssuranceLevel.MULTI_FACTOR,
+        AssuranceLevel.HARDWARE_BACKED,
+    ):
+        assert replace(policy, required_assurance_level=level).required_assurance_level is level
+
+
+@pytest.mark.asyncio
+async def test_adjudication_requires_step_up_only_when_signed_policy_requests_it() -> None:
+    (
+        service,
+        repository,
+        invocation,
+        policy,
+        actor,
+        adjudicator,
+        permission,
+        audit,
+    ) = await adjudication_fixture()
+    stronger = _signed_adjudication_policy(service, policy, AssuranceLevel.MULTI_FACTOR)
+    service = GovernedProtectedDraftAdjudicationService(
+        repository=repository,
+        invocation_source=service._invocation_source,
+        context_source=service._context_source,
+        context_vault=service._context_vault,
+        policy_source=InMemoryProtectedDraftAdjudicationPolicySource((stronger,)),
+        permission_authorizer=permission,
+        adjudicator=adjudicator,
+        audit_sink=audit,
+        environment_id=invocation.record.environment_id,
+        clock=lambda: invocation.record.invoked_at,
+    )
+    actor = development_target_session_operator(actor.subject_id)
+    with pytest.raises(ProtectedDraftAdjudicationError, match="policy_assurance_required"):
+        await create_adjudication(service, invocation, stronger, actor)
+
+
+@pytest.mark.asyncio
+async def test_adjudication_rejects_non_human_actor() -> None:
+    service, _, invocation, policy, actor, *_ = await adjudication_fixture()
+    with pytest.raises(ProtectedDraftAdjudicationError, match="human_required"):
+        await create_adjudication(
+            service,
+            invocation,
+            policy,
+            replace(actor, kind=SubjectKind.SERVICE),
+        )
 
 
 @pytest.mark.asyncio

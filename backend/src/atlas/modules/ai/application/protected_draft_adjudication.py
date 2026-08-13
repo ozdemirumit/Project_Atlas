@@ -41,8 +41,8 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 from atlas.modules.knowledge.application.model_context_assembly import (
     GovernedProtectedModelContextService,
@@ -127,6 +127,7 @@ class GovernedProtectedDraftAdjudicationService:
         self._verify_invocation(
             invocation.record, policy, invocation_digest, adjudication_policy_digest, purpose, now
         )
+        self._require_policy_assurance(actor, policy)
         self._require_scope(
             actor, invocation.record.organization_id, invocation.record.environment_id
         )
@@ -329,6 +330,7 @@ class GovernedProtectedDraftAdjudicationService:
             record.purpose,
             self._clock(),
         )
+        self._require_policy_assurance(actor, policy)
         browser_digest = self._digest([policy.browser_binding_key_digest, browser_session_id])
         authorization_digest = self._digest(
             [
@@ -538,13 +540,16 @@ class GovernedProtectedDraftAdjudicationService:
 
     @staticmethod
     def _require_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
+        if actor.kind is not SubjectKind.HUMAN:
+            raise ProtectedDraftAdjudicationError("protected_draft_adjudication_human_required")
+
+    @staticmethod
+    def _require_policy_assurance(
+        actor: AuthenticatedSubject, policy: ProtectedDraftAdjudicationPolicySnapshot
+    ) -> None:
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
             raise ProtectedDraftAdjudicationError(
-                "protected_draft_adjudication_enterprise_human_hardware_mfa_required"
+                "protected_draft_adjudication_policy_assurance_required"
             )
 
     def _require_scope(
@@ -637,6 +642,7 @@ def build_development_protected_draft_adjudication_policy(
         minimum_citation_count=1,
         minimum_unknown_count=1,
         retention_minutes=10,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         signed_by="subject.protected-draft-adjudication-policy-signer",
         signature_verified=True,
         issued_at=issued_at,

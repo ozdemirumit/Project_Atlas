@@ -42,7 +42,8 @@ Presentation proceeds only when:
   invocation, context, retrieval, publication, source, access, classification, purpose, model,
   endpoint, policy, citation, unknown, safety, destination, and protected-artifact lineage;
 - the exact protected adjudication report, model draft, context package, and evidence package can
-  be rehydrated through their existing trusted boundaries after current consumer, tenant, MFA,
+  be rehydrated through their existing trusted boundaries after current consumer, tenant,
+  authentication-assurance,
   browser, permission, lifecycle, retention, and integrity checks;
 - a current signed presentation policy resolves the approved trusted presenter, required source
   and receipt schemas, classification ceiling, maximum summary/unknown/citation/byte limits,
@@ -75,9 +76,11 @@ policy, access, purpose, and browser bindings from trusted records.
 ### Identity And Access
 
 The actor must be the same current enterprise human consumer that owns the invocation and
-adjudication, in the exact tenant and environment, with recent hardware-backed MFA, dedicated C1
-answer-presentation and lineage-read permissions, browser binding, CSRF for first presentation,
-and current source and classification access.
+adjudication, in the exact tenant and environment, with authentication assurance satisfying the
+current signed policy, dedicated C1 answer-presentation and lineage-read permissions, browser
+binding, CSRF for first presentation, and current source and classification access. The default
+`SINGLE_FACTOR` policy accepts a signed-in username/password development browser session;
+`MULTI_FACTOR` or `HARDWARE_BACKED` is required only when that explicit signed policy requests it.
 
 Service, shared, AI, break-glass, cross-tenant, policy-signer, model gateway, endpoint owner or
 evaluator, context assembler, adjudicator, presenter, and presenter-attestor identities cannot act
@@ -174,9 +177,9 @@ authorization uncertainty fails closed.
 ### Persistence And API
 
 Claims and records are immutable, deterministic, concurrency-safe, and equivalent in memory and
-PostgreSQL. The API uses normal browser session, mutation CSRF for first presentation, strict
-schemas, dedicated default-deny RBAC, C1 classification, recent hardware MFA, exact tenant and
-consumer scope, minimized no-store responses, and safe errors.
+PostgreSQL. The API uses a current browser-bound session, mutation CSRF for first presentation,
+strict schemas, dedicated default-deny RBAC, C1 classification, policy-evaluated authentication
+assurance, exact tenant and consumer scope, minimized no-store responses, and safe errors.
 
 ## Consequences
 

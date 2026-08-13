@@ -79,7 +79,12 @@ class ProtectedModelContextPolicySnapshot:
             or not 256 <= self.maximum_estimated_tokens <= 25_000
             or not 1 <= self.maximum_evidence_items <= 20
             or not 1 <= self.retention_minutes <= 1_440
-            or self.required_assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or self.required_assurance_level
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or not self.signature_verified
             or self.issued_at.tzinfo is None
             or self.expires_at.tzinfo is None

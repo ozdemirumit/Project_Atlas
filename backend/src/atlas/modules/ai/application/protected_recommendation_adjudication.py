@@ -52,8 +52,8 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 POLICY_SCHEMA = "atlas.protected-recommendation-adjudication-policy.v1"
@@ -129,6 +129,7 @@ class GovernedProtectedRecommendationAdjudicationService:
             raise ProtectedRecommendationAdjudicationError(
                 "protected_recommendation_adjudication_policy_invalid"
             )
+        self._require_assurance(actor, policy)
         await self._permission_authorizer.authorize(
             actor=actor,
             organization_id=actor.organization_id,
@@ -338,6 +339,7 @@ class GovernedProtectedRecommendationAdjudicationService:
             raise ProtectedRecommendationAdjudicationError(
                 "protected_recommendation_adjudication_not_found"
             )
+        self._require_assurance(actor, policy)
         await self._permission_authorizer.authorize(
             actor=actor,
             organization_id=record.organization_id,
@@ -446,6 +448,7 @@ class GovernedProtectedRecommendationAdjudicationService:
             raise ProtectedRecommendationAdjudicationError(
                 "protected_recommendation_adjudication_not_found"
             )
+        self._require_assurance(actor, policy)
         await self._permission_authorizer.authorize(
             actor=actor,
             organization_id=record.organization_id,
@@ -544,6 +547,7 @@ class GovernedProtectedRecommendationAdjudicationService:
             raise ProtectedRecommendationAdjudicationError(
                 "protected_recommendation_adjudication_not_found"
             )
+        self._require_assurance(actor, policy)
         return record
 
     @classmethod
@@ -781,13 +785,19 @@ class GovernedProtectedRecommendationAdjudicationService:
 
     @staticmethod
     def _require_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
+        if actor.kind is not SubjectKind.HUMAN:
             raise ProtectedRecommendationAdjudicationError(
-                "protected_recommendation_adjudication_enterprise_human_hardware_mfa_required"
+                "protected_recommendation_adjudication_human_required"
+            )
+
+    @staticmethod
+    def _require_assurance(
+        actor: AuthenticatedSubject,
+        policy: ProtectedRecommendationAdjudicationPolicySnapshot,
+    ) -> None:
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
+            raise ProtectedRecommendationAdjudicationError(
+                "protected_recommendation_adjudication_assurance_required"
             )
 
     def _require_scope(
@@ -892,6 +902,7 @@ def build_development_protected_recommendation_adjudication_policy(
         maximum_unknown_count=100,
         maximum_output_bytes=256 * 1024,
         retention_minutes=30,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         browser_binding_key_digest=GovernedProtectedModelInvocationService._digest(
             ["protected-recommendation-adjudication", "browser-binding", "v1"]
         ),

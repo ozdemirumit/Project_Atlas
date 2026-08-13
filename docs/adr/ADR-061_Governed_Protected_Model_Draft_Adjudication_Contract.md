@@ -42,7 +42,8 @@ Adjudication proceeds only when:
   context policy, invocation policy, endpoint evaluation, model, schema, citation, safety, budget,
   destination, and protected-artifact lineage;
 - the exact protected draft and context package can be rehydrated through their existing trusted
-  boundaries after current consumer, tenant, MFA, browser, permission, lifecycle, retention, and
+  boundaries after current consumer, tenant, authentication-assurance, browser, permission,
+  lifecycle, retention, and
   integrity checks;
 - a current signed adjudication policy resolves the approved deterministic adjudicator, validation
   profile, required schemas, classification ceiling, evidence-coverage rules, unknown/conflict
@@ -70,8 +71,11 @@ command, schedule, workflow, approval, execution, deployment, or mutation fields
 ### Identity And Access
 
 The actor must be the same current enterprise human consumer that owns the invocation, in the exact
-tenant and environment, with recent hardware-backed MFA, dedicated C1 adjudication and lineage-read
-permissions, browser binding, CSRF, and current source and classification access. Service, shared,
+tenant and environment, with authentication assurance satisfying the current signed policy,
+dedicated C1 adjudication and lineage-read permissions, browser binding, CSRF, and current source
+and classification access. The default `SINGLE_FACTOR` policy accepts a signed-in
+username/password development browser session; `MULTI_FACTOR` or `HARDWARE_BACKED` is required
+only when that explicit signed policy requests it. Service, shared,
 AI, break-glass, cross-tenant, policy-signer, model gateway, endpoint owner/evaluator, context
 assembler, invocation supply-chain, adjudicator, and adjudicator-attestor identities cannot act as
 the human caller.

@@ -50,8 +50,8 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 POLICY_SCHEMA = "atlas.protected-candidate-risk-recovery-policy.v1"
@@ -129,6 +129,7 @@ class GovernedProtectedCandidateRiskRecoveryService:
             raise ProtectedCandidateRiskRecoveryError(
                 "protected_candidate_risk_recovery_policy_invalid"
             )
+        self._require_assurance(actor, policy)
         await self._permission_authorizer.authorize(
             actor=actor,
             organization_id=actor.organization_id,
@@ -346,6 +347,7 @@ class GovernedProtectedCandidateRiskRecoveryService:
             or not policy.issued_at <= now < policy.expires_at
         ):
             raise ProtectedCandidateRiskRecoveryError("protected_candidate_risk_recovery_not_found")
+        self._require_assurance(actor, policy)
         await self._permission_authorizer.authorize(
             actor=actor,
             organization_id=record.organization_id,
@@ -802,13 +804,19 @@ class GovernedProtectedCandidateRiskRecoveryService:
 
     @staticmethod
     def _require_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
+        if actor.kind is not SubjectKind.HUMAN:
             raise ProtectedCandidateRiskRecoveryError(
-                "protected_candidate_risk_recovery_enterprise_human_hardware_mfa_required"
+                "protected_candidate_risk_recovery_human_required"
+            )
+
+    @staticmethod
+    def _require_assurance(
+        actor: AuthenticatedSubject,
+        policy: ProtectedCandidateRiskRecoveryPolicySnapshot,
+    ) -> None:
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
+            raise ProtectedCandidateRiskRecoveryError(
+                "protected_candidate_risk_recovery_assurance_required"
             )
 
     def _require_scope(
@@ -907,6 +915,7 @@ def build_development_protected_candidate_risk_recovery_policy(
         maximum_duration_minutes=480,
         maximum_output_bytes=524_288,
         retention_minutes=10,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         classification_ceiling="classification.internal",
         browser_binding_key_digest=digest(["protected-candidate-risk-recovery-browser-key"]),
         risk_floor_profile_digest=digest(["conservative-risk-floor-v1"]),
