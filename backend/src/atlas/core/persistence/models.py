@@ -4041,3 +4041,43 @@ class InventoryDeviceRecordModel(Base):
     site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class ItsmIntegrationProfileModel(Base):
+    __tablename__ = "itsm_integration_profiles"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "profile_key",
+            name="uq_itsm_integration_profiles_scope_key",
+        ),
+        UniqueConstraint(
+            "created_by",
+            "create_idempotency_key",
+            name="uq_itsm_integration_profiles_actor_create_idem",
+        ),
+        UniqueConstraint(
+            "retired_by",
+            "retirement_idempotency_key",
+            name="uq_itsm_integration_profiles_actor_retire_idem",
+        ),
+    )
+
+    profile_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    profile_key: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    display_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    provider_family: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    lifecycle: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    readiness_state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    create_idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    retired_by: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    retirement_idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

@@ -59,6 +59,7 @@ from atlas.api.routes import (
     investigations,
     invocation_authorizations,
     invocation_evidence,
+    itsm_integrations,
     lab_self_tests,
     license_analyses,
     malware_analyses,
@@ -767,6 +768,9 @@ from atlas.modules.inventory.adapters.postgres import PostgreSQLInventoryDeviceR
 from atlas.modules.inventory.application.service import InventoryDeviceService
 from atlas.modules.investigations.adapters.synthetic import SyntheticInvestigationAssembler
 from atlas.modules.investigations.application.service import InvestigationService
+from atlas.modules.itsm.adapters.memory import InMemoryItsmIntegrationProfileRepository
+from atlas.modules.itsm.adapters.postgres import PostgreSQLItsmIntegrationProfileRepository
+from atlas.modules.itsm.application.service import ItsmIntegrationService
 from atlas.modules.knowledge.adapters.correction_resubmission_memory import (
     InMemoryOperationalKnowledgeCorrectionPolicySource,
     InMemoryOperationalKnowledgeCorrectionRepository,
@@ -1501,6 +1505,7 @@ def create_app(
     authorization_service: AuthorizationService | None = None,
     storage_operations_service: StorageOperationsService | None = None,
     inventory_device_service: InventoryDeviceService | None = None,
+    itsm_integration_service: ItsmIntegrationService | None = None,
     graph_impact_service: GraphImpactService | None = None,
     health_check_service: HealthCheckService | None = None,
     investigation_service: InvestigationService | None = None,
@@ -5025,6 +5030,15 @@ def create_app(
         audit_sink=resolved_audit_sink,
         environment_id=f"environment.{resolved_settings.environment}",
     )
+    resolved_itsm_integration_service = itsm_integration_service or ItsmIntegrationService(
+        repository=(
+            PostgreSQLItsmIntegrationProfileRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryItsmIntegrationProfileRepository()
+        ),
+        audit_sink=resolved_audit_sink,
+        environment_id=f"environment.{resolved_settings.environment}",
+    )
     resolved_graph_impact_service = graph_impact_service or GraphImpactService(
         analyzer=resolved_graph_analyzer,
         audit_sink=resolved_audit_sink,
@@ -5336,6 +5350,7 @@ def create_app(
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
         app.state.inventory_device_service = resolved_inventory_device_service
+        app.state.itsm_integration_service = resolved_itsm_integration_service
         app.state.graph_impact_service = resolved_graph_impact_service
         app.state.health_check_service = resolved_health_check_service
         app.state.investigation_service = resolved_investigation_service
@@ -5424,6 +5439,7 @@ def create_app(
         await resolved_recovery_service.close()
         await resolved_support_bundle_service.close()
         await resolved_inventory_device_service.close()
+        await resolved_itsm_integration_service.close()
         await resolved_itsm_handoff_review_service.close()
         await resolved_report_service.close()
         await resolved_bootstrap_state_service.close()
@@ -5461,6 +5477,7 @@ def create_app(
     app.include_router(identity_governance.router, prefix="/api/v1")
     app.include_router(workload_identities.router, prefix="/api/v1")
     app.include_router(inventory_devices.router, prefix="/api/v1")
+    app.include_router(itsm_integrations.router, prefix="/api/v1")
     app.include_router(platform.router, prefix="/api/v1")
     app.include_router(release_preflight.router, prefix="/api/v1")
     app.include_router(deployment_configuration.router, prefix="/api/v1")

@@ -32,6 +32,9 @@ STORAGE_OVERVIEW_READ = "storage.overview.read"
 INVENTORY_DEVICE_READ = "inventory.devices.read"
 INVENTORY_DEVICE_CREATE = "inventory.devices.create"
 INVENTORY_DEVICE_RETIRE = "inventory.devices.retire"
+ITSM_INTEGRATION_READ = "itsm.integrations.read"
+ITSM_INTEGRATION_CREATE = "itsm.integrations.create"
+ITSM_INTEGRATION_RETIRE = "itsm.integrations.retire"
 AI_GROUNDED_QUERY_CREATE = "ai.grounded-query.create"
 GRAPH_STORAGE_IMPACT_READ = "graph.storage-impact.read"
 HEALTH_CHECK_OVERVIEW_READ = "health-check.overview.read"
@@ -409,6 +412,23 @@ def inventory_device_permission_definitions() -> tuple[PermissionDefinition, ...
     )
 
 
+def itsm_integration_permission_definitions() -> tuple[PermissionDefinition, ...]:
+    return (
+        PermissionDefinition(
+            permission_id=ITSM_INTEGRATION_READ,
+            description="Read secret-free ITSM integration readiness profiles.",
+        ),
+        PermissionDefinition(
+            permission_id=ITSM_INTEGRATION_CREATE,
+            description="Register one configuration-only ITSM integration profile.",
+        ),
+        PermissionDefinition(
+            permission_id=ITSM_INTEGRATION_RETIRE,
+            description="Retire one ITSM integration profile while preserving history.",
+        ),
+    )
+
+
 def security_administrator_role_definition(
     *, include_workload_identity: bool = False
 ) -> RoleDefinition:
@@ -461,6 +481,19 @@ def inventory_device_scope(
         site_id="site.local",
         domain_id="domain.inventory",
         resource_id="resource.inventory.devices",
+        capability_class=capability_class,
+    )
+
+
+def itsm_integration_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.itsm",
+        resource_id="resource.itsm.integrations",
         capability_class=capability_class,
     )
 
@@ -1719,6 +1752,7 @@ def build_development_authorization_service(
         *identity_governance_permission_definitions(),
         *workload_identity_permission_definitions(),
         *inventory_device_permission_definitions(),
+        *itsm_integration_permission_definitions(),
         *audit_permission_definitions(),
         PermissionDefinition(
             permission_id=IDENTITY_SELF_READ,
@@ -2618,6 +2652,9 @@ def build_development_authorization_service(
                 INVENTORY_DEVICE_READ,
                 INVENTORY_DEVICE_CREATE,
                 INVENTORY_DEVICE_RETIRE,
+                ITSM_INTEGRATION_READ,
+                ITSM_INTEGRATION_CREATE,
+                ITSM_INTEGRATION_RETIRE,
                 AI_GROUNDED_QUERY_CREATE,
                 GRAPH_STORAGE_IMPACT_READ,
                 HEALTH_CHECK_OVERVIEW_READ,
@@ -2925,6 +2962,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=inventory_device_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.itsm-integration-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=itsm_integration_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.itsm-integration-manage",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=itsm_integration_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C2_DIAGNOSTIC,

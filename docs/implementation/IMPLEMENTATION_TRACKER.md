@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-170 |
 | Title | Provider-neutral ITSM adapter readiness and sandbox configuration contracts |
-| Status | In Progress; scope and acceptance recorded |
-| Branch | `main` (start record; implementation branch pending) |
+| Status | In Progress; implementation and focused validation complete |
+| Branch | `agent/itsm-adapter-readiness` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-124, ADR-125, ADR-126 (planned) |
 | Last Updated | 2026-08-13 |
-| Next Action | Record ADR-126 and implement provider-neutral ITSM profile, mapping and sandbox-readiness evidence without dispatch or external mutation |
+| Next Action | Complete full regression, production build, live responsive validation and delivery evidence |
 
 ### ATLAS-IMP-170 Scope Rationale
 
@@ -43,6 +43,32 @@
   arbitrary endpoint test, dispatch, ticket mutation, workflow approval or execution control.
 - ADR, focused and full backend/frontend gates, one Alembic head, production build and live responsive
   validation pass before delivery.
+
+### ATLAS-IMP-170 Validation Evidence
+
+- ADR-126 records the immutable provider-neutral profile, opaque credential reference, versioned
+  allowlisted mapping contract, deterministic six-check readiness assessment and unchanged
+  no-dispatch/no-execution boundary.
+- Migration `20260813_0104` adds durable profile storage and leaves one Alembic head. The in-memory
+  repository remains available without a database URL; PostgreSQL serialization round-trips the
+  complete profile and no-authority assessment.
+- Dedicated C1 read and C2 lifecycle permissions enforce exact scope. Registration and retirement
+  require a CSRF-protected human browser session, idempotency, optimistic concurrency, attributable
+  audit and no-store API responses. API output omits the credential reference identifier and all
+  request fingerprints/idempotency keys.
+- Focused backend service, API and health tests passed 13 scenarios. Ruff formatting and lint passed;
+  strict `mypy` passed across 1,108 source and test files. The complete backend regression passed
+  1,022 tests with three expected Windows symlink skips, and Alembic reports one head.
+- Focused frontend ITSM readiness and existing inventory management tests passed 8 scenarios.
+  TypeScript and zero-warning ESLint passed; the complete frontend suite passed 236 tests across 90
+  files and the production build passed with only the existing large-chunk advisory.
+- The Health governance UI presents profile inventory, lifecycle, provider, mapping contract and exact
+  readiness blockers. It contains no endpoint-test, dispatch, ticket mutation, workflow approval or
+  execution control.
+- Live browser validation registered a provider-neutral profile, showed the missing sandbox-evidence
+  blocker, six readiness checks and three allowlisted mappings, and recovered the profile after reload.
+  Desktop 1,280 x 720 and mobile 390 x 844 views had no page-level horizontal overflow, alert or
+  console warning/error. No dispatch, execute, endpoint-test or ticket-creation button was present.
 
 ### ATLAS-IMP-169 Scope Rationale
 

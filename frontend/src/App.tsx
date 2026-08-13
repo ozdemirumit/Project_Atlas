@@ -196,6 +196,9 @@ const HealthInventoryEvidenceWorkspace = lazy(
 const InventoryDeviceRegistryWorkspace = lazy(
   () => import("./features/health/InventoryDeviceRegistryWorkspace"),
 );
+const ItsmIntegrationReadinessWorkspace = lazy(
+  () => import("./features/health/ItsmIntegrationReadinessWorkspace"),
+);
 const InstalledMcpManagementWorkspace = lazy(
   () => import("./features/connectors/InstalledMcpManagementWorkspace"),
 );
@@ -10670,6 +10673,33 @@ export function OperationalApplication({
                         </div>
                       )}
                     </section>
+                  )}
+
+                  {activeHealthView === "governance" && identity && (
+                    <WorkspaceLoadBoundary
+                      compact
+                      resetKey={identity.subject_id}
+                      workspace="Health"
+                    >
+                      <Suspense
+                        fallback={
+                          <div className="workspace-message" aria-live="polite" aria-busy="true">
+                            <Clock3 size={22} />
+                            <div>
+                              <h2>Loading ITSM integration readiness</h2>
+                              <p>Preparing authorized configuration and blocker inventory.</p>
+                            </div>
+                          </div>
+                        }
+                      >
+                        <ItsmIntegrationReadinessWorkspace
+                          governedSessionAvailable={
+                            identity.credential_kind === "browser_session"
+                          }
+                          onRequestEnterpriseLogin={() => setEnterpriseLoginRequested(true)}
+                        />
+                      </Suspense>
+                    </WorkspaceLoadBoundary>
                   )}
 
                   {activeHealthView === "governance" && identityGovernance && (
