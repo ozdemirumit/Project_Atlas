@@ -23,6 +23,9 @@ from atlas.modules.identity.domain.models import (
     SubjectKind,
 )
 from atlas.modules.itsm.adapters.memory import InMemoryItsmIntegrationProfileRepository
+from atlas.modules.itsm.adapters.sandbox import (
+    DeterministicNoNetworkItsmSandboxConformanceAdapter,
+)
 from atlas.modules.itsm.application.service import ItsmIntegrationService
 
 NOW = datetime(2026, 8, 13, 5, 0, tzinfo=UTC)
@@ -104,6 +107,7 @@ class ItsmFixture:
             repository=self.repository,
             audit_sink=self.sink,
             environment_id="environment.test",
+            sandbox_conformance_adapter=DeterministicNoNetworkItsmSandboxConformanceAdapter(),
             clock=lambda: NOW,
         )
         self.app = create_app(
@@ -261,3 +265,71 @@ def test_create_is_idempotent_and_retirement_is_version_bound() -> None:
         "itsm_integration_inventory_read",
         "itsm_integration_retired",
     }
+
+
+def test_sandbox_conformance_requires_csrf_and_returns_secret_free_evidence() -> None:
+    fixture = ItsmFixture()
+    with TestClient(fixture.app) as client:
+        csrf = login(client)
+        created = client.post(
+            "/api/v1/itsm/integrations",
+            json=create_payload(),
+            headers={"X-CSRF-Token": csrf, "Idempotency-Key": "itsm-create-conformance"},
+        )
+        profile = created.json()["data"]
+        path = f"/api/v1/itsm/integrations/{profile['profile_id']}/sandbox-conformance-assessments"
+        missing_csrf = client.post(
+            path,
+            json={
+                "schema_version": "atlas.itsm-sandbox-conformance-input.v1",
+                "expected_profile_version": profile["version"],
+                "acknowledged_diagnostic_only_and_no_dispatch": True,
+            },
+            headers={"Idempotency-Key": "itsm-sandbox-missing-csrf"},
+        )
+        assessed = client.post(
+            path,
+            json={
+                "schema_version": "atlas.itsm-sandbox-conformance-input.v1",
+                "expected_profile_version": profile["version"],
+                "acknowledged_diagnostic_only_and_no_dispatch": True,
+            },
+            headers={"X-CSRF-Token": csrf, "Idempotency-Key": "itsm-sandbox-api-0001"},
+        )
+        replay = client.post(
+            path,
+            json={
+                "schema_version": "atlas.itsm-sandbox-conformance-input.v1",
+                "expected_profile_version": profile["version"],
+                "acknowledged_diagnostic_only_and_no_dispatch": True,
+            },
+            headers={"X-CSRF-Token": csrf, "Idempotency-Key": "itsm-sandbox-api-0001"},
+        )
+        latest = client.get(f"{path}/latest")
+
+    assert missing_csrf.status_code == 403
+    assert missing_csrf.json()["code"] == "csrf_validation_failed"
+    assert assessed.status_code == 201
+    assert assessed.headers["Cache-Control"] == "no-store"
+    data = assessed.json()["data"]
+    assert data["state"] == "conformant"
+    assert data["sandbox_conformant"] is True
+    assert all(
+        data[field] is False
+        for field in (
+            "production_ready",
+            "dispatch_authorized",
+            "external_record_mutation_authorized",
+            "workflow_approved",
+            "execution_authorized",
+            "infrastructure_mutation_performed",
+        )
+    )
+    assert replay.status_code == 201
+    assert replay.json()["data"]["reused"] is True
+    assert latest.status_code == 200
+    assert latest.headers["Cache-Control"] == "no-store"
+    assert latest.json()["data"]["assessment_id"] == data["assessment_id"]
+    assert "secret_reference" not in assessed.text
+    assert "endpoint" not in assessed.text
+    assert "idempotency" not in assessed.text

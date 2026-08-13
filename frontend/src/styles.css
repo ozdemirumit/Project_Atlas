@@ -11478,12 +11478,104 @@ tbody tr.selected {
   flex: 0 0 auto;
 }
 
+.itsm-conformance-panel {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  border: 1px solid #d5dfdc;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.itsm-conformance-panel .itsm-detail-heading {
+  border-bottom: 1px solid #d5dfdc;
+}
+
+.itsm-detail-heading > button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  border: 1px solid #567d70;
+  border-radius: 5px;
+  color: #244d40;
+  background: #f1f8f5;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.itsm-detail-heading > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.itsm-conformance-panel > .inventory-device-status,
+.itsm-conformance-panel > .inventory-device-empty,
+.itsm-conformance-panel > .inventory-device-boundary {
+  margin-right: 14px;
+  margin-left: 14px;
+}
+
+.itsm-conformance-panel > .inventory-device-boundary {
+  margin-bottom: 12px;
+}
+
+.itsm-conformance-evidence {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+  margin: 0 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: #dce5e2;
+}
+
+.itsm-conformance-evidence > div {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  padding: 11px 12px;
+  background: #f8faf9;
+}
+
+.itsm-conformance-evidence span {
+  color: #697972;
+  font-size: 9px;
+  font-weight: 720;
+  text-transform: uppercase;
+}
+
+.itsm-conformance-evidence strong,
+.itsm-conformance-evidence code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #293c35;
+  font-size: 10px;
+}
+
+.itsm-conformance-evidence strong.conformant,
+.itsm-conformance-evidence strong.blocked {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #24634d;
+  text-transform: capitalize;
+}
+
+.itsm-conformance-evidence strong.blocked {
+  color: #865126;
+}
+
 @media (max-width: 960px) {
   .itsm-readiness-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .itsm-readiness-checks {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .itsm-conformance-evidence {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -11496,5 +11588,18 @@ tbody tr.selected {
 
   .itsm-authority-boundary {
     align-self: flex-start;
+  }
+
+  .itsm-detail-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .itsm-detail-heading > button {
+    justify-content: center;
+  }
+
+  .itsm-conformance-evidence {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

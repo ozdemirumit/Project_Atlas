@@ -4,17 +4,20 @@ import asyncio
 import json
 from collections.abc import Callable
 from dataclasses import asdict, is_dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from hashlib import sha256
-from typing import cast
+from typing import Any, cast
 from uuid import uuid4
 
 from atlas import __version__
 from atlas.core.audit import AuditRecord, AuditSink
 from atlas.core.classification import DataClassification
 from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
-from atlas.modules.itsm.application.ports import ItsmIntegrationProfileRepository
+from atlas.modules.itsm.application.ports import (
+    ItsmIntegrationProfileRepository,
+    ItsmSandboxConformanceAdapter,
+)
 from atlas.modules.itsm.domain.models import (
     ItsmAllowedOperation,
     ItsmCheckState,
@@ -25,12 +28,19 @@ from atlas.modules.itsm.domain.models import (
     ItsmReadinessAssessment,
     ItsmReadinessCheck,
     ItsmReadinessState,
+    ItsmSandboxConformanceAssessment,
+    ItsmSandboxConformanceState,
+    ItsmSandboxDiagnostic,
 )
 
 ITSM_PROFILE_SCHEMA = "atlas.itsm-integration-profile.v1"
+ITSM_SANDBOX_CONFORMANCE_SCHEMA = "atlas.itsm-sandbox-conformance-assessment.v1"
+ITSM_SANDBOX_DIAGNOSTIC_CONTRACT = "contract.itsm-sandbox-conformance.v1"
 ITSM_READ = "itsm.integrations.read"
 ITSM_CREATE = "itsm.integrations.create"
 ITSM_RETIRE = "itsm.integrations.retire"
+ITSM_SANDBOX_CONFORMANCE_READ = "itsm.integrations.sandbox-conformance.read"
+ITSM_SANDBOX_CONFORMANCE_CREATE = "itsm.integrations.sandbox-conformance.create"
 
 
 class ItsmIntegrationError(RuntimeError):
@@ -45,12 +55,14 @@ class ItsmIntegrationService:
         audit_sink: AuditSink,
         environment_id: str,
         site_id: str = "site.local",
+        sandbox_conformance_adapter: ItsmSandboxConformanceAdapter | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
         self._audit_sink = audit_sink
         self._environment_id = environment_id
         self._site_id = site_id
+        self._sandbox_conformance_adapter = sandbox_conformance_adapter
         self._clock = clock or (lambda: datetime.now(UTC))
         self._lock = asyncio.Lock()
 
@@ -316,8 +328,299 @@ class ItsmIntegrationService:
         )
         return retired
 
+    async def assess_sandbox_conformance(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        profile_id: str,
+        expected_profile_version: int,
+        acknowledged_diagnostic_only_and_no_dispatch: bool,
+        idempotency_key: str,
+        correlation_id: str,
+    ) -> ItsmSandboxConformanceAssessment:
+        self._require_human(actor)
+        if not acknowledged_diagnostic_only_and_no_dispatch:
+            raise ItsmIntegrationError("itsm_sandbox_conformance_acknowledgement_required")
+        if expected_profile_version < 1 or not 8 <= len(idempotency_key) <= 128:
+            raise ItsmIntegrationError("itsm_sandbox_conformance_request_invalid")
+        profile = await self._repository.get(profile_id=profile_id)
+        if profile is None:
+            raise ItsmIntegrationError("itsm_integration_not_found")
+        self._validate_record(profile)
+        self._require_scope(actor, profile)
+        if profile.lifecycle is not ItsmProfileLifecycle.ACTIVE:
+            raise ItsmIntegrationError("itsm_sandbox_conformance_profile_inactive")
+        if profile.version != expected_profile_version:
+            raise ItsmIntegrationError("itsm_sandbox_conformance_profile_version_conflict")
+        fingerprint = self._digest(
+            {
+                "schema_version": ITSM_SANDBOX_CONFORMANCE_SCHEMA,
+                "organization_id": actor.organization_id,
+                "environment_id": self._environment_id,
+                "site_id": self._site_id,
+                "profile_id": profile.profile_id,
+                "profile_version": profile.version,
+                "profile_digest": profile.canonical_digest,
+                "assessed_by": actor.subject_id,
+                "diagnostic_contract_version": ITSM_SANDBOX_DIAGNOSTIC_CONTRACT,
+                "acknowledged_no_authority": True,
+            }
+        )
+        prior = await self._repository.get_sandbox_conformance_by_key(
+            assessed_by=actor.subject_id, idempotency_key=idempotency_key
+        )
+        if prior is not None:
+            self._validate_sandbox_assessment(prior, profile=profile)
+            if prior.request_fingerprint != fingerprint:
+                raise ItsmIntegrationError("itsm_sandbox_conformance_idempotency_conflict")
+            reused = replace(prior, reused=True)
+            await self._audit(
+                actor,
+                correlation_id=correlation_id,
+                permission_id=ITSM_SANDBOX_CONFORMANCE_CREATE,
+                result_code="itsm_sandbox_conformance_reused",
+                scope_reference=profile.profile_id,
+                idempotency_key=idempotency_key,
+            )
+            return reused
+
+        async with self._lock:
+            raced = await self._repository.get_sandbox_conformance_by_key(
+                assessed_by=actor.subject_id, idempotency_key=idempotency_key
+            )
+            if raced is not None:
+                self._validate_sandbox_assessment(raced, profile=profile)
+                if raced.request_fingerprint != fingerprint:
+                    raise ItsmIntegrationError("itsm_sandbox_conformance_idempotency_conflict")
+                return replace(raced, reused=True)
+            now = self._clock()
+            valid_until = now + timedelta(minutes=10)
+            challenge_digest = self._digest(
+                {
+                    "schema_version": "atlas.itsm-sandbox-conformance-challenge.v1",
+                    "assessment_seed": f"assessment-seed.{uuid4().hex}",
+                    "organization_id": profile.organization_id,
+                    "environment_id": profile.environment_id,
+                    "site_id": profile.site_id,
+                    "profile_id": profile.profile_id,
+                    "profile_version": profile.version,
+                    "profile_digest": profile.canonical_digest,
+                    "mapping_version": profile.mapping_version,
+                    "diagnostic_contract_version": ITSM_SANDBOX_DIAGNOSTIC_CONTRACT,
+                }
+            )
+            diagnostic = await self._run_sandbox_diagnostic(
+                profile=profile, challenge_digest=challenge_digest
+            )
+            self._validate_sandbox_diagnostic(
+                diagnostic, profile=profile, challenge_digest=challenge_digest
+            )
+            payload = {
+                "schema_version": ITSM_SANDBOX_CONFORMANCE_SCHEMA,
+                "version": 1,
+                "organization_id": profile.organization_id,
+                "environment_id": profile.environment_id,
+                "site_id": profile.site_id,
+                "profile_id": profile.profile_id,
+                "profile_version": profile.version,
+                "profile_digest": profile.canonical_digest,
+                "mapping_version": profile.mapping_version,
+                "assessed_by": actor.subject_id,
+                "adapter_id": diagnostic.adapter_id,
+                "adapter_version": diagnostic.adapter_version,
+                "adapter_production_eligible": diagnostic.production_eligible,
+                "diagnostic_contract_version": ITSM_SANDBOX_DIAGNOSTIC_CONTRACT,
+                "challenge_digest": challenge_digest,
+                "observed_at": now,
+                "valid_until": valid_until,
+                "state": diagnostic.state,
+                "reason_codes": (diagnostic.reason_code,),
+                "request_fingerprint": fingerprint,
+                "diagnostic_only": True,
+                "sandbox_conformant": (diagnostic.state is ItsmSandboxConformanceState.CONFORMANT),
+                "production_ready": False,
+                "dispatch_authorized": False,
+                "external_record_mutation_authorized": False,
+                "workflow_approved": False,
+                "execution_authorized": False,
+                "infrastructure_mutation_performed": False,
+            }
+            digest = self._digest(payload)
+            assessment = ItsmSandboxConformanceAssessment(
+                assessment_id=f"itsm-sandbox-conformance.{digest[:24]}",
+                idempotency_key=idempotency_key,
+                canonical_digest=digest,
+                **cast(dict[str, Any], payload),
+            )
+            await self._audit(
+                actor,
+                correlation_id=correlation_id,
+                permission_id=ITSM_SANDBOX_CONFORMANCE_CREATE,
+                result_code="itsm_sandbox_conformance_requested",
+                scope_reference=profile.profile_id,
+                idempotency_key=idempotency_key,
+            )
+            if not await self._repository.add_sandbox_conformance(assessment):
+                raced = await self._repository.get_sandbox_conformance_by_key(
+                    assessed_by=actor.subject_id, idempotency_key=idempotency_key
+                )
+                if raced is None or raced.request_fingerprint != fingerprint:
+                    raise ItsmIntegrationError("itsm_sandbox_conformance_idempotency_conflict")
+                self._validate_sandbox_assessment(raced, profile=profile)
+                assessment = replace(raced, reused=True)
+        await self._audit(
+            actor,
+            correlation_id=correlation_id,
+            permission_id=ITSM_SANDBOX_CONFORMANCE_CREATE,
+            result_code=f"itsm_sandbox_conformance_{assessment.state.value}",
+            scope_reference=profile.profile_id,
+            idempotency_key=idempotency_key,
+        )
+        return assessment
+
+    async def latest_sandbox_conformance(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        profile_id: str,
+        correlation_id: str,
+    ) -> ItsmSandboxConformanceAssessment:
+        profile = await self._repository.get(profile_id=profile_id)
+        if profile is None:
+            raise ItsmIntegrationError("itsm_integration_not_found")
+        self._validate_record(profile)
+        self._require_scope(actor, profile)
+        assessment = await self._repository.get_latest_sandbox_conformance(
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+            site_id=self._site_id,
+            profile_id=profile_id,
+        )
+        if assessment is None:
+            raise ItsmIntegrationError("itsm_sandbox_conformance_not_found")
+        self._validate_sandbox_assessment(assessment, profile=profile)
+        await self._audit(
+            actor,
+            correlation_id=correlation_id,
+            permission_id=ITSM_SANDBOX_CONFORMANCE_READ,
+            result_code="itsm_sandbox_conformance_read",
+            scope_reference=profile.profile_id,
+            idempotency_key=None,
+        )
+        return assessment
+
     async def close(self) -> None:
         await self._repository.close()
+
+    async def _run_sandbox_diagnostic(
+        self, *, profile: ItsmIntegrationProfile, challenge_digest: str
+    ) -> ItsmSandboxDiagnostic:
+        if not self._sandbox_prerequisites_satisfied(profile):
+            return self._bounded_diagnostic(
+                profile=profile,
+                challenge_digest=challenge_digest,
+                adapter_id="adapter.itsm.application",
+                state=ItsmSandboxConformanceState.PROFILE_BLOCKED,
+                reason="profile_blocked",
+            )
+        if self._sandbox_conformance_adapter is None:
+            return self._bounded_diagnostic(
+                profile=profile,
+                challenge_digest=challenge_digest,
+                adapter_id="adapter.itsm.unconfigured",
+                state=ItsmSandboxConformanceState.UNAVAILABLE,
+                reason="adapter_unavailable",
+            )
+        try:
+            return await self._sandbox_conformance_adapter.assess(
+                profile=profile,
+                challenge_digest=challenge_digest,
+                diagnostic_contract_version=ITSM_SANDBOX_DIAGNOSTIC_CONTRACT,
+            )
+        except Exception:
+            return self._bounded_diagnostic(
+                profile=profile,
+                challenge_digest=challenge_digest,
+                adapter_id="adapter.itsm.failure-contained",
+                state=ItsmSandboxConformanceState.ROUND_TRIP_FAILED,
+                reason="round_trip_failed",
+            )
+
+    @staticmethod
+    def _bounded_diagnostic(
+        *,
+        profile: ItsmIntegrationProfile,
+        challenge_digest: str,
+        adapter_id: str,
+        state: ItsmSandboxConformanceState,
+        reason: str,
+    ) -> ItsmSandboxDiagnostic:
+        return ItsmSandboxDiagnostic(
+            adapter_id=adapter_id,
+            adapter_version="version.1",
+            organization_id=profile.organization_id,
+            environment_id=profile.environment_id,
+            site_id=profile.site_id,
+            profile_id=profile.profile_id,
+            profile_version=profile.version,
+            challenge_digest=challenge_digest,
+            state=state,
+            reason_code=f"itsm.sandbox-conformance.{reason}",
+        )
+
+    @staticmethod
+    def _sandbox_prerequisites_satisfied(profile: ItsmIntegrationProfile) -> bool:
+        return all(
+            check.state is ItsmCheckState.SATISFIED
+            for check in profile.readiness.checks
+            if check.check_id != "itsm.readiness.sandbox-validation"
+        )
+
+    @staticmethod
+    def _validate_sandbox_diagnostic(
+        diagnostic: ItsmSandboxDiagnostic,
+        *,
+        profile: ItsmIntegrationProfile,
+        challenge_digest: str,
+    ) -> None:
+        if (
+            diagnostic.organization_id != profile.organization_id
+            or diagnostic.environment_id != profile.environment_id
+            or diagnostic.site_id != profile.site_id
+            or diagnostic.profile_id != profile.profile_id
+            or diagnostic.profile_version != profile.version
+            or diagnostic.challenge_digest != challenge_digest
+        ):
+            raise ItsmIntegrationError("itsm_sandbox_conformance_adapter_binding_invalid")
+
+    @classmethod
+    def _validate_sandbox_assessment(
+        cls,
+        assessment: ItsmSandboxConformanceAssessment,
+        *,
+        profile: ItsmIntegrationProfile,
+    ) -> None:
+        if (
+            assessment.organization_id != profile.organization_id
+            or assessment.environment_id != profile.environment_id
+            or assessment.site_id != profile.site_id
+            or assessment.profile_id != profile.profile_id
+            or assessment.profile_version != profile.version
+            or assessment.profile_digest != profile.canonical_digest
+            or assessment.mapping_version != profile.mapping_version
+            or cls._digest(cls._sandbox_assessment_payload(assessment))
+            != assessment.canonical_digest
+        ):
+            raise ItsmIntegrationError("itsm_sandbox_conformance_integrity_failed")
+
+    @classmethod
+    def _sandbox_assessment_payload(
+        cls, assessment: ItsmSandboxConformanceAssessment
+    ) -> dict[str, object]:
+        payload = cast(dict[str, object], asdict(assessment))
+        for field in ("assessment_id", "idempotency_key", "canonical_digest", "reused"):
+            payload.pop(field)
+        return cast(dict[str, object], cls._normalize(payload))
 
     def _require_scope(self, actor: AuthenticatedSubject, record: ItsmIntegrationProfile) -> None:
         if (

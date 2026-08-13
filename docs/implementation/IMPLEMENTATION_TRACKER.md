@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-171 |
 | Title | Provider-neutral ITSM sandbox conformance assessment |
-| Status | In Progress; architecture and implementation pending |
+| Status | In Progress; implementation and full validation complete |
 | Branch | `agent/itsm-sandbox-conformance` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-124, ADR-125, ADR-126, ADR-127 (planned) |
 | Last Updated | 2026-08-13 |
-| Next Action | Record ADR-127 and implement the exact-profile sandbox conformance assessment boundary |
+| Next Action | Complete delivery through PR, CI, merge and independent main validation |
 
 ### ATLAS-IMP-171 Scope Rationale
 
@@ -45,6 +45,34 @@
 - PostgreSQL and in-memory persistence, migration, API schemas, Health governance presentation,
   focused/full tests, one Alembic head, production build and responsive live validation pass before
   delivery. The UI exposes no arbitrary endpoint test, secret, ticket mutation or execution control.
+
+### ATLAS-IMP-171 Validation Evidence
+
+- ADR-127 records the fixed inert challenge, exact-profile adapter binding, stable bounded outcomes,
+  production-unavailable default, deterministic no-network development adapter and unchanged
+  no-dispatch/no-execution authority boundary.
+- Migration `20260813_0105` adds immutable sandbox conformance assessments with actor/idempotency
+  uniqueness and leaves one Alembic head. PostgreSQL serialization round-trips the complete artifact;
+  no-database development remains explicitly process-memory-only.
+- Dedicated C1 read and C2 diagnostic permissions enforce exact organization, environment, site,
+  profile version and profile digest scope. Creation requires a CSRF-protected human browser session,
+  acknowledgement and idempotency; reads and replays verify integrity and return `no-store` without
+  request fingerprints, idempotency keys, endpoints, credential references or provider-native data.
+- Stable states cover conformant, unavailable, profile-blocked, trust, credential, permission,
+  mapping and round-trip outcomes. Adapter exceptions are contained as bounded failures. Every result
+  keeps production readiness, dispatch, external mutation, workflow approval, execution and
+  infrastructure mutation false.
+- Focused backend ITSM and health tests passed 23 scenarios. Ruff formatting and lint passed; strict
+  `mypy` passed across 1,109 source and test files. The complete backend regression passed 1,032 tests
+  with three expected Windows symlink skips, and Alembic reports one head.
+- Frontend TypeScript and zero-warning ESLint passed. The complete suite passed 239 tests across 91
+  files, including unsafe-response rejection, and the production build passed with only the existing
+  large-chunk advisory. The ITSM workspace remains a separate 25.62 kB lazy chunk.
+- Live browser validation authenticated, registered an exact provider-neutral profile, ran the
+  acknowledgement-gated no-network diagnostic, displayed its profile/mapping binding and recovered
+  the conformant evidence after reload. Desktop 1,280 x 720 and mobile 390 x 844 views had no
+  page-level horizontal overflow, alert or console warning/error. No arbitrary endpoint test,
+  dispatch, ticket-creation or execution button was present.
 
 ### ATLAS-IMP-170 Scope Rationale
 

@@ -13,6 +13,8 @@ from atlas.modules.itsm.domain.models import (
     ItsmProfileLifecycle,
     ItsmProviderFamily,
     ItsmReadinessState,
+    ItsmSandboxConformanceAssessment,
+    ItsmSandboxConformanceState,
     ItsmWriteSemantics,
 )
 
@@ -64,6 +66,16 @@ class RetireItsmIntegrationProfileInput(BaseModel):
     expected_version: int = Field(ge=1)
     reason: str = Field(min_length=20, max_length=1000)
     acknowledged_history_preserved_and_dispatch_absent: bool
+
+
+class CreateItsmSandboxConformanceInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = Field(
+        default="atlas.itsm-sandbox-conformance-input.v1", pattern=STABLE_ID
+    )
+    expected_profile_version: int = Field(ge=1)
+    acknowledged_diagnostic_only_and_no_dispatch: bool
 
 
 class ItsmFieldMappingData(BaseModel):
@@ -163,4 +175,52 @@ class ItsmIntegrationProfileInventoryResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: ItsmIntegrationProfileInventoryData
+    meta: ResponseMeta
+
+
+class ItsmSandboxConformanceData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    assessment_id: str
+    schema_version: str
+    version: int
+    organization_id: str
+    environment_id: str
+    site_id: str
+    profile_id: str
+    profile_version: int
+    profile_digest: str
+    mapping_version: int
+    assessed_by: str
+    adapter_id: str
+    adapter_version: str
+    adapter_production_eligible: bool
+    diagnostic_contract_version: str
+    challenge_digest: str
+    observed_at: datetime
+    valid_until: datetime
+    state: ItsmSandboxConformanceState
+    reason_codes: list[str]
+    canonical_digest: str
+    diagnostic_only: bool
+    sandbox_conformant: bool
+    production_ready: bool
+    dispatch_authorized: bool
+    external_record_mutation_authorized: bool
+    workflow_approved: bool
+    execution_authorized: bool
+    infrastructure_mutation_performed: bool
+    reused: bool
+
+    @classmethod
+    def from_domain(
+        cls, assessment: ItsmSandboxConformanceAssessment
+    ) -> ItsmSandboxConformanceData:
+        return cls(**{field: getattr(assessment, field) for field in cls.model_fields})
+
+
+class ItsmSandboxConformanceResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ItsmSandboxConformanceData
     meta: ResponseMeta

@@ -4081,3 +4081,28 @@ class ItsmIntegrationProfileModel(Base):
     site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class ItsmSandboxConformanceModel(Base):
+    __tablename__ = "itsm_sandbox_conformance_assessments"
+    __table_args__ = (
+        UniqueConstraint(
+            "assessed_by",
+            "idempotency_key",
+            name="uq_itsm_sandbox_conformance_actor_idem",
+        ),
+    )
+
+    assessment_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    profile_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    profile_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    assessed_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

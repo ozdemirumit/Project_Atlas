@@ -8,10 +8,13 @@ from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
 from atlas.api.errors import AtlasError
 from atlas.api.itsm_integration_schemas import (
     CreateItsmIntegrationProfileInput,
+    CreateItsmSandboxConformanceInput,
     ItsmIntegrationProfileData,
     ItsmIntegrationProfileInventoryData,
     ItsmIntegrationProfileInventoryResponse,
     ItsmIntegrationProfileResponse,
+    ItsmSandboxConformanceData,
+    ItsmSandboxConformanceResponse,
     RetireItsmIntegrationProfileInput,
 )
 from atlas.api.schemas import ResponseMeta
@@ -20,6 +23,8 @@ from atlas.api.security import (
     authorize_itsm_integration_create,
     authorize_itsm_integration_read,
     authorize_itsm_integration_retire,
+    authorize_itsm_sandbox_conformance_create,
+    authorize_itsm_sandbox_conformance_read,
     itsm_integration_mutation_subject,
 )
 from atlas.modules.authorization.domain.models import AuthorizationDecision
@@ -169,3 +174,60 @@ async def retire_itsm_integration_profile(
     except ItsmIntegrationError as error:
         _raise(error)
     return _response(record, request, response)
+
+
+@router.post(
+    "/{profile_id}/sandbox-conformance-assessments",
+    response_model=ItsmSandboxConformanceResponse,
+    status_code=201,
+)
+async def assess_itsm_sandbox_conformance(
+    profile_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    payload: CreateItsmSandboxConformanceInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(itsm_integration_mutation_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_itsm_sandbox_conformance_create)],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> ItsmSandboxConformanceResponse:
+    service: ItsmIntegrationService = request.app.state.itsm_integration_service
+    try:
+        assessment = await service.assess_sandbox_conformance(
+            actor=subject,
+            profile_id=profile_id,
+            idempotency_key=idempotency_key,
+            correlation_id=str(request.state.correlation_id),
+            **payload.model_dump(exclude={"schema_version"}),
+        )
+    except ItsmIntegrationError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ItsmSandboxConformanceResponse(
+        data=ItsmSandboxConformanceData.from_domain(assessment), meta=_meta(request)
+    )
+
+
+@router.get(
+    "/{profile_id}/sandbox-conformance-assessments/latest",
+    response_model=ItsmSandboxConformanceResponse,
+)
+async def latest_itsm_sandbox_conformance(
+    profile_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_itsm_sandbox_conformance_read)],
+) -> ItsmSandboxConformanceResponse:
+    service: ItsmIntegrationService = request.app.state.itsm_integration_service
+    try:
+        assessment = await service.latest_sandbox_conformance(
+            actor=subject,
+            profile_id=profile_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ItsmIntegrationError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ItsmSandboxConformanceResponse(
+        data=ItsmSandboxConformanceData.from_domain(assessment), meta=_meta(request)
+    )
