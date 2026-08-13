@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import TypedDict
@@ -13,6 +15,11 @@ from atlas.core.classification import DataClassification
 from atlas.core.config import Settings
 from atlas.modules.recommendations.application.service import RecommendationService
 from atlas.modules.recommendations.domain.models import RecommendationArtifact
+from atlas.modules.reports.adapters.memory import InMemoryTechnicalReportRepository
+from atlas.modules.reports.adapters.postgres import (
+    PostgreSQLTechnicalReportRepository,
+    _normalize,
+)
 from atlas.modules.reports.adapters.synthetic import SyntheticTechnicalReportAssembler
 from atlas.modules.reports.application.service import (
     ReportAccessContext,
@@ -420,3 +427,66 @@ async def test_report_scope_mismatch_is_rejected_before_audit() -> None:
 
     assert provider.calls == 0
     assert audit_sink.records == []
+
+
+def test_report_is_recovered_and_reused_after_service_restart() -> None:
+    sink = CollectingAuditSink()
+    repository = InMemoryTechnicalReportRepository()
+    first_app = create_app(settings(), audit_sink=sink)
+    with TestClient(first_app) as client:
+        first_app.state.report_service = ReportService(
+            source_provider=first_app.state.recommendation_service,
+            assembler=SyntheticTechnicalReportAssembler(),
+            audit_sink=sink,
+            repository=repository,
+        )
+        source = create_recommendation(client)
+        payload = report_payload(source["recommendation_id"], source["version"])
+        created_response = client.post(f"/api/v1/reports/storage/{TARGET}", json=payload)
+        assert created_response.status_code == 200, created_response.text
+        created = created_response.json()["data"]
+
+    unavailable_source = CountingRecommendationProvider()
+    restarted_service = ReportService(
+        source_provider=unavailable_source,
+        assembler=SyntheticTechnicalReportAssembler(),
+        audit_sink=sink,
+        repository=repository,
+    )
+    second_app = create_app(settings(), audit_sink=sink, report_service=restarted_service)
+    with TestClient(second_app) as client:
+        recovered_response = client.get(f"/api/v1/reports/{created['report_id']}")
+        reused_response = client.post(f"/api/v1/reports/storage/{TARGET}", json=payload)
+
+    assert recovered_response.status_code == 200, recovered_response.text
+    assert recovered_response.headers["Cache-Control"] == "no-store"
+    assert recovered_response.json()["data"] == created
+    assert reused_response.status_code == 200, reused_response.text
+    assert reused_response.json()["data"]["report_id"] == created["report_id"]
+    assert unavailable_source.calls == 0
+    assert any(record.event_type == "atlas.report.read" for record in sink.records)
+
+
+def test_postgres_mapping_preserves_complete_report_and_authority_boundary() -> None:
+    sink = CollectingAuditSink()
+    app = create_app(settings(), audit_sink=sink)
+    with TestClient(app) as client:
+        source = create_recommendation(client)
+        response = client.post(
+            f"/api/v1/reports/storage/{TARGET}",
+            json=report_payload(source["recommendation_id"], source["version"]),
+        )
+        assert response.status_code == 200, response.text
+        report = asyncio.run(
+            app.state.report_service.get(report_id=response.json()["data"]["report_id"])
+        )
+
+    assert report is not None
+    payload = _normalize(asdict(report))
+    assert isinstance(payload, dict)
+    restored = PostgreSQLTechnicalReportRepository._to_domain(payload)
+    assert restored == report
+    assert restored.content_digest == report.content_digest
+    assert restored.itsm_handoff is not None
+    assert restored.itsm_handoff.dispatch_authorized is False
+    assert restored.execution_authorized is False

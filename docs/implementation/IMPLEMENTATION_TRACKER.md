@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-169 |
 | Title | Durable technical reports and post-restart ITSM review revalidation |
-| Status | In Progress; scope and acceptance recorded |
-| Branch | `main` (start record; implementation branch pending) |
+| Status | In Progress; implementation and local validation complete, delivery pending |
+| Branch | `agent/durable-technical-reports` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-016, ATLAS-032, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-124, ADR-125 (planned) |
 | Last Updated | 2026-08-13 |
-| Next Action | Record ADR-125, implement durable exact-report storage and restart-safe review revalidation, then complete local, live and GitHub validation |
+| Next Action | Publish the validated exact head, pass PR CI, merge, verify independent `main` CI and record delivery evidence |
 
 ### ATLAS-IMP-169 Scope Rationale
 
@@ -40,6 +40,32 @@
   dispatch, arbitrary ticket mutation, credential, approval or execution controls.
 - ADR, focused and full backend/frontend gates, production build and live restart validation pass
   before delivery.
+
+### ATLAS-IMP-169 Validation Evidence
+
+- ADR-125 records complete immutable report persistence, exact request and lineage fingerprints,
+  protected recovery, process-restart revalidation and the unchanged no-dispatch/no-execution
+  boundary. PostgreSQL migration `20260813_0103` leaves one Alembic head.
+- The complete report payload, including sections, source lineage, Markdown, review state, handoff,
+  classification, expiry, digest and authority booleans, round-trips through the PostgreSQL mapping.
+  Exact retry is reusable after service reconstruction without consulting process-local
+  recommendation memory; new generation still requires live source evidence.
+- Protected report lookup uses a dedicated default-deny C1 permission, exact requester and tenant
+  scope, expiry, classification, digest and authority checks, attributable audit and no-store
+  responses. The UI retains only the opaque report ID in the URL and recovers report and review
+  evidence after reload.
+- ITSM review reads and idempotent decision replays revalidate the exact durable report and handoff.
+  An orphaned durable review cannot bypass source validation after restart.
+- Backend Ruff formatting and lint passed; strict `mypy` passed across 1,095 source and test files.
+  The complete regression passed 1,014 tests with three expected Windows symlink skips; final
+  restart-focused tests passed 22 scenarios after the replay-order hardening.
+- Frontend TypeScript and zero-warning ESLint passed. The complete suite passed 233 tests across 89
+  files and the production build passed with only the existing large-chunk advisory.
+- Live browser validation generated a report, added `report_id` to the URL and recovered the same
+  report and pending review after reload. Desktop and mobile 390 x 844 views had no console error or
+  horizontal overflow; no dispatch or execute button was present. The local no-database profile
+  remains explicitly process-memory-only, while restart persistence is covered by reconstructed
+  shared-repository tests and the PostgreSQL adapter contract.
 
 ### ATLAS-IMP-168 Scope Rationale
 

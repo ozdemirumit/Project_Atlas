@@ -30,3 +30,25 @@ class ReportAssembler(Protocol):
         version: int,
         prior_version_id: str | None,
     ) -> TechnicalReport: ...
+
+
+class TechnicalReportRepository(Protocol):
+    durable: bool
+
+    async def get(self, *, report_id: str) -> TechnicalReport | None: ...
+
+    async def get_by_request_fingerprint(
+        self, *, request_fingerprint: str
+    ) -> TechnicalReport | None: ...
+
+    async def get_latest(self, *, lineage_fingerprint: str) -> TechnicalReport | None: ...
+
+    async def add(
+        self,
+        report: TechnicalReport,
+        *,
+        request_fingerprint: str,
+        lineage_fingerprint: str,
+    ) -> bool: ...
+
+    async def close(self) -> None: ...

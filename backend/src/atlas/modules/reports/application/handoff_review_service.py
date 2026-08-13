@@ -125,21 +125,6 @@ class ItsmHandoffReviewService:
                 "reviewer_id": actor.subject_id,
             }
         )
-        replay = await self._repository.get_by_create_key(
-            reviewer_id=actor.subject_id, idempotency_key=idempotency_key
-        )
-        if replay is not None:
-            if replay.request_fingerprint != fingerprint:
-                raise ItsmHandoffReviewError("itsm_handoff_review_idempotency_conflict")
-            await self._audit(
-                actor,
-                correlation_id=correlation_id,
-                result_code="itsm_handoff_review_replayed",
-                idempotency_key=idempotency_key,
-                review_id=replay.review_id,
-            )
-            return replace(replay, reused=True)
-
         report = await self._load_report(actor, report_id)
         handoff = report.itsm_handoff
         resolved_handoff_digest = canonical_handoff_digest(handoff) if handoff else ""
@@ -162,6 +147,21 @@ class ItsmHandoffReviewService:
             )
         ):
             raise ItsmHandoffReviewError("itsm_handoff_review_authority_denied")
+        replay = await self._repository.get_by_create_key(
+            reviewer_id=actor.subject_id, idempotency_key=idempotency_key
+        )
+        if replay is not None:
+            if replay.request_fingerprint != fingerprint:
+                raise ItsmHandoffReviewError("itsm_handoff_review_idempotency_conflict")
+            self._validate_review_source(replay, report)
+            await self._audit(
+                actor,
+                correlation_id=correlation_id,
+                result_code="itsm_handoff_review_replayed",
+                idempotency_key=idempotency_key,
+                review_id=replay.review_id,
+            )
+            return replace(replay, reused=True)
         existing = await self._repository.get_by_handoff(handoff_draft_id=handoff.draft_id)
         if existing is not None:
             raise ItsmHandoffReviewError("itsm_handoff_review_state_conflict")
@@ -245,6 +245,8 @@ class ItsmHandoffReviewService:
         correlation_id: str,
     ) -> ItsmHandoffHumanReview | None:
         report = await self._load_report(actor, report_id)
+        if report.expires_at <= self._clock():
+            raise ItsmHandoffReviewError("itsm_handoff_review_source_changed")
         handoff = report.itsm_handoff
         if handoff is None or handoff.draft_id != handoff_draft_id:
             raise ItsmHandoffReviewError("itsm_handoff_review_not_found")

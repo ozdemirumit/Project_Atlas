@@ -156,6 +156,16 @@ export async function createStorageTechnicalReport(
   return (await response.json()) as TechnicalReportResponse;
 }
 
+export async function getTechnicalReport(reportId: string): Promise<TechnicalReportResponse> {
+  const response = await apiFetch(`/api/v1/reports/${encodeURIComponent(reportId)}`, {
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    throw new ApiRequestError("Technical report unavailable", response.status);
+  }
+  return (await response.json()) as TechnicalReportResponse;
+}
+
 export async function getItsmHandoffReview(
   reportId: string,
   handoffDraftId: string,
