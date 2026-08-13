@@ -4,14 +4,71 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-186 |
-| Title | Fenced workflow orchestration lease without execution authority |
-| Status | PR exact-head CI in progress |
-| Branch | `agent/workflow-worker-lease-foundation` |
-| Pull Request | [#198](https://github.com/ozdemirumit/Project_Atlas/pull/198) |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ADR-134, ADR-135, ADR-136 |
+| Task ID | ATLAS-IMP-187 |
+| Title | Durable workflow run materialization without dispatch authority |
+| Status | Implementation complete; delivery gates in progress |
+| Branch | `agent/workflow-run-materialization` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ADR-134, ADR-135, ADR-136, ADR-137 |
 | Last Updated | 2026-08-14 |
-| Next Action | Pass exact-head PR CI, squash-merge, verify main CI and synchronize local main |
+| Next Action | Open PR, pass exact-head CI, merge and verify main CI |
+
+### ATLAS-IMP-187 Scope Rationale
+
+- IMP-186 provides durable fenced ownership but intentionally creates no execution instance. The
+  next smallest durable boundary is one immutable `created` run and its ordered `not_started`
+  step-run records, derived from the exact code-owned definition.
+- Only the exact active lease holder may materialize a run. The operation revalidates plan, lease,
+  scope, target, worker, digest and fencing token and atomically persists one idempotent result.
+- Attempt creation, queue delivery, worker dispatch, running states, retries, timers, signals,
+  connector/model calls, approvals, ITSM, runbooks and infrastructure actions remain deferred.
+
+### ATLAS-IMP-187 Acceptance Criteria
+
+- A dedicated workflow workload identity can idempotently materialize exactly one immutable run for
+  an exact `planned` plan under its active unexpired lease; competing or changed requests fail
+  closed without revealing unauthorized state.
+- The run remains `created`; ordered step runs remain `not_started` and preserve step kind,
+  capability, timeout and dependency contracts from the exact definition version. Every authority
+  field remains structurally false.
+- PostgreSQL locks and revalidates the plan and lease, then writes run, step runs and the immutable
+  idempotency claim in one transaction. Production never falls back to memory.
+- Human UI exposes authoritative read-only run state with no materialize, dispatch or attempt
+  controls, no credential material, no second-login or MFA prompt and no implication that work ran.
+
+### ATLAS-IMP-187 Validation Evidence
+
+- Domain and application services create one deterministic immutable `created` run with ordered
+  `not_started` step runs only after exact plan, definition, lease, workload identity, scope,
+  target, digest and fencing checks. Exact idempotent replay returns the same record; stale,
+  released, expired, cancelled, changed or competing requests fail closed.
+- PostgreSQL locks and revalidates the plan and current lease, then persists run, ordered steps and
+  the immutable idempotency claim atomically. Historical lease evidence is preserved without an
+  unsafe foreign key to the replaceable current-lease row. Alembic has one head at
+  `20260814_0110`.
+- API tests prove that workload-token identity is required for materialization while the existing
+  username/password browser session can read the result without MFA or another authorized-browser
+  prompt. Browser mutation receives `401`; every execution-authority field remains false and the
+  original plan is unchanged.
+- Ruff format/lint and strict mypy passed across 1,018 source files. The full backend suite passed
+  1,612 tests with three expected Windows symlink skips. The full frontend suite passed 305 tests
+  across 95 files; ESLint, TypeScript and the production build passed with only the pre-existing
+  chunk-size advisory.
+- Live validation at `http://127.0.0.1:5253/#/workspace/workflows` restarted the backend from this
+  branch and used one `atlas-demo` / `local-demo` username/password login. Plan
+  `workflow-plan.42814d840be192e2d9c16fda` showed `Materialized run record`, `No human controls`
+  and no run yet, without a second login or MFA prompt. The UI continued to state that no
+  connector, approval, ITSM, runbook, worker or infrastructure action ran.
+
+### ATLAS-IMP-186 Delivery Evidence
+
+- Source head `25b84f233540a849dc493b8b2871011bb6f48dfd` passed exact-head PR CI run
+  `31743926312`; frontend completed in 4m59s and backend in 8m50s.
+- PR [#198](https://github.com/ozdemirumit/Project_Atlas/pull/198) was squash-merged as
+  `4dcca330090a76d1bd56c90d8ee7fc8e01e98b35`.
+- The exact merged commit independently passed `main` CI run `31744701149`; frontend completed in
+  4m54s and backend in 9m39s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-187 branched.
 
 ### ATLAS-IMP-186 Scope Rationale
 

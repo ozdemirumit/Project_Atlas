@@ -555,6 +555,7 @@ MVP workflows do not execute C3 through C5 capabilities.
 - ADR-134 establishes the initial code-owned definition registry and durable non-executable run-plan boundary.
 - ADR-135 establishes durable plan cancellation and immutable transition-history boundaries.
 - ADR-136 establishes digest-bound fenced orchestration leases without execution authority.
+- ADR-137 establishes durable run and step-run materialization without attempt or dispatch authority.
 
 ## 39. Assumptions
 

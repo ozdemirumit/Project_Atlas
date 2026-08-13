@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from atlas.api.schemas import ResponseMeta
 from atlas.modules.workflows.domain import (
     WorkflowDefinition,
+    WorkflowExecutionRun,
     WorkflowOrchestrationLease,
     WorkflowRunPlan,
 )
@@ -64,6 +65,19 @@ class HeartbeatWorkflowOrchestrationLeaseInput(WorkflowOrchestrationLeaseMutatio
 
 class ReleaseWorkflowOrchestrationLeaseInput(WorkflowOrchestrationLeaseMutationInput):
     schema_version: Literal["atlas.workflow-orchestration-lease-release-input.v1"]
+
+
+class MaterializeWorkflowRunInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["atlas.workflow-run-materialization-input.v1"]
+    plan_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    target_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    target_type: Literal["storage"]
+    lease_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    lease_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    fencing_token: int = Field(ge=1)
+    acknowledged_materialization_only_no_dispatch_authority: Literal[True]
 
 
 class WorkflowStepDefinitionData(BaseModel):
@@ -195,6 +209,68 @@ class WorkflowOrchestrationLeaseResponse(BaseModel):
 
 class WorkflowOrchestrationLeaseStatusResponse(BaseModel):
     data: WorkflowOrchestrationLeaseStatusData
+    meta: ResponseMeta
+
+
+class WorkflowExecutionStepRunData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    step_run_id: str
+    run_id: str
+    step_id: str
+    ordinal: int
+    kind: str
+    capability_class: str
+    timeout_seconds: int
+    depends_on: list[str]
+    state: Literal["not_started"]
+    canonical_digest: str
+
+
+class WorkflowExecutionRunData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    plan_id: str
+    plan_digest: str
+    definition_id: str
+    definition_version: int
+    definition_digest: str
+    scope: WorkflowScopeData
+    target_id: str
+    target_type: Literal["storage"]
+    lease_id: str
+    lease_digest: str
+    fencing_token: int
+    materialized_by_subject_id: str
+    created_at: datetime
+    state: Literal["created"]
+    step_runs: list[WorkflowExecutionStepRunData]
+    authority: WorkflowPlanAuthorityData
+    grants_execution_authority: Literal[False]
+    canonical_digest: str
+
+    @classmethod
+    def from_domain(cls, run: WorkflowExecutionRun) -> WorkflowExecutionRunData:
+        return cls.model_validate(run.canonical_value() | {"grants_execution_authority": False})
+
+
+class WorkflowMaterializedRunStatusData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    plan_id: str
+    run: WorkflowExecutionRunData | None
+    server_time: datetime
+    durable: bool
+
+
+class WorkflowExecutionRunResponse(BaseModel):
+    data: WorkflowExecutionRunData
+    meta: ResponseMeta
+
+
+class WorkflowMaterializedRunStatusResponse(BaseModel):
+    data: WorkflowMaterializedRunStatusData
     meta: ResponseMeta
 
 

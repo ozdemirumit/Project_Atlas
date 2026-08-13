@@ -134,6 +134,48 @@ export type WorkflowOrchestrationLeaseStatus = {
   lease: WorkflowOrchestrationLease | null;
 };
 
+export type WorkflowExecutionStepRun = {
+  step_run_id: string;
+  run_id: string;
+  step_id: string;
+  ordinal: number;
+  kind: WorkflowStepKind;
+  capability_class: WorkflowCapabilityClass;
+  timeout_seconds: number;
+  depends_on: string[];
+  state: "not_started";
+  canonical_digest: string;
+};
+
+export type WorkflowExecutionRun = {
+  run_id: string;
+  plan_id: string;
+  plan_digest: string;
+  definition_id: string;
+  definition_version: number;
+  definition_digest: string;
+  scope: WorkflowRunPlan["scope"];
+  target_id: string;
+  target_type: "storage";
+  lease_id: string;
+  lease_digest: string;
+  fencing_token: number;
+  materialized_by_subject_id: string;
+  created_at: string;
+  state: "created";
+  step_runs: WorkflowExecutionStepRun[];
+  authority: WorkflowPlanAuthority;
+  grants_execution_authority: false;
+  canonical_digest: string;
+};
+
+export type WorkflowMaterializedRunStatus = {
+  plan_id: string;
+  run: WorkflowExecutionRun | null;
+  server_time: string;
+  durable: boolean;
+};
+
 const digest = /^[a-f0-9]{64}$/;
 const capabilityClasses = new Set<WorkflowCapabilityClass>(["C0", "C1", "C2"]);
 const stepKinds = new Set<WorkflowStepKind>([
@@ -151,9 +193,69 @@ const authorityFields = [
   "runbook_execution_authorized",
   "infrastructure_change_authorized",
 ] as const;
+const runFields = [
+  "run_id",
+  "plan_id",
+  "plan_digest",
+  "definition_id",
+  "definition_version",
+  "definition_digest",
+  "scope",
+  "target_id",
+  "target_type",
+  "lease_id",
+  "lease_digest",
+  "fencing_token",
+  "materialized_by_subject_id",
+  "created_at",
+  "state",
+  "step_runs",
+  "authority",
+  "grants_execution_authority",
+  "canonical_digest",
+] as const;
+const stepRunFields = [
+  "step_run_id",
+  "run_id",
+  "step_id",
+  "ordinal",
+  "kind",
+  "capability_class",
+  "timeout_seconds",
+  "depends_on",
+  "state",
+  "canonical_digest",
+] as const;
+const forbiddenCredentialFields = new Set([
+  "api_key",
+  "access_token",
+  "bearer_token",
+  "credential",
+  "credentials",
+  "password",
+  "refresh_token",
+  "secret",
+  "secrets",
+  "token",
+  "workload_token",
+]);
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasExactKeys(value: Record<string, unknown>, fields: readonly string[]): boolean {
+  const keys = Object.keys(value);
+  return keys.length === fields.length && fields.every((field) => field in value);
+}
+
+function containsCredentialMaterial(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(containsCredentialMaterial);
+  if (!isObject(value)) return false;
+  return Object.entries(value).some(
+    ([key, nested]) =>
+      forbiddenCredentialFields.has(key.toLowerCase()) || containsCredentialMaterial(nested),
+  );
 }
 
 function isIdentifier(value: unknown): value is string {
@@ -310,6 +412,76 @@ function isLeaseBoundToPlan(
   );
 }
 
+function isStepRunBoundToPlan(
+  value: unknown,
+  index: number,
+  runId: string,
+  plan: WorkflowRunPlan,
+): value is WorkflowExecutionStepRun {
+  if (!isObject(value) || !hasExactKeys(value, stepRunFields)) return false;
+  const planStep = plan.steps[index];
+  if (!planStep) return false;
+  return (
+    isIdentifier(value.step_run_id) &&
+    value.run_id === runId &&
+    value.step_id === planStep.step_id &&
+    value.ordinal === index + 1 &&
+    value.ordinal === planStep.ordinal &&
+    value.kind === planStep.kind &&
+    value.capability_class === planStep.capability_class &&
+    Number.isSafeInteger(value.timeout_seconds) &&
+    Number(value.timeout_seconds) >= 1 &&
+    Number(value.timeout_seconds) <= 3_600 &&
+    Array.isArray(value.depends_on) &&
+    value.depends_on.every(isIdentifier) &&
+    value.depends_on.every((dependency) =>
+      plan.steps.slice(0, index).some((step) => step.step_id === dependency),
+    ) &&
+    new Set(value.depends_on).size === value.depends_on.length &&
+    value.state === "not_started" &&
+    isDigest(value.canonical_digest)
+  );
+}
+
+function isRunBoundToPlan(value: unknown, plan: WorkflowRunPlan): value is WorkflowExecutionRun {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, runFields) ||
+    !isScope(value.scope) ||
+    !Array.isArray(value.step_runs) ||
+    containsCredentialMaterial(value)
+  ) {
+    return false;
+  }
+  return (
+    isIdentifier(value.run_id) &&
+    value.plan_id === plan.plan_id &&
+    value.plan_digest === plan.canonical_digest &&
+    value.definition_id === plan.definition_id &&
+    value.definition_version === plan.definition_version &&
+    value.definition_digest === plan.definition_digest &&
+    value.scope.organization_id === plan.scope.organization_id &&
+    value.scope.environment_id === plan.scope.environment_id &&
+    value.scope.site_id === plan.scope.site_id &&
+    value.target_id === plan.target_id &&
+    value.target_type === plan.target_type &&
+    isIdentifier(value.lease_id) &&
+    isDigest(value.lease_digest) &&
+    Number.isSafeInteger(value.fencing_token) &&
+    Number(value.fencing_token) >= 1 &&
+    isIdentifier(value.materialized_by_subject_id) &&
+    isTimestamp(value.created_at) &&
+    value.state === "created" &&
+    value.step_runs.length === plan.steps.length &&
+    value.step_runs.every((stepRun, index) =>
+      isStepRunBoundToPlan(stepRun, index, value.run_id as string, plan),
+    ) &&
+    hasSafeAuthority(value.authority) &&
+    value.grants_execution_authority === false &&
+    isDigest(value.canonical_digest)
+  );
+}
+
 function isRunPlan(value: unknown): value is WorkflowRunPlan {
   if (
     !isObject(value) ||
@@ -453,6 +625,34 @@ export async function getWorkflowOrchestrationLease(input: {
     throw new ApiRequestError("Workflow orchestration lease response was unsafe", response.status);
   }
   return data as WorkflowOrchestrationLeaseStatus;
+}
+
+export async function getWorkflowMaterializedRun(input: {
+  plan: WorkflowRunPlan;
+  scope: WorkflowScope;
+  authorizedTargetIds: readonly string[];
+}): Promise<WorkflowMaterializedRunStatus> {
+  if (
+    !isBoundToScope(input.plan, input.scope) ||
+    !input.authorizedTargetIds.includes(input.plan.target_id)
+  ) {
+    throw new ApiRequestError("Workflow plan is outside the authorized run scope", 403);
+  }
+  const response = await apiFetch(
+    `/api/v1/workflows/plans/${encodeURIComponent(input.plan.plan_id)}/materialized-run`,
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(response, "Workflow materialized run retrieval failed");
+  if (
+    !isObject(data) ||
+    data.plan_id !== input.plan.plan_id ||
+    !isTimestamp(data.server_time) ||
+    typeof data.durable !== "boolean" ||
+    !(data.run === null || isRunBoundToPlan(data.run, input.plan))
+  ) {
+    throw new ApiRequestError("Workflow materialized run response was unsafe", response.status);
+  }
+  return data as WorkflowMaterializedRunStatus;
 }
 
 export async function createWorkflowPlan(input: {

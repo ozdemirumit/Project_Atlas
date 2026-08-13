@@ -1534,6 +1534,8 @@ from atlas.modules.workflows.application import (
     WorkflowOrchestrationLeaseService,
     WorkflowPlanningService,
     WorkflowPlanRepository,
+    WorkflowRunMaterializationRepository,
+    WorkflowRunMaterializationService,
 )
 from atlas.modules.workflows.domain import code_owned_workflow_registry
 
@@ -1560,6 +1562,7 @@ def create_app(
     conversation_target_access_source: ConversationTargetAccessSource | None = None,
     workflow_planning_service: WorkflowPlanningService | None = None,
     workflow_orchestration_lease_service: WorkflowOrchestrationLeaseService | None = None,
+    workflow_run_materialization_service: WorkflowRunMaterializationService | None = None,
     security_export_service: SecurityExportService | None = None,
     session_service: SessionService | None = None,
     api_credential_service: ApiCredentialService | None = None,
@@ -5325,6 +5328,33 @@ def create_app(
         )
     else:
         resolved_workflow_orchestration_lease_service = workflow_orchestration_lease_service
+    if workflow_run_materialization_service is None:
+        run_repository_methods = (
+            "get_materialized_run_by_plan_id",
+            "get_run_materialization_request",
+            "materialize_run",
+        )
+        if not all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in run_repository_methods
+        ):
+            raise ValueError(
+                "workflow planning repository does not implement run materialization; "
+                "inject workflow_run_materialization_service explicitly"
+            )
+        workflow_run_repository = cast(
+            WorkflowRunMaterializationRepository,
+            workflow_repository,
+        )
+        resolved_workflow_run_materialization_service = WorkflowRunMaterializationService(
+            registry=resolved_workflow_planning_service.registry,
+            plan_repository=workflow_repository,
+            lease_repository=resolved_workflow_orchestration_lease_service.repository,
+            run_repository=workflow_run_repository,
+            audit_sink=resolved_audit_sink,
+        )
+    else:
+        resolved_workflow_run_materialization_service = workflow_run_materialization_service
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -5549,6 +5579,12 @@ def create_app(
         )
         app.state.workflow_orchestration_lease_repository = (
             resolved_workflow_orchestration_lease_service.repository
+        )
+        app.state.workflow_run_materialization_service = (
+            resolved_workflow_run_materialization_service
+        )
+        app.state.workflow_run_materialization_repository = (
+            resolved_workflow_run_materialization_service.repository
         )
         yield
         await resolved_workflow_planning_service.close()

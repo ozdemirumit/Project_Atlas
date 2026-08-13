@@ -5,6 +5,7 @@ import {
   Ban,
   CalendarClock,
   CheckCircle2,
+  Database,
   FileClock,
   History,
   LockKeyhole,
@@ -19,6 +20,7 @@ import { listOperationalConversations } from "../../api/conversations";
 import {
   cancelWorkflowPlan,
   createWorkflowPlan,
+  getWorkflowMaterializedRun,
   getWorkflowOrchestrationLease,
   listWorkflowDefinitions,
   listWorkflowPlans,
@@ -120,6 +122,26 @@ export default function WorkflowPlanningWorkspace({
     enabled: Boolean(selectedPlan),
     retry: false,
   });
+  const materializedRunQuery = useQuery({
+    queryKey: [
+      "workflow-materialized-run",
+      selectedPlan?.plan_id,
+      selectedPlan?.canonical_digest,
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () => {
+      if (!selectedPlan) throw new ApiRequestError("No workflow plan is selected", 422);
+      return getWorkflowMaterializedRun({
+        plan: selectedPlan,
+        scope,
+        authorizedTargetIds,
+      });
+    },
+    enabled: Boolean(selectedPlan),
+    retry: false,
+  });
   const definitions = definitionQuery.data?.definitions ?? [];
   const selectedDefinition = definitions.find((item) => item.definition_id === definitionId);
   const createMutation = useMutation({
@@ -173,6 +195,10 @@ export default function WorkflowPlanningWorkspace({
     cancelMutation.error instanceof ApiRequestError && cancelMutation.error.status === 401;
   const leaseErrorStatus =
     leaseQuery.error instanceof ApiRequestError ? leaseQuery.error.status : undefined;
+  const materializedRunErrorStatus =
+    materializedRunQuery.error instanceof ApiRequestError
+      ? materializedRunQuery.error.status
+      : undefined;
 
   const selectPlan = (plan: WorkflowRunPlan) => {
     setSelectedPlan(plan);
@@ -333,6 +359,89 @@ export default function WorkflowPlanningWorkspace({
                     <div className="workflow-safety-boundary" role="note">
                       <LockKeyhole size={18} />
                       <span>This lease coordinates ownership only. It grants no execution authority and did not run any plan step.</span>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div aria-labelledby="workflow-materialized-run-title">
+                <div className="workflow-section-heading">
+                  <div>
+                    <p className="eyebrow">READ-ONLY RUN EVIDENCE</p>
+                    <h3 id="workflow-materialized-run-title">Materialized run record</h3>
+                  </div>
+                  <span>No human controls</span>
+                </div>
+                {materializedRunQuery.isLoading && (
+                  <div className="workspace-message" role="status">
+                    <RefreshCw className="spin" size={17} />
+                    <span>Loading authoritative run record...</span>
+                  </div>
+                )}
+                {materializedRunQuery.isError && (
+                  <div className="workspace-message error-state" role="alert">
+                    <div>
+                      <strong>
+                        {materializedRunErrorStatus === 401
+                          ? "Your session has expired"
+                          : materializedRunErrorStatus === 403
+                            ? "Run record permission is missing"
+                            : "Run record is unavailable"}
+                      </strong>
+                      <p>
+                        {materializedRunErrorStatus === 401
+                          ? "Sign in again to continue."
+                          : materializedRunErrorStatus === 403
+                            ? "Your current role cannot inspect materialized run records."
+                            : "No run state is inferred. Retry the read-only request."}
+                      </p>
+                    </div>
+                    {materializedRunErrorStatus !== 401 && materializedRunErrorStatus !== 403 && (
+                      <button type="button" onClick={() => void materializedRunQuery.refetch()}>
+                        <RefreshCw size={15} /> Retry run record
+                      </button>
+                    )}
+                  </div>
+                )}
+                {materializedRunQuery.isSuccess && materializedRunQuery.data.run === null && (
+                  <div className="workflow-empty-state">
+                    <Database size={19} /> No materialized run is recorded for this plan.
+                  </div>
+                )}
+                {materializedRunQuery.isSuccess && materializedRunQuery.data.run !== null && (
+                  <>
+                    <dl>
+                      <div><dt>Status</dt><dd><span className="state-badge neutral">{materializedRunQuery.data.run.state}</span></dd></div>
+                      <div><dt>Run identifier</dt><dd><code title={materializedRunQuery.data.run.run_id}>{safeHolderIdentifier(materializedRunQuery.data.run.run_id)}</code></dd></div>
+                      <div><dt>Materialized by</dt><dd><code title={materializedRunQuery.data.run.materialized_by_subject_id}>{safeHolderIdentifier(materializedRunQuery.data.run.materialized_by_subject_id)}</code></dd></div>
+                      <div><dt>Created</dt><dd>{formatTimestamp(materializedRunQuery.data.run.created_at)}</dd></div>
+                      <div><dt>Lease identifier</dt><dd><code title={materializedRunQuery.data.run.lease_id}>{safeHolderIdentifier(materializedRunQuery.data.run.lease_id)}</code></dd></div>
+                      <div><dt>Fencing token</dt><dd>{materializedRunQuery.data.run.fencing_token}</dd></div>
+                      <div><dt>Plan digest</dt><dd><code title={materializedRunQuery.data.run.plan_digest}>{shortDigest(materializedRunQuery.data.run.plan_digest)}</code></dd></div>
+                      <div><dt>Definition digest</dt><dd><code title={materializedRunQuery.data.run.definition_digest}>{shortDigest(materializedRunQuery.data.run.definition_digest)}</code></dd></div>
+                      <div><dt>Lease digest</dt><dd><code title={materializedRunQuery.data.run.lease_digest}>{shortDigest(materializedRunQuery.data.run.lease_digest)}</code></dd></div>
+                      <div><dt>Run digest</dt><dd><code title={materializedRunQuery.data.run.canonical_digest}>{shortDigest(materializedRunQuery.data.run.canonical_digest)}</code></dd></div>
+                      <div><dt>Observed</dt><dd>{formatTimestamp(materializedRunQuery.data.server_time)}</dd></div>
+                    </dl>
+                    <ol className="workflow-step-preview" aria-label="Materialized step records">
+                      {materializedRunQuery.data.run.step_runs.map((step) => (
+                        <li key={step.step_run_id}>
+                          <span>{step.ordinal}</span>
+                          <div>
+                            <strong>{step.step_id}</strong>
+                            <small>
+                              {readableKind(step.kind)} | {step.capability_class} | {step.state} | {step.timeout_seconds}s
+                              {step.depends_on.length > 0
+                                ? ` | depends on ${step.depends_on.join(", ")}`
+                                : " | no dependencies"}
+                            </small>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                    <div className="workflow-safety-boundary" role="note">
+                      <LockKeyhole size={18} />
+                      <span>This durable record only freezes run and step identities. Every step remains not_started, and no execution authority is granted.</span>
                     </div>
                   </>
                 )}

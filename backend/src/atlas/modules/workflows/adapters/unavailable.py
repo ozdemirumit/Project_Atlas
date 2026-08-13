@@ -14,8 +14,13 @@ from atlas.modules.workflows.application import (
     WorkflowPlanIdempotencyRecord,
     WorkflowPlanMutationResult,
     WorkflowPlanningError,
+    WorkflowRunMaterializationError,
+    WorkflowRunMaterializationIdempotencyRecord,
+    WorkflowRunMaterializationRequest,
+    WorkflowRunMaterializationResult,
 )
 from atlas.modules.workflows.domain import (
+    WorkflowExecutionRun,
     WorkflowOrchestrationLease,
     WorkflowRunPlan,
     WorkflowScope,
@@ -83,6 +88,23 @@ class UnavailableWorkflowPlanRepository:
     async def get_lease_by_plan_id(self, *, plan_id: str) -> WorkflowOrchestrationLease | None:
         self._raise()
 
+    async def get_materialized_run_by_plan_id(self, *, plan_id: str) -> WorkflowExecutionRun | None:
+        self._raise_run()
+
+    async def get_run_materialization_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        worker_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowRunMaterializationIdempotencyRecord | None:
+        self._raise_run()
+
+    async def materialize_run(
+        self, request: WorkflowRunMaterializationRequest
+    ) -> WorkflowRunMaterializationResult:
+        self._raise_run()
+
     async def get_lease_acquire_request(
         self,
         *,
@@ -109,3 +131,10 @@ class UnavailableWorkflowPlanRepository:
 
     async def close(self) -> None:
         return None
+
+    @staticmethod
+    def _raise_run() -> NoReturn:
+        raise WorkflowRunMaterializationError(
+            "workflow_run_repository_unavailable",
+            "Durable workflow run materialization storage is not configured.",
+        )

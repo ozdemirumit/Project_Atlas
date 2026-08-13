@@ -75,6 +75,14 @@ class WorkflowOrchestrationLeaseEffectiveState(StrEnum):
     RELEASED = "released"
 
 
+class WorkflowExecutionRunState(StrEnum):
+    CREATED = "created"
+
+
+class WorkflowExecutionStepRunState(StrEnum):
+    NOT_STARTED = "not_started"
+
+
 @dataclass(frozen=True, slots=True)
 class WorkflowScope:
     organization_id: str
@@ -166,6 +174,158 @@ class WorkflowOrchestrationLease:
         if requested_at >= self.expires_at:
             return WorkflowOrchestrationLeaseEffectiveState.EXPIRED
         return WorkflowOrchestrationLeaseEffectiveState.ACTIVE
+
+    @property
+    def grants_execution_authority(self) -> bool:
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowExecutionStepRun:
+    """Immutable logical step identity created before attempts or dispatch exist."""
+
+    step_run_id: str
+    run_id: str
+    step_id: str
+    ordinal: int
+    kind: WorkflowStepKind
+    capability_class: WorkflowCapabilityClass
+    timeout_seconds: int
+    depends_on: tuple[str, ...]
+    state: WorkflowExecutionStepRunState
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        _require_identifier(self.step_run_id, name="step_run_id")
+        _require_identifier(self.run_id, name="step run_id")
+        _require_identifier(self.step_id, name="step run step_id")
+        if self.ordinal < 1:
+            raise ValueError("step run ordinal must be positive")
+        if not isinstance(self.kind, WorkflowStepKind):
+            raise ValueError("step run kind is unsupported")
+        if not isinstance(self.capability_class, WorkflowCapabilityClass):
+            raise ValueError("step run capability class is unsupported")
+        if not 1 <= self.timeout_seconds <= 3600:
+            raise ValueError("step run timeout must be between 1 and 3600 seconds")
+        if len(self.depends_on) != len(set(self.depends_on)):
+            raise ValueError("step run dependencies must be unique")
+        for dependency in self.depends_on:
+            _require_identifier(dependency, name="step run dependency")
+        if self.step_id in self.depends_on:
+            raise ValueError("step run cannot depend on itself")
+        if self.state is not WorkflowExecutionStepRunState.NOT_STARTED:
+            raise ValueError("materialized step runs must remain not_started")
+        _require_digest(self.canonical_digest, name="step run canonical_digest")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("step run canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "capability_class": self.capability_class.value,
+            "depends_on": list(self.depends_on),
+            "kind": self.kind.value,
+            "ordinal": self.ordinal,
+            "run_id": self.run_id,
+            "state": self.state.value,
+            "step_id": self.step_id,
+            "step_run_id": self.step_run_id,
+            "timeout_seconds": self.timeout_seconds,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowExecutionRun:
+    """Durable run graph that deliberately grants no attempt or dispatch authority."""
+
+    run_id: str
+    plan_id: str
+    plan_digest: str
+    definition_id: str
+    definition_version: int
+    definition_digest: str
+    scope: WorkflowScope
+    target_id: str
+    target_type: str
+    lease_id: str
+    lease_digest: str
+    fencing_token: int
+    materialized_by_subject_id: str
+    created_at: datetime
+    state: WorkflowExecutionRunState
+    step_runs: tuple[WorkflowExecutionStepRun, ...]
+    authority: WorkflowPlanAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        _require_identifier(self.run_id, name="execution run_id")
+        _require_identifier(self.plan_id, name="execution run plan_id")
+        _require_digest(self.plan_digest, name="execution run plan_digest")
+        _require_identifier(self.definition_id, name="execution run definition_id")
+        if self.definition_version < 1:
+            raise ValueError("execution run definition_version must be positive")
+        _require_digest(self.definition_digest, name="execution run definition_digest")
+        _require_identifier(self.target_id, name="execution run target_id")
+        if self.target_type != "storage":
+            raise ValueError("workflow execution runs support only storage targets")
+        _require_identifier(self.lease_id, name="execution run lease_id")
+        _require_digest(self.lease_digest, name="execution run lease_digest")
+        if self.fencing_token < 1:
+            raise ValueError("execution run fencing_token must be at least one")
+        _require_identifier(
+            self.materialized_by_subject_id,
+            name="execution run materialized_by_subject_id",
+        )
+        if self.created_at.tzinfo is None:
+            raise ValueError("execution run created_at must be timezone-aware")
+        if self.state is not WorkflowExecutionRunState.CREATED:
+            raise ValueError("materialized workflow execution runs must remain created")
+        if not self.step_runs:
+            raise ValueError("workflow execution runs require step runs")
+        if tuple(step.ordinal for step in self.step_runs) != tuple(
+            range(1, len(self.step_runs) + 1)
+        ):
+            raise ValueError("workflow execution step runs must preserve definition order")
+        if len({step.step_id for step in self.step_runs}) != len(self.step_runs):
+            raise ValueError("workflow execution step identifiers must be unique")
+        available: set[str] = set()
+        for step in self.step_runs:
+            if step.run_id != self.run_id or any(
+                dependency not in available for dependency in step.depends_on
+            ):
+                raise ValueError("workflow execution step binding is invalid")
+            available.add(step.step_id)
+        if any(self.authority.canonical_value().values()):
+            raise ValueError("workflow execution runs cannot grant operational authority")
+        _require_digest(self.canonical_digest, name="execution run canonical_digest")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("workflow execution run canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "authority": self.authority.canonical_value(),
+            "created_at": self.created_at.isoformat(),
+            "definition_digest": self.definition_digest,
+            "definition_id": self.definition_id,
+            "definition_version": self.definition_version,
+            "fencing_token": self.fencing_token,
+            "lease_digest": self.lease_digest,
+            "lease_id": self.lease_id,
+            "materialized_by_subject_id": self.materialized_by_subject_id,
+            "plan_digest": self.plan_digest,
+            "plan_id": self.plan_id,
+            "run_id": self.run_id,
+            "scope": self.scope.canonical_value(),
+            "state": self.state.value,
+            "step_runs": [step.canonical_value() for step in self.step_runs],
+            "target_id": self.target_id,
+            "target_type": self.target_type,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
 
     @property
     def grants_execution_authority(self) -> bool:

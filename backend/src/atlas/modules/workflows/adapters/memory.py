@@ -17,8 +17,13 @@ from atlas.modules.workflows.application import (
     WorkflowPlanIdempotencyRecord,
     WorkflowPlanMutationResult,
     WorkflowPlanMutationStatus,
+    WorkflowRunMaterializationIdempotencyRecord,
+    WorkflowRunMaterializationRequest,
+    WorkflowRunMaterializationResult,
+    WorkflowRunMaterializationStatus,
 )
 from atlas.modules.workflows.domain import (
+    WorkflowExecutionRun,
     WorkflowOrchestrationLease,
     WorkflowOrchestrationLeaseEffectiveState,
     WorkflowPlanState,
@@ -39,6 +44,10 @@ class InMemoryWorkflowPlanRepository:
         self._leases_by_plan: dict[str, WorkflowOrchestrationLease] = {}
         self._lease_acquire_requests: dict[
             tuple[WorkflowScope, str, str], WorkflowLeaseAcquireIdempotencyRecord
+        ] = {}
+        self._runs_by_plan: dict[str, WorkflowExecutionRun] = {}
+        self._run_materialization_requests: dict[
+            tuple[WorkflowScope, str, str], WorkflowRunMaterializationIdempotencyRecord
         ] = {}
         self._lock = asyncio.Lock()
 
@@ -171,6 +180,70 @@ class InMemoryWorkflowPlanRepository:
     ) -> WorkflowLeaseAcquireIdempotencyRecord | None:
         async with self._lock:
             return self._lease_acquire_requests.get((scope, worker_subject_id, idempotency_key))
+
+    async def get_materialized_run_by_plan_id(self, *, plan_id: str) -> WorkflowExecutionRun | None:
+        async with self._lock:
+            return self._runs_by_plan.get(plan_id)
+
+    async def get_run_materialization_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        worker_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowRunMaterializationIdempotencyRecord | None:
+        async with self._lock:
+            return self._run_materialization_requests.get(
+                (scope, worker_subject_id, idempotency_key)
+            )
+
+    async def materialize_run(
+        self, request: WorkflowRunMaterializationRequest
+    ) -> WorkflowRunMaterializationResult:
+        async with self._lock:
+            run = request.candidate
+            key = (run.scope, request.worker_subject_id, request.idempotency_key)
+            prior = self._run_materialization_requests.get(key)
+            if prior is not None:
+                status = (
+                    WorkflowRunMaterializationStatus.REPLAY
+                    if prior.request_fingerprint == request.request_fingerprint
+                    else WorkflowRunMaterializationStatus.IDEMPOTENCY_CONFLICT
+                )
+                return WorkflowRunMaterializationResult(status, prior.run)
+            plan = self._plans.get(run.plan_id)
+            lease = self._leases_by_plan.get(run.plan_id)
+            if (
+                plan is None
+                or plan.state is not WorkflowPlanState.PLANNED
+                or plan.canonical_digest != request.expected_plan_digest == run.plan_digest
+                or plan.scope != run.scope
+                or plan.target_id != run.target_id
+                or plan.target_type != run.target_type
+                or lease is None
+                or lease.lease_id != request.expected_lease_id == run.lease_id
+                or lease.canonical_digest != request.expected_lease_digest == run.lease_digest
+                or lease.fencing_token != request.expected_fencing_token == run.fencing_token
+                or lease.worker_subject_id != request.worker_subject_id
+                or request.worker_subject_id != run.materialized_by_subject_id
+                or lease.effective_state(requested_at=request.requested_at)
+                is not WorkflowOrchestrationLeaseEffectiveState.ACTIVE
+                or lease.grants_execution_authority
+            ):
+                return WorkflowRunMaterializationResult(
+                    WorkflowRunMaterializationStatus.STATE_CONFLICT, None
+                )
+            current = self._runs_by_plan.get(run.plan_id)
+            if current is not None:
+                return WorkflowRunMaterializationResult(
+                    WorkflowRunMaterializationStatus.STATE_CONFLICT, current
+                )
+            self._runs_by_plan[run.plan_id] = run
+            self._run_materialization_requests[key] = WorkflowRunMaterializationIdempotencyRecord(
+                request_fingerprint=request.request_fingerprint,
+                run=run,
+            )
+            return WorkflowRunMaterializationResult(WorkflowRunMaterializationStatus.CREATED, run)
 
     async def acquire_lease(
         self, request: WorkflowLeaseAcquireRequest
