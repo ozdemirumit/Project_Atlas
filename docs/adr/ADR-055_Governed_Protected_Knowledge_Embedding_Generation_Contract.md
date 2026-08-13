@@ -61,9 +61,12 @@ credential, command, schedule, workflow, execution, deployment, or mutation fiel
 
 ### Identity And Separation
 
-The actor must be a current enterprise human in the exact tenant with recent hardware-backed MFA,
-dedicated C2 embedding-create and lineage-read permissions, browser binding, CSRF, and a current
-signed policy. The actor cannot be the curator, either reviewer, final approver, publication
+The actor must be a current enterprise human in the exact tenant with dedicated C2 embedding-create
+and lineage-read permissions, browser binding, CSRF, and a current signed policy. Under ADR-133,
+the default `SINGLE_FACTOR` policy accepts an authorized username/password development browser
+session; `MULTI_FACTOR` or `HARDWARE_BACKED` assurance and corresponding freshness apply only when
+the signed embedding policy explicitly requests them. The actor cannot be the curator, either
+reviewer, final approver, publication
 steward, materialization steward, chunking steward, policy signer, trusted preparer, materializer,
 chunker, embedder, model owner, or a service, shared, AI, or break-glass identity.
 
@@ -123,9 +126,9 @@ no-referrer, and restrictive content-security headers.
 
 Intent, claim, trusted embedding, persistence completion, and read are separately audited. Audit
 excludes content, coordinates, chunk maps, token streams, vector values, endpoints, keys, profile
-internals, cookies, raw identity, and secrets. Policy, lineage, permission, MFA, separation,
-browser, embedder, model, persistence, audit, concurrency, numerical validation, or integrity
-uncertainty fails closed.
+internals, cookies, raw identity, and secrets. Policy, lineage, permission, configured assurance,
+separation, browser, embedder, model, persistence, audit, concurrency, numerical validation, or
+integrity uncertainty fails closed.
 
 ## Consequences
 
@@ -140,7 +143,8 @@ uncertainty fails closed.
 
 - Production requires an approved isolated embedding runtime, signed model artifact, and encrypted
   embedding store.
-- A separate eligible human steward and recent hardware MFA are required.
+- A separate eligible human steward remains required; assurance follows the explicit embedding
+  policy and defaults to `SINGLE_FACTOR` under ADR-133.
 - Failed or uncertain post-claim generation requires governance intervention rather than automatic
   replay.
 

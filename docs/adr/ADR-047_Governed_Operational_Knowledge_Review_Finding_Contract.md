@@ -74,8 +74,11 @@ Before claim creation the service revalidates:
   classification, access, retention, encryption, source-content, and presentation-policy bindings;
 - the signed finding policy, trusted recorder identity, receipt schema, category and severity
   catalogs, input limits, artifact integrity, encryption, immutable-write, and cleanup rules;
-- a current enterprise human identity with recent hardware-backed MFA, exact tenant scope,
-  dedicated C2 finding-create and presentation/lease-read permissions;
+- a current enterprise human identity satisfying the signed finding policy's assurance and
+  freshness requirements, exact tenant scope, dedicated C2 finding-create and
+  presentation/lease-read permissions; under ADR-133, the default `SINGLE_FACTOR` policy accepts
+  an authorized username/password development browser session, while `MULTI_FACTOR` or
+  `HARDWARE_BACKED` assurance applies only when explicitly requested by that policy;
 - the salted current-subject digest equals the lease holder and exact assigned reviewer;
 - the normal browser session hashes to the lease browser binding;
 - the track-specific HttpOnly lease cookie hashes to the stored lease-secret digest;
@@ -163,8 +166,9 @@ claimed.
 
 Claims and records are immutable, deterministic, concurrency-safe, and equivalent in memory and
 PostgreSQL. The API uses the normal browser session, the track-specific lease cookie, mutation
-CSRF, strict schemas, dedicated default-deny RBAC, C2 classification, recent hardware MFA, exact
-tenant and assignee scope, safe errors, and minimized no-store responses.
+CSRF, strict schemas, dedicated default-deny RBAC, C2 classification, ADR-133 policy-evaluated
+assurance and freshness, exact tenant and assignee scope, safe errors, and minimized no-store
+responses.
 
 ## Consequences
 

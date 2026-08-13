@@ -6,12 +6,16 @@ from datetime import timedelta
 
 import pytest
 from test_package_acquisition import CollectingAuditSink
-from test_protected_content import present_content, protected_content_fixture
+from test_protected_content import (
+    development_domain_reviewer,
+    present_content,
+    protected_content_fixture,
+)
 from test_protected_inspection import domain_reviewer
 from test_runtime_activation import FailSecondAuditSink
 
 from atlas.api.review_finding_schemas import OperationalKnowledgeReviewFindingData
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject, SubjectKind
 from atlas.modules.knowledge.adapters.review_finding_memory import (
     InMemoryOperationalKnowledgeReviewFindingPolicySource,
     InMemoryOperationalKnowledgeReviewFindingRepository,
@@ -98,6 +102,7 @@ async def review_finding_fixture(
     authorizer: RecordingReviewFindingPermissionAuthorizer | None = None,
     audit_sink: CollectingAuditSink | FailSecondAuditSink | None = None,
     clock_offset: timedelta = timedelta(),
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     OperationalKnowledgeReviewFindingService,
     InMemoryOperationalKnowledgeReviewFindingRepository,
@@ -115,6 +120,18 @@ async def review_finding_fixture(
         issued_at=presentation.record.presented_at,
         expires_at=presentation.record.expires_at,
     )
+    if required_assurance_level is not policy.required_assurance_level:
+        policy = replace(
+            policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        policy = replace(
+            policy,
+            canonical_digest=OperationalKnowledgeReviewFindingService._digest(
+                OperationalKnowledgeReviewFindingService._policy_payload(policy)
+            ),
+        )
     repository = InMemoryOperationalKnowledgeReviewFindingRepository()
     permission_authorizer = authorizer or RecordingReviewFindingPermissionAuthorizer()
     audit = audit_sink or CollectingAuditSink()
@@ -162,11 +179,12 @@ async def record_finding(
     secret: str,
     policy: OperationalKnowledgeReviewFindingPolicySnapshot,
     *,
+    actor: AuthenticatedSubject | None = None,
     findings: tuple[OperationalKnowledgeReviewFindingItem, ...] | None = None,
     idempotency_key: str = "knowledge-review-finding-001",
 ) -> OperationalKnowledgeReviewFindingRecord:
     return await service.create(
-        actor=domain_reviewer(),
+        actor=actor or domain_reviewer(),
         source_lease_id=presentation.source_lease_id,
         source_presentation_id=presentation.presentation_id,
         source_presentation_digest=presentation.canonical_digest,
@@ -219,6 +237,77 @@ async def test_review_finding_is_immutable_metadata_only_and_idempotent() -> Non
         "operational_knowledge_review_finding_claimed",
         "operational_knowledge_review_finding_recorded",
     ]
+
+
+@pytest.mark.asyncio
+async def test_review_finding_accepts_development_identity_under_default_policy() -> None:
+    service, _, presentation, secret, policy, *_ = await review_finding_fixture()
+
+    record = await record_finding(
+        service,
+        presentation,
+        secret,
+        policy,
+        actor=development_domain_reviewer(),
+    )
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.track_code == "review-track.domain"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    (AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED),
+)
+async def test_review_finding_enforces_explicit_step_up_policy(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    service, repository, presentation, secret, policy, authorizer, _ = await review_finding_fixture(
+        required_assurance_level=required_assurance_level
+    )
+
+    with pytest.raises(OperationalKnowledgeReviewFindingError, match="source_invalid"):
+        await record_finding(
+            service,
+            presentation,
+            secret,
+            policy,
+            actor=development_domain_reviewer(),
+        )
+
+    assert authorizer.calls == []
+    assert (
+        await repository.get_claim_by_source_presentation(
+            source_presentation_id=presentation.presentation_id
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_review_finding_rejects_non_human_identity() -> None:
+    (
+        service,
+        repository,
+        presentation,
+        secret,
+        policy,
+        authorizer,
+        _,
+    ) = await review_finding_fixture()
+    actor = replace(development_domain_reviewer(), kind=SubjectKind.SERVICE)
+
+    with pytest.raises(OperationalKnowledgeReviewFindingError, match="human_required"):
+        await record_finding(service, presentation, secret, policy, actor=actor)
+
+    assert authorizer.calls == []
+    assert (
+        await repository.get_claim_by_source_presentation(
+            source_presentation_id=presentation.presentation_id
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio

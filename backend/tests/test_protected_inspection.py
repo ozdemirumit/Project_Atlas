@@ -12,10 +12,10 @@ from test_browser_sessions import BasicTestIdentityProvider, login, settings
 from test_package_acquisition import CollectingAuditSink
 from test_reviewer_assignment import assign_reviewers, reviewer_assignment_fixture
 from test_runtime_activation import FailSecondAuditSink
-from test_target_session import target_session_operator
+from test_target_session import development_target_session_operator, target_session_operator
 
 from atlas.api.app import create_app
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject, SubjectKind
 from atlas.modules.knowledge.adapters.finding_presentation_memory import (
     InMemoryOperationalKnowledgeFindingPresentationPolicySource,
     InMemoryOperationalKnowledgeFindingPresentationRepository,
@@ -64,6 +64,7 @@ from atlas.modules.knowledge.application.protected_content import (
 )
 from atlas.modules.knowledge.application.protected_inspection import (
     OperationalKnowledgeProtectedInspectionService,
+    _signed_policy,
     build_development_operational_knowledge_protected_inspection_policy,
 )
 from atlas.modules.knowledge.application.protected_inspection_ports import (
@@ -168,6 +169,7 @@ async def protected_inspection_fixture(
     | AlteredProtectedInspectionBroker
     | BlockingProtectedInspectionBroker
     | None = None,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     OperationalKnowledgeProtectedInspectionService,
     InMemoryOperationalKnowledgeProtectedInspectionRepository,
@@ -189,6 +191,13 @@ async def protected_inspection_fixture(
         issued_at=assignment.created_at - timedelta(hours=1),
         expires_at=assignment.created_at + timedelta(days=1),
     )
+    if policy.required_assurance_level is not required_assurance_level:
+        policy = replace(
+            policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        policy = replace(policy, canonical_digest=_signed_policy(policy))
     repository = InMemoryOperationalKnowledgeProtectedInspectionRepository()
     authorizer = permission_authorizer or RecordingProtectedInspectionPermissionAuthorizer()
     resolved_broker = broker or SyntheticOperationalKnowledgeProtectedInspectionBroker(
@@ -217,6 +226,10 @@ async def protected_inspection_fixture(
 
 def domain_reviewer() -> AuthenticatedSubject:
     return target_session_operator("subject.synthetic-domain-reviewer")
+
+
+def development_domain_reviewer() -> AuthenticatedSubject:
+    return development_target_session_operator("subject.synthetic-domain-reviewer")
 
 
 async def lease_domain_inspection(
@@ -270,6 +283,57 @@ async def test_protected_inspection_is_exact_assignee_cookie_only_and_idempotent
         "operational_knowledge_assignment_track_claimed_for_inspection",
         "operational_knowledge_protected_inspection_leased",
     ]
+
+
+@pytest.mark.asyncio
+async def test_protected_inspection_accepts_development_identity_under_default_policy() -> None:
+    service, _, assignment, policy, _, _, _ = await protected_inspection_fixture()
+
+    grant = await lease_domain_inspection(
+        service,
+        assignment,
+        policy,
+        actor=development_domain_reviewer(),
+    )
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert grant.record.content_inspection_opened and not grant.record.content_disclosed
+
+
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    [AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED],
+)
+@pytest.mark.asyncio
+async def test_protected_inspection_enforces_explicit_stronger_assurance_policy(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    service, _, assignment, policy, authorizer, broker, _ = await protected_inspection_fixture(
+        required_assurance_level=required_assurance_level
+    )
+
+    with pytest.raises(OperationalKnowledgeProtectedInspectionError, match="assurance_required"):
+        await lease_domain_inspection(
+            service,
+            assignment,
+            policy,
+            actor=development_domain_reviewer(),
+        )
+
+    assert authorizer.calls == []
+    assert getattr(broker, "call_count", 0) == 0
+
+
+@pytest.mark.asyncio
+async def test_protected_inspection_denies_non_human_identity() -> None:
+    service, _, assignment, policy, authorizer, broker, _ = await protected_inspection_fixture()
+    actor = replace(development_domain_reviewer(), kind=SubjectKind.SERVICE)
+
+    with pytest.raises(OperationalKnowledgeProtectedInspectionError, match="human_required"):
+        await lease_domain_inspection(service, assignment, policy, actor=actor)
+
+    assert authorizer.calls == []
+    assert getattr(broker, "call_count", 0) == 0
 
 
 @pytest.mark.asyncio

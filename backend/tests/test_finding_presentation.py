@@ -6,6 +6,7 @@ from datetime import timedelta
 
 import pytest
 from test_package_acquisition import CollectingAuditSink
+from test_protected_content import development_domain_reviewer
 from test_protected_inspection import domain_reviewer
 from test_review_finding import (
     domain_finding,
@@ -17,7 +18,7 @@ from test_runtime_activation import FailSecondAuditSink
 from atlas.api.finding_presentation_schemas import (
     OperationalKnowledgeFindingPresentationData,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject, SubjectKind
 from atlas.modules.knowledge.adapters.finding_presentation_memory import (
     InMemoryOperationalKnowledgeFindingPresentationPolicySource,
     InMemoryOperationalKnowledgeFindingPresentationRepository,
@@ -109,6 +110,7 @@ async def finding_presentation_fixture(
     authorizer: RecordingFindingPresentationPermissionAuthorizer | None = None,
     audit_sink: CollectingAuditSink | FailSecondAuditSink | None = None,
     clock_offset: timedelta = timedelta(),
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     OperationalKnowledgeFindingPresentationService,
     InMemoryOperationalKnowledgeFindingPresentationRepository,
@@ -132,6 +134,18 @@ async def finding_presentation_fixture(
         issued_at=finding.created_at - timedelta(hours=1),
         expires_at=finding.expires_at,
     )
+    if required_assurance_level is not policy.required_assurance_level:
+        policy = replace(
+            policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        policy = replace(
+            policy,
+            canonical_digest=OperationalKnowledgeFindingPresentationService._digest(
+                OperationalKnowledgeFindingPresentationService._policy_payload(policy)
+            ),
+        )
     presenter_type = presenter_factory or SyntheticOperationalKnowledgeFindingPresenter
     presenter = presenter_type(recorder=recorder)
     presenter._clock = lambda: finding.created_at + clock_offset
@@ -246,6 +260,91 @@ async def test_finding_presentation_is_exact_metadata_only_and_replayable() -> N
         "operational_knowledge_finding_presentation_read",
         "operational_knowledge_finding_presentation_read",
     ]
+
+
+@pytest.mark.asyncio
+async def test_finding_presentation_accepts_development_identity_under_default_policy() -> None:
+    service, _, content, finding, secret, policy, *_ = await finding_presentation_fixture()
+
+    record = await present_finding(
+        service,
+        content,
+        finding,
+        secret,
+        policy,
+        actor=development_domain_reviewer(),
+    )
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.track_code == "review-track.domain"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    (AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED),
+)
+async def test_finding_presentation_enforces_explicit_step_up_policy(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    (
+        service,
+        repository,
+        content,
+        finding,
+        secret,
+        policy,
+        presenter,
+        authorizer,
+        _,
+    ) = await finding_presentation_fixture(required_assurance_level=required_assurance_level)
+
+    with pytest.raises(OperationalKnowledgeFindingPresentationError, match="source_invalid"):
+        await present_finding(
+            service,
+            content,
+            finding,
+            secret,
+            policy,
+            actor=development_domain_reviewer(),
+        )
+
+    assert authorizer.calls == []
+    assert not presenter.calls
+    assert (
+        await repository.get_claim_by_source_finding(
+            source_finding_packet_id=finding.finding_packet_id
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_finding_presentation_rejects_non_human_identity() -> None:
+    (
+        service,
+        repository,
+        content,
+        finding,
+        secret,
+        policy,
+        presenter,
+        authorizer,
+        _,
+    ) = await finding_presentation_fixture()
+    actor = replace(development_domain_reviewer(), kind=SubjectKind.SERVICE)
+
+    with pytest.raises(OperationalKnowledgeFindingPresentationError, match="human_required"):
+        await present_finding(service, content, finding, secret, policy, actor=actor)
+
+    assert authorizer.calls == []
+    assert not presenter.calls
+    assert (
+        await repository.get_claim_by_source_finding(
+            source_finding_packet_id=finding.finding_packet_id
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio

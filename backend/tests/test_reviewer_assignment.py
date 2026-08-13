@@ -12,10 +12,10 @@ from test_browser_sessions import BasicTestIdentityProvider, login, settings
 from test_draft_review_request import request_review, review_request_fixture
 from test_package_acquisition import CollectingAuditSink
 from test_runtime_activation import FailSecondAuditSink
-from test_target_session import target_session_operator
+from test_target_session import development_target_session_operator, target_session_operator
 
 from atlas.api.app import create_app
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject, SubjectKind
 from atlas.modules.knowledge.adapters.reviewer_assignment_memory import (
     InMemoryOperationalKnowledgeReviewerAssignmentPolicySource,
     InMemoryOperationalKnowledgeReviewerAssignmentRepository,
@@ -28,6 +28,7 @@ from atlas.modules.knowledge.adapters.reviewer_assignment_synthetic import (
 )
 from atlas.modules.knowledge.application.reviewer_assignment import (
     OperationalKnowledgeReviewerAssignmentService,
+    _signed_policy,
     build_development_operational_knowledge_reviewer_assignment_policy,
 )
 from atlas.modules.knowledge.application.reviewer_assignment_ports import (
@@ -126,6 +127,7 @@ async def reviewer_assignment_fixture(
     | AlteredReviewerAssignmentReceiptAdapter
     | BlockingReviewerAssignmentAdapter
     | None = None,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     OperationalKnowledgeReviewerAssignmentService,
     InMemoryOperationalKnowledgeReviewerAssignmentRepository,
@@ -147,6 +149,13 @@ async def reviewer_assignment_fixture(
         issued_at=review_request.created_at - timedelta(hours=1),
         expires_at=review_request.created_at + timedelta(days=1),
     )
+    if policy.required_assurance_level is not required_assurance_level:
+        policy = replace(
+            policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        policy = replace(policy, canonical_digest=_signed_policy(policy))
     repository = InMemoryOperationalKnowledgeReviewerAssignmentRepository()
     authorizer = permission_authorizer or RecordingReviewerAssignmentPermissionAuthorizer()
     resolved_adapter = adapter or SyntheticOperationalKnowledgeReviewerAssignmentAdapter(
@@ -221,6 +230,56 @@ async def test_reviewer_assignment_is_minimized_distinct_and_idempotent() -> Non
         "operational_knowledge_review_request_claimed_for_assignment",
         "operational_knowledge_reviewers_assigned",
     ]
+
+
+@pytest.mark.asyncio
+async def test_reviewer_assignment_accepts_development_identity_under_default_policy() -> None:
+    service, _, review_request, policy, _, _, _ = await reviewer_assignment_fixture()
+    actor = development_target_session_operator("subject.knowledge-review-coordinator")
+
+    record = await assign_reviewers(service, review_request, policy, actor=actor)
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.requested_by == actor.subject_id
+
+
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    [AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED],
+)
+@pytest.mark.asyncio
+async def test_reviewer_assignment_enforces_explicit_stronger_assurance_policy(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    service, _, review_request, policy, authorizer, adapter, _ = await reviewer_assignment_fixture(
+        required_assurance_level=required_assurance_level
+    )
+
+    with pytest.raises(OperationalKnowledgeReviewerAssignmentError, match="assurance_required"):
+        await assign_reviewers(
+            service,
+            review_request,
+            policy,
+            actor=development_target_session_operator("subject.knowledge-review-coordinator"),
+        )
+
+    assert authorizer.calls == []
+    assert getattr(adapter, "call_count", 0) == 0
+
+
+@pytest.mark.asyncio
+async def test_reviewer_assignment_denies_non_human_identity() -> None:
+    service, _, review_request, policy, authorizer, adapter, _ = await reviewer_assignment_fixture()
+    actor = replace(
+        development_target_session_operator("subject.knowledge-review-coordinator"),
+        kind=SubjectKind.SERVICE,
+    )
+
+    with pytest.raises(OperationalKnowledgeReviewerAssignmentError, match="human_required"):
+        await assign_reviewers(service, review_request, policy, actor=actor)
+
+    assert authorizer.calls == []
+    assert getattr(adapter, "call_count", 0) == 0
 
 
 @pytest.mark.asyncio

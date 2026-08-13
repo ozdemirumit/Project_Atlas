@@ -53,8 +53,11 @@ Before claim creation the service revalidates:
   retention, immutable-storage, and cleanup bindings;
 - exact signed review-orchestration policy, signer, schema, scope, required domain and security
   tracks, queue identifiers, assignment strategy, SLA class, adapter, and freshness bindings;
-- hardware-backed human assurance, exact tenant scope, dedicated C3 review-request permission,
-  and knowledge-draft read permission;
+- a current human identity satisfying the signed review-orchestration policy's assurance and
+  freshness requirements, exact tenant scope, dedicated C3 review-request permission, and
+  knowledge-draft read permission; under ADR-133, the default `SINGLE_FACTOR` policy accepts an
+  authorized username/password development browser session, while `MULTI_FACTOR` or
+  `HARDWARE_BACKED` assurance applies only when explicitly requested by that policy;
 - absence of a prior review-request claim and absence of review decisions, corrections, approval,
   publication, chunks, embeddings, retrieval, model context, graph update, scheduling, workflow,
   execution, deployment, or infrastructure-mutation authority.
@@ -153,7 +156,8 @@ codes, track codes, queue IDs, bounded counts, state labels, and non-sensitive d
 
 Claims and review-request records are immutable, deterministic, concurrency-safe, and equivalent
 in memory and PostgreSQL. The API uses browser session, mutation CSRF, strict schemas, no-store,
-dedicated default-deny RBAC, hardware MFA, exact tenant scope, safe errors, and minimized responses.
+dedicated default-deny RBAC, ADR-133 policy-evaluated assurance, exact tenant scope, safe errors,
+and minimized responses.
 
 ## Consequences
 

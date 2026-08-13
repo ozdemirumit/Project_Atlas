@@ -8,12 +8,17 @@ import pytest
 from pydantic import ValidationError
 from test_package_acquisition import CollectingAuditSink
 from test_publication_preparation import prepare, publication_preparation_fixture
-from test_target_session import target_session_operator
+from test_target_session import development_target_session_operator, target_session_operator
 
 from atlas.api.source_materialization_schemas import (
     OperationalKnowledgeSourceMaterializationInput,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 from atlas.modules.knowledge.adapters.source_materialization_memory import (
     InMemoryOperationalKnowledgeSourceMaterializationPolicySource,
     InMemoryOperationalKnowledgeSourceMaterializationRepository,
@@ -133,7 +138,7 @@ async def source_materialization_fixture(
         environment_id=preparation.environment_id,
         clock=lambda: preparation.prepared_at,
     )
-    actor = target_session_operator("subject.knowledge-materialization-steward")
+    actor = development_target_session_operator("subject.knowledge-materialization-steward")
     return (
         service,
         repository,
@@ -171,7 +176,7 @@ async def materialize(
 
 
 @pytest.mark.asyncio
-async def test_source_materialization_is_metadata_only_immutable_and_idempotent() -> None:
+async def test_source_materialization_accepts_development_password_and_is_immutable() -> None:
     (
         service,
         repository,
@@ -182,6 +187,8 @@ async def test_source_materialization_is_metadata_only_immutable_and_idempotent(
         permission,
         audit,
     ) = await source_materialization_fixture()
+    assert actor.authentication_method is AuthenticationMethod.DEVELOPMENT
+    assert actor.assurance_level is AssuranceLevel.DEVELOPMENT
     record = await materialize(service, preparation, policy, actor)
     repeated = await materialize(service, preparation, policy, actor)
     replay = await service.get(
@@ -209,6 +216,23 @@ async def test_source_materialization_is_metadata_only_immutable_and_idempotent(
         "operational_knowledge_source_materialization_read",
         "operational_knowledge_source_materialization_read",
     ]
+
+
+@pytest.mark.asyncio
+async def test_source_materialization_rejects_non_human_actor() -> None:
+    service, repository, preparation, policy, actor, *_ = await source_materialization_fixture()
+    service_actor = replace(
+        actor,
+        kind=SubjectKind.SERVICE,
+        authentication_method=AuthenticationMethod.WORKLOAD_TOKEN,
+    )
+
+    with pytest.raises(OperationalKnowledgeSourceMaterializationError, match="human_required"):
+        await materialize(service, preparation, policy, service_actor)
+
+    assert (
+        await repository.get_claim_by_preparation(preparation_id=preparation.preparation_id) is None
+    )
 
 
 @pytest.mark.asyncio

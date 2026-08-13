@@ -61,9 +61,12 @@ schedule, workflow, execution, deployment, or mutation fields.
 
 ### Identity And Separation
 
-The actor must be a current enterprise human in the exact tenant with recent hardware-backed MFA,
-dedicated C2 retrieval-publication and C1 lineage-read permissions, browser binding, CSRF, and a
-current signed policy. The actor cannot be any curator, reviewer, final approver, preparation,
+The actor must be a current enterprise human in the exact tenant with dedicated C2
+retrieval-publication and C1 lineage-read permissions, browser binding, CSRF, and a current signed
+policy. Under ADR-133, the default `SINGLE_FACTOR` policy accepts an authorized username/password
+development browser session; `MULTI_FACTOR` or `HARDWARE_BACKED` assurance and corresponding
+freshness apply only when the signed retrieval-publication policy explicitly requests them. The
+actor cannot be any curator, reviewer, final approver, preparation,
 materialization, chunking, embedding, or index steward, policy signer, trusted preparer,
 materializer, chunker, embedder, indexer, publisher, model owner, index-profile owner, alias-profile
 owner, or a service, shared, AI, or break-glass identity.
@@ -131,8 +134,8 @@ policy, browser, and permission authority remain current. Responses use strict `
 Intent, claim, trusted activation, publication verification, persistence completion, and read are
 separately audited. Audit excludes content, coordinates, chunk maps, point IDs, collection or
 alias names, payloads, filters, token streams, vectors, endpoints, keys, profile internals,
-cookies, raw identity, and secrets. Policy, lineage, permission, MFA, separation, browser,
-publisher, projection, persistence, audit, concurrency, activation, route verification, or
+cookies, raw identity, and secrets. Policy, lineage, permission, configured assurance, separation,
+browser, publisher, projection, persistence, audit, concurrency, activation, route verification, or
 integrity uncertainty fails closed.
 
 ## Consequences
@@ -149,7 +152,8 @@ integrity uncertainty fails closed.
 
 - Production requires an approved isolated publication boundary, signed publication profile,
   atomic route activation, and route-verification support.
-- A separate eligible human publication steward and recent hardware MFA are required.
+- A separate eligible human publication steward remains required; assurance follows the explicit
+  retrieval-publication policy and defaults to `SINGLE_FACTOR` under ADR-133.
 - Failed or uncertain post-claim publication requires governance intervention rather than
   automatic replay.
 

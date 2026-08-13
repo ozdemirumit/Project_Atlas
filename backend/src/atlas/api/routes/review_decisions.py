@@ -41,7 +41,7 @@ def _raise(error: OperationalKnowledgeTrackReviewDecisionError) -> NoReturn:
     code = str(error)
     if isinstance(error, OperationalKnowledgeTrackReviewDecisionUncertainError):
         status = 503
-    elif code.endswith(("required", "denied", "mfa_required")):
+    elif code.endswith(("required", "denied", "human_required")):
         status = 403
     elif code.endswith("not_found"):
         status = 404

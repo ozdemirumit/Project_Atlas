@@ -18,8 +18,8 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 from atlas.modules.knowledge.application.correction_resubmission_ports import (
     OperationalKnowledgeCorrectionAdapter,
@@ -112,7 +112,7 @@ class OperationalKnowledgeCorrectionService:
         idempotency_key: str,
         correlation_id: str,
     ) -> OperationalKnowledgeCorrectionRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         purpose = purpose.strip()
         if (
             not exact_change_requirements_addressed_acknowledged
@@ -141,6 +141,7 @@ class OperationalKnowledgeCorrectionService:
                 "operational_knowledge_correction_policy_not_found"
             )
         self._verify_policy(policy)
+        self._require_policy_assurance(actor, policy)
         decisions, request, draft = source
         now = self._clock()
         ordered = self._verify_source(
@@ -322,7 +323,7 @@ class OperationalKnowledgeCorrectionService:
         browser_session_id: str,
         correlation_id: str,
     ) -> OperationalKnowledgeCorrectionRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         record = await self._repository.get(correction_id=correction_id)
         if record is None:
             raise OperationalKnowledgeCorrectionError("operational_knowledge_correction_not_found")
@@ -333,6 +334,7 @@ class OperationalKnowledgeCorrectionService:
                 "operational_knowledge_correction_policy_not_found"
             )
         self._verify_policy(policy)
+        self._require_policy_assurance(actor, policy)
         self._require_scope(actor, record.organization_id, record.environment_id)
         subject_digest = self._digest([policy.subject_digest_salt_digest, actor.subject_id])
         browser_digest = self._digest([policy.browser_binding_key_digest, browser_session_id])
@@ -882,14 +884,19 @@ class OperationalKnowledgeCorrectionService:
         ).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
+    def _require_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
             raise OperationalKnowledgeCorrectionError(
-                "operational_knowledge_correction_enterprise_human_hardware_mfa_required"
+                "operational_knowledge_correction_human_required"
+            )
+
+    @staticmethod
+    def _require_policy_assurance(
+        actor: AuthenticatedSubject, policy: OperationalKnowledgeCorrectionPolicySnapshot
+    ) -> None:
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
+            raise OperationalKnowledgeCorrectionError(
+                "operational_knowledge_correction_assurance_required"
             )
 
     def _require_scope(
@@ -935,7 +942,12 @@ class OperationalKnowledgeCorrectionService:
 
 
 def build_development_operational_knowledge_correction_policy(
-    *, organization_id: str, environment_id: str, issued_at: datetime, expires_at: datetime
+    *,
+    organization_id: str,
+    environment_id: str,
+    issued_at: datetime,
+    expires_at: datetime,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> OperationalKnowledgeCorrectionPolicySnapshot:
     digest = OperationalKnowledgeCorrectionService._digest
     policy = OperationalKnowledgeCorrectionPolicySnapshot(
@@ -968,7 +980,7 @@ def build_development_operational_knowledge_correction_policy(
         browser_binding_key_digest=digest(
             ["operational-knowledge-correction", organization_id, "browser-binding"]
         ),
-        required_assurance_level=AssuranceLevel.HARDWARE_BACKED,
+        required_assurance_level=required_assurance_level,
         signed_by="subject.operational-knowledge-correction-policy-signer",
         signature_verified=True,
         issued_at=issued_at,

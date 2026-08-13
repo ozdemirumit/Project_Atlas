@@ -12,10 +12,10 @@ from test_browser_sessions import BasicTestIdentityProvider, login, settings
 from test_evidence_draft import create_draft, draft_fixture
 from test_package_acquisition import CollectingAuditSink
 from test_runtime_activation import FailSecondAuditSink
-from test_target_session import target_session_operator
+from test_target_session import development_target_session_operator, target_session_operator
 
 from atlas.api.app import create_app
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject, SubjectKind
 from atlas.modules.knowledge.adapters.draft_review_request_memory import (
     InMemoryOperationalKnowledgeReviewRequestPolicySource,
     InMemoryOperationalKnowledgeReviewRequestRepository,
@@ -28,6 +28,7 @@ from atlas.modules.knowledge.adapters.draft_review_request_synthetic import (
 )
 from atlas.modules.knowledge.application.draft_review_request import (
     OperationalKnowledgeReviewRequestService,
+    _signed_policy,
     build_development_operational_knowledge_review_request_policy,
 )
 from atlas.modules.knowledge.application.draft_review_request_ports import (
@@ -119,6 +120,7 @@ async def review_request_fixture(
     | AlteredReviewRequestReceiptAdapter
     | BlockingReviewRequestAdapter
     | None = None,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     OperationalKnowledgeReviewRequestService,
     InMemoryOperationalKnowledgeReviewRequestRepository,
@@ -141,6 +143,13 @@ async def review_request_fixture(
         issued_at=draft.created_at - timedelta(hours=1),
         expires_at=draft.created_at + timedelta(days=1),
     )
+    if policy.required_assurance_level is not required_assurance_level:
+        policy = replace(
+            policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        policy = replace(policy, canonical_digest=_signed_policy(policy))
     repository = InMemoryOperationalKnowledgeReviewRequestRepository()
     authorizer = permission_authorizer or RecordingReviewRequestPermissionAuthorizer()
     resolved_adapter = adapter or SyntheticOperationalKnowledgeReviewRequestAdapter(
@@ -207,6 +216,58 @@ async def test_review_request_is_immutable_minimized_and_idempotent() -> None:
         "operational_knowledge_review_source_claimed",
         "operational_knowledge_review_request_created",
     ]
+
+
+@pytest.mark.asyncio
+async def test_review_request_accepts_development_identity_under_default_policy() -> None:
+    service, _, draft, policy, _, _, _ = await review_request_fixture()
+    actor = development_target_session_operator("subject.connector-independent-knowledge-curator")
+
+    record = await request_review(service, draft, policy, actor=actor)
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.requested_by == actor.subject_id
+
+
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    [AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED],
+)
+@pytest.mark.asyncio
+async def test_review_request_enforces_explicit_stronger_assurance_policy(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    service, _, draft, policy, authorizer, adapter, _ = await review_request_fixture(
+        required_assurance_level=required_assurance_level
+    )
+
+    with pytest.raises(OperationalKnowledgeReviewRequestError, match="assurance_required"):
+        await request_review(
+            service,
+            draft,
+            policy,
+            actor=development_target_session_operator(
+                "subject.connector-independent-knowledge-curator"
+            ),
+        )
+
+    assert authorizer.calls == []
+    assert getattr(adapter, "call_count", 0) == 0
+
+
+@pytest.mark.asyncio
+async def test_review_request_denies_non_human_identity() -> None:
+    service, _, draft, policy, authorizer, adapter, _ = await review_request_fixture()
+    actor = replace(
+        development_target_session_operator("subject.connector-independent-knowledge-curator"),
+        kind=SubjectKind.SERVICE,
+    )
+
+    with pytest.raises(OperationalKnowledgeReviewRequestError, match="human_required"):
+        await request_review(service, draft, policy, actor=actor)
+
+    assert authorizer.calls == []
+    assert getattr(adapter, "call_count", 0) == 0
 
 
 @pytest.mark.asyncio

@@ -101,8 +101,10 @@ export function ProtectedInspectionLeasePanel({
               onChange={(event) => setAcknowledged(event.target.checked)}
             />
             <span>
-              This opens a short-lived browser-bound channel for the exact assigned reviewer. It
-              returns no content or secret in JSON and records no finding, decision, or approval.
+              This opens a short-lived browser-bound channel for the exact assigned signed-in human
+              reviewer. Stronger assurance applies only when the explicit inspection policy
+              requires it. It returns no content or secret in JSON and records no finding,
+              decision, or approval.
             </span>
           </label>
           <button
@@ -124,8 +126,10 @@ export function ProtectedInspectionLeasePanel({
           <div>
             <h3>Inspection lease unavailable</h3>
             <p>
-              The current identity must be the exact unexpired assignee for this track with recent
-              hardware MFA. Claimed uncertain attempts are not retried automatically.
+              Use the current signed-in human session. It must be the exact unexpired assignee for
+              this track and retain its browser binding. Stronger assurance applies only when the
+              explicit inspection policy requires it. Claimed uncertain attempts are not retried
+              automatically.
             </p>
           </div>
         </div>

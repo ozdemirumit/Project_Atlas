@@ -51,8 +51,11 @@ Before claim creation the service revalidates:
   track, queue, assignment strategy, policy, immutable-storage, and cleanup bindings;
 - exact signed assignment policy, signer, schema, scope, directory source, eligibility rules,
   separation rules, workload limits, assignment TTL, adapter, and freshness bindings;
-- hardware-backed human assurance, exact tenant scope, dedicated C3 assignment-request and
-  review-request-read permissions;
+- a current human identity satisfying the signed assignment policy's assurance and freshness
+  requirements, exact tenant scope, dedicated C3 assignment-request and review-request-read
+  permissions; under ADR-133, the default `SINGLE_FACTOR` policy accepts an authorized
+  username/password development browser session, while `MULTI_FACTOR` or `HARDWARE_BACKED`
+  assurance applies only when explicitly requested by that policy;
 - both tracks remain unassigned and no inspection, decision, correction, approval, publication,
   chunks, embeddings, retrieval, model context, graph update, scheduling, workflow, execution,
   deployment, or mutation authority exists.
@@ -84,7 +87,8 @@ API, browser, logs, or audit stream.
 The adapter must:
 
 1. verify the instruction and exact ADR-043 review-manifest binding;
-2. resolve current eligible hardware-MFA human members for each policy-selected queue;
+2. resolve current eligible human members for each policy-selected queue and evaluate any
+   assurance requirement explicitly selected by the assignment policy under ADR-133;
 3. validate tenant, employment/identity status, role, permission, domain competence, security
    clearance, workload, conflict, and assignment freshness;
 4. exclude every upstream, request, policy, attestation, approval, and publication actor digest;
@@ -152,7 +156,8 @@ non-sensitive digests.
 
 Claims and assignment records are immutable, deterministic, concurrency-safe, and equivalent in
 memory and PostgreSQL. The API uses browser session, mutation CSRF, strict schemas, no-store,
-dedicated default-deny RBAC, hardware MFA, exact tenant scope, safe errors, and minimized responses.
+dedicated default-deny RBAC, ADR-133 policy-evaluated assurance, exact tenant scope, safe errors,
+and minimized responses.
 
 ## Consequences
 

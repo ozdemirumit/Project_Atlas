@@ -7,13 +7,14 @@ from datetime import timedelta
 import pytest
 from test_finding_presentation import finding_presentation_fixture, present_finding
 from test_package_acquisition import CollectingAuditSink
+from test_protected_content import development_domain_reviewer
 from test_protected_inspection import domain_reviewer
 from test_runtime_activation import FailSecondAuditSink
 
 from atlas.api.review_decision_schemas import (
     OperationalKnowledgeTrackReviewDecisionData,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject, SubjectKind
 from atlas.modules.knowledge.adapters.review_decision_memory import (
     InMemoryOperationalKnowledgeTrackReviewDecisionPolicySource,
     InMemoryOperationalKnowledgeTrackReviewDecisionRepository,
@@ -102,6 +103,7 @@ async def review_decision_fixture(
     authorizer: RecordingReviewDecisionPermissionAuthorizer | None = None,
     audit_sink: CollectingAuditSink | FailSecondAuditSink | None = None,
     clock_offset: timedelta = timedelta(),
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     OperationalKnowledgeTrackReviewDecisionService,
     InMemoryOperationalKnowledgeTrackReviewDecisionRepository,
@@ -130,6 +132,18 @@ async def review_decision_fixture(
         issued_at=presentation.presented_at - timedelta(hours=1),
         expires_at=presentation.expires_at,
     )
+    if required_assurance_level is not policy.required_assurance_level:
+        policy = replace(
+            policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        policy = replace(
+            policy,
+            canonical_digest=OperationalKnowledgeTrackReviewDecisionService._digest(
+                OperationalKnowledgeTrackReviewDecisionService._policy_payload(policy)
+            ),
+        )
     resolved_attestor = attestor or SyntheticOperationalKnowledgeTrackReviewDecisionAttestor()
     resolved_attestor._clock = lambda: presentation.presented_at + clock_offset
     repository = InMemoryOperationalKnowledgeTrackReviewDecisionRepository()
@@ -252,6 +266,95 @@ async def test_review_decision_is_immutable_minimized_and_idempotent() -> None:
         "operational_knowledge_track_review_decision_read",
         "operational_knowledge_track_review_decision_read",
     ]
+
+
+@pytest.mark.asyncio
+async def test_review_decision_accepts_development_identity_under_default_policy() -> None:
+    service, _, content, finding, presentation, secret, policy, *_ = await review_decision_fixture()
+
+    record = await decide(
+        service,
+        content,
+        finding,
+        presentation,
+        secret,
+        policy,
+        actor=development_domain_reviewer(),
+    )
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.track_code == "review-track.domain"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    (AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED),
+)
+async def test_review_decision_enforces_explicit_step_up_policy(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    (
+        service,
+        repository,
+        content,
+        finding,
+        presentation,
+        secret,
+        policy,
+        attestor,
+        authorizer,
+        _,
+    ) = await review_decision_fixture(required_assurance_level=required_assurance_level)
+
+    with pytest.raises(OperationalKnowledgeTrackReviewDecisionError, match="source_invalid"):
+        await decide(
+            service,
+            content,
+            finding,
+            presentation,
+            secret,
+            policy,
+            actor=development_domain_reviewer(),
+        )
+
+    assert authorizer.calls == []
+    assert not attestor.calls
+    assert (
+        await repository.get_claim_by_source_presentation(
+            source_finding_presentation_id=presentation.finding_presentation_id
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_review_decision_rejects_non_human_identity() -> None:
+    (
+        service,
+        repository,
+        content,
+        finding,
+        presentation,
+        secret,
+        policy,
+        attestor,
+        authorizer,
+        _,
+    ) = await review_decision_fixture()
+    actor = replace(development_domain_reviewer(), kind=SubjectKind.SERVICE)
+
+    with pytest.raises(OperationalKnowledgeTrackReviewDecisionError, match="human_required"):
+        await decide(service, content, finding, presentation, secret, policy, actor=actor)
+
+    assert authorizer.calls == []
+    assert not attestor.calls
+    assert (
+        await repository.get_claim_by_source_presentation(
+            source_finding_presentation_id=presentation.finding_presentation_id
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio

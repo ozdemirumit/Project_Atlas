@@ -12,7 +12,12 @@ from test_protected_inspection import (
     protected_inspection_fixture,
 )
 
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 from atlas.modules.knowledge.adapters.protected_content_memory import (
     InMemoryOperationalKnowledgeProtectedContentPolicySource,
     InMemoryOperationalKnowledgeProtectedContentRepository,
@@ -101,6 +106,7 @@ async def protected_content_fixture(
     presenter: OperationalKnowledgeProtectedContentPresenter | None = None,
     authorizer: RecordingProtectedContentPermissionAuthorizer | None = None,
     clock_offset: timedelta = timedelta(),
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     OperationalKnowledgeProtectedContentService,
     InMemoryOperationalKnowledgeProtectedContentRepository,
@@ -118,6 +124,18 @@ async def protected_content_fixture(
         issued_at=assignment.created_at - timedelta(hours=1),
         expires_at=assignment.created_at + timedelta(days=1),
     )
+    if required_assurance_level is not policy.required_assurance_level:
+        policy = replace(
+            policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        policy = replace(
+            policy,
+            canonical_digest=OperationalKnowledgeProtectedContentService._digest(
+                OperationalKnowledgeProtectedContentService._policy_payload(policy)
+            ),
+        )
     repository = InMemoryOperationalKnowledgeProtectedContentRepository()
     permission_authorizer = authorizer or RecordingProtectedContentPermissionAuthorizer()
     audit = CollectingAuditSink()
@@ -171,6 +189,14 @@ async def present_content(
     )
 
 
+def development_domain_reviewer() -> AuthenticatedSubject:
+    return replace(
+        domain_reviewer(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+
 @pytest.mark.asyncio
 async def test_protected_content_is_bounded_plain_text_and_idempotent() -> None:
     (
@@ -205,6 +231,55 @@ async def test_protected_content_is_bounded_plain_text_and_idempotent() -> None:
         "operational_knowledge_protected_content_presented",
         "operational_knowledge_protected_content_read",
     ]
+
+
+@pytest.mark.asyncio
+async def test_protected_content_accepts_development_identity_under_default_policy() -> None:
+    service, _, lease, secret, policy, *_ = await protected_content_fixture()
+
+    grant = await present_content(
+        service, lease, secret, policy, actor=development_domain_reviewer()
+    )
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert grant.record.lease_holder_subject_digest == lease.lease_holder_subject_digest
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    (AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED),
+)
+async def test_protected_content_enforces_explicit_step_up_policy(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    service, repository, lease, secret, policy, authorizer, _ = await protected_content_fixture(
+        required_assurance_level=required_assurance_level
+    )
+
+    with pytest.raises(OperationalKnowledgeProtectedContentError, match="source_invalid"):
+        await present_content(
+            service,
+            lease,
+            secret,
+            policy,
+            actor=development_domain_reviewer(),
+        )
+
+    assert authorizer.calls == []
+    assert await repository.get_claim_by_source_lease(source_lease_id=lease.lease_id) is None
+
+
+@pytest.mark.asyncio
+async def test_protected_content_rejects_non_human_identity() -> None:
+    service, repository, lease, secret, policy, authorizer, _ = await protected_content_fixture()
+    actor = replace(development_domain_reviewer(), kind=SubjectKind.SERVICE)
+
+    with pytest.raises(OperationalKnowledgeProtectedContentError, match="human_required"):
+        await present_content(service, lease, secret, policy, actor=actor)
+
+    assert authorizer.calls == []
+    assert await repository.get_claim_by_source_lease(source_lease_id=lease.lease_id) is None
 
 
 @pytest.mark.asyncio

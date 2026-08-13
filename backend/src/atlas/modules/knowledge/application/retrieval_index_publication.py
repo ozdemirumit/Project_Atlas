@@ -15,12 +15,7 @@ from atlas.modules.authorization.application.bootstrap import (
     KNOWLEDGE_RETRIEVAL_PUBLICATION_CREATE,
     KNOWLEDGE_RETRIEVAL_PUBLICATION_READ,
 )
-from atlas.modules.identity.domain.models import (
-    AssuranceLevel,
-    AuthenticatedSubject,
-    AuthenticationMethod,
-    SubjectKind,
-)
+from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 from atlas.modules.knowledge.application.retrieval_index_publication_ports import (
     OperationalKnowledgeIndexStagingSource,
     OperationalKnowledgeRetrievalPublicationError,
@@ -87,7 +82,7 @@ class OperationalKnowledgeRetrievalIndexPublicationService:
         idempotency_key: str,
         correlation_id: str,
     ) -> OperationalKnowledgeRetrievalPublicationRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         purpose = purpose.strip()
         if (
             not 20 <= len(purpose) <= 1000
@@ -387,7 +382,7 @@ class OperationalKnowledgeRetrievalIndexPublicationService:
         browser_session_id: str,
         correlation_id: str,
     ) -> OperationalKnowledgeRetrievalPublicationRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         record = await self._repository.get(publication_id=publication_id)
         if record is None:
             raise OperationalKnowledgeRetrievalPublicationError(
@@ -532,14 +527,10 @@ class OperationalKnowledgeRetrievalIndexPublicationService:
         ).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
+    def _require_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
             raise OperationalKnowledgeRetrievalPublicationError(
-                "operational_knowledge_retrieval_publication_enterprise_human_hardware_mfa_required"
+                "operational_knowledge_retrieval_publication_human_required"
             )
 
     def _require_scope(

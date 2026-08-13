@@ -9,12 +9,17 @@ from pydantic import ValidationError
 from test_final_resolution import final_resolution_fixture, resolve
 from test_package_acquisition import CollectingAuditSink
 from test_protected_inspection import domain_reviewer
-from test_target_session import target_session_operator
+from test_target_session import development_target_session_operator, target_session_operator
 
 from atlas.api.publication_preparation_schemas import (
     OperationalKnowledgePublicationPreparationInput,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 from atlas.modules.knowledge.adapters.publication_preparation_memory import (
     InMemoryOperationalKnowledgePublicationPreparationPolicySource,
     InMemoryOperationalKnowledgePublicationPreparationRepository,
@@ -134,7 +139,7 @@ async def publication_preparation_fixture(
         environment_id=resolution.environment_id,
         clock=lambda: resolution.resolved_at,
     )
-    actor = target_session_operator("subject.knowledge-publication-steward")
+    actor = development_target_session_operator("subject.knowledge-publication-steward")
     return (
         service,
         repository,
@@ -173,7 +178,7 @@ async def prepare(
 
 
 @pytest.mark.asyncio
-async def test_publication_preparation_is_metadata_only_immutable_and_idempotent() -> None:
+async def test_publication_preparation_accepts_development_password_and_is_immutable() -> None:
     (
         service,
         repository,
@@ -185,6 +190,8 @@ async def test_publication_preparation_is_metadata_only_immutable_and_idempotent
         permission,
         audit,
     ) = await publication_preparation_fixture()
+    assert actor.authentication_method is AuthenticationMethod.DEVELOPMENT
+    assert actor.assurance_level is AssuranceLevel.DEVELOPMENT
     record = await prepare(service, resolution, policy, actor)
     repeated = await prepare(service, resolution, policy, actor)
     replay = await service.get(
@@ -212,6 +219,21 @@ async def test_publication_preparation_is_metadata_only_immutable_and_idempotent
         "operational_knowledge_publication_preparation_read",
         "operational_knowledge_publication_preparation_read",
     ]
+
+
+@pytest.mark.asyncio
+async def test_publication_preparation_rejects_non_human_actor() -> None:
+    service, repository, _, resolution, policy, actor, *_ = await publication_preparation_fixture()
+    service_actor = replace(
+        actor,
+        kind=SubjectKind.SERVICE,
+        authentication_method=AuthenticationMethod.WORKLOAD_TOKEN,
+    )
+
+    with pytest.raises(OperationalKnowledgePublicationPreparationError, match="human_required"):
+        await prepare(service, resolution, policy, service_actor)
+
+    assert await repository.get_claim_by_resolution(resolution_id=resolution.resolution_id) is None
 
 
 @pytest.mark.asyncio

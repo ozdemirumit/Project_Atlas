@@ -73,7 +73,12 @@ class OperationalKnowledgeRetrievalPolicySnapshot:
             or not 1 <= self.maximum_results <= 20
             or not 128 <= self.maximum_excerpt_characters <= 4_000
             or not 1 <= self.retention_minutes <= 1_440
-            or self.required_assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or self.required_assurance_level
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or not self.signature_verified
             or self.issued_at.tzinfo is None
             or self.expires_at.tzinfo is None

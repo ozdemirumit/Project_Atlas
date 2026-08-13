@@ -59,10 +59,13 @@ mutation fields.
 
 ### Identity And Separation
 
-The actor must be a current enterprise human in the exact tenant with recent hardware-backed MFA,
-dedicated C2 final-resolution-create and lineage-read permissions, browser binding, CSRF, and a
-current signed policy. The actor cannot be the curator, either track reviewer, policy signer,
-trusted attestor, or a service, shared, AI, or break-glass identity.
+The actor must be a current enterprise human in the exact tenant with dedicated C2
+final-resolution-create and lineage-read permissions, browser binding, CSRF, and a current signed
+policy. Under ADR-133, the default `SINGLE_FACTOR` policy accepts an authorized username/password
+development browser session; `MULTI_FACTOR` or `HARDWARE_BACKED` assurance and corresponding
+freshness apply only when the signed final-resolution policy explicitly requests them. The actor
+cannot be the curator, either track reviewer, policy signer, trusted attestor, or a service, shared,
+AI, or break-glass identity.
 
 ### Trusted Attestation Boundary
 
@@ -104,8 +107,8 @@ policy, browser, and permission authority remain current. Responses use strict `
 
 Intent, claim, attestation, persistence completion, and read are separately audited. Audit excludes
 content, findings, free-form rationale, artifact coordinates, cookies, raw identity, and secrets.
-Policy, lineage, permission, MFA, separation, browser, attestor, persistence, audit, concurrency, or
-integrity uncertainty fails closed.
+Policy, lineage, permission, configured assurance, separation, browser, attestor, persistence,
+audit, concurrency, or integrity uncertainty fails closed.
 
 ## Consequences
 
@@ -119,7 +122,8 @@ integrity uncertainty fails closed.
 ### Costs
 
 - Production requires an approved trusted final-resolution attestor.
-- A separate eligible approver and recent hardware MFA are required after both reviews pass.
+- A separate eligible approver remains required after both reviews pass; assurance follows the
+  explicit final-resolution policy and defaults to `SINGLE_FACTOR` under ADR-133.
 - Rejected generations require a later explicit revision contract rather than silent reuse.
 
 ## Rejected Alternatives

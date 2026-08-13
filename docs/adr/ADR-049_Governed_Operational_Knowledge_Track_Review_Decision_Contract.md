@@ -70,8 +70,11 @@ Before a claim is created the service revalidates:
   draft version, classification, access, retention, encryption, and track;
 - the signed decision policy, allowed dispositions and basis codes, required attestor identity,
   receipt schema, assurance level, and authentication age;
-- a current enterprise human identity with recent hardware-backed MFA, exact tenant scope, and
-  dedicated C2 decision-create plus protected lineage-read permissions;
+- a current enterprise human identity satisfying the signed decision policy's assurance and
+  freshness requirements, exact tenant scope, and dedicated C2 decision-create plus protected
+  lineage-read permissions; under ADR-133, the default `SINGLE_FACTOR` policy accepts an
+  authorized username/password development browser session, while `MULTI_FACTOR` or
+  `HARDWARE_BACKED` assurance applies only when explicitly requested by that policy;
 - the salted current-subject digest equals the lease holder and exact assigned reviewer;
 - the normal browser session and track-specific HttpOnly lease cookie match the active lease;
 - the presentation remains unexpired and no prior decision, correction, approval, publication,
@@ -150,8 +153,8 @@ concurrency, or integrity uncertainty fails closed.
 
 Claims and records are immutable, deterministic, concurrency-safe, and equivalent in memory and
 PostgreSQL. The API uses the normal browser session, track-specific lease cookie, mutation CSRF,
-strict schemas, dedicated default-deny RBAC, C2 classification, recent hardware MFA, exact tenant
-and assignee scope, minimized responses, and safe errors.
+strict schemas, dedicated default-deny RBAC, C2 classification, ADR-133 policy-evaluated assurance
+and freshness, exact tenant and assignee scope, minimized responses, and safe errors.
 
 ## Consequences
 

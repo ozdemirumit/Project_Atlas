@@ -12,10 +12,10 @@ from test_browser_sessions import BasicTestIdentityProvider, login, settings
 from test_invocation_evidence import evidence_fixture, ingest_evidence
 from test_package_acquisition import CollectingAuditSink
 from test_runtime_activation import FailSecondAuditSink
-from test_target_session import target_session_operator
+from test_target_session import development_target_session_operator, target_session_operator
 
 from atlas.api.app import create_app
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject, SubjectKind
 from atlas.modules.knowledge.adapters.evidence_draft_memory import (
     InMemoryOperationalEvidenceKnowledgeDraftPolicySource,
     InMemoryOperationalEvidenceKnowledgeDraftRepository,
@@ -28,6 +28,7 @@ from atlas.modules.knowledge.adapters.evidence_draft_synthetic import (
 )
 from atlas.modules.knowledge.application.evidence_draft import (
     OperationalEvidenceKnowledgeDraftService,
+    _signed_policy,
     build_development_operational_evidence_knowledge_draft_policy,
 )
 from atlas.modules.knowledge.application.evidence_draft_ports import (
@@ -118,6 +119,7 @@ async def draft_fixture(
     | AlteredDraftReceiptAdapter
     | BlockingDraftAdapter
     | None = None,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     OperationalEvidenceKnowledgeDraftService,
     InMemoryOperationalEvidenceKnowledgeDraftRepository,
@@ -139,6 +141,13 @@ async def draft_fixture(
         issued_at=evidence.ingested_at - timedelta(hours=1),
         expires_at=evidence.ingested_at + timedelta(days=1),
     )
+    if policy.required_assurance_level is not required_assurance_level:
+        policy = replace(
+            policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        policy = replace(policy, canonical_digest=_signed_policy(policy))
     repository = InMemoryOperationalEvidenceKnowledgeDraftRepository()
     authorizer = permission_authorizer or RecordingDraftPermissionAuthorizer()
     resolved_adapter = adapter or SyntheticOperationalEvidenceKnowledgeDraftAdapter(
@@ -216,6 +225,59 @@ async def test_evidence_draft_is_immutable_minimized_and_idempotent() -> None:
         "operational_evidence_knowledge_draft_source_claimed",
         "operational_evidence_knowledge_draft_created",
     ]
+
+
+@pytest.mark.asyncio
+async def test_evidence_draft_accepts_development_identity_under_default_policy() -> None:
+    service, _, _, policy, _, _, source = await draft_fixture()
+    evidence = source[0]
+    actor = development_target_session_operator("subject.connector-independent-knowledge-curator")
+
+    record = await create_draft(service, evidence, policy, actor=actor)
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.curated_by == actor.subject_id
+
+
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    [AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED],
+)
+@pytest.mark.asyncio
+async def test_evidence_draft_enforces_explicit_stronger_assurance_policy(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    service, _, _, policy, authorizer, adapter, source = await draft_fixture(
+        required_assurance_level=required_assurance_level
+    )
+
+    with pytest.raises(OperationalEvidenceKnowledgeDraftError, match="assurance_required"):
+        await create_draft(
+            service,
+            source[0],
+            policy,
+            actor=development_target_session_operator(
+                "subject.connector-independent-knowledge-curator"
+            ),
+        )
+
+    assert authorizer.calls == []
+    assert getattr(adapter, "calls", []) in ([], 0)
+
+
+@pytest.mark.asyncio
+async def test_evidence_draft_denies_non_human_identity() -> None:
+    service, _, _, policy, authorizer, adapter, source = await draft_fixture()
+    actor = replace(
+        development_target_session_operator("subject.connector-independent-knowledge-curator"),
+        kind=SubjectKind.SERVICE,
+    )
+
+    with pytest.raises(OperationalEvidenceKnowledgeDraftError, match="human_required"):
+        await create_draft(service, source[0], policy, actor=actor)
+
+    assert authorizer.calls == []
+    assert getattr(adapter, "calls", []) in ([], 0)
 
 
 @pytest.mark.asyncio
