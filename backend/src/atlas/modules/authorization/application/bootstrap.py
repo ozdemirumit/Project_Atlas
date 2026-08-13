@@ -39,6 +39,9 @@ ITSM_SANDBOX_CONFORMANCE_READ = "itsm.integrations.sandbox-conformance.read"
 ITSM_SANDBOX_CONFORMANCE_CREATE = "itsm.integrations.sandbox-conformance.create"
 ITSM_SANDBOX_ONBOARDING_READ = "itsm.integrations.sandbox-onboarding.read"
 AI_GROUNDED_QUERY_CREATE = "ai.grounded-query.create"
+CONVERSATION_READ = "conversation.read"
+CONVERSATION_CREATE = "conversation.create"
+CONVERSATION_TURN_APPEND = "conversation.turn.append"
 GRAPH_STORAGE_IMPACT_READ = "graph.storage-impact.read"
 HEALTH_CHECK_OVERVIEW_READ = "health-check.overview.read"
 HEALTH_CHECK_RUN_CREATE = "health-check.run.create"
@@ -1582,6 +1585,17 @@ def ai_grounded_query_scope(organization_id: str, environment: str) -> ResourceS
     )
 
 
+def conversation_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.conversation",
+        resource_id="resource.conversation.storage",
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
 def graph_storage_impact_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -1800,6 +1814,18 @@ def build_development_authorization_service(
         PermissionDefinition(
             permission_id=AI_GROUNDED_QUERY_CREATE,
             description="Create an evidence-grounded answer in the exact authorized scope.",
+        ),
+        PermissionDefinition(
+            permission_id=CONVERSATION_READ,
+            description="Read owned operational conversations in the exact authorized scope.",
+        ),
+        PermissionDefinition(
+            permission_id=CONVERSATION_CREATE,
+            description="Create one target-bound operational conversation.",
+        ),
+        PermissionDefinition(
+            permission_id=CONVERSATION_TURN_APPEND,
+            description="Append one governed decision-support turn to an owned conversation.",
         ),
         PermissionDefinition(
             permission_id=GRAPH_STORAGE_IMPACT_READ,
@@ -2674,6 +2700,9 @@ def build_development_authorization_service(
                 ITSM_SANDBOX_CONFORMANCE_CREATE,
                 ITSM_SANDBOX_ONBOARDING_READ,
                 AI_GROUNDED_QUERY_CREATE,
+                CONVERSATION_READ,
+                CONVERSATION_CREATE,
+                CONVERSATION_TURN_APPEND,
                 GRAPH_STORAGE_IMPACT_READ,
                 HEALTH_CHECK_OVERVIEW_READ,
                 HEALTH_CHECK_RUN_CREATE,
@@ -4680,6 +4709,16 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=ai_grounded_query_scope(
+                    settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.conversation",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=conversation_scope(
                     settings.development_organization_id, settings.environment
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),

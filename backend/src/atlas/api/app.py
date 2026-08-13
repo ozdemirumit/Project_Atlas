@@ -37,6 +37,7 @@ from atlas.api.routes import (
     connectors,
     content_policy_scans,
     contract_validations,
+    conversations,
     correction_resubmissions,
     credential_assignments,
     deployment_configuration,
@@ -738,6 +739,20 @@ from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeSigningProviderOnboardingPolicyAttestation,
     ConnectorUpgradeSigningProviderOnboardingPolicySnapshot,
     ConnectorUpgradeSigningProviderOnboardingPolicyTrustKey,
+)
+from atlas.modules.conversations.adapters.grounded import GroundedConversationGenerator
+from atlas.modules.conversations.adapters.memory import InMemoryConversationRepository
+from atlas.modules.conversations.adapters.postgres import PostgreSQLConversationRepository
+from atlas.modules.conversations.adapters.targets import (
+    DevelopmentConversationTargetAccessSource,
+    EmptyConversationTargetAccessSource,
+)
+from atlas.modules.conversations.adapters.unavailable import UnavailableConversationRepository
+from atlas.modules.conversations.application.ports import ConversationTargetAccessSource
+from atlas.modules.conversations.application.service import ConversationService
+from atlas.modules.conversations.domain.models import (
+    AuthorizedConversationTarget,
+    ConversationScope,
 )
 from atlas.modules.graph.adapters.synthetic import build_synthetic_graph_snapshot
 from atlas.modules.graph.application.engine import InMemoryGraphImpactAnalyzer
@@ -1529,6 +1544,8 @@ def create_app(
     report_service: ReportService | None = None,
     itsm_handoff_review_service: ItsmHandoffReviewService | None = None,
     grounded_answer_service: GroundedAnswerService | None = None,
+    conversation_service: ConversationService | None = None,
+    conversation_target_access_source: ConversationTargetAccessSource | None = None,
     security_export_service: SecurityExportService | None = None,
     session_service: SessionService | None = None,
     api_credential_service: ApiCredentialService | None = None,
@@ -5208,6 +5225,46 @@ def create_app(
         model_id=model_id,
         data_profile=model_data_profile,
     )
+    resolved_conversation_service = conversation_service or ConversationService(
+        repository=(
+            PostgreSQLConversationRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else (
+                UnavailableConversationRepository()
+                if resolved_settings.environment == "production"
+                else InMemoryConversationRepository()
+            )
+        ),
+        generator=GroundedConversationGenerator(
+            grounded_answer_service=resolved_grounded_answer_service,
+        ),
+        audit_sink=resolved_audit_sink,
+    )
+    resolved_conversation_target_access_source = conversation_target_access_source or (
+        DevelopmentConversationTargetAccessSource(
+            subject_id=resolved_settings.development_subject_id,
+            required_principal_ids=frozenset(resolved_settings.development_role_ids),
+            scope=ConversationScope(
+                organization_id=resolved_settings.development_organization_id,
+                environment_id=f"environment.{resolved_settings.environment}",
+                site_id="site.local",
+            ),
+            targets=(
+                AuthorizedConversationTarget(
+                    target_id="asset.storage.lab.vsp-g400",
+                    display_name="VSP G400 Lab",
+                    description="Authorized synthetic enterprise storage target.",
+                ),
+                AuthorizedConversationTarget(
+                    target_id="asset.storage.lab.vsp-one-b28",
+                    display_name="VSP One B28 Lab",
+                    description="Authorized synthetic enterprise storage target.",
+                ),
+            ),
+        )
+        if resolved_settings.environment == "development"
+        else EmptyConversationTargetAccessSource()
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -5424,7 +5481,10 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.itsm_handoff_review_service = resolved_itsm_handoff_review_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
+        app.state.conversation_service = resolved_conversation_service
+        app.state.conversation_target_access_source = resolved_conversation_target_access_source
         yield
+        await resolved_conversation_service.close()
         await resolved_recommendation_correction_service.close()
         await resolved_final_recommendation_disposition_service.close()
         await resolved_recommendation_track_review_decision_service.close()
@@ -5562,6 +5622,7 @@ def create_app(
     app.include_router(upgrades.router, prefix="/api/v1")
     app.include_router(mcp_builder.router, prefix="/api/v1")
     app.include_router(connectors.router, prefix="/api/v1")
+    app.include_router(conversations.router, prefix="/api/v1")
     app.include_router(connector_validations.router, prefix="/api/v1")
     app.include_router(supply_chain_inventories.router, prefix="/api/v1")
     app.include_router(content_policy_scans.router, prefix="/api/v1")

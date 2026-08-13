@@ -118,7 +118,7 @@ describe("workspace route loading boundary", () => {
 
     renderApp();
 
-    expect(await screen.findByRole("heading", { name: "Enterprise operations" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Storage conversations" })).toBeVisible();
     expect(operationalRender).not.toHaveBeenCalled();
   });
 
@@ -126,7 +126,7 @@ describe("workspace route loading boundary", () => {
     window.history.replaceState(null, "", "/#/workspace");
     mockAuthenticatedRequests();
     renderApp();
-    await screen.findByRole("heading", { name: "Enterprise operations" });
+    await screen.findByRole("heading", { name: "Storage conversations" });
 
     fireEvent.click(screen.getByRole("button", { name: /^Health$/ }));
 
@@ -139,7 +139,7 @@ describe("workspace route loading boundary", () => {
     window.history.replaceState(null, "", "/#/workspace");
     mockAuthenticatedRequests();
     renderApp();
-    await screen.findByRole("heading", { name: "Enterprise operations" });
+    await screen.findByRole("heading", { name: "Storage conversations" });
 
     fireEvent.click(screen.getByRole("button", { name: /MCP Builder/ }));
 
@@ -164,7 +164,7 @@ describe("workspace route loading boundary", () => {
     mockAuthenticatedRequests();
     renderApp();
 
-    expect(await screen.findByRole("heading", { name: "Enterprise operations" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Storage conversations" })).toBeVisible();
     await waitFor(() => expect(window.location.hash).toBe("#/workspace"));
   });
 
@@ -173,7 +173,7 @@ describe("workspace route loading boundary", () => {
     mockAuthenticatedRequests();
     renderApp();
 
-    expect(await screen.findByRole("heading", { name: "Enterprise operations" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Storage conversations" })).toBeVisible();
     expect(window.location.hash).toBe("#/workspace");
     expect(operationalRender).not.toHaveBeenCalled();
   });
@@ -183,7 +183,7 @@ describe("workspace route loading boundary", () => {
     mockAuthenticatedRequests();
     renderApp();
 
-    expect(await screen.findByRole("heading", { name: "Enterprise operations" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Storage conversations" })).toBeVisible();
     expect(window.location.hash).toBe("#/workspace");
     expect(operationalRender).not.toHaveBeenCalled();
   });
@@ -202,7 +202,7 @@ describe("workspace route loading boundary", () => {
     window.history.replaceState(null, "", "/#/workspace");
     mockAuthenticatedRequests();
     renderApp();
-    await screen.findByRole("heading", { name: "Enterprise operations" });
+    await screen.findByRole("heading", { name: "Storage conversations" });
 
     window.history.pushState(null, "", "/#/health");
     window.dispatchEvent(new PopStateEvent("popstate"));
@@ -245,7 +245,7 @@ describe("workspace route loading boundary", () => {
     expect(operationalRender).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Retry identity check" }));
 
-    expect(await screen.findByRole("heading", { name: "Enterprise operations" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Storage conversations" })).toBeVisible();
     expect(identityAttempts).toBe(2);
   });
 });

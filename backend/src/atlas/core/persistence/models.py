@@ -8,6 +8,7 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
+    ForeignKey,
     Integer,
     String,
     Text,
@@ -4104,5 +4105,83 @@ class ItsmSandboxConformanceModel(Base):
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class OperationalConversationModel(Base):
+    __tablename__ = "operational_conversations"
+    __table_args__ = (CheckConstraint("version >= 1", name="ck_operational_conversation_version"),)
+
+    conversation_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    lifecycle: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    target_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    owner_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class OperationalConversationTurnModel(Base):
+    __tablename__ = "operational_conversation_turns"
+    __table_args__ = (
+        UniqueConstraint(
+            "conversation_id",
+            "ordinal",
+            name="uq_operational_conversation_turn_ordinal",
+        ),
+        CheckConstraint("ordinal >= 1", name="ck_operational_conversation_turn_ordinal"),
+    )
+
+    turn_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("operational_conversations.conversation_id"),
+        nullable=False,
+        index=True,
+    )
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class OperationalConversationIdempotencyModel(Base):
+    __tablename__ = "operational_conversation_idempotency_records"
+    __table_args__ = (
+        UniqueConstraint(
+            "operation",
+            "idempotency_scope_id",
+            "idempotency_key",
+            name="uq_operational_conversation_operation_scope_idem",
+        ),
+        CheckConstraint("result_version >= 1", name="ck_operational_conversation_idem_version"),
+    )
+
+    record_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    operation: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    idempotency_scope_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    owner_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(128), nullable=False)
+    result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("operational_conversations.conversation_id"),
+        nullable=False,
+        index=True,
+    )
+    result_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

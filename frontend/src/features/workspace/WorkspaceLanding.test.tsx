@@ -1,9 +1,24 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CurrentIdentity } from "../../api/identity";
+import {
+  getOperationalConversation,
+  listOperationalConversations,
+  type OperationalConversation,
+  type OperationalConversationSummary,
+} from "../../api/conversations";
 import { WorkspaceLanding } from "./WorkspaceLanding";
+
+vi.mock("../../api/conversations", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/conversations")>();
+  return {
+    ...original,
+    getOperationalConversation: vi.fn(),
+    listOperationalConversations: vi.fn(),
+  };
+});
 
 const identity: CurrentIdentity = {
   subject_id: "subject.operator",
@@ -44,7 +59,35 @@ const platform = {
   meta: { correlation_id: "correlation.test", generated_at: "2026-08-10T00:00:00Z" },
 };
 
-function renderLanding() {
+const conversation: OperationalConversation = {
+  schema_version: "atlas.operational-conversation.v1",
+  conversation_id: "conversation.server-authorized",
+  version: 1,
+  organization_id: "organization.test",
+  environment_id: "environment.test",
+  site_id: "site.test",
+  owner_subject_id: "subject.operator",
+  target_id: "storage.server-authorized",
+  target_type: "storage",
+  title: "Server-authorized investigation",
+  lifecycle: "open",
+  turn_count: 0,
+  created_by: "subject.operator",
+  created_at: "2026-08-13T10:00:00Z",
+  updated_by: "subject.operator",
+  updated_at: "2026-08-13T10:00:00Z",
+  durable: true,
+  canonical_digest: "a".repeat(64),
+  turns: [],
+};
+
+function conversationSummary(): OperationalConversationSummary {
+  const { turns, ...summary } = conversation;
+  void turns;
+  return summary;
+}
+
+function renderLanding(onNavigateCapability = vi.fn()) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -53,16 +96,33 @@ function renderLanding() {
       <WorkspaceLanding
         identity={identity}
         onNavigate={() => undefined}
-        onNavigateCapability={() => undefined}
+        onNavigateCapability={onNavigateCapability}
       />
     </QueryClientProvider>,
   );
 }
 
 describe("WorkspaceLanding", () => {
+  beforeEach(() => {
+    vi.mocked(listOperationalConversations).mockResolvedValue({
+      conversations: [],
+      authorizedTargets: [
+        {
+          targetId: "storage.server-authorized",
+          displayName: "Server-authorized storage",
+          description: "Returned by the scoped conversation inventory.",
+        },
+      ],
+      durable: true,
+      truncated: false,
+    });
+    vi.mocked(getOperationalConversation).mockResolvedValue(conversation);
+  });
+
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    window.history.replaceState({}, "", "/");
   });
 
   it("uses the existing current-session endpoint for sign-out", async () => {
@@ -99,8 +159,65 @@ describe("WorkspaceLanding", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Your current session remains authoritative",
+    expect(
+      await screen.findByText(/Your current session remains authoritative/),
+    ).toBeVisible();
+  });
+
+  it("uses only server-returned storage authorization in the conversation workspace", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/platform/status")) {
+        return Promise.resolve(new Response(JSON.stringify(platform), { status: 200 }));
+      }
+      return Promise.resolve(new Response(null, { status: 204 }));
+    });
+    renderLanding();
+
+    const trigger = await screen.findByRole("button", { name: "New conversation" });
+    await waitFor(() => expect(trigger).toBeEnabled());
+    fireEvent.click(trigger);
+    expect(screen.getByRole("option", { name: "Server-authorized storage" })).toBeVisible();
+    expect(screen.queryByText("VSP G400 Lab")).not.toBeInTheDocument();
+    expect(screen.queryByText("VSP One B28 Lab")).not.toBeInTheDocument();
+  });
+
+  it("preserves target and conversation URL context while routing to safe existing views", async () => {
+    const onNavigateCapability = vi.fn();
+    vi.mocked(listOperationalConversations).mockResolvedValue({
+      conversations: [
+        conversationSummary(),
+      ],
+      authorizedTargets: [
+        { targetId: "storage.server-authorized", displayName: "Server-authorized storage" },
+      ],
+      durable: true,
+      truncated: false,
+    });
+    renderLanding(onNavigateCapability);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Reopen Server-authorized investigation" }),
     );
+    await screen.findByRole("heading", { name: "Server-authorized investigation" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Inventory" }));
+    expect(new URLSearchParams(window.location.search).get("target_id")).toBe(
+      "storage.server-authorized",
+    );
+    expect(new URLSearchParams(window.location.search).get("conversation_id")).toBe(
+      "conversation.server-authorized",
+    );
+    expect(onNavigateCapability).toHaveBeenLastCalledWith({
+      workspace: "Connectors",
+      view: "inventory",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Topology" }));
+    expect(onNavigateCapability).toHaveBeenLastCalledWith({
+      workspace: "Health",
+      view: "overview",
+    });
+    expect(window.location.search).toContain("target_id=storage.server-authorized");
+    expect(window.location.search).toContain("conversation_id=conversation.server-authorized");
   });
 });

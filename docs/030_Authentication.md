@@ -11,7 +11,7 @@
 | Reviewers | Architecture Owner, Platform Engineering, Identity and Access Management, Operations, Audit and Compliance |
 | Approver | Umit Ozdemir (acting Security Architecture Owner) |
 | Approval Date | 2026-08-03 |
-| Last Updated | 2026-08-03 |
+| Last Updated | 2026-08-13 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-013](013_Deployment_Architecture.md), [ATLAS-025](025_Policy_Engine.md), [ATLAS-031](031_RBAC.md), [ATLAS-032](032_Audit.md), [ATLAS-038](038_Deployment_and_Bootstrap.md) |
 | Supersedes | ATLAS-030 version 0.1.0 |
 
@@ -47,7 +47,7 @@ Authentication proves identity. It does not grant permission to view data, invok
 - Provide secure, recoverable bootstrap without creating a permanent bypass
 - Establish one traceable subject identity across UI, API, workflow, and connector activity
 - Fail closed when identity or trust cannot be verified
-- Support stronger authentication for sensitive administration and future controlled actions
+- Accept optional identity-provider assurance signals for deployment-defined step-up policies
 - Make authentication health and failures observable without disclosing secrets
 
 ## 4. Identity Classes
@@ -102,6 +102,12 @@ The directory integration must support:
 
 Plain LDAP is prohibited outside an explicitly isolated development environment. Passwords received for authentication must not be stored, logged, placed in queues, or sent to an LLM.
 
+Active Directory and LDAP integration is authentication-only. Atlas may perform the minimum bounded,
+read-only identity and group queries required for authentication and Atlas role mapping. It must not
+manage directory users, groups, memberships, passwords, computers, organizational units, Group
+Policy or domain controllers. Atlas must not provide an Active Directory MCP connector, arbitrary
+LDAP access or directory-management workflow. ADR-132 defines this immutable boundary.
+
 ### 6.2 Federated Single Sign-On
 
 The authentication abstraction must support OpenID Connect as the preferred federation protocol and SAML 2.0 where required by enterprise deployments.
@@ -121,11 +127,17 @@ Local authentication exists for initial bootstrap and controlled recovery. It is
 
 ## 7. Authentication Assurance
 
-Authentication context includes method, provider, authentication time, assurance level, and applicable factors. Downstream policy can require a minimum assurance level.
+Authentication context includes method, provider, authentication time and any assurance claims the
+provider supplies. Atlas records these claims as context; they do not grant authorization.
 
-Multi-factor authentication is enforced by the enterprise identity provider where available. Atlas must be able to request or verify step-up authentication for security administration, secret changes, emergency access, approval of high-risk operations, and other policy-defined events.
+Atlas does not implement or require its own MFA mechanism. The default product policy accepts an
+approved single-factor enterprise identity and must not block ordinary or protected product
+functions solely because an MFA or hardware-backed assurance claim is absent. A deployment may
+optionally configure named step-up policies when its identity provider supports them. Such policies
+are evaluated by the policy layer and must not be hard-coded into domain services or UI components.
 
-A remembered browser session alone must not satisfy a fresh-authentication requirement.
+When optional step-up is enabled, a remembered browser session alone does not satisfy a configured
+fresh-authentication requirement. ADR-133 defines the controlling decision.
 
 ## 8. Session and Token Lifecycle
 
