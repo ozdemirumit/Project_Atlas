@@ -244,7 +244,7 @@ def test_creation_returns_immutable_evidence_and_non_execution_packet() -> None:
 
 
 @pytest.mark.asyncio
-async def test_eligible_separate_human_can_approve_without_execution_authority() -> None:
+async def test_development_separate_human_can_approve_without_execution_authority() -> None:
     sink = CollectingAuditSink()
     rca, recommendation, approval = build_services(sink)
     with TestClient(
@@ -264,7 +264,7 @@ async def test_eligible_separate_human_can_approve_without_execution_authority()
         rationale="The evidence supports this bounded read-only diagnostic plan.",
         expected_version=int(data["version"]),
         idempotency_key="approval-review-key-0001",
-        context=access_context(data),
+        context=access_context(data, assurance_level="development"),
     )
 
     assert updated.state is ApprovalState.APPROVED
@@ -281,7 +281,7 @@ async def test_eligible_separate_human_can_approve_without_execution_authority()
     [
         ({"subject_id": "subject.development.operator"}, "approval_separation_required"),
         ({"actor_type": "service"}, "approval_human_reviewer_required"),
-        ({"assurance_level": "development"}, "approval_assurance_insufficient"),
+        ({"assurance_level": "unknown"}, "approval_assurance_insufficient"),
     ],
 )
 async def test_ineligible_reviewer_fails_closed(overrides: dict[str, object], code: str) -> None:

@@ -4,14 +4,70 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-182 |
-| Title | Recommendation human review optional step-up migration |
-| Status | PR validation in progress |
-| Branch | `agent/recommendation-review-optional-step-up` |
-| Pull Request | [#194](https://github.com/ozdemirumit/Project_Atlas/pull/194) |
+| Task ID | ATLAS-IMP-183 |
+| Title | Residual legacy assurance-gate cleanup |
+| Status | Validation complete; PR preparation in progress |
+| Branch | `agent/residual-assurance-cleanup` |
+| Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ADR-132, ADR-133 |
 | Last Updated | 2026-08-13 |
-| Next Action | Complete exact-head PR CI, squash-merge PR #194, verify merged main CI, and synchronize local main |
+| Next Action | Commit and push the verified cleanup, open a PR, and complete exact-head and merged-main CI |
+
+### ATLAS-IMP-183 Scope Rationale
+
+- IMP-177 through IMP-182 migrated connector lifecycle, package, runtime/target, Knowledge, protected
+  AI and recommendation-review policy chains to ADR-133. A complete direct-assurance scan now leaves
+  three legacy fixed eligibility lists in generic Approval, upgrade Change Review and ITSM handoff
+  human review.
+- Those lists reject development or single-factor identities independently of RBAC, scope,
+  separation or a named step-up policy. Seven connector route mappers also retain obsolete
+  `mfa_required` suffixes that no current service emits.
+- This final cleanup changes no role, scope, CSRF, exact-source, separation, stage/quorum,
+  idempotency, audit, protected-content or no-execution boundary.
+
+### ATLAS-IMP-183 Acceptance Criteria
+
+- Authorized human development and single-factor sessions can use legacy approval/review paths
+  without a fabricated MFA claim; non-human, role, scope and separation failures still fail closed.
+- No application service directly rejects a supported identity solely because assurance is below
+  MFA, and no API route retains an obsolete `mfa_required` mapping.
+- Existing immutable approval, staged review, completion receipt and ITSM handoff no-authority
+  contracts remain intact and focused regression tests prove the retained denials.
+- Static/focused/full backend and frontend gates, live username/password validation, documentation,
+  exact PR/main CI and local main synchronization pass before delivery.
+
+### ATLAS-IMP-183 Validation Evidence
+
+- Generic approval, four-stage upgrade human review, upgrade completion receipt and ITSM handoff
+  human review now accept explicitly enabled development and normal single-factor human sessions.
+  Unknown assurance metadata still fails closed where the legacy string contract accepts external
+  values; non-human, role, scope, self-review, distinct-reviewer, stage/quorum, exact-source,
+  acknowledgement, idempotency and audit boundaries remain enforced.
+- Seven connector route mappers no longer reference obsolete `mfa_required` suffixes. A repository
+  static regression test rejects any future route occurrence and any residual supported-assurance
+  set in approvals, change review or reports that omits the explicitly enabled development mode.
+- Focused backend validation passed 36 tests. Ruff format/lint and strict mypy passed across 1,002
+  source files. The complete backend suite collected 1,494 tests and passed 1,491 with three
+  expected Windows symlink skips.
+- The unchanged complete frontend suite passed 289 tests across 94 files; zero-warning ESLint,
+  TypeScript and the production build passed with only the pre-existing chunk-size advisory.
+- Live validation at `http://127.0.0.1:5253/#/connectors/knowledge` used an IMP-183 backend started
+  with the repository's explicit development-identity opt-in. `atlas-demo` / `local-demo` completed
+  one username/password login; the capability workspace loaded without a second-login,
+  authorized-browser or fixed-MFA prompt.
+- ADR-124 now follows ADR-133: human identity, dedicated reviewer role, exact-scope authorization,
+  separation and audit prevent self-attestation; MFA is not a hard-coded workflow prerequisite and
+  remains available only through an explicit deployment policy.
+
+### ATLAS-IMP-182 Delivery Evidence
+
+- Source head `decc31d5ace73dacc7fab7b1eb252888fce2393e` passed exact-head PR CI run
+  `31720967295`; frontend completed in 5m03s and backend in 8m27s.
+- PR [#194](https://github.com/ozdemirumit/Project_Atlas/pull/194) was squash-merged as
+  `0d34b537f965782e5126147e543cd28c120b876b`.
+- The exact merged commit independently passed `main` CI run `31721715275`; frontend completed in
+  5m04s and backend in 8m46s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-183 branched.
 
 ### ATLAS-IMP-182 Scope Rationale
 

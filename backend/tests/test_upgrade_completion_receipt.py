@@ -35,6 +35,7 @@ from atlas.modules.change_review.application.completion_receipt_service import (
 )
 from atlas.modules.change_review.application.ports import ChangeReviewError
 from atlas.modules.change_review.domain.human_review import HumanReviewOutcome
+from atlas.modules.identity.domain.models import AssuranceLevel, SubjectKind
 
 
 async def completion_context(tmp_path: Path) -> tuple[Any, ...]:
@@ -100,10 +101,11 @@ def receipt_request(
 @pytest.mark.asyncio
 async def test_completion_receipt_binds_four_humans_without_authority(tmp_path: Path) -> None:
     *_, review, reviewers, repository, service = await completion_context(tmp_path)
-    receipt = await service.create(**receipt_request(review, reviewers[-1]))
-    replay = await service.create(**receipt_request(review, reviewers[-1]))
+    development_creator = replace(reviewers[-1], assurance_level=AssuranceLevel.DEVELOPMENT)
+    receipt = await service.create(**receipt_request(review, development_creator))
+    replay = await service.create(**receipt_request(review, development_creator))
     read = await service.get(
-        actor=reviewers[-1],
+        actor=development_creator,
         receipt_id=receipt.receipt_id,
         correlation_id="correlation.completion-receipt.read",
     )
@@ -157,6 +159,19 @@ async def test_completion_receipt_rejects_incomplete_stale_and_wrong_creator(
                 **receipt_request(pending, reviewer(1, pending.stages[-1].required_role_id)),
                 "acknowledged_evidence_only": False,
             }
+        )
+    with pytest.raises(ChangeReviewError, match="human_required"):
+        await service.create(
+            **receipt_request(
+                pending,
+                replace(
+                    reviewer(1, pending.stages[-1].required_role_id),
+                    subject_id="service.enterprise.receipt-reader",
+                    kind=SubjectKind.SERVICE,
+                    assurance_level=AssuranceLevel.DEVELOPMENT,
+                ),
+                key="completion-receipt-service-creator",
+            )
         )
     with pytest.raises(ChangeReviewError, match="review_ineligible"):
         await service.create(

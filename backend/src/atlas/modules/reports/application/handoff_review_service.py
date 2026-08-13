@@ -8,7 +8,7 @@ from hashlib import sha256
 
 from atlas import __version__
 from atlas.core.audit import AuditRecord, AuditSink
-from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject, SubjectKind
+from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 from atlas.modules.reports.application.handoff_review_ports import (
     ItsmHandoffReviewRepository,
     TechnicalReportSource,
@@ -22,7 +22,6 @@ from atlas.modules.reports.domain.models import TechnicalReport
 
 ITSM_REVIEWER_ROLE_ID = "role.itsm-reviewer"
 ITSM_HANDOFF_REVIEW_SCHEMA = "atlas.itsm-handoff-human-review.v1"
-ELIGIBLE_ASSURANCE = {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
 
 
 class ItsmHandoffReviewError(Exception):
@@ -270,8 +269,6 @@ class ItsmHandoffReviewService:
     def _validate_actor(self, actor: AuthenticatedSubject) -> None:
         if actor.kind is not SubjectKind.HUMAN:
             raise ItsmHandoffReviewError("itsm_handoff_review_human_required")
-        if actor.assurance_level not in ELIGIBLE_ASSURANCE:
-            raise ItsmHandoffReviewError("itsm_handoff_review_assurance_insufficient")
         if ITSM_REVIEWER_ROLE_ID not in actor.role_ids:
             raise ItsmHandoffReviewError("itsm_handoff_review_role_required")
 
