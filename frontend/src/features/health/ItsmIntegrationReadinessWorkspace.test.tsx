@@ -112,7 +112,7 @@ const conformance: ItsmSandboxConformanceAssessment = {
 };
 
 const onboarding: ItsmSandboxOnboardingReadiness = {
-  schema_version: "atlas.itsm-sandbox-onboarding-readiness.v1",
+  schema_version: "atlas.itsm-sandbox-onboarding-readiness.v2",
   version: 1,
   organization_id: "organization.development",
   environment_id: "environment.test",
@@ -125,7 +125,11 @@ const onboarding: ItsmSandboxOnboardingReadiness = {
   conformance_assessment_digest: conformance.canonical_digest,
   adapter_id: conformance.adapter_id,
   adapter_version: conformance.adapter_version,
-  policy_version: "policy.itsm-sandbox-onboarding.v1",
+  policy_id: "policy.itsm-sandbox-onboarding.development",
+  policy_version: 1,
+  policy_digest: "f".repeat(64),
+  policy_issuer: "issuer.atlas-development",
+  policy_expires_at: "2026-09-12T05:00:00Z",
   assessed_at: "2026-08-13T05:00:00Z",
   evidence_observed_at: "2026-08-13T05:00:00Z",
   evidence_valid_until: "2026-08-13T05:10:00Z",
@@ -208,6 +212,10 @@ describe("ItsmIntegrationReadinessWorkspace", () => {
     expect(screen.getByText("Sandbox adapter approval")).toBeVisible();
     expect(screen.getByText("adapter not onboarding eligible")).toBeVisible();
     expect(screen.getByText("Security and deployment approvals")).toBeVisible();
+    expect(screen.getByText("policy.itsm-sandbox-onboarding.development / v1")).toBeVisible();
+    expect(screen.getByText("issuer.atlas-development")).toBeVisible();
+    expect(screen.getByText("f".repeat(20) + "...")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /upload policy|edit policy|approve policy|configure adapter/i })).toBeNull();
   });
 
   it("keeps profile lifecycle changes behind a governed browser session", async () => {

@@ -253,7 +253,11 @@ class ItsmSandboxOnboardingReadinessData(BaseModel):
     conformance_assessment_digest: str | None
     adapter_id: str | None
     adapter_version: str | None
-    policy_version: str
+    policy_id: str
+    policy_version: int
+    policy_digest: str
+    policy_issuer: str
+    policy_expires_at: datetime
     assessed_at: datetime
     evidence_observed_at: datetime | None
     evidence_valid_until: datetime | None

@@ -18,8 +18,10 @@ from atlas.modules.itsm.application.ports import (
     ItsmIntegrationProfileRepository,
     ItsmSandboxConformanceAdapter,
     ItsmSandboxOnboardingEvidenceSource,
+    ItsmSandboxOnboardingPolicySource,
 )
 from atlas.modules.itsm.domain.models import (
+    ITSM_SANDBOX_ONBOARDING_REQUIREMENTS,
     ItsmAllowedOperation,
     ItsmCheckState,
     ItsmFieldMapping,
@@ -33,6 +35,7 @@ from atlas.modules.itsm.domain.models import (
     ItsmSandboxConformanceState,
     ItsmSandboxDiagnostic,
     ItsmSandboxOnboardingEvidence,
+    ItsmSandboxOnboardingPolicy,
     ItsmSandboxOnboardingReadiness,
     ItsmSandboxOnboardingRequirement,
     ItsmSandboxOnboardingRequirementState,
@@ -48,7 +51,6 @@ ITSM_RETIRE = "itsm.integrations.retire"
 ITSM_SANDBOX_CONFORMANCE_READ = "itsm.integrations.sandbox-conformance.read"
 ITSM_SANDBOX_CONFORMANCE_CREATE = "itsm.integrations.sandbox-conformance.create"
 ITSM_SANDBOX_ONBOARDING_READ = "itsm.integrations.sandbox-onboarding.read"
-ITSM_SANDBOX_ONBOARDING_POLICY = "policy.itsm-sandbox-onboarding.v1"
 
 
 class ItsmIntegrationError(RuntimeError):
@@ -65,6 +67,7 @@ class ItsmIntegrationService:
         site_id: str = "site.local",
         sandbox_conformance_adapter: ItsmSandboxConformanceAdapter | None = None,
         sandbox_onboarding_evidence_source: ItsmSandboxOnboardingEvidenceSource | None = None,
+        sandbox_onboarding_policy_source: ItsmSandboxOnboardingPolicySource | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
@@ -73,6 +76,7 @@ class ItsmIntegrationService:
         self._site_id = site_id
         self._sandbox_conformance_adapter = sandbox_conformance_adapter
         self._sandbox_onboarding_evidence_source = sandbox_onboarding_evidence_source
+        self._sandbox_onboarding_policy_source = sandbox_onboarding_policy_source
         self._clock = clock or (lambda: datetime.now(UTC))
         self._lock = asyncio.Lock()
 
@@ -532,6 +536,12 @@ class ItsmIntegrationService:
         self._validate_record(profile)
         self._require_scope(actor, profile)
         now = self._clock()
+        policy = await self._resolve_onboarding_policy(
+            organization_id=profile.organization_id,
+            environment_id=profile.environment_id,
+            site_id=profile.site_id,
+            assessed_at=now,
+        )
         assessment = await self._repository.get_latest_sandbox_conformance(
             organization_id=actor.organization_id,
             environment_id=self._environment_id,
@@ -565,12 +575,20 @@ class ItsmIntegrationService:
                 assessment=assessment if assessment_integrity_valid else None,
                 assessed_at=now,
             )
+        if (
+            evidence_valid
+            and evidence is not None
+            and (now - evidence.observed_at).total_seconds() > policy.max_evidence_age_seconds
+        ):
+            evidence_valid = False
+            evidence_reason = "itsm.sandbox-onboarding.evidence_stale_by_policy"
         dossier = self._build_onboarding_readiness(
             profile=profile,
             assessment=assessment if assessment_integrity_valid else None,
             assessment_integrity_valid=assessment_integrity_valid,
             evidence=evidence if evidence_valid else None,
             evidence_reason=evidence_reason,
+            policy=policy,
             assessed_at=now,
         )
         await self._audit(
@@ -743,6 +761,7 @@ class ItsmIntegrationService:
         assessment_integrity_valid: bool,
         evidence: ItsmSandboxOnboardingEvidence | None,
         evidence_reason: str,
+        policy: ItsmSandboxOnboardingPolicy,
         assessed_at: datetime,
     ) -> ItsmSandboxOnboardingReadiness:
         profile_current = profile.lifecycle is ItsmProfileLifecycle.ACTIVE
@@ -759,6 +778,11 @@ class ItsmIntegrationService:
         elif assessment.valid_until <= assessed_at:
             conformance_reason = "itsm.sandbox-onboarding.conformance_expired"
             conformance_current = False
+        elif (
+            assessed_at - assessment.observed_at
+        ).total_seconds() > policy.max_conformance_age_seconds:
+            conformance_reason = "itsm.sandbox-onboarding.conformance_stale_by_policy"
+            conformance_current = False
         else:
             conformance_reason = "itsm.sandbox-onboarding.satisfied"
             conformance_current = True
@@ -768,12 +792,25 @@ class ItsmIntegrationService:
                 return False, evidence_reason
             return (True, "itsm.sandbox-onboarding.satisfied") if value else (False, missing_reason)
 
+        adapter_rule = next(
+            (
+                item
+                for item in policy.adapter_rules
+                if assessment is not None
+                and item.adapter_id == assessment.adapter_id
+                and item.adapter_version == assessment.adapter_version
+            ),
+            None,
+        )
         adapter_eligible = bool(
             evidence
             and assessment
+            and adapter_rule
             and evidence.adapter_sandbox_approved
-            and evidence.production_eligible
-            and assessment.adapter_production_eligible
+            and (
+                not adapter_rule.require_production_eligible
+                or (evidence.production_eligible and assessment.adapter_production_eligible)
+            )
         )
         conditions = (
             (
@@ -877,7 +914,7 @@ class ItsmIntegrationService:
             item.state is ItsmSandboxOnboardingRequirementState.SATISFIED for item in requirements
         )
         payload: dict[str, object] = {
-            "schema_version": "atlas.itsm-sandbox-onboarding-readiness.v1",
+            "schema_version": "atlas.itsm-sandbox-onboarding-readiness.v2",
             "version": 1,
             "organization_id": profile.organization_id,
             "environment_id": profile.environment_id,
@@ -890,7 +927,11 @@ class ItsmIntegrationService:
             "conformance_assessment_digest": assessment.canonical_digest if assessment else None,
             "adapter_id": assessment.adapter_id if assessment else None,
             "adapter_version": assessment.adapter_version if assessment else None,
-            "policy_version": ITSM_SANDBOX_ONBOARDING_POLICY,
+            "policy_id": policy.policy_id,
+            "policy_version": policy.version,
+            "policy_digest": policy.canonical_digest,
+            "policy_issuer": policy.issuer,
+            "policy_expires_at": policy.expires_at,
             "assessed_at": assessed_at,
             "evidence_observed_at": evidence.observed_at if evidence else None,
             "evidence_valid_until": evidence.valid_until if evidence else None,
@@ -909,6 +950,56 @@ class ItsmIntegrationService:
         return ItsmSandboxOnboardingReadiness(
             **cast(dict[str, Any], payload), canonical_digest=cls._digest(payload)
         )
+
+    async def _resolve_onboarding_policy(
+        self,
+        *,
+        organization_id: str,
+        environment_id: str,
+        site_id: str,
+        assessed_at: datetime,
+    ) -> ItsmSandboxOnboardingPolicy:
+        if self._sandbox_onboarding_policy_source is None:
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_unavailable")
+        try:
+            policies = await self._sandbox_onboarding_policy_source.list_scope(
+                organization_id=organization_id,
+                environment_id=environment_id,
+                site_id=site_id,
+            )
+        except Exception as error:
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_unavailable") from error
+        if not policies:
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_unavailable")
+        for policy in policies:
+            if self._digest(self._onboarding_policy_payload(policy)) != policy.canonical_digest:
+                raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_integrity_failed")
+            if (
+                policy.organization_id != organization_id
+                or policy.environment_id != environment_id
+                or policy.site_id != site_id
+            ):
+                raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_scope_invalid")
+            if policy.requirement_ids != ITSM_SANDBOX_ONBOARDING_REQUIREMENTS:
+                raise ItsmIntegrationError(
+                    "itsm_sandbox_onboarding_policy_requirements_unsupported"
+                )
+        active = tuple(
+            item for item in policies if item.effective_at <= assessed_at < item.expires_at
+        )
+        if len(active) > 1:
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_ambiguous")
+        if not active:
+            if all(item.effective_at > assessed_at for item in policies):
+                raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_not_effective")
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_expired")
+        return active[0]
+
+    @classmethod
+    def _onboarding_policy_payload(cls, policy: ItsmSandboxOnboardingPolicy) -> dict[str, object]:
+        payload = cast(dict[str, object], asdict(policy))
+        payload.pop("canonical_digest")
+        return cast(dict[str, object], cls._normalize(payload))
 
     def _require_scope(self, actor: AuthenticatedSubject, record: ItsmIntegrationProfile) -> None:
         if (

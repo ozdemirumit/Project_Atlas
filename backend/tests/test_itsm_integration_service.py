@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 
@@ -16,6 +17,8 @@ from atlas.modules.identity.domain.models import (
 from atlas.modules.itsm.adapters.memory import InMemoryItsmIntegrationProfileRepository
 from atlas.modules.itsm.adapters.onboarding import (
     DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource,
+    InMemoryItsmSandboxOnboardingPolicySource,
+    build_development_itsm_sandbox_onboarding_policy,
 )
 from atlas.modules.itsm.adapters.postgres import PostgreSQLItsmIntegrationProfileRepository
 from atlas.modules.itsm.adapters.sandbox import (
@@ -23,12 +26,15 @@ from atlas.modules.itsm.adapters.sandbox import (
 )
 from atlas.modules.itsm.application.service import ItsmIntegrationError, ItsmIntegrationService
 from atlas.modules.itsm.domain.models import (
+    ITSM_SANDBOX_ONBOARDING_REQUIREMENTS,
     ItsmAllowedOperation,
     ItsmFieldMapping,
     ItsmProfileLifecycle,
     ItsmProviderFamily,
     ItsmReadinessState,
     ItsmSandboxConformanceState,
+    ItsmSandboxOnboardingAdapterRule,
+    ItsmSandboxOnboardingPolicy,
     ItsmSandboxOnboardingState,
     ItsmWriteSemantics,
 )
@@ -85,6 +91,12 @@ class FailingSandboxOnboardingEvidenceSource:
         raise RuntimeError("provider-native failure must remain contained")
 
 
+class FailingSandboxOnboardingPolicySource:
+    async def list_scope(self, **values: object):  # type: ignore[no-untyped-def]
+        del values
+        raise RuntimeError("policy authority failure must remain contained")
+
+
 class CollectingAuditSink:
     def __init__(self) -> None:
         self.records: list[AuditRecord] = []
@@ -104,6 +116,35 @@ def actor() -> AuthenticatedSubject:
         authenticated_at=NOW,
         organization_id="organization.development",
         role_ids=("role.itsm-integration-admin",),
+    )
+
+
+def policy_source() -> InMemoryItsmSandboxOnboardingPolicySource:
+    return InMemoryItsmSandboxOnboardingPolicySource(
+        (
+            build_development_itsm_sandbox_onboarding_policy(
+                organization_id="organization.development",
+                environment_id="environment.test",
+                site_id="site.local",
+                now=NOW,
+            ),
+        )
+    )
+
+
+def policy(**overrides: Any) -> ItsmSandboxOnboardingPolicy:
+    baseline = build_development_itsm_sandbox_onboarding_policy(
+        organization_id="organization.development",
+        environment_id="environment.test",
+        site_id="site.local",
+        now=NOW,
+    )
+    candidate = replace(baseline, canonical_digest="0" * 64, **overrides)
+    return replace(
+        candidate,
+        canonical_digest=ItsmIntegrationService._digest(
+            ItsmIntegrationService._onboarding_policy_payload(candidate)
+        ),
     )
 
 
@@ -411,6 +452,7 @@ async def test_sandbox_onboarding_readiness_blocks_synthetic_deployment_evidence
         sandbox_onboarding_evidence_source=(
             DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource()
         ),
+        sandbox_onboarding_policy_source=policy_source(),
         clock=lambda: NOW,
     )
     profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
@@ -458,6 +500,7 @@ async def test_sandbox_onboarding_readiness_distinguishes_missing_conformance() 
         sandbox_onboarding_evidence_source=(
             DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource()
         ),
+        sandbox_onboarding_policy_source=policy_source(),
         clock=lambda: NOW,
     )
     profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
@@ -484,6 +527,7 @@ async def test_sandbox_onboarding_readiness_requires_all_authoritative_evidence(
         environment_id="environment.test",
         sandbox_conformance_adapter=ProductionEligibleSandboxAdapter(),
         sandbox_onboarding_evidence_source=ApprovedSandboxOnboardingEvidenceSource(),
+        sandbox_onboarding_policy_source=policy_source(),
         clock=lambda: NOW,
     )
     profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
@@ -506,6 +550,11 @@ async def test_sandbox_onboarding_readiness_requires_all_authoritative_evidence(
     assert dossier.sandbox_onboarding_ready is True
     assert dossier.conformance_assessment_id == assessment.assessment_id
     assert dossier.conformance_assessment_digest == assessment.canonical_digest
+    assert dossier.policy_id == "policy.itsm-sandbox-onboarding.development"
+    assert dossier.policy_version == 1
+    assert dossier.policy_digest == policy().canonical_digest
+    assert dossier.policy_issuer == "issuer.atlas-development"
+    assert dossier.policy_expires_at == NOW + timedelta(days=30)
     assert all(item.state.value == "satisfied" for item in dossier.requirements)
     assert dossier.production_ready is False
     assert dossier.dispatch_authorized is False
@@ -535,6 +584,7 @@ async def test_sandbox_onboarding_readiness_contains_invalid_or_failed_evidence_
         environment_id="environment.test",
         sandbox_conformance_adapter=DeterministicNoNetworkItsmSandboxConformanceAdapter(),
         sandbox_onboarding_evidence_source=evidence_source,  # type: ignore[arg-type]
+        sandbox_onboarding_policy_source=policy_source(),
         clock=lambda: NOW,
     )
     profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
@@ -555,3 +605,178 @@ async def test_sandbox_onboarding_readiness_contains_invalid_or_failed_evidence_
 
     assert dossier.state is ItsmSandboxOnboardingState.BLOCKED
     assert {item.reason_code for item in dossier.requirements} >= {expected_reason}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("source", "expected_error"),
+    [
+        (None, "itsm_sandbox_onboarding_policy_unavailable"),
+        (
+            InMemoryItsmSandboxOnboardingPolicySource(),
+            "itsm_sandbox_onboarding_policy_unavailable",
+        ),
+        (
+            FailingSandboxOnboardingPolicySource(),
+            "itsm_sandbox_onboarding_policy_unavailable",
+        ),
+        (
+            InMemoryItsmSandboxOnboardingPolicySource(
+                (replace(policy(), canonical_digest="f" * 64),)
+            ),
+            "itsm_sandbox_onboarding_policy_integrity_failed",
+        ),
+        (
+            InMemoryItsmSandboxOnboardingPolicySource(
+                (policy(organization_id="organization.foreign"),)
+            ),
+            "itsm_sandbox_onboarding_policy_scope_invalid",
+        ),
+        (
+            InMemoryItsmSandboxOnboardingPolicySource(
+                (
+                    policy(
+                        requirement_ids=(
+                            *ITSM_SANDBOX_ONBOARDING_REQUIREMENTS[:-1],
+                            "itsm.sandbox-onboarding.unsupported",
+                        )
+                    ),
+                )
+            ),
+            "itsm_sandbox_onboarding_policy_requirements_unsupported",
+        ),
+        (
+            InMemoryItsmSandboxOnboardingPolicySource(
+                (policy(effective_at=NOW + timedelta(hours=1)),)
+            ),
+            "itsm_sandbox_onboarding_policy_not_effective",
+        ),
+        (
+            InMemoryItsmSandboxOnboardingPolicySource(
+                (
+                    policy(
+                        issued_at=NOW - timedelta(hours=2),
+                        effective_at=NOW - timedelta(hours=2),
+                        expires_at=NOW - timedelta(hours=1),
+                    ),
+                )
+            ),
+            "itsm_sandbox_onboarding_policy_expired",
+        ),
+        (
+            InMemoryItsmSandboxOnboardingPolicySource(
+                (policy(), policy(policy_id="policy.itsm-sandbox-onboarding.secondary"))
+            ),
+            "itsm_sandbox_onboarding_policy_ambiguous",
+        ),
+    ],
+)
+async def test_sandbox_onboarding_policy_resolution_fails_closed(
+    source: object,
+    expected_error: str,
+) -> None:
+    service = ItsmIntegrationService(
+        repository=InMemoryItsmIntegrationProfileRepository(),
+        audit_sink=CollectingAuditSink(),
+        environment_id="environment.test",
+        sandbox_onboarding_policy_source=source,  # type: ignore[arg-type]
+        clock=lambda: NOW,
+    )
+    profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
+
+    with pytest.raises(ItsmIntegrationError, match=expected_error):
+        await service.sandbox_onboarding_readiness(
+            actor=actor(),
+            profile_id=profile.profile_id,
+            correlation_id="correlation.itsm.sandbox.onboarding.policy-failure",
+        )
+
+
+@pytest.mark.asyncio
+async def test_sandbox_onboarding_policy_enforces_evidence_and_conformance_age() -> None:
+    current_time = [NOW]
+    governed_policy = policy(
+        max_conformance_age_seconds=60,
+        max_evidence_age_seconds=60,
+    )
+    service = ItsmIntegrationService(
+        repository=InMemoryItsmIntegrationProfileRepository(),
+        audit_sink=CollectingAuditSink(),
+        environment_id="environment.test",
+        sandbox_conformance_adapter=ProductionEligibleSandboxAdapter(),
+        sandbox_onboarding_evidence_source=ApprovedSandboxOnboardingEvidenceSource(),
+        sandbox_onboarding_policy_source=InMemoryItsmSandboxOnboardingPolicySource(
+            (governed_policy,)
+        ),
+        clock=lambda: current_time[0],
+    )
+    profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
+    await service.assess_sandbox_conformance(
+        actor=actor(),
+        profile_id=profile.profile_id,
+        expected_profile_version=profile.version,
+        acknowledged_diagnostic_only_and_no_dispatch=True,
+        idempotency_key="itsm-sandbox-onboarding-policy-age",
+        correlation_id="correlation.itsm.sandbox.onboarding.policy-age.assess",
+    )
+    current_time[0] = NOW + timedelta(seconds=61)
+
+    dossier = await service.sandbox_onboarding_readiness(
+        actor=actor(),
+        profile_id=profile.profile_id,
+        correlation_id="correlation.itsm.sandbox.onboarding.policy-age.read",
+    )
+
+    assert dossier.state is ItsmSandboxOnboardingState.BLOCKED
+    assert {item.reason_code for item in dossier.requirements} >= {
+        "itsm.sandbox-onboarding.conformance_stale_by_policy",
+        "itsm.sandbox-onboarding.evidence_stale_by_policy",
+    }
+
+
+@pytest.mark.asyncio
+async def test_sandbox_onboarding_policy_requires_exact_adapter_identity_and_version() -> None:
+    governed_policy = policy(
+        adapter_rules=(
+            ItsmSandboxOnboardingAdapterRule(
+                adapter_id="adapter.itsm.approved-production",
+                adapter_version="version.9",
+            ),
+        )
+    )
+    service = ItsmIntegrationService(
+        repository=InMemoryItsmIntegrationProfileRepository(),
+        audit_sink=CollectingAuditSink(),
+        environment_id="environment.test",
+        sandbox_conformance_adapter=ProductionEligibleSandboxAdapter(),
+        sandbox_onboarding_evidence_source=ApprovedSandboxOnboardingEvidenceSource(),
+        sandbox_onboarding_policy_source=InMemoryItsmSandboxOnboardingPolicySource(
+            (governed_policy,)
+        ),
+        clock=lambda: NOW,
+    )
+    profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
+    await service.assess_sandbox_conformance(
+        actor=actor(),
+        profile_id=profile.profile_id,
+        expected_profile_version=profile.version,
+        acknowledged_diagnostic_only_and_no_dispatch=True,
+        idempotency_key="itsm-sandbox-onboarding-policy-adapter",
+        correlation_id="correlation.itsm.sandbox.onboarding.policy-adapter.assess",
+    )
+
+    dossier = await service.sandbox_onboarding_readiness(
+        actor=actor(),
+        profile_id=profile.profile_id,
+        correlation_id="correlation.itsm.sandbox.onboarding.policy-adapter.read",
+    )
+
+    adapter_requirement = next(
+        item
+        for item in dossier.requirements
+        if item.requirement_id == "itsm.sandbox-onboarding.adapter-sandbox-approved"
+    )
+    assert adapter_requirement.reason_code == (
+        "itsm.sandbox-onboarding.adapter_not_onboarding_eligible"
+    )
+    assert dossier.sandbox_onboarding_ready is False

@@ -772,6 +772,8 @@ from atlas.modules.itsm.adapters.memory import InMemoryItsmIntegrationProfileRep
 from atlas.modules.itsm.adapters.onboarding import (
     DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource,
     EmptyItsmSandboxOnboardingEvidenceSource,
+    InMemoryItsmSandboxOnboardingPolicySource,
+    build_development_itsm_sandbox_onboarding_policy,
 )
 from atlas.modules.itsm.adapters.postgres import PostgreSQLItsmIntegrationProfileRepository
 from atlas.modules.itsm.adapters.sandbox import (
@@ -5055,6 +5057,19 @@ def create_app(
             EmptyItsmSandboxOnboardingEvidenceSource()
             if is_production
             else DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource()
+        ),
+        sandbox_onboarding_policy_source=(
+            InMemoryItsmSandboxOnboardingPolicySource()
+            if is_production
+            else InMemoryItsmSandboxOnboardingPolicySource(
+                (
+                    build_development_itsm_sandbox_onboarding_policy(
+                        organization_id=resolved_settings.development_organization_id,
+                        environment_id=f"environment.{resolved_settings.environment}",
+                        site_id="site.local",
+                    ),
+                )
+            )
         ),
     )
     resolved_graph_impact_service = graph_impact_service or GraphImpactService(
