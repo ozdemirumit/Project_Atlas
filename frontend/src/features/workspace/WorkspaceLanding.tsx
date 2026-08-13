@@ -7,21 +7,30 @@ import {
   ApplicationSidebar,
   ApplicationTopbar,
 } from "../shell/ApplicationShell";
-import type { WorkspaceCapabilityDestination, WorkspaceId } from "../shell/workspace";
+import type {
+  WorkspaceCapabilityDestination,
+  WorkspaceId,
+  WorkspaceViewId,
+} from "../shell/workspace";
 import OperationsConversationWorkspace from "./OperationsConversationWorkspace";
+import WorkflowPlanningWorkspace from "./WorkflowPlanningWorkspace";
 import { WorkspaceOverview } from "./WorkspaceOverview";
 import { useState } from "react";
 
 interface WorkspaceLandingProps {
+  activeView: WorkspaceViewId;
   identity: CurrentIdentity;
   onNavigate: (workspace: WorkspaceId) => void;
   onNavigateCapability: (destination: WorkspaceCapabilityDestination) => void;
+  onNavigateView: (view: WorkspaceViewId) => void;
 }
 
 export function WorkspaceLanding({
+  activeView,
   identity,
   onNavigate,
   onNavigateCapability,
+  onNavigateView,
 }: WorkspaceLandingProps) {
   const queryClient = useQueryClient();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -92,32 +101,47 @@ export function WorkspaceLanding({
         />
 
         <div className="workspace-grid">
-          <section className="conversation" aria-label="Workspace workspace">
+          <section
+            className={`conversation ${activeView === "workflows" ? "workflow-planning-route" : ""}`}
+            aria-label="Workspace workspace"
+          >
             {logoutMutation.isError && (
               <div className="workspace-message error-state" role="alert">
                 Sign-out was not completed. Your current session remains authoritative.
               </div>
             )}
-            <OperationsConversationWorkspace
-              organizationId={identity.organization_id}
-              environmentId={identity.scope.environment_id}
-              siteId={identity.scope.site_id}
-              ownerSubjectId={identity.subject_id}
-              governedSessionAvailable
-              onRequestEnterpriseLogin={() => {
-                queryClient.removeQueries({ queryKey: ["operational-conversation"] });
-                queryClient.removeQueries({ queryKey: ["operational-conversations"] });
-                void queryClient.invalidateQueries({ queryKey: ["current-identity"] });
-              }}
-              onNavigateContext={navigateConversationContext}
-            />
-            <div className="workspace-capability-directory">
-              <div className="workspace-capability-directory-heading">
-                <p className="eyebrow">OPERATION DIRECTORY</p>
-                <h2>Platform capabilities</h2>
-              </div>
-              <WorkspaceOverview onNavigate={onNavigateCapability} />
-            </div>
+            {activeView === "home" ? (
+              <>
+                <OperationsConversationWorkspace
+                  organizationId={identity.organization_id}
+                  environmentId={identity.scope.environment_id}
+                  siteId={identity.scope.site_id}
+                  ownerSubjectId={identity.subject_id}
+                  governedSessionAvailable
+                  onRequestEnterpriseLogin={() => {
+                    queryClient.removeQueries({ queryKey: ["operational-conversation"] });
+                    queryClient.removeQueries({ queryKey: ["operational-conversations"] });
+                    void queryClient.invalidateQueries({ queryKey: ["current-identity"] });
+                  }}
+                  onNavigateContext={navigateConversationContext}
+                />
+                <div className="workspace-capability-directory">
+                  <div className="workspace-capability-directory-heading">
+                    <p className="eyebrow">OPERATION DIRECTORY</p>
+                    <h2>Platform capabilities</h2>
+                  </div>
+                  <WorkspaceOverview onNavigate={onNavigateCapability} />
+                </div>
+              </>
+            ) : (
+              <WorkflowPlanningWorkspace
+                environmentId={identity.scope.environment_id}
+                onBack={() => onNavigateView("home")}
+                organizationId={identity.organization_id}
+                ownerSubjectId={identity.subject_id}
+                siteId={identity.scope.site_id}
+              />
+            )}
           </section>
         </div>
       </main>

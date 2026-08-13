@@ -1,12 +1,15 @@
 export const workspaceIds = ["Workspace", "Health", "Connectors"] as const;
+export const workspaceViewIds = ["home", "workflows"] as const;
 export const healthViewIds = ["overview", "investigate", "deployments", "governance"] as const;
 export const connectorViewIds = ["inventory", "builder", "runtime", "knowledge"] as const;
 
 export type WorkspaceId = (typeof workspaceIds)[number];
+export type WorkspaceViewId = (typeof workspaceViewIds)[number];
 export type HealthViewId = (typeof healthViewIds)[number];
 export type ConnectorViewId = (typeof connectorViewIds)[number];
 
 export type WorkspaceCapabilityDestination =
+  | { workspace: "Workspace"; view: "workflows" }
   | { workspace: "Health"; view: HealthViewId }
   | { workspace: "Connectors"; view: ConnectorViewId };
 
@@ -27,6 +30,9 @@ export function isKnownWorkspaceHash(hash: string): boolean {
   if (workspace === "connectors" && view) {
     return connectorViewIds.some((candidate) => candidate === view);
   }
+  if (workspace === "workspace" && view) {
+    return view === "workflows";
+  }
   return !view && workspaceIds.some((candidate) => candidate.toLowerCase() === workspace);
 }
 
@@ -39,6 +45,16 @@ export function workspaceHash(workspace: WorkspaceId): string {
   if (workspace === "Health") return healthViewHash("overview");
   if (workspace === "Connectors") return connectorViewHash("inventory");
   return "#/workspace";
+}
+
+export function workspaceViewFromHash(hash: string): WorkspaceViewId {
+  const [workspace, view] = hashSegments(hash);
+  if (workspace !== "workspace") return "home";
+  return view === "workflows" ? "workflows" : "home";
+}
+
+export function workspaceViewHash(view: WorkspaceViewId): string {
+  return view === "workflows" ? "#/workspace/workflows" : "#/workspace";
 }
 
 export function healthViewFromHash(hash: string): HealthViewId {
@@ -62,6 +78,7 @@ export function connectorViewHash(view: ConnectorViewId): string {
 }
 
 export function capabilityDestinationHash(destination: WorkspaceCapabilityDestination): string {
+  if (destination.workspace === "Workspace") return workspaceViewHash(destination.view);
   return destination.workspace === "Health"
     ? healthViewHash(destination.view)
     : connectorViewHash(destination.view);

@@ -45,6 +45,9 @@ CONVERSATION_TURN_APPEND = "conversation.turn.append"
 GRAPH_STORAGE_IMPACT_READ = "graph.storage-impact.read"
 HEALTH_CHECK_OVERVIEW_READ = "health-check.overview.read"
 HEALTH_CHECK_RUN_CREATE = "health-check.run.create"
+WORKFLOW_DEFINITION_READ = "workflow.definitions.read"
+WORKFLOW_PLAN_CREATE = "workflow.plans.create"
+WORKFLOW_PLAN_READ = "workflow.plans.read"
 INVESTIGATION_CREATE = "investigation.create"
 RCA_CREATE = "rca.create"
 RECOMMENDATION_CREATE = "recommendation.create"
@@ -1618,6 +1621,21 @@ def health_check_scope(organization_id: str, environment: str) -> ResourceScope:
     )
 
 
+def workflow_scope(
+    organization_id: str,
+    environment: str,
+    capability_class: CapabilityClass,
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.workflow",
+        resource_id="resource.workflow.plans",
+        capability_class=capability_class,
+    )
+
+
 def investigation_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -1838,6 +1856,18 @@ def build_development_authorization_service(
         PermissionDefinition(
             permission_id=HEALTH_CHECK_RUN_CREATE,
             description="Run an exact allowlisted C1 read-only health check.",
+        ),
+        PermissionDefinition(
+            permission_id=WORKFLOW_DEFINITION_READ,
+            description="Read immutable code-owned workflow definitions.",
+        ),
+        PermissionDefinition(
+            permission_id=WORKFLOW_PLAN_CREATE,
+            description="Create a durable non-executable workflow run plan.",
+        ),
+        PermissionDefinition(
+            permission_id=WORKFLOW_PLAN_READ,
+            description="Read exact-scope non-executable workflow run plans.",
         ),
         PermissionDefinition(
             permission_id=INVESTIGATION_CREATE,
@@ -2706,6 +2736,9 @@ def build_development_authorization_service(
                 GRAPH_STORAGE_IMPACT_READ,
                 HEALTH_CHECK_OVERVIEW_READ,
                 HEALTH_CHECK_RUN_CREATE,
+                WORKFLOW_DEFINITION_READ,
+                WORKFLOW_PLAN_CREATE,
+                WORKFLOW_PLAN_READ,
                 INVESTIGATION_CREATE,
                 RCA_CREATE,
                 RECOMMENDATION_CREATE,
@@ -4740,6 +4773,30 @@ def build_development_authorization_service(
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=health_check_scope(
                     settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.workflow-definitions",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=workflow_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C0_INFORMATIONAL,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.workflow-plans",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=workflow_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),

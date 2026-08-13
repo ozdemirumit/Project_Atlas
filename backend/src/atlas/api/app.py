@@ -120,6 +120,7 @@ from atlas.api.routes import (
     target_session_verifications,
     upgrades,
     vulnerability_analyses,
+    workflows,
     workload_identities,
 )
 from atlas.core.audit import AuditSink, LoggingAuditSink
@@ -1524,6 +1525,11 @@ from atlas.modules.support.application.service import SupportBundleService
 from atlas.modules.upgrade.adapters.memory import InMemoryUpgradeSimulationRepository
 from atlas.modules.upgrade.adapters.postgres import PostgreSQLUpgradeSimulationRepository
 from atlas.modules.upgrade.application.service import UpgradeService
+from atlas.modules.workflows.adapters.memory import InMemoryWorkflowPlanRepository
+from atlas.modules.workflows.adapters.postgres import PostgreSQLWorkflowPlanRepository
+from atlas.modules.workflows.adapters.unavailable import UnavailableWorkflowPlanRepository
+from atlas.modules.workflows.application import WorkflowPlanningService
+from atlas.modules.workflows.domain import code_owned_workflow_registry
 
 
 def create_app(
@@ -1546,6 +1552,7 @@ def create_app(
     grounded_answer_service: GroundedAnswerService | None = None,
     conversation_service: ConversationService | None = None,
     conversation_target_access_source: ConversationTargetAccessSource | None = None,
+    workflow_planning_service: WorkflowPlanningService | None = None,
     security_export_service: SecurityExportService | None = None,
     session_service: SessionService | None = None,
     api_credential_service: ApiCredentialService | None = None,
@@ -5265,6 +5272,19 @@ def create_app(
         if resolved_settings.environment == "development"
         else EmptyConversationTargetAccessSource()
     )
+    resolved_workflow_planning_service = workflow_planning_service or WorkflowPlanningService(
+        registry=code_owned_workflow_registry(),
+        repository=(
+            PostgreSQLWorkflowPlanRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else (
+                UnavailableWorkflowPlanRepository()
+                if resolved_settings.environment == "production"
+                else InMemoryWorkflowPlanRepository()
+            )
+        ),
+        audit_sink=resolved_audit_sink,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -5483,7 +5503,9 @@ def create_app(
         app.state.grounded_answer_service = resolved_grounded_answer_service
         app.state.conversation_service = resolved_conversation_service
         app.state.conversation_target_access_source = resolved_conversation_target_access_source
+        app.state.workflow_planning_service = resolved_workflow_planning_service
         yield
+        await resolved_workflow_planning_service.close()
         await resolved_conversation_service.close()
         await resolved_recommendation_correction_service.close()
         await resolved_final_recommendation_disposition_service.close()
@@ -5623,6 +5645,7 @@ def create_app(
     app.include_router(mcp_builder.router, prefix="/api/v1")
     app.include_router(connectors.router, prefix="/api/v1")
     app.include_router(conversations.router, prefix="/api/v1")
+    app.include_router(workflows.router, prefix="/api/v1")
     app.include_router(connector_validations.router, prefix="/api/v1")
     app.include_router(supply_chain_inventories.router, prefix="/api/v1")
     app.include_router(content_policy_scans.router, prefix="/api/v1")

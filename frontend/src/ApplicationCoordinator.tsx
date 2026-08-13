@@ -16,8 +16,11 @@ import {
   isKnownWorkspaceHash,
   type WorkspaceCapabilityDestination,
   type WorkspaceId,
+  type WorkspaceViewId,
   workspaceFromHash,
   workspaceHash,
+  workspaceViewFromHash,
+  workspaceViewHash,
 } from "./features/shell/workspace";
 import { WorkspaceLanding } from "./features/workspace/WorkspaceLanding";
 
@@ -55,6 +58,10 @@ function connectorViewFromLocation(): ConnectorViewId {
   return connectorViewFromHash(window.location.hash);
 }
 
+function workspaceViewFromLocation(): WorkspaceViewId {
+  return workspaceViewFromHash(window.location.hash);
+}
+
 function operationalWorkspace(
   workspace: WorkspaceId,
 ): Exclude<WorkspaceId, "Workspace"> {
@@ -77,6 +84,9 @@ function IdentityVerificationFailure({ onRetry }: { onRetry: () => void }) {
 
 export function App() {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId>(workspaceFromLocation);
+  const [activeWorkspaceView, setActiveWorkspaceView] = useState<WorkspaceViewId>(
+    workspaceViewFromLocation,
+  );
   const [activeHealthView, setActiveHealthView] = useState<HealthViewId>(healthViewFromLocation);
   const [activeConnectorView, setActiveConnectorView] = useState<ConnectorViewId>(
     connectorViewFromLocation,
@@ -96,6 +106,7 @@ export function App() {
   useEffect(() => {
     const syncWorkspace = () => {
       const workspace = workspaceFromLocation();
+      setActiveWorkspaceView(workspaceViewFromLocation());
       setActiveHealthView(healthViewFromLocation());
       setActiveConnectorView(connectorViewFromLocation());
       if (workspace !== "Workspace") {
@@ -119,9 +130,23 @@ export function App() {
       setOperationalActivated(true);
     }
     setActiveWorkspace(workspace);
+    if (workspace === "Workspace") setActiveWorkspaceView("home");
     if (workspace === "Health") setActiveHealthView("overview");
     if (workspace === "Connectors") setActiveConnectorView("inventory");
     const nextHash = workspaceHash(workspace);
+    if (window.location.hash !== nextHash) {
+      window.history.pushState(
+        null,
+        "",
+        `${window.location.pathname}${window.location.search}${nextHash}`,
+      );
+    }
+  };
+
+  const navigateToWorkspaceView = (view: WorkspaceViewId) => {
+    setActiveWorkspace("Workspace");
+    setActiveWorkspaceView(view);
+    const nextHash = workspaceViewHash(view);
     if (window.location.hash !== nextHash) {
       window.history.pushState(
         null,
@@ -162,7 +187,9 @@ export function App() {
   };
 
   const navigateToCapability = (destination: WorkspaceCapabilityDestination) => {
-    if (destination.workspace === "Health") {
+    if (destination.workspace === "Workspace") {
+      navigateToWorkspaceView(destination.view);
+    } else if (destination.workspace === "Health") {
       navigateToHealthView(destination.view);
     } else {
       navigateToConnectorView(destination.view);
@@ -197,9 +224,11 @@ export function App() {
     <>
       {showWorkspace && identity && (
         <WorkspaceLanding
+          activeView={activeWorkspaceView}
           identity={identity}
           onNavigate={navigateToWorkspace}
           onNavigateCapability={navigateToCapability}
+          onNavigateView={navigateToWorkspaceView}
         />
       )}
       {activeWorkspace === "Workspace" && identityQuery.isLoading && (

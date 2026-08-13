@@ -28,6 +28,16 @@ interface CapabilityGroup {
 
 const capabilityGroups: CapabilityGroup[] = [
   {
+    title: "Operational planning",
+    capabilities: [
+      {
+        label: "Workflow planning",
+        destination: { workspace: "Workspace", view: "workflows" },
+        icon: Workflow,
+      },
+    ],
+  },
+  {
     title: "Infrastructure operations",
     capabilities: [
       { label: "Inventory and health", destination: { workspace: "Health", view: "overview" }, icon: Activity },
@@ -80,7 +90,7 @@ export function WorkspaceOverview({ onNavigate }: WorkspaceOverviewProps) {
           <span>operational domains</span>
         </div>
         <div>
-          <strong>13</strong>
+          <strong>14</strong>
           <span>available capabilities</span>
         </div>
         <div>
