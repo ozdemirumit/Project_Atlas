@@ -43,7 +43,12 @@ from atlas.modules.connectors.domain.schema_semantics_validation import (
     ConnectorPackageSchemaSemanticsValidation,
     SchemaSemanticsOutcome,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 
 def canonical(value: object) -> str:
@@ -205,6 +210,47 @@ async def test_reviewed_bounded_schemas_pass_idempotently_and_audit() -> None:
     assert [item.result_code for item in audit.records] == [
         "connector_schema_semantics_validation_passed"
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "assurance"),
+    [
+        (AuthenticationMethod.DEVELOPMENT, AssuranceLevel.DEVELOPMENT),
+        (AuthenticationMethod.LDAP, AssuranceLevel.SINGLE_FACTOR),
+    ],
+)
+async def test_allows_human_schema_validator_without_fixed_assurance(
+    method: AuthenticationMethod,
+    assurance: AssuranceLevel,
+) -> None:
+    service, _, _, source_scan, _ = await semantics_fixture(overrides=reviewed_schema_overrides())
+    subject = replace(
+        schema_operator(),
+        authentication_method=method,
+        assurance_level=assurance,
+    )
+
+    report = await validate(service, source_scan, subject=subject)
+
+    assert report.outcome is SchemaSemanticsOutcome.PASSED
+
+
+@pytest.mark.asyncio
+async def test_rejects_non_human_schema_validator() -> None:
+    service, _, _, source_scan, repository = await semantics_fixture(
+        overrides=reviewed_schema_overrides()
+    )
+
+    with pytest.raises(PackageSchemaSemanticsValidationError) as caught:
+        await validate(
+            service,
+            source_scan,
+            subject=replace(schema_operator(), kind=SubjectKind.SERVICE),
+        )
+
+    assert caught.value.code == "package_schema_semantics_human_required"
+    assert repository._records == {}
 
 
 @pytest.mark.asyncio

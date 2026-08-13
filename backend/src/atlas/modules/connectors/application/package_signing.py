@@ -31,8 +31,8 @@ from atlas.modules.connectors.domain.package_signing import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 SIGNING_CREATE_PERMISSION = "connectors.package-signing-receipts.create"
@@ -129,6 +129,9 @@ class PackageSigningService:
             or not policy.issued_at <= now < policy.expires_at
             or attestation.verified_at > now
             or now - attestation.verified_at > timedelta(hours=policy.maximum_attestation_age_hours)
+            or not assurance_satisfies_policy(
+                actor.assurance_level, policy.required_assurance_level
+            )
         ):
             raise PackageSigningError("package_signing_binding_invalid")
         if actor.subject_id in forbidden | {
@@ -419,13 +422,8 @@ class PackageSigningService:
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise PackageSigningError("package_signing_enterprise_human_mfa_required")
+        if actor.kind is not SubjectKind.HUMAN:
+            raise PackageSigningError("package_signing_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -481,7 +479,7 @@ def build_development_package_signing_policy(
         policy_version="version.1.0",
         required_attestation_schema="atlas.connector-publisher-attestation.v1",
         maximum_attestation_age_hours=168,
-        required_assurance_level=AssuranceLevel.MULTI_FACTOR,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         signer_profile_id="signer-profile.nonproduction-hmac",
         signer_workload_id="workload.connector-package-signer",
         key_id="key.connector-package-signing.nonproduction",

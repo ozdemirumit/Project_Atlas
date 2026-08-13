@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import timedelta
 from pathlib import Path
 
@@ -34,7 +34,12 @@ from atlas.modules.connectors.domain.package_signing import (
 from atlas.modules.connectors.domain.publisher_attestation import (
     ConnectorPublisherAttestationReport,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 
 class FailSecondAuditSink:
@@ -54,7 +59,9 @@ def signing_operator(
 
 
 async def signing_fixture(
-    *, audit_sink: CollectingAuditSink | FailingAuditSink | FailSecondAuditSink | None = None
+    *,
+    audit_sink: CollectingAuditSink | FailingAuditSink | FailSecondAuditSink | None = None,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     PackageSigningService,
     ConnectorPublisherAttestationReport,
@@ -69,6 +76,20 @@ async def signing_fixture(
         issued_at=report.verified_at - timedelta(hours=1),
         expires_at=report.verified_at + timedelta(days=2),
     )
+    if required_assurance_level is not policy.required_assurance_level:
+        policy = replace(
+            policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        payload = asdict(policy)
+        payload.pop("canonical_digest")
+        policy = replace(
+            policy,
+            canonical_digest=PackageSigningService._digest(
+                PackageSigningService._normalize(payload)
+            ),
+        )
     signer = NonProductionHmacPackageSigner(
         key_material=b"nonproduction-package-signing-key-material",
         signer_workload_id=policy.signer_workload_id,
@@ -131,6 +152,45 @@ async def test_package_signature_grants_only_registry_governance_eligibility() -
         "connector_package_signing_requested",
         "connector_package_signing_completed",
     ]
+
+
+@pytest.mark.asyncio
+async def test_signing_optional_step_up_policy_and_human_boundary() -> None:
+    service, report, policy, _ = await signing_fixture()
+    development_actor = replace(
+        signing_operator(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    receipt = await sign_package(service, report, policy, actor=development_actor)
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert receipt.requested_by == development_actor.subject_id
+
+    hardware_service, hardware_report, hardware_policy, _ = await signing_fixture(
+        required_assurance_level=AssuranceLevel.HARDWARE_BACKED
+    )
+    with pytest.raises(PackageSigningError, match="binding_invalid"):
+        await sign_package(
+            hardware_service,
+            hardware_report,
+            hardware_policy,
+            actor=development_actor,
+        )
+
+    non_human_service, non_human_report, non_human_policy, _ = await signing_fixture()
+    with pytest.raises(PackageSigningError, match="human_required"):
+        await sign_package(
+            non_human_service,
+            non_human_report,
+            non_human_policy,
+            actor=replace(
+                signing_operator(),
+                kind=SubjectKind.SERVICE,
+                authentication_method=AuthenticationMethod.WORKLOAD_TOKEN,
+            ),
+        )
 
 
 @pytest.mark.asyncio

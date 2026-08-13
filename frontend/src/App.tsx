@@ -1136,7 +1136,8 @@ export function OperationalApplication({
     mutationFn: () => createBrowserSession(username, password),
     onSuccess: async () => {
       setEnterpriseLoginRequested(false);
-      await queryClient.invalidateQueries({ queryKey: ["current-identity"] });
+      // A new browser session changes the authorization context for every active read.
+      await queryClient.invalidateQueries({ refetchType: "active" });
     },
     onSettled: () => setPassword(""),
   });
@@ -5298,7 +5299,7 @@ export function OperationalApplication({
                                                                             Independent schema validator required
                                                                           </h3>
                                                                           <p>
-                                                                            Sign in with an MFA identity that did
+                                                                            Sign in with an authorized identity that did
                                                                             not perform Builder, custody, intake,
                                                                             inventory, or content scanning.
                                                                           </p>

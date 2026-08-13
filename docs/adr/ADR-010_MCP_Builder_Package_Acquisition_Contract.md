@@ -7,6 +7,14 @@
   ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051,
   ATLAS-053, ATLAS-055, ATLAS-056, ADR-009
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. This stage still
+requires a dedicated, authenticated, authorized human and every existing RBAC, scope,
+acknowledgement, separation, audit, and no-discovery control. The default policy requires no MFA;
+an optional named step-up policy may add assurance checks when configured, but assurance is not
+authorization.
+
 ## Context
 
 ADR-009 creates an immutable, unsigned, quarantined MCP Builder candidate archive. It does not
@@ -23,11 +31,12 @@ Atlas accepts the first acquisition profile `atlas.connector-acquisition.builder
 from an exact `atlas.candidate-handoff.python312.v1` record and its immutable
 `mcp-builder-candidate-zip.v1` archive.
 
-Acquisition is initiated by a dedicated, authenticated, multi-factor human registry intake
+Acquisition is initiated by a dedicated, authenticated, authorized human registry intake
 operator with create and read permissions in the exact handoff organization and environment. The
 intake operator must differ from the Builder package custodian, domain reviewer, security reviewer,
-and lab operator. AI, service, wrong-scope, insufficient-assurance, self-transfer, and unauthorized
-identities fail closed without disclosing source or archive details.
+and lab operator. AI, service, wrong-scope, self-transfer, unauthorized identities, and identities
+that do not satisfy an optional configured `package_acquisition` step-up policy fail closed without
+disclosing source or archive details.
 
 Before recording acquisition, Atlas rereads the source archive through the Builder archive port,
 verifies its recorded size and SHA-256 digest, inspects the bounded handoff envelope, and binds the
@@ -81,7 +90,8 @@ registration, installation, enablement, or execution controls.
 - Domain invariant and canonical digest tests
 - Exact handoff, archive profile, contract, digest, size, capability, and tenant binding tests
 - Missing, stale, changed, corrupt, unsupported, and cross-scope source tests
-- Dedicated permission, MFA, human identity, acknowledgement, and separation tests
+- Dedicated permission, authorized single-factor human identity, acknowledgement, separation, and
+  optional named step-up policy tests
 - Immutable content-addressed copy, confinement, idempotency, and concurrency tests
 - Audit-before-persist and memory/PostgreSQL equivalence tests
 - Strict create/read API, CSRF, safe error, and no-store tests

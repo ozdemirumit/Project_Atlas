@@ -37,12 +37,7 @@ from atlas.modules.connectors.domain.validation_intake import (
     ValidatedSchemaEvidence,
     ValidatedSchemaPurpose,
 )
-from atlas.modules.identity.domain.models import (
-    AssuranceLevel,
-    AuthenticatedSubject,
-    AuthenticationMethod,
-    SubjectKind,
-)
+from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 
 PACKAGE_VALIDATION_CREATE_PERMISSION = "connectors.package-validations.create"
 PACKAGE_VALIDATION_READ_PERMISSION = "connectors.package-validations.read"
@@ -171,7 +166,7 @@ class PackageValidationService:
         idempotency_key: str,
         correlation_id: str,
     ) -> ConnectorPackageValidation:
-        self._require_enterprise_human(actor)
+        self._require_human_actor(actor)
         if not acknowledged_untrusted_quarantined_package:
             raise PackageValidationError("package_validation_acknowledgement_required")
         if validation_profile != VALIDATION_PROFILE:
@@ -328,7 +323,7 @@ class PackageValidationService:
         validation_id: str,
         correlation_id: str,
     ) -> ConnectorPackageValidation:
-        self._require_enterprise_human(actor)
+        self._require_human_actor(actor)
         validation = await self._repository.get_by_id(validation_id=validation_id)
         if validation is None:
             raise PackageValidationError("package_validation_not_found")
@@ -1009,14 +1004,9 @@ class PackageValidationService:
         ).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise PackageValidationError("package_validation_enterprise_human_mfa_required")
+    def _require_human_actor(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
+            raise PackageValidationError("package_validation_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str

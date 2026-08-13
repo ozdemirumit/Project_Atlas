@@ -127,6 +127,29 @@ async def test_inventories_content_and_dependencies_idempotently_without_authori
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    ("method", "assurance"),
+    [
+        (AuthenticationMethod.DEVELOPMENT, AssuranceLevel.DEVELOPMENT),
+        (AuthenticationMethod.LDAP, AssuranceLevel.SINGLE_FACTOR),
+    ],
+)
+async def test_allows_human_inventory_operator_without_fixed_assurance(
+    method: AuthenticationMethod,
+    assurance: AssuranceLevel,
+) -> None:
+    service, _, validation, _ = await inventory_fixture()
+
+    report = await inventory(
+        service,
+        validation,
+        subject=inventory_operator(method=method, assurance=assurance),
+    )
+
+    assert report.outcome is InventoryOutcome.PASSED
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
     ("overrides", "additions", "failed_check"),
     [
         (None, {"unexpected.bin": "bounded but unsupported"}, 2),
@@ -174,20 +197,30 @@ async def test_archive_corruption_fails_without_creating_inventory() -> None:
         inventory_operator("subject.domain.reviewer"),
         inventory_operator("subject.security.reviewer"),
         inventory_operator("subject.lab.operator"),
-        inventory_operator(
-            method=AuthenticationMethod.DEVELOPMENT,
-            assurance=AssuranceLevel.DEVELOPMENT,
-        ),
-        inventory_operator(kind=SubjectKind.SERVICE),
     ],
 )
-async def test_rejects_non_independent_or_non_enterprise_operator(
+async def test_rejects_non_independent_operator(
     subject: AuthenticatedSubject,
 ) -> None:
     service, _, validation, _ = await inventory_fixture()
 
     with pytest.raises(PackageSupplyChainInventoryError):
         await inventory(service, validation, subject=subject)
+
+
+@pytest.mark.asyncio
+async def test_rejects_non_human_inventory_operator() -> None:
+    service, _, validation, repository = await inventory_fixture()
+
+    with pytest.raises(PackageSupplyChainInventoryError) as caught:
+        await inventory(
+            service,
+            validation,
+            subject=inventory_operator(kind=SubjectKind.SERVICE),
+        )
+
+    assert caught.value.code == "package_inventory_human_required"
+    assert repository._records == {}
 
 
 @pytest.mark.asyncio

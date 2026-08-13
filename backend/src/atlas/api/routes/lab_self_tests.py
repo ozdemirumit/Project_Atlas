@@ -30,7 +30,7 @@ IDEMPOTENCY = Header(
 
 
 def _raise(error: PackageLabSelfTestError) -> NoReturn:
-    if error.code == "package_lab_enterprise_human_mfa_required":
+    if error.code == "package_lab_human_required":
         status = 403
     elif error.code.endswith("not_found"):
         status = 404

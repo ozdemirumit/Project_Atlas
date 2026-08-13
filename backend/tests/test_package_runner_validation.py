@@ -41,7 +41,12 @@ from atlas.modules.connectors.domain.runner_validation import (
     ConnectorPackageRunnerValidation,
     RunnerValidationOutcome,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 
 def runner_operator(subject_id: str = "subject.runner.validator") -> AuthenticatedSubject:
@@ -119,6 +124,35 @@ async def test_exact_package_runs_in_disconnected_synthetic_runner() -> None:
         "exception",
     ):
         assert forbidden not in exposed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "assurance"),
+    [
+        (AuthenticationMethod.DEVELOPMENT, AssuranceLevel.DEVELOPMENT),
+        (AuthenticationMethod.LDAP, AssuranceLevel.SINGLE_FACTOR),
+    ],
+)
+async def test_human_eligibility_does_not_require_fixed_assurance(
+    method: AuthenticationMethod,
+    assurance: AssuranceLevel,
+) -> None:
+    service, source = await runner_fixture()
+    subject = replace(runner_operator(), authentication_method=method, assurance_level=assurance)
+
+    report = await validate(service, source, subject=subject)
+
+    assert report.outcome is RunnerValidationOutcome.PASSED
+
+
+@pytest.mark.asyncio
+async def test_runner_validation_rejects_non_human_actor() -> None:
+    service, source = await runner_fixture()
+    subject = replace(runner_operator(), kind=SubjectKind.SERVICE)
+
+    with pytest.raises(PackageRunnerValidationError, match="package_runner_human_required"):
+        await validate(service, source, subject=subject)
 
 
 @pytest.mark.asyncio

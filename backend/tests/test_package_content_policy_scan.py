@@ -137,6 +137,40 @@ async def test_scans_clean_package_idempotently_without_authority() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    ("method", "assurance"),
+    [
+        (AuthenticationMethod.DEVELOPMENT, AssuranceLevel.DEVELOPMENT),
+        (AuthenticationMethod.LDAP, AssuranceLevel.SINGLE_FACTOR),
+    ],
+)
+async def test_human_eligibility_does_not_require_fixed_assurance(
+    method: AuthenticationMethod,
+    assurance: AssuranceLevel,
+) -> None:
+    service, _, source_inventory, _ = await content_policy_fixture()
+    subject = content_policy_operator(method=method, assurance=assurance)
+
+    report = await scan(service, source_inventory, subject=subject)
+
+    assert report.outcome is ContentPolicyOutcome.PASSED
+
+
+@pytest.mark.asyncio
+async def test_content_policy_scan_rejects_non_human_actor() -> None:
+    service, _, source_inventory, _ = await content_policy_fixture()
+
+    with pytest.raises(
+        PackageContentPolicyScanError, match="package_content_policy_human_required"
+    ):
+        await scan(
+            service,
+            source_inventory,
+            subject=content_policy_operator(kind=SubjectKind.SERVICE),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
     ("readme", "kind", "rule"),
     [
         (
@@ -221,14 +255,9 @@ async def test_archive_corruption_fails_without_creating_scan() -> None:
         content_policy_operator("subject.domain.reviewer"),
         content_policy_operator("subject.security.reviewer"),
         content_policy_operator("subject.lab.operator"),
-        content_policy_operator(
-            method=AuthenticationMethod.DEVELOPMENT,
-            assurance=AssuranceLevel.DEVELOPMENT,
-        ),
-        content_policy_operator(kind=SubjectKind.SERVICE),
     ],
 )
-async def test_rejects_non_independent_or_non_enterprise_operator(
+async def test_rejects_non_independent_operator(
     subject: AuthenticatedSubject,
 ) -> None:
     service, _, source_inventory, _ = await content_policy_fixture()

@@ -53,12 +53,7 @@ from atlas.modules.connectors.domain.supply_chain_inventory import (
     DependencyKind,
     PackageContentClass,
 )
-from atlas.modules.identity.domain.models import (
-    AssuranceLevel,
-    AuthenticatedSubject,
-    AuthenticationMethod,
-    SubjectKind,
-)
+from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 
 STATIC_DEPENDENCY_CREATE_PERMISSION = "connectors.package-static-dependency-analyses.create"
 STATIC_DEPENDENCY_READ_PERMISSION = "connectors.package-static-dependency-analyses.read"
@@ -391,7 +386,7 @@ class PackageStaticDependencyAnalysisService:
         idempotency_key: str,
         correlation_id: str,
     ) -> ConnectorPackageStaticDependencyAnalysis:
-        self._require_enterprise_human(actor)
+        self._require_human_actor(actor)
         if not acknowledged_offline_static_dependency_limitations:
             raise PackageStaticDependencyAnalysisError(
                 "package_static_dependency_acknowledgement_required"
@@ -591,7 +586,7 @@ class PackageStaticDependencyAnalysisService:
         analysis_id: str,
         correlation_id: str,
     ) -> ConnectorPackageStaticDependencyAnalysis:
-        self._require_enterprise_human(actor)
+        self._require_human_actor(actor)
         analysis = await self._repository.get_by_id(analysis_id=analysis_id)
         if analysis is None:
             raise PackageStaticDependencyAnalysisError("package_static_dependency_not_found")
@@ -1223,16 +1218,9 @@ class PackageStaticDependencyAnalysisService:
         ).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise PackageStaticDependencyAnalysisError(
-                "package_static_dependency_enterprise_human_mfa_required"
-            )
+    def _require_human_actor(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
+            raise PackageStaticDependencyAnalysisError("package_static_dependency_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str

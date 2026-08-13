@@ -76,7 +76,11 @@ class ConnectorPackageInstallationPolicySnapshot:
             or not 1 <= self.maximum_registration_age_hours <= 87600
             or not 1 <= self.maximum_package_bytes <= 25_000_000
             or self.required_assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or not 1 <= self.maximum_archive_entries <= 500
             or not 256 <= self.maximum_manifest_bytes <= 1_000_000
             or not 1 <= self.maximum_capabilities <= 500

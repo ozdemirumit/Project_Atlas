@@ -43,7 +43,12 @@ from atlas.modules.connectors.domain.lab_self_test import (
     LabSelfTestOutcome,
 )
 from atlas.modules.connectors.domain.runner_validation import ConnectorPackageRunnerValidation
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 
 def lab_operator(subject_id: str = "subject.package.lab-operator") -> AuthenticatedSubject:
@@ -149,6 +154,35 @@ async def test_exact_package_passes_plan_bound_read_only_lab_self_test() -> None
         "exception",
     ):
         assert forbidden not in exposed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "assurance"),
+    [
+        (AuthenticationMethod.DEVELOPMENT, AssuranceLevel.DEVELOPMENT),
+        (AuthenticationMethod.LDAP, AssuranceLevel.SINGLE_FACTOR),
+    ],
+)
+async def test_human_eligibility_does_not_require_fixed_assurance(
+    method: AuthenticationMethod,
+    assurance: AssuranceLevel,
+) -> None:
+    service, source, plan, _ = await lab_fixture()
+    subject = replace(lab_operator(), authentication_method=method, assurance_level=assurance)
+
+    report = await self_test(service, source, plan, subject=subject)
+
+    assert report.outcome is LabSelfTestOutcome.PASSED
+
+
+@pytest.mark.asyncio
+async def test_lab_self_test_rejects_non_human_actor() -> None:
+    service, source, plan, _ = await lab_fixture()
+    subject = replace(lab_operator(), kind=SubjectKind.SERVICE)
+
+    with pytest.raises(PackageLabSelfTestError, match="package_lab_human_required"):
+        await self_test(service, source, plan, subject=subject)
 
 
 @pytest.mark.asyncio

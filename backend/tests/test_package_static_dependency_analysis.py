@@ -48,7 +48,12 @@ from atlas.modules.connectors.domain.static_dependency_analysis import (
     StaticDependencyCategory,
     StaticDependencyOutcome,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 
 def static_operator(
@@ -146,6 +151,45 @@ async def test_reviewed_source_and_empty_runtime_dependencies_pass_without_autho
     assert [item.result_code for item in audit.records] == [
         "connector_static_dependency_analysis_passed"
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "assurance"),
+    [
+        (AuthenticationMethod.DEVELOPMENT, AssuranceLevel.DEVELOPMENT),
+        (AuthenticationMethod.LDAP, AssuranceLevel.SINGLE_FACTOR),
+    ],
+)
+async def test_allows_human_static_analyst_without_fixed_assurance(
+    method: AuthenticationMethod,
+    assurance: AssuranceLevel,
+) -> None:
+    service, _, _, _, source, _ = await static_fixture()
+    subject = replace(
+        static_operator(),
+        authentication_method=method,
+        assurance_level=assurance,
+    )
+
+    report = await analyze(service, source, subject=subject)
+
+    assert report.outcome is StaticDependencyOutcome.PASSED
+
+
+@pytest.mark.asyncio
+async def test_rejects_non_human_static_analyst() -> None:
+    service, _, _, _, source, repository = await static_fixture()
+
+    with pytest.raises(PackageStaticDependencyAnalysisError) as caught:
+        await analyze(
+            service,
+            source,
+            subject=replace(static_operator(), kind=SubjectKind.SERVICE),
+        )
+
+    assert caught.value.code == "package_static_dependency_human_required"
+    assert repository._records == {}
 
 
 @pytest.mark.asyncio

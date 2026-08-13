@@ -8,6 +8,14 @@
   ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009
   through ADR-020
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. This stage still
+requires a dedicated, authenticated, authorized human and every existing RBAC, scope,
+acknowledgement, separation, audit, and no-discovery control. The default policy requires no MFA;
+an optional named step-up policy may add assurance checks when configured, but assurance is not
+authorization.
+
 ## Context
 
 ADR-020 proves that the exact quarantined package has one internally consistent static contract. It
@@ -26,12 +34,13 @@ Atlas adopts profile `atlas.connector-runner.python312.v1`, harness version
 `atlas.connector-runner-harness.v1`, and baseline adapter contract
 `atlas.connector-isolated-subprocess.v1`.
 
-A dedicated authenticated multi-factor human runner-validation operator initiates the stage in the
+A dedicated authenticated authorized human runner-validation operator initiates the stage in the
 exact package organization and environment. The operator differs from every Builder, acquisition,
 manifest-validation, inventory, content-policy, schema-semantics, authority-behavior,
 static-dependency, vulnerability-analysis, malware-analysis, license-analysis, and
-contract-validation actor. AI, service, prior-stage, wrong-scope, insufficient-assurance, and
-unauthorized identities fail closed without package, process, or report discovery.
+contract-validation actor. AI, service, prior-stage, wrong-scope, unauthorized identities, and
+identities that do not satisfy an optional configured `package_runner_validation` step-up policy
+fail closed without package, process, or report discovery.
 
 The stage accepts only the exact passed ADR-020 report with `promotion_blocked=false`, all
 through-contract completion flags, and every no-authority flag intact. Atlas independently verifies
@@ -126,7 +135,8 @@ without package internals or later-stage action controls.
 - Proof that package tests are never imported or executed and no dependency installation occurs
 - Safe report and non-disclosure tests for source, fixture, expected output, capability, path,
   environment, stdout/stderr, exception, and harness diagnostics
-- Dedicated permission, MFA, human identity, acknowledgement, scope, and separation tests
+- Dedicated permission, authorized single-factor human identity, acknowledgement, scope,
+  separation, and optional named step-up policy tests
 - Passed and failed immutable reports, idempotency, concurrency, and audit-before-persist
 - Memory and PostgreSQL repository equivalence with one Alembic head
 - Strict create/read API, CSRF, no-store, safe-error, and response-minimization tests

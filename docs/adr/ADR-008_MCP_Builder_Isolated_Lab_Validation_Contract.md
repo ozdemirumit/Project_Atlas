@@ -1,6 +1,8 @@
 # ADR-008: MCP Builder Isolated Lab Validation Contract
 
 - Status: Accepted
+- Assurance amendment: Fixed MFA requirements are superseded by ADR-133; authorization and
+  separation remain mandatory while step-up is optional deployment policy.
 - Date: 2026-08-05
 - Decision owners: Product Owner, Architecture Owner, Security Owner
 - Governing documents: ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025,
@@ -25,9 +27,9 @@ runner contract version `mcp-builder-isolated-runner.v1`.
 
 A run requires an accepted `atlas.security-review.connector.v1` record and binds the exact project,
 source, design checkpoint, generation, artifact, static-validation report, domain review, security
-review, organization, environment, and authenticated multi-factor human lab operator. Creation and
+review, organization, environment, and authenticated authorized human lab operator. Creation and
 read use dedicated permissions. The lab operator must differ from both the domain reviewer and the
-security reviewer. AI, service, wrong-scope, insufficient-assurance, self-review, and unassigned
+security reviewer. AI, service, wrong-scope, self-review, and unassigned
 identities fail closed.
 
 The profile accepts only the deterministic `atlas.python312.v1` scaffold produced by
@@ -103,6 +105,6 @@ trust, execution approval, deployment approval, or infrastructure safety.
 - Package import, manifest, fixture, every-capability fail-closed invocation, network denial, no-secret,
   bounded-output, and workspace-cleanup tests
 - Idempotency, concurrent replay, audit-before-persist, memory/PostgreSQL equivalence, and migration tests
-- Strict create/read API, CSRF, RBAC, MFA, tenant, acknowledgement, and separation-of-duties tests
+- Strict create/read API, CSRF, RBAC, optional step-up policy, tenant, acknowledgement, and separation-of-duties tests
 - Desktop, 390-pixel mobile, browser-log, and live authorized/denied API validation
 

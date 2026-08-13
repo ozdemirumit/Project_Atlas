@@ -7,6 +7,14 @@
   ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051,
   ATLAS-053, ATLAS-055, ATLAS-056, ADR-009, ADR-010
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. This stage still
+requires a dedicated, authenticated, authorized human and every existing RBAC, scope,
+acknowledgement, separation, audit, and no-discovery control. The default policy requires no MFA;
+an optional named step-up policy may add assurance checks when configured, but assurance is not
+authorization.
+
 ## Context
 
 ADR-010 transfers exact MCP Builder package bytes into connector quarantine and records an
@@ -24,11 +32,12 @@ Atlas adopts validation profile `atlas.connector-validation-intake.builder-v1` a
 version `atlas.connector-manifest-schema-validator.v1` for exact acquisitions produced by
 `atlas.connector-acquisition.builder-handoff.v1`.
 
-A dedicated authenticated multi-factor human package validation operator initiates the stage in
+A dedicated authenticated authorized human package validation operator initiates the stage in
 the exact acquisition organization and environment. The operator differs from the acquisition
 operator and every Builder custodian, domain reviewer, security reviewer, and lab operator bound to
-the acquisition. AI, service, wrong-scope, insufficient-assurance, prior-stage, and unauthorized
-identities fail closed without acquisition, archive, manifest, schema, or finding discovery.
+the acquisition. AI, service, wrong-scope, prior-stage, unauthorized identities, and identities
+that do not satisfy an optional configured `package_validation_intake` step-up policy fail closed
+without acquisition, archive, manifest, schema, or finding discovery.
 
 Before creating a validation report, Atlas verifies the acquisition canonical digest, supported
 source and profile, quarantined unsigned and unattested state, every no-authority invariant, and
@@ -100,7 +109,8 @@ deploy, or mutate a connector or infrastructure.
 - Exact acquisition, archive, envelope, manifest, capability, product, network, and schema binding
 - Missing, duplicate, malformed, oversized, stale, changed, corrupt, unsupported, and extension-key
   adversarial fixtures
-- Dedicated permission, MFA, human identity, acknowledgement, scope, and separation tests
+- Dedicated permission, authorized single-factor human identity, acknowledgement, scope,
+  separation, and optional named step-up policy tests
 - Passed and failed immutable reports, idempotency, concurrency, and audit-before-persist
 - Memory and PostgreSQL repository equivalence with one Alembic head
 - Strict create/read API, CSRF, safe error, no-store, and response-minimization tests

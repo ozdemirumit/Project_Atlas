@@ -8,6 +8,14 @@
   ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-009
   through ADR-021
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. This stage still
+requires a dedicated, authenticated, authorized human and every existing RBAC, scope,
+acknowledgement, separation, audit, and no-discovery control. The default policy requires no MFA;
+an optional named step-up policy may add assurance checks when configured, but assurance is not
+authorization.
+
 ## Context
 
 ADR-021 proves that the exact quarantined package imports and preserves reviewed bounded or
@@ -26,12 +34,13 @@ Atlas adopts profile `atlas.connector-lab-self-test.readonly.v1`, plan schema
 `atlas.connector-lab-plan.v1`, runner adapter contract `atlas.connector-lab-runner.v1`, and report
 schema `atlas.connector-lab-self-test-report.v1`.
 
-A dedicated authenticated multi-factor human lab operator initiates the stage in the exact package
+A dedicated authenticated authorized human lab operator initiates the stage in the exact package
 organization and environment. The operator differs from every prior Builder, review, acquisition,
 analysis, contract, and runner-validation actor and from the lab-plan approver and credential
 custodian. AI, service, prior-stage, plan-approver, credential-custodian, wrong-scope,
-insufficient-assurance, and unauthorized identities fail closed without target, secret, package,
-or report discovery.
+unauthorized identities, and identities that do not satisfy an optional configured
+`package_lab_self_test` step-up policy fail closed without target, secret, package, or report
+discovery.
 
 The stage accepts only the exact passed ADR-021 report with `promotion_blocked=false`, every
 through-runner completion flag, and all no-authority flags intact. Atlas independently verifies the
@@ -135,7 +144,8 @@ secrets, target coordinates, raw traffic, package internals, or later-stage acti
 ## Validation
 
 - Exact passed-runner-report, package, inventory, digest, plan, approval, lease, and lineage tests
-- Dedicated permission, MFA, human identity, acknowledgement, scope, and complete separation tests
+- Dedicated permission, authorized single-factor human identity, acknowledgement, scope, complete
+  separation, and optional named step-up policy tests
 - Plan expiry/drift, product/version mismatch, target identity, TLS, redirect, DNS/egress, deadline,
   request/output budget, malformed evidence, and cleanup/revocation failure tests
 - Secret-reference-only API and persistence tests plus proof that raw values never enter audit,

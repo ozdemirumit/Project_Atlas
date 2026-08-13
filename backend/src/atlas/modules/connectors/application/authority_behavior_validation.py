@@ -51,12 +51,7 @@ from atlas.modules.connectors.domain.supply_chain_inventory import (
     ConnectorPackageSupplyChainInventory,
     PackageContentClass,
 )
-from atlas.modules.identity.domain.models import (
-    AssuranceLevel,
-    AuthenticatedSubject,
-    AuthenticationMethod,
-    SubjectKind,
-)
+from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 
 AUTHORITY_BEHAVIOR_CREATE_PERMISSION = "connectors.package-authority-behavior-validations.create"
 AUTHORITY_BEHAVIOR_READ_PERMISSION = "connectors.package-authority-behavior-validations.read"
@@ -321,7 +316,7 @@ class PackageAuthorityBehaviorValidationService:
         idempotency_key: str,
         correlation_id: str,
     ) -> ConnectorPackageAuthorityBehaviorValidation:
-        self._require_enterprise_human(actor)
+        self._require_human_actor(actor)
         if not acknowledged_static_analysis_limitations:
             raise PackageAuthorityBehaviorValidationError(
                 "package_authority_behavior_acknowledgement_required"
@@ -516,7 +511,7 @@ class PackageAuthorityBehaviorValidationService:
         validation_id: str,
         correlation_id: str,
     ) -> ConnectorPackageAuthorityBehaviorValidation:
-        self._require_enterprise_human(actor)
+        self._require_human_actor(actor)
         validation = await self._repository.get_by_id(validation_id=validation_id)
         if validation is None:
             raise PackageAuthorityBehaviorValidationError("package_authority_behavior_not_found")
@@ -1134,15 +1129,10 @@ class PackageAuthorityBehaviorValidationService:
         ).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
+    def _require_human_actor(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
             raise PackageAuthorityBehaviorValidationError(
-                "package_authority_behavior_enterprise_human_mfa_required"
+                "package_authority_behavior_human_required"
             )
 
     def _require_scope(

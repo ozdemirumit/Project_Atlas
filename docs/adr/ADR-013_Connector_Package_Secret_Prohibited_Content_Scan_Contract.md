@@ -7,6 +7,14 @@
   ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051,
   ATLAS-053, ATLAS-055, ATLAS-056, ADR-009, ADR-010, ADR-011, ADR-012
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. This stage still
+requires a dedicated, authenticated, authorized human and every existing RBAC, scope,
+acknowledgement, separation, audit, and no-discovery control. The default policy requires no MFA;
+an optional named step-up policy may add assurance checks when configured, but assurance is not
+authorization.
+
 ## Context
 
 ADR-012 records a complete, deterministic inventory of every file and dependency declaration in
@@ -25,11 +33,12 @@ Atlas adopts scan profile `atlas.connector-content-policy-scan.python312.v1` and
 `atlas.connector-secret-prohibited-content-scanner.v1` for exact passed reports produced by
 `atlas.connector-supply-chain-inventory.python312.v1`.
 
-A dedicated authenticated multi-factor human content-policy operator initiates the stage in the
+A dedicated authenticated authorized human content-policy operator initiates the stage in the
 exact package organization and environment. This operator differs from every Builder actor and all
-acquisition, validation, and inventory actors in the lineage. AI, service, wrong-scope,
-insufficient-assurance, prior-stage, and unauthorized identities fail closed without package,
-inventory, path, finding, or digest discovery.
+acquisition, validation, and inventory actors in the lineage. AI, service, wrong-scope, prior-stage,
+unauthorized identities, and identities that do not satisfy an optional configured
+`package_content_policy_scan` step-up policy fail closed without package, inventory, path, finding,
+or digest discovery.
 
 Before scanning, Atlas verifies the inventory canonical digest, passed outcome, supported profile
 and inspector, exact validation/acquisition/package lineage, complete per-file evidence, inventory
@@ -108,7 +117,8 @@ or infrastructure.
 - Private key, token, authorization literal, credential URL, sensitive assignment, placeholder,
   secret-reference, binary signature, nested archive, prohibited path, encoding, and control-byte cases
 - Raw-secret non-disclosure across domain representation, audit, API, errors, and persisted evidence
-- Dedicated permission, MFA, human identity, acknowledgement, scope, and full-lineage separation tests
+- Dedicated permission, authorized single-factor human identity, acknowledgement, scope,
+  full-lineage separation, and optional named step-up policy tests
 - Passed and failed immutable reports, idempotency, concurrency, and audit-before-persist
 - Memory and PostgreSQL repository equivalence with one Alembic head
 - Strict create/read API, CSRF, safe error, no-store, and response-minimization tests

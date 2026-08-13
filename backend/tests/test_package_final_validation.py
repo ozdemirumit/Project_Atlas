@@ -51,7 +51,12 @@ from atlas.modules.connectors.domain.final_validation import (
     FinalValidationPolicySnapshot,
 )
 from atlas.modules.connectors.domain.lab_self_test import ConnectorPackageLabSelfTest
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 from atlas.modules.mcp_builder.adapters.candidate_handoff_memory import (
     InMemoryMcpBuilderCandidateHandoffRepository,
 )
@@ -199,6 +204,35 @@ async def test_exact_lineage_is_eligible_without_lifecycle_authority() -> None:
     assert not first.infrastructure_mutation_performed
     assert second.validation_id == first.validation_id and second.reused
     assert audit.records[-1].event_type == "atlas.connector.package-final-validation"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "assurance"),
+    [
+        (AuthenticationMethod.DEVELOPMENT, AssuranceLevel.DEVELOPMENT),
+        (AuthenticationMethod.LDAP, AssuranceLevel.SINGLE_FACTOR),
+    ],
+)
+async def test_human_eligibility_does_not_require_fixed_assurance(
+    method: AuthenticationMethod,
+    assurance: AssuranceLevel,
+) -> None:
+    service, lab, policy = await final_fixture()
+    subject = replace(final_operator(), authentication_method=method, assurance_level=assurance)
+
+    report = await final_validate(service, lab, policy, subject=subject)
+
+    assert report.outcome is FinalValidationOutcome.ELIGIBLE
+
+
+@pytest.mark.asyncio
+async def test_final_validation_rejects_non_human_actor() -> None:
+    service, lab, policy = await final_fixture()
+    subject = replace(final_operator(), kind=SubjectKind.SERVICE)
+
+    with pytest.raises(PackageFinalValidationError, match="package_final_human_required"):
+        await final_validate(service, lab, policy, subject=subject)
 
 
 @pytest.mark.asyncio

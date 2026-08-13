@@ -91,14 +91,19 @@ from atlas.modules.mcp_builder.domain.security_review import (
 NOW = datetime(2026, 8, 5, 12, 0, tzinfo=UTC)
 
 
-def actor(*, subject_id: str = "subject.development.operator") -> AuthenticatedSubject:
+def actor(
+    *,
+    subject_id: str = "subject.development.operator",
+    authentication_method: AuthenticationMethod = AuthenticationMethod.LDAP,
+    assurance_level: AssuranceLevel = AssuranceLevel.MULTI_FACTOR,
+) -> AuthenticatedSubject:
     return AuthenticatedSubject(
         subject_id=subject_id,
         display_name="MCP Builder Reviewer",
         kind=SubjectKind.HUMAN,
         provider_id="provider.ldap.test",
-        authentication_method=AuthenticationMethod.LDAP,
-        assurance_level=AssuranceLevel.MULTI_FACTOR,
+        authentication_method=authentication_method,
+        assurance_level=assurance_level,
         authenticated_at=NOW,
         organization_id="organization.development",
         role_ids=("role.development.operator",),
@@ -593,16 +598,29 @@ async def test_service_persists_audited_project_and_replays_idempotently() -> No
 
 
 @pytest.mark.asyncio
-async def test_service_rejects_changed_replay_non_mfa_and_foreign_owner() -> None:
+async def test_service_accepts_single_factor_human_and_rejects_non_human_and_foreign_owner() -> (
+    None
+):
     builder, _, _, _ = service()
     project = await builder.create_project(**create_request())
     with pytest.raises(McpBuilderError, match="builder_idempotency_conflict"):
         await builder.create_project(**create_request(product="Different product"))
-    with pytest.raises(McpBuilderError, match="builder_enterprise_human_mfa_required"):
+    single_factor_project = await builder.create_project(
+        **create_request(
+            actor=actor(assurance_level=AssuranceLevel.SINGLE_FACTOR),
+            idempotency_key="mcp-builder-test-0002",
+        )
+    )
+    with pytest.raises(McpBuilderError, match="builder_human_required"):
         await builder.create_project(
             **create_request(
-                actor=replace(actor(), assurance_level=AssuranceLevel.SINGLE_FACTOR),
-                idempotency_key="mcp-builder-test-0002",
+                actor=replace(
+                    actor(),
+                    kind=SubjectKind.SERVICE,
+                    authentication_method=AuthenticationMethod.WORKLOAD_TOKEN,
+                    assurance_level=AssuranceLevel.HARDWARE_BACKED,
+                ),
+                idempotency_key="mcp-builder-test-non-human-0001",
             )
         )
     with pytest.raises(McpBuilderError, match="builder_project_not_found"):
@@ -611,6 +629,8 @@ async def test_service_rejects_changed_replay_non_mfa_and_foreign_owner() -> Non
             project_id=project.project_id,
             correlation_id="correlation.mcp-builder-foreign",
         )
+
+    assert single_factor_project.state is BuilderProjectState.ANALYZED
 
 
 @pytest.mark.asyncio
@@ -697,7 +717,7 @@ async def test_design_checkpoint_rejects_stale_scope_risk_and_candidate_drift() 
                 capability_decisions=(replace(decision, required_permission="administrator"),),
             )
         )
-    with pytest.raises(McpBuilderError, match="builder_enterprise_human_mfa_required"):
+    with pytest.raises(McpBuilderError, match="builder_human_required"):
         await builder.create_design_checkpoint(
             **design_request(
                 project,
@@ -1911,9 +1931,14 @@ def api_payload() -> dict[str, Any]:
     }
 
 
-def test_api_requires_csrf_and_returns_secret_free_no_store_evidence(tmp_path: Path) -> None:
+def test_development_password_session_runs_authorized_builder_api_chain(tmp_path: Path) -> None:
     sink = CollectingAuditSink()
-    provider = BasicTestIdentityProvider(actor())
+    provider = BasicTestIdentityProvider(
+        actor(
+            authentication_method=AuthenticationMethod.DEVELOPMENT,
+            assurance_level=AssuranceLevel.DEVELOPMENT,
+        )
+    )
     app_settings = settings().model_copy(
         update={"mcp_builder_generation_root": tmp_path / "mcp-builder-generations"}
     )

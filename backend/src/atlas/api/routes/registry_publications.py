@@ -34,7 +34,7 @@ IDEMPOTENCY = Header(
 
 
 def _raise(error: RegistryPublicationError) -> NoReturn:
-    if error.code.endswith(("mfa_required", "separation_required")):
+    if error.code.endswith(("human_required", "mfa_required", "separation_required")):
         status = 403
     elif error.code.endswith("not_found"):
         status = 404

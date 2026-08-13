@@ -33,7 +33,7 @@ IDEMPOTENCY = Header(
 
 
 def _raise(error: PackageValidationError) -> NoReturn:
-    if error.code == "package_validation_enterprise_human_mfa_required":
+    if error.code == "package_validation_human_required":
         status = 403
     elif error.code.endswith("not_found"):
         status = 404

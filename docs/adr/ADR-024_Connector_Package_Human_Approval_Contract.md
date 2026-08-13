@@ -4,6 +4,14 @@
 
 Accepted
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. This stage still
+requires a dedicated, authenticated, authorized human and every existing RBAC, scope,
+acknowledgement, separation, audit, and no-discovery control. The default policy requires no MFA;
+an optional named step-up policy may add assurance checks when configured, but assurance is not
+authorization.
+
 ## Context
 
 ADR-023 produces a deterministic final-validation report for one exact connector package and marks
@@ -66,7 +74,8 @@ The platform packet binds at least:
 - exact package, handoff, project, inventory, product, and observed-version identity;
 - eligibility, coverage, finding, limitation, and blocking-risk counts;
 - stable risk, check, limitation, and source-stage summary digests;
-- approval-policy ID, digest, version, stage, quorum, assurance, and expiry requirements;
+- approval-policy ID, digest, version, stage, quorum, optional named step-up policy, and expiry
+  requirements;
 - review purpose and explicit no-authority declarations; and
 - deterministic canonicalization version and packet digest.
 
@@ -84,7 +93,8 @@ first snapshot defines:
 
 - accepted final-validation schema and eligible outcome;
 - maximum final-evidence age and request lifetime;
-- required human authentication assurance;
+- optional named `package_approval` step-up policy, disabled by default, with accepted external
+  assurance values and freshness only when configured;
 - one stable approval stage and quorum of one distinct eligible human;
 - permitted outcomes and mandatory rationale bounds;
 - requester/approver/upstream/policy-author separation;
@@ -96,10 +106,12 @@ human identity, no-authority, and fail-closed requirements.
 
 ## Requester And Approver Separation
 
-Only an exact-tenant, multi-factor human with dedicated request permission may submit the eligible
-final-validation report. The final validator may submit it because submission creates no decision.
+Only an authenticated, authorized, exact-tenant human with dedicated request permission may submit
+the eligible final-validation report. The final validator may submit it because submission creates
+no decision.
 
-Only a separate exact-tenant, multi-factor human with dedicated decision permission may decide.
+Only a separate authenticated, authorized, exact-tenant human with dedicated decision permission
+may decide.
 The approver must be distinct from:
 
 - the request creator and final validator;
@@ -107,8 +119,9 @@ The approver must be distinct from:
   custody actor in the exact lineage; and
 - the approval-policy signer or publisher.
 
-AI, workload, service, anonymous, shared, wrong-scope, disabled, delegated-without-policy, and
-insufficient-assurance identities fail closed without request discovery.
+AI, workload, service, anonymous, shared, wrong-scope, disabled, delegated-without-policy,
+unauthorized identities, and identities that do not satisfy the optional configured
+`package_approval` step-up policy fail closed without request discovery.
 
 ## Decision Contract
 
@@ -156,9 +169,10 @@ source, policy, clock, or persistence failure cannot fabricate approval.
 
 ## API And Web Contract
 
-Strict create/read/decide APIs require dedicated default-deny RBAC, browser sessions, CSRF for
-mutations, exact tenant scope, MFA human identity, correlation, acknowledgements, bounded schemas,
-safe errors, optimistic concurrency, and `no-store` responses.
+Strict create/read/decide APIs require a dedicated authorized human identity, default-deny RBAC,
+browser sessions, CSRF for mutations, exact tenant scope, correlation, acknowledgements, bounded
+schemas, safe errors, optimistic concurrency, and `no-store` responses. The optional named
+`package_approval` step-up policy is evaluated only when configured.
 
 The web view presents exact package/evidence/policy identity, requester, expiry, stage, eligibility,
 risks, limitations, and what each outcome does and does not permit before neutral decision controls.
@@ -187,7 +201,8 @@ execution, or deployment control is present.
 ## Validation
 
 - Exact final-report, package, policy, packet-digest, tenant, environment, and source-change tests
-- Requester/approver/upstream/policy-signer separation, MFA, scope, and no-discovery tests
+- Requester/approver/upstream/policy-signer separation, authorized single-factor human, scope,
+  no-discovery, and optional named step-up policy tests
 - Approve, reject, needs-evidence, defer, expiry, stale-version, conflict, and replay tests
 - Immutable request/decision, idempotency, concurrency, audit-before-persist, memory/PostgreSQL
   equivalence, and one Alembic-head tests

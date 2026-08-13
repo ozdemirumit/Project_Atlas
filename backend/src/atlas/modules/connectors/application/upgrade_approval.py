@@ -83,6 +83,7 @@ from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 UPGRADE_APPROVAL_POLICY_SCHEMA = "atlas.connector-upgrade-approval-policy.v1"
@@ -3429,7 +3430,7 @@ class ConnectorUpgradeApprovalService:
         if len(active) != 1:
             raise ConnectorUpgradeApprovalError("connector_upgrade_approval_policy_unavailable")
         policy = active[0]
-        if not self._assurance_satisfies(actor.assurance_level, policy.required_assurance_level):
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
             raise ConnectorUpgradeApprovalError("connector_upgrade_approval_assurance_insufficient")
         return policy
 
@@ -4150,23 +4151,6 @@ class ConnectorUpgradeApprovalService:
                 ),
             )
         )
-
-    @staticmethod
-    def _assurance_satisfies(actual: AssuranceLevel, required: AssuranceLevel) -> bool:
-        if required is AssuranceLevel.SINGLE_FACTOR:
-            return actual in {
-                AssuranceLevel.DEVELOPMENT,
-                AssuranceLevel.SINGLE_FACTOR,
-                AssuranceLevel.MULTI_FACTOR,
-                AssuranceLevel.HARDWARE_BACKED,
-            }
-        order = {
-            AssuranceLevel.DEVELOPMENT: 0,
-            AssuranceLevel.SINGLE_FACTOR: 1,
-            AssuranceLevel.MULTI_FACTOR: 2,
-            AssuranceLevel.HARDWARE_BACKED: 3,
-        }
-        return order[actual] >= order[required]
 
     @staticmethod
     def _require_authenticated_human(actor: AuthenticatedSubject) -> None:

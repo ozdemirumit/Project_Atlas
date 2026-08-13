@@ -46,7 +46,12 @@ from atlas.modules.connectors.domain.authority_behavior_validation import (
 from atlas.modules.connectors.domain.schema_semantics_validation import (
     ConnectorPackageSchemaSemanticsValidation,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 MODULE_PATH = "src/atlas_generated_connector/capabilities/capability_read.py"
 
@@ -177,6 +182,45 @@ async def test_reviewed_read_only_behavior_passes_without_authority() -> None:
     assert [item.result_code for item in audit.records] == [
         "connector_authority_behavior_validation_passed"
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "assurance"),
+    [
+        (AuthenticationMethod.DEVELOPMENT, AssuranceLevel.DEVELOPMENT),
+        (AuthenticationMethod.LDAP, AssuranceLevel.SINGLE_FACTOR),
+    ],
+)
+async def test_allows_human_behavior_validator_without_fixed_assurance(
+    method: AuthenticationMethod,
+    assurance: AssuranceLevel,
+) -> None:
+    service, _, _, source, _ = await behavior_fixture()
+    subject = replace(
+        behavior_operator(),
+        authentication_method=method,
+        assurance_level=assurance,
+    )
+
+    report = await compare(service, source, subject=subject)
+
+    assert report.outcome is AuthorityBehaviorOutcome.PASSED
+
+
+@pytest.mark.asyncio
+async def test_rejects_non_human_behavior_validator() -> None:
+    service, _, _, source, repository = await behavior_fixture()
+
+    with pytest.raises(PackageAuthorityBehaviorValidationError) as caught:
+        await compare(
+            service,
+            source,
+            subject=replace(behavior_operator(), kind=SubjectKind.SERVICE),
+        )
+
+    assert caught.value.code == "package_authority_behavior_human_required"
+    assert repository._records == {}
 
 
 @pytest.mark.asyncio

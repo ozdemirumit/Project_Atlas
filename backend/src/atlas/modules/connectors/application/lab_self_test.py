@@ -52,12 +52,7 @@ from atlas.modules.connectors.domain.lab_self_test import (
     LabExecutionResult,
     LabSelfTestOutcome,
 )
-from atlas.modules.identity.domain.models import (
-    AssuranceLevel,
-    AuthenticatedSubject,
-    AuthenticationMethod,
-    SubjectKind,
-)
+from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 
 LAB_SELF_TEST_CREATE_PERMISSION = "connectors.package-lab-self-tests.create"
 LAB_SELF_TEST_READ_PERMISSION = "connectors.package-lab-self-tests.read"
@@ -520,13 +515,8 @@ class PackageLabSelfTestService:
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise PackageLabSelfTestError("package_lab_enterprise_human_mfa_required")
+        if actor.kind is not SubjectKind.HUMAN:
+            raise PackageLabSelfTestError("package_lab_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str

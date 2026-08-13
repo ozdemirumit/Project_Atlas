@@ -16,9 +16,7 @@ from atlas.core.audit import AuditRecord, AuditSink
 from atlas.core.capabilities import CapabilityClass
 from atlas.core.classification import DataClassification
 from atlas.modules.identity.domain.models import (
-    AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
 )
 from atlas.modules.mcp_builder.application.analyzer import (
@@ -266,7 +264,7 @@ class McpBuilderService:
         idempotency_key: str,
         correlation_id: str,
     ) -> McpBuilderProject:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         if not confirmed_synthetic_or_lab_only:
             raise McpBuilderError("builder_lab_confirmation_required")
         if not 8 <= len(idempotency_key) <= 128:
@@ -407,7 +405,7 @@ class McpBuilderService:
     async def get_project(
         self, *, actor: AuthenticatedSubject, project_id: str, correlation_id: str
     ) -> McpBuilderProject:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         project = await self._repository.get_by_id(owner_id=actor.subject_id, project_id=project_id)
         if (
             project is None
@@ -443,7 +441,7 @@ class McpBuilderService:
         idempotency_key: str,
         correlation_id: str,
     ) -> McpBuilderDesignCheckpoint:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         if not 8 <= len(idempotency_key) <= 128:
             raise McpBuilderError("builder_design_idempotency_key_invalid")
         project = await self._project_for_design(actor=actor, project_id=project_id)
@@ -555,7 +553,7 @@ class McpBuilderService:
     async def get_design_checkpoint(
         self, *, actor: AuthenticatedSubject, project_id: str, correlation_id: str
     ) -> McpBuilderDesignCheckpoint:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         checkpoint = await self._design_repository.get_by_project(project_id=project_id)
         if (
             checkpoint is None
@@ -595,7 +593,7 @@ class McpBuilderService:
         idempotency_key: str,
         correlation_id: str,
     ) -> McpBuilderGeneration:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         if not acknowledged_quarantine:
             raise McpBuilderError("builder_generation_quarantine_acknowledgement_required")
         if not 8 <= len(idempotency_key) <= 128:
@@ -797,7 +795,7 @@ class McpBuilderService:
         idempotency_key: str,
         correlation_id: str,
     ) -> McpBuilderValidation:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         if not acknowledged_static_only:
             raise McpBuilderError("builder_validation_static_acknowledgement_required")
         if not 8 <= len(idempotency_key) <= 128:
@@ -989,7 +987,7 @@ class McpBuilderService:
         idempotency_key: str,
         correlation_id: str,
     ) -> McpBuilderDomainReview:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         if not acknowledged_human_domain_decision:
             raise McpBuilderError("builder_domain_review_human_acknowledgement_required")
         if not 8 <= len(idempotency_key) <= 128:
@@ -1189,7 +1187,7 @@ class McpBuilderService:
         idempotency_key: str,
         correlation_id: str,
     ) -> McpBuilderSecurityReview:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         if not acknowledged_independent_security_decision:
             raise McpBuilderError("builder_security_review_human_acknowledgement_required")
         if not 8 <= len(idempotency_key) <= 128:
@@ -1406,7 +1404,7 @@ class McpBuilderService:
         idempotency_key: str,
         correlation_id: str,
     ) -> McpBuilderLabValidation:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         if not acknowledged_isolated_synthetic_execution:
             raise McpBuilderError("builder_lab_validation_execution_acknowledgement_required")
         if not 8 <= len(idempotency_key) <= 128:
@@ -1669,7 +1667,7 @@ class McpBuilderService:
         idempotency_key: str,
         correlation_id: str,
     ) -> McpBuilderCandidateHandoff:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         if not acknowledged_unsigned_quarantined_package:
             raise McpBuilderError("builder_candidate_handoff_acknowledgement_required")
         if handoff_profile != CANDIDATE_HANDOFF_PROFILE:
@@ -1930,7 +1928,7 @@ class McpBuilderService:
     async def _lab_validation_for_actor(
         self, *, actor: AuthenticatedSubject, project_id: str
     ) -> McpBuilderLabValidation:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         validation = await self._lab_validation_repository.get_by_project(project_id=project_id)
         if (
             validation is None
@@ -1951,7 +1949,7 @@ class McpBuilderService:
     async def _candidate_handoff_for_actor(
         self, *, actor: AuthenticatedSubject, project_id: str
     ) -> McpBuilderCandidateHandoff:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         handoff = await self._candidate_handoff_repository.get_by_project(project_id=project_id)
         if (
             handoff is None
@@ -1972,7 +1970,7 @@ class McpBuilderService:
     async def _security_review_for_actor(
         self, *, actor: AuthenticatedSubject, project_id: str
     ) -> McpBuilderSecurityReview:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         review = await self._security_review_repository.get_by_project(project_id=project_id)
         if (
             review is None
@@ -1995,7 +1993,7 @@ class McpBuilderService:
     async def _domain_review_for_actor(
         self, *, actor: AuthenticatedSubject, project_id: str
     ) -> McpBuilderDomainReview:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         review = await self._domain_review_repository.get_by_project(project_id=project_id)
         if (
             review is None
@@ -2025,7 +2023,7 @@ class McpBuilderService:
     async def _validation_for_actor(
         self, *, actor: AuthenticatedSubject, project_id: str
     ) -> McpBuilderValidation:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         validation = await self._validation_repository.get_by_project(project_id=project_id)
         if (
             validation is None
@@ -2051,7 +2049,7 @@ class McpBuilderService:
     async def _generation_for_actor(
         self, *, actor: AuthenticatedSubject, project_id: str
     ) -> McpBuilderGeneration:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         generation = await self._generation_repository.get_by_project(project_id=project_id)
         if (
             generation is None
@@ -2730,14 +2728,9 @@ class McpBuilderService:
             raise McpBuilderError("builder_candidate_handoff_integrity_failed")
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise McpBuilderError("builder_enterprise_human_mfa_required")
+    def _require_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
+            raise McpBuilderError("builder_human_required")
 
     @staticmethod
     def _validated_text(value: str, field_name: str, maximum: int) -> str:

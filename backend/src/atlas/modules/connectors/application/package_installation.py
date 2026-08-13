@@ -34,8 +34,8 @@ from atlas.modules.connectors.domain.registry_publication import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 from atlas.modules.mcp_builder.domain.candidate_handoff import McpBuilderCandidateHandoff
 
@@ -451,9 +451,8 @@ class PackageInstallationService:
             or not registration.eligible_for_installation_governance
             or registration.connector_installed
             or registration.promotion_blocked
-            or (
-                policy.required_assurance_level is AssuranceLevel.HARDWARE_BACKED
-                and actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or not assurance_satisfies_policy(
+                actor.assurance_level, policy.required_assurance_level
             )
         ):
             raise PackageInstallationError("package_installation_binding_invalid")
@@ -509,13 +508,8 @@ class PackageInstallationService:
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise PackageInstallationError("package_installation_enterprise_human_mfa_required")
+        if actor.kind is not SubjectKind.HUMAN:
+            raise PackageInstallationError("package_installation_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -572,7 +566,7 @@ def build_development_package_installation_policy(
         required_registration_record_schema="atlas.connector-package-registration-record.v1",
         maximum_registration_age_hours=168,
         maximum_package_bytes=25_000_000,
-        required_assurance_level=AssuranceLevel.MULTI_FACTOR,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         required_registry_profile_id="registry-profile.nonproduction-internal",
         reader_workload_id="workload.connector-registry-reader",
         required_artifact_reference_schema="atlas.connector-registry-artifact-reference.v1",

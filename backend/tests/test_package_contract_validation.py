@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import cast
 
@@ -50,7 +50,12 @@ from atlas.modules.connectors.domain.contract_validation import (
     ContractOutcome,
 )
 from atlas.modules.connectors.domain.license_analysis import ConnectorPackageLicenseAnalysis
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 ContractFixtureParts = tuple[
     PackageMalwareAnalysisService,
@@ -143,6 +148,35 @@ async def test_exact_generated_contract_passes_without_execution_authority() -> 
         "parser_diagnostics",
     ):
         assert forbidden not in exposed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "assurance"),
+    [
+        (AuthenticationMethod.DEVELOPMENT, AssuranceLevel.DEVELOPMENT),
+        (AuthenticationMethod.LDAP, AssuranceLevel.SINGLE_FACTOR),
+    ],
+)
+async def test_human_eligibility_does_not_require_fixed_assurance(
+    method: AuthenticationMethod,
+    assurance: AssuranceLevel,
+) -> None:
+    service, _, source = await contract_fixture()
+    subject = replace(contract_operator(), authentication_method=method, assurance_level=assurance)
+
+    report = await validate(service, source, subject=subject)
+
+    assert report.outcome is ContractOutcome.PASSED
+
+
+@pytest.mark.asyncio
+async def test_contract_validation_rejects_non_human_actor() -> None:
+    service, _, source = await contract_fixture()
+    subject = replace(contract_operator(), kind=SubjectKind.SERVICE)
+
+    with pytest.raises(PackageContractValidationError, match="package_contract_human_required"):
+        await validate(service, source, subject=subject)
 
 
 @pytest.mark.asyncio

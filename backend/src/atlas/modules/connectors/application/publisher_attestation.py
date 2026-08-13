@@ -29,8 +29,8 @@ from atlas.modules.connectors.domain.publisher_attestation import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 ATTESTATION_SCHEMA = "atlas.connector-publisher-attestation.v1"
@@ -159,6 +159,9 @@ class PublisherAttestationService:
             or not claim.signature_verified
             or not claim.grants_no_runtime_authority
             or claim.issued_by not in policy.trusted_issuer_ids
+            or not assurance_satisfies_policy(
+                actor.assurance_level, policy.required_assurance_level
+            )
         ):
             raise PublisherAttestationError("publisher_attestation_binding_invalid")
         separated = forbidden | {
@@ -365,13 +368,8 @@ class PublisherAttestationService:
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise PublisherAttestationError("publisher_attestation_enterprise_human_mfa_required")
+        if actor.kind is not SubjectKind.HUMAN:
+            raise PublisherAttestationError("publisher_attestation_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -432,7 +430,7 @@ def build_development_publisher_attestation_policy(
         maximum_approval_age_hours=168,
         maximum_claim_age_hours=8760,
         minimum_support_validity_days=30,
-        required_assurance_level=AssuranceLevel.MULTI_FACTOR,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         trusted_issuer_ids=("subject.publisher-claim-authority",),
         signed_by="subject.publisher-attestation-policy-owner",
         signature_verified=True,

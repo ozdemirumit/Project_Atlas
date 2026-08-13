@@ -338,7 +338,6 @@ async def test_concurrent_replay_produces_one_receipt_and_one_audit() -> None:
         actor("subject.domain.reviewer"),
         actor("subject.security.reviewer"),
         actor("subject.lab.operator"),
-        actor(method=AuthenticationMethod.DEVELOPMENT, assurance=AssuranceLevel.DEVELOPMENT),
         actor(kind=SubjectKind.SERVICE),
     ],
 )
@@ -349,6 +348,21 @@ async def test_rejects_non_independent_or_non_enterprise_actor(
 
     with pytest.raises(PackageAcquisitionError):
         await acquire(service, handoff, subject=subject)
+
+
+@pytest.mark.asyncio
+async def test_development_password_identity_can_acquire_an_authorized_package() -> None:
+    service, handoff, _, _, _, _, _ = await service_fixture()
+    subject = actor(
+        method=AuthenticationMethod.DEVELOPMENT,
+        assurance=AssuranceLevel.DEVELOPMENT,
+    )
+
+    receipt = await acquire(service, handoff, subject=subject)
+
+    assert receipt.acquired_by == subject.subject_id
+    assert receipt.package_acquired and not receipt.publisher_attested
+    assert not receipt.execution_authorized and not receipt.infrastructure_mutation_performed
 
 
 @pytest.mark.asyncio

@@ -66,7 +66,11 @@ class ConnectorRegistryPublicationPolicySnapshot:
             self.version != 1
             or not 1 <= self.maximum_signing_age_hours <= 87600
             or self.required_assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or not 1 <= self.maximum_package_bytes <= 25_000_000
             or not self.signature_verified
             or self.issued_at.tzinfo is None

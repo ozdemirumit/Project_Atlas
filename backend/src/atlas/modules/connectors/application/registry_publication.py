@@ -36,8 +36,8 @@ from atlas.modules.connectors.domain.registry_publication import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 from atlas.modules.mcp_builder.domain.candidate_handoff import McpBuilderCandidateHandoff
 
@@ -178,9 +178,8 @@ class RegistryPublicationService:
             or not approval.approval_valid
             or not final.eligible_for_human_approval
             or not acquisition.integrity_verified
-            or (
-                policy.required_assurance_level is AssuranceLevel.HARDWARE_BACKED
-                and actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or not assurance_satisfies_policy(
+                actor.assurance_level, policy.required_assurance_level
             )
         ):
             raise RegistryPublicationError("registry_publication_binding_invalid")
@@ -510,13 +509,8 @@ class RegistryPublicationService:
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise RegistryPublicationError("registry_publication_enterprise_human_mfa_required")
+        if actor.kind is not SubjectKind.HUMAN:
+            raise RegistryPublicationError("registry_publication_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -573,7 +567,7 @@ def build_development_registry_publication_policy(
         required_signing_receipt_schema="atlas.connector-package-signing-receipt.v1",
         required_signing_envelope_schema="atlas.connector-package-signing-envelope.v1",
         maximum_signing_age_hours=168,
-        required_assurance_level=AssuranceLevel.MULTI_FACTOR,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         required_signer_profile_id="signer-profile.nonproduction-hmac",
         required_signer_workload_id="workload.connector-package-signer",
         required_key_id="key.connector-package-signing.nonproduction",

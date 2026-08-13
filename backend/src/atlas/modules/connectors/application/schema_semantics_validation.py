@@ -51,12 +51,7 @@ from atlas.modules.connectors.domain.supply_chain_inventory import (
     ConnectorPackageSupplyChainInventory,
     PackageContentClass,
 )
-from atlas.modules.identity.domain.models import (
-    AssuranceLevel,
-    AuthenticatedSubject,
-    AuthenticationMethod,
-    SubjectKind,
-)
+from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 
 SCHEMA_SEMANTICS_CREATE_PERMISSION = "connectors.package-schema-semantics-validations.create"
 SCHEMA_SEMANTICS_READ_PERMISSION = "connectors.package-schema-semantics-validations.read"
@@ -135,7 +130,7 @@ class PackageSchemaSemanticsValidationService:
         idempotency_key: str,
         correlation_id: str,
     ) -> ConnectorPackageSchemaSemanticsValidation:
-        self._require_enterprise_human(actor)
+        self._require_human_actor(actor)
         if not acknowledged_untrusted_schema_content:
             raise PackageSchemaSemanticsValidationError(
                 "package_schema_semantics_acknowledgement_required"
@@ -334,7 +329,7 @@ class PackageSchemaSemanticsValidationService:
         validation_id: str,
         correlation_id: str,
     ) -> ConnectorPackageSchemaSemanticsValidation:
-        self._require_enterprise_human(actor)
+        self._require_human_actor(actor)
         validation = await self._repository.get_by_id(validation_id=validation_id)
         if validation is None:
             raise PackageSchemaSemanticsValidationError("package_schema_semantics_not_found")
@@ -1009,16 +1004,9 @@ class PackageSchemaSemanticsValidationService:
         return sha256(encoded).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise PackageSchemaSemanticsValidationError(
-                "package_schema_semantics_enterprise_human_mfa_required"
-            )
+    def _require_human_actor(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
+            raise PackageSchemaSemanticsValidationError("package_schema_semantics_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str

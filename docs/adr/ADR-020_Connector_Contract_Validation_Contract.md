@@ -7,6 +7,14 @@
   ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051,
   ATLAS-053, ATLAS-055, ATLAS-056, ADR-009 through ADR-019
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. This stage still
+requires a dedicated, authenticated, authorized human and every existing RBAC, scope,
+acknowledgement, separation, audit, and no-discovery control. The default policy requires no MFA;
+an optional named step-up policy may add assurance checks when configured, but assurance is not
+authorization.
+
 ## Context
 
 ADR-019 establishes that the exact connector package satisfies one approved internal-use license
@@ -25,12 +33,13 @@ simulator behavior, and vendor compatibility remain later independent gates.
 Atlas adopts profile `atlas.connector-contract.python312.v1` and validator version
 `atlas.connector-contract-validator.v1`.
 
-A dedicated authenticated multi-factor human contract-validation operator initiates the stage in
+A dedicated authenticated authorized human contract-validation operator initiates the stage in
 the exact package organization and environment. The operator differs from every Builder,
 acquisition, manifest-validation, inventory, content-policy, schema-semantics,
 authority-behavior, static-dependency, vulnerability-analysis, malware-analysis, and
-license-analysis actor. AI, service, prior-stage, wrong-scope, insufficient-assurance, and
-unauthorized identities fail closed without package or report discovery.
+license-analysis actor. AI, service, prior-stage, wrong-scope, unauthorized identities, and
+identities that do not satisfy an optional configured `package_contract_validation` step-up policy
+fail closed without package or report discovery.
 
 The stage accepts only the exact passed ADR-019 report with `promotion_blocked=false` and all
 through-license completion flags. Atlas verifies the complete upstream canonical lineage, every
@@ -128,7 +137,8 @@ or later-stage action controls.
   target access tests
 - Safe-finding and non-disclosure tests for paths, source, assertions, fixtures, schemas,
   configuration, capabilities, permissions, endpoints, citations, and parser diagnostics
-- Dedicated permission, MFA, human identity, acknowledgement, scope, and separation tests
+- Dedicated permission, authorized single-factor human identity, acknowledgement, scope,
+  separation, and optional named step-up policy tests
 - Passed and failed immutable reports, idempotency, concurrency, and audit-before-persist
 - Memory and PostgreSQL repository equivalence with one Alembic head
 - Strict create/read API, CSRF, no-store, safe-error, and response-minimization tests

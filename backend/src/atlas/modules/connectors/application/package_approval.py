@@ -34,8 +34,8 @@ from atlas.modules.connectors.domain.package_approval import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 APPROVAL_REQUEST_SCHEMA = "atlas.connector-package-approval-request.v1"
@@ -125,6 +125,9 @@ class PackageApprovalService:
             or validation.validated_at > now
             or now - validation.validated_at
             > timedelta(hours=policy.maximum_final_validation_age_hours)
+            or not assurance_satisfies_policy(
+                actor.assurance_level, policy.required_assurance_level
+            )
         ):
             raise PackageApprovalError("package_approval_source_not_eligible")
         request_digest_seed = self._digest([validation.validation_id, policy.canonical_digest])
@@ -222,6 +225,9 @@ class PackageApprovalService:
             or validation.canonical_digest != request.source_final_validation_digest
             or policy.canonical_digest != request.approval_policy_digest
             or outcome not in policy.permitted_outcomes
+            or not assurance_satisfies_policy(
+                actor.assurance_level, policy.required_assurance_level
+            )
             or not policy.minimum_rationale_length
             <= len(rationale)
             <= policy.maximum_rationale_length
@@ -454,13 +460,8 @@ class PackageApprovalService:
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise PackageApprovalError("package_approval_enterprise_human_mfa_required")
+        if actor.kind is not SubjectKind.HUMAN:
+            raise PackageApprovalError("package_approval_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -564,7 +565,7 @@ def build_development_package_approval_policy(
         required_final_validation_schema="atlas.connector-package-final-validation.v1",
         maximum_final_validation_age_hours=168,
         request_lifetime_minutes=1440,
-        required_assurance_level=AssuranceLevel.MULTI_FACTOR,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         stage_count=1,
         quorum=1,
         permitted_outcomes=tuple(PackageApprovalOutcome),

@@ -118,7 +118,11 @@ class ConnectorPublisherAttestationPolicySnapshot:
             or not 1 <= self.maximum_claim_age_hours <= 87600
             or not 0 <= self.minimum_support_validity_days <= 3650
             or self.required_assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or not self.trusted_issuer_ids
             or not self.signature_verified
             or self.issued_at.tzinfo is None

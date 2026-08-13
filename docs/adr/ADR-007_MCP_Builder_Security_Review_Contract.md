@@ -3,6 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Status | Accepted |
+| Assurance Amendment | Fixed MFA requirements are superseded by ADR-133; authorization and separation remain mandatory while step-up is optional deployment policy. |
 | Decision Date | 2026-08-05 |
 | Decision Owner | Project Atlas Architecture |
 | Related Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-022, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-046, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056, ADR-004, ADR-005, ADR-006 |
@@ -27,9 +28,9 @@ contract version `mcp-builder-security-review.v1`.
 
 A review requires an accepted `atlas.domain-review.connector.v1` record and binds the exact project,
 source, design checkpoint, generation, artifact, static-validation report, domain-review record,
-organization, environment, and authenticated multi-factor human security reviewer. Creation requires
+organization, environment, and authenticated authorized human security reviewer. Creation requires
 the dedicated security-review permission. The security reviewer must be different from the domain
-reviewer. AI, service, wrong-scope, insufficient-assurance, self-review, and unassigned identities
+reviewer. AI, service, wrong-scope, self-review, and unassigned identities
 fail closed.
 
 Exactly one structured assessment is required for each control:
@@ -83,7 +84,7 @@ installation, enablement, target connection, execution, deployment, or infrastru
 
 ## Validation
 
-- Exact upstream digest, accepted-domain-review, tenant, MFA, permission, and separation-of-duties
+- Exact upstream digest, accepted-domain-review, tenant, optional step-up policy, permission, and separation-of-duties
   binding
 - Complete nine-control accepted, needs-remediation, and rejected derivation with evidence-lineage
   enforcement

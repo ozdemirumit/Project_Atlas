@@ -45,7 +45,12 @@ from atlas.modules.connectors.domain.package_installation import (
     ConnectorPackageInstallationReceipt,
 )
 from atlas.modules.connectors.domain.package_registration import ConnectorPackageRegistrationRecord
-from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 
 class FailSecondAuditSink:
@@ -67,7 +72,7 @@ def installation_operator(
 async def installation_fixture(
     *,
     audit_sink: CollectingAuditSink | FailingAuditSink | FailSecondAuditSink | None = None,
-    required_assurance_level: AssuranceLevel = AssuranceLevel.MULTI_FACTOR,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     PackageInstallationService,
     PackageRegistrationService,
@@ -171,6 +176,59 @@ async def test_installation_grants_only_instance_governance_eligibility() -> Non
         "connector_package_installation_requested",
         "connector_package_installation_completed",
     ]
+
+
+@pytest.mark.asyncio
+async def test_installation_optional_step_up_policy_and_human_boundary() -> None:
+    service, _, _, registration, policy, _, _ = await installation_fixture()
+    development_actor = replace(
+        installation_operator(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    receipt = await install_package(service, registration, policy, actor=development_actor)
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert receipt.installed_by == development_actor.subject_id
+
+    (
+        hardware_service,
+        _,
+        _,
+        hardware_registration,
+        hardware_policy,
+        _,
+        _,
+    ) = await installation_fixture(required_assurance_level=AssuranceLevel.HARDWARE_BACKED)
+    with pytest.raises(PackageInstallationError, match="binding_invalid"):
+        await install_package(
+            hardware_service,
+            hardware_registration,
+            hardware_policy,
+            actor=development_actor,
+        )
+
+    (
+        non_human_service,
+        _,
+        _,
+        non_human_registration,
+        non_human_policy,
+        _,
+        _,
+    ) = await installation_fixture()
+    with pytest.raises(PackageInstallationError, match="human_required"):
+        await install_package(
+            non_human_service,
+            non_human_registration,
+            non_human_policy,
+            actor=replace(
+                installation_operator(),
+                kind=SubjectKind.SERVICE,
+                authentication_method=AuthenticationMethod.WORKLOAD_TOKEN,
+            ),
+        )
 
 
 @pytest.mark.asyncio

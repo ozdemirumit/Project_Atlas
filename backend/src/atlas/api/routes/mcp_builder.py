@@ -83,7 +83,7 @@ IDEMPOTENCY = Header(
 
 
 def _raise(error: McpBuilderError) -> NoReturn:
-    if error.code in {"builder_enterprise_human_mfa_required"}:
+    if error.code == "builder_human_required":
         status = 403
     elif error.code.endswith("not_found"):
         status = 404
