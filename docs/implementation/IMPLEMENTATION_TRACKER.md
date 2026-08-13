@@ -4,14 +4,47 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-171 |
-| Title | Provider-neutral ITSM sandbox conformance assessment |
-| Status | In Progress; implementation and full validation complete |
-| Branch | `agent/itsm-sandbox-conformance` |
+| Task ID | ATLAS-IMP-172 |
+| Title | Provider-neutral ITSM sandbox adapter onboarding readiness |
+| Status | In Progress; architecture and implementation pending |
+| Branch | `agent/itsm-sandbox-onboarding-readiness` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-124, ADR-125, ADR-126, ADR-127 (planned) |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-124, ADR-125, ADR-126, ADR-127, ADR-128 (planned) |
 | Last Updated | 2026-08-13 |
-| Next Action | Complete delivery through PR, CI, merge and independent main validation |
+| Next Action | Record ADR-128 and implement the exact-profile sandbox onboarding readiness dossier |
+
+### ATLAS-IMP-172 Scope Rationale
+
+- IMP-171 proves one exact profile can complete a bounded inert diagnostic, but conformance alone
+  does not establish that its sandbox adapter deployment has the ownership, trust, credential,
+  audit, resilience and organizational evidence required for onboarding.
+- No production ITSM vendor, endpoint, credential or sandbox deployment has been selected in this
+  workspace. Readiness must therefore be derived from an injected authoritative evidence source,
+  remain fail-closed in production and never accept self-asserted browser deployment facts.
+- This slice presents a read-only onboarding dossier for one exact active profile and its current
+  unexpired conformance assessment. It does not configure or contact a provider, activate dispatch,
+  mutate an external record, approve a workflow or grant infrastructure execution authority.
+
+### ATLAS-IMP-172 Acceptance Criteria
+
+- A versioned, immutable, exact-scope dossier binds the current profile ID, version and digest,
+  mapping version, latest unexpired conformance assessment and digest, adapter identity and version,
+  readiness-policy version, evidence observation time and canonical digest.
+- Requirement results cover active/current profile integrity, current conformant diagnostic,
+  approved sandbox adapter registration, workload identity, credential-reference ownership,
+  network/trust boundary, mapping change control, rate limiting and backpressure, audit routing,
+  availability/recovery and named security/deployment approval evidence.
+- Missing, stale, nonconformant, scope-mismatched, non-production-eligible or policy-ineligible
+  evidence fails closed with stable requirement states and reason codes. Callers cannot submit
+  endpoints, credentials, secrets, tokens, payloads, provider operations or approval assertions.
+- Authenticated exact-scope C1 reads use dedicated default-deny RBAC, `no-store`, non-disclosing
+  errors and attributable audit. Production uses an empty authoritative evidence source until
+  deployment owners configure separately reviewed sandbox-adapter evidence.
+- The Health governance UI displays every requirement and the deployment input still required,
+  while exposing no adapter configuration, endpoint test, dispatch, ticket mutation, workflow
+  approval or execution control.
+- ADR, focused and full backend/frontend gates, one Alembic head, production build and responsive
+  live validation pass before delivery. The dossier remains computed on read and grants no authority.
 
 ### ATLAS-IMP-171 Scope Rationale
 
@@ -73,6 +106,15 @@
   the conformant evidence after reload. Desktop 1,280 x 720 and mobile 390 x 844 views had no
   page-level horizontal overflow, alert or console warning/error. No arbitrary endpoint test,
   dispatch, ticket-creation or execution button was present.
+
+### ATLAS-IMP-171 Delivery Evidence
+
+- Source head `67dad67cd05d4a12ef701850bb8c4f55f919a5fb` passed exact-head PR CI run
+  `31661374110`; backend completed in 7m47s and frontend in 4m46s.
+- PR [#183](https://github.com/ozdemirumit/Project_Atlas/pull/183) was squash-merged as
+  `71073b22509bd11f72b398ca2e316bee18667a37`.
+- The exact merged commit independently passed `main` CI run `31661792696`; backend completed in
+  7m33s and frontend in 4m46s.
 
 ### ATLAS-IMP-170 Scope Rationale
 
