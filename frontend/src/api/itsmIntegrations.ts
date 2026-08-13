@@ -108,7 +108,7 @@ export type ItsmSandboxConformanceAssessment = {
 };
 
 export type ItsmSandboxOnboardingReadiness = {
-  schema_version: "atlas.itsm-sandbox-onboarding-readiness.v2";
+  schema_version: "atlas.itsm-sandbox-onboarding-readiness.v3";
   version: 1;
   organization_id: string;
   environment_id: string;
@@ -126,6 +126,13 @@ export type ItsmSandboxOnboardingReadiness = {
   policy_digest: string;
   policy_issuer: string;
   policy_expires_at: string;
+  policy_provenance_id: string;
+  policy_provenance_digest: string;
+  policy_signing_key_id: string;
+  policy_signing_key_version: string;
+  policy_signature_algorithm: string;
+  policy_signed_at: string;
+  policy_verified_at: string;
   assessed_at: string;
   evidence_observed_at: string | null;
   evidence_valid_until: string | null;
@@ -246,9 +253,13 @@ export function isSandboxOnboardingReadiness(
     "approval_assertion",
     "policy_payload",
     "policy_override",
+    "signature_value",
+    "verification_key",
+    "key_material",
+    "trust_decision",
   ];
   return (
-    record.schema_version === "atlas.itsm-sandbox-onboarding-readiness.v2" &&
+    record.schema_version === "atlas.itsm-sandbox-onboarding-readiness.v3" &&
     record.version === 1 &&
     typeof record.profile_id === "string" &&
     typeof record.profile_version === "number" &&
@@ -262,6 +273,16 @@ export function isSandboxOnboardingReadiness(
     typeof record.policy_issuer === "string" &&
     typeof record.policy_expires_at === "string" &&
     !Number.isNaN(Date.parse(record.policy_expires_at)) &&
+    typeof record.policy_provenance_id === "string" &&
+    typeof record.policy_provenance_digest === "string" &&
+    /^[a-f0-9]{64}$/.test(record.policy_provenance_digest) &&
+    typeof record.policy_signing_key_id === "string" &&
+    typeof record.policy_signing_key_version === "string" &&
+    typeof record.policy_signature_algorithm === "string" &&
+    typeof record.policy_signed_at === "string" &&
+    !Number.isNaN(Date.parse(record.policy_signed_at)) &&
+    typeof record.policy_verified_at === "string" &&
+    !Number.isNaN(Date.parse(record.policy_verified_at)) &&
     (record.state === "ready" || record.state === "blocked") &&
     Array.isArray(requirements) &&
     requirements.length === 12 &&

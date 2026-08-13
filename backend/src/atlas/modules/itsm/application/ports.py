@@ -9,6 +9,8 @@ from atlas.modules.itsm.domain.models import (
     ItsmSandboxDiagnostic,
     ItsmSandboxOnboardingEvidence,
     ItsmSandboxOnboardingPolicy,
+    ItsmSandboxOnboardingPolicyProvenance,
+    ItsmSandboxOnboardingPolicyTrustKey,
 )
 
 
@@ -89,3 +91,37 @@ class ItsmSandboxOnboardingPolicySource(Protocol):
         environment_id: str,
         site_id: str,
     ) -> tuple[ItsmSandboxOnboardingPolicy, ...]: ...
+
+
+class ItsmSandboxOnboardingPolicyProvenanceSource(Protocol):
+    async def list_scope(
+        self,
+        *,
+        organization_id: str,
+        environment_id: str,
+        site_id: str,
+        policy_id: str,
+    ) -> tuple[ItsmSandboxOnboardingPolicyProvenance, ...]: ...
+
+
+class ItsmSandboxOnboardingPolicyTrustSource(Protocol):
+    async def list_scope(
+        self,
+        *,
+        organization_id: str,
+        environment_id: str,
+        site_id: str,
+        issuer: str,
+    ) -> tuple[ItsmSandboxOnboardingPolicyTrustKey, ...]: ...
+
+
+class ItsmSandboxOnboardingPolicyVerifier(Protocol):
+    @property
+    def supported_algorithms(self) -> tuple[str, ...]: ...
+
+    async def verify(
+        self,
+        *,
+        provenance: ItsmSandboxOnboardingPolicyProvenance,
+        trust_key: ItsmSandboxOnboardingPolicyTrustKey,
+    ) -> bool: ...

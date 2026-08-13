@@ -10,6 +10,7 @@ from atlas.core.classification import DataClassification
 from atlas.modules.identity.domain.models import validate_stable_identifier
 
 _DIGEST = re.compile(r"^[a-f0-9]{64}$")
+_SIGNATURE = re.compile(r"^[A-Za-z0-9_-]{43,512}$")
 _PROFILE_KEY = re.compile(r"^[a-z][a-z0-9_.:-]{2,127}$")
 _PROVIDER_FIELD = re.compile(r"^[A-Za-z][A-Za-z0-9_.:-]{0,127}$")
 ALLOWED_SOURCE_FIELDS = frozenset(
@@ -73,6 +74,12 @@ class ItsmSandboxOnboardingState(StrEnum):
 class ItsmSandboxOnboardingRequirementState(StrEnum):
     SATISFIED = "satisfied"
     BLOCKED = "blocked"
+
+
+class ItsmSandboxOnboardingPolicyTrustKeyState(StrEnum):
+    ACTIVE = "active"
+    DISABLED = "disabled"
+    REVOKED = "revoked"
 
 
 ITSM_SANDBOX_ONBOARDING_REQUIREMENTS = (
@@ -149,6 +156,92 @@ class ItsmSandboxOnboardingPolicy:
             or _DIGEST.fullmatch(self.canonical_digest) is None
         ):
             raise ValueError("ITSM sandbox onboarding policy is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class ItsmSandboxOnboardingPolicyProvenance:
+    provenance_id: str
+    schema_version: str
+    version: int
+    organization_id: str
+    environment_id: str
+    site_id: str
+    policy_id: str
+    policy_version: int
+    policy_digest: str
+    issuer: str
+    signing_key_id: str
+    signing_key_version: str
+    algorithm: str
+    signed_at: datetime
+    expires_at: datetime
+    signed_payload_digest: str
+    signature_value: str
+    signature_digest: str
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.provenance_id,
+            self.schema_version,
+            self.organization_id,
+            self.environment_id,
+            self.site_id,
+            self.policy_id,
+            self.issuer,
+            self.signing_key_id,
+            self.signing_key_version,
+            self.algorithm,
+        ):
+            validate_stable_identifier(value, "ITSM onboarding policy provenance identifier")
+        if (
+            self.schema_version != "atlas.itsm-sandbox-onboarding-policy-provenance.v1"
+            or self.version != 1
+            or self.policy_version < 1
+            or _DIGEST.fullmatch(self.policy_digest) is None
+            or _DIGEST.fullmatch(self.signed_payload_digest) is None
+            or _SIGNATURE.fullmatch(self.signature_value) is None
+            or _DIGEST.fullmatch(self.signature_digest) is None
+            or _DIGEST.fullmatch(self.canonical_digest) is None
+            or self.signed_at.tzinfo is None
+            or self.expires_at.tzinfo is None
+            or self.expires_at <= self.signed_at
+        ):
+            raise ValueError("ITSM sandbox onboarding policy provenance is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class ItsmSandboxOnboardingPolicyTrustKey:
+    issuer: str
+    signing_key_id: str
+    signing_key_version: str
+    algorithm: str
+    organization_id: str
+    environment_id: str
+    site_id: str
+    state: ItsmSandboxOnboardingPolicyTrustKeyState
+    not_before: datetime
+    expires_at: datetime
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.issuer,
+            self.signing_key_id,
+            self.signing_key_version,
+            self.algorithm,
+            self.organization_id,
+            self.environment_id,
+            self.site_id,
+        ):
+            validate_stable_identifier(value, "ITSM onboarding policy trust key identifier")
+        if (
+            self.not_before.tzinfo is None
+            or self.expires_at.tzinfo is None
+            or self.expires_at <= self.not_before
+            or _DIGEST.fullmatch(self.canonical_digest) is None
+        ):
+            raise ValueError("ITSM sandbox onboarding policy trust key is invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -547,6 +640,13 @@ class ItsmSandboxOnboardingReadiness:
     policy_digest: str
     policy_issuer: str
     policy_expires_at: datetime
+    policy_provenance_id: str
+    policy_provenance_digest: str
+    policy_signing_key_id: str
+    policy_signing_key_version: str
+    policy_signature_algorithm: str
+    policy_signed_at: datetime
+    policy_verified_at: datetime
     assessed_at: datetime
     evidence_observed_at: datetime | None
     evidence_valid_until: datetime | None
@@ -570,6 +670,10 @@ class ItsmSandboxOnboardingReadiness:
             self.profile_id,
             self.policy_id,
             self.policy_issuer,
+            self.policy_provenance_id,
+            self.policy_signing_key_id,
+            self.policy_signing_key_version,
+            self.policy_signature_algorithm,
         ):
             validate_stable_identifier(value, "ITSM sandbox onboarding readiness identifier")
         optional_ids = (
@@ -605,15 +709,20 @@ class ItsmSandboxOnboardingReadiness:
         ):
             raise ValueError("ITSM sandbox onboarding evidence interval is incomplete")
         if (
-            self.schema_version != "atlas.itsm-sandbox-onboarding-readiness.v2"
+            self.schema_version != "atlas.itsm-sandbox-onboarding-readiness.v3"
             or self.version != 1
             or self.profile_version < 1
             or self.mapping_version < 1
             or _DIGEST.fullmatch(self.profile_digest) is None
             or self.policy_version < 1
             or _DIGEST.fullmatch(self.policy_digest) is None
+            or _DIGEST.fullmatch(self.policy_provenance_digest) is None
             or self.policy_expires_at.tzinfo is None
             or self.policy_expires_at <= self.assessed_at
+            or self.policy_signed_at.tzinfo is None
+            or self.policy_verified_at.tzinfo is None
+            or self.policy_signed_at > self.policy_verified_at
+            or self.policy_verified_at != self.assessed_at
             or (
                 self.conformance_assessment_digest is not None
                 and _DIGEST.fullmatch(self.conformance_assessment_digest) is None

@@ -258,6 +258,13 @@ class ItsmSandboxOnboardingReadinessData(BaseModel):
     policy_digest: str
     policy_issuer: str
     policy_expires_at: datetime
+    policy_provenance_id: str
+    policy_provenance_digest: str
+    policy_signing_key_id: str
+    policy_signing_key_version: str
+    policy_signature_algorithm: str
+    policy_signed_at: datetime
+    policy_verified_at: datetime
     assessed_at: datetime
     evidence_observed_at: datetime | None
     evidence_valid_until: datetime | None

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hmac
 import json
 from dataclasses import asdict, is_dataclass
 from datetime import UTC, datetime, timedelta
@@ -14,7 +16,15 @@ from atlas.modules.itsm.domain.models import (
     ItsmSandboxOnboardingAdapterRule,
     ItsmSandboxOnboardingEvidence,
     ItsmSandboxOnboardingPolicy,
+    ItsmSandboxOnboardingPolicyProvenance,
+    ItsmSandboxOnboardingPolicyTrustKey,
+    ItsmSandboxOnboardingPolicyTrustKeyState,
 )
+
+_DEVELOPMENT_POLICY_SIGNING_KEY = sha256(
+    b"project-atlas-itsm-onboarding-policy-development-key"
+).digest()
+_DEVELOPMENT_POLICY_ALGORITHM = "algorithm.hmac-sha256-nonproduction"
 
 
 def _normalize(value: object) -> object:
@@ -99,6 +109,10 @@ class InMemoryItsmSandboxOnboardingPolicySource:
     def __init__(self, policies: tuple[ItsmSandboxOnboardingPolicy, ...] = ()) -> None:
         self._policies = policies
 
+    @property
+    def policies(self) -> tuple[ItsmSandboxOnboardingPolicy, ...]:
+        return self._policies
+
     async def list_scope(
         self,
         *,
@@ -108,6 +122,99 @@ class InMemoryItsmSandboxOnboardingPolicySource:
     ) -> tuple[ItsmSandboxOnboardingPolicy, ...]:
         del organization_id, environment_id, site_id
         return self._policies
+
+
+class InMemoryItsmSandboxOnboardingPolicyProvenanceSource:
+    def __init__(self, provenances: tuple[ItsmSandboxOnboardingPolicyProvenance, ...] = ()) -> None:
+        self._provenances = provenances
+
+    async def list_scope(
+        self,
+        *,
+        organization_id: str,
+        environment_id: str,
+        site_id: str,
+        policy_id: str,
+    ) -> tuple[ItsmSandboxOnboardingPolicyProvenance, ...]:
+        del organization_id, environment_id, site_id
+        return tuple(item for item in self._provenances if item.policy_id == policy_id)
+
+
+class InMemoryItsmSandboxOnboardingPolicyTrustSource:
+    def __init__(self, trust_keys: tuple[ItsmSandboxOnboardingPolicyTrustKey, ...] = ()) -> None:
+        self._trust_keys = trust_keys
+
+    async def list_scope(
+        self,
+        *,
+        organization_id: str,
+        environment_id: str,
+        site_id: str,
+        issuer: str,
+    ) -> tuple[ItsmSandboxOnboardingPolicyTrustKey, ...]:
+        del organization_id, environment_id, site_id
+        return tuple(item for item in self._trust_keys if item.issuer == issuer)
+
+
+class HmacDevelopmentItsmSandboxOnboardingPolicyVerifier:
+    def __init__(
+        self,
+        *,
+        signing_key_id: str = "signing-key.itsm-policy.development",
+        signing_key_version: str = "version.1",
+        key_material: bytes = _DEVELOPMENT_POLICY_SIGNING_KEY,
+    ) -> None:
+        if len(key_material) < 32:
+            raise ValueError("Development ITSM policy verification key is too short")
+        self._signing_key_id = signing_key_id
+        self._signing_key_version = signing_key_version
+        self._key_material = key_material
+
+    @property
+    def supported_algorithms(self) -> tuple[str, ...]:
+        return (_DEVELOPMENT_POLICY_ALGORITHM,)
+
+    async def verify(
+        self,
+        *,
+        provenance: ItsmSandboxOnboardingPolicyProvenance,
+        trust_key: ItsmSandboxOnboardingPolicyTrustKey,
+    ) -> bool:
+        if (
+            provenance.signing_key_id != self._signing_key_id
+            or provenance.signing_key_version != self._signing_key_version
+            or trust_key.signing_key_id != self._signing_key_id
+            or trust_key.signing_key_version != self._signing_key_version
+            or provenance.algorithm != _DEVELOPMENT_POLICY_ALGORITHM
+        ):
+            return False
+        expected = (
+            base64.urlsafe_b64encode(
+                hmac.new(
+                    self._key_material,
+                    provenance.signed_payload_digest.encode("ascii"),
+                    sha256,
+                ).digest()
+            )
+            .decode("ascii")
+            .rstrip("=")
+        )
+        return hmac.compare_digest(expected, provenance.signature_value)
+
+
+class UnavailableItsmSandboxOnboardingPolicyVerifier:
+    @property
+    def supported_algorithms(self) -> tuple[str, ...]:
+        return ()
+
+    async def verify(
+        self,
+        *,
+        provenance: ItsmSandboxOnboardingPolicyProvenance,
+        trust_key: ItsmSandboxOnboardingPolicyTrustKey,
+    ) -> bool:
+        del provenance, trust_key
+        return False
 
 
 def build_development_itsm_sandbox_onboarding_policy(
@@ -147,3 +254,69 @@ def onboarding_policy_payload(policy: ItsmSandboxOnboardingPolicy) -> dict[str, 
     payload = cast(dict[str, object], asdict(policy))
     payload.pop("canonical_digest")
     return cast(dict[str, object], _normalize(payload))
+
+
+def build_development_itsm_sandbox_onboarding_policy_authenticity(
+    policy: ItsmSandboxOnboardingPolicy,
+) -> tuple[
+    ItsmSandboxOnboardingPolicyProvenance,
+    ItsmSandboxOnboardingPolicyTrustKey,
+    HmacDevelopmentItsmSandboxOnboardingPolicyVerifier,
+]:
+    signing_key_id = "signing-key.itsm-policy.development"
+    signing_key_version = "version.1"
+    unsigned_values = {
+        "provenance_id": f"provenance.{policy.policy_id}.{policy.version}",
+        "schema_version": "atlas.itsm-sandbox-onboarding-policy-provenance.v1",
+        "version": 1,
+        "organization_id": policy.organization_id,
+        "environment_id": policy.environment_id,
+        "site_id": policy.site_id,
+        "policy_id": policy.policy_id,
+        "policy_version": policy.version,
+        "policy_digest": policy.canonical_digest,
+        "issuer": policy.issuer,
+        "signing_key_id": signing_key_id,
+        "signing_key_version": signing_key_version,
+        "algorithm": _DEVELOPMENT_POLICY_ALGORITHM,
+        "signed_at": policy.issued_at,
+        "expires_at": policy.expires_at,
+    }
+    signed_payload_digest = _digest(unsigned_values)
+    signature_value = (
+        base64.urlsafe_b64encode(
+            hmac.new(
+                _DEVELOPMENT_POLICY_SIGNING_KEY,
+                signed_payload_digest.encode("ascii"),
+                sha256,
+            ).digest()
+        )
+        .decode("ascii")
+        .rstrip("=")
+    )
+    provenance_values = {
+        **unsigned_values,
+        "signed_payload_digest": signed_payload_digest,
+        "signature_value": signature_value,
+        "signature_digest": _digest(signature_value),
+    }
+    provenance = ItsmSandboxOnboardingPolicyProvenance(
+        **cast(dict[str, Any], provenance_values),
+        canonical_digest=_digest(provenance_values),
+    )
+    trust_values = {
+        "issuer": policy.issuer,
+        "signing_key_id": signing_key_id,
+        "signing_key_version": signing_key_version,
+        "algorithm": _DEVELOPMENT_POLICY_ALGORITHM,
+        "organization_id": policy.organization_id,
+        "environment_id": policy.environment_id,
+        "site_id": policy.site_id,
+        "state": ItsmSandboxOnboardingPolicyTrustKeyState.ACTIVE,
+        "not_before": policy.issued_at,
+        "expires_at": policy.expires_at,
+    }
+    trust_key = ItsmSandboxOnboardingPolicyTrustKey(
+        **cast(dict[str, Any], trust_values), canonical_digest=_digest(trust_values)
+    )
+    return provenance, trust_key, HmacDevelopmentItsmSandboxOnboardingPolicyVerifier()

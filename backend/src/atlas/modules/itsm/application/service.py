@@ -18,7 +18,10 @@ from atlas.modules.itsm.application.ports import (
     ItsmIntegrationProfileRepository,
     ItsmSandboxConformanceAdapter,
     ItsmSandboxOnboardingEvidenceSource,
+    ItsmSandboxOnboardingPolicyProvenanceSource,
     ItsmSandboxOnboardingPolicySource,
+    ItsmSandboxOnboardingPolicyTrustSource,
+    ItsmSandboxOnboardingPolicyVerifier,
 )
 from atlas.modules.itsm.domain.models import (
     ITSM_SANDBOX_ONBOARDING_REQUIREMENTS,
@@ -36,6 +39,9 @@ from atlas.modules.itsm.domain.models import (
     ItsmSandboxDiagnostic,
     ItsmSandboxOnboardingEvidence,
     ItsmSandboxOnboardingPolicy,
+    ItsmSandboxOnboardingPolicyProvenance,
+    ItsmSandboxOnboardingPolicyTrustKey,
+    ItsmSandboxOnboardingPolicyTrustKeyState,
     ItsmSandboxOnboardingReadiness,
     ItsmSandboxOnboardingRequirement,
     ItsmSandboxOnboardingRequirementState,
@@ -68,6 +74,13 @@ class ItsmIntegrationService:
         sandbox_conformance_adapter: ItsmSandboxConformanceAdapter | None = None,
         sandbox_onboarding_evidence_source: ItsmSandboxOnboardingEvidenceSource | None = None,
         sandbox_onboarding_policy_source: ItsmSandboxOnboardingPolicySource | None = None,
+        sandbox_onboarding_policy_provenance_source: (
+            ItsmSandboxOnboardingPolicyProvenanceSource | None
+        ) = None,
+        sandbox_onboarding_policy_trust_source: (
+            ItsmSandboxOnboardingPolicyTrustSource | None
+        ) = None,
+        sandbox_onboarding_policy_verifier: ItsmSandboxOnboardingPolicyVerifier | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
@@ -77,6 +90,11 @@ class ItsmIntegrationService:
         self._sandbox_conformance_adapter = sandbox_conformance_adapter
         self._sandbox_onboarding_evidence_source = sandbox_onboarding_evidence_source
         self._sandbox_onboarding_policy_source = sandbox_onboarding_policy_source
+        self._sandbox_onboarding_policy_provenance_source = (
+            sandbox_onboarding_policy_provenance_source
+        )
+        self._sandbox_onboarding_policy_trust_source = sandbox_onboarding_policy_trust_source
+        self._sandbox_onboarding_policy_verifier = sandbox_onboarding_policy_verifier
         self._clock = clock or (lambda: datetime.now(UTC))
         self._lock = asyncio.Lock()
 
@@ -536,7 +554,7 @@ class ItsmIntegrationService:
         self._validate_record(profile)
         self._require_scope(actor, profile)
         now = self._clock()
-        policy = await self._resolve_onboarding_policy(
+        policy, policy_provenance = await self._resolve_onboarding_policy(
             organization_id=profile.organization_id,
             environment_id=profile.environment_id,
             site_id=profile.site_id,
@@ -589,6 +607,7 @@ class ItsmIntegrationService:
             evidence=evidence if evidence_valid else None,
             evidence_reason=evidence_reason,
             policy=policy,
+            policy_provenance=policy_provenance,
             assessed_at=now,
         )
         await self._audit(
@@ -762,6 +781,7 @@ class ItsmIntegrationService:
         evidence: ItsmSandboxOnboardingEvidence | None,
         evidence_reason: str,
         policy: ItsmSandboxOnboardingPolicy,
+        policy_provenance: ItsmSandboxOnboardingPolicyProvenance,
         assessed_at: datetime,
     ) -> ItsmSandboxOnboardingReadiness:
         profile_current = profile.lifecycle is ItsmProfileLifecycle.ACTIVE
@@ -914,7 +934,7 @@ class ItsmIntegrationService:
             item.state is ItsmSandboxOnboardingRequirementState.SATISFIED for item in requirements
         )
         payload: dict[str, object] = {
-            "schema_version": "atlas.itsm-sandbox-onboarding-readiness.v2",
+            "schema_version": "atlas.itsm-sandbox-onboarding-readiness.v3",
             "version": 1,
             "organization_id": profile.organization_id,
             "environment_id": profile.environment_id,
@@ -932,6 +952,13 @@ class ItsmIntegrationService:
             "policy_digest": policy.canonical_digest,
             "policy_issuer": policy.issuer,
             "policy_expires_at": policy.expires_at,
+            "policy_provenance_id": policy_provenance.provenance_id,
+            "policy_provenance_digest": policy_provenance.canonical_digest,
+            "policy_signing_key_id": policy_provenance.signing_key_id,
+            "policy_signing_key_version": policy_provenance.signing_key_version,
+            "policy_signature_algorithm": policy_provenance.algorithm,
+            "policy_signed_at": policy_provenance.signed_at,
+            "policy_verified_at": assessed_at,
             "assessed_at": assessed_at,
             "evidence_observed_at": evidence.observed_at if evidence else None,
             "evidence_valid_until": evidence.valid_until if evidence else None,
@@ -958,7 +985,7 @@ class ItsmIntegrationService:
         environment_id: str,
         site_id: str,
         assessed_at: datetime,
-    ) -> ItsmSandboxOnboardingPolicy:
+    ) -> tuple[ItsmSandboxOnboardingPolicy, ItsmSandboxOnboardingPolicyProvenance]:
         if self._sandbox_onboarding_policy_source is None:
             raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_unavailable")
         try:
@@ -984,8 +1011,22 @@ class ItsmIntegrationService:
                 raise ItsmIntegrationError(
                     "itsm_sandbox_onboarding_policy_requirements_unsupported"
                 )
+        authenticated: list[
+            tuple[ItsmSandboxOnboardingPolicy, ItsmSandboxOnboardingPolicyProvenance]
+        ] = []
+        for policy in policies:
+            authenticated.append(
+                (
+                    policy,
+                    await self._verify_onboarding_policy_provenance(
+                        policy, assessed_at=assessed_at
+                    ),
+                )
+            )
         active = tuple(
-            item for item in policies if item.effective_at <= assessed_at < item.expires_at
+            item
+            for item in authenticated
+            if item[0].effective_at <= assessed_at < item[0].expires_at
         )
         if len(active) > 1:
             raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_ambiguous")
@@ -995,9 +1036,164 @@ class ItsmIntegrationService:
             raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_expired")
         return active[0]
 
+    async def _verify_onboarding_policy_provenance(
+        self,
+        policy: ItsmSandboxOnboardingPolicy,
+        *,
+        assessed_at: datetime,
+    ) -> ItsmSandboxOnboardingPolicyProvenance:
+        if self._sandbox_onboarding_policy_provenance_source is None:
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_provenance_unavailable")
+        try:
+            provenances = await self._sandbox_onboarding_policy_provenance_source.list_scope(
+                organization_id=policy.organization_id,
+                environment_id=policy.environment_id,
+                site_id=policy.site_id,
+                policy_id=policy.policy_id,
+            )
+        except Exception as error:
+            raise ItsmIntegrationError(
+                "itsm_sandbox_onboarding_policy_provenance_unavailable"
+            ) from error
+        if not provenances:
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_provenance_unavailable")
+        if len(provenances) > 1:
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_provenance_ambiguous")
+        provenance = provenances[0]
+        if not isinstance(provenance, ItsmSandboxOnboardingPolicyProvenance):
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_provenance_malformed")
+        if (
+            self._digest(self._onboarding_policy_provenance_payload(provenance))
+            != provenance.canonical_digest
+            or self._digest(self._onboarding_policy_provenance_signed_payload(provenance))
+            != provenance.signed_payload_digest
+            or self._digest(provenance.signature_value) != provenance.signature_digest
+        ):
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_provenance_integrity_failed")
+        if (
+            provenance.organization_id != policy.organization_id
+            or provenance.environment_id != policy.environment_id
+            or provenance.site_id != policy.site_id
+            or provenance.policy_id != policy.policy_id
+            or provenance.policy_version != policy.version
+            or provenance.policy_digest != policy.canonical_digest
+            or provenance.issuer != policy.issuer
+        ):
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_provenance_binding_invalid")
+        if provenance.signed_at > assessed_at:
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_provenance_not_effective")
+        if provenance.expires_at <= assessed_at:
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_provenance_expired")
+        if provenance.signed_at != policy.issued_at or provenance.expires_at != policy.expires_at:
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_provenance_binding_invalid")
+        verifier = self._sandbox_onboarding_policy_verifier
+        if verifier is None:
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_verifier_unavailable")
+        if provenance.algorithm not in verifier.supported_algorithms:
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_algorithm_unsupported")
+        trust_key = await self._resolve_onboarding_policy_trust_key(
+            provenance,
+            assessed_at=assessed_at,
+        )
+        try:
+            verified = await verifier.verify(provenance=provenance, trust_key=trust_key)
+        except Exception as error:
+            raise ItsmIntegrationError(
+                "itsm_sandbox_onboarding_policy_verifier_unavailable"
+            ) from error
+        if not verified:
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_signature_invalid")
+        return provenance
+
+    async def _resolve_onboarding_policy_trust_key(
+        self,
+        provenance: ItsmSandboxOnboardingPolicyProvenance,
+        *,
+        assessed_at: datetime,
+    ) -> ItsmSandboxOnboardingPolicyTrustKey:
+        if self._sandbox_onboarding_policy_trust_source is None:
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_trust_unavailable")
+        try:
+            trust_keys = await self._sandbox_onboarding_policy_trust_source.list_scope(
+                organization_id=provenance.organization_id,
+                environment_id=provenance.environment_id,
+                site_id=provenance.site_id,
+                issuer=provenance.issuer,
+            )
+        except Exception as error:
+            raise ItsmIntegrationError(
+                "itsm_sandbox_onboarding_policy_trust_unavailable"
+            ) from error
+        if not trust_keys:
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_trust_unavailable")
+        if len(trust_keys) > 1:
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_trust_ambiguous")
+        trust_key = trust_keys[0]
+        if not isinstance(trust_key, ItsmSandboxOnboardingPolicyTrustKey):
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_trust_malformed")
+        if (
+            self._digest(self._onboarding_policy_trust_payload(trust_key))
+            != trust_key.canonical_digest
+        ):
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_trust_integrity_failed")
+        if (
+            trust_key.organization_id != provenance.organization_id
+            or trust_key.environment_id != provenance.environment_id
+            or trust_key.site_id != provenance.site_id
+            or trust_key.issuer != provenance.issuer
+            or trust_key.signing_key_id != provenance.signing_key_id
+            or trust_key.signing_key_version != provenance.signing_key_version
+            or trust_key.algorithm != provenance.algorithm
+        ):
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_trust_binding_invalid")
+        if trust_key.state is ItsmSandboxOnboardingPolicyTrustKeyState.REVOKED:
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_trust_revoked")
+        if trust_key.state is ItsmSandboxOnboardingPolicyTrustKeyState.DISABLED:
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_trust_disabled")
+        if trust_key.not_before > assessed_at:
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_trust_not_effective")
+        if trust_key.expires_at <= assessed_at:
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_trust_expired")
+        if (
+            trust_key.not_before > provenance.signed_at
+            or trust_key.expires_at < provenance.expires_at
+        ):
+            raise ItsmIntegrationError("itsm_sandbox_onboarding_policy_trust_binding_invalid")
+        return trust_key
+
     @classmethod
     def _onboarding_policy_payload(cls, policy: ItsmSandboxOnboardingPolicy) -> dict[str, object]:
         payload = cast(dict[str, object], asdict(policy))
+        payload.pop("canonical_digest")
+        return cast(dict[str, object], cls._normalize(payload))
+
+    @classmethod
+    def _onboarding_policy_provenance_payload(
+        cls, provenance: ItsmSandboxOnboardingPolicyProvenance
+    ) -> dict[str, object]:
+        payload = cast(dict[str, object], asdict(provenance))
+        payload.pop("canonical_digest")
+        return cast(dict[str, object], cls._normalize(payload))
+
+    @classmethod
+    def _onboarding_policy_provenance_signed_payload(
+        cls, provenance: ItsmSandboxOnboardingPolicyProvenance
+    ) -> dict[str, object]:
+        payload = cast(dict[str, object], asdict(provenance))
+        for field in (
+            "signed_payload_digest",
+            "signature_value",
+            "signature_digest",
+            "canonical_digest",
+        ):
+            payload.pop(field)
+        return cast(dict[str, object], cls._normalize(payload))
+
+    @classmethod
+    def _onboarding_policy_trust_payload(
+        cls, trust_key: ItsmSandboxOnboardingPolicyTrustKey
+    ) -> dict[str, object]:
+        payload = cast(dict[str, object], asdict(trust_key))
         payload.pop("canonical_digest")
         return cast(dict[str, object], cls._normalize(payload))
 

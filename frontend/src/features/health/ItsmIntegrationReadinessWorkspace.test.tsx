@@ -112,7 +112,7 @@ const conformance: ItsmSandboxConformanceAssessment = {
 };
 
 const onboarding: ItsmSandboxOnboardingReadiness = {
-  schema_version: "atlas.itsm-sandbox-onboarding-readiness.v2",
+  schema_version: "atlas.itsm-sandbox-onboarding-readiness.v3",
   version: 1,
   organization_id: "organization.development",
   environment_id: "environment.test",
@@ -130,6 +130,13 @@ const onboarding: ItsmSandboxOnboardingReadiness = {
   policy_digest: "f".repeat(64),
   policy_issuer: "issuer.atlas-development",
   policy_expires_at: "2026-09-12T05:00:00Z",
+  policy_provenance_id: "provenance.policy.itsm-sandbox-onboarding.development.1",
+  policy_provenance_digest: "1".repeat(64),
+  policy_signing_key_id: "signing-key.itsm-policy.development",
+  policy_signing_key_version: "version.1",
+  policy_signature_algorithm: "algorithm.hmac-sha256-nonproduction",
+  policy_signed_at: "2026-08-13T05:00:00Z",
+  policy_verified_at: "2026-08-13T05:00:00Z",
   assessed_at: "2026-08-13T05:00:00Z",
   evidence_observed_at: "2026-08-13T05:00:00Z",
   evidence_valid_until: "2026-08-13T05:10:00Z",
@@ -214,8 +221,10 @@ describe("ItsmIntegrationReadinessWorkspace", () => {
     expect(screen.getByText("Security and deployment approvals")).toBeVisible();
     expect(screen.getByText("policy.itsm-sandbox-onboarding.development / v1")).toBeVisible();
     expect(screen.getByText("issuer.atlas-development")).toBeVisible();
+    expect(screen.getByText("provenance.policy.itsm-sandbox-onboarding.development.1")).toBeVisible();
+    expect(screen.getByText("signing-key.itsm-policy.development / version.1")).toBeVisible();
     expect(screen.getByText("f".repeat(20) + "...")).toBeVisible();
-    expect(screen.queryByRole("button", { name: /upload policy|edit policy|approve policy|configure adapter/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /upload policy|edit policy|approve policy|sign policy|rotate key|revoke key|trust key|configure adapter/i })).toBeNull();
   });
 
   it("keeps profile lifecycle changes behind a governed browser session", async () => {

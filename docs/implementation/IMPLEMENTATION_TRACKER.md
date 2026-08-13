@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-174 |
 | Title | Provider-neutral ITSM onboarding policy provenance and authenticity |
-| Status | In Progress; architecture and implementation pending |
+| Status | In Progress; implementation and local validation complete, delivery pending |
 | Branch | `agent/itsm-onboarding-policy-authenticity` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-124, ADR-125, ADR-126, ADR-127, ADR-128, ADR-129, ADR-130 (planned) |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-124, ADR-125, ADR-126, ADR-127, ADR-128, ADR-129, ADR-130 |
 | Last Updated | 2026-08-13 |
-| Next Action | Record ADR-130 and require trusted policy provenance before onboarding evaluation |
+| Next Action | Publish the validated IMP-174 branch, pass exact-head CI, merge, and validate main |
 
 ### ATLAS-IMP-174 Scope Rationale
 
@@ -46,6 +46,39 @@
   controls.
 - ADR, focused/full backend and frontend gates, one Alembic head, production build and responsive
   live verification pass before delivery; every authority flag remains false.
+
+### ATLAS-IMP-174 Validation Evidence
+
+- ADR-130 records detached exact-policy provenance, an independently injected issuer/key trust
+  registry, verification-key isolation, authenticity-before-lifecycle ordering and unchanged
+  no-authoring/no-operation boundaries. Production sources remain empty and its verifier remains
+  unavailable.
+- The immutable provenance envelope binds exact policy ID/version/digest, issuer, scope, signing
+  key ID/version, algorithm, signed/expiry times, signed-payload digest, signature digest and
+  canonical digest. The trust record independently binds issuer, key, algorithm, scope, lifecycle
+  and active/disabled/revoked state without exposing key material.
+- Focused service/API coverage passed 59 scenarios, including missing, failed, ambiguous, malformed,
+  drifted, mismatched, future, expired and policy-lifecycle-detached provenance; missing, failed,
+  ambiguous, bad-integrity, wrong-scope, insufficient-lifetime, future, expired, disabled and revoked
+  trust; unsupported algorithm, invalid signature and verifier failure.
+- The v3 dossier binds minimized provenance ID/digest, signing-key ID/version, algorithm, signed time
+  and verification time. API and frontend contracts exclude signature value, verification key/key
+  material and caller-shaped trust decisions while every production, dispatch, external-mutation,
+  workflow, execution and infrastructure-mutation authority flag remains false.
+- The complete backend gate found 1,216 files formatted, passed Ruff, found no strict mypy issues in
+  1,110 source/test modules, passed 1,073 tests with three expected Windows symlink skips and
+  retained one Alembic head at `20260813_0105`.
+- Frontend TypeScript and zero-warning ESLint passed. Focused policy authenticity and workspace
+  tests passed 9 scenarios; the complete suite passed 242 tests across 91 files. The production
+  build passed with only the existing Babel and large-chunk advisories; the ITSM workspace remains
+  a separately loaded 32.28 kB chunk.
+- Live development authentication succeeded against backend port 8000 and frontend port 5253. A
+  fresh profile displayed policy, provenance, signing-key/version, algorithm and verification time
+  before conformance; the acknowledged no-network diagnostic refreshed all 12 requirements while
+  preserving fail-closed synthetic adapter and owner-approval blockers. No raw signature appeared.
+- The Health governance workspace had no page-level horizontal overflow at 1,280 x 720 or
+  390 x 844. It exposed no policy upload/edit/sign/approval, trust, key rotation/revocation, adapter
+  configuration, dispatch, ticket mutation or execution control.
 
 ### ATLAS-IMP-173 Scope Rationale
 

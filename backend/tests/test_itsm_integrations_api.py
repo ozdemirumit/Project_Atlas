@@ -25,8 +25,11 @@ from atlas.modules.identity.domain.models import (
 from atlas.modules.itsm.adapters.memory import InMemoryItsmIntegrationProfileRepository
 from atlas.modules.itsm.adapters.onboarding import (
     DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource,
+    InMemoryItsmSandboxOnboardingPolicyProvenanceSource,
     InMemoryItsmSandboxOnboardingPolicySource,
+    InMemoryItsmSandboxOnboardingPolicyTrustSource,
     build_development_itsm_sandbox_onboarding_policy,
+    build_development_itsm_sandbox_onboarding_policy_authenticity,
 )
 from atlas.modules.itsm.adapters.sandbox import (
     DeterministicNoNetworkItsmSandboxConformanceAdapter,
@@ -108,6 +111,15 @@ class ItsmFixture:
     def __init__(self, *, roles: tuple[str, ...] = (ROLE_ID,)) -> None:
         self.sink = CollectingAuditSink()
         self.repository = InMemoryItsmIntegrationProfileRepository()
+        onboarding_policy = build_development_itsm_sandbox_onboarding_policy(
+            organization_id=ORGANIZATION_ID,
+            environment_id="environment.test",
+            site_id="site.local",
+            now=NOW,
+        )
+        provenance, trust_key, verifier = (
+            build_development_itsm_sandbox_onboarding_policy_authenticity(onboarding_policy)
+        )
         self.service = ItsmIntegrationService(
             repository=self.repository,
             audit_sink=self.sink,
@@ -117,15 +129,15 @@ class ItsmFixture:
                 DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource()
             ),
             sandbox_onboarding_policy_source=InMemoryItsmSandboxOnboardingPolicySource(
-                (
-                    build_development_itsm_sandbox_onboarding_policy(
-                        organization_id=ORGANIZATION_ID,
-                        environment_id="environment.test",
-                        site_id="site.local",
-                        now=NOW,
-                    ),
-                )
+                (onboarding_policy,)
             ),
+            sandbox_onboarding_policy_provenance_source=(
+                InMemoryItsmSandboxOnboardingPolicyProvenanceSource((provenance,))
+            ),
+            sandbox_onboarding_policy_trust_source=InMemoryItsmSandboxOnboardingPolicyTrustSource(
+                (trust_key,)
+            ),
+            sandbox_onboarding_policy_verifier=verifier,
             clock=lambda: NOW,
         )
         self.app = create_app(
@@ -386,13 +398,17 @@ def test_sandbox_onboarding_readiness_is_read_only_blocked_and_non_disclosing() 
     assert readiness.status_code == 200
     assert readiness.headers["Cache-Control"] == "no-store"
     data = readiness.json()["data"]
-    assert data["schema_version"] == "atlas.itsm-sandbox-onboarding-readiness.v2"
+    assert data["schema_version"] == "atlas.itsm-sandbox-onboarding-readiness.v3"
     assert data["state"] == "blocked"
     assert data["profile_digest"] == profile["canonical_digest"]
     assert data["conformance_assessment_id"] == assessed.json()["data"]["assessment_id"]
     assert data["policy_id"] == "policy.itsm-sandbox-onboarding.development"
     assert data["policy_version"] == 1
     assert data["policy_issuer"] == "issuer.atlas-development"
+    assert data["policy_provenance_id"].startswith("provenance.policy.itsm-sandbox")
+    assert data["policy_signing_key_id"] == "signing-key.itsm-policy.development"
+    assert data["policy_signature_algorithm"] == "algorithm.hmac-sha256-nonproduction"
+    assert "signature_value" not in data
     assert len(data["requirements"]) == 12
     assert all(
         data[field] is False
