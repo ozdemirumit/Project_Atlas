@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from sqlalchemy import Table
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from atlas.core.persistence.models import (
@@ -213,15 +214,12 @@ def test_execution_run_keeps_historical_lease_binding_without_current_lease_fk()
 
 
 def test_materialization_models_enforce_one_run_ordered_steps_and_one_claim() -> None:
-    run_constraints = {
-        constraint.name for constraint in WorkflowExecutionRunModel.__table__.constraints
-    }
-    step_constraints = {
-        constraint.name for constraint in WorkflowExecutionStepRunModel.__table__.constraints
-    }
-    claim_constraints = {
-        constraint.name for constraint in WorkflowRunMaterializationClaimModel.__table__.constraints
-    }
+    run_table = cast(Table, WorkflowExecutionRunModel.__table__)
+    step_table = cast(Table, WorkflowExecutionStepRunModel.__table__)
+    claim_table = cast(Table, WorkflowRunMaterializationClaimModel.__table__)
+    run_constraints = {constraint.name for constraint in run_table.constraints}
+    step_constraints = {constraint.name for constraint in step_table.constraints}
+    claim_constraints = {constraint.name for constraint in claim_table.constraints}
 
     assert "uq_workflow_execution_run_plan" in run_constraints
     assert "uq_workflow_execution_run_digest" in run_constraints
