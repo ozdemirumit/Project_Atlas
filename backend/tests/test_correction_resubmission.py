@@ -12,11 +12,16 @@ from test_browser_sessions import BasicTestIdentityProvider, login, settings
 from test_package_acquisition import CollectingAuditSink
 from test_review_decision import decide, review_decision_fixture
 from test_runtime_activation import FailSecondAuditSink
-from test_target_session import target_session_operator
+from test_target_session import development_target_session_operator
 
 from atlas.api.app import create_app
 from atlas.api.correction_resubmission_schemas import OperationalKnowledgeCorrectionInput
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 from atlas.modules.knowledge.adapters.correction_resubmission_memory import (
     InMemoryOperationalKnowledgeCorrectionPolicySource,
     InMemoryOperationalKnowledgeCorrectionRepository,
@@ -117,6 +122,7 @@ async def correction_fixture(
     audit_sink: CollectingAuditSink | FailSecondAuditSink | None = None,
     all_passed: bool = False,
     one_track_only: bool = False,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     OperationalKnowledgeCorrectionService,
     InMemoryOperationalKnowledgeCorrectionRepository,
@@ -186,6 +192,7 @@ async def correction_fixture(
         environment_id=request.environment_id,
         issued_at=presentation.presented_at - timedelta(hours=1),
         expires_at=presentation.presented_at + timedelta(days=1),
+        required_assurance_level=required_assurance_level,
     )
     resolved_adapter = adapter or SyntheticOperationalKnowledgeCorrectionAdapter(
         clock=lambda: presentation.presented_at
@@ -204,7 +211,7 @@ async def correction_fixture(
         environment_id=request.environment_id,
         clock=lambda: presentation.presented_at,
     )
-    actor = target_session_operator(draft.curated_by)
+    actor = development_target_session_operator(draft.curated_by)
     return service, repository, source, policy, actor, resolved_adapter, permission, audit
 
 
@@ -239,7 +246,7 @@ async def correct(
 
 
 @pytest.mark.asyncio
-async def test_correction_is_immutable_minimized_idempotent_and_resubmittable() -> None:
+async def test_correction_accepts_development_password_and_is_immutable_idempotent() -> None:
     (
         service,
         repository,
@@ -250,6 +257,9 @@ async def test_correction_is_immutable_minimized_idempotent_and_resubmittable() 
         authorizer,
         audit,
     ) = await correction_fixture()
+    assert actor.authentication_method is AuthenticationMethod.DEVELOPMENT
+    assert actor.assurance_level is AssuranceLevel.DEVELOPMENT
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
     record = await correct(service, source, policy, actor)
     repeated = await correct(service, source, policy, actor)
     replay = await service.get(
@@ -294,6 +304,49 @@ async def test_correction_is_immutable_minimized_idempotent_and_resubmittable() 
         "operational_knowledge_correction_read",
         "operational_knowledge_correction_read",
     ]
+
+
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    [AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED],
+)
+@pytest.mark.asyncio
+async def test_correction_enforces_explicit_stronger_assurance_policy(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    service, repository, source, policy, actor, *_ = await correction_fixture(
+        required_assurance_level=required_assurance_level
+    )
+
+    with pytest.raises(OperationalKnowledgeCorrectionError, match="assurance_required"):
+        await correct(service, source, policy, actor)
+
+    assert (
+        await repository.get_claim_by_source_request(
+            source_review_request_id=source.request.review_request_id
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_correction_rejects_non_human_actor() -> None:
+    service, repository, source, policy, actor, *_ = await correction_fixture()
+    service_actor = replace(
+        actor,
+        kind=SubjectKind.SERVICE,
+        authentication_method=AuthenticationMethod.WORKLOAD_TOKEN,
+    )
+
+    with pytest.raises(OperationalKnowledgeCorrectionError, match="human_required"):
+        await correct(service, source, policy, service_actor)
+
+    assert (
+        await repository.get_claim_by_source_request(
+            source_review_request_id=source.request.review_request_id
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio

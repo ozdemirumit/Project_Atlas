@@ -15,12 +15,7 @@ from atlas.modules.authorization.application.bootstrap import (
     KNOWLEDGE_DETERMINISTIC_CHUNKING_CREATE,
     KNOWLEDGE_DETERMINISTIC_CHUNKING_READ,
 )
-from atlas.modules.identity.domain.models import (
-    AssuranceLevel,
-    AuthenticatedSubject,
-    AuthenticationMethod,
-    SubjectKind,
-)
+from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 from atlas.modules.knowledge.application.deterministic_chunking_ports import (
     OperationalKnowledgeChunker,
     OperationalKnowledgeChunkingError,
@@ -96,7 +91,7 @@ class OperationalKnowledgeDeterministicChunkingService:
         idempotency_key: str,
         correlation_id: str,
     ) -> OperationalKnowledgeChunkingRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         purpose = purpose.strip()
         if (
             not 20 <= len(purpose) <= 1000
@@ -436,7 +431,7 @@ class OperationalKnowledgeDeterministicChunkingService:
         browser_session_id: str,
         correlation_id: str,
     ) -> OperationalKnowledgeChunkingRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         record = await self._repository.get(chunk_set_id=chunk_set_id)
         if record is None:
             raise OperationalKnowledgeChunkingError("operational_knowledge_chunking_not_found")
@@ -575,15 +570,9 @@ class OperationalKnowledgeDeterministicChunkingService:
         ).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
-            raise OperationalKnowledgeChunkingError(
-                "operational_knowledge_chunking_enterprise_human_hardware_mfa_required"
-            )
+    def _require_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
+            raise OperationalKnowledgeChunkingError("operational_knowledge_chunking_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str

@@ -14,7 +14,7 @@ from atlas.api.retrieval_index_publication_schemas import (
     OperationalKnowledgeRetrievalPublicationData,
     OperationalKnowledgeRetrievalPublicationInput,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 from atlas.modules.knowledge.adapters.retrieval_index_publication_memory import (
     InMemoryOperationalKnowledgeRetrievalPublicationPolicySource,
     InMemoryOperationalKnowledgeRetrievalPublicationRepository,
@@ -163,6 +163,18 @@ async def create_publication(
         idempotency_key=idempotency_key,
         correlation_id="cor_knowledge_retrieval_publication",
     )
+
+
+@pytest.mark.asyncio
+async def test_retrieval_publication_rejects_non_human_actor() -> None:
+    service, _, index, policy, actor, *_ = await publication_fixture()
+    with pytest.raises(OperationalKnowledgeRetrievalPublicationError, match="human_required"):
+        await create_publication(
+            service,
+            index,
+            policy,
+            replace(actor, kind=SubjectKind.SERVICE),
+        )
 
 
 @pytest.mark.asyncio

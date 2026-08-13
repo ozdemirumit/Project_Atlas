@@ -54,8 +54,12 @@ Before claim creation the service revalidates:
 - exact signed curation policy, signer, schema, scope, draft domain, content type, source authority,
   language, title template, classification inheritance, access-policy inheritance, retention
   inheritance, adapter, limits, and freshness bindings;
-- hardware-backed human assurance, exact tenant scope, dedicated C3 knowledge-draft curation and
-  evidence-read permissions, and separation from upstream actors and policy or adapter attestors;
+- a current human identity satisfying the signed curation policy's assurance and freshness
+  requirements, exact tenant scope, dedicated C3 knowledge-draft curation and evidence-read
+  permissions, and separation from upstream actors and policy or adapter attestors; under ADR-133,
+  the default `SINGLE_FACTOR` policy accepts an authorized username/password development browser
+  session, while `MULTI_FACTOR` or `HARDWARE_BACKED` assurance applies only when explicitly
+  requested by that policy;
 - absence of a prior curation claim and absence of knowledge approval, retrieval publication,
   model-context availability, graph update, scheduling, workflow continuation, execution,
   deployment, or infrastructure-mutation authority.
@@ -152,7 +156,8 @@ codes, bounded counts, lifecycle labels, and non-sensitive digests.
 
 Claims and draft records are immutable, deterministic, concurrency-safe, and equivalent in memory
 and PostgreSQL. The API uses browser session, mutation CSRF, strict schemas, no-store, dedicated
-default-deny RBAC, hardware MFA, exact tenant scope, safe errors, and minimized responses.
+default-deny RBAC, ADR-133 policy-evaluated assurance, exact tenant scope, safe errors, and
+minimized responses.
 
 ## Consequences
 

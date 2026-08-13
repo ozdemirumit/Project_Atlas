@@ -18,8 +18,8 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 from atlas.modules.knowledge.application.protected_inspection_ports import (
     OperationalKnowledgeProtectedInspectionBroker,
@@ -92,7 +92,7 @@ class OperationalKnowledgeProtectedInspectionService:
         idempotency_key: str,
         correlation_id: str,
     ) -> OperationalKnowledgeProtectedInspectionGrant:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         if not lease_only_acknowledged:
             raise OperationalKnowledgeProtectedInspectionError(
                 "operational_knowledge_protected_inspection_acknowledgement_required"
@@ -121,6 +121,10 @@ class OperationalKnowledgeProtectedInspectionService:
                 "operational_knowledge_protected_inspection_policy_not_found"
             )
         self._verify_snapshot(policy)
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
+            raise OperationalKnowledgeProtectedInspectionError(
+                "operational_knowledge_protected_inspection_assurance_required"
+            )
         now = self._clock()
         self._verify_source(
             source=source,
@@ -135,7 +139,7 @@ class OperationalKnowledgeProtectedInspectionService:
             minutes=policy.maximum_authentication_age_minutes
         ):
             raise OperationalKnowledgeProtectedInspectionError(
-                "operational_knowledge_protected_inspection_recent_hardware_mfa_required"
+                "operational_knowledge_protected_inspection_recent_authentication_required"
             )
         current_subject_digest = self._digest([policy.subject_digest_salt_digest, actor.subject_id])
         expected_subject_digest, opaque_assignment_id = self._track_binding(source, track_code)
@@ -307,7 +311,7 @@ class OperationalKnowledgeProtectedInspectionService:
     async def get(
         self, *, actor: AuthenticatedSubject, lease_id: str, correlation_id: str
     ) -> OperationalKnowledgeProtectedInspectionRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         record = await self._repository.get(lease_id=lease_id)
         if record is None:
             raise OperationalKnowledgeProtectedInspectionError(
@@ -606,14 +610,10 @@ class OperationalKnowledgeProtectedInspectionService:
         ).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
+    def _require_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
             raise OperationalKnowledgeProtectedInspectionError(
-                "operational_knowledge_protected_inspection_enterprise_human_hardware_mfa_required"
+                "operational_knowledge_protected_inspection_human_required"
             )
 
     def _require_scope(
@@ -696,7 +696,7 @@ def build_development_operational_knowledge_protected_inspection_policy(
         maximum_concurrent_leases=1,
         require_browser_session_binding=True,
         require_exact_assignee=True,
-        required_assurance_level=AssuranceLevel.HARDWARE_BACKED,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         signed_by="subject.operational-knowledge-protected-inspection-policy-signer",
         signature_verified=True,
         issued_at=issued_at,

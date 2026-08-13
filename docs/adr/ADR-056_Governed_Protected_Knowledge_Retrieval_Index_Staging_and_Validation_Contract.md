@@ -63,9 +63,12 @@ state, command, schedule, workflow, execution, deployment, or mutation fields.
 
 ### Identity And Separation
 
-The actor must be a current enterprise human in the exact tenant with recent hardware-backed MFA,
-dedicated C2 index-stage, index-validate, and lineage-read permissions, browser binding, CSRF, and
-a current signed policy. The actor cannot be any curator, reviewer, final approver, publication,
+The actor must be a current enterprise human in the exact tenant with dedicated C2 index-stage,
+index-validate, and lineage-read permissions, browser binding, CSRF, and a current signed policy.
+Under ADR-133, the default `SINGLE_FACTOR` policy accepts an authorized username/password
+development browser session; `MULTI_FACTOR` or `HARDWARE_BACKED` assurance and corresponding
+freshness apply only when the signed index-staging policy explicitly requests them. The actor
+cannot be any curator, reviewer, final approver, publication,
 materialization, chunking, or embedding steward, policy signer, trusted preparer, materializer,
 chunker, embedder, indexer, model owner, index-profile owner, or a service, shared, AI, or
 break-glass identity.
@@ -132,8 +135,8 @@ no-referrer, and restrictive content-security headers.
 Intent, claim, trusted staging, validation completion, persistence completion, and read are
 separately audited. Audit excludes content, coordinates, chunk maps, point IDs, collection names,
 payloads, token streams, vector values, endpoints, keys, profile internals, cookies, raw identity,
-and secrets. Policy, lineage, permission, MFA, separation, browser, indexer, model-space,
-persistence, audit, concurrency, reconciliation, or integrity uncertainty fails closed.
+and secrets. Policy, lineage, permission, configured assurance, separation, browser, indexer,
+model-space, persistence, audit, concurrency, reconciliation, or integrity uncertainty fails closed.
 
 ## Consequences
 
@@ -148,7 +151,8 @@ persistence, audit, concurrency, reconciliation, or integrity uncertainty fails 
 
 - Production requires an approved isolated vector-store boundary, signed index profile, encrypted
   staging capacity, and reconciliation support.
-- A separate eligible human steward and recent hardware MFA are required.
+- A separate eligible human steward remains required; assurance follows the explicit index-staging
+  policy and defaults to `SINGLE_FACTOR` under ADR-133.
 - Failed or uncertain post-claim staging requires governance intervention rather than automatic
   replay.
 

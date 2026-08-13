@@ -76,7 +76,12 @@ class OperationalEvidenceKnowledgeDraftPolicySnapshot:
             or not 1 <= self.maximum_source_age_minutes <= 1440
             or not 1 <= self.maximum_draft_items <= 1000
             or not 1 <= self.maximum_draft_bytes <= 1_048_576
-            or self.required_assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or self.required_assurance_level
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or not all(
                 (
                     self.require_classification_inheritance,

@@ -15,12 +15,7 @@ from atlas.modules.authorization.application.bootstrap import (
     KNOWLEDGE_INDEX_STAGING_CREATE,
     KNOWLEDGE_INDEX_STAGING_READ,
 )
-from atlas.modules.identity.domain.models import (
-    AssuranceLevel,
-    AuthenticatedSubject,
-    AuthenticationMethod,
-    SubjectKind,
-)
+from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 from atlas.modules.knowledge.application.index_staging_validation_ports import (
     OperationalKnowledgeEmbeddingSetSource,
     OperationalKnowledgeIndexer,
@@ -87,7 +82,7 @@ class OperationalKnowledgeIndexStagingValidationService:
         idempotency_key: str,
         correlation_id: str,
     ) -> OperationalKnowledgeIndexRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         purpose = purpose.strip()
         if (
             not 20 <= len(purpose) <= 1000
@@ -388,7 +383,7 @@ class OperationalKnowledgeIndexStagingValidationService:
         browser_session_id: str,
         correlation_id: str,
     ) -> OperationalKnowledgeIndexRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         record = await self._repository.get(index_staging_id=index_staging_id)
         if record is None:
             raise OperationalKnowledgeIndexError("operational_knowledge_index_not_found")
@@ -524,15 +519,9 @@ class OperationalKnowledgeIndexStagingValidationService:
         ).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
-            raise OperationalKnowledgeIndexError(
-                "operational_knowledge_index_enterprise_human_hardware_mfa_required"
-            )
+    def _require_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
+            raise OperationalKnowledgeIndexError("operational_knowledge_index_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str

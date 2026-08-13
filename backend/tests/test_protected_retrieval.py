@@ -1,19 +1,23 @@
 from __future__ import annotations
 
 from dataclasses import asdict, replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
 from test_package_acquisition import CollectingAuditSink
 from test_retrieval_index_publication import create_publication, publication_fixture
-from test_target_session import target_session_operator
+from test_target_session import development_target_session_operator, target_session_operator
 
 from atlas.api.protected_retrieval_schemas import (
     OperationalKnowledgeRetrievalInput,
     OperationalKnowledgeRetrievalResultData,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    SubjectKind,
+)
 from atlas.modules.knowledge.adapters.protected_retrieval_memory import (
     InMemoryOperationalKnowledgeRetrievalPolicySource,
     MemoryOperationalKnowledgeRetrievalRepository,
@@ -155,6 +159,93 @@ async def create_retrieval(
         idempotency_key=idempotency_key,
         correlation_id="cor_protected_knowledge_retrieval",
     )
+
+
+@pytest.mark.asyncio
+async def test_protected_retrieval_rejects_non_human_actor() -> None:
+    service, _, publication, policy, actor, *_ = await retrieval_fixture()
+    with pytest.raises(OperationalKnowledgeRetrievalError, match="human_required"):
+        await create_retrieval(
+            service,
+            publication,
+            policy,
+            replace(actor, kind=SubjectKind.SERVICE),
+        )
+
+
+@pytest.mark.asyncio
+async def test_protected_retrieval_accepts_development_identity_under_default_policy() -> None:
+    service, _, publication, policy, _, *_ = await retrieval_fixture()
+    actor = development_target_session_operator("subject.knowledge-retrieval-consumer")
+
+    result = await create_retrieval(service, publication, policy, actor)
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert result.record.consumer_subject_digest != actor.subject_id
+
+
+@pytest.mark.asyncio
+async def test_protected_retrieval_rejects_insufficient_explicit_assurance_policy() -> None:
+    service, _, publication, policy, _, *_ = await retrieval_fixture()
+    actor = development_target_session_operator("subject.knowledge-retrieval-consumer")
+    stronger_policy = replace(
+        policy,
+        required_assurance_level=AssuranceLevel.MULTI_FACTOR,
+        canonical_digest="0" * 64,
+    )
+    stronger_policy = replace(
+        stronger_policy,
+        canonical_digest=service._digest(service._payload(stronger_policy)),
+    )
+    service._policy_source = InMemoryOperationalKnowledgeRetrievalPolicySource((stronger_policy,))
+    with pytest.raises(OperationalKnowledgeRetrievalError, match="assurance_required"):
+        await create_retrieval(service, publication, stronger_policy, actor)
+
+
+@pytest.mark.parametrize(
+    "assurance_level",
+    (
+        AssuranceLevel.SINGLE_FACTOR,
+        AssuranceLevel.MULTI_FACTOR,
+        AssuranceLevel.HARDWARE_BACKED,
+    ),
+)
+def test_protected_retrieval_policy_accepts_supported_assurance_levels(
+    assurance_level: AssuranceLevel,
+) -> None:
+    issued_at = datetime.now(UTC)
+    policy = OperationalKnowledgeRetrievalPolicySnapshot(
+        policy_id="operational-knowledge-retrieval-policy.test",
+        schema_version="atlas.operational-knowledge-retrieval-policy.v1",
+        version=1,
+        organization_id="org.test",
+        environment_id="env.test",
+        policy_version="policy-version.test-v1",
+        required_publication_schema="atlas.operational-knowledge-retrieval-publication.v1",
+        required_publication_state="operational_knowledge_retrieval_published",
+        required_retriever_id="operational-knowledge-retriever.test",
+        required_retriever_attestor_id="subject.retriever-attestor",
+        required_receipt_schema="atlas.operational-knowledge-retrieval-receipt.v1",
+        protected_vault_id="protected-vault.test",
+        retrieval_profile_digest="a" * 64,
+        authorization_profile_digest="b" * 64,
+        ranking_profile_digest="c" * 64,
+        evidence_profile_digest="d" * 64,
+        subject_digest_salt_digest="e" * 64,
+        browser_binding_key_digest="f" * 64,
+        maximum_authentication_age_minutes=15,
+        maximum_query_characters=1_000,
+        maximum_results=5,
+        maximum_excerpt_characters=1_000,
+        retention_minutes=30,
+        required_assurance_level=assurance_level,
+        signed_by="subject.policy-signer",
+        signature_verified=True,
+        issued_at=issued_at,
+        expires_at=issued_at + timedelta(hours=1),
+        canonical_digest="0" * 64,
+    )
+    assert policy.required_assurance_level is assurance_level
 
 
 @pytest.mark.asyncio

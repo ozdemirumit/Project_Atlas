@@ -60,9 +60,12 @@ deployment, or mutation fields. Corrected content never crosses the ordinary app
 ### Identity And Authorization
 
 The actor must be the original accountable curator, in the exact tenant, using a current enterprise
-human identity with recent hardware-backed MFA and dedicated C2 correction-create plus lineage-read
-permissions. Reviewers, policy signers, and trusted adapter identities cannot perform the correction.
-The normal browser session, mutation CSRF, current policy, and exact tenant scope are revalidated.
+human identity with dedicated C2 correction-create plus lineage-read permissions. Reviewers, policy
+signers, and trusted adapter identities cannot perform the correction. The normal browser session,
+mutation CSRF, current policy, and exact tenant scope are revalidated. Under ADR-133, the default
+`SINGLE_FACTOR` policy accepts an authorized username/password development browser session;
+`MULTI_FACTOR` or `HARDWARE_BACKED` assurance and corresponding freshness apply only when the
+signed correction policy explicitly requests them.
 
 ### Trusted Correction Boundary
 
@@ -112,8 +115,8 @@ restrictive content-security policy.
 
 Intent, claim, trusted-adapter completion, persistence completion, and read are separately audited.
 Audit excludes findings, corrected content, artifact coordinates, cookies, raw identity, and secrets.
-Policy, lineage, permission, MFA, browser, adapter, receipt, persistence, audit, concurrency, or
-integrity uncertainty fails closed.
+Policy, lineage, permission, configured assurance, browser, adapter, receipt, persistence, audit,
+concurrency, or integrity uncertainty fails closed.
 
 ## Consequences
 

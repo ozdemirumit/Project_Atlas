@@ -76,7 +76,12 @@ class OperationalKnowledgeReviewerAssignmentPolicySnapshot:
             or not 5 <= self.assignment_ttl_minutes <= 10_080
             or not self.require_distinct_reviewers
             or not self.require_upstream_actor_exclusion
-            or self.required_assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or self.required_assurance_level
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or not self.signature_verified
             or self.issued_at.tzinfo is None
             or self.expires_at.tzinfo is None

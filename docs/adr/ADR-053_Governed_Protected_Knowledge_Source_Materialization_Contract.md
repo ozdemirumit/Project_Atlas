@@ -60,9 +60,12 @@ deployment, or mutation fields.
 
 ### Identity And Separation
 
-The actor must be a current enterprise human in the exact tenant with recent hardware-backed MFA,
-dedicated C2 materialization-create and lineage-read permissions, browser binding, CSRF, and a
-current signed policy. The actor cannot be the curator, either reviewer, final approver,
+The actor must be a current enterprise human in the exact tenant with dedicated C2
+materialization-create and lineage-read permissions, browser binding, CSRF, and a current signed
+policy. Under ADR-133, the default `SINGLE_FACTOR` policy accepts an authorized username/password
+development browser session; `MULTI_FACTOR` or `HARDWARE_BACKED` assurance and corresponding
+freshness apply only when the signed materialization policy explicitly requests them. The actor
+cannot be the curator, either reviewer, final approver,
 publication steward, policy signer, trusted preparer, trusted materializer, or a service, shared,
 AI, or break-glass identity.
 
@@ -120,8 +123,8 @@ policy, browser, and permission authority remain current. Responses use strict `
 
 Intent, claim, trusted materialization, persistence completion, and read are separately audited.
 Audit excludes content, title, coordinates, keys, scan details, profile internals, cookies, raw
-identity, and secrets. Policy, lineage, permission, MFA, separation, browser, materializer,
-persistence, audit, concurrency, or integrity uncertainty fails closed.
+identity, and secrets. Policy, lineage, permission, configured assurance, separation, browser,
+materializer, persistence, audit, concurrency, or integrity uncertainty fails closed.
 
 ## Consequences
 
@@ -135,7 +138,8 @@ persistence, audit, concurrency, or integrity uncertainty fails closed.
 ### Costs
 
 - Production requires an approved isolated materializer and protected encrypted artifact store.
-- A separate eligible human steward and recent hardware MFA are required.
+- A separate eligible human steward remains required; assurance follows the explicit
+  materialization policy and defaults to `SINGLE_FACTOR` under ADR-133.
 - Failed or uncertain post-claim materializations require governance intervention rather than
   automatic replay.
 

@@ -55,8 +55,12 @@ Before content access the service revalidates:
   artifact, manifest, governance, broker, expiry, immutable-write, and cleanup bindings;
 - the signed presentation policy, trusted presenter identity, source schema/state, maximum bytes,
   permitted media type, redaction profile, replay rule, and content-integrity requirements;
-- a current enterprise human identity with hardware-backed MFA, exact tenant scope, dedicated C2
-  content-presentation and lease-read permissions, and authentication no older than the policy;
+- a current enterprise human identity satisfying the signed presentation policy's assurance and
+  freshness requirements, exact tenant scope, dedicated C2 content-presentation and lease-read
+  permissions, and authentication no older than the policy; under ADR-133, the default
+  `SINGLE_FACTOR` policy accepts an authorized username/password development browser session,
+  while `MULTI_FACTOR` or `HARDWARE_BACKED` assurance applies only when explicitly requested by
+  that policy;
 - the salted current-subject digest equals the lease holder and assigned reviewer for that track;
 - the normal browser session hashes to the lease browser binding;
 - the track-specific HttpOnly cookie secret hashes to the stored lease-secret digest;
@@ -166,8 +170,8 @@ uncertainty fails closed and is not reported as successful disclosure.
 Claims and presentation metadata are immutable, deterministic, concurrency-safe, and equivalent
 in memory and PostgreSQL. The API uses normal browser session, track-specific lease cookie,
 mutation CSRF for first presentation, strict schemas, no-store, dedicated default-deny RBAC, C2
-classification, recent hardware MFA, exact tenant and assignee scope, safe errors, and minimized
-responses.
+classification, ADR-133 policy-evaluated assurance and freshness, exact tenant and assignee scope,
+safe errors, and minimized responses.
 
 ## Consequences
 

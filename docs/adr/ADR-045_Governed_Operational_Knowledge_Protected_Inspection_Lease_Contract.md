@@ -16,7 +16,7 @@ review request. Assignment exposes only opaque assignment IDs and salted subject
 not open content, create a reusable session, or grant review-decision authority.
 
 An assigned reviewer needs a narrowly bounded way to begin protected inspection. Atlas must prove
-that the current hardware-MFA human is the exact assignee for the selected track without exposing
+that the current human is the exact assignee for the selected track without exposing
 raw reviewer identity, draft content, storage coordinates, or bearer material in API responses.
 
 ## Decision
@@ -53,8 +53,12 @@ Before claim creation the service revalidates:
   and cleanup bindings;
 - exact signed inspection policy, signer, schema, scope, identity-digest salt, lease broker,
   receipt schema, authentication freshness, TTL, browser-binding, and concurrency limits;
-- a current enterprise human identity with hardware-backed MFA, exact tenant scope, dedicated C2
-  protected-inspection-lease permission, assignment-read permission, and recent authentication;
+- a current enterprise human identity satisfying the signed inspection policy's assurance and
+  freshness requirements, exact tenant scope, dedicated C2 protected-inspection-lease permission,
+  assignment-read permission, and recent authentication; under ADR-133, the default
+  `SINGLE_FACTOR` policy accepts an authorized username/password development browser session,
+  while `MULTI_FACTOR` or `HARDWARE_BACKED` assurance applies only when explicitly requested by
+  that policy;
 - the salted current subject digest exactly matches the selected track's assigned reviewer digest;
 - the assignment and selected track are current, no prior active or claimed lease exists for that
   track and assignment, and no later decision, correction, approval, publication, retrieval,
@@ -159,8 +163,9 @@ digests. Audit never contains content or lease secrets.
 
 Claims and lease records are immutable, deterministic, concurrency-safe, and equivalent in memory
 and PostgreSQL. The API uses browser session, mutation CSRF, strict schemas, no-store, dedicated
-default-deny RBAC, C2 classification, hardware MFA, authentication freshness, exact tenant scope,
-safe errors, minimized responses, and narrowly scoped cookie handling.
+default-deny RBAC, C2 classification, ADR-133 policy-evaluated assurance and authentication
+freshness, exact tenant scope, safe errors, minimized responses, and narrowly scoped cookie
+handling.
 
 ## Consequences
 

@@ -73,7 +73,12 @@ class OperationalKnowledgeProtectedContentPolicySnapshot:
             or not self.require_exact_replay
             or not self.require_plain_text
             or self.output_media_type != "media-type.text-plain"
-            or self.required_assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or self.required_assurance_level
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or not self.signature_verified
             or self.issued_at.tzinfo is None
             or self.expires_at.tzinfo is None

@@ -14,7 +14,7 @@ from atlas.api.index_staging_validation_schemas import (
     OperationalKnowledgeIndexData,
     OperationalKnowledgeIndexInput,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 from atlas.modules.knowledge.adapters.index_staging_validation_memory import (
     InMemoryOperationalKnowledgeIndexPolicySource,
     InMemoryOperationalKnowledgeIndexRepository,
@@ -153,6 +153,18 @@ async def create_index_stage(
         idempotency_key=idempotency_key,
         correlation_id="cor_knowledge_index_staging",
     )
+
+
+@pytest.mark.asyncio
+async def test_index_staging_rejects_non_human_actor() -> None:
+    service, _, embedding, policy, actor, *_ = await index_fixture()
+    with pytest.raises(OperationalKnowledgeIndexError, match="human_required"):
+        await create_index_stage(
+            service,
+            embedding,
+            policy,
+            replace(actor, kind=SubjectKind.SERVICE),
+        )
 
 
 @pytest.mark.asyncio

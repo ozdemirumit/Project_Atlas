@@ -14,7 +14,7 @@ from atlas.api.embedding_generation_schemas import (
     OperationalKnowledgeEmbeddingData,
     OperationalKnowledgeEmbeddingInput,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 from atlas.modules.knowledge.adapters.embedding_generation_memory import (
     InMemoryOperationalKnowledgeEmbeddingPolicySource,
     InMemoryOperationalKnowledgeEmbeddingRepository,
@@ -161,6 +161,18 @@ async def create_embedding_set(
         idempotency_key=idempotency_key,
         correlation_id="cor_knowledge_embedding_generation",
     )
+
+
+@pytest.mark.asyncio
+async def test_embedding_rejects_non_human_actor() -> None:
+    service, _, chunk, policy, actor, *_ = await embedding_fixture()
+    with pytest.raises(OperationalKnowledgeEmbeddingError, match="human_required"):
+        await create_embedding_set(
+            service,
+            chunk,
+            policy,
+            replace(actor, kind=SubjectKind.SERVICE),
+        )
 
 
 @pytest.mark.asyncio

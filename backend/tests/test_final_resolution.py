@@ -8,10 +8,15 @@ import pytest
 from pydantic import ValidationError
 from test_package_acquisition import CollectingAuditSink
 from test_review_decision import decide, review_decision_fixture
-from test_target_session import target_session_operator
+from test_target_session import development_target_session_operator, target_session_operator
 
 from atlas.api.final_resolution_schemas import OperationalKnowledgeFinalResolutionInput
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 from atlas.modules.knowledge.adapters.final_resolution_memory import (
     InMemoryOperationalKnowledgeFinalResolutionPolicySource,
     InMemoryOperationalKnowledgeFinalResolutionRepository,
@@ -200,7 +205,7 @@ async def final_resolution_fixture(
         environment_id=request.environment_id,
         clock=lambda: presentation.presented_at,
     )
-    actor = target_session_operator("subject.knowledge-final-approver")
+    actor = development_target_session_operator("subject.knowledge-final-approver")
     return service, repository, source, policy, actor, resolved_attestor, permission, audit
 
 
@@ -243,7 +248,9 @@ async def resolve(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("disposition", ["final-resolution.approved", "final-resolution.rejected"])
-async def test_final_resolution_is_minimized_immutable_and_idempotent(disposition: str) -> None:
+async def test_final_resolution_accepts_development_password_and_is_immutable(
+    disposition: str,
+) -> None:
     (
         service,
         repository,
@@ -254,6 +261,8 @@ async def test_final_resolution_is_minimized_immutable_and_idempotent(dispositio
         permission,
         audit,
     ) = await final_resolution_fixture()
+    assert actor.authentication_method is AuthenticationMethod.DEVELOPMENT
+    assert actor.assurance_level is AssuranceLevel.DEVELOPMENT
     record = await resolve(service, source, policy, actor, disposition_code=disposition)
     repeated = await resolve(service, source, policy, actor, disposition_code=disposition)
     replay = await service.get(
@@ -281,6 +290,26 @@ async def test_final_resolution_is_minimized_immutable_and_idempotent(dispositio
         "operational_knowledge_final_resolution_read",
         "operational_knowledge_final_resolution_read",
     ]
+
+
+@pytest.mark.asyncio
+async def test_final_resolution_rejects_non_human_actor() -> None:
+    service, repository, source, policy, actor, *_ = await final_resolution_fixture()
+    service_actor = replace(
+        actor,
+        kind=SubjectKind.SERVICE,
+        authentication_method=AuthenticationMethod.WORKLOAD_TOKEN,
+    )
+
+    with pytest.raises(OperationalKnowledgeFinalResolutionError, match="human_required"):
+        await resolve(service, source, policy, service_actor)
+
+    assert (
+        await repository.get_claim_by_review_request(
+            review_request_id=source.request.review_request_id
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio

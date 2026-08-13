@@ -59,10 +59,13 @@ command, schedule, workflow, execution, deployment, or mutation fields.
 
 ### Identity And Separation
 
-The actor must be a current enterprise human in the exact tenant with recent hardware-backed MFA,
-dedicated C2 publication-preparation-create and lineage-read permissions, browser binding, CSRF,
-and a current signed policy. The actor cannot be the curator, either track reviewer, final approver,
-policy signer, trusted preparer, or a service, shared, AI, or break-glass identity.
+The actor must be a current enterprise human in the exact tenant with dedicated C2
+publication-preparation-create and lineage-read permissions, browser binding, CSRF, and a current
+signed policy. Under ADR-133, the default `SINGLE_FACTOR` policy accepts an authorized
+username/password development browser session; `MULTI_FACTOR` or `HARDWARE_BACKED` assurance and
+corresponding freshness apply only when the signed publication-preparation policy explicitly
+requests them. The actor cannot be the curator, either track reviewer, final approver, policy
+signer, trusted preparer, or a service, shared, AI, or break-glass identity.
 
 ### Trusted Preparation Boundary
 
@@ -108,8 +111,8 @@ tenant, policy, browser, and permission authority remain current. Responses use 
 
 Intent, claim, trusted preparation, persistence completion, and read are separately audited. Audit
 excludes content, title, artifact coordinates, profile internals, cookies, raw identity, and secrets.
-Policy, lineage, permission, MFA, separation, browser, preparer, persistence, audit, concurrency, or
-integrity uncertainty fails closed.
+Policy, lineage, permission, configured assurance, separation, browser, preparer, persistence,
+audit, concurrency, or integrity uncertainty fails closed.
 
 ## Consequences
 
@@ -123,7 +126,8 @@ integrity uncertainty fails closed.
 ### Costs
 
 - Production requires an approved trusted publication preparer.
-- A separate eligible human steward and recent hardware MFA are required after approval.
+- A separate eligible human steward remains required after approval; assurance follows the
+  explicit publication-preparation policy and defaults to `SINGLE_FACTOR` under ADR-133.
 - Failed or uncertain post-claim preparations require governance intervention rather than replay.
 
 ## Rejected Alternatives

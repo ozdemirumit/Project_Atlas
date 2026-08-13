@@ -79,7 +79,12 @@ class OperationalKnowledgeReviewRequestPolicySnapshot:
             or self.domain_queue_id == self.security_queue_id
             or not 1 <= self.maximum_source_age_minutes <= 1440
             or not 1 <= self.maximum_manifest_bytes <= 262_144
-            or self.required_assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or self.required_assurance_level
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or not all(
                 (
                     self.require_classification_inheritance,

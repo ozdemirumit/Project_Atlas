@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { OperationalKnowledgeReviewerAssignment } from "../../api/reviewerAssignments";
@@ -101,9 +101,43 @@ const lease = {
   reused: false,
 };
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("ProtectedInspectionLeasePanel", () => {
+  it("uses a signed-in human session without imposing fixed MFA or hardware assurance", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ detail: "inspection_policy_denied" }), { status: 403 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <ProtectedInspectionLeasePanel assignment={assignment} />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText(/exact assigned signed-in human reviewer/i)).toBeVisible();
+    expect(screen.getByText(/stronger assurance applies only when/i)).toBeVisible();
+    expect(document.body).not.toHaveTextContent(/MFA|multi[- ]factor|hardware/i);
+    fireEvent.click(screen.getByLabelText(/opens a short-lived browser-bound channel/i));
+    fireEvent.click(screen.getByRole("button", { name: "Open inspection lease" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/current signed-in human session/i);
+    expect(alert).toHaveTextContent(/exact unexpired assignee/i);
+    expect(alert).toHaveTextContent(/retain its browser binding/i);
+    expect(alert).toHaveTextContent(
+      /stronger assurance applies only when.*explicit inspection policy requires it/i,
+    );
+    expect(alert).toHaveTextContent(/not retried automatically/i);
+    expect(alert).not.toHaveTextContent(/MFA|multi[- ]factor|hardware/i);
+  });
+
   it("opens only an assigned track lease without content or bearer material", async () => {
     document.cookie = "atlas_csrf=test-csrf; path=/";
     const fetchMock = vi

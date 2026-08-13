@@ -101,7 +101,12 @@ class OperationalKnowledgeReviewFindingPolicySnapshot:
             or len(set(self.domain_category_codes)) != len(self.domain_category_codes)
             or len(set(self.security_category_codes)) != len(self.security_category_codes)
             or len(set(self.severity_codes)) != len(self.severity_codes)
-            or self.required_assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or self.required_assurance_level
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or not self.signature_verified
             or self.issued_at.tzinfo is None
             or self.expires_at.tzinfo is None

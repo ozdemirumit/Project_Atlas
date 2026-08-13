@@ -42,7 +42,7 @@ def _raise(error: OperationalKnowledgeReviewFindingError) -> NoReturn:
     code = str(error)
     if isinstance(error, OperationalKnowledgeReviewFindingUncertainError):
         status = 503
-    elif code.endswith(("required", "denied", "mfa_required")):
+    elif code.endswith(("required", "denied", "human_required")):
         status = 403
     elif code.endswith("not_found"):
         status = 404

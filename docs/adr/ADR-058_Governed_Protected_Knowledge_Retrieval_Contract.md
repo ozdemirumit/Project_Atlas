@@ -63,9 +63,12 @@ result count, excerpt size, timeout, language handling, ranking, and diversity a
 
 ### Identity And Access
 
-The actor must be a current enterprise human in the exact tenant with recent hardware-backed MFA,
-dedicated C1 protected-retrieval and publication-lineage-read permissions, browser binding, CSRF,
-and a current signed policy. The actor must have current source and classification access for each
+The actor must be a current enterprise human in the exact tenant with dedicated C1
+protected-retrieval and publication-lineage-read permissions, browser binding, CSRF, and a current
+signed policy. Under ADR-133, the default `SINGLE_FACTOR` policy accepts an authorized
+username/password development browser session; `MULTI_FACTOR` or `HARDWARE_BACKED` assurance and
+corresponding freshness apply only when the signed retrieval policy explicitly requests them. The
+actor must have current source and classification access for each
 returned result. Initial foundation policy excludes all accountable supply-chain actors for the
 exact lineage, the policy signer, publisher, trusted retriever, service, shared, AI, and break-glass
 identities. A later policy revision may permit ordinary eligible consumers without weakening
@@ -133,17 +136,17 @@ infrastructure.
 
 ### Read, Failure, And Audit
 
-Only the accountable consumer may read the result while identity, tenant, MFA, browser, source,
-classification, policy, lifecycle, retention, and permission authority remain current. Protected
-content is rehydrated only after those checks. Responses use strict `no-store`, `nosniff`,
+Only the accountable consumer may read the result while identity, tenant, configured assurance,
+browser, source, classification, policy, lifecycle, retention, and permission authority remain
+current. Protected content is rehydrated only after those checks. Responses use strict `no-store`,
 no-referrer, and restrictive content-security headers.
 
 Intent, authorization, trusted retrieval, evidence validation, vault write, metadata persistence,
 rehydration, and read are separately audited. Audit excludes raw query, excerpts, titles, source
 URIs, item or chunk IDs, scores, vectors, filters, routes, protected artifact handles, cookies, raw
-identity, credentials, and secrets. Lineage, policy, permission, MFA, browser, filtering,
-classification, lifecycle, retention, citation, safety, vault, persistence, audit, or integrity
-uncertainty fails closed.
+identity, credentials, and secrets. Lineage, policy, permission, configured assurance, browser,
+filtering, classification, lifecycle, retention, citation, safety, vault, persistence, audit, or
+integrity uncertainty fails closed.
 
 ## Consequences
 

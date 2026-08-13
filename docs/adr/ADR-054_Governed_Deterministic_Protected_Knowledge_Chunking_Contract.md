@@ -62,9 +62,12 @@ deployment, or mutation fields.
 
 ### Identity And Separation
 
-The actor must be a current enterprise human in the exact tenant with recent hardware-backed MFA,
-dedicated C2 chunking-create and lineage-read permissions, browser binding, CSRF, and a current
-signed policy. The actor cannot be the curator, either reviewer, final approver, publication
+The actor must be a current enterprise human in the exact tenant with dedicated C2 chunking-create
+and lineage-read permissions, browser binding, CSRF, and a current signed policy. Under ADR-133,
+the default `SINGLE_FACTOR` policy accepts an authorized username/password development browser
+session; `MULTI_FACTOR` or `HARDWARE_BACKED` assurance and corresponding freshness apply only when
+the signed chunking policy explicitly requests them. The actor cannot be the curator, either
+reviewer, final approver, publication
 steward, materialization steward, policy signer, trusted preparer, trusted materializer, trusted
 chunker, or a service, shared, AI, or break-glass identity.
 
@@ -125,8 +128,8 @@ no-referrer, and restrictive content-security headers.
 
 Intent, claim, trusted chunking, persistence completion, and read are separately audited. Audit
 excludes content, title, coordinates, chunk maps, token streams, keys, profile internals, cookies,
-raw identity, and secrets. Policy, lineage, permission, MFA, separation, browser, chunker,
-persistence, audit, concurrency, determinism, or integrity uncertainty fails closed.
+raw identity, and secrets. Policy, lineage, permission, configured assurance, separation, browser,
+chunker, persistence, audit, concurrency, determinism, or integrity uncertainty fails closed.
 
 ## Consequences
 
@@ -141,7 +144,8 @@ persistence, audit, concurrency, determinism, or integrity uncertainty fails clo
 
 - Production requires an approved isolated deterministic chunker and encrypted chunk artifact
   store.
-- A separate eligible human steward and recent hardware MFA are required.
+- A separate eligible human steward remains required; assurance follows the explicit chunking
+  policy and defaults to `SINGLE_FACTOR` under ADR-133.
 - Failed or uncertain post-claim chunking requires governance intervention rather than automatic
   replay.
 

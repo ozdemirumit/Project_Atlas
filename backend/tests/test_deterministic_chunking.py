@@ -11,7 +11,7 @@ from test_source_materialization import materialize, source_materialization_fixt
 from test_target_session import target_session_operator
 
 from atlas.api.deterministic_chunking_schemas import OperationalKnowledgeChunkingInput
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 from atlas.modules.knowledge.adapters.deterministic_chunking_memory import (
     InMemoryOperationalKnowledgeChunkingPolicySource,
     InMemoryOperationalKnowledgeChunkingRepository,
@@ -169,6 +169,18 @@ async def create_chunk_set(
         idempotency_key=idempotency_key,
         correlation_id="cor_knowledge_deterministic_chunking",
     )
+
+
+@pytest.mark.asyncio
+async def test_chunking_rejects_non_human_actor() -> None:
+    service, _, materialization, policy, actor, *_ = await deterministic_chunking_fixture()
+    with pytest.raises(OperationalKnowledgeChunkingError, match="human_required"):
+        await create_chunk_set(
+            service,
+            materialization,
+            policy,
+            replace(actor, kind=SubjectKind.SERVICE),
+        )
 
 
 @pytest.mark.asyncio

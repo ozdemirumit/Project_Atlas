@@ -16,9 +16,7 @@ from atlas.modules.authorization.application.bootstrap import (
     KNOWLEDGE_FINAL_RESOLUTION_READ,
 )
 from atlas.modules.identity.domain.models import (
-    AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
 )
 from atlas.modules.knowledge.application.final_resolution_ports import (
@@ -102,7 +100,7 @@ class OperationalKnowledgeFinalResolutionService:
         idempotency_key: str,
         correlation_id: str,
     ) -> OperationalKnowledgeFinalResolutionRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         purpose = purpose.strip()
         basis_codes = tuple(sorted(set(basis_codes)))
         if (
@@ -385,7 +383,7 @@ class OperationalKnowledgeFinalResolutionService:
         browser_session_id: str,
         correlation_id: str,
     ) -> OperationalKnowledgeFinalResolutionRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         record = await self._repository.get(resolution_id=resolution_id)
         if record is None:
             raise OperationalKnowledgeFinalResolutionError(
@@ -538,14 +536,10 @@ class OperationalKnowledgeFinalResolutionService:
         ).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
+    def _require_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
             raise OperationalKnowledgeFinalResolutionError(
-                "operational_knowledge_final_resolution_enterprise_human_hardware_mfa_required"
+                "operational_knowledge_final_resolution_human_required"
             )
 
     def _require_scope(

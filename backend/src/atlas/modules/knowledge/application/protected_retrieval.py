@@ -18,8 +18,8 @@ from atlas.modules.authorization.application.bootstrap import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 from atlas.modules.knowledge.application.protected_retrieval_ports import (
     OperationalKnowledgeRetrievalError,
@@ -88,7 +88,7 @@ class OperationalKnowledgeProtectedRetrievalService:
         idempotency_key: str,
         correlation_id: str,
     ) -> OperationalKnowledgeRetrievalResult:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         query, purpose = query.strip(), purpose.strip()
         if (
             not 3 <= len(query) <= 4_000
@@ -116,6 +116,7 @@ class OperationalKnowledgeProtectedRetrievalService:
             )
         now = self._clock()
         self._verify_source(publication, policy, publication_digest, retrieval_policy_digest, now)
+        self._require_assurance(actor, policy)
         if len(query) > policy.maximum_query_characters or now - actor.authenticated_at > timedelta(
             minutes=policy.maximum_authentication_age_minutes
         ):
@@ -313,7 +314,7 @@ class OperationalKnowledgeProtectedRetrievalService:
         browser_session_id: str,
         correlation_id: str,
     ) -> OperationalKnowledgeRetrievalResult:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         record = await self._repository.get(retrieval_id=retrieval_id)
         if record is None:
             raise OperationalKnowledgeRetrievalError("operational_knowledge_retrieval_not_found")
@@ -330,6 +331,7 @@ class OperationalKnowledgeProtectedRetrievalService:
             > timedelta(minutes=policy.maximum_authentication_age_minutes)
         ):
             raise OperationalKnowledgeRetrievalError("operational_knowledge_retrieval_not_found")
+        self._require_assurance(actor, policy)
         self._verify_source(
             publication,
             policy,
@@ -487,14 +489,20 @@ class OperationalKnowledgeProtectedRetrievalService:
             )
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
+    def _require_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
             raise OperationalKnowledgeRetrievalError(
-                "operational_knowledge_retrieval_enterprise_human_hardware_mfa_required"
+                "operational_knowledge_retrieval_human_required"
+            )
+
+    @staticmethod
+    def _require_assurance(
+        actor: AuthenticatedSubject,
+        policy: OperationalKnowledgeRetrievalPolicySnapshot,
+    ) -> None:
+        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
+            raise OperationalKnowledgeRetrievalError(
+                "operational_knowledge_retrieval_assurance_required"
             )
 
     def _require_scope(
@@ -608,7 +616,7 @@ def build_development_operational_knowledge_retrieval_policy(
         maximum_results=5,
         maximum_excerpt_characters=1_000,
         retention_minutes=30,
-        required_assurance_level=AssuranceLevel.HARDWARE_BACKED,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         signed_by="subject.operational-knowledge-retrieval-policy-signer",
         signature_verified=True,
         issued_at=issued_at,

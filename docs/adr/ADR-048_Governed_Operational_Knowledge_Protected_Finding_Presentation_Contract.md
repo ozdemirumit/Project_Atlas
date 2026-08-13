@@ -55,9 +55,12 @@ Before artifact access the service revalidates:
   category/severity catalog, classification, access, retention, encryption, and cleanup digests;
 - the signed presentation policy, trusted presenter identity and attestor, required source schema
   and state, receipt schema, item and byte limits, permitted media type, and cleanup rules;
-- a current enterprise human identity with recent hardware-backed MFA, exact tenant scope, and
-  dedicated C2 finding-presentation, finding-metadata-read, presentation-read, and lease-read
-  permissions;
+- a current enterprise human identity satisfying the signed presentation policy's assurance and
+  freshness requirements, exact tenant scope, and dedicated C2 finding-presentation,
+  finding-metadata-read, presentation-read, and lease-read permissions; under ADR-133, the default
+  `SINGLE_FACTOR` policy accepts an authorized username/password development browser session,
+  while `MULTI_FACTOR` or `HARDWARE_BACKED` assurance applies only when explicitly requested by
+  that policy;
 - the salted current-subject digest equals both the lease holder and exact assigned reviewer;
 - the normal browser session hashes to the lease browser binding and the track-specific HttpOnly
   lease cookie hashes to the stored lease-secret digest;
@@ -155,8 +158,9 @@ or authorization uncertainty fails closed.
 
 Claims and records are immutable, deterministic, concurrency-safe, and equivalent in memory and
 PostgreSQL. The API uses the normal browser session, track-specific lease cookie, mutation CSRF
-for first presentation, strict schemas, dedicated default-deny RBAC, C2 classification, recent
-hardware MFA, exact tenant and assignee scope, minimized no-store responses, and safe errors.
+for first presentation, strict schemas, dedicated default-deny RBAC, C2 classification, ADR-133
+policy-evaluated assurance and freshness, exact tenant and assignee scope, minimized no-store
+responses, and safe errors.
 
 ## Consequences
 

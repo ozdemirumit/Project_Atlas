@@ -4,14 +4,79 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-179 |
-| Title | Connector runtime and target optional step-up migration |
-| Status | Validation complete; delivery pending |
-| Branch | `agent/runtime-target-optional-step-up` |
-| Pull Request | Pending |
+| Task ID | ATLAS-IMP-180 |
+| Title | Knowledge curation and retrieval optional step-up migration |
+| Status | PR validation in progress |
+| Branch | `agent/knowledge-optional-step-up` |
+| Pull Request | [#192](https://github.com/ozdemirumit/Project_Atlas/pull/192) |
 | Governing Documents | ATLAS-003, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ADR-132, ADR-133 |
 | Last Updated | 2026-08-13 |
-| Next Action | Publish the verified IMP-179 branch, complete exact-head PR CI, merge and verify the resulting main commit |
+| Next Action | Complete exact-head PR CI, squash-merge PR #192, verify merged main CI, and synchronize local main |
+
+### ATLAS-IMP-180 Scope Rationale
+
+- IMP-179 completed the connector target, runtime and bounded invocation chain through immutable
+  invocation-evidence ingestion. The next contiguous lifecycle boundary is evidence-to-knowledge
+  curation, separated human review, protected presentation, publication preparation, deterministic
+  materialization/chunking/embedding/indexing and governed retrieval.
+- These services still embed development and hardware-backed assurance rejection independently of
+  RBAC or a named signed policy. ADR-133 requires the default local and username/password path to
+  remain usable while allowing deployments to configure an explicit stronger step-up policy.
+- Protected classification, exact assignee/track scope, short leases, no-store presentation,
+  non-delegation, separation, signed lineage, deterministic content identity, publication controls,
+  query minimization, audit and no operational authority remain mandatory.
+- Model-context assembly and model invocation begin at ADR-059 and are intentionally deferred to
+  IMP-181 so knowledge publication/retrieval and AI reasoning remain independently reviewable.
+
+### ATLAS-IMP-180 Acceptance Criteria
+
+- Authorized local username/password and single-factor humans can complete the default knowledge
+  curation, review, publication and retrieval lifecycle without a fabricated MFA claim.
+- An explicit signed policy can still require multi-factor or hardware-backed step-up through the
+  shared helper; insufficient assurance fails closed without granting role, scope or approval.
+- Human eligibility, exact tenant/track/assignee scope, separation, lease freshness, no-store
+  protected presentation, deterministic lineage, idempotency, audit and no-execution boundaries
+  remain enforced independently of assurance.
+- Static regression coverage spans ADR-042 through ADR-058 application, route and domain modules.
+  Focused/full backend and frontend gates, live Knowledge validation, ADR reconciliation and exact
+  PR/main CI must pass before delivery.
+
+### ATLAS-IMP-180 Validation Evidence
+
+- All 17 ADR-042 through ADR-058 application services now require the correct human actor without
+  embedding development, MFA or hardware-backed eligibility gates. Development policies use
+  `SINGLE_FACTOR`; explicit signed `MULTI_FACTOR` or `HARDWARE_BACKED` requirements still fail
+  closed through the shared assurance helper when the current identity is insufficient.
+- Protected classification, exact tenant/track/assignee/browser-session binding, short leases,
+  no-store content presentation, non-delegation, separation of duties, signed lineage and
+  freshness, deterministic content identity, publication controls, query minimization, audit and
+  no operational authority remain independently enforced.
+- Static application, route and domain coverage passed 44 tests. The combined Knowledge package
+  passed 226 tests. Ruff format/lint and strict mypy passed across 1,002 source files.
+- The complete backend suite passed 1,371 tests with three expected Windows symlink skips. The
+  complete frontend suite passed 288 tests across 94 files; zero-warning ESLint, TypeScript and the
+  production build passed with only the pre-existing operational chunk-size advisory.
+- The protected inspection component passed two focused tests and no longer presents hardware MFA
+  as a fixed prerequisite. It explains that a signed-in human session is sufficient by default and
+  that stronger assurance applies only when an explicit inspection policy requests it.
+- Live validation at `http://127.0.0.1:5253/#/connectors/knowledge` used the local `atlas-demo`
+  username/password session against the IMP-180 backend. The Knowledge task view loaded with the
+  authenticated development identity and no fixed MFA or hardware prompt. No published Knowledge
+  record exists in the current development dataset, so no protected inspection or retrieval
+  evidence was fabricated for live validation.
+- ADR-042 through ADR-058 preserve their governance decisions while recording that ADR-133
+  supersedes fixed assurance prerequisites. Optional named step-up remains deployment policy;
+  exact authorization and every protected-content safety boundary remain mandatory.
+
+### ATLAS-IMP-179 Delivery Evidence
+
+- Source commit `b9339b7e771613955671eda2671773e786ed1bce` passed exact-head PR CI run
+  `31705517739`; frontend completed in 3m55s and backend in 6m46s.
+- PR [#191](https://github.com/ozdemirumit/Project_Atlas/pull/191) was squash-merged as
+  `1d951105acc99cd73af163725f4e429ee1a20bd0`.
+- The exact merged commit independently passed `main` CI run `31706115090`; frontend completed in
+  4m57s and backend in 8m03s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-180 branched.
 
 ### ATLAS-IMP-179 Scope Rationale
 

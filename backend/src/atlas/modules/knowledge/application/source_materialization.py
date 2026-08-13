@@ -16,9 +16,7 @@ from atlas.modules.authorization.application.bootstrap import (
     KNOWLEDGE_SOURCE_MATERIALIZATION_READ,
 )
 from atlas.modules.identity.domain.models import (
-    AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
 )
 from atlas.modules.knowledge.application.source_materialization_ports import (
@@ -94,7 +92,7 @@ class OperationalKnowledgeSourceMaterializationService:
         idempotency_key: str,
         correlation_id: str,
     ) -> OperationalKnowledgeSourceMaterializationRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         purpose = purpose.strip()
         if (
             not 20 <= len(purpose) <= 1000
@@ -410,7 +408,7 @@ class OperationalKnowledgeSourceMaterializationService:
         browser_session_id: str,
         correlation_id: str,
     ) -> OperationalKnowledgeSourceMaterializationRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         record = await self._repository.get(materialization_id=materialization_id)
         if record is None:
             raise OperationalKnowledgeSourceMaterializationError(
@@ -554,14 +552,10 @@ class OperationalKnowledgeSourceMaterializationService:
         ).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
+    def _require_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
             raise OperationalKnowledgeSourceMaterializationError(
-                "operational_knowledge_source_materialization_enterprise_human_hardware_mfa_required"
+                "operational_knowledge_source_materialization_human_required"
             )
 
     def _require_scope(
