@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-173 |
 | Title | Provider-neutral ITSM sandbox onboarding policy governance |
-| Status | In Progress; architecture and implementation pending |
+| Status | In Progress; implementation and local validation complete, delivery pending |
 | Branch | `agent/itsm-sandbox-onboarding-policy-governance` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-124, ADR-125, ADR-126, ADR-127, ADR-128, ADR-129 (planned) |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-124, ADR-125, ADR-126, ADR-127, ADR-128, ADR-129 |
 | Last Updated | 2026-08-13 |
-| Next Action | Record ADR-129 and bind onboarding readiness to an injected governed policy snapshot |
+| Next Action | Publish the validated IMP-173 branch, pass exact-head CI, merge, and validate main |
 
 ### ATLAS-IMP-173 Scope Rationale
 
@@ -44,6 +44,38 @@
   approval or execution control.
 - ADR, focused/full backend and frontend gates, one Alembic head, production build and responsive
   live verification pass before delivery; every authority flag remains false.
+
+### ATLAS-IMP-173 Validation Evidence
+
+- ADR-129 records an injected immutable onboarding-policy authority, exact organization,
+  environment and site scope, ordered supported requirements, approved adapter identity/version
+  rules, policy freshness bounds, lifecycle, issuer and canonical integrity. No application
+  constant fallback or browser policy input exists.
+- Exactly one current policy is required. Focused service coverage proves missing or failed
+  authority, bad integrity, wrong scope, unsupported requirements, future, expired and ambiguous
+  policy states fail closed with stable errors. Separate tests prove policy-governed conformance
+  and evidence age limits and exact adapter identity/version eligibility.
+- Production wiring uses an empty policy source. Development injects one deterministic local
+  snapshot, but its synthetic no-network adapter and synthetic approval evidence remain
+  onboarding-ineligible. The v2 dossier binds policy ID, version, digest, issuer and expiry while
+  every production, dispatch, external-mutation, workflow, execution and infrastructure-mutation
+  authority flag remains false.
+- Focused backend service/API validation passed 35 scenarios. The complete backend gate found
+  1,216 files formatted, passed Ruff, found no strict mypy issues in 1,110 source/test modules, passed
+  1,049 tests with three expected Windows symlink skips and retained one Alembic head at
+  `20260813_0105`.
+- Frontend TypeScript and zero-warning ESLint passed. Focused policy contract and workspace tests
+  passed 9 scenarios; the complete suite passed 242 tests across 91 files. The production build
+  passed with only the existing Babel and large-chunk advisories; the ITSM workspace remains a
+  separately loaded 31.14 kB chunk.
+- Live development authentication succeeded against backend port 8000 and frontend port 5253. A
+  profile was registered, the policy-bound fail-closed dossier appeared before conformance, and
+  the acknowledged no-network diagnostic refreshed all 12 requirements while preserving the
+  synthetic adapter and owner-approval blockers. Policy ID/version, issuer, expiry and digest were
+  visible as immutable evidence.
+- The Health governance workspace had no page-level horizontal overflow at 1,280 x 720 or
+  390 x 844. It exposed no policy upload/edit/approval, adapter configuration, dispatch, ticket
+  mutation or execution control.
 
 ### ATLAS-IMP-172 Scope Rationale
 

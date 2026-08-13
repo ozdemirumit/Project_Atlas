@@ -25,6 +25,8 @@ from atlas.modules.identity.domain.models import (
 from atlas.modules.itsm.adapters.memory import InMemoryItsmIntegrationProfileRepository
 from atlas.modules.itsm.adapters.onboarding import (
     DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource,
+    InMemoryItsmSandboxOnboardingPolicySource,
+    build_development_itsm_sandbox_onboarding_policy,
 )
 from atlas.modules.itsm.adapters.sandbox import (
     DeterministicNoNetworkItsmSandboxConformanceAdapter,
@@ -113,6 +115,16 @@ class ItsmFixture:
             sandbox_conformance_adapter=DeterministicNoNetworkItsmSandboxConformanceAdapter(),
             sandbox_onboarding_evidence_source=(
                 DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource()
+            ),
+            sandbox_onboarding_policy_source=InMemoryItsmSandboxOnboardingPolicySource(
+                (
+                    build_development_itsm_sandbox_onboarding_policy(
+                        organization_id=ORGANIZATION_ID,
+                        environment_id="environment.test",
+                        site_id="site.local",
+                        now=NOW,
+                    ),
+                )
             ),
             clock=lambda: NOW,
         )
@@ -374,10 +386,13 @@ def test_sandbox_onboarding_readiness_is_read_only_blocked_and_non_disclosing() 
     assert readiness.status_code == 200
     assert readiness.headers["Cache-Control"] == "no-store"
     data = readiness.json()["data"]
-    assert data["schema_version"] == "atlas.itsm-sandbox-onboarding-readiness.v1"
+    assert data["schema_version"] == "atlas.itsm-sandbox-onboarding-readiness.v2"
     assert data["state"] == "blocked"
     assert data["profile_digest"] == profile["canonical_digest"]
     assert data["conformance_assessment_id"] == assessed.json()["data"]["assessment_id"]
+    assert data["policy_id"] == "policy.itsm-sandbox-onboarding.development"
+    assert data["policy_version"] == 1
+    assert data["policy_issuer"] == "issuer.atlas-development"
     assert len(data["requirements"]) == 12
     assert all(
         data[field] is False

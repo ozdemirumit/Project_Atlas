@@ -75,6 +75,82 @@ class ItsmSandboxOnboardingRequirementState(StrEnum):
     BLOCKED = "blocked"
 
 
+ITSM_SANDBOX_ONBOARDING_REQUIREMENTS = (
+    "itsm.sandbox-onboarding.profile-current",
+    "itsm.sandbox-onboarding.conformance-current",
+    "itsm.sandbox-onboarding.adapter-registered",
+    "itsm.sandbox-onboarding.adapter-sandbox-approved",
+    "itsm.sandbox-onboarding.workload-identity",
+    "itsm.sandbox-onboarding.credential-ownership",
+    "itsm.sandbox-onboarding.network-trust",
+    "itsm.sandbox-onboarding.mapping-change-control",
+    "itsm.sandbox-onboarding.rate-backpressure",
+    "itsm.sandbox-onboarding.audit-routing",
+    "itsm.sandbox-onboarding.availability-recovery",
+    "itsm.sandbox-onboarding.owner-approvals",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ItsmSandboxOnboardingAdapterRule:
+    adapter_id: str
+    adapter_version: str
+    require_production_eligible: bool = True
+
+    def __post_init__(self) -> None:
+        validate_stable_identifier(self.adapter_id, "ITSM onboarding policy adapter")
+        validate_stable_identifier(self.adapter_version, "ITSM onboarding policy adapter version")
+
+
+@dataclass(frozen=True, slots=True)
+class ItsmSandboxOnboardingPolicy:
+    schema_version: str
+    policy_id: str
+    version: int
+    organization_id: str
+    environment_id: str
+    site_id: str
+    issuer: str
+    requirement_ids: tuple[str, ...]
+    adapter_rules: tuple[ItsmSandboxOnboardingAdapterRule, ...]
+    max_conformance_age_seconds: int
+    max_evidence_age_seconds: int
+    issued_at: datetime
+    effective_at: datetime
+    expires_at: datetime
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.schema_version,
+            self.policy_id,
+            self.organization_id,
+            self.environment_id,
+            self.site_id,
+            self.issuer,
+        ):
+            validate_stable_identifier(value, "ITSM sandbox onboarding policy identifier")
+        if (
+            self.schema_version != "atlas.itsm-sandbox-onboarding-policy.v1"
+            or self.version < 1
+            or not self.requirement_ids
+            or len(set(self.requirement_ids)) != len(self.requirement_ids)
+            or any(not item.startswith("itsm.sandbox-onboarding.") for item in self.requirement_ids)
+            or not self.adapter_rules
+            or len({(item.adapter_id, item.adapter_version) for item in self.adapter_rules})
+            != len(self.adapter_rules)
+            or not 60 <= self.max_conformance_age_seconds <= 86400
+            or not 60 <= self.max_evidence_age_seconds <= 604800
+            or any(
+                item.tzinfo is None for item in (self.issued_at, self.effective_at, self.expires_at)
+            )
+            or self.effective_at < self.issued_at
+            or self.expires_at <= self.effective_at
+            or _DIGEST.fullmatch(self.canonical_digest) is None
+        ):
+            raise ValueError("ITSM sandbox onboarding policy is invalid")
+
+
 @dataclass(frozen=True, slots=True)
 class ItsmFieldMapping:
     source_field: str
@@ -466,7 +542,11 @@ class ItsmSandboxOnboardingReadiness:
     conformance_assessment_digest: str | None
     adapter_id: str | None
     adapter_version: str | None
-    policy_version: str
+    policy_id: str
+    policy_version: int
+    policy_digest: str
+    policy_issuer: str
+    policy_expires_at: datetime
     assessed_at: datetime
     evidence_observed_at: datetime | None
     evidence_valid_until: datetime | None
@@ -488,7 +568,8 @@ class ItsmSandboxOnboardingReadiness:
             self.environment_id,
             self.site_id,
             self.profile_id,
-            self.policy_version,
+            self.policy_id,
+            self.policy_issuer,
         ):
             validate_stable_identifier(value, "ITSM sandbox onboarding readiness identifier")
         optional_ids = (
@@ -524,11 +605,15 @@ class ItsmSandboxOnboardingReadiness:
         ):
             raise ValueError("ITSM sandbox onboarding evidence interval is incomplete")
         if (
-            self.schema_version != "atlas.itsm-sandbox-onboarding-readiness.v1"
+            self.schema_version != "atlas.itsm-sandbox-onboarding-readiness.v2"
             or self.version != 1
             or self.profile_version < 1
             or self.mapping_version < 1
             or _DIGEST.fullmatch(self.profile_digest) is None
+            or self.policy_version < 1
+            or _DIGEST.fullmatch(self.policy_digest) is None
+            or self.policy_expires_at.tzinfo is None
+            or self.policy_expires_at <= self.assessed_at
             or (
                 self.conformance_assessment_digest is not None
                 and _DIGEST.fullmatch(self.conformance_assessment_digest) is None

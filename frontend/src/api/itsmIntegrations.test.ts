@@ -54,7 +54,7 @@ describe("ITSM sandbox conformance runtime contract", () => {
 
 function onboarding(overrides: Record<string, unknown> = {}) {
   return {
-    schema_version: "atlas.itsm-sandbox-onboarding-readiness.v1",
+    schema_version: "atlas.itsm-sandbox-onboarding-readiness.v2",
     version: 1,
     organization_id: "organization.development",
     environment_id: "environment.test",
@@ -67,7 +67,11 @@ function onboarding(overrides: Record<string, unknown> = {}) {
     conformance_assessment_digest: "c".repeat(64),
     adapter_id: "adapter.itsm.synthetic-no-network",
     adapter_version: "version.1",
-    policy_version: "policy.itsm-sandbox-onboarding.v1",
+    policy_id: "policy.itsm-sandbox-onboarding.development",
+    policy_version: 1,
+    policy_digest: "f".repeat(64),
+    policy_issuer: "issuer.atlas-development",
+    policy_expires_at: "2026-09-12T05:00:00Z",
     assessed_at: "2026-08-13T05:00:00Z",
     evidence_observed_at: "2026-08-13T05:00:00Z",
     evidence_valid_until: "2026-08-13T05:10:00Z",
@@ -103,5 +107,14 @@ describe("ITSM sandbox onboarding runtime contract", () => {
       false,
     );
     expect(isSandboxOnboardingReadiness(onboarding({ requirements: [] }))).toBe(false);
+    expect(isSandboxOnboardingReadiness(onboarding({ policy_override: "unsafe" }))).toBe(false);
+  });
+
+  it("requires an immutable versioned policy binding", () => {
+    expect(isSandboxOnboardingReadiness(onboarding({ schema_version: "atlas.itsm-sandbox-onboarding-readiness.v1" }))).toBe(false);
+    expect(isSandboxOnboardingReadiness(onboarding({ policy_version: 0 }))).toBe(false);
+    expect(isSandboxOnboardingReadiness(onboarding({ policy_version: 1.5 }))).toBe(false);
+    expect(isSandboxOnboardingReadiness(onboarding({ policy_digest: "not-a-digest" }))).toBe(false);
+    expect(isSandboxOnboardingReadiness(onboarding({ policy_expires_at: "not-a-time" }))).toBe(false);
   });
 });

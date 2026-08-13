@@ -8,6 +8,7 @@ from atlas.modules.itsm.domain.models import (
     ItsmSandboxConformanceAssessment,
     ItsmSandboxDiagnostic,
     ItsmSandboxOnboardingEvidence,
+    ItsmSandboxOnboardingPolicy,
 )
 
 
@@ -78,3 +79,13 @@ class ItsmSandboxOnboardingEvidenceSource(Protocol):
         profile: ItsmIntegrationProfile,
         assessment: ItsmSandboxConformanceAssessment | None,
     ) -> ItsmSandboxOnboardingEvidence | None: ...
+
+
+class ItsmSandboxOnboardingPolicySource(Protocol):
+    async def list_scope(
+        self,
+        *,
+        organization_id: str,
+        environment_id: str,
+        site_id: str,
+    ) -> tuple[ItsmSandboxOnboardingPolicy, ...]: ...
