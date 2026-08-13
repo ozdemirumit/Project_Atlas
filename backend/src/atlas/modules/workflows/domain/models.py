@@ -57,6 +57,7 @@ class WorkflowStepKind(StrEnum):
 
 class WorkflowPlanState(StrEnum):
     PLANNED = "planned"
+    CANCELLED = "cancelled"
 
 
 class WorkflowPlanStepState(StrEnum):
@@ -279,6 +280,63 @@ class WorkflowPlanStep:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkflowPlanTransition:
+    transition_id: str
+    prior_state: WorkflowPlanState
+    new_state: WorkflowPlanState
+    actor_subject_id: str
+    scope: WorkflowScope
+    target_id: str
+    target_type: str
+    reason: str
+    reason_digest: str
+    correlation_id: str
+    occurred_at: datetime
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        _require_identifier(self.transition_id, name="transition_id")
+        if self.prior_state is not WorkflowPlanState.PLANNED:
+            raise ValueError("workflow cancellation must start from planned")
+        if self.new_state is not WorkflowPlanState.CANCELLED:
+            raise ValueError("workflow cancellation must end in cancelled")
+        _require_identifier(self.actor_subject_id, name="transition actor_subject_id")
+        _require_identifier(self.target_id, name="transition target_id")
+        if self.target_type != "storage":
+            raise ValueError("workflow cancellation supports only storage targets")
+        _require_text(self.reason, name="cancellation reason", maximum=500)
+        if self.reason != " ".join(self.reason.split()):
+            raise ValueError("cancellation reason must be normalized")
+        _require_digest(self.reason_digest, name="cancellation reason_digest")
+        if self.reason_digest != canonical_digest({"reason": self.reason}):
+            raise ValueError("workflow cancellation reason digest mismatch")
+        _require_identifier(self.correlation_id, name="transition correlation_id")
+        if self.occurred_at.tzinfo is None:
+            raise ValueError("workflow transition occurred_at must be timezone-aware")
+        _require_digest(self.canonical_digest, name="transition canonical_digest")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("workflow transition canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "actor_subject_id": self.actor_subject_id,
+            "correlation_id": self.correlation_id,
+            "new_state": self.new_state.value,
+            "occurred_at": self.occurred_at.isoformat(),
+            "prior_state": self.prior_state.value,
+            "reason": self.reason,
+            "reason_digest": self.reason_digest,
+            "scope": self.scope.canonical_value(),
+            "target_id": self.target_id,
+            "target_type": self.target_type,
+            "transition_id": self.transition_id,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+@dataclass(frozen=True, slots=True)
 class WorkflowRunPlan:
     plan_id: str
     definition_id: str
@@ -296,6 +354,7 @@ class WorkflowRunPlan:
     authority: WorkflowPlanAuthority
     safety_notice: str
     canonical_digest: str
+    transition_history: tuple[WorkflowPlanTransition, ...] = ()
 
     def __post_init__(self) -> None:
         _require_identifier(self.plan_id, name="plan_id")
@@ -310,8 +369,8 @@ class WorkflowRunPlan:
         _require_identifier(self.creator_subject_id, name="creator_subject_id")
         if self.created_at.tzinfo is None:
             raise ValueError("plan created_at must be timezone-aware")
-        if self.state is not WorkflowPlanState.PLANNED:
-            raise ValueError("workflow run plans must remain planned")
+        if not isinstance(self.state, WorkflowPlanState):
+            raise ValueError("workflow run plan state is unsupported")
         if not self.steps:
             raise ValueError("workflow run plans require steps")
         if tuple(step.ordinal for step in self.steps) != tuple(range(1, len(self.steps) + 1)):
@@ -320,12 +379,13 @@ class WorkflowRunPlan:
             raise ValueError("workflow plan step identifiers must be unique")
         if self.safety_notice != NO_EXECUTION_SAFETY_NOTICE:
             raise ValueError("workflow plan must preserve the no-execution boundary")
+        self._validate_transition_history()
         expected = canonical_digest(self.digest_payload())
         if self.canonical_digest != expected:
             raise ValueError("workflow plan canonical digest mismatch")
 
     def digest_payload(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "authority": self.authority.canonical_value(),
             "canonical_input_digest": self.canonical_input_digest,
             "created_at": self.created_at.isoformat(),
@@ -342,6 +402,32 @@ class WorkflowRunPlan:
             "target_id": self.target_id,
             "target_type": self.target_type,
         }
+        # Preserve the IMP-184 digest contract for plans with no lifecycle history.
+        if self.transition_history:
+            payload["transition_history"] = [
+                transition.canonical_value() for transition in self.transition_history
+            ]
+        return payload
+
+    def _validate_transition_history(self) -> None:
+        if self.state is WorkflowPlanState.PLANNED:
+            if self.transition_history:
+                raise ValueError("planned workflow plans cannot contain transition history")
+            return
+        if self.state is not WorkflowPlanState.CANCELLED or len(self.transition_history) != 1:
+            raise ValueError("cancelled workflow plans require one cancellation transition")
+        transition = self.transition_history[0]
+        if (
+            transition.prior_state is not WorkflowPlanState.PLANNED
+            or transition.new_state is not WorkflowPlanState.CANCELLED
+            or transition.scope != self.scope
+            or transition.target_id != self.target_id
+            or transition.target_type != self.target_type
+            or transition.occurred_at < self.created_at
+        ):
+            raise ValueError("workflow cancellation transition binding mismatch")
+        if any(step.state is not WorkflowPlanStepState.NOT_STARTED for step in self.steps):
+            raise ValueError("cancelled workflow plan steps must remain not_started")
 
 
 def code_owned_workflow_registry() -> WorkflowDefinitionRegistry:

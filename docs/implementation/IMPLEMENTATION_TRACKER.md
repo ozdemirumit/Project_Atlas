@@ -4,14 +4,62 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-184 |
-| Title | Versioned workflow definition and non-executable run-plan foundation |
+| Task ID | ATLAS-IMP-185 |
+| Title | Durable workflow cancellation state and immutable transition history |
 | Status | Local implementation and validation complete; PR delivery in progress |
-| Branch | `agent/durable-readonly-workflow-foundation` |
-| Pull Request | [#196](https://github.com/ozdemirumit/Project_Atlas/pull/196) |
-| Governing Documents | ATLAS-002 FR-014, ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ATLAS-037, ADR-134 |
+| Branch | `agent/durable-workflow-cancellation-state` |
+| Pull Request | [#197](https://github.com/ozdemirumit/Project_Atlas/pull/197) |
+| Governing Documents | ATLAS-002 FR-014, ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ADR-134, ADR-135 |
 | Last Updated | 2026-08-13 |
 | Next Action | Deliver through exact-head PR CI, squash merge, main CI and local main synchronization |
+
+### ATLAS-IMP-185 Scope Rationale
+
+- IMP-184 established immutable definitions and non-executable plans but intentionally allowed only
+  the `planned` state. The next smallest authoritative lifecycle transition is cancelling a plan
+  before any work starts.
+- An authorized human may cancel an exact-scope `planned` plan with a bounded reason. Cancellation
+  is idempotent, appends immutable transition history and never deletes the plan or starts a step.
+- Worker queues, leases, dispatch, retries, timers, signals, approvals, connector calls and all
+  operational execution remain deferred. A cancelled plan cannot return to planned.
+
+### ATLAS-IMP-185 Acceptance Criteria
+
+- Browser-session humans with exact workflow permission can cancel a visible planned run; API-token,
+  wrong-scope, wrong-target and unauthorized identities fail closed without revealing plan state.
+- `planned -> cancelled` is the only new transition. Every transition records actor, time, reason,
+  prior/new state, correlation and canonical digest; repeated same-key cancellation replays exactly.
+- PostgreSQL performs state update, transition append and idempotency atomically with optimistic
+  conflict protection. Production never falls back to memory and development remains labeled.
+- UI exposes cancellation only for planned runs, requires explicit acknowledgement, preserves the
+  history, and never suggests that a worker or infrastructure operation ran.
+
+### ATLAS-IMP-185 Validation Evidence
+
+- Domain, service, API, architecture-boundary and PostgreSQL adapter tests cover the only allowed
+  transition, terminal state, exact replay, changed-request conflict, race protection, audit,
+  browser-session/CSRF enforcement, immutable history and atomic state/history/idempotency writes.
+- Ruff format/lint and strict mypy passed across 1,156 source files. The full backend suite passed
+  1,550 tests with three expected Windows symlink skips. Alembic has one head at
+  `20260813_0108`.
+- The full frontend suite passed 291 tests across 95 files; zero-warning ESLint, TypeScript and
+  production build passed with only the pre-existing chunk-size advisory.
+- Live validation at `http://127.0.0.1:5253/#/workspace/workflows` used one `atlas-demo` /
+  `local-demo` username/password login. The same browser session opened Connector Inventory,
+  created plan `workflow-plan.fdbcf60f3f1569d83b5e3a7c`, and recorded its exact
+  `planned -> cancelled` history without an additional authorized-browser or MFA prompt.
+- Both plan steps remained `not_started`; the UI confirmed that no connector, approval, ITSM,
+  runbook, worker or infrastructure action ran.
+
+### ATLAS-IMP-184 Delivery Evidence
+
+- Source head `ab4098d9b274f926714e4292213e7d0df2252588` passed exact-head PR CI run
+  `31730983824`; frontend completed in 5m21s and backend in 8m14s.
+- PR [#196](https://github.com/ozdemirumit/Project_Atlas/pull/196) was squash-merged as
+  `686a435398f321f789c17c7d79b3578710e44791`.
+- The exact merged commit independently passed `main` CI run `31731743547`; frontend completed in
+  3m58s and backend in 8m38s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-185 branched.
 
 ### ATLAS-IMP-184 Scope Rationale
 

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { listOperationalConversations } from "../../api/conversations";
 import {
+  cancelWorkflowPlan,
   createWorkflowPlan,
   listWorkflowDefinitions,
   listWorkflowPlans,
@@ -18,6 +19,7 @@ vi.mock("../../api/workflows", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/workflows")>();
   return {
     ...original,
+    cancelWorkflowPlan: vi.fn(),
     createWorkflowPlan: vi.fn(),
     listWorkflowDefinitions: vi.fn(),
     listWorkflowPlans: vi.fn(),
@@ -82,6 +84,29 @@ const plan: WorkflowRunPlan = {
   },
   safety_notice: WORKFLOW_PLAN_SAFETY_NOTICE,
   canonical_digest: "c".repeat(64),
+  transition_history: [],
+};
+
+const cancelledPlan: WorkflowRunPlan = {
+  ...plan,
+  state: "cancelled",
+  canonical_digest: "d".repeat(64),
+  transition_history: [
+    {
+      transition_id: "workflow-transition.1234567890abcdef",
+      prior_state: "planned",
+      new_state: "cancelled",
+      actor_subject_id: "subject.operator",
+      scope: plan.scope,
+      target_id: plan.target_id,
+      target_type: "storage",
+      reason: "The assessment is no longer required.",
+      reason_digest: "e".repeat(64),
+      correlation_id: "correlation.workflow.cancel",
+      occurred_at: "2026-08-13T10:05:00Z",
+      canonical_digest: "f".repeat(64),
+    },
+  ],
 };
 
 function renderWorkspace() {
@@ -112,6 +137,7 @@ describe("WorkflowPlanningWorkspace", () => {
     vi.mocked(listWorkflowDefinitions).mockResolvedValue({ definitions: [definition] });
     vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [], durable: false, truncated: false });
     vi.mocked(createWorkflowPlan).mockResolvedValue(plan);
+    vi.mocked(cancelWorkflowPlan).mockResolvedValue(cancelledPlan);
   });
 
   afterEach(() => {
@@ -141,5 +167,42 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(await screen.findByRole("heading", { name: plan.plan_id })).toBeVisible();
     expect(screen.getByText(/No connector, approval, ITSM, runbook, worker/i)).toBeVisible();
     expect(screen.getAllByText("planned").length).toBeGreaterThan(0);
+  });
+
+  it("cancels a selected planned plan and preserves its immutable history", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+    const confirm = screen.getByRole("button", { name: "Confirm cancellation" });
+    expect(confirm).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Cancellation reason"), {
+      target: { value: "  The assessment is no longer required.  " },
+    });
+    fireEvent.click(
+      screen.getByLabelText(
+        "I acknowledge that cancellation preserves history and cannot undo external work.",
+      ),
+    );
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(cancelWorkflowPlan).toHaveBeenCalledTimes(1));
+    expect(cancelWorkflowPlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        plan,
+        reason: "  The assessment is no longer required.  ",
+        acknowledgeNoExternalUndo: true,
+      }),
+    );
+    expect(await screen.findByRole("heading", { name: "State transitions" })).toBeVisible();
+    expect(screen.getByText("planned to cancelled")).toBeVisible();
+    expect(screen.getByText(/The assessment is no longer required/)).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Cancel this plan" })).toBeNull();
+    expect(screen.queryByText(/authorized browser session|MFA/i)).toBeNull();
   });
 });

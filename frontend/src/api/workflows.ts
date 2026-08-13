@@ -54,6 +54,25 @@ export type WorkflowPlanStep = {
   state: "not_started";
 };
 
+export type WorkflowPlanTransition = {
+  transition_id: string;
+  prior_state: "planned";
+  new_state: "cancelled";
+  actor_subject_id: string;
+  scope: {
+    organization_id: string;
+    environment_id: string;
+    site_id: string;
+  };
+  target_id: string;
+  target_type: "storage";
+  reason: string;
+  reason_digest: string;
+  correlation_id: string;
+  occurred_at: string;
+  canonical_digest: string;
+};
+
 export type WorkflowRunPlan = {
   plan_id: string;
   definition_id: string;
@@ -69,12 +88,13 @@ export type WorkflowRunPlan = {
   canonical_input_digest: string;
   creator_subject_id: string;
   created_at: string;
-  state: "planned";
+  state: "planned" | "cancelled";
   steps: WorkflowPlanStep[];
   durable: boolean;
   authority: WorkflowPlanAuthority;
   safety_notice: typeof WORKFLOW_PLAN_SAFETY_NOTICE;
   canonical_digest: string;
+  transition_history: WorkflowPlanTransition[];
 };
 
 export type WorkflowDefinitionInventory = {
@@ -181,6 +201,32 @@ function isPlanStep(value: unknown, index: number): value is WorkflowPlanStep {
   );
 }
 
+function isTransition(
+  value: unknown,
+  planScope: WorkflowRunPlan["scope"],
+  targetId: string,
+): value is WorkflowPlanTransition {
+  if (!isObject(value) || !isObject(value.scope)) return false;
+  return (
+    isIdentifier(value.transition_id) &&
+    value.prior_state === "planned" &&
+    value.new_state === "cancelled" &&
+    isIdentifier(value.actor_subject_id) &&
+    value.scope.organization_id === planScope.organization_id &&
+    value.scope.environment_id === planScope.environment_id &&
+    value.scope.site_id === planScope.site_id &&
+    value.target_id === targetId &&
+    value.target_type === "storage" &&
+    isText(value.reason, 500) &&
+    value.reason === value.reason.trim().replace(/\s+/g, " ") &&
+    isDigest(value.reason_digest) &&
+    isIdentifier(value.correlation_id) &&
+    typeof value.occurred_at === "string" &&
+    !Number.isNaN(Date.parse(value.occurred_at)) &&
+    isDigest(value.canonical_digest)
+  );
+}
+
 function isBoundToScope(value: WorkflowRunPlan, scope: WorkflowScope): boolean {
   return (
     value.scope.organization_id === scope.organizationId &&
@@ -190,8 +236,15 @@ function isBoundToScope(value: WorkflowRunPlan, scope: WorkflowScope): boolean {
 }
 
 function isRunPlan(value: unknown): value is WorkflowRunPlan {
-  if (!isObject(value) || !isObject(value.scope) || !Array.isArray(value.steps)) return false;
-  return (
+  if (
+    !isObject(value) ||
+    !isObject(value.scope) ||
+    !Array.isArray(value.steps) ||
+    !Array.isArray(value.transition_history)
+  ) {
+    return false;
+  }
+  const baseValid =
     isIdentifier(value.plan_id) &&
     isIdentifier(value.definition_id) &&
     Number.isInteger(value.definition_version) &&
@@ -206,13 +259,25 @@ function isRunPlan(value: unknown): value is WorkflowRunPlan {
     isIdentifier(value.creator_subject_id) &&
     typeof value.created_at === "string" &&
     !Number.isNaN(Date.parse(value.created_at)) &&
-    value.state === "planned" &&
+    (value.state === "planned" || value.state === "cancelled") &&
     value.steps.length >= 1 &&
     value.steps.every(isPlanStep) &&
     typeof value.durable === "boolean" &&
     hasSafeAuthority(value.authority) &&
     value.safety_notice === WORKFLOW_PLAN_SAFETY_NOTICE &&
-    isDigest(value.canonical_digest)
+    isDigest(value.canonical_digest);
+  if (!baseValid) return false;
+  const transitionsValid = value.transition_history.every((transition) =>
+    isTransition(
+      transition,
+      value.scope as WorkflowRunPlan["scope"],
+      value.target_id as string,
+    ),
+  );
+  return (
+    transitionsValid &&
+    ((value.state === "planned" && value.transition_history.length === 0) ||
+      (value.state === "cancelled" && value.transition_history.length === 1))
   );
 }
 
@@ -328,6 +393,59 @@ export async function createWorkflowPlan(input: {
     !isBoundToScope(data, input.scope)
   ) {
     throw new ApiRequestError("Workflow plan creation response was not request-bound", response.status);
+  }
+  return data;
+}
+
+export async function cancelWorkflowPlan(input: {
+  plan: WorkflowRunPlan;
+  reason: string;
+  acknowledgeNoExternalUndo: boolean;
+  scope: WorkflowScope;
+  authorizedTargetIds: readonly string[];
+}): Promise<WorkflowRunPlan> {
+  if (
+    input.plan.state !== "planned" ||
+    !isBoundToScope(input.plan, input.scope) ||
+    !input.authorizedTargetIds.includes(input.plan.target_id)
+  ) {
+    throw new ApiRequestError("Workflow plan is not cancellable in this scope", 409);
+  }
+  const reason = input.reason.trim().replace(/\s+/g, " ");
+  if (!reason || reason.length > 500 || input.acknowledgeNoExternalUndo !== true) {
+    throw new ApiRequestError("Workflow cancellation requires a reason and acknowledgement", 422);
+  }
+  const response = await apiFetch(
+    `/api/v1/workflows/plans/${encodeURIComponent(input.plan.plan_id)}/cancellation`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": `workflow-plan-cancel.${crypto.randomUUID()}`,
+      },
+      body: JSON.stringify({
+        schema_version: "atlas.workflow-run-plan-cancellation-input.v1",
+        reason,
+        acknowledge_no_external_undo: true,
+      }),
+    },
+  );
+  const data = await readData(response, "Workflow plan cancellation failed");
+  if (
+    !isRunPlan(data) ||
+    data.plan_id !== input.plan.plan_id ||
+    data.state !== "cancelled" ||
+    data.target_id !== input.plan.target_id ||
+    !isBoundToScope(data, input.scope) ||
+    !input.authorizedTargetIds.includes(data.target_id) ||
+    data.transition_history.length !== 1 ||
+    data.transition_history.at(0)?.reason !== reason
+  ) {
+    throw new ApiRequestError(
+      "Workflow plan cancellation response was not request-bound",
+      response.status,
+    );
   }
   return data;
 }

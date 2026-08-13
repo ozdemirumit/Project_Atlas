@@ -3,6 +3,9 @@ from __future__ import annotations
 from typing import NoReturn
 
 from atlas.modules.workflows.application import (
+    WorkflowPlanCancellationIdempotencyRecord,
+    WorkflowPlanCancellationRequest,
+    WorkflowPlanCancellationResult,
     WorkflowPlanIdempotencyRecord,
     WorkflowPlanMutationResult,
     WorkflowPlanningError,
@@ -52,6 +55,20 @@ class UnavailableWorkflowPlanRepository:
         idempotency_key: str,
         request_fingerprint: str,
     ) -> WorkflowPlanMutationResult:
+        self._raise()
+
+    async def get_cancellation_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        actor_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowPlanCancellationIdempotencyRecord | None:
+        self._raise()
+
+    async def cancel(
+        self, request: WorkflowPlanCancellationRequest
+    ) -> WorkflowPlanCancellationResult:
         self._raise()
 
     async def close(self) -> None:

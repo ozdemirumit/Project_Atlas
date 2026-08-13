@@ -2,18 +2,22 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  Ban,
   CalendarClock,
   CheckCircle2,
   FileClock,
+  History,
   LockKeyhole,
   Plus,
   RefreshCw,
   Workflow,
+  X,
 } from "lucide-react";
 
 import { ApiRequestError } from "../../api/client";
 import { listOperationalConversations } from "../../api/conversations";
 import {
+  cancelWorkflowPlan,
   createWorkflowPlan,
   listWorkflowDefinitions,
   listWorkflowPlans,
@@ -47,6 +51,8 @@ export default function WorkflowPlanningWorkspace({
   const [purpose, setPurpose] = useState("");
   const [inputSummary, setInputSummary] = useState("");
   const [selectedPlan, setSelectedPlan] = useState<WorkflowRunPlan | null>(null);
+  const [cancellationReason, setCancellationReason] = useState("");
+  const [cancellationAcknowledged, setCancellationAcknowledged] = useState(false);
   const scope = useMemo(
     () => ({ organizationId, environmentId, siteId }),
     [environmentId, organizationId, siteId],
@@ -100,6 +106,22 @@ export default function WorkflowPlanningWorkspace({
       void queryClient.invalidateQueries({ queryKey: ["workflow-plans"] });
     },
   });
+  const cancelMutation = useMutation({
+    mutationFn: (plan: WorkflowRunPlan) =>
+      cancelWorkflowPlan({
+        plan,
+        reason: cancellationReason,
+        acknowledgeNoExternalUndo: cancellationAcknowledged,
+        scope,
+        authorizedTargetIds,
+      }),
+    onSuccess: (plan) => {
+      setSelectedPlan(plan);
+      setCancellationReason("");
+      setCancellationAcknowledged(false);
+      void queryClient.invalidateQueries({ queryKey: ["workflow-plans"] });
+    },
+  });
   const loading = targetQuery.isLoading || definitionQuery.isLoading || plansQuery.isLoading;
   const failed = targetQuery.isError || definitionQuery.isError || plansQuery.isError;
   const sessionExpired = [targetQuery.error, definitionQuery.error, plansQuery.error].some(
@@ -108,6 +130,21 @@ export default function WorkflowPlanningWorkspace({
   const canCreate = Boolean(
     selectedDefinition && targetId && purpose.trim() && inputSummary.trim() && !createMutation.isPending,
   );
+  const canCancel = Boolean(
+    selectedPlan?.state === "planned" &&
+      cancellationReason.trim() &&
+      cancellationAcknowledged &&
+      !cancelMutation.isPending,
+  );
+  const cancellationSessionExpired =
+    cancelMutation.error instanceof ApiRequestError && cancelMutation.error.status === 401;
+
+  const selectPlan = (plan: WorkflowRunPlan) => {
+    setSelectedPlan(plan);
+    setCancellationReason("");
+    setCancellationAcknowledged(false);
+    cancelMutation.reset();
+  };
 
   const refresh = () => {
     void targetQuery.refetch();
@@ -182,7 +219,7 @@ export default function WorkflowPlanningWorkspace({
             </div>
             {selectedDefinition && (
               <ol className="workflow-step-preview">
-                {selectedDefinition.steps.map((step) => <li key={step.step_id}><span>{step.ordinal}</span><div><strong>{step.title}</strong><small>{readableKind(step.kind)} · {step.capability_class} · not started</small></div></li>)}
+                {selectedDefinition.steps.map((step) => <li key={step.step_id}><span>{step.ordinal}</span><div><strong>{step.title}</strong><small>{readableKind(step.kind)} | {step.capability_class} | not started</small></div></li>)}
               </ol>
             )}
             {authorizedTargets.length === 0 && <div className="workflow-empty-state">No authorized storage target is available in this scope.</div>}
@@ -191,19 +228,89 @@ export default function WorkflowPlanningWorkspace({
           </section>
 
           <section className="workflow-plan-history" aria-labelledby="workflow-history-title">
-            <div className="workflow-section-heading"><div><p className="eyebrow">PLAN HISTORY</p><h2 id="workflow-history-title">Planned runs</h2></div><span>{plansQuery.data?.durable ? "durable" : "development memory"}</span></div>
+            <div className="workflow-section-heading"><div><p className="eyebrow">PLAN HISTORY</p><h2 id="workflow-history-title">Workflow plans</h2></div><span>{plansQuery.data?.durable ? "durable" : "development memory"}</span></div>
             {(plansQuery.data?.plans.length ?? 0) === 0 ? (
               <div className="workflow-empty-state"><FileClock size={20} /> No workflow plans in this scope.</div>
             ) : (
-              <div className="workflow-plan-list">{plansQuery.data?.plans.map((plan) => <button type="button" key={plan.plan_id} onClick={() => setSelectedPlan(plan)}><CalendarClock size={18} /><span><strong>{definitions.find((item) => item.definition_id === plan.definition_id)?.title ?? plan.definition_id}</strong><small>{plan.target_id} · {new Date(plan.created_at).toLocaleString()}</small></span><span className="state-badge neutral">planned</span></button>)}</div>
+              <div className="workflow-plan-list">{plansQuery.data?.plans.map((plan) => <button type="button" key={plan.plan_id} onClick={() => selectPlan(plan)}><CalendarClock size={18} /><span><strong>{definitions.find((item) => item.definition_id === plan.definition_id)?.title ?? plan.definition_id}</strong><small>{plan.target_id} | {new Date(plan.created_at).toLocaleString()}</small></span><span className="state-badge neutral">{plan.state}</span></button>)}</div>
             )}
           </section>
 
           {selectedPlan && (
             <section className="workflow-plan-detail" aria-labelledby="workflow-plan-detail-title">
-              <div className="workflow-section-heading"><div><p className="eyebrow">EXACT PLAN</p><h2 id="workflow-plan-detail-title">{selectedPlan.plan_id}</h2></div><button className="icon-button" type="button" aria-label="Close plan detail" onClick={() => setSelectedPlan(null)}>×</button></div>
-              <dl><div><dt>State</dt><dd>planned</dd></div><div><dt>Target</dt><dd>{selectedPlan.target_id}</dd></div><div><dt>Definition</dt><dd>{selectedPlan.definition_id} v{selectedPlan.definition_version}</dd></div><div><dt>Storage</dt><dd>{selectedPlan.durable ? "durable" : "development memory"}</dd></div></dl>
-              <ol className="workflow-step-preview">{selectedPlan.steps.map((step) => <li key={step.step_id}><CheckCircle2 size={17} /><div><strong>{step.step_id}</strong><small>{readableKind(step.kind)} · {step.state}</small></div></li>)}</ol>
+              <div className="workflow-section-heading"><div><p className="eyebrow">EXACT PLAN</p><h2 id="workflow-plan-detail-title">{selectedPlan.plan_id}</h2></div><button className="icon-button" type="button" aria-label="Close plan detail" onClick={() => setSelectedPlan(null)}><X size={17} /></button></div>
+              <dl><div><dt>State</dt><dd>{selectedPlan.state}</dd></div><div><dt>Target</dt><dd>{selectedPlan.target_id}</dd></div><div><dt>Definition</dt><dd>{selectedPlan.definition_id} v{selectedPlan.definition_version}</dd></div><div><dt>Storage</dt><dd>{selectedPlan.durable ? "durable" : "development memory"}</dd></div></dl>
+              <ol className="workflow-step-preview">{selectedPlan.steps.map((step) => <li key={step.step_id}><CheckCircle2 size={17} /><div><strong>{step.step_id}</strong><small>{readableKind(step.kind)} | {step.state}</small></div></li>)}</ol>
+
+              {selectedPlan.state === "planned" && (
+                <div className="workflow-plan-composer" aria-labelledby="workflow-cancel-title">
+                  <div className="workflow-section-heading">
+                    <div><p className="eyebrow">WITHDRAW INTENT</p><h3 id="workflow-cancel-title">Cancel this plan</h3></div>
+                    <span>History is preserved</span>
+                  </div>
+                  <label>
+                    Cancellation reason
+                    <textarea
+                      value={cancellationReason}
+                      maxLength={500}
+                      onChange={(event) => setCancellationReason(event.target.value)}
+                      placeholder="Why this unstarted plan is being withdrawn"
+                    />
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={cancellationAcknowledged}
+                      onChange={(event) => setCancellationAcknowledged(event.target.checked)}
+                    />
+                    I acknowledge that cancellation preserves history and cannot undo external work.
+                  </label>
+                  {cancelMutation.isError && (
+                    <div className="workspace-message error-state" role="alert">
+                      <div>
+                        <strong>
+                          {cancellationSessionExpired
+                            ? "Your session has expired"
+                            : "Cancellation was not recorded"}
+                        </strong>
+                        <p>
+                          {cancellationSessionExpired
+                            ? "Sign in again to continue."
+                            : "Reload the exact plan before trying again."}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  <button
+                    className="primary-action"
+                    type="button"
+                    disabled={!canCancel}
+                    onClick={() => cancelMutation.mutate(selectedPlan)}
+                  >
+                    <Ban size={16} /> {cancelMutation.isPending ? "Cancelling..." : "Confirm cancellation"}
+                  </button>
+                </div>
+              )}
+
+              {selectedPlan.transition_history.length > 0 && (
+                <div aria-labelledby="workflow-transition-history-title">
+                  <div className="workflow-section-heading">
+                    <div><p className="eyebrow">IMMUTABLE HISTORY</p><h3 id="workflow-transition-history-title">State transitions</h3></div>
+                    <History size={18} />
+                  </div>
+                  <ol className="workflow-step-preview">
+                    {selectedPlan.transition_history.map((transition) => (
+                      <li key={transition.transition_id}>
+                        <History size={17} />
+                        <div>
+                          <strong>{transition.prior_state} to {transition.new_state}</strong>
+                          <small>{transition.reason} | {transition.actor_subject_id} | {new Date(transition.occurred_at).toLocaleString()}</small>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
               <div className="workflow-safety-boundary"><LockKeyhole size={18} /><span>No connector, approval, ITSM, runbook, worker or infrastructure action ran.</span></div>
             </section>
           )}

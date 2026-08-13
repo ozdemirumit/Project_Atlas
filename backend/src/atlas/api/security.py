@@ -247,6 +247,7 @@ from atlas.modules.authorization.application.bootstrap import (
     UPGRADE_READINESS_PREVIEW,
     UPGRADE_ROLLBACK_SIMULATE,
     WORKFLOW_DEFINITION_READ,
+    WORKFLOW_PLAN_CANCEL,
     WORKFLOW_PLAN_CREATE,
     WORKFLOW_PLAN_READ,
     WORKLOAD_IDENTITY_ADMIN_CREATE,
@@ -532,6 +533,24 @@ async def workflow_plan_creation_subject(
         code="browser_session_required",
         title="Browser session required",
         detail="Use a CSRF-protected human browser session to create a workflow plan.",
+    )
+
+
+async def workflow_plan_cancellation_subject(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthenticatedSubject:
+    if (
+        subject.kind is SubjectKind.HUMAN
+        and getattr(request.state, "authenticated_credential_kind", None)
+        is CredentialKind.BROWSER_SESSION
+    ):
+        return subject
+    raise AtlasError(
+        status=403,
+        code="browser_session_required",
+        title="Browser session required",
+        detail="Use a CSRF-protected human browser session to cancel a workflow plan.",
     )
 
 
@@ -1953,6 +1972,18 @@ async def authorize_workflow_plan_create(
         request,
         subject,
         permission_id=WORKFLOW_PLAN_CREATE,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def authorize_workflow_plan_cancel(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(workflow_plan_cancellation_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_workflow(
+        request,
+        subject,
+        permission_id=WORKFLOW_PLAN_CANCEL,
         capability_class=CapabilityClass.C1_READ_ONLY,
     )
 
