@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-180 |
 | Title | Knowledge curation and retrieval optional step-up migration |
-| Status | Ready for review |
+| Status | PR validation in progress |
 | Branch | `agent/knowledge-optional-step-up` |
-| Pull Request | Pending |
+| Pull Request | [#192](https://github.com/ozdemirumit/Project_Atlas/pull/192) |
 | Governing Documents | ATLAS-003, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ADR-132, ADR-133 |
 | Last Updated | 2026-08-13 |
-| Next Action | Push the verified branch, open the IMP-180 pull request, and complete exact-head PR/main CI |
+| Next Action | Complete exact-head PR CI, squash-merge PR #192, verify merged main CI, and synchronize local main |
 
 ### ATLAS-IMP-180 Scope Rationale
 
