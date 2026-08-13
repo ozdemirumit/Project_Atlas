@@ -4,14 +4,47 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-170 |
-| Title | Provider-neutral ITSM adapter readiness and sandbox configuration contracts |
-| Status | In Progress; implementation and focused validation complete |
-| Branch | `agent/itsm-adapter-readiness` |
+| Task ID | ATLAS-IMP-171 |
+| Title | Provider-neutral ITSM sandbox conformance assessment |
+| Status | In Progress; architecture and implementation pending |
+| Branch | `agent/itsm-sandbox-conformance` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-124, ADR-125, ADR-126 (planned) |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-053, ATLAS-055, ATLAS-056, ADR-124, ADR-125, ADR-126, ADR-127 (planned) |
 | Last Updated | 2026-08-13 |
-| Next Action | Complete full regression, production build, live responsive validation and delivery evidence |
+| Next Action | Record ADR-127 and implement the exact-profile sandbox conformance assessment boundary |
+
+### ATLAS-IMP-171 Scope Rationale
+
+- IMP-170 establishes immutable provider-neutral integration profiles and identifies sandbox
+  validation as a distinct readiness prerequisite, but Atlas cannot produce or validate that
+  evidence through a governed adapter contract.
+- ATLAS-036 requires non-production validation, synthetic scenarios, idempotency, security,
+  observability and audit before any outbound capability can be activated. No production ITSM
+  vendor, endpoint, credential or sandbox has been selected, so production must remain unavailable.
+- This slice demonstrates only that an injected adapter can complete a fixed, inert sandbox
+  diagnostic for one exact active profile. It does not accept an arbitrary endpoint, secret,
+  payload or provider operation from the caller and does not create or update an ITSM record.
+
+### ATLAS-IMP-171 Acceptance Criteria
+
+- An immutable, short-lived sandbox conformance assessment binds the exact organization,
+  environment, site, profile ID, profile version, profile digest, mapping version, adapter identity,
+  diagnostic contract version and stable outcome without exposing provider-native errors or secrets.
+- The application generates a fixed inert diagnostic challenge. The adapter owns credential
+  resolution, trust establishment and any provider-native exchange; raw credentials, tokens,
+  endpoints, request payloads and provider responses never cross its boundary.
+- Production uses an unavailable adapter until deployment owners configure a separately reviewed
+  vendor sandbox adapter. A deterministic no-network development adapter may prove the contract for
+  tests and local UI inspection but cannot establish production readiness.
+- Creation requires a dedicated default-deny C2 permission, browser session, CSRF, explicit
+  no-authority acknowledgement and idempotency. Latest read uses a separate C1 permission. Both are
+  exact-scope, attributable, audited, integrity checked and `no-store`.
+- Stable outcomes distinguish conformant, unavailable, profile-blocked, trust, credential,
+  permission, mapping and round-trip failures. A conformant result remains diagnostic evidence only:
+  dispatch, external mutation, workflow approval and infrastructure execution stay false.
+- PostgreSQL and in-memory persistence, migration, API schemas, Health governance presentation,
+  focused/full tests, one Alembic head, production build and responsive live validation pass before
+  delivery. The UI exposes no arbitrary endpoint test, secret, ticket mutation or execution control.
 
 ### ATLAS-IMP-170 Scope Rationale
 
@@ -69,6 +102,15 @@
   blocker, six readiness checks and three allowlisted mappings, and recovered the profile after reload.
   Desktop 1,280 x 720 and mobile 390 x 844 views had no page-level horizontal overflow, alert or
   console warning/error. No dispatch, execute, endpoint-test or ticket-creation button was present.
+
+### ATLAS-IMP-170 Delivery Evidence
+
+- Source head `99e8b535e4e2849ec631a8b179ef3ecdc96506c2` passed exact-head PR CI run
+  `31658080206`; backend completed in 7m58s and frontend in 4m46s.
+- PR [#182](https://github.com/ozdemirumit/Project_Atlas/pull/182) was squash-merged as
+  `95e953c4b1a55a9b19960760bf57f23269f30c60`.
+- The exact merged commit independently passed `main` CI run `31658515768`; backend completed in
+  7m12s and frontend in 4m52s.
 
 ### ATLAS-IMP-169 Scope Rationale
 
