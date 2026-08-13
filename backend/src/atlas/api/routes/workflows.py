@@ -21,11 +21,16 @@ from atlas.api.workflow_schemas import (
     CancelWorkflowPlanInput,
     CreateWorkflowPlanInput,
     HeartbeatWorkflowOrchestrationLeaseInput,
+    MaterializeWorkflowAttemptInput,
     MaterializeWorkflowRunInput,
     ReleaseWorkflowOrchestrationLeaseInput,
+    WorkflowAttemptInventoryData,
+    WorkflowAttemptInventoryResponse,
     WorkflowDefinitionData,
     WorkflowDefinitionInventoryData,
     WorkflowDefinitionInventoryResponse,
+    WorkflowExecutionAttemptData,
+    WorkflowExecutionAttemptResponse,
     WorkflowExecutionRunData,
     WorkflowExecutionRunResponse,
     WorkflowMaterializedRunStatusData,
@@ -49,6 +54,9 @@ from atlas.modules.identity.domain.models import AuthenticatedSubject
 from atlas.modules.workflows.application import (
     WORKFLOW_WORKER_AUDIENCE,
     WorkflowAccessContext,
+    WorkflowAttemptMaterializationError,
+    WorkflowAttemptMaterializationRepository,
+    WorkflowAttemptMaterializationService,
     WorkflowOrchestrationLeaseError,
     WorkflowOrchestrationLeaseRepository,
     WorkflowOrchestrationLeaseService,
@@ -60,6 +68,8 @@ from atlas.modules.workflows.application import (
     WorkflowWorkerContext,
 )
 from atlas.modules.workflows.domain import (
+    WorkflowExecutionAttempt,
+    WorkflowExecutionAttemptState,
     WorkflowExecutionRun,
     WorkflowExecutionRunState,
     WorkflowExecutionStepRunState,
@@ -236,6 +246,38 @@ def _raise_materialization(error: WorkflowRunMaterializationError) -> NoReturn:
     ) from error
 
 
+def _raise_attempt(error: WorkflowAttemptMaterializationError) -> NoReturn:
+    if error.code.endswith("_invalid") or error.code.endswith("_required"):
+        status = 422
+    elif "repository" in error.code:
+        status = 503
+    else:
+        status = 409
+    raise AtlasError(
+        status=status,
+        code=(
+            "workflow_attempt_request_invalid"
+            if status == 422
+            else "workflow_attempt_service_unavailable"
+            if status == 503
+            else "workflow_attempt_conflict"
+        ),
+        title=(
+            "Workflow attempt request invalid"
+            if status == 422
+            else "Workflow attempt service unavailable"
+            if status == 503
+            else "Workflow attempt conflict"
+        ),
+        detail=(
+            "The workflow attempt request did not satisfy the bounded contract."
+            if status == 422
+            else "The workflow attempt operation is unavailable."
+        ),
+        retryable=status == 503,
+    ) from error
+
+
 async def _worker_context(
     request: Request,
     subject: AuthenticatedSubject,
@@ -319,6 +361,18 @@ def _run_response(
     )
 
 
+def _attempt_response(
+    attempt: WorkflowExecutionAttempt,
+    request: Request,
+    response: Response,
+) -> WorkflowExecutionAttemptResponse:
+    _no_store(response)
+    return WorkflowExecutionAttemptResponse(
+        data=WorkflowExecutionAttemptData.from_domain(attempt),
+        meta=_meta(request),
+    )
+
+
 def _run_matches_plan(run: WorkflowExecutionRun, plan: WorkflowRunPlan) -> bool:
     return (
         run.plan_id == plan.plan_id
@@ -342,6 +396,31 @@ def _run_matches_plan(run: WorkflowExecutionRun, plan: WorkflowRunPlan) -> bool:
         )
         and not any(run.authority.canonical_value().values())
         and not run.grants_execution_authority
+    )
+
+
+def _attempt_matches_run(attempt: WorkflowExecutionAttempt, run: WorkflowExecutionRun) -> bool:
+    step = next((item for item in run.step_runs if item.step_run_id == attempt.step_run_id), None)
+    return bool(
+        step is not None
+        and attempt.run_id == run.run_id
+        and attempt.run_digest == run.canonical_digest
+        and attempt.step_run_digest == step.canonical_digest
+        and attempt.step_id == step.step_id
+        and attempt.plan_id == run.plan_id
+        and attempt.plan_digest == run.plan_digest
+        and attempt.definition_id == run.definition_id
+        and attempt.definition_version == run.definition_version
+        and attempt.definition_digest == run.definition_digest
+        and attempt.scope == run.scope
+        and attempt.target_id == run.target_id
+        and attempt.target_type == run.target_type
+        and attempt.lease_id == run.lease_id
+        and attempt.fencing_token == run.fencing_token
+        and attempt.attempt_number == 1
+        and attempt.state is WorkflowExecutionAttemptState.CREATED
+        and not any(attempt.authority.canonical_value().values())
+        and not attempt.grants_execution_authority
     )
 
 
@@ -597,6 +676,113 @@ async def materialize_workflow_run(
     except WorkflowRunMaterializationError as error:
         _raise_materialization(error)
     return _run_response(run, request, response)
+
+
+@router.get(
+    "/plans/{plan_id}/runs/{run_id}/attempts",
+    response_model=WorkflowAttemptInventoryResponse,
+)
+async def list_workflow_attempts(
+    plan_id: Annotated[str, SAFE_ID],
+    run_id: Annotated[str, SAFE_ID],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[AuthorizationDecision, Depends(authorize_workflow_plan_read)],
+) -> WorkflowAttemptInventoryResponse:
+    planning_service: WorkflowPlanningService = request.app.state.workflow_planning_service
+    try:
+        plan = await planning_service.get_plan(
+            plan_id=plan_id,
+            context=await _context(request, subject, decision),
+        )
+    except WorkflowPlanningError as error:
+        _raise(error)
+    run_repository: WorkflowRunMaterializationRepository = (
+        request.app.state.workflow_run_materialization_repository
+    )
+    attempt_repository: WorkflowAttemptMaterializationRepository = (
+        request.app.state.workflow_attempt_materialization_repository
+    )
+    try:
+        run = await run_repository.get_materialized_run_by_plan_id(plan_id=plan.plan_id)
+        if run is None or run.run_id != run_id or not _run_matches_plan(run, plan):
+            raise AtlasError(
+                status=404,
+                code="workflow_resource_unavailable",
+                title="Workflow resource unavailable",
+                detail="The requested workflow resource is unavailable.",
+            )
+        attempts = await attempt_repository.list_attempts_by_run_id(run_id=run.run_id)
+    except AtlasError:
+        raise
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_attempt_service_unavailable",
+            title="Workflow attempt service unavailable",
+            detail="Workflow attempt evidence is unavailable.",
+            retryable=True,
+        ) from error
+    if any(not _attempt_matches_run(attempt, run) for attempt in attempts) or len(
+        {attempt.step_run_id for attempt in attempts}
+    ) != len(attempts):
+        raise AtlasError(
+            status=503,
+            code="workflow_attempt_service_unavailable",
+            title="Workflow attempt service unavailable",
+            detail="Workflow attempt evidence is unavailable.",
+            retryable=True,
+        )
+    step_order = {step.step_run_id: step.ordinal for step in run.step_runs}
+    attempts = tuple(sorted(attempts, key=lambda item: step_order[item.step_run_id]))
+    _no_store(response)
+    return WorkflowAttemptInventoryResponse(
+        data=WorkflowAttemptInventoryData(
+            run_id=run.run_id,
+            attempts=[WorkflowExecutionAttemptData.from_domain(item) for item in attempts],
+            server_time=datetime.now(UTC),
+            durable=attempt_repository.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/plans/{plan_id}/runs/{run_id}/steps/{step_run_id}/attempts",
+    response_model=WorkflowExecutionAttemptResponse,
+    status_code=201,
+)
+async def materialize_workflow_attempt(
+    plan_id: Annotated[str, SAFE_ID],
+    run_id: Annotated[str, SAFE_ID],
+    step_run_id: Annotated[str, SAFE_ID],
+    payload: MaterializeWorkflowAttemptInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(workflow_worker_subject)],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> WorkflowExecutionAttemptResponse:
+    service: WorkflowAttemptMaterializationService = (
+        request.app.state.workflow_attempt_materialization_service
+    )
+    try:
+        attempt = await service.materialize(
+            plan_id=plan_id,
+            plan_digest=payload.plan_digest,
+            run_id=run_id,
+            run_digest=payload.run_digest,
+            step_run_id=step_run_id,
+            step_run_digest=payload.step_run_digest,
+            lease_id=payload.lease_id,
+            lease_digest=payload.lease_digest,
+            fencing_token=payload.fencing_token,
+            idempotency_key=idempotency_key,
+            context=await _worker_context(request, subject, target_id=payload.target_id),
+        )
+    except WorkflowAttemptMaterializationError as error:
+        _raise_attempt(error)
+    return _attempt_response(attempt, request, response)
 
 
 @router.post(

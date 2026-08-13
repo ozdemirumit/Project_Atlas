@@ -24,6 +24,7 @@ import {
   getWorkflowOrchestrationLease,
   listWorkflowDefinitions,
   listWorkflowPlans,
+  listWorkflowRunAttempts,
   WORKFLOW_PLAN_SAFETY_NOTICE,
   type WorkflowDefinition,
   type WorkflowRunPlan,
@@ -142,6 +143,27 @@ export default function WorkflowPlanningWorkspace({
     enabled: Boolean(selectedPlan),
     retry: false,
   });
+  const materializedRun = materializedRunQuery.data?.run ?? null;
+  const attemptQuery = useQuery({
+    queryKey: [
+      "workflow-run-attempts",
+      materializedRun?.run_id,
+      materializedRun?.canonical_digest,
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () => {
+      if (!materializedRun) throw new ApiRequestError("No workflow run is selected", 422);
+      return listWorkflowRunAttempts({
+        run: materializedRun,
+        scope,
+        authorizedTargetIds,
+      });
+    },
+    enabled: Boolean(materializedRun),
+    retry: false,
+  });
   const definitions = definitionQuery.data?.definitions ?? [];
   const selectedDefinition = definitions.find((item) => item.definition_id === definitionId);
   const createMutation = useMutation({
@@ -199,6 +221,8 @@ export default function WorkflowPlanningWorkspace({
     materializedRunQuery.error instanceof ApiRequestError
       ? materializedRunQuery.error.status
       : undefined;
+  const attemptErrorStatus =
+    attemptQuery.error instanceof ApiRequestError ? attemptQuery.error.status : undefined;
 
   const selectPlan = (plan: WorkflowRunPlan) => {
     setSelectedPlan(plan);
@@ -446,6 +470,95 @@ export default function WorkflowPlanningWorkspace({
                   </>
                 )}
               </div>
+
+              {materializedRun && (
+                <div aria-labelledby="workflow-attempt-records-title">
+                  <div className="workflow-section-heading">
+                    <div>
+                      <p className="eyebrow">READ-ONLY ATTEMPT EVIDENCE</p>
+                      <h3 id="workflow-attempt-records-title">Materialized attempt records</h3>
+                    </div>
+                    <span>No human controls</span>
+                  </div>
+                  {attemptQuery.isLoading && (
+                    <div className="workspace-message" role="status">
+                      <RefreshCw className="spin" size={17} />
+                      <span>Loading authoritative attempt records...</span>
+                    </div>
+                  )}
+                  {attemptQuery.isError && (
+                    <div className="workspace-message error-state" role="alert">
+                      <div>
+                        <strong>
+                          {attemptErrorStatus === 401
+                            ? "Your session has expired"
+                            : attemptErrorStatus === 403
+                              ? "Attempt evidence permission is missing"
+                              : "Attempt evidence is unavailable"}
+                        </strong>
+                        <p>
+                          {attemptErrorStatus === 401
+                            ? "Sign in again to continue."
+                            : attemptErrorStatus === 403
+                              ? "Your current role cannot inspect materialized attempt records."
+                              : "No attempt state is inferred. Retry the read-only request."}
+                        </p>
+                      </div>
+                      {attemptErrorStatus !== 401 && attemptErrorStatus !== 403 && (
+                        <button type="button" onClick={() => void attemptQuery.refetch()}>
+                          <RefreshCw size={15} /> Retry attempt evidence
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {attemptQuery.isSuccess && attemptQuery.data.attempts.length === 0 && (
+                    <div className="workflow-empty-state">
+                      <FileClock size={19} /> No materialized attempts are recorded for this run.
+                    </div>
+                  )}
+                  {attemptQuery.isSuccess && attemptQuery.data.attempts.length > 0 && (
+                    <>
+                      <ol className="workflow-step-preview" aria-label="Materialized attempt records">
+                        {attemptQuery.data.attempts.map((attempt) => (
+                          <li key={attempt.attempt_id}>
+                            <span>{attempt.attempt_number}</span>
+                            <div>
+                              <strong>
+                                <code title={attempt.attempt_id}>
+                                  {safeHolderIdentifier(attempt.attempt_id)}
+                                </code>
+                              </strong>
+                              <small>
+                                root step {attempt.step_id} | {attempt.state} | created {formatTimestamp(attempt.created_at)}
+                              </small>
+                              <small>
+                                lease {safeHolderIdentifier(attempt.lease_id)} | fence {attempt.fencing_token}
+                              </small>
+                              <small>
+                                run {shortDigest(attempt.run_digest)} | step {shortDigest(attempt.step_run_digest)} | plan {shortDigest(attempt.plan_digest)}
+                              </small>
+                              <small>
+                                definition {shortDigest(attempt.definition_digest)} | lease {shortDigest(attempt.lease_digest)} | attempt {shortDigest(attempt.canonical_digest)}
+                              </small>
+                            </div>
+                          </li>
+                        ))}
+                      </ol>
+                      <dl>
+                        <div><dt>Run identifier</dt><dd><code title={attemptQuery.data.run_id}>{safeHolderIdentifier(attemptQuery.data.run_id)}</code></dd></div>
+                        <div><dt>Observed</dt><dd>{formatTimestamp(attemptQuery.data.server_time)}</dd></div>
+                        <div><dt>Storage</dt><dd>{attemptQuery.data.durable ? "durable" : "development memory"}</dd></div>
+                      </dl>
+                    </>
+                  )}
+                  {attemptQuery.isSuccess && (
+                    <div className="workflow-safety-boundary" role="note">
+                      <LockKeyhole size={18} />
+                      <span>These records preserve pre-dispatch attempt identity only. No action ran, and no execution authority is granted.</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {selectedPlan.state === "planned" && (
                 <div className="workflow-plan-composer" aria-labelledby="workflow-cancel-title">

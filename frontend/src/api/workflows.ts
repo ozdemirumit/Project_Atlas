@@ -176,6 +176,40 @@ export type WorkflowMaterializedRunStatus = {
   durable: boolean;
 };
 
+export type WorkflowExecutionAttempt = {
+  attempt_id: string;
+  run_id: string;
+  run_digest: string;
+  step_run_id: string;
+  step_run_digest: string;
+  step_id: string;
+  attempt_number: 1;
+  plan_id: string;
+  plan_digest: string;
+  definition_id: string;
+  definition_version: number;
+  definition_digest: string;
+  scope: WorkflowRunPlan["scope"];
+  target_id: string;
+  target_type: "storage";
+  lease_id: string;
+  lease_digest: string;
+  fencing_token: number;
+  materialized_by_subject_id: string;
+  created_at: string;
+  state: "created";
+  authority: WorkflowPlanAuthority;
+  grants_execution_authority: false;
+  canonical_digest: string;
+};
+
+export type WorkflowExecutionAttemptInventory = {
+  run_id: string;
+  attempts: WorkflowExecutionAttempt[];
+  server_time: string;
+  durable: boolean;
+};
+
 const digest = /^[a-f0-9]{64}$/;
 const capabilityClasses = new Set<WorkflowCapabilityClass>(["C0", "C1", "C2"]);
 const stepKinds = new Set<WorkflowStepKind>([
@@ -226,6 +260,34 @@ const stepRunFields = [
   "state",
   "canonical_digest",
 ] as const;
+const attemptFields = [
+  "attempt_id",
+  "run_id",
+  "run_digest",
+  "step_run_id",
+  "step_run_digest",
+  "step_id",
+  "attempt_number",
+  "plan_id",
+  "plan_digest",
+  "definition_id",
+  "definition_version",
+  "definition_digest",
+  "scope",
+  "target_id",
+  "target_type",
+  "lease_id",
+  "lease_digest",
+  "fencing_token",
+  "materialized_by_subject_id",
+  "created_at",
+  "state",
+  "authority",
+  "grants_execution_authority",
+  "canonical_digest",
+] as const;
+const attemptInventoryFields = ["run_id", "attempts", "server_time", "durable"] as const;
+const scopeFields = ["organization_id", "environment_id", "site_id"] as const;
 const forbiddenCredentialFields = new Set([
   "api_key",
   "access_token",
@@ -281,6 +343,10 @@ function isScope(value: unknown): value is WorkflowRunPlan["scope"] {
     isIdentifier(value.environment_id) &&
     isIdentifier(value.site_id)
   );
+}
+
+function isExactScope(value: unknown): value is WorkflowRunPlan["scope"] {
+  return isObject(value) && hasExactKeys(value, scopeFields) && isScope(value);
 }
 
 function isCapabilityClass(value: unknown): value is WorkflowCapabilityClass {
@@ -482,6 +548,74 @@ function isRunBoundToPlan(value: unknown, plan: WorkflowRunPlan): value is Workf
   );
 }
 
+function isAttemptBoundToRun(
+  value: unknown,
+  run: WorkflowExecutionRun,
+): value is WorkflowExecutionAttempt {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, attemptFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value)
+  ) {
+    return false;
+  }
+  const stepRun = run.step_runs.find((candidate) => candidate.step_run_id === value.step_run_id);
+  return Boolean(
+    stepRun &&
+      isIdentifier(value.attempt_id) &&
+      value.run_id === run.run_id &&
+      value.run_digest === run.canonical_digest &&
+      value.step_run_digest === stepRun.canonical_digest &&
+      value.step_id === stepRun.step_id &&
+      value.attempt_number === 1 &&
+      value.plan_id === run.plan_id &&
+      value.plan_digest === run.plan_digest &&
+      value.definition_id === run.definition_id &&
+      value.definition_version === run.definition_version &&
+      value.definition_digest === run.definition_digest &&
+      value.scope.organization_id === run.scope.organization_id &&
+      value.scope.environment_id === run.scope.environment_id &&
+      value.scope.site_id === run.scope.site_id &&
+      value.target_id === run.target_id &&
+      value.target_type === run.target_type &&
+      value.lease_id === run.lease_id &&
+      isDigest(value.lease_digest) &&
+      value.fencing_token === run.fencing_token &&
+      value.materialized_by_subject_id === run.materialized_by_subject_id &&
+      isTimestamp(value.created_at) &&
+      Date.parse(value.created_at) >= Date.parse(run.created_at) &&
+      value.state === "created" &&
+      hasSafeAuthority(value.authority) &&
+      value.grants_execution_authority === false &&
+      isDigest(value.canonical_digest),
+  );
+}
+
+function areAttemptsBoundToRun(
+  attempts: unknown[],
+  run: WorkflowExecutionRun,
+): attempts is WorkflowExecutionAttempt[] {
+  const seenAttempts = new Set<string>();
+  const seenStepRuns = new Set<string>();
+  let priorStepIndex = -1;
+  return attempts.every((attempt) => {
+    if (!isAttemptBoundToRun(attempt, run)) return false;
+    const stepIndex = run.step_runs.findIndex((stepRun) => stepRun.step_run_id === attempt.step_run_id);
+    if (
+      stepIndex <= priorStepIndex ||
+      seenAttempts.has(attempt.attempt_id) ||
+      seenStepRuns.has(attempt.step_run_id)
+    ) {
+      return false;
+    }
+    priorStepIndex = stepIndex;
+    seenAttempts.add(attempt.attempt_id);
+    seenStepRuns.add(attempt.step_run_id);
+    return true;
+  });
+}
+
 function isRunPlan(value: unknown): value is WorkflowRunPlan {
   if (
     !isObject(value) ||
@@ -653,6 +787,41 @@ export async function getWorkflowMaterializedRun(input: {
     throw new ApiRequestError("Workflow materialized run response was unsafe", response.status);
   }
   return data as WorkflowMaterializedRunStatus;
+}
+
+export async function listWorkflowRunAttempts(input: {
+  run: WorkflowExecutionRun;
+  scope: WorkflowScope;
+  authorizedTargetIds: readonly string[];
+}): Promise<WorkflowExecutionAttemptInventory> {
+  if (
+    input.run.scope.organization_id !== input.scope.organizationId ||
+    input.run.scope.environment_id !== input.scope.environmentId ||
+    input.run.scope.site_id !== input.scope.siteId ||
+    !input.authorizedTargetIds.includes(input.run.target_id) ||
+    !hasSafeAuthority(input.run.authority) ||
+    input.run.grants_execution_authority !== false
+  ) {
+    throw new ApiRequestError("Workflow run is outside the authorized attempt scope", 403);
+  }
+  const response = await apiFetch(
+    `/api/v1/workflows/plans/${encodeURIComponent(input.run.plan_id)}/runs/${encodeURIComponent(input.run.run_id)}/attempts`,
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(response, "Workflow attempt evidence retrieval failed");
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, attemptInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    data.run_id !== input.run.run_id ||
+    !Array.isArray(data.attempts) ||
+    !areAttemptsBoundToRun(data.attempts, input.run) ||
+    !isTimestamp(data.server_time) ||
+    typeof data.durable !== "boolean"
+  ) {
+    throw new ApiRequestError("Workflow attempt evidence response was unsafe", response.status);
+  }
+  return data as WorkflowExecutionAttemptInventory;
 }
 
 export async function createWorkflowPlan(input: {

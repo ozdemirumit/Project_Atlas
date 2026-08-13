@@ -1,3 +1,12 @@
+from atlas.modules.workflows.application.attempt_ports import (
+    WorkflowAttemptMaterializationError,
+    WorkflowAttemptMaterializationIdempotencyRecord,
+    WorkflowAttemptMaterializationRepository,
+    WorkflowAttemptMaterializationRequest,
+    WorkflowAttemptMaterializationResult,
+    WorkflowAttemptMaterializationStatus,
+)
+from atlas.modules.workflows.application.attempts import WorkflowAttemptMaterializationService
 from atlas.modules.workflows.application.materialization import (
     WorkflowRunMaterializationService,
 )
@@ -44,6 +53,13 @@ from atlas.modules.workflows.application.service import (
 __all__ = [
     "WORKFLOW_WORKER_AUDIENCE",
     "WorkflowAccessContext",
+    "WorkflowAttemptMaterializationError",
+    "WorkflowAttemptMaterializationIdempotencyRecord",
+    "WorkflowAttemptMaterializationRepository",
+    "WorkflowAttemptMaterializationRequest",
+    "WorkflowAttemptMaterializationResult",
+    "WorkflowAttemptMaterializationService",
+    "WorkflowAttemptMaterializationStatus",
     "WorkflowLeaseAcquireIdempotencyRecord",
     "WorkflowLeaseAcquireRequest",
     "WorkflowLeaseAcquireResult",

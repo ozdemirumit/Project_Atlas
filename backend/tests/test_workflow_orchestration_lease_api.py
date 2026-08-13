@@ -168,6 +168,8 @@ def test_injected_planning_service_and_default_lease_service_share_one_repositor
         assert app.state.workflow_orchestration_lease_repository is repository
         assert app.state.workflow_run_materialization_service.repository is repository
         assert app.state.workflow_run_materialization_repository is repository
+        assert app.state.workflow_attempt_materialization_service.repository is repository
+        assert app.state.workflow_attempt_materialization_repository is repository
 
 
 def test_plan_only_repository_requires_an_explicit_lease_service() -> None:
@@ -461,3 +463,128 @@ def test_workload_materializes_one_no_dispatch_run_visible_to_existing_browser_s
     assert browser_status.json()["data"]["run"] == run
     assert unchanged_plan.status_code == 200
     assert unchanged_plan.json()["data"] == plan
+
+
+def test_workload_materializes_one_created_attempt_visible_to_same_browser_session() -> None:
+    target_source = _ExplicitTargetAccessSource()
+    workload_service, token = _workload_service()
+    app = create_app(
+        _settings(),
+        audit_sink=_AuditSink(),
+        workload_identity_service=workload_service,
+        conversation_target_access_source=target_source,
+    )
+
+    with TestClient(app) as client:
+        csrf = _login(client)
+        created = client.post(
+            "/api/v1/workflows/plans",
+            json=_plan_payload(),
+            headers={"X-CSRF-Token": csrf, "Idempotency-Key": "workflow-attempt-api-plan"},
+        )
+        assert created.status_code == 201
+        plan = created.json()["data"]
+        plan_id = plan["plan_id"]
+        acquired = client.post(
+            f"/api/v1/workflows/plans/{plan_id}/orchestration-lease/acquisition",
+            json={
+                "schema_version": "atlas.workflow-orchestration-lease-acquire-input.v1",
+                "plan_digest": plan["canonical_digest"],
+                "target_id": TARGET_ID,
+                "target_type": "storage",
+                "lease_duration_seconds": 90,
+                "acknowledged_coordination_only_no_execution_authority": True,
+            },
+            headers={
+                **_workload_headers(token),
+                "Idempotency-Key": "workflow-attempt-api-lease",
+            },
+        )
+        assert acquired.status_code == 201
+        lease = acquired.json()["data"]
+        materialized_run = client.post(
+            f"/api/v1/workflows/plans/{plan_id}/materialized-run",
+            json={
+                "schema_version": "atlas.workflow-run-materialization-input.v1",
+                "plan_digest": plan["canonical_digest"],
+                "target_id": TARGET_ID,
+                "target_type": "storage",
+                "lease_id": lease["lease_id"],
+                "lease_digest": lease["canonical_digest"],
+                "fencing_token": lease["fencing_token"],
+                "acknowledged_materialization_only_no_dispatch_authority": True,
+            },
+            headers={
+                **_workload_headers(token),
+                "Idempotency-Key": "workflow-attempt-api-run",
+            },
+        )
+        assert materialized_run.status_code == 201
+        run = materialized_run.json()["data"]
+        root, dependent = run["step_runs"]
+        inventory_url = f"/api/v1/workflows/plans/{plan_id}/runs/{run['run_id']}/attempts"
+        empty_inventory = client.get(inventory_url)
+        root_url = (
+            f"/api/v1/workflows/plans/{plan_id}/runs/{run['run_id']}"
+            f"/steps/{root['step_run_id']}/attempts"
+        )
+        payload = {
+            "schema_version": "atlas.workflow-attempt-materialization-input.v1",
+            "plan_digest": plan["canonical_digest"],
+            "run_digest": run["canonical_digest"],
+            "step_run_digest": root["canonical_digest"],
+            "target_id": TARGET_ID,
+            "target_type": "storage",
+            "lease_id": lease["lease_id"],
+            "lease_digest": lease["canonical_digest"],
+            "fencing_token": lease["fencing_token"],
+            "acknowledged_attempt_only_no_queue_dispatch_or_execution_authority": True,
+        }
+        browser_mutation = client.post(
+            root_url,
+            json=payload,
+            headers={"Idempotency-Key": "workflow-attempt-browser-denied"},
+        )
+        dependent_mutation = client.post(
+            f"/api/v1/workflows/plans/{plan_id}/runs/{run['run_id']}"
+            f"/steps/{dependent['step_run_id']}/attempts",
+            json=payload | {"step_run_digest": dependent["canonical_digest"]},
+            headers={
+                **_workload_headers(token),
+                "Idempotency-Key": "workflow-attempt-dependent-denied",
+            },
+        )
+        headers = {
+            **_workload_headers(token),
+            "Idempotency-Key": "workflow-attempt-materialize-api",
+        }
+        materialized = client.post(root_url, json=payload, headers=headers)
+        replayed = client.post(root_url, json=payload, headers=headers)
+        browser_inventory = client.get(inventory_url)
+        unchanged_run = client.get(f"/api/v1/workflows/plans/{plan_id}/materialized-run")
+
+    assert empty_inventory.status_code == 200
+    assert empty_inventory.json()["data"]["attempts"] == []
+    assert browser_mutation.status_code == 401
+    assert browser_mutation.json()["code"] == "workload_authentication_failed"
+    assert "mfa" not in browser_mutation.text.casefold()
+    assert "authorized browser session" not in browser_mutation.text.casefold()
+    assert dependent_mutation.status_code == 409
+    assert dependent_mutation.json()["code"] == "workflow_attempt_conflict"
+    assert materialized.status_code == 201
+    attempt = materialized.json()["data"]
+    assert replayed.status_code == 201
+    assert replayed.json()["data"] == attempt
+    assert attempt["state"] == "created"
+    assert attempt["attempt_number"] == 1
+    assert attempt["run_digest"] == run["canonical_digest"]
+    assert attempt["step_run_digest"] == root["canonical_digest"]
+    assert attempt["materialized_by_subject_id"] == WORKER_ID
+    assert not any(attempt["authority"].values())
+    assert attempt["grants_execution_authority"] is False
+    assert browser_inventory.status_code == 200
+    assert browser_inventory.headers["Cache-Control"].startswith("no-store")
+    assert browser_inventory.json()["data"]["attempts"] == [attempt]
+    assert unchanged_run.status_code == 200
+    assert unchanged_run.json()["data"]["run"] == run
+    assert all(step["state"] == "not_started" for step in run["step_runs"])
