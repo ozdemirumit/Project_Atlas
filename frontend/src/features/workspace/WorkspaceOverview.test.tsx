@@ -8,8 +8,9 @@ describe("WorkspaceOverview", () => {
     const onNavigate = vi.fn();
     render(<WorkspaceOverview onNavigate={onNavigate} />);
 
-    expect(screen.getByLabelText("Workspace coverage")).toHaveTextContent("13");
-    expect(screen.getAllByRole("button")).toHaveLength(13);
+    expect(screen.getByLabelText("Workspace coverage")).toHaveTextContent("14");
+    expect(screen.getAllByRole("button")).toHaveLength(14);
+    expect(screen.getByRole("heading", { name: "Operational planning" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Infrastructure operations" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Connector lifecycle" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "AI decision support" })).toBeVisible();
@@ -21,6 +22,8 @@ describe("WorkspaceOverview", () => {
     expect(onNavigate).toHaveBeenCalledWith({ workspace: "Health", view: "overview" });
     fireEvent.click(screen.getByRole("button", { name: /Identity and access/ }));
     expect(onNavigate).toHaveBeenCalledWith({ workspace: "Health", view: "governance" });
+    fireEvent.click(screen.getByRole("button", { name: /Workflow planning/ }));
+    expect(onNavigate).toHaveBeenCalledWith({ workspace: "Workspace", view: "workflows" });
     expect(screen.getByRole("button", { name: /Runtime governance/ })).toHaveTextContent(
       "Connectors / Runtime",
     );

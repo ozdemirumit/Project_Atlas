@@ -4,14 +4,67 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-183 |
-| Title | Residual legacy assurance-gate cleanup |
-| Status | PR validation in progress |
-| Branch | `agent/residual-assurance-cleanup` |
-| Pull Request | [#195](https://github.com/ozdemirumit/Project_Atlas/pull/195) |
-| Governing Documents | ATLAS-003, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ADR-132, ADR-133 |
+| Task ID | ATLAS-IMP-184 |
+| Title | Versioned workflow definition and non-executable run-plan foundation |
+| Status | Local implementation and validation complete; PR delivery in progress |
+| Branch | `agent/durable-readonly-workflow-foundation` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-002 FR-014, ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ATLAS-037, ADR-134 |
 | Last Updated | 2026-08-13 |
-| Next Action | Complete exact-head PR CI, squash-merge PR #195, verify merged main CI, and synchronize local main |
+| Next Action | Deliver through exact-head PR CI, squash merge, main CI and local main synchronization |
+
+### ATLAS-IMP-184 Scope Rationale
+
+- FR-014 is a Must requirement, while the current repository contains domain-specific workflows but
+  no general LLM-independent workflow state authority. This first bounded slice establishes the
+  canonical contracts without pretending that workers, timers or connector execution already exist.
+- Definitions are code-owned, versioned and limited to C0-C2 analytical/read-only step kinds. An
+  authorized human may create an immutable run plan bound to one exact definition, scope, target and
+  input digest; planning performs no step, target contact, connector invocation or external mutation.
+- Arbitrary user-authored definitions, C3-C5 capabilities, worker dispatch, retries, timers,
+  approval waits, compensation and automatic execution are explicitly deferred to later slices.
+
+### ATLAS-IMP-184 Acceptance Criteria
+
+- Authorized humans can list active versioned definitions, inspect their ordered step contracts,
+  create an idempotent non-executable run plan and reopen plans in exact tenant/site scope.
+- Definitions reject cycles, duplicate step IDs, unsupported step kinds/classes, missing
+  dependencies and any C3-C5 or execution authority. Plans retain canonical definition/input/scope
+  digests, creator, timestamps and all-false authority flags.
+- Production uses durable PostgreSQL persistence and never silently falls back to memory;
+  development memory is labeled non-durable. Audit failure blocks plan creation.
+- API/UI loading, empty, failure, retry, create and detail states are covered. Focused/full backend
+  and frontend gates, migration-head, live validation, ADR, exact PR/main CI and local main sync pass.
+
+### ATLAS-IMP-184 Validation Evidence
+
+- A code-owned registry now exposes three immutable version-1 analytical definitions with bounded
+  C0-C2 steps. Domain validation rejects duplicate or missing dependencies, cycles, invalid order,
+  unsupported step kinds and any authority outside the planning contract.
+- Authorized humans can create idempotent storage-target plans and list or reopen them in exact
+  organization/environment/site and target scope. New plans remain `planned`, every step remains
+  `not_started`, and all worker, connector, approval, signal, retry, ITSM, runbook and infrastructure
+  authority fields are structurally false.
+- Production wiring uses PostgreSQL when configured and otherwise fails closed; the explicit
+  development repository is labeled non-durable. Alembic has one head at `20260813_0107`.
+- Ruff format/lint and strict mypy passed across 1,014 source files. The full backend suite passed
+  1,527 tests with three expected Windows symlink skips. The full frontend suite passed 290 tests
+  across 95 files; zero-warning ESLint, TypeScript and production build passed with only the
+  pre-existing chunk-size advisory.
+- Live validation at `http://127.0.0.1:5253/#/workspace/workflows` used one `atlas-demo` /
+  `local-demo` username/password login. The registry loaded, an authorized plan was created and
+  reopened, no additional authorized-browser or MFA prompt appeared, and the UI confirmed that no
+  connector, approval, ITSM, runbook, worker or infrastructure action ran.
+
+### ATLAS-IMP-183 Delivery Evidence
+
+- Source head `0a3ea8343e4460265ba51ed1adbee23057246ad2` passed exact-head PR CI run
+  `31724537488`; frontend completed in 5m04s and backend in 8m57s.
+- PR [#195](https://github.com/ozdemirumit/Project_Atlas/pull/195) was squash-merged as
+  `a2fa7950f84da735abee8592b5dae9c93687d366`.
+- The exact merged commit independently passed `main` CI run `31725316219`; frontend completed in
+  4m01s and backend in 9m03s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-184 branched.
 
 ### ATLAS-IMP-183 Scope Rationale
 

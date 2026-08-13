@@ -552,6 +552,7 @@ MVP workflows do not execute C3 through C5 capabilities.
 - ATLAS-024 and ATLAS-025 define decision and policy steps.
 - ATLAS-037 defines approval packets and human decisions.
 - ATLAS-056 defines workflow testing requirements.
+- ADR-134 establishes the initial code-owned definition registry and durable non-executable run-plan boundary.
 
 ## 39. Assumptions
 

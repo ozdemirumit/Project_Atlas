@@ -246,6 +246,9 @@ from atlas.modules.authorization.application.bootstrap import (
     UPGRADE_HUMAN_REVIEW_READ,
     UPGRADE_READINESS_PREVIEW,
     UPGRADE_ROLLBACK_SIMULATE,
+    WORKFLOW_DEFINITION_READ,
+    WORKFLOW_PLAN_CREATE,
+    WORKFLOW_PLAN_READ,
     WORKLOAD_IDENTITY_ADMIN_CREATE,
     WORKLOAD_IDENTITY_ADMIN_REVOKE,
     WORKLOAD_IDENTITY_ADMIN_ROTATE,
@@ -350,6 +353,7 @@ from atlas.modules.authorization.application.bootstrap import (
     upgrade_completion_receipt_scope,
     upgrade_human_review_scope,
     upgrade_simulation_scope,
+    workflow_scope,
     workload_identity_governance_scope,
 )
 from atlas.modules.authorization.application.service import AuthorizationService
@@ -510,6 +514,24 @@ async def itsm_integration_mutation_subject(
         code="browser_session_required",
         title="Browser session required",
         detail="Use a CSRF-protected browser session for ITSM configuration lifecycle management.",
+    )
+
+
+async def workflow_plan_creation_subject(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthenticatedSubject:
+    if (
+        subject.kind is SubjectKind.HUMAN
+        and getattr(request.state, "authenticated_credential_kind", None)
+        is CredentialKind.BROWSER_SESSION
+    ):
+        return subject
+    raise AtlasError(
+        status=403,
+        code="browser_session_required",
+        title="Browser session required",
+        detail="Use a CSRF-protected human browser session to create a workflow plan.",
     )
 
 
@@ -1875,6 +1897,76 @@ async def authorize_health_check_run_create(
     subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
 ) -> AuthorizationDecision:
     return await _authorize_health_check(request, subject, permission_id=HEALTH_CHECK_RUN_CREATE)
+
+
+async def _authorize_workflow(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.workflow",
+            scope=workflow_scope(
+                subject.organization_id,
+                settings.environment,
+                capability_class,
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_workflow_definition_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_workflow(
+        request,
+        subject,
+        permission_id=WORKFLOW_DEFINITION_READ,
+        capability_class=CapabilityClass.C0_INFORMATIONAL,
+    )
+
+
+async def authorize_workflow_plan_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(workflow_plan_creation_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_workflow(
+        request,
+        subject,
+        permission_id=WORKFLOW_PLAN_CREATE,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def authorize_workflow_plan_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_workflow(
+        request,
+        subject,
+        permission_id=WORKFLOW_PLAN_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
 
 
 async def authorize_investigation_create(

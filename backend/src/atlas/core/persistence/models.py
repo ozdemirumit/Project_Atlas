@@ -4185,3 +4185,79 @@ class OperationalConversationIdempotencyModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowDefinitionModel(Base):
+    __tablename__ = "workflow_definitions"
+    __table_args__ = (
+        UniqueConstraint(
+            "definition_id",
+            "definition_version",
+            name="uq_workflow_definition_identity_version",
+        ),
+        CheckConstraint("definition_version >= 1", name="ck_workflow_definition_version"),
+    )
+
+    record_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    definition_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    definition_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    definition_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    input_schema_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, index=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowRunPlanModel(Base):
+    __tablename__ = "workflow_run_plans"
+    __table_args__ = (
+        CheckConstraint("definition_version >= 1", name="ck_workflow_run_plan_definition_version"),
+        CheckConstraint("state = 'planned'", name="ck_workflow_run_plan_state"),
+        UniqueConstraint("canonical_digest", name="uq_workflow_run_plan_digest"),
+    )
+
+    plan_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    definition_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    definition_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    definition_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    creator_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    target_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    target_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_input_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowIdempotencyModel(Base):
+    __tablename__ = "workflow_idempotency_records"
+    __table_args__ = (
+        UniqueConstraint(
+            "operation",
+            "idempotency_scope_id",
+            "idempotency_key",
+            name="uq_workflow_operation_scope_idem",
+        ),
+    )
+
+    record_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    operation: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    idempotency_scope_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(128), nullable=False)
+    result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    plan_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_run_plans.plan_id"),
+        nullable=False,
+        index=True,
+    )
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    creator_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

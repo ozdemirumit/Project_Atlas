@@ -94,9 +94,11 @@ function renderLanding(onNavigateCapability = vi.fn()) {
   return render(
     <QueryClientProvider client={client}>
       <WorkspaceLanding
+        activeView="home"
         identity={identity}
         onNavigate={() => undefined}
         onNavigateCapability={onNavigateCapability}
+        onNavigateView={() => undefined}
       />
     </QueryClientProvider>,
   );
