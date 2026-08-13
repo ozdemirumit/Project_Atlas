@@ -54,7 +54,7 @@ describe("ITSM sandbox conformance runtime contract", () => {
 
 function onboarding(overrides: Record<string, unknown> = {}) {
   return {
-    schema_version: "atlas.itsm-sandbox-onboarding-readiness.v2",
+    schema_version: "atlas.itsm-sandbox-onboarding-readiness.v3",
     version: 1,
     organization_id: "organization.development",
     environment_id: "environment.test",
@@ -72,6 +72,13 @@ function onboarding(overrides: Record<string, unknown> = {}) {
     policy_digest: "f".repeat(64),
     policy_issuer: "issuer.atlas-development",
     policy_expires_at: "2026-09-12T05:00:00Z",
+    policy_provenance_id: "provenance.policy.itsm-sandbox-onboarding.development.1",
+    policy_provenance_digest: "1".repeat(64),
+    policy_signing_key_id: "signing-key.itsm-policy.development",
+    policy_signing_key_version: "version.1",
+    policy_signature_algorithm: "algorithm.hmac-sha256-nonproduction",
+    policy_signed_at: "2026-08-13T05:00:00Z",
+    policy_verified_at: "2026-08-13T05:00:00Z",
     assessed_at: "2026-08-13T05:00:00Z",
     evidence_observed_at: "2026-08-13T05:00:00Z",
     evidence_valid_until: "2026-08-13T05:10:00Z",
@@ -108,13 +115,17 @@ describe("ITSM sandbox onboarding runtime contract", () => {
     );
     expect(isSandboxOnboardingReadiness(onboarding({ requirements: [] }))).toBe(false);
     expect(isSandboxOnboardingReadiness(onboarding({ policy_override: "unsafe" }))).toBe(false);
+    expect(isSandboxOnboardingReadiness(onboarding({ signature_value: "unsafe" }))).toBe(false);
+    expect(isSandboxOnboardingReadiness(onboarding({ trust_decision: "trusted" }))).toBe(false);
   });
 
   it("requires an immutable versioned policy binding", () => {
-    expect(isSandboxOnboardingReadiness(onboarding({ schema_version: "atlas.itsm-sandbox-onboarding-readiness.v1" }))).toBe(false);
+    expect(isSandboxOnboardingReadiness(onboarding({ schema_version: "atlas.itsm-sandbox-onboarding-readiness.v2" }))).toBe(false);
     expect(isSandboxOnboardingReadiness(onboarding({ policy_version: 0 }))).toBe(false);
     expect(isSandboxOnboardingReadiness(onboarding({ policy_version: 1.5 }))).toBe(false);
     expect(isSandboxOnboardingReadiness(onboarding({ policy_digest: "not-a-digest" }))).toBe(false);
     expect(isSandboxOnboardingReadiness(onboarding({ policy_expires_at: "not-a-time" }))).toBe(false);
+    expect(isSandboxOnboardingReadiness(onboarding({ policy_provenance_digest: "not-a-digest" }))).toBe(false);
+    expect(isSandboxOnboardingReadiness(onboarding({ policy_verified_at: "not-a-time" }))).toBe(false);
   });
 });

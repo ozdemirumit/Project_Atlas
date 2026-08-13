@@ -17,8 +17,11 @@ from atlas.modules.identity.domain.models import (
 from atlas.modules.itsm.adapters.memory import InMemoryItsmIntegrationProfileRepository
 from atlas.modules.itsm.adapters.onboarding import (
     DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource,
+    InMemoryItsmSandboxOnboardingPolicyProvenanceSource,
     InMemoryItsmSandboxOnboardingPolicySource,
+    InMemoryItsmSandboxOnboardingPolicyTrustSource,
     build_development_itsm_sandbox_onboarding_policy,
+    build_development_itsm_sandbox_onboarding_policy_authenticity,
 )
 from atlas.modules.itsm.adapters.postgres import PostgreSQLItsmIntegrationProfileRepository
 from atlas.modules.itsm.adapters.sandbox import (
@@ -35,6 +38,9 @@ from atlas.modules.itsm.domain.models import (
     ItsmSandboxConformanceState,
     ItsmSandboxOnboardingAdapterRule,
     ItsmSandboxOnboardingPolicy,
+    ItsmSandboxOnboardingPolicyProvenance,
+    ItsmSandboxOnboardingPolicyTrustKey,
+    ItsmSandboxOnboardingPolicyTrustKeyState,
     ItsmSandboxOnboardingState,
     ItsmWriteSemantics,
 )
@@ -97,6 +103,28 @@ class FailingSandboxOnboardingPolicySource:
         raise RuntimeError("policy authority failure must remain contained")
 
 
+class FailingSandboxOnboardingPolicyProvenanceSource:
+    async def list_scope(self, **values: object):  # type: ignore[no-untyped-def]
+        del values
+        raise RuntimeError("provenance authority failure must remain contained")
+
+
+class FailingSandboxOnboardingPolicyTrustSource:
+    async def list_scope(self, **values: object):  # type: ignore[no-untyped-def]
+        del values
+        raise RuntimeError("trust authority failure must remain contained")
+
+
+class FailingSandboxOnboardingPolicyVerifier:
+    @property
+    def supported_algorithms(self) -> tuple[str, ...]:
+        return ("algorithm.hmac-sha256-nonproduction",)
+
+    async def verify(self, **values: object) -> bool:
+        del values
+        raise RuntimeError("verification boundary failure must remain contained")
+
+
 class CollectingAuditSink:
     def __init__(self) -> None:
         self.records: list[AuditRecord] = []
@@ -146,6 +174,96 @@ def policy(**overrides: Any) -> ItsmSandboxOnboardingPolicy:
             ItsmIntegrationService._onboarding_policy_payload(candidate)
         ),
     )
+
+
+def authenticity_kwargs(
+    *policies: ItsmSandboxOnboardingPolicy,
+) -> dict[str, Any]:
+    snapshots = policies or (policy(),)
+    provenances = []
+    trust_keys = {}
+    verifier = None
+    for snapshot in snapshots:
+        provenance, trust_key, verifier = (
+            build_development_itsm_sandbox_onboarding_policy_authenticity(snapshot)
+        )
+        provenances.append(provenance)
+        trust_keys[trust_key.canonical_digest] = trust_key
+    assert verifier is not None
+    return {
+        "sandbox_onboarding_policy_provenance_source": (
+            InMemoryItsmSandboxOnboardingPolicyProvenanceSource(tuple(provenances))
+        ),
+        "sandbox_onboarding_policy_trust_source": InMemoryItsmSandboxOnboardingPolicyTrustSource(
+            tuple(trust_keys.values())
+        ),
+        "sandbox_onboarding_policy_verifier": verifier,
+    }
+
+
+def provenance(**overrides: Any) -> ItsmSandboxOnboardingPolicyProvenance:
+    baseline, _, _ = build_development_itsm_sandbox_onboarding_policy_authenticity(policy())
+    candidate = replace(baseline, canonical_digest="0" * 64, **overrides)
+    candidate = replace(
+        candidate,
+        signed_payload_digest=ItsmIntegrationService._digest(
+            ItsmIntegrationService._onboarding_policy_provenance_signed_payload(candidate)
+        ),
+        signature_digest=ItsmIntegrationService._digest(candidate.signature_value),
+    )
+    return replace(
+        candidate,
+        canonical_digest=ItsmIntegrationService._digest(
+            ItsmIntegrationService._onboarding_policy_provenance_payload(candidate)
+        ),
+    )
+
+
+def trust_key(**overrides: Any) -> ItsmSandboxOnboardingPolicyTrustKey:
+    _, baseline, _ = build_development_itsm_sandbox_onboarding_policy_authenticity(policy())
+    candidate = replace(baseline, canonical_digest="0" * 64, **overrides)
+    return replace(
+        candidate,
+        canonical_digest=ItsmIntegrationService._digest(
+            ItsmIntegrationService._onboarding_policy_trust_payload(candidate)
+        ),
+    )
+
+
+def custom_authenticity_kwargs(
+    *,
+    provenances: tuple[ItsmSandboxOnboardingPolicyProvenance, ...] | None = None,
+    trust_keys: tuple[ItsmSandboxOnboardingPolicyTrustKey, ...] | None = None,
+    provenance_source: object | None = None,
+    trust_source: object | None = None,
+    verifier: object | None = None,
+) -> dict[str, Any]:
+    default_provenance, default_trust, default_verifier = (
+        build_development_itsm_sandbox_onboarding_policy_authenticity(policy())
+    )
+    return {
+        "sandbox_onboarding_policy_provenance_source": (
+            provenance_source
+            if provenance_source is not None
+            else InMemoryItsmSandboxOnboardingPolicyProvenanceSource(
+                provenances if provenances is not None else (default_provenance,)
+            )
+        ),
+        "sandbox_onboarding_policy_trust_source": (
+            trust_source
+            if trust_source is not None
+            else InMemoryItsmSandboxOnboardingPolicyTrustSource(
+                trust_keys if trust_keys is not None else (default_trust,)
+            )
+        ),
+        "sandbox_onboarding_policy_verifier": verifier or default_verifier,
+    }
+
+
+def without_verifier_kwargs() -> dict[str, Any]:
+    values = custom_authenticity_kwargs()
+    values["sandbox_onboarding_policy_verifier"] = None
+    return values
 
 
 def mappings() -> tuple[ItsmFieldMapping, ...]:
@@ -453,6 +571,7 @@ async def test_sandbox_onboarding_readiness_blocks_synthetic_deployment_evidence
             DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource()
         ),
         sandbox_onboarding_policy_source=policy_source(),
+        **authenticity_kwargs(),
         clock=lambda: NOW,
     )
     profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
@@ -501,6 +620,7 @@ async def test_sandbox_onboarding_readiness_distinguishes_missing_conformance() 
             DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource()
         ),
         sandbox_onboarding_policy_source=policy_source(),
+        **authenticity_kwargs(),
         clock=lambda: NOW,
     )
     profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
@@ -528,6 +648,7 @@ async def test_sandbox_onboarding_readiness_requires_all_authoritative_evidence(
         sandbox_conformance_adapter=ProductionEligibleSandboxAdapter(),
         sandbox_onboarding_evidence_source=ApprovedSandboxOnboardingEvidenceSource(),
         sandbox_onboarding_policy_source=policy_source(),
+        **authenticity_kwargs(),
         clock=lambda: NOW,
     )
     profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
@@ -555,6 +676,14 @@ async def test_sandbox_onboarding_readiness_requires_all_authoritative_evidence(
     assert dossier.policy_digest == policy().canonical_digest
     assert dossier.policy_issuer == "issuer.atlas-development"
     assert dossier.policy_expires_at == NOW + timedelta(days=30)
+    assert dossier.policy_provenance_id == (
+        "provenance.policy.itsm-sandbox-onboarding.development.1"
+    )
+    assert dossier.policy_signing_key_id == "signing-key.itsm-policy.development"
+    assert dossier.policy_signing_key_version == "version.1"
+    assert dossier.policy_signature_algorithm == "algorithm.hmac-sha256-nonproduction"
+    assert dossier.policy_signed_at == NOW
+    assert dossier.policy_verified_at == NOW
     assert all(item.state.value == "satisfied" for item in dossier.requirements)
     assert dossier.production_ready is False
     assert dossier.dispatch_authorized is False
@@ -585,6 +714,7 @@ async def test_sandbox_onboarding_readiness_contains_invalid_or_failed_evidence_
         sandbox_conformance_adapter=DeterministicNoNetworkItsmSandboxConformanceAdapter(),
         sandbox_onboarding_evidence_source=evidence_source,  # type: ignore[arg-type]
         sandbox_onboarding_policy_source=policy_source(),
+        **authenticity_kwargs(),
         clock=lambda: NOW,
     )
     profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
@@ -661,7 +791,7 @@ async def test_sandbox_onboarding_readiness_contains_invalid_or_failed_evidence_
                     ),
                 )
             ),
-            "itsm_sandbox_onboarding_policy_expired",
+            "itsm_sandbox_onboarding_policy_provenance_expired",
         ),
         (
             InMemoryItsmSandboxOnboardingPolicySource(
@@ -675,11 +805,17 @@ async def test_sandbox_onboarding_policy_resolution_fails_closed(
     source: object,
     expected_error: str,
 ) -> None:
+    source_policies = (
+        source.policies
+        if isinstance(source, InMemoryItsmSandboxOnboardingPolicySource) and source.policies
+        else (policy(),)
+    )
     service = ItsmIntegrationService(
         repository=InMemoryItsmIntegrationProfileRepository(),
         audit_sink=CollectingAuditSink(),
         environment_id="environment.test",
         sandbox_onboarding_policy_source=source,  # type: ignore[arg-type]
+        **authenticity_kwargs(*source_policies),
         clock=lambda: NOW,
     )
     profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
@@ -689,6 +825,219 @@ async def test_sandbox_onboarding_policy_resolution_fails_closed(
             actor=actor(),
             profile_id=profile.profile_id,
             correlation_id="correlation.itsm.sandbox.onboarding.policy-failure",
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("auth_kwargs", "expected_error"),
+    [
+        ({}, "itsm_sandbox_onboarding_policy_provenance_unavailable"),
+        (
+            custom_authenticity_kwargs(provenances=()),
+            "itsm_sandbox_onboarding_policy_provenance_unavailable",
+        ),
+        (
+            custom_authenticity_kwargs(
+                provenance_source=FailingSandboxOnboardingPolicyProvenanceSource()
+            ),
+            "itsm_sandbox_onboarding_policy_provenance_unavailable",
+        ),
+        (
+            custom_authenticity_kwargs(
+                provenances=(
+                    provenance(),
+                    provenance(
+                        provenance_id=(
+                            "provenance.policy.itsm-sandbox-onboarding.development.secondary"
+                        )
+                    ),
+                )
+            ),
+            "itsm_sandbox_onboarding_policy_provenance_ambiguous",
+        ),
+        (
+            custom_authenticity_kwargs(
+                provenances=(replace(provenance(), canonical_digest="f" * 64),)
+            ),
+            "itsm_sandbox_onboarding_policy_provenance_integrity_failed",
+        ),
+        (
+            custom_authenticity_kwargs(
+                provenances=(provenance(organization_id="organization.foreign"),)
+            ),
+            "itsm_sandbox_onboarding_policy_provenance_binding_invalid",
+        ),
+        (
+            custom_authenticity_kwargs(
+                provenances=(provenance(signed_at=NOW - timedelta(minutes=1)),)
+            ),
+            "itsm_sandbox_onboarding_policy_provenance_binding_invalid",
+        ),
+        (
+            custom_authenticity_kwargs(
+                provenances=(provenance(expires_at=NOW + timedelta(days=29)),)
+            ),
+            "itsm_sandbox_onboarding_policy_provenance_binding_invalid",
+        ),
+        (
+            custom_authenticity_kwargs(
+                provenances=(
+                    provenance(
+                        signed_at=NOW + timedelta(hours=1),
+                        expires_at=NOW + timedelta(hours=2),
+                    ),
+                )
+            ),
+            "itsm_sandbox_onboarding_policy_provenance_not_effective",
+        ),
+        (
+            custom_authenticity_kwargs(
+                provenances=(
+                    provenance(
+                        signed_at=NOW - timedelta(hours=2),
+                        expires_at=NOW - timedelta(hours=1),
+                    ),
+                )
+            ),
+            "itsm_sandbox_onboarding_policy_provenance_expired",
+        ),
+        (
+            custom_authenticity_kwargs(
+                provenances=(provenance(algorithm="algorithm.unsupported-signature"),)
+            ),
+            "itsm_sandbox_onboarding_policy_algorithm_unsupported",
+        ),
+        (
+            custom_authenticity_kwargs(provenances=(provenance(signature_value="A" * 43),)),
+            "itsm_sandbox_onboarding_policy_signature_invalid",
+        ),
+        (
+            without_verifier_kwargs(),
+            "itsm_sandbox_onboarding_policy_verifier_unavailable",
+        ),
+        (
+            custom_authenticity_kwargs(verifier=FailingSandboxOnboardingPolicyVerifier()),
+            "itsm_sandbox_onboarding_policy_verifier_unavailable",
+        ),
+    ],
+)
+async def test_sandbox_onboarding_policy_provenance_fails_closed(
+    auth_kwargs: dict[str, Any],
+    expected_error: str,
+) -> None:
+    service = ItsmIntegrationService(
+        repository=InMemoryItsmIntegrationProfileRepository(),
+        audit_sink=CollectingAuditSink(),
+        environment_id="environment.test",
+        sandbox_onboarding_policy_source=policy_source(),
+        **auth_kwargs,
+        clock=lambda: NOW,
+    )
+    profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
+
+    with pytest.raises(ItsmIntegrationError, match=expected_error):
+        await service.sandbox_onboarding_readiness(
+            actor=actor(),
+            profile_id=profile.profile_id,
+            correlation_id="correlation.itsm.sandbox.onboarding.provenance-failure",
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("auth_kwargs", "expected_error"),
+    [
+        (
+            custom_authenticity_kwargs(trust_keys=()),
+            "itsm_sandbox_onboarding_policy_trust_unavailable",
+        ),
+        (
+            custom_authenticity_kwargs(trust_source=FailingSandboxOnboardingPolicyTrustSource()),
+            "itsm_sandbox_onboarding_policy_trust_unavailable",
+        ),
+        (
+            custom_authenticity_kwargs(
+                trust_keys=(
+                    trust_key(),
+                    trust_key(signing_key_id="signing-key.itsm-policy.secondary"),
+                )
+            ),
+            "itsm_sandbox_onboarding_policy_trust_ambiguous",
+        ),
+        (
+            custom_authenticity_kwargs(
+                trust_keys=(replace(trust_key(), canonical_digest="f" * 64),)
+            ),
+            "itsm_sandbox_onboarding_policy_trust_integrity_failed",
+        ),
+        (
+            custom_authenticity_kwargs(
+                trust_keys=(trust_key(organization_id="organization.foreign"),)
+            ),
+            "itsm_sandbox_onboarding_policy_trust_binding_invalid",
+        ),
+        (
+            custom_authenticity_kwargs(
+                trust_keys=(trust_key(expires_at=NOW + timedelta(days=29)),)
+            ),
+            "itsm_sandbox_onboarding_policy_trust_binding_invalid",
+        ),
+        (
+            custom_authenticity_kwargs(
+                trust_keys=(
+                    trust_key(
+                        not_before=NOW + timedelta(hours=1),
+                        expires_at=NOW + timedelta(hours=2),
+                    ),
+                )
+            ),
+            "itsm_sandbox_onboarding_policy_trust_not_effective",
+        ),
+        (
+            custom_authenticity_kwargs(
+                trust_keys=(
+                    trust_key(
+                        not_before=NOW - timedelta(hours=2),
+                        expires_at=NOW - timedelta(hours=1),
+                    ),
+                )
+            ),
+            "itsm_sandbox_onboarding_policy_trust_expired",
+        ),
+        (
+            custom_authenticity_kwargs(
+                trust_keys=(trust_key(state=ItsmSandboxOnboardingPolicyTrustKeyState.DISABLED),)
+            ),
+            "itsm_sandbox_onboarding_policy_trust_disabled",
+        ),
+        (
+            custom_authenticity_kwargs(
+                trust_keys=(trust_key(state=ItsmSandboxOnboardingPolicyTrustKeyState.REVOKED),)
+            ),
+            "itsm_sandbox_onboarding_policy_trust_revoked",
+        ),
+    ],
+)
+async def test_sandbox_onboarding_policy_trust_fails_closed(
+    auth_kwargs: dict[str, Any],
+    expected_error: str,
+) -> None:
+    service = ItsmIntegrationService(
+        repository=InMemoryItsmIntegrationProfileRepository(),
+        audit_sink=CollectingAuditSink(),
+        environment_id="environment.test",
+        sandbox_onboarding_policy_source=policy_source(),
+        **auth_kwargs,
+        clock=lambda: NOW,
+    )
+    profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
+
+    with pytest.raises(ItsmIntegrationError, match=expected_error):
+        await service.sandbox_onboarding_readiness(
+            actor=actor(),
+            profile_id=profile.profile_id,
+            correlation_id="correlation.itsm.sandbox.onboarding.trust-failure",
         )
 
 
@@ -708,6 +1057,7 @@ async def test_sandbox_onboarding_policy_enforces_evidence_and_conformance_age()
         sandbox_onboarding_policy_source=InMemoryItsmSandboxOnboardingPolicySource(
             (governed_policy,)
         ),
+        **authenticity_kwargs(governed_policy),
         clock=lambda: current_time[0],
     )
     profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
@@ -753,6 +1103,7 @@ async def test_sandbox_onboarding_policy_requires_exact_adapter_identity_and_ver
         sandbox_onboarding_policy_source=InMemoryItsmSandboxOnboardingPolicySource(
             (governed_policy,)
         ),
+        **authenticity_kwargs(governed_policy),
         clock=lambda: NOW,
     )
     profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]

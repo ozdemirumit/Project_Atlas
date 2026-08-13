@@ -772,8 +772,12 @@ from atlas.modules.itsm.adapters.memory import InMemoryItsmIntegrationProfileRep
 from atlas.modules.itsm.adapters.onboarding import (
     DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource,
     EmptyItsmSandboxOnboardingEvidenceSource,
+    InMemoryItsmSandboxOnboardingPolicyProvenanceSource,
     InMemoryItsmSandboxOnboardingPolicySource,
+    InMemoryItsmSandboxOnboardingPolicyTrustSource,
+    UnavailableItsmSandboxOnboardingPolicyVerifier,
     build_development_itsm_sandbox_onboarding_policy,
+    build_development_itsm_sandbox_onboarding_policy_authenticity,
 )
 from atlas.modules.itsm.adapters.postgres import PostgreSQLItsmIntegrationProfileRepository
 from atlas.modules.itsm.adapters.sandbox import (
@@ -5040,6 +5044,22 @@ def create_app(
         audit_sink=resolved_audit_sink,
         environment_id=f"environment.{resolved_settings.environment}",
     )
+    development_itsm_onboarding_policy = (
+        None
+        if is_production
+        else build_development_itsm_sandbox_onboarding_policy(
+            organization_id=resolved_settings.development_organization_id,
+            environment_id=f"environment.{resolved_settings.environment}",
+            site_id="site.local",
+        )
+    )
+    development_itsm_policy_authenticity = (
+        None
+        if development_itsm_onboarding_policy is None
+        else build_development_itsm_sandbox_onboarding_policy_authenticity(
+            development_itsm_onboarding_policy
+        )
+    )
     resolved_itsm_integration_service = itsm_integration_service or ItsmIntegrationService(
         repository=(
             PostgreSQLItsmIntegrationProfileRepository.from_url(resolved_settings.database_url)
@@ -5060,16 +5080,27 @@ def create_app(
         ),
         sandbox_onboarding_policy_source=(
             InMemoryItsmSandboxOnboardingPolicySource()
-            if is_production
-            else InMemoryItsmSandboxOnboardingPolicySource(
-                (
-                    build_development_itsm_sandbox_onboarding_policy(
-                        organization_id=resolved_settings.development_organization_id,
-                        environment_id=f"environment.{resolved_settings.environment}",
-                        site_id="site.local",
-                    ),
-                )
+            if development_itsm_onboarding_policy is None
+            else InMemoryItsmSandboxOnboardingPolicySource((development_itsm_onboarding_policy,))
+        ),
+        sandbox_onboarding_policy_provenance_source=(
+            InMemoryItsmSandboxOnboardingPolicyProvenanceSource()
+            if development_itsm_policy_authenticity is None
+            else InMemoryItsmSandboxOnboardingPolicyProvenanceSource(
+                (development_itsm_policy_authenticity[0],)
             )
+        ),
+        sandbox_onboarding_policy_trust_source=(
+            InMemoryItsmSandboxOnboardingPolicyTrustSource()
+            if development_itsm_policy_authenticity is None
+            else InMemoryItsmSandboxOnboardingPolicyTrustSource(
+                (development_itsm_policy_authenticity[1],)
+            )
+        ),
+        sandbox_onboarding_policy_verifier=(
+            UnavailableItsmSandboxOnboardingPolicyVerifier()
+            if development_itsm_policy_authenticity is None
+            else development_itsm_policy_authenticity[2]
         ),
     )
     resolved_graph_impact_service = graph_impact_service or GraphImpactService(
