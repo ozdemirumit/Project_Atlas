@@ -166,6 +166,8 @@ def test_injected_planning_service_and_default_lease_service_share_one_repositor
         assert app.state.workflow_planning_service.repository is repository
         assert app.state.workflow_orchestration_lease_service.repository is repository
         assert app.state.workflow_orchestration_lease_repository is repository
+        assert app.state.workflow_run_materialization_service.repository is repository
+        assert app.state.workflow_run_materialization_repository is repository
 
 
 def test_plan_only_repository_requires_an_explicit_lease_service() -> None:
@@ -351,3 +353,111 @@ def test_workload_lease_api_rejects_wrong_audience_and_environment_without_step_
         assert response.json()["code"] == "workload_authentication_failed"
         assert "mfa" not in response.text.casefold()
         assert "authorized browser session" not in response.text.casefold()
+
+
+def test_workload_materializes_one_no_dispatch_run_visible_to_existing_browser_session() -> None:
+    target_source = _ExplicitTargetAccessSource()
+    workload_service, token = _workload_service()
+    app = create_app(
+        _settings(),
+        audit_sink=_AuditSink(),
+        workload_identity_service=workload_service,
+        conversation_target_access_source=target_source,
+    )
+
+    with TestClient(app) as client:
+        csrf = _login(client)
+        created = client.post(
+            "/api/v1/workflows/plans",
+            json=_plan_payload(),
+            headers={"X-CSRF-Token": csrf, "Idempotency-Key": "workflow-run-plan-0001"},
+        )
+        assert created.status_code == 201
+        plan = created.json()["data"]
+        plan_id = plan["plan_id"]
+
+        empty_status = client.get(f"/api/v1/workflows/plans/{plan_id}/materialized-run")
+        browser_mutation = client.post(
+            f"/api/v1/workflows/plans/{plan_id}/materialized-run",
+            json={
+                "schema_version": "atlas.workflow-run-materialization-input.v1",
+                "plan_digest": plan["canonical_digest"],
+                "target_id": TARGET_ID,
+                "target_type": "storage",
+                "lease_id": "workflow-lease.not-available",
+                "lease_digest": "0" * 64,
+                "fencing_token": 1,
+                "acknowledged_materialization_only_no_dispatch_authority": True,
+            },
+            headers={"Idempotency-Key": "workflow-run-browser-denied-0001"},
+        )
+        acquired = client.post(
+            f"/api/v1/workflows/plans/{plan_id}/orchestration-lease/acquisition",
+            json={
+                "schema_version": "atlas.workflow-orchestration-lease-acquire-input.v1",
+                "plan_digest": plan["canonical_digest"],
+                "target_id": TARGET_ID,
+                "target_type": "storage",
+                "lease_duration_seconds": 90,
+                "acknowledged_coordination_only_no_execution_authority": True,
+            },
+            headers={
+                **_workload_headers(token),
+                "Idempotency-Key": "workflow-run-lease-0001",
+            },
+        )
+        assert acquired.status_code == 201
+        lease = acquired.json()["data"]
+        materialization_payload = {
+            "schema_version": "atlas.workflow-run-materialization-input.v1",
+            "plan_digest": plan["canonical_digest"],
+            "target_id": TARGET_ID,
+            "target_type": "storage",
+            "lease_id": lease["lease_id"],
+            "lease_digest": lease["canonical_digest"],
+            "fencing_token": lease["fencing_token"],
+            "acknowledged_materialization_only_no_dispatch_authority": True,
+        }
+        headers = {
+            **_workload_headers(token),
+            "Idempotency-Key": "workflow-run-materialize-0001",
+        }
+        materialized = client.post(
+            f"/api/v1/workflows/plans/{plan_id}/materialized-run",
+            json=materialization_payload,
+            headers=headers,
+        )
+        replayed = client.post(
+            f"/api/v1/workflows/plans/{plan_id}/materialized-run",
+            json=materialization_payload,
+            headers=headers,
+        )
+        browser_status = client.get(f"/api/v1/workflows/plans/{plan_id}/materialized-run")
+        unchanged_plan = client.get(f"/api/v1/workflows/plans/{plan_id}")
+
+    assert empty_status.status_code == 200
+    assert empty_status.json()["data"]["run"] is None
+    assert browser_mutation.status_code == 401
+    assert browser_mutation.json()["code"] == "workload_authentication_failed"
+    assert "mfa" not in browser_mutation.text.casefold()
+    assert "authorized browser session" not in browser_mutation.text.casefold()
+    assert materialized.status_code == 201
+    run = materialized.json()["data"]
+    assert replayed.status_code == 201
+    assert replayed.json()["data"] == run
+    assert run["state"] == "created"
+    assert run["plan_id"] == plan_id
+    assert run["plan_digest"] == plan["canonical_digest"]
+    assert run["lease_id"] == lease["lease_id"]
+    assert run["lease_digest"] == lease["canonical_digest"]
+    assert run["fencing_token"] == lease["fencing_token"]
+    assert run["materialized_by_subject_id"] == WORKER_ID
+    assert run["step_runs"]
+    assert all(step["state"] == "not_started" for step in run["step_runs"])
+    assert not any(run["authority"].values())
+    assert run["grants_execution_authority"] is False
+    assert browser_status.status_code == 200
+    assert browser_status.headers["Cache-Control"].startswith("no-store")
+    assert browser_status.json()["data"]["run"] == run
+    assert unchanged_plan.status_code == 200
+    assert unchanged_plan.json()["data"] == plan

@@ -21,10 +21,15 @@ from atlas.api.workflow_schemas import (
     CancelWorkflowPlanInput,
     CreateWorkflowPlanInput,
     HeartbeatWorkflowOrchestrationLeaseInput,
+    MaterializeWorkflowRunInput,
     ReleaseWorkflowOrchestrationLeaseInput,
     WorkflowDefinitionData,
     WorkflowDefinitionInventoryData,
     WorkflowDefinitionInventoryResponse,
+    WorkflowExecutionRunData,
+    WorkflowExecutionRunResponse,
+    WorkflowMaterializedRunStatusData,
+    WorkflowMaterializedRunStatusResponse,
     WorkflowOrchestrationLeaseData,
     WorkflowOrchestrationLeaseResponse,
     WorkflowOrchestrationLeaseStatusData,
@@ -49,9 +54,15 @@ from atlas.modules.workflows.application import (
     WorkflowOrchestrationLeaseService,
     WorkflowPlanningError,
     WorkflowPlanningService,
+    WorkflowRunMaterializationError,
+    WorkflowRunMaterializationRepository,
+    WorkflowRunMaterializationService,
     WorkflowWorkerContext,
 )
 from atlas.modules.workflows.domain import (
+    WorkflowExecutionRun,
+    WorkflowExecutionRunState,
+    WorkflowExecutionStepRunState,
     WorkflowOrchestrationLease,
     WorkflowRunPlan,
     WorkflowScope,
@@ -193,6 +204,38 @@ def _raise_lease(error: WorkflowOrchestrationLeaseError) -> NoReturn:
     ) from error
 
 
+def _raise_materialization(error: WorkflowRunMaterializationError) -> NoReturn:
+    if error.code.endswith("_invalid") or error.code.endswith("_required"):
+        status = 422
+    elif "repository" in error.code:
+        status = 503
+    else:
+        status = 409
+    raise AtlasError(
+        status=status,
+        code=(
+            "workflow_run_request_invalid"
+            if status == 422
+            else "workflow_run_service_unavailable"
+            if status == 503
+            else "workflow_run_conflict"
+        ),
+        title=(
+            "Workflow run request invalid"
+            if status == 422
+            else "Workflow run service unavailable"
+            if status == 503
+            else "Workflow run conflict"
+        ),
+        detail=(
+            "The workflow run request did not satisfy the bounded contract."
+            if status == 422
+            else "The workflow run operation is unavailable."
+        ),
+        retryable=status == 503,
+    ) from error
+
+
 async def _worker_context(
     request: Request,
     subject: AuthenticatedSubject,
@@ -261,6 +304,44 @@ def _lease_response(
     return WorkflowOrchestrationLeaseResponse(
         data=WorkflowOrchestrationLeaseData.from_domain(lease, requested_at=requested_at),
         meta=_meta(request),
+    )
+
+
+def _run_response(
+    run: WorkflowExecutionRun,
+    request: Request,
+    response: Response,
+) -> WorkflowExecutionRunResponse:
+    _no_store(response)
+    return WorkflowExecutionRunResponse(
+        data=WorkflowExecutionRunData.from_domain(run),
+        meta=_meta(request),
+    )
+
+
+def _run_matches_plan(run: WorkflowExecutionRun, plan: WorkflowRunPlan) -> bool:
+    return (
+        run.plan_id == plan.plan_id
+        and run.plan_digest == plan.canonical_digest
+        and run.definition_id == plan.definition_id
+        and run.definition_version == plan.definition_version
+        and run.definition_digest == plan.definition_digest
+        and run.scope == plan.scope
+        and run.target_id == plan.target_id
+        and run.target_type == plan.target_type
+        and run.state is WorkflowExecutionRunState.CREATED
+        and len(run.step_runs) == len(plan.steps)
+        and all(
+            step_run.run_id == run.run_id
+            and step_run.step_id == plan_step.step_id
+            and step_run.ordinal == plan_step.ordinal
+            and step_run.kind == plan_step.kind
+            and step_run.capability_class == plan_step.capability_class
+            and step_run.state is WorkflowExecutionStepRunState.NOT_STARTED
+            for step_run, plan_step in zip(run.step_runs, plan.steps, strict=True)
+        )
+        and not any(run.authority.canonical_value().values())
+        and not run.grants_execution_authority
     )
 
 
@@ -433,6 +514,89 @@ async def get_workflow_orchestration_lease_status(
         ),
         meta=_meta(request),
     )
+
+
+@router.get(
+    "/plans/{plan_id}/materialized-run",
+    response_model=WorkflowMaterializedRunStatusResponse,
+)
+async def get_workflow_materialized_run_status(
+    plan_id: Annotated[str, SAFE_ID],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[AuthorizationDecision, Depends(authorize_workflow_plan_read)],
+) -> WorkflowMaterializedRunStatusResponse:
+    planning_service: WorkflowPlanningService = request.app.state.workflow_planning_service
+    try:
+        plan = await planning_service.get_plan(
+            plan_id=plan_id,
+            context=await _context(request, subject, decision),
+        )
+    except WorkflowPlanningError as error:
+        _raise(error)
+    repository: WorkflowRunMaterializationRepository = (
+        request.app.state.workflow_run_materialization_repository
+    )
+    try:
+        run = await repository.get_materialized_run_by_plan_id(plan_id=plan.plan_id)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_run_service_unavailable",
+            title="Workflow run service unavailable",
+            detail="The workflow run status is unavailable.",
+            retryable=True,
+        ) from error
+    if run is not None and not _run_matches_plan(run, plan):
+        raise AtlasError(
+            status=503,
+            code="workflow_run_service_unavailable",
+            title="Workflow run service unavailable",
+            detail="The workflow run status is unavailable.",
+            retryable=True,
+        )
+    _no_store(response)
+    return WorkflowMaterializedRunStatusResponse(
+        data=WorkflowMaterializedRunStatusData(
+            plan_id=plan.plan_id,
+            run=None if run is None else WorkflowExecutionRunData.from_domain(run),
+            server_time=datetime.now(UTC),
+            durable=repository.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/plans/{plan_id}/materialized-run",
+    response_model=WorkflowExecutionRunResponse,
+    status_code=201,
+)
+async def materialize_workflow_run(
+    plan_id: Annotated[str, SAFE_ID],
+    payload: MaterializeWorkflowRunInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(workflow_worker_subject)],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> WorkflowExecutionRunResponse:
+    service: WorkflowRunMaterializationService = (
+        request.app.state.workflow_run_materialization_service
+    )
+    try:
+        run = await service.materialize(
+            plan_id=plan_id,
+            plan_digest=payload.plan_digest,
+            lease_id=payload.lease_id,
+            lease_digest=payload.lease_digest,
+            fencing_token=payload.fencing_token,
+            idempotency_key=idempotency_key,
+            context=await _worker_context(request, subject, target_id=payload.target_id),
+        )
+    except WorkflowRunMaterializationError as error:
+        _raise_materialization(error)
+    return _run_response(run, request, response)
 
 
 @router.post(

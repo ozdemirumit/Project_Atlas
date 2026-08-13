@@ -18,10 +18,13 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from atlas.core.persistence.models import (
+    WorkflowExecutionRunModel,
+    WorkflowExecutionStepRunModel,
     WorkflowIdempotencyModel,
     WorkflowLeaseIdempotencyModel,
     WorkflowOrchestrationLeaseModel,
     WorkflowPlanTransitionModel,
+    WorkflowRunMaterializationClaimModel,
     WorkflowRunPlanModel,
 )
 from atlas.modules.workflows.application import (
@@ -41,9 +44,17 @@ from atlas.modules.workflows.application import (
     WorkflowPlanMutationResult,
     WorkflowPlanMutationStatus,
     WorkflowPlanningError,
+    WorkflowRunMaterializationIdempotencyRecord,
+    WorkflowRunMaterializationRequest,
+    WorkflowRunMaterializationResult,
+    WorkflowRunMaterializationStatus,
 )
 from atlas.modules.workflows.domain import (
     WorkflowCapabilityClass,
+    WorkflowExecutionRun,
+    WorkflowExecutionRunState,
+    WorkflowExecutionStepRun,
+    WorkflowExecutionStepRunState,
     WorkflowOrchestrationLease,
     WorkflowOrchestrationLeaseEffectiveState,
     WorkflowOrchestrationLeaseState,
@@ -301,6 +312,113 @@ class PostgreSQLWorkflowPlanRepository:
             )
             return None if row is None else self._lease_from_row(row)
 
+    async def get_materialized_run_by_plan_id(self, *, plan_id: str) -> WorkflowExecutionRun | None:
+        async with self._sessions() as session:
+            row = cast(
+                WorkflowExecutionRunModel | None,
+                await session.scalar(
+                    select(WorkflowExecutionRunModel).where(
+                        WorkflowExecutionRunModel.plan_id == plan_id
+                    )
+                ),
+            )
+            return None if row is None else self._materialized_run_from_row(row)
+
+    async def get_run_materialization_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        worker_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowRunMaterializationIdempotencyRecord | None:
+        async with self._sessions() as session:
+            claim = await self._load_materialization_claim(
+                session,
+                scope=scope,
+                worker_subject_id=worker_subject_id,
+                idempotency_key=idempotency_key,
+            )
+            if claim is None:
+                return None
+            return WorkflowRunMaterializationIdempotencyRecord(
+                request_fingerprint=claim.request_fingerprint,
+                run=self._materialized_run_from_claim(claim),
+            )
+
+    async def materialize_run(
+        self, request: WorkflowRunMaterializationRequest
+    ) -> WorkflowRunMaterializationResult:
+        self._validate_materialization_request(request)
+        run = request.candidate
+        async with self._sessions() as session:
+            replay = await self._materialization_replay(session, request=request)
+            if replay is not None:
+                return replay
+
+            plan_row = cast(
+                WorkflowRunPlanModel | None,
+                await session.scalar(
+                    select(WorkflowRunPlanModel)
+                    .where(WorkflowRunPlanModel.plan_id == run.plan_id)
+                    .with_for_update()
+                ),
+            )
+            lease_row = cast(
+                WorkflowOrchestrationLeaseModel | None,
+                await session.scalar(
+                    select(WorkflowOrchestrationLeaseModel)
+                    .where(WorkflowOrchestrationLeaseModel.plan_id == run.plan_id)
+                    .with_for_update()
+                ),
+            )
+            if not self._materialization_sources_match(
+                plan_row=plan_row,
+                lease_row=lease_row,
+                request=request,
+            ):
+                await session.rollback()
+                return WorkflowRunMaterializationResult(
+                    WorkflowRunMaterializationStatus.STATE_CONFLICT,
+                    None,
+                )
+
+            existing = cast(
+                WorkflowExecutionRunModel | None,
+                await session.scalar(
+                    select(WorkflowExecutionRunModel)
+                    .where(WorkflowExecutionRunModel.plan_id == run.plan_id)
+                    .with_for_update()
+                ),
+            )
+            if existing is not None:
+                await session.rollback()
+                return WorkflowRunMaterializationResult(
+                    WorkflowRunMaterializationStatus.STATE_CONFLICT,
+                    self._materialized_run_from_row(existing),
+                )
+
+            try:
+                session.add(self._materialized_run_model(run))
+                for step in run.step_runs:
+                    session.add(self._materialized_step_model(step))
+                session.add(self._materialization_claim_model(request))
+                await session.commit()
+                return WorkflowRunMaterializationResult(
+                    WorkflowRunMaterializationStatus.CREATED,
+                    run,
+                )
+            except IntegrityError:
+                await session.rollback()
+
+        async with self._sessions() as session:
+            replay = await self._materialization_replay(session, request=request)
+            if replay is not None:
+                return replay
+        return WorkflowRunMaterializationResult(
+            WorkflowRunMaterializationStatus.STATE_CONFLICT,
+            None,
+        )
+
     async def get_lease_acquire_request(
         self,
         *,
@@ -464,6 +582,304 @@ class PostgreSQLWorkflowPlanRepository:
 
     async def close(self) -> None:
         await self._engine.dispose()
+
+    async def _materialization_replay(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowRunMaterializationRequest,
+    ) -> WorkflowRunMaterializationResult | None:
+        run = request.candidate
+        scope_id = self._materialization_scope_id(run)
+        claim = cast(
+            WorkflowRunMaterializationClaimModel | None,
+            await session.scalar(
+                select(WorkflowRunMaterializationClaimModel).where(
+                    WorkflowRunMaterializationClaimModel.idempotency_scope_id == scope_id,
+                    WorkflowRunMaterializationClaimModel.idempotency_key == request.idempotency_key,
+                    WorkflowRunMaterializationClaimModel.organization_id
+                    == run.scope.organization_id,
+                    WorkflowRunMaterializationClaimModel.environment_id == run.scope.environment_id,
+                    WorkflowRunMaterializationClaimModel.site_id == run.scope.site_id,
+                    WorkflowRunMaterializationClaimModel.worker_subject_id
+                    == run.materialized_by_subject_id,
+                )
+            ),
+        )
+        if claim is None:
+            return None
+        result = self._materialized_run_from_claim(claim)
+        status = (
+            WorkflowRunMaterializationStatus.REPLAY
+            if claim.request_fingerprint == request.request_fingerprint
+            else WorkflowRunMaterializationStatus.IDEMPOTENCY_CONFLICT
+        )
+        return WorkflowRunMaterializationResult(status, result)
+
+    @classmethod
+    async def _load_materialization_claim(
+        cls,
+        session: AsyncSession,
+        *,
+        scope: WorkflowScope,
+        worker_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowRunMaterializationClaimModel | None:
+        scope_id = canonical_digest(
+            {
+                "scope": scope.canonical_value(),
+                "worker_subject_id": worker_subject_id,
+            }
+        )
+        return cast(
+            WorkflowRunMaterializationClaimModel | None,
+            await session.scalar(
+                select(WorkflowRunMaterializationClaimModel).where(
+                    WorkflowRunMaterializationClaimModel.idempotency_scope_id == scope_id,
+                    WorkflowRunMaterializationClaimModel.idempotency_key == idempotency_key,
+                    WorkflowRunMaterializationClaimModel.organization_id == scope.organization_id,
+                    WorkflowRunMaterializationClaimModel.environment_id == scope.environment_id,
+                    WorkflowRunMaterializationClaimModel.site_id == scope.site_id,
+                    WorkflowRunMaterializationClaimModel.worker_subject_id == worker_subject_id,
+                )
+            ),
+        )
+
+    @classmethod
+    def _materialized_run_from_row(cls, row: WorkflowExecutionRunModel) -> WorkflowExecutionRun:
+        try:
+            run = cls._execution_run_to_domain(row.payload)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowPlanningError(
+                "workflow_run_materialization_repository_contract_violation",
+                "The workflow run repository contains an invalid run.",
+            ) from exc
+        if (
+            row.run_id != run.run_id
+            or row.plan_id != run.plan_id
+            or row.plan_digest != run.plan_digest
+            or row.definition_id != run.definition_id
+            or row.definition_version != run.definition_version
+            or row.definition_digest != run.definition_digest
+            or row.organization_id != run.scope.organization_id
+            or row.environment_id != run.scope.environment_id
+            or row.site_id != run.scope.site_id
+            or row.target_type != run.target_type
+            or row.target_id != run.target_id
+            or row.lease_id != run.lease_id
+            or row.lease_digest != run.lease_digest
+            or row.lease_fencing_token != run.fencing_token
+            or row.materialized_by_subject_id != run.materialized_by_subject_id
+            or row.created_at != run.created_at
+            or row.state != run.state.value
+            or row.canonical_digest != run.canonical_digest
+        ):
+            cls._materialization_contract_violation()
+        return run
+
+    @classmethod
+    def _materialized_run_from_claim(
+        cls, claim: WorkflowRunMaterializationClaimModel
+    ) -> WorkflowExecutionRun:
+        raw = claim.payload.get("result_run")
+        if not isinstance(raw, dict):
+            cls._materialization_contract_violation()
+        try:
+            run = cls._execution_run_to_domain(cast(dict[str, Any], raw))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowPlanningError(
+                "workflow_run_materialization_repository_contract_violation",
+                "The workflow run repository contains an invalid idempotency result.",
+            ) from exc
+        run_payload = cls._execution_run_payload(run)
+        scope_id = cls._materialization_scope_id(run)
+        expected: dict[str, Any] = {
+            "idempotency_key": claim.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": claim.request_fingerprint,
+            "result_digest": run.canonical_digest,
+            "result_run": run_payload,
+        }
+        if (
+            claim.idempotency_scope_id != scope_id
+            or claim.result_digest != run.canonical_digest
+            or claim.run_id != run.run_id
+            or claim.plan_id != run.plan_id
+            or claim.organization_id != run.scope.organization_id
+            or claim.environment_id != run.scope.environment_id
+            or claim.site_id != run.scope.site_id
+            or claim.worker_subject_id != run.materialized_by_subject_id
+            or claim.payload != expected
+            or claim.canonical_digest != canonical_digest(expected)
+        ):
+            cls._materialization_contract_violation()
+        return run
+
+    @classmethod
+    def _materialized_run_model(cls, run: WorkflowExecutionRun) -> WorkflowExecutionRunModel:
+        return WorkflowExecutionRunModel(
+            run_id=run.run_id,
+            plan_id=run.plan_id,
+            plan_digest=run.plan_digest,
+            definition_id=run.definition_id,
+            definition_version=run.definition_version,
+            definition_digest=run.definition_digest,
+            organization_id=run.scope.organization_id,
+            environment_id=run.scope.environment_id,
+            site_id=run.scope.site_id,
+            target_type=run.target_type,
+            target_id=run.target_id,
+            lease_id=run.lease_id,
+            lease_digest=run.lease_digest,
+            lease_fencing_token=run.fencing_token,
+            materialized_by_subject_id=run.materialized_by_subject_id,
+            created_at=run.created_at,
+            state=run.state.value,
+            canonical_digest=run.canonical_digest,
+            payload=cls._execution_run_payload(run),
+        )
+
+    @staticmethod
+    def _materialized_step_model(step: WorkflowExecutionStepRun) -> WorkflowExecutionStepRunModel:
+        return WorkflowExecutionStepRunModel(
+            step_run_id=step.step_run_id,
+            run_id=step.run_id,
+            step_id=step.step_id,
+            ordinal=step.ordinal,
+            kind=step.kind.value,
+            capability_class=step.capability_class.value,
+            timeout_seconds=step.timeout_seconds,
+            depends_on=list(step.depends_on),
+            state=step.state.value,
+            canonical_digest=step.canonical_digest,
+            payload=cast(dict[str, Any], step.canonical_value()),
+        )
+
+    @classmethod
+    def _materialization_claim_model(
+        cls, request: WorkflowRunMaterializationRequest
+    ) -> WorkflowRunMaterializationClaimModel:
+        run = request.candidate
+        run_payload = cls._execution_run_payload(run)
+        scope_id = cls._materialization_scope_id(run)
+        payload: dict[str, Any] = {
+            "idempotency_key": request.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": request.request_fingerprint,
+            "result_digest": run.canonical_digest,
+            "result_run": run_payload,
+        }
+        digest = canonical_digest(payload)
+        return WorkflowRunMaterializationClaimModel(
+            claim_id=f"workflow_run_mat_claim_{sha256(digest.encode()).hexdigest()[:32]}",
+            idempotency_scope_id=scope_id,
+            idempotency_key=request.idempotency_key,
+            request_fingerprint=request.request_fingerprint,
+            result_digest=run.canonical_digest,
+            run_id=run.run_id,
+            plan_id=run.plan_id,
+            organization_id=run.scope.organization_id,
+            environment_id=run.scope.environment_id,
+            site_id=run.scope.site_id,
+            worker_subject_id=run.materialized_by_subject_id,
+            created_at=request.requested_at,
+            canonical_digest=digest,
+            payload=payload,
+        )
+
+    @classmethod
+    def _validate_materialization_request(cls, request: WorkflowRunMaterializationRequest) -> None:
+        run = request.candidate
+        if run.state is not WorkflowExecutionRunState.CREATED or run.grants_execution_authority:
+            raise ValueError("workflow run materialization payload is unsafe")
+        if len(request.idempotency_key) > 128 or not request.idempotency_key:
+            raise ValueError("workflow run materialization idempotency key is invalid")
+        if len(request.request_fingerprint) != 64:
+            raise ValueError("workflow run materialization request fingerprint is invalid")
+        if request.requested_at.tzinfo is None:
+            raise ValueError("workflow run materialization time must be timezone-aware")
+
+    @staticmethod
+    def _materialization_sources_match(
+        *,
+        plan_row: WorkflowRunPlanModel | None,
+        lease_row: WorkflowOrchestrationLeaseModel | None,
+        request: WorkflowRunMaterializationRequest,
+    ) -> bool:
+        run = request.candidate
+        return bool(
+            plan_row is not None
+            and lease_row is not None
+            and plan_row.state == WorkflowPlanState.PLANNED.value
+            and plan_row.canonical_digest == request.expected_plan_digest == run.plan_digest
+            and plan_row.definition_id == run.definition_id
+            and plan_row.definition_version == run.definition_version
+            and plan_row.definition_digest == run.definition_digest
+            and plan_row.organization_id == run.scope.organization_id
+            and plan_row.environment_id == run.scope.environment_id
+            and plan_row.site_id == run.scope.site_id
+            and plan_row.target_type == run.target_type
+            and plan_row.target_id == run.target_id
+            and lease_row.plan_id == run.plan_id
+            and lease_row.plan_digest == run.plan_digest
+            and lease_row.organization_id == run.scope.organization_id
+            and lease_row.environment_id == run.scope.environment_id
+            and lease_row.site_id == run.scope.site_id
+            and lease_row.target_type == run.target_type
+            and lease_row.target_id == run.target_id
+            and lease_row.lease_id == request.expected_lease_id == run.lease_id
+            and lease_row.canonical_digest == request.expected_lease_digest == run.lease_digest
+            and lease_row.fencing_token == request.expected_fencing_token == run.fencing_token
+            and lease_row.worker_subject_id
+            == request.worker_subject_id
+            == run.materialized_by_subject_id
+            and lease_row.state == WorkflowOrchestrationLeaseState.ACTIVE.value
+            and lease_row.expires_at > request.requested_at
+        )
+
+    @staticmethod
+    def _materialization_scope_id(run: WorkflowExecutionRun) -> str:
+        return canonical_digest(
+            {
+                "scope": run.scope.canonical_value(),
+                "worker_subject_id": run.materialized_by_subject_id,
+            }
+        )
+
+    @staticmethod
+    def _execution_run_payload(run: WorkflowExecutionRun) -> dict[str, Any]:
+        return cast(dict[str, Any], run.canonical_value())
+
+    @staticmethod
+    def _execution_run_to_domain(raw: dict[str, Any]) -> WorkflowExecutionRun:
+        payload = dict(raw)
+        payload["scope"] = WorkflowScope(**cast(Any, payload["scope"]))
+        payload["created_at"] = datetime.fromisoformat(str(payload["created_at"]))
+        payload["state"] = WorkflowExecutionRunState(str(payload["state"]))
+        payload["step_runs"] = tuple(
+            WorkflowExecutionStepRun(
+                step_run_id=str(item["step_run_id"]),
+                run_id=str(item["run_id"]),
+                step_id=str(item["step_id"]),
+                ordinal=int(item["ordinal"]),
+                kind=WorkflowStepKind(str(item["kind"])),
+                capability_class=WorkflowCapabilityClass(str(item["capability_class"])),
+                timeout_seconds=int(item["timeout_seconds"]),
+                depends_on=tuple(str(value) for value in item["depends_on"]),
+                state=WorkflowExecutionStepRunState(str(item["state"])),
+                canonical_digest=str(item["canonical_digest"]),
+            )
+            for item in payload["step_runs"]
+        )
+        payload["authority"] = WorkflowPlanAuthority(**cast(Any, payload["authority"]))
+        return WorkflowExecutionRun(**cast(Any, payload))
+
+    @staticmethod
+    def _materialization_contract_violation() -> None:
+        raise WorkflowPlanningError(
+            "workflow_run_materialization_repository_contract_violation",
+            "The workflow run materialization record does not match its canonical payload.",
+        )
 
     async def _lease_acquire_after_integrity(
         self, *, request: WorkflowLeaseAcquireRequest

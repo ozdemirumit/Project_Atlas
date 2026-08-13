@@ -1,3 +1,14 @@
+from atlas.modules.workflows.application.materialization import (
+    WorkflowRunMaterializationService,
+)
+from atlas.modules.workflows.application.materialization_ports import (
+    WorkflowRunMaterializationError,
+    WorkflowRunMaterializationIdempotencyRecord,
+    WorkflowRunMaterializationRepository,
+    WorkflowRunMaterializationRequest,
+    WorkflowRunMaterializationResult,
+    WorkflowRunMaterializationStatus,
+)
 from atlas.modules.workflows.application.orchestration import (
     WORKFLOW_WORKER_AUDIENCE,
     WorkflowOrchestrationLeaseService,
@@ -53,5 +64,12 @@ __all__ = [
     "WorkflowPlanRepository",
     "WorkflowPlanningError",
     "WorkflowPlanningService",
+    "WorkflowRunMaterializationError",
+    "WorkflowRunMaterializationIdempotencyRecord",
+    "WorkflowRunMaterializationRepository",
+    "WorkflowRunMaterializationRequest",
+    "WorkflowRunMaterializationResult",
+    "WorkflowRunMaterializationService",
+    "WorkflowRunMaterializationStatus",
     "WorkflowWorkerContext",
 ]

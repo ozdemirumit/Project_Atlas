@@ -10,6 +10,7 @@ import {
   listWorkflowPlans,
   WORKFLOW_PLAN_SAFETY_NOTICE,
   type WorkflowDefinition,
+  type WorkflowExecutionRun,
   type WorkflowOrchestrationLease,
   type WorkflowRunPlan,
 } from "../../api/workflows";
@@ -128,6 +129,41 @@ const activeLease: WorkflowOrchestrationLease = {
   grants_execution_authority: false,
 };
 
+const materializedRun: WorkflowExecutionRun = {
+  run_id: "workflow-run.1234567890abcdef",
+  plan_id: plan.plan_id,
+  plan_digest: plan.canonical_digest,
+  definition_id: plan.definition_id,
+  definition_version: plan.definition_version,
+  definition_digest: plan.definition_digest,
+  scope: plan.scope,
+  target_id: plan.target_id,
+  target_type: "storage",
+  lease_id: activeLease.lease_id,
+  lease_digest: activeLease.canonical_digest,
+  fencing_token: activeLease.fencing_token,
+  materialized_by_subject_id: "workload.workflow.materializer",
+  created_at: "2026-08-13T10:03:00Z",
+  state: "created",
+  step_runs: [
+    {
+      step_run_id: "workflow-step-run.1234567890abcdef",
+      run_id: "workflow-run.1234567890abcdef",
+      step_id: plan.steps[0]!.step_id,
+      ordinal: 1,
+      kind: plan.steps[0]!.kind,
+      capability_class: plan.steps[0]!.capability_class,
+      timeout_seconds: 60,
+      depends_on: [],
+      state: "not_started",
+      canonical_digest: "9".repeat(64),
+    },
+  ],
+  authority: { ...plan.authority },
+  grants_execution_authority: false,
+  canonical_digest: "1".repeat(64),
+};
+
 function leaseResponse(lease: WorkflowOrchestrationLease | null, status = 200): Response {
   return new Response(
     JSON.stringify({
@@ -144,6 +180,42 @@ function leaseResponse(lease: WorkflowOrchestrationLease | null, status = 200): 
     }),
     { status, headers: { "Content-Type": "application/json" } },
   );
+}
+
+function materializedRunResponse(run: WorkflowExecutionRun | null, status = 200): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            plan_id: plan.plan_id,
+            run,
+            server_time: "2026-08-13T10:04:00Z",
+            durable: false,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.run",
+            generated_at: "2026-08-13T10:04:00Z",
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
+function mockReadResponses(input: {
+  lease?: WorkflowOrchestrationLease | null;
+  run?: WorkflowExecutionRun | null;
+  leaseStatus?: number;
+  runStatus?: number;
+}) {
+  vi.mocked(fetch).mockImplementation((request) => {
+    const url = request instanceof Request ? request.url : request.toString();
+    return Promise.resolve(
+      url.endsWith("/materialized-run")
+        ? materializedRunResponse(input.run ?? null, input.runStatus ?? 200)
+        : leaseResponse(input.lease ?? null, input.leaseStatus ?? 200),
+    );
+  });
 }
 
 function renderWorkspace() {
@@ -175,7 +247,8 @@ describe("WorkflowPlanningWorkspace", () => {
     vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [], durable: false, truncated: false });
     vi.mocked(createWorkflowPlan).mockResolvedValue(plan);
     vi.mocked(cancelWorkflowPlan).mockResolvedValue(cancelledPlan);
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(leaseResponse(null)));
+    vi.stubGlobal("fetch", vi.fn());
+    mockReadResponses({});
   });
 
   afterEach(() => {
@@ -265,7 +338,7 @@ describe("WorkflowPlanningWorkspace", () => {
       durable: false,
       truncated: false,
     });
-    vi.mocked(fetch).mockResolvedValue(leaseResponse(lease));
+    mockReadResponses({ lease });
     renderWorkspace();
 
     fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
@@ -301,9 +374,7 @@ describe("WorkflowPlanningWorkspace", () => {
       durable: false,
       truncated: false,
     });
-    vi.mocked(fetch).mockResolvedValue(
-      leaseResponse({ ...activeLease, plan_digest: "0".repeat(64) }),
-    );
+    mockReadResponses({ lease: { ...activeLease, plan_digest: "0".repeat(64) } });
     renderWorkspace();
 
     fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
@@ -327,7 +398,7 @@ describe("WorkflowPlanningWorkspace", () => {
       durable: false,
       truncated: false,
     });
-    vi.mocked(fetch).mockResolvedValue(new Response(null, { status }));
+    mockReadResponses({ leaseStatus: status });
     renderWorkspace();
 
     fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
@@ -340,5 +411,121 @@ describe("WorkflowPlanningWorkspace", () => {
     } else {
       expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
     }
+  });
+
+  it("presents an empty materialized run result without implying execution", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    expect(
+      await screen.findByText("No materialized run is recorded for this plan."),
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: /materialize|start|execute|dispatch/i })).toBeNull();
+    expect(screen.queryByText(/authorized browser session|MFA/i)).toBeNull();
+  });
+
+  it("presents a request-bound created run and its ordered not-started steps read-only", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    mockReadResponses({ lease: activeLease, run: materializedRun });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    expect(await screen.findByRole("heading", { name: "Materialized run record" })).toBeVisible();
+    expect(await screen.findByTitle("workload.workflow.materializer")).toBeVisible();
+    expect(screen.getByText("created")).toBeVisible();
+    expect(screen.getAllByText("7")).toHaveLength(2);
+    expect(screen.getByRole("list", { name: "Materialized step records" })).toHaveTextContent(
+      "query-authorized-evidence",
+    );
+    expect(screen.getByRole("list", { name: "Materialized step records" })).toHaveTextContent(
+      "not_started",
+    );
+    expect(screen.getByText(/freezes run and step identities/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /materialize|start|execute|dispatch/i })).toBeNull();
+    expect(screen.queryByText(/authorized browser session|MFA/i)).toBeNull();
+  });
+
+  it("fails closed on an unsafe materialized run response", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    mockReadResponses({
+      run: {
+        ...materializedRun,
+        plan_digest: "0".repeat(64),
+        materialized_by_subject_id: "unsafe.subject",
+      },
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    expect(await screen.findByText("Run record is unavailable")).toBeVisible();
+    expect(screen.getByText(/No run state is inferred/i)).toBeVisible();
+    expect(screen.queryByText("unsafe.subject")).toBeNull();
+  });
+
+  it("retries a failed read-only run request without exposing mutation controls", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    let runReads = 0;
+    vi.mocked(fetch).mockImplementation((request) => {
+      const url = request instanceof Request ? request.url : request.toString();
+      if (!url.endsWith("/materialized-run")) return Promise.resolve(leaseResponse(null));
+      runReads += 1;
+      return Promise.resolve(
+        runReads === 1 ? materializedRunResponse(null, 503) : materializedRunResponse(null),
+      );
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retry run record" }));
+
+    expect(
+      await screen.findByText("No materialized run is recorded for this plan."),
+    ).toBeVisible();
+    expect(runReads).toBe(2);
+    expect(screen.queryByRole("button", { name: /materialize|start|execute|dispatch/i })).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [403, "Run record permission is missing", "current role cannot inspect materialized"],
+  ])("handles run read status %s with the existing sign-in and permission model", async (
+    status,
+    title,
+    detail,
+  ) => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    mockReadResponses({ runStatus: status });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    expect(await screen.findByText(title)).toBeVisible();
+    expect(screen.getByText(new RegExp(detail, "i"))).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Retry run record" })).toBeNull();
+    expect(screen.queryByText(/authorized browser session|MFA/i)).toBeNull();
   });
 });

@@ -87,6 +87,10 @@ class WorkflowPlanningService:
     def repository(self) -> WorkflowPlanRepository:
         return self._repository
 
+    @property
+    def registry(self) -> WorkflowDefinitionRegistry:
+        return self._registry
+
     async def close(self) -> None:
         await self._repository.close()
 

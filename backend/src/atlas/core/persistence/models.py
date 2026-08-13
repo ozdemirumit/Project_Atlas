@@ -4403,3 +4403,113 @@ class WorkflowLeaseIdempotencyModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowExecutionRunModel(Base):
+    __tablename__ = "workflow_execution_runs"
+    __table_args__ = (
+        UniqueConstraint("plan_id", name="uq_workflow_execution_run_plan"),
+        UniqueConstraint("canonical_digest", name="uq_workflow_execution_run_digest"),
+        CheckConstraint(
+            "definition_version >= 1", name="ck_workflow_execution_run_definition_version"
+        ),
+        CheckConstraint("lease_fencing_token >= 1", name="ck_workflow_execution_run_fencing_token"),
+        CheckConstraint("state = 'created'", name="ck_workflow_execution_run_state"),
+    )
+
+    run_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    plan_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_run_plans.plan_id"),
+        nullable=False,
+        index=True,
+    )
+    plan_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    definition_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    definition_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    definition_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    target_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    target_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    # Historical lease binding deliberately has no FK to the mutable current-lease row.
+    # A fencing takeover replaces that row's lease_id while immutable runs retain this snapshot.
+    lease_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    lease_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    lease_fencing_token: Mapped[int] = mapped_column(Integer, nullable=False)
+    materialized_by_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowExecutionStepRunModel(Base):
+    __tablename__ = "workflow_execution_step_runs"
+    __table_args__ = (
+        UniqueConstraint("run_id", "step_id", name="uq_workflow_step_run_step"),
+        UniqueConstraint("run_id", "ordinal", name="uq_workflow_step_run_ordinal"),
+        UniqueConstraint("canonical_digest", name="uq_workflow_step_run_digest"),
+        CheckConstraint("ordinal >= 1", name="ck_workflow_step_run_ordinal"),
+        CheckConstraint(
+            "capability_class IN ('C0', 'C1', 'C2')",
+            name="ck_workflow_step_run_capability_class",
+        ),
+        CheckConstraint(
+            "timeout_seconds BETWEEN 1 AND 3600",
+            name="ck_workflow_step_run_timeout",
+        ),
+        CheckConstraint("state = 'not_started'", name="ck_workflow_step_run_state"),
+    )
+
+    step_run_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_execution_runs.run_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    step_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    capability_class: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    depends_on: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowRunMaterializationClaimModel(Base):
+    __tablename__ = "workflow_run_materialization_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "idempotency_scope_id",
+            "idempotency_key",
+            name="uq_workflow_run_materialization_scope_idem",
+        ),
+        UniqueConstraint("run_id", name="uq_workflow_run_materialization_claim_run"),
+        UniqueConstraint("canonical_digest", name="uq_workflow_run_materialization_claim_digest"),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    idempotency_scope_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_execution_runs.run_id"),
+        nullable=False,
+        index=True,
+    )
+    plan_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_run_plans.plan_id"),
+        nullable=False,
+        index=True,
+    )
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    worker_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
