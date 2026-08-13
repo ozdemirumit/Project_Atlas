@@ -25,6 +25,7 @@ from atlas.modules.workflows.domain import (
     WorkflowPlanAuthority,
     WorkflowPlanState,
     WorkflowPlanStepState,
+    WorkflowRunPlan,
     WorkflowScope,
     WorkflowStepDefinition,
     WorkflowStepKind,
@@ -95,7 +96,7 @@ async def create_plan(
     definition_id: str = "workflow.evidence-grounded-query",
     definition_version: int = 1,
     target_id: str = TARGET_ID,
-):
+) -> WorkflowRunPlan:
     return await service.create_plan(
         definition_id=definition_id,
         definition_version=definition_version,
@@ -353,11 +354,12 @@ def test_plan_authority_and_non_planned_states_cannot_be_forged() -> None:
 async def test_invalid_input_payloads_are_rejected_before_persistence() -> None:
     service, repository, _ = fixture()
 
-    for payload, expected_code in (
+    cases: tuple[tuple[dict[str, object], str], ...] = (
         ({"not_json": object()}, "workflow_inputs_invalid"),
         ({"not_finite": float("nan")}, "workflow_inputs_invalid"),
         ({"too_large": "x" * 17_000}, "workflow_inputs_too_large"),
-    ):
+    )
+    for payload, expected_code in cases:
         with pytest.raises(WorkflowPlanningError) as invalid:
             await create_plan(service, inputs=payload, key=f"workflow-{expected_code}-0001")
         assert invalid.value.code == expected_code
