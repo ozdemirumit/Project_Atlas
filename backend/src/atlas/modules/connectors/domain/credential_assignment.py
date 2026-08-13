@@ -136,7 +136,11 @@ class ConnectorCredentialAssignmentPolicySnapshot:
             or not 1 <= self.maximum_credential_profile_age_hours <= 87600
             or not 1 <= self.minimum_rotation_window_hours <= 8760
             or self.required_assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or not self.allowed_secret_store_profile_ids
             or not self.allowed_credential_classes
             or not self.allowed_authentication_methods

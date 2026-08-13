@@ -54,7 +54,12 @@ from atlas.modules.connectors.domain.runtime_trust import (
     ConnectorRuntimeTrustPolicySnapshot,
     ConnectorRuntimeTrustProfileSnapshot,
 )
-from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 
 def runtime_trust_granter(
@@ -64,7 +69,9 @@ def runtime_trust_granter(
 
 
 async def runtime_trust_fixture(
-    *, audit_sink: CollectingAuditSink | FailingAuditSink | None = None
+    *,
+    audit_sink: CollectingAuditSink | FailingAuditSink | None = None,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     ConnectorRuntimeTrustService,
     ConnectorCapabilityEnablementService,
@@ -108,6 +115,13 @@ async def runtime_trust_fixture(
         issued_at=enablement.enabled_at - timedelta(hours=1),
         expires_at=enablement.enabled_at + timedelta(days=10),
     )
+    if required_assurance_level is not policy.required_assurance_level:
+        policy = replace(
+            policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        policy = replace(policy, canonical_digest=_signed_snapshot(policy))
     service = ConnectorRuntimeTrustService(
         repository=InMemoryConnectorRuntimeTrustRepository(),
         enablement_source=enablement_service,
@@ -176,6 +190,57 @@ async def test_runtime_trust_grants_only_secret_brokerage_eligibility() -> None:
         "connector_runtime_trust_requested",
         "connector_runtime_trust_completed",
     ]
+
+
+@pytest.mark.asyncio
+async def test_runtime_trust_accepts_development_identity_under_default_policy() -> None:
+    service, *_, enablement, profile, policy = await runtime_trust_fixture()
+    development_actor = replace(
+        runtime_trust_granter(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    record = await grant_runtime_trust(
+        service, enablement, profile, policy, actor=development_actor
+    )
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.granted_by == development_actor.subject_id
+
+
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    [AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED],
+)
+@pytest.mark.asyncio
+async def test_runtime_trust_enforces_explicit_stronger_assurance_policy(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    service, *_, enablement, profile, policy = await runtime_trust_fixture(
+        required_assurance_level=required_assurance_level
+    )
+    development_actor = replace(
+        runtime_trust_granter(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    with pytest.raises(ConnectorRuntimeTrustError, match="invalid"):
+        await grant_runtime_trust(service, enablement, profile, policy, actor=development_actor)
+
+
+@pytest.mark.asyncio
+async def test_runtime_trust_rejects_non_human_actor() -> None:
+    service, *_, enablement, profile, policy = await runtime_trust_fixture()
+    service_actor = replace(
+        runtime_trust_granter(),
+        kind=SubjectKind.SERVICE,
+        authentication_method=AuthenticationMethod.WORKLOAD_TOKEN,
+    )
+
+    with pytest.raises(ConnectorRuntimeTrustError, match="human_required"):
+        await grant_runtime_trust(service, enablement, profile, policy, actor=service_actor)
 
 
 @pytest.mark.asyncio

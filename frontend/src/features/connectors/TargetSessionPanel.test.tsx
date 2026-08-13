@@ -103,4 +103,18 @@ describe("TargetSessionPanel", () => {
     for (const forbidden of ["target_address", "target_endpoint", "host", "port", "credential_profile_id", "secret_reference_id", "secret_store_profile_id", "broker_id", "lease_handle", "session_handle", "certificate_body", "raw_vendor_output", "command", "parameters", "execution_authorized", "deployment_approved"]) expect(body).not.toHaveProperty(forbidden);
     expect(new Headers(init?.headers).get("X-CSRF-Token")).toBe("test-csrf");
   });
+
+  it("reports session policy failures without presenting MFA as a prerequisite", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockRejectedValue(new Error("policy rejected")));
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(<QueryClientProvider client={client}><TargetSessionPanel activation={activation} /></QueryClientProvider>);
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Session profile digest" }), { target: { value: profileDigest } });
+    fireEvent.click(screen.getByLabelText(/Verification permits one bounded read-only connection/));
+    fireEvent.click(screen.getByRole("button", { name: "Verify target session" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/signed session-policy and network controls.*read-only privilege.*requested scope.*separation of duties/i);
+    expect(alert).not.toHaveTextContent(/MFA|multi[- ]factor|hardware|assurance/i);
+  });
 });

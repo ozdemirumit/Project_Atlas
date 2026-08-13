@@ -12,7 +12,10 @@ from test_bounded_invocation import bounded_fixture, invoke_bounded
 from test_browser_sessions import BasicTestIdentityProvider, login, settings
 from test_package_acquisition import CollectingAuditSink
 from test_runtime_activation import FailSecondAuditSink
-from test_target_session import target_session_operator
+from test_target_session import (
+    development_target_session_operator,
+    target_session_operator,
+)
 
 from atlas.api.app import create_app
 from atlas.modules.authorization.application.service import AuthorizationService
@@ -35,6 +38,7 @@ from atlas.modules.connectors.application.invocation_authorization_ports import 
 )
 from atlas.modules.connectors.application.invocation_evidence import (
     ConnectorInvocationEvidenceService,
+    _signed_policy,
     build_development_connector_invocation_evidence_policy,
 )
 from atlas.modules.connectors.application.invocation_evidence_ports import (
@@ -48,7 +52,7 @@ from atlas.modules.connectors.domain.invocation_evidence import (
     ConnectorInvocationEvidenceReceipt,
     ConnectorInvocationEvidenceRecord,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject, SubjectKind
 
 ACKNOWLEDGEMENT_FIELD = (
     "acknowledged_ingestion_is_one_way_and_does_not_publish_knowledge_or_grant_authority"
@@ -125,6 +129,7 @@ async def evidence_fixture(
     | AlteredReceiptAdapter
     | BlockingAdapter
     | None = None,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     ConnectorInvocationEvidenceService,
     ConnectorBoundedInvocationRecord,
@@ -145,6 +150,13 @@ async def evidence_fixture(
         issued_at=invocation.completed_at - timedelta(hours=1),
         expires_at=invocation.completed_at + timedelta(days=1),
     )
+    if policy.required_assurance_level is not required_assurance_level:
+        policy = replace(
+            policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        policy = replace(policy, canonical_digest=_signed_policy(policy))
     authorizer = permission_authorizer or RecordingPermissionAuthorizer()
     resolved_adapter = adapter or SyntheticConnectorInvocationEvidenceAdapter(
         clock=lambda: invocation.completed_at
@@ -212,6 +224,59 @@ async def test_invocation_evidence_is_immutable_minimized_and_idempotent() -> No
         "connector_invocation_evidence_claimed",
         "connector_invocation_evidence_ingested",
     ]
+
+
+@pytest.mark.asyncio
+async def test_invocation_evidence_accepts_development_identity_under_default_policy() -> None:
+    service, invocation, policy, _, _, _ = await evidence_fixture()
+    actor = development_target_session_operator("subject.connector-independent-evidence-ingestor")
+
+    record = await ingest_evidence(service, invocation, policy, actor=actor)
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.ingested_by == actor.subject_id
+    assert record.evidence_ingested and not record.knowledge_item_created
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    (AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED),
+)
+async def test_invocation_evidence_enforces_explicit_step_up_policy(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    service, invocation, policy, authorizer, adapter, _ = await evidence_fixture(
+        required_assurance_level=required_assurance_level
+    )
+
+    with pytest.raises(ConnectorInvocationEvidenceError, match="source_invalid"):
+        await ingest_evidence(
+            service,
+            invocation,
+            policy,
+            actor=development_target_session_operator(
+                "subject.connector-independent-evidence-ingestor"
+            ),
+        )
+
+    assert authorizer.calls == []
+    assert getattr(adapter, "calls", []) in ([], 0)
+
+
+@pytest.mark.asyncio
+async def test_invocation_evidence_denies_non_human_identity() -> None:
+    service, invocation, policy, authorizer, adapter, _ = await evidence_fixture()
+    actor = replace(
+        development_target_session_operator("subject.connector-independent-evidence-ingestor"),
+        kind=SubjectKind.SERVICE,
+    )
+
+    with pytest.raises(ConnectorInvocationEvidenceError, match="human_required"):
+        await ingest_evidence(service, invocation, policy, actor=actor)
+
+    assert authorizer.calls == []
+    assert getattr(adapter, "calls", []) in ([], 0)
 
 
 @pytest.mark.asyncio
@@ -391,7 +456,7 @@ def test_invocation_evidence_api_forbids_content_and_returns_minimized_metadata(
         registration_service,
         *_rest,
     ) = runtime_fixture
-    subject = target_session_operator("subject.connector-independent-evidence-ingestor")
+    subject = development_target_session_operator("subject.connector-independent-evidence-ingestor")
     app_settings = settings(
         development_subject_id=subject.subject_id,
         mcp_builder_generation_root=tmp_path / "mcp-builder-generations",

@@ -8,6 +8,18 @@
   ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053,
   ATLAS-054, ATLAS-055, ATLAS-056, ADR-009 through ADR-040
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA, hardware-backed, and minimum-assurance prerequisite.
+Invocation-evidence ingestion still requires a dedicated, authenticated, authorized human and
+every existing exact capability permission, RBAC, exact-scope, acknowledgement, separation,
+signed-policy, lineage/freshness, idempotency, audit, atomic one-way claim, classification,
+retention, and no-publication/no-execution control. The default policy requires no MFA and uses
+`SINGLE_FACTOR`; an optional named step-up policy may add assurance checks only when explicitly
+configured, but assurance is not authorization.
+Development username/password identities satisfy the default. Explicitly configured
+`MULTI_FACTOR` or `HARDWARE_BACKED` policies still fail closed when assurance is insufficient.
+
 ## Context
 
 ADR-040 consumes one exact authorization, invokes one bounded C0/C1 connector capability, validates
@@ -55,14 +67,18 @@ Before claim creation the service revalidates:
 - bounded positive observation count and output size;
 - exact signed ingestion policy, signer, schema, scope, classification, access-policy, retention,
   encryption, storage-adapter, and freshness bindings;
-- hardware-backed human assurance, exact tenant scope, a dedicated C3 ingestion permission, the
-  capability's exact read permission, and separation from all upstream actors and policy or adapter
-  attestors;
+- a dedicated authenticated and authorized human, exact tenant scope, a dedicated C3 ingestion
+  permission, the capability's exact read permission, and separation from all upstream actors and
+  policy or adapter attestors;
+- the optional named `connector_invocation_evidence_ingestion` step-up policy only when explicitly
+  configured;
 - absence of prior ingestion, scheduling, retrieval publication, model-context availability,
   workflow continuation, execution, deployment, and infrastructure-mutation authority.
 
-Wrong-scope, altered, ambiguous, reused-authority, insufficient-assurance, or unauthorized
-requests fail closed without reading the result artifact or writing evidence.
+Wrong-scope, altered, ambiguous, reused-authority, or unauthorized requests and identities that do
+not satisfy the optional configured step-up policy fail closed without reading the result artifact
+or writing evidence. The signed ingestion policy defaults to `SINGLE_FACTOR`; it defines accepted
+external assurance values and freshness only when step-up is explicitly configured.
 
 ### Atomic One-Way Ingestion Claim
 
@@ -141,8 +157,9 @@ codes, bounded counts, and non-sensitive digests.
 
 Claims and completion records are immutable, deterministic, concurrency-safe, and equivalent in
 memory and PostgreSQL. The API uses browser session, mutation CSRF, strict schemas, no-store,
-dedicated default-deny RBAC, exact capability permission re-evaluation, hardware MFA, safe errors,
-and minimized responses.
+dedicated default-deny RBAC, exact capability permission re-evaluation, safe errors, minimized
+responses, and the optional named `connector_invocation_evidence_ingestion` step-up policy only
+when configured.
 
 ## Consequences
 

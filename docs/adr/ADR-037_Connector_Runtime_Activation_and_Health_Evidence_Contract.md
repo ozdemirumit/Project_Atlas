@@ -4,6 +4,17 @@
 - Date: 2026-08-06
 - Owners: Product Owner, Solution Architecture, Security Architecture
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA, hardware-backed, and minimum-assurance prerequisite.
+Runtime activation still requires a dedicated, authenticated, authorized human and every existing
+RBAC, exact-scope, acknowledgement, separation, signed-policy, lineage/freshness, idempotency,
+audit, runtime/secret isolation, cleanup, and no-target-execution control. The default policy
+requires no MFA and uses `SINGLE_FACTOR`; an optional named step-up policy may add assurance checks
+only when explicitly configured, but assurance is not authorization.
+Development username/password identities satisfy the default. Explicitly configured
+`MULTI_FACTOR` or `HARDWARE_BACKED` policies still fail closed when assurance is insufficient.
+
 ## Context
 
 ADR-036 authorizes one exact trusted connector workload to use governed secret brokerage, but it
@@ -54,10 +65,13 @@ profile/policy integrity and freshness, package and workload parity, current cre
 revocation posture, exact immutable runner controls, approved adapter, one-time non-renewable lease,
 memory-only delivery, local-only health contract, actor separation, and no later authority.
 
-Only a dedicated exact-tenant hardware-backed MFA human with C3 permission may request activation.
-The actor must be distinct from every upstream actor, profile/policy signer, activation adapter
-attestor, and workload identity. AI, service, shared, wrong-scope, and insufficient-assurance
-identities fail closed without discovery.
+Only a dedicated, authenticated, authorized, exact-tenant human with C3 permission may request
+activation. The actor must be distinct from every upstream actor, profile/policy signer, activation
+adapter attestor, and workload identity. AI, service, shared, wrong-scope, unauthorized identities,
+and identities that do not satisfy the optional configured `connector_runtime_activation` step-up
+policy fail closed without discovery. The signed activation policy defaults to `SINGLE_FACTOR`;
+it defines accepted external assurance values and freshness only when that named step-up policy is
+explicitly configured.
 
 ### Trusted Activation Boundary
 
@@ -95,8 +109,9 @@ infrastructure mutation.
 Activation records are immutable, one-to-one per secret-brokerage authorization for version one,
 deterministic, idempotent, concurrency-safe, and equivalent in memory/PostgreSQL. Required intent
 audit succeeds before activation; required completion audit succeeds before persistence. APIs use
-dedicated default-deny RBAC, exact scope, hardware MFA, browser session, CSRF on mutation, strict
-schemas, no-store responses, safe errors, and minimized evidence.
+dedicated default-deny RBAC, exact scope, browser session, CSRF on mutation, strict schemas,
+no-store responses, safe errors, minimized evidence, and the optional named
+`connector_runtime_activation` step-up policy only when configured.
 
 Persistence, audit, and web output exclude credential-profile identity, secret reference,
 store/broker identity, lease identity or timing, workload token, delivery internals, target details,

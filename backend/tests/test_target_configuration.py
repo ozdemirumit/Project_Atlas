@@ -32,6 +32,7 @@ from atlas.modules.connectors.application.package_installation import PackageIns
 from atlas.modules.connectors.application.package_registration import PackageRegistrationService
 from atlas.modules.connectors.application.target_configuration import (
     ConnectorTargetConfigurationService,
+    _signed_snapshot,
     build_development_connector_target_configuration_policy,
     build_development_connector_target_profile,
 )
@@ -44,7 +45,12 @@ from atlas.modules.connectors.domain.target_configuration import (
     ConnectorTargetConfigurationPolicySnapshot,
     ConnectorTargetProfileSnapshot,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 
 def target_binder(
@@ -54,7 +60,9 @@ def target_binder(
 
 
 async def target_configuration_fixture(
-    *, audit_sink: CollectingAuditSink | FailingAuditSink | FailSecondAuditSink | None = None
+    *,
+    audit_sink: CollectingAuditSink | FailingAuditSink | FailSecondAuditSink | None = None,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     ConnectorTargetConfigurationService,
     ConnectorInstanceCreationService,
@@ -85,6 +93,13 @@ async def target_configuration_fixture(
         issued_at=instance.created_at - timedelta(hours=1),
         expires_at=instance.created_at + timedelta(days=2),
     )
+    if required_assurance_level is not policy.required_assurance_level:
+        policy = replace(
+            policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        policy = replace(policy, canonical_digest=_signed_snapshot(policy))
     service = ConnectorTargetConfigurationService(
         repository=InMemoryConnectorTargetConfigurationRepository(),
         instance_source=instance_service,
@@ -149,6 +164,54 @@ async def test_target_binding_grants_only_credential_governance_eligibility() ->
         "connector_target_configuration_requested",
         "connector_target_configuration_completed",
     ]
+
+
+@pytest.mark.asyncio
+async def test_target_binding_default_policy_accepts_development_password_human() -> None:
+    service, _, _, _, instance, profile, policy = await target_configuration_fixture()
+    actor = replace(
+        target_binder(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    binding = await bind_target(service, instance, profile, policy, actor=actor)
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert binding.bound_by == actor.subject_id
+    assert not binding.runtime_trust_granted and not binding.execution_authorized
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    (AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED),
+)
+async def test_target_binding_enforces_explicit_stronger_assurance_policy(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    service, _, _, _, instance, profile, policy = await target_configuration_fixture(
+        required_assurance_level=required_assurance_level
+    )
+    actor = replace(
+        target_binder(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    with pytest.raises(ConnectorTargetConfigurationError, match="binding_invalid"):
+        await bind_target(service, instance, profile, policy, actor=actor)
+
+
+@pytest.mark.asyncio
+async def test_target_binding_rejects_non_human_identity() -> None:
+    service, _, _, _, instance, profile, policy = await target_configuration_fixture()
+    actor = replace(target_binder(), kind=SubjectKind.SERVICE)
+
+    with pytest.raises(
+        ConnectorTargetConfigurationError, match="target_configuration_human_required"
+    ):
+        await bind_target(service, instance, profile, policy, actor=actor)
 
 
 @pytest.mark.asyncio

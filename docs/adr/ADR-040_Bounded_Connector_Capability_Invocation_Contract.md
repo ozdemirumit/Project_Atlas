@@ -8,6 +8,18 @@
   ATLAS-037, ATLAS-047, ATLAS-050, ATLAS-051, ATLAS-053, ATLAS-055, ATLAS-056,
   ADR-009 through ADR-039
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA, hardware-backed, development-assurance exclusion, and
+minimum-assurance prerequisite. Bounded invocation still requires a dedicated, authenticated,
+authorized human and every existing exact capability permission, RBAC, exact-scope,
+acknowledgement, separation, signed-policy, lineage/freshness, idempotency, audit, atomic single-use,
+cleanup, and no-mutation control. The default policy requires no MFA and uses `SINGLE_FACTOR`; an
+optional named step-up policy may add assurance checks only when explicitly configured, but
+assurance is not authorization.
+Development username/password identities satisfy the default. Explicitly configured
+`MULTI_FACTOR` or `HARDWARE_BACKED` policies still fail closed when assurance is insufficient.
+
 ## Context
 
 ADR-039 creates one short-lived, single-use, non-renewable authorization bound to an exact closed
@@ -53,13 +65,16 @@ Before consumption the service revalidates:
 - C0 or C1 capability class and the capability's exact required permission at invocation time;
 - authorization freshness, single-use, non-renewable, and initially unconsumed state;
 - exact signed bounded-invocation policy, signer, schema, scope, and freshness;
-- hardware-backed human assurance and separation from every upstream lifecycle actor, policy
-  signer, profile signer, envelope signer, adapter attestor, and workload identity;
+- a dedicated authenticated and authorized human, plus separation from every upstream lifecycle
+  actor, policy signer, profile signer, envelope signer, adapter attestor, and workload identity;
+- the optional named `connector_bounded_invocation` step-up policy only when explicitly configured;
 - absence of scheduling, prior invocation, result ingestion, execution, deployment, and
   infrastructure-mutation authority.
 
-Wrong-scope, expired, development-assurance, service, shared, already-consumed, altered, ambiguous,
-or insufficiently authorized requests fail closed without target access.
+Wrong-scope, expired, service, shared, already-consumed, altered, ambiguous, unauthorized requests,
+and identities that do not satisfy the optional configured step-up policy fail closed without
+target access. The signed bounded-invocation policy defaults to `SINGLE_FACTOR`; it defines accepted
+external assurance values and freshness only when step-up is explicitly configured.
 
 ### Atomic Single-Use Consumption
 
@@ -127,9 +142,10 @@ Consumption claims and completion records are immutable, deterministic, concurre
 equivalent in memory and PostgreSQL. Required intent audit precedes claim creation. Claim audit
 follows successful atomic consumption. Completion audit succeeds before completion persistence.
 
-APIs use dedicated default-deny RBAC, exact capability permission re-evaluation, hardware MFA,
-browser session, mutation CSRF, strict request schemas, no-store responses, safe errors, and
-minimized evidence. Persistence, audit, logs, and web output exclude raw input and output, target
+APIs use dedicated default-deny RBAC, exact capability permission re-evaluation, browser session,
+mutation CSRF, strict request schemas, no-store responses, safe errors, minimized evidence, and the
+optional named `connector_bounded_invocation` step-up policy only when configured. Persistence,
+audit, logs, and web output exclude raw input and output, target
 coordinates, credential and secret identities, store/broker/lease/session identity, tokens,
 signatures, commands, request fingerprints, idempotency keys, and mutable runtime data.
 

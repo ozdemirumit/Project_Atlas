@@ -53,7 +53,12 @@ from atlas.modules.connectors.domain.capability_enablement import (
 from atlas.modules.connectors.domain.configuration_validation import (
     ConnectorConfigurationValidationRecord,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 
 def capability_enabler(
@@ -63,7 +68,9 @@ def capability_enabler(
 
 
 async def capability_enablement_fixture(
-    *, audit_sink: CollectingAuditSink | FailingAuditSink | None = None
+    *,
+    audit_sink: CollectingAuditSink | FailingAuditSink | None = None,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     ConnectorCapabilityEnablementService,
     ConnectorConfigurationValidationService,
@@ -105,6 +112,13 @@ async def capability_enablement_fixture(
         issued_at=validation.validated_at - timedelta(hours=1),
         expires_at=validation.validated_at + timedelta(days=10),
     )
+    if required_assurance_level is not policy.required_assurance_level:
+        policy = replace(
+            policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        policy = replace(policy, canonical_digest=_signed_snapshot(policy))
     service = ConnectorCapabilityEnablementService(
         repository=InMemoryConnectorCapabilityEnablementRepository(),
         validation_source=validation_service,
@@ -172,6 +186,57 @@ async def test_enablement_grants_only_runtime_trust_eligibility() -> None:
         "connector_capability_enablement_requested",
         "connector_capability_enablement_completed",
     ]
+
+
+@pytest.mark.asyncio
+async def test_enablement_accepts_development_identity_under_default_policy() -> None:
+    service, _, _, _, _, _, _, validation, profile, policy = await capability_enablement_fixture()
+    development_actor = replace(
+        capability_enabler(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    record = await enable_capabilities(
+        service, validation, profile, policy, actor=development_actor
+    )
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.enabled_by == development_actor.subject_id
+
+
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    [AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED],
+)
+@pytest.mark.asyncio
+async def test_enablement_enforces_explicit_stronger_assurance_policy(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    service, _, _, _, _, _, _, validation, profile, policy = await capability_enablement_fixture(
+        required_assurance_level=required_assurance_level
+    )
+    development_actor = replace(
+        capability_enabler(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    with pytest.raises(ConnectorCapabilityEnablementError, match="invalid"):
+        await enable_capabilities(service, validation, profile, policy, actor=development_actor)
+
+
+@pytest.mark.asyncio
+async def test_enablement_rejects_non_human_actor() -> None:
+    service, _, _, _, _, _, _, validation, profile, policy = await capability_enablement_fixture()
+    service_actor = replace(
+        capability_enabler(),
+        kind=SubjectKind.SERVICE,
+        authentication_method=AuthenticationMethod.WORKLOAD_TOKEN,
+    )
+
+    with pytest.raises(ConnectorCapabilityEnablementError, match="human_required"):
+        await enable_capabilities(service, validation, profile, policy, actor=service_actor)
 
 
 @pytest.mark.asyncio

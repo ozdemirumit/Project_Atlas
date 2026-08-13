@@ -4,6 +4,17 @@
 **Date:** 2026-08-06
 **Decision Owners:** Product Owner, Solution Architecture, Security Architecture
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. Target/configuration
+binding still requires a dedicated, authenticated, authorized human and every existing RBAC,
+exact-scope, acknowledgement, separation, signed-policy, lineage/freshness, idempotency, audit, and
+no-execution control. The default policy requires no MFA and uses `SINGLE_FACTOR`; an optional named
+step-up policy may add assurance checks only when explicitly configured, but assurance is not
+authorization.
+Development username/password identities satisfy the default. Explicitly configured
+`MULTI_FACTOR` or `HARDWARE_BACKED` policies still fail closed when assurance is insufficient.
+
 ## Context
 
 ADR-030 creates a connector instance identity in `disabled_unconfigured` state. The record has exact
@@ -48,10 +59,12 @@ and caller-selected trust. No network connection or DNS resolution occurs during
 
 ### Configuration Policy
 
-An immutable signed policy fixes source schemas and age, assurance, allowed target types/products,
-allowed endpoint suffixes and ports, required trust/route/proxy profiles, target-profile signer,
-separation identities, output state, and record schema. Customer input cannot weaken platform
-controls.
+An immutable signed policy fixes source schemas and age, allowed target types/products, allowed
+endpoint suffixes and ports, required trust/route/proxy profiles, target-profile signer, separation
+identities, output state, record schema, and an optional named
+`connector_target_configuration_binding` step-up policy. Step-up is disabled by default with
+`SINGLE_FACTOR`; accepted external assurance values and freshness apply only when explicitly
+configured. Customer input cannot weaken platform controls.
 
 ### Source And Separation
 
@@ -59,10 +72,11 @@ The service reloads and verifies the current instance record and complete packag
 lineage through the owning service. It independently verifies the current target profile and policy,
 all exact digests, scope, compatibility, freshness, and no-later-authority state.
 
-Only a dedicated exact-tenant MFA human with C3 permission may bind configuration. The actor must be
-distinct from every upstream package, installation, instance, policy, target-profile, workload,
-publisher, installer, and custody actor. AI, service, shared, wrong-scope, and insufficient-assurance
-identities fail closed without discovery.
+Only a dedicated, authenticated, authorized, exact-tenant human with C3 permission may bind
+configuration. The actor must be distinct from every upstream package, installation, instance,
+policy, target-profile, workload, publisher, installer, and custody actor. AI, service, shared,
+wrong-scope, unauthorized identities, and identities that do not satisfy the optional configured
+`connector_target_configuration_binding` step-up policy fail closed without discovery.
 
 ### Resulting Authority
 
@@ -79,8 +93,9 @@ components must reload the exact profile by ID and digest.
 
 Bindings are immutable, one-to-one per instance for configuration version one, deterministic,
 idempotent, concurrency-safe, and equivalent in memory/PostgreSQL. Intent and completion audit must
-succeed before persistence. APIs use dedicated default-deny RBAC, exact scope, MFA, browser session,
-CSRF on mutation, strict schemas, no-store responses, safe errors, and minimized evidence.
+succeed before persistence. APIs use dedicated default-deny RBAC, exact scope, browser session,
+CSRF on mutation, strict schemas, no-store responses, safe errors, minimized evidence, and the
+optional named `connector_target_configuration_binding` step-up policy only when configured.
 
 Audit and web output exclude endpoint, host, port, trust material, route/proxy details, internal
 profile payload, signatures, keys, credentials, secrets, request fingerprints, and idempotency keys.

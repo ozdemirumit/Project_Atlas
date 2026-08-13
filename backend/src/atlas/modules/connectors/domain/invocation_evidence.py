@@ -72,7 +72,12 @@ class ConnectorInvocationEvidencePolicySnapshot:
             or not 1 <= self.maximum_source_age_minutes <= 1440
             or not 1 <= self.maximum_evidence_items <= 1000
             or not 1 <= self.maximum_evidence_bytes <= 1_048_576
-            or self.required_assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or self.required_assurance_level
+            not in {
+                AssuranceLevel.SINGLE_FACTOR,
+                AssuranceLevel.MULTI_FACTOR,
+                AssuranceLevel.HARDWARE_BACKED,
+            }
             or not self.signature_verified
             or self.issued_at.tzinfo is None
             or self.expires_at.tzinfo is None

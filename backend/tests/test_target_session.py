@@ -50,7 +50,12 @@ from atlas.modules.connectors.domain.target_session import (
     ConnectorTargetSessionProfileSnapshot,
     ConnectorTargetSessionVerificationRecord,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 ACKNOWLEDGEMENT_FIELD = "acknowledged_bounded_session_grants_no_invocation_execution_or_deployment"
 
@@ -61,8 +66,20 @@ def target_session_operator(
     return runtime_activation_operator(subject_id)
 
 
+def development_target_session_operator(
+    subject_id: str = "subject.connector-independent-target-session-operator",
+) -> AuthenticatedSubject:
+    return replace(
+        target_session_operator(subject_id),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+
 async def target_session_fixture(
-    *, audit_sink: CollectingAuditSink | FailSecondAuditSink | None = None
+    *,
+    audit_sink: CollectingAuditSink | FailSecondAuditSink | None = None,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     ConnectorTargetSessionService,
     ConnectorRuntimeActivationService,
@@ -99,6 +116,13 @@ async def target_session_fixture(
         issued_at=activation.healthy_at - timedelta(hours=1),
         expires_at=activation.healthy_at + timedelta(days=10),
     )
+    if policy.required_assurance_level is not required_assurance_level:
+        policy = replace(
+            policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        policy = replace(policy, canonical_digest=_signed_snapshot(policy))
     adapter = SyntheticConnectorTargetSessionAdapter(clock=lambda: activation.healthy_at)
     service = ConnectorTargetSessionService(
         repository=InMemoryConnectorTargetSessionRepository(),
@@ -171,6 +195,54 @@ async def test_target_session_is_bounded_read_only_closed_and_idempotent() -> No
         "connector_target_session_requested",
         "connector_target_session_completed",
     ]
+
+
+@pytest.mark.asyncio
+async def test_target_session_accepts_development_identity_under_default_policy() -> None:
+    service, _, _, _, activation, _, _, profile, policy, _ = await target_session_fixture()
+
+    record = await verify_target_session(
+        service,
+        activation,
+        profile,
+        policy,
+        actor=development_target_session_operator(),
+    )
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.verified_by == "subject.connector-independent-target-session-operator"
+    assert record.target_session_closed and not record.target_connected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    (AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED),
+)
+async def test_target_session_enforces_explicit_step_up_policy(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    service, _, _, _, activation, _, _, profile, policy, _ = await target_session_fixture(
+        required_assurance_level=required_assurance_level
+    )
+
+    with pytest.raises(ConnectorTargetSessionError, match="target_session_invalid"):
+        await verify_target_session(
+            service,
+            activation,
+            profile,
+            policy,
+            actor=development_target_session_operator(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_target_session_denies_non_human_identity() -> None:
+    service, _, _, _, activation, _, _, profile, policy, _ = await target_session_fixture()
+    actor = replace(development_target_session_operator(), kind=SubjectKind.SERVICE)
+
+    with pytest.raises(ConnectorTargetSessionError, match="target_session_human_required"):
+        await verify_target_session(service, activation, profile, policy, actor=actor)
 
 
 @pytest.mark.asyncio
@@ -272,7 +344,7 @@ def test_target_session_api_is_csrf_protected_forbids_coordinates_and_is_minimiz
         registration_service,
         *_rest,
     ) = runtime_fixture
-    subject = target_session_operator()
+    subject = development_target_session_operator()
     app_settings = settings(
         development_subject_id=subject.subject_id,
         mcp_builder_generation_root=tmp_path / "mcp-builder-generations",

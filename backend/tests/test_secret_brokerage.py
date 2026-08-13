@@ -62,7 +62,12 @@ from atlas.modules.connectors.domain.secret_brokerage import (
     ConnectorSecretBrokeragePolicySnapshot,
     ConnectorSecretBrokerageProfileSnapshot,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 ACKNOWLEDGEMENT_FIELD = (
     "acknowledged_authorization_grants_no_lease_secret_runtime_target_execution_or_deployment"
@@ -90,7 +95,9 @@ def secret_brokerage_authorizer(
 
 
 async def secret_brokerage_fixture(
-    *, audit_sink: CollectingAuditSink | FailingAuditSink | None = None
+    *,
+    audit_sink: CollectingAuditSink | FailingAuditSink | None = None,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     ConnectorSecretBrokerageService,
     RuntimeFixture,
@@ -123,6 +130,13 @@ async def secret_brokerage_fixture(
         issued_at=runtime_trust.granted_at - timedelta(hours=1),
         expires_at=runtime_trust.granted_at + timedelta(days=10),
     )
+    if required_assurance_level is not policy.required_assurance_level:
+        policy = replace(
+            policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        policy = replace(policy, canonical_digest=_signed_snapshot(policy))
     service = ConnectorSecretBrokerageService(
         repository=InMemoryConnectorSecretBrokerageRepository(),
         runtime_trust_source=runtime_service,
@@ -180,6 +194,61 @@ async def test_secret_brokerage_authorizes_only_future_runtime_activation() -> N
         "connector_secret_brokerage_requested",
         "connector_secret_brokerage_completed",
     ]
+
+
+@pytest.mark.asyncio
+async def test_secret_brokerage_accepts_development_identity_under_default_policy() -> None:
+    service, _, runtime_trust, profile, policy = await secret_brokerage_fixture()
+    development_actor = replace(
+        secret_brokerage_authorizer(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    record = await authorize_secret_brokerage(
+        service, runtime_trust, profile, policy, actor=development_actor
+    )
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.authorized_by == development_actor.subject_id
+
+
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    [AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED],
+)
+@pytest.mark.asyncio
+async def test_secret_brokerage_enforces_explicit_stronger_assurance_policy(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    service, _, runtime_trust, profile, policy = await secret_brokerage_fixture(
+        required_assurance_level=required_assurance_level
+    )
+    development_actor = replace(
+        secret_brokerage_authorizer(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    with pytest.raises(ConnectorSecretBrokerageError, match="invalid"):
+        await authorize_secret_brokerage(
+            service, runtime_trust, profile, policy, actor=development_actor
+        )
+
+
+@pytest.mark.asyncio
+async def test_secret_brokerage_rejects_non_human_actor() -> None:
+    service, _, runtime_trust, profile, policy = await secret_brokerage_fixture()
+    service_actor = replace(
+        secret_brokerage_authorizer(),
+        kind=SubjectKind.SERVICE,
+        authentication_method=AuthenticationMethod.WORKLOAD_TOKEN,
+    )
+
+    with pytest.raises(ConnectorSecretBrokerageError, match="human_required"):
+        await authorize_secret_brokerage(
+            service, runtime_trust, profile, policy, actor=service_actor
+        )
 
 
 @pytest.mark.asyncio

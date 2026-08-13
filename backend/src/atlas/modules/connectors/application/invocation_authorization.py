@@ -41,8 +41,8 @@ from atlas.modules.connectors.domain.target_session import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 INVOCATION_AUTHORIZATION_CREATE_PERMISSION = "connectors.invocation-authorizations.create"
@@ -152,6 +152,7 @@ class ConnectorInvocationAuthorizationService:
         capability = self._capability(enablement, capability_id)
         now = self._clock()
         self._verify_authorization(
+            actor=actor,
             source=source,
             enablement=enablement,
             capability=capability,
@@ -378,6 +379,7 @@ class ConnectorInvocationAuthorizationService:
     @staticmethod
     def _verify_authorization(
         *,
+        actor: AuthenticatedSubject,
         source: ConnectorTargetSessionVerificationRecord,
         enablement: ConnectorCapabilityEnablementRecord,
         capability: ConnectorGovernedCapability,
@@ -454,6 +456,9 @@ class ConnectorInvocationAuthorizationService:
             or now - source.verified_at > timedelta(hours=policy.maximum_source_age_hours)
             or now - profile.issued_at > timedelta(hours=policy.maximum_profile_age_hours)
             or now - envelope.issued_at > timedelta(hours=policy.maximum_envelope_age_hours)
+            or not assurance_satisfies_policy(
+                actor.assurance_level, policy.required_assurance_level
+            )
         ):
             raise ConnectorInvocationAuthorizationError("invocation_authorization_invalid")
 
@@ -522,14 +527,8 @@ class ConnectorInvocationAuthorizationService:
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
-            raise ConnectorInvocationAuthorizationError(
-                "invocation_authorization_enterprise_human_hardware_mfa_required"
-            )
+        if actor.kind is not SubjectKind.HUMAN:
+            raise ConnectorInvocationAuthorizationError("invocation_authorization_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -675,7 +674,7 @@ def build_development_connector_invocation_authorization_policy(
         maximum_profile_age_hours=24,
         maximum_envelope_age_hours=24,
         authorization_lifetime_minutes=15,
-        required_assurance_level=AssuranceLevel.HARDWARE_BACKED,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         required_source_state=ENABLED_TARGET_SESSION_VERIFIED,
         authorization_schema=INVOCATION_AUTHORIZATION_SCHEMA,
         signed_by="subject.connector-invocation-authorization-policy-signer",

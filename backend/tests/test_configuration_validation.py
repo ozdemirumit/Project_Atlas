@@ -50,7 +50,12 @@ from atlas.modules.connectors.domain.configuration_validation import (
 from atlas.modules.connectors.domain.credential_assignment import (
     ConnectorCredentialAssignmentRecord,
 )
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
 
 
 def configuration_validator(
@@ -60,7 +65,9 @@ def configuration_validator(
 
 
 async def configuration_validation_fixture(
-    *, audit_sink: CollectingAuditSink | FailingAuditSink | None = None
+    *,
+    audit_sink: CollectingAuditSink | FailingAuditSink | None = None,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
 ) -> tuple[
     ConnectorConfigurationValidationService,
     ConnectorCredentialAssignmentService,
@@ -105,6 +112,13 @@ async def configuration_validation_fixture(
         issued_at=assignment.assigned_at - timedelta(hours=1),
         expires_at=assignment.assigned_at + timedelta(days=10),
     )
+    if required_assurance_level is not policy.required_assurance_level:
+        policy = replace(
+            policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        policy = replace(policy, canonical_digest=_signed_snapshot(policy))
     service = ConnectorConfigurationValidationService(
         repository=InMemoryConnectorConfigurationValidationRepository(),
         assignment_source=assignment_service,
@@ -171,6 +185,55 @@ async def test_validation_grants_only_capability_governance_eligibility() -> Non
         "connector_configuration_validation_requested",
         "connector_configuration_validation_completed",
     ]
+
+
+@pytest.mark.asyncio
+async def test_validation_default_policy_accepts_development_password_human() -> None:
+    service, _, _, _, _, _, assignment, evidence, policy = await configuration_validation_fixture()
+    actor = replace(
+        configuration_validator(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    record = await validate_configuration(service, assignment, evidence, policy, actor=actor)
+
+    assert policy.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert record.validated_by == actor.subject_id
+    assert not record.runtime_trust_granted and not record.execution_authorized
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "required_assurance_level",
+    (AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED),
+)
+async def test_validation_enforces_explicit_stronger_assurance_policy(
+    required_assurance_level: AssuranceLevel,
+) -> None:
+    service, _, _, _, _, _, assignment, evidence, policy = await configuration_validation_fixture(
+        required_assurance_level=required_assurance_level
+    )
+    actor = replace(
+        configuration_validator(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+
+    with pytest.raises(ConnectorConfigurationValidationError, match="validation_invalid"):
+        await validate_configuration(service, assignment, evidence, policy, actor=actor)
+
+
+@pytest.mark.asyncio
+async def test_validation_rejects_non_human_identity() -> None:
+    service, _, _, _, _, _, assignment, evidence, policy = await configuration_validation_fixture()
+    actor = replace(configuration_validator(), kind=SubjectKind.SERVICE)
+
+    with pytest.raises(
+        ConnectorConfigurationValidationError,
+        match="configuration_validation_human_required",
+    ):
+        await validate_configuration(service, assignment, evidence, policy, actor=actor)
 
 
 @pytest.mark.asyncio

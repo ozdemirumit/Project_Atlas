@@ -164,4 +164,18 @@ describe("RuntimeActivationPanel", () => {
     for (const forbidden of ["credential_profile_id", "secret_reference_id", "secret_store_profile_id", "broker_id", "lease_handle", "lease_ttl", "runner_workload_identity_id", "runner_image", "environment_variables", "health_command", "target_profile_id", "endpoint_url", "host", "port", "command", "parameters", "execution_authorized", "deployment_approved"]) expect(body).not.toHaveProperty(forbidden);
     expect(new Headers(init?.headers).get("X-CSRF-Token")).toBe("test-csrf");
   });
+
+  it("reports activation policy failures without presenting MFA as a prerequisite", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockRejectedValue(new Error("policy rejected")));
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(<QueryClientProvider client={client}><RuntimeActivationPanel brokerage={brokerage} /></QueryClientProvider>);
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Activation profile digest" }), { target: { value: profileDigest } });
+    fireEvent.click(screen.getByLabelText(/Activation starts only the exact isolated runtime/));
+    fireEvent.click(screen.getByRole("button", { name: "Activate runtime" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/signed activation-policy controls.*runtime health evidence.*requested scope.*separation of duties/i);
+    expect(alert).not.toHaveTextContent(/MFA|multi[- ]factor|hardware|assurance/i);
+  });
 });

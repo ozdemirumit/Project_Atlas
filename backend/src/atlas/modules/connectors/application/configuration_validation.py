@@ -38,8 +38,8 @@ from atlas.modules.connectors.domain.package_registration import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 CONFIGURATION_VALIDATION_CREATE_PERMISSION = "connectors.configuration-validations.create"
@@ -88,7 +88,7 @@ class ConnectorConfigurationValidationService:
         idempotency_key: str,
         correlation_id: str,
     ) -> ConnectorConfigurationValidationRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         if not acknowledged_validation_grants_no_secret_network_enablement_or_runtime_authority:
             raise ConnectorConfigurationValidationError(
                 "configuration_validation_acknowledgement_required"
@@ -297,7 +297,7 @@ class ConnectorConfigurationValidationService:
     async def get(
         self, *, actor: AuthenticatedSubject, validation_id: str, correlation_id: str
     ) -> ConnectorConfigurationValidationRecord:
-        self._require_enterprise_human(actor)
+        self._require_human(actor)
         record = await self._repository.get(validation_id=validation_id)
         if record is None:
             raise ConnectorConfigurationValidationError("configuration_validation_record_not_found")
@@ -396,9 +396,8 @@ class ConnectorConfigurationValidationService:
             or now - assignment.assigned_at > timedelta(hours=policy.maximum_assignment_age_hours)
             or now - evidence.observed_at
             > timedelta(minutes=policy.maximum_observation_age_minutes)
-            or (
-                policy.required_assurance_level is AssuranceLevel.HARDWARE_BACKED
-                and actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
+            or not assurance_satisfies_policy(
+                actor.assurance_level, policy.required_assurance_level
             )
         ):
             raise ConnectorConfigurationValidationError("configuration_validation_invalid")
@@ -438,16 +437,9 @@ class ConnectorConfigurationValidationService:
         ).hexdigest()
 
     @staticmethod
-    def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise ConnectorConfigurationValidationError(
-                "configuration_validation_enterprise_human_mfa_required"
-            )
+    def _require_human(actor: AuthenticatedSubject) -> None:
+        if actor.kind is not SubjectKind.HUMAN:
+            raise ConnectorConfigurationValidationError("configuration_validation_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -594,7 +586,7 @@ def build_development_connector_configuration_validation_policy(
         required_authentication_result="authentication.succeeded",
         required_authorization_result="authorization.read-only-confirmed",
         required_product_identity_result="product-identity.matched",
-        required_assurance_level=AssuranceLevel.MULTI_FACTOR,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         required_effective_state=DISABLED_CONFIGURATION_VALIDATED,
         validation_record_schema=CONFIGURATION_VALIDATION_SCHEMA,
         signed_by="human.configuration-validation-policy-owner",

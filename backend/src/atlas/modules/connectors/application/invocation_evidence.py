@@ -38,8 +38,8 @@ from atlas.modules.connectors.domain.invocation_evidence import (
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
+    assurance_satisfies_policy,
 )
 
 INVOCATION_EVIDENCE_CREATE_PERMISSION = "connectors.invocation-evidence.create"
@@ -128,6 +128,7 @@ class ConnectorInvocationEvidenceService:
         now = self._clock()
         self._require_scope(actor, source.organization_id, source.environment_id)
         self._verify_source(
+            actor=actor,
             source=source,
             policy=policy,
             source_digest=source_invocation_digest,
@@ -444,6 +445,7 @@ class ConnectorInvocationEvidenceService:
     @staticmethod
     def _verify_source(
         *,
+        actor: AuthenticatedSubject,
         source: ConnectorBoundedInvocationRecord,
         policy: ConnectorInvocationEvidencePolicySnapshot,
         source_digest: str,
@@ -477,6 +479,9 @@ class ConnectorInvocationEvidenceService:
             or not 0 <= source.output_bytes <= policy.maximum_evidence_bytes
             or now - source.completed_at > timedelta(minutes=policy.maximum_source_age_minutes)
             or not policy.issued_at <= now < policy.expires_at
+            or not assurance_satisfies_policy(
+                actor.assurance_level, policy.required_assurance_level
+            )
         ):
             raise ConnectorInvocationEvidenceError("invocation_evidence_source_invalid")
 
@@ -570,14 +575,8 @@ class ConnectorInvocationEvidenceService:
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level is not AssuranceLevel.HARDWARE_BACKED
-        ):
-            raise ConnectorInvocationEvidenceError(
-                "invocation_evidence_enterprise_human_hardware_mfa_required"
-            )
+        if actor.kind is not SubjectKind.HUMAN:
+            raise ConnectorInvocationEvidenceError("invocation_evidence_human_required")
 
     def _require_scope(
         self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
@@ -658,7 +657,7 @@ def build_development_connector_invocation_evidence_policy(
         maximum_source_age_minutes=60,
         maximum_evidence_items=100,
         maximum_evidence_bytes=524_288,
-        required_assurance_level=AssuranceLevel.HARDWARE_BACKED,
+        required_assurance_level=AssuranceLevel.SINGLE_FACTOR,
         signed_by="subject.connector-invocation-evidence-policy-signer",
         signature_verified=True,
         issued_at=issued_at,

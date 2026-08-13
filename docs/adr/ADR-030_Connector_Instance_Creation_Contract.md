@@ -4,6 +4,16 @@
 **Date:** 2026-08-06
 **Decision Owners:** Product Owner, Solution Architecture, Security Architecture
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. Instance creation still
+requires a dedicated, authenticated, authorized human and every existing RBAC, exact-scope,
+acknowledgement, separation, signed-policy, lineage/freshness, idempotency, audit, and no-execution
+control. The default policy requires no MFA and uses `SINGLE_FACTOR`; an optional named step-up
+policy may add assurance checks only when explicitly configured, but assurance is not authorization.
+Development username/password identities satisfy the default. Explicitly configured
+`MULTI_FACTOR` or `HARDWARE_BACKED` policies still fail closed when assurance is insufficient.
+
 ## Context
 
 ADR-029 places one exact registered connector package into a governed immutable installation store.
@@ -19,8 +29,9 @@ treated as configuration, connectivity, health validation, enablement, or execut
 ## Decision
 
 Atlas will create a connector instance as an immutable version-one governance record in state
-`disabled_unconfigured`. Creation is a C3 administrative operation performed by an authenticated,
-MFA-protected human with exact tenant scope and dedicated permission.
+`disabled_unconfigured`. Creation is a C3 administrative operation performed by a dedicated,
+authenticated, authorized human with exact tenant scope and dedicated permission. The optional
+named `connector_instance_creation` step-up policy is evaluated only when explicitly configured.
 
 ### Request Contract
 
@@ -60,7 +71,9 @@ from every upstream human, policy signer, workload, publisher, installer, and cu
 An immutable signed policy fixes:
 
 - required installation receipt and instance-record schemas;
-- maximum installation age and required assurance level;
+- maximum installation age;
+- optional named `connector_instance_creation` step-up policy, disabled by default with
+  `SINGLE_FACTOR`, plus accepted external assurance values and freshness only when configured;
 - required installation/store/artifact profiles;
 - allowed SDK profiles and capability classes;
 - instance state `disabled_unconfigured`;
@@ -110,7 +123,8 @@ closed.
 A required intent audit succeeds before persistence. A required completion audit succeeds before
 the record is committed. Read and create APIs use dedicated default-deny RBAC, exact scope, browser
 session authentication, CSRF protection for mutation, strict extra-field rejection, safe errors,
-`Cache-Control: no-store`, and minimized response evidence.
+`Cache-Control: no-store`, minimized response evidence, and the optional named
+`connector_instance_creation` step-up policy only when configured.
 
 Audit and web responses exclude internal store references, installer and custodian identities,
 request fingerprints, idempotency keys, raw manifests, package bytes, signatures, keys, endpoints,

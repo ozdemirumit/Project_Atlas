@@ -4,6 +4,17 @@
 **Date:** 2026-08-06
 **Decision Owners:** Product Owner, Solution Architecture, Security Architecture
 
+## Amendment: ADR-133 (2026-08-13)
+
+ADR-133 supersedes this ADR's fixed MFA and minimum-assurance prerequisite. Credential-reference
+assignment still requires a dedicated, authenticated, authorized human and every existing RBAC,
+exact-scope, acknowledgement, separation, signed-policy, lineage/freshness, idempotency, audit,
+secret-isolation, and no-execution control. The default policy requires no MFA and uses
+`SINGLE_FACTOR`; an optional named step-up policy may add assurance checks only when explicitly
+configured, but assurance is not authorization.
+Development username/password identities satisfy the default. Explicitly configured
+`MULTI_FACTOR` or `HARDWARE_BACKED` policies still fail closed when assurance is insufficient.
+
 ## Context
 
 ADR-031 binds a disabled connector instance to exact signed target and configuration evidence. The
@@ -49,10 +60,12 @@ context, or ordinary persistence record.
 
 ### Assignment Policy
 
-An immutable signed policy fixes source schemas and age, assurance, allowed credential classes and
+An immutable signed policy fixes source schemas and age, allowed credential classes and
 authentication methods, maximum privilege, allowed secret-store profiles, required rotation and
-expiry posture, credential-profile signer, separation identities, output state, and record schema.
-Customer input cannot weaken these controls.
+expiry posture, credential-profile signer, separation identities, output state, record schema, and
+an optional named `connector_credential_reference_assignment` step-up policy. Step-up is disabled
+by default with `SINGLE_FACTOR`; accepted external assurance values and freshness apply only when
+explicitly configured. Customer input cannot weaken these controls.
 
 ### Source And Separation
 
@@ -61,10 +74,12 @@ installation, instance, target-profile, and configuration-policy lineage through
 It independently verifies the current credential profile and assignment policy, exact digests,
 scope, compatibility, freshness, rotation/revocation posture, and no-later-authority state.
 
-Only a dedicated exact-tenant MFA human with C3 permission may assign a credential profile. The
-actor must be distinct from every upstream package, installation, instance, target, policy,
-credential-profile, workload, publisher, installer, and custody actor. AI, service, shared,
-wrong-scope, and insufficient-assurance identities fail closed without discovery.
+Only a dedicated, authenticated, authorized, exact-tenant human with C3 permission may assign a
+credential profile. The actor must be distinct from every upstream package, installation,
+instance, target, policy, credential-profile, workload, publisher, installer, and custody actor.
+AI, service, shared, wrong-scope, unauthorized identities, and identities that do not satisfy the
+optional configured `connector_credential_reference_assignment` step-up policy fail closed without
+discovery.
 
 ### Resulting Authority
 
@@ -89,8 +104,9 @@ verification is metadata-only and deterministic.
 
 Assignments are immutable, one-to-one per target binding for version one, deterministic,
 idempotent, concurrency-safe, and equivalent in memory/PostgreSQL. Intent and completion audit must
-succeed before persistence. APIs use dedicated default-deny RBAC, exact scope, MFA, browser session,
-CSRF on mutation, strict schemas, no-store responses, safe errors, and minimized evidence.
+succeed before persistence. APIs use dedicated default-deny RBAC, exact scope, browser session,
+CSRF on mutation, strict schemas, no-store responses, safe errors, minimized evidence, and the
+optional named `connector_credential_reference_assignment` step-up policy only when configured.
 
 Audit and web output exclude internal secret-reference identifiers, secret-store paths and profile
 internals, secret values, tokens, keys, certificates, usernames, passwords, target coordinates,
