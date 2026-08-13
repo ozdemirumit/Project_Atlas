@@ -8,6 +8,7 @@ import {
   retireInventoryDevice,
   type InventoryDevice,
 } from "../../api/inventoryDevices";
+import { ApiRequestError } from "../../api/client";
 import InventoryDeviceRegistryWorkspace from "./InventoryDeviceRegistryWorkspace";
 
 vi.mock("../../api/inventoryDevices", async (importOriginal) => {
@@ -58,8 +59,11 @@ function renderWorkspace(
   return render(
     <QueryClientProvider client={queryClient}>
       <InventoryDeviceRegistryWorkspace
+        environmentId="environment.test"
         governedSessionAvailable={governedSessionAvailable}
         onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+        organizationId="organization.test"
+        siteId="site.local"
       />
     </QueryClientProvider>,
   );
@@ -96,6 +100,10 @@ describe("InventoryDeviceRegistryWorkspace", () => {
     expect(screen.getByText("Durable store")).toBeVisible();
     expect(screen.getByRole("button", { name: "Add device" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Retire Primary VSP" })).toBeVisible();
+    expect(screen.getByRole("columnheader", { name: "Manage" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retire Primary VSP" })).toHaveTextContent(
+      "Retire",
+    );
     expect(screen.queryByRole("button", { name: /delete/i })).toBeNull();
   });
 
@@ -121,6 +129,9 @@ describe("InventoryDeviceRegistryWorkspace", () => {
     fireEvent.click(submit);
 
     await waitFor(() => expect(createInventoryDevice).toHaveBeenCalledTimes(1));
+    expect(
+      await screen.findByText("Primary VSP was added to active inventory."),
+    ).toBeVisible();
     expect(vi.mocked(createInventoryDevice).mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
         deviceKey: "storage.vsp-02",
@@ -148,6 +159,11 @@ describe("InventoryDeviceRegistryWorkspace", () => {
     fireEvent.click(submit);
 
     await waitFor(() => expect(retireInventoryDevice).toHaveBeenCalledTimes(1));
+    expect(
+      await screen.findByText(
+        "Primary VSP was removed from active inventory and retained as retired.",
+      ),
+    ).toBeVisible();
     expect(retireInventoryDevice).toHaveBeenCalledWith({
       device,
       reason: "The governed decommissioning workflow has completed successfully.",
@@ -160,7 +176,15 @@ describe("InventoryDeviceRegistryWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retired" }));
 
     await waitFor(() =>
-      expect(getInventoryDevices).toHaveBeenLastCalledWith({ lifecycle: "retired", query: "" }),
+      expect(getInventoryDevices).toHaveBeenLastCalledWith({
+        lifecycle: "retired",
+        query: "",
+        scope: {
+          organizationId: "organization.test",
+          environmentId: "environment.test",
+          siteId: "site.local",
+        },
+      }),
     );
   });
 
@@ -176,5 +200,58 @@ describe("InventoryDeviceRegistryWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Sign in to manage" }));
     expect(onRequestEnterpriseLogin).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers login recovery when a governed session expires during retirement", async () => {
+    const onRequestEnterpriseLogin = vi.fn();
+    vi.mocked(retireInventoryDevice).mockRejectedValue(
+      new ApiRequestError("Inventory device retirement failed", 403),
+    );
+    renderWorkspace(true, onRequestEnterpriseLogin);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Retire Primary VSP" }));
+    fireEvent.change(screen.getByLabelText("Retirement reason"), {
+      target: { value: "The governed decommissioning workflow has completed successfully." },
+    });
+    fireEvent.click(
+      screen.getByLabelText(
+        "Preserve this record and stop using it as an active inventory target.",
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Retire device" }));
+
+    expect(
+      await screen.findByText("Your session can no longer manage inventory devices."),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
+    expect(onRequestEnterpriseLogin).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps add device visible and actionable when the authorized inventory is empty", async () => {
+    vi.mocked(getInventoryDevices).mockResolvedValue({
+      devices: [],
+      durable: true,
+      truncated: false,
+    });
+    renderWorkspace();
+
+    expect(await screen.findByText("No matching registered devices")).toBeVisible();
+    const addButtons = screen.getAllByRole("button", { name: "Add device" });
+    expect(addButtons).toHaveLength(2);
+    fireEvent.click(addButtons[1]!);
+    expect(screen.getByRole("dialog", { name: "Add infrastructure device" })).toBeVisible();
+  });
+
+  it("offers an explicit retry when the authorized inventory query fails", async () => {
+    vi.mocked(getInventoryDevices)
+      .mockRejectedValueOnce(new Error("inventory unavailable"))
+      .mockResolvedValueOnce({ devices: [device], durable: true, truncated: false });
+    renderWorkspace();
+
+    expect(await screen.findByText("Device registry is unavailable.")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("Primary VSP")).toBeVisible();
+    expect(getInventoryDevices).toHaveBeenCalledTimes(2);
   });
 });

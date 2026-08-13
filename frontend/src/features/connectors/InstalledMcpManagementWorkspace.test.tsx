@@ -753,6 +753,7 @@ function renderWorkspace(
   subjectId = "subject.connector-operator",
   enterpriseMfaAvailable = true,
   onRequestEnterpriseLogin?: () => void,
+  onOpenBuilder?: () => void,
 ) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -761,6 +762,7 @@ function renderWorkspace(
     <QueryClientProvider client={queryClient}>
       <InstalledMcpManagementWorkspace
         enterpriseMfaAvailable={enterpriseMfaAvailable}
+        onOpenBuilder={onOpenBuilder}
         onRequestEnterpriseLogin={onRequestEnterpriseLogin}
         subjectId={subjectId}
       />
@@ -826,8 +828,15 @@ describe("InstalledMcpManagementWorkspace", () => {
 
     expect(await screen.findByRole("heading", { name: "Installed MCPs" })).toBeVisible();
     expect(await screen.findByText("Storage East")).toBeVisible();
+    expect(screen.getByText("Enterprise MFA present")).toBeVisible();
+    expect(screen.getByText("1 governed package")).toBeVisible();
+    expect(screen.getByText("1 creation policy")).toBeVisible();
     expect(screen.getByRole("button", { name: "Add MCP" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Retire Storage East" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Remove Storage East" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Review update for Storage East" }))
+      .toHaveTextContent("Review update");
+    expect(screen.getByRole("button", { name: "Remove Storage East" }))
+      .toHaveTextContent("Remove");
     expect(screen.getByText("Security and onboarding diagnostics")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Signing trust" })).not.toBeVisible();
 
@@ -937,9 +946,10 @@ describe("InstalledMcpManagementWorkspace", () => {
 
     expect(await screen.findByText(/Enterprise MFA required for MCP lifecycle changes/i))
       .toBeVisible();
+    expect(screen.getByText("Enterprise MFA required")).toBeVisible();
     expect(await screen.findByText("Storage East")).toBeVisible();
     expect(screen.getByRole("button", { name: "Add MCP" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Retire Storage East" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Remove Storage East" })).toBeDisabled();
 
     fireEvent.click(screen.getByRole("button", { name: "Sign in to manage" }));
     expect(onRequestEnterpriseLogin).toHaveBeenCalledTimes(1);
@@ -1136,9 +1146,10 @@ describe("InstalledMcpManagementWorkspace", () => {
 
   it("requires a reason and explicit no-runtime-action acknowledgement before retirement", async () => {
     renderWorkspace();
-    fireEvent.click(await screen.findByRole("button", { name: "Retire Storage East" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Remove Storage East" }));
 
-    const submit = screen.getByRole("button", { name: "Retire MCP" });
+    expect(screen.getByRole("heading", { name: "Remove Storage East" })).toBeVisible();
+    const submit = screen.getByRole("button", { name: "Confirm retirement" });
     expect(submit).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Retirement reason"), {
       target: { value: "The unused MCP identity has completed governed retirement." },
@@ -1155,11 +1166,14 @@ describe("InstalledMcpManagementWorkspace", () => {
   });
 
   it("changes the instance query boundary and explains the governed package prerequisite", async () => {
+    const onOpenBuilder = vi.fn();
     vi.mocked(getConnectorPackageInstallations).mockResolvedValue([]);
     vi.mocked(getConnectorInstances).mockResolvedValue([]);
-    renderWorkspace();
+    renderWorkspace("subject.connector-operator", true, undefined, onOpenBuilder);
 
     expect(await screen.findByText(/Complete package installation/i)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Open Builder workflow" }));
+    expect(onOpenBuilder).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Retired" }));
     await waitFor(() =>
       expect(getConnectorInstances).toHaveBeenLastCalledWith({ lifecycle: "retired", query: "" }),

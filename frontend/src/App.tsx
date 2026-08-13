@@ -31,7 +31,7 @@ import {
   UserX,
   X,
 } from "lucide-react";
-import { lazy, Suspense, type FormEvent, useEffect, useState } from "react";
+import { lazy, Suspense, type FormEvent, useEffect, useRef, useState } from "react";
 
 import {
   createApiCredential,
@@ -357,6 +357,7 @@ export function OperationalApplication({
   const queryClient = useQueryClient();
   const activeNavigation = activeWorkspace;
   const activeHealthViewDescriptor = healthViewDescriptor(activeHealthView);
+  const connectorFocusTarget = useRef<ConnectorViewId | null>(null);
 
   useEffect(() => {
     if (activeNavigation !== "Connectors") return;
@@ -370,6 +371,10 @@ export function OperationalApplication({
             ? "auto"
             : "smooth",
       });
+      if (connectorFocusTarget.current === activeConnectorView) {
+        target?.focus({ preventScroll: true });
+        connectorFocusTarget.current = null;
+      }
     });
     return () => window.cancelAnimationFrame(frame);
   }, [activeConnectorView, activeNavigation]);
@@ -1149,6 +1154,10 @@ export function OperationalApplication({
       queryClient.removeQueries({ queryKey: ["workload-identities"] });
       queryClient.removeQueries({ queryKey: ["audit-export-overview"] });
       queryClient.removeQueries({ queryKey: ["upgrade-human-review-inbox"] });
+      queryClient.removeQueries({ queryKey: ["inventory-devices"] });
+      queryClient.removeQueries({ queryKey: ["connector-package-installations"] });
+      queryClient.removeQueries({ queryKey: ["connector-instance-creation-policies"] });
+      queryClient.removeQueries({ queryKey: ["connector-instances"] });
       setApprovalRequestId(null);
       setTechnicalReportId(null);
       const url = new URL(window.location.href);
@@ -2209,6 +2218,10 @@ export function OperationalApplication({
                           ? undefined
                           : () => setEnterpriseLoginRequested(true)
                       }
+                      onOpenBuilder={() => {
+                        connectorFocusTarget.current = "builder";
+                        onNavigateConnectorView("builder");
+                      }}
                       subjectId={identity?.subject_id ?? ""}
                     />
                   </Suspense>
@@ -2218,6 +2231,7 @@ export function OperationalApplication({
               <section
                 className="workspace-section mcp-builder-section connector-view-anchor"
                 id="connector-view-builder"
+                tabIndex={-1}
               >
                 <div className="section-heading">
                   <div>
@@ -8199,6 +8213,36 @@ export function OperationalApplication({
                 </div>
               )}
 
+              {activeNavigation === "Health" && activeHealthView === "overview" && identity && (
+                <WorkspaceLoadBoundary
+                  compact
+                  resetKey="inventory-device-registry"
+                  workspace="Health"
+                >
+                  <Suspense
+                    fallback={
+                      <div className="workspace-message" aria-live="polite" aria-busy="true">
+                        <Clock3 size={22} />
+                        <div>
+                          <h2>Loading device registry</h2>
+                          <p>Preparing authorized infrastructure lifecycle records.</p>
+                        </div>
+                      </div>
+                    }
+                  >
+                    <InventoryDeviceRegistryWorkspace
+                      environmentId={identity.scope.environment_id}
+                      governedSessionAvailable={
+                        identity.credential_kind === "browser_session"
+                      }
+                      onRequestEnterpriseLogin={() => setEnterpriseLoginRequested(true)}
+                      organizationId={identity.scope.organization_id}
+                      siteId={identity.scope.site_id}
+                    />
+                  </Suspense>
+                </WorkspaceLoadBoundary>
+              )}
+
               {activeNavigation === "Health" && activeHealthView === "overview" && overview && (
                 <WorkspaceLoadBoundary compact resetKey={overview.snapshot_id} workspace="Health">
                   <Suspense
@@ -8212,12 +8256,6 @@ export function OperationalApplication({
                       </div>
                     }
                   >
-                    <InventoryDeviceRegistryWorkspace
-                      governedSessionAvailable={
-                        identity?.credential_kind === "browser_session"
-                      }
-                      onRequestEnterpriseLogin={() => setEnterpriseLoginRequested(true)}
-                    />
                     <HealthInventoryEvidenceWorkspace
                       impact={impact}
                       impactError={impactQuery.isError}

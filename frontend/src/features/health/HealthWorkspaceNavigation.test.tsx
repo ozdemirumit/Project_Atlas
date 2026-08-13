@@ -11,7 +11,7 @@ describe("HealthWorkspaceNavigation", () => {
     const onNavigate = vi.fn();
     render(<HealthWorkspaceNavigation activeView="overview" onNavigate={onNavigate} />);
 
-    expect(screen.getByRole("tab", { name: "Inventory" })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: "Device registry" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
@@ -33,7 +33,7 @@ describe("HealthWorkspaceNavigation", () => {
     const onNavigate = vi.fn();
     render(<HealthWorkspaceNavigation activeView="overview" onNavigate={onNavigate} />);
 
-    const overview = screen.getByRole("tab", { name: "Inventory" });
+    const overview = screen.getByRole("tab", { name: "Device registry" });
     overview.focus();
     fireEvent.keyDown(overview, { key: "ArrowRight" });
     expect(onNavigate).toHaveBeenLastCalledWith("investigate");
