@@ -107,6 +107,40 @@ export type ItsmSandboxConformanceAssessment = {
   reused: boolean;
 };
 
+export type ItsmSandboxOnboardingReadiness = {
+  schema_version: "atlas.itsm-sandbox-onboarding-readiness.v1";
+  version: 1;
+  organization_id: string;
+  environment_id: string;
+  site_id: string;
+  profile_id: string;
+  profile_version: number;
+  profile_digest: string;
+  mapping_version: number;
+  conformance_assessment_id: string | null;
+  conformance_assessment_digest: string | null;
+  adapter_id: string | null;
+  adapter_version: string | null;
+  policy_version: string;
+  assessed_at: string;
+  evidence_observed_at: string | null;
+  evidence_valid_until: string | null;
+  state: "ready" | "blocked";
+  requirements: Array<{
+    requirement_id: string;
+    state: "satisfied" | "blocked";
+    reason_code: string;
+  }>;
+  canonical_digest: string;
+  sandbox_onboarding_ready: boolean;
+  production_ready: false;
+  dispatch_authorized: false;
+  external_record_mutation_authorized: false;
+  workflow_approved: false;
+  execution_authorized: false;
+  infrastructure_mutation_performed: false;
+};
+
 const providerFamilies = new Set<ItsmProviderFamily>([
   "service_now",
   "jira_service_management",
@@ -188,6 +222,67 @@ function readSandboxConformanceResponse(value: unknown): ItsmSandboxConformanceA
     !isSandboxConformance(value.data)
   ) {
     throw new ApiRequestError("ITSM sandbox conformance response was unsafe", 500);
+  }
+  return value.data;
+}
+
+export function isSandboxOnboardingReadiness(
+  value: unknown,
+): value is ItsmSandboxOnboardingReadiness {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  const requirements = record.requirements;
+  const forbidden = [
+    "endpoint_origin",
+    "secret_reference_id",
+    "credential",
+    "token",
+    "request_payload",
+    "provider_operation",
+    "approval_assertion",
+  ];
+  return (
+    record.schema_version === "atlas.itsm-sandbox-onboarding-readiness.v1" &&
+    record.version === 1 &&
+    typeof record.profile_id === "string" &&
+    typeof record.profile_version === "number" &&
+    typeof record.profile_digest === "string" &&
+    typeof record.mapping_version === "number" &&
+    typeof record.policy_version === "string" &&
+    (record.state === "ready" || record.state === "blocked") &&
+    Array.isArray(requirements) &&
+    requirements.length === 12 &&
+    requirements.every(
+      (item) =>
+        Boolean(item) &&
+        typeof item === "object" &&
+        typeof (item as Record<string, unknown>).requirement_id === "string" &&
+        ((item as Record<string, unknown>).state === "satisfied" ||
+          (item as Record<string, unknown>).state === "blocked") &&
+        typeof (item as Record<string, unknown>).reason_code === "string",
+    ) &&
+    typeof record.sandbox_onboarding_ready === "boolean" &&
+    record.sandbox_onboarding_ready === (record.state === "ready") &&
+    record.production_ready === false &&
+    record.dispatch_authorized === false &&
+    record.external_record_mutation_authorized === false &&
+    record.workflow_approved === false &&
+    record.execution_authorized === false &&
+    record.infrastructure_mutation_performed === false &&
+    forbidden.every((field) => !(field in record))
+  );
+}
+
+function readSandboxOnboardingReadinessResponse(
+  value: unknown,
+): ItsmSandboxOnboardingReadiness {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !("data" in value) ||
+    !isSandboxOnboardingReadiness(value.data)
+  ) {
+    throw new ApiRequestError("ITSM sandbox onboarding response was unsafe", 500);
   }
   return value.data;
 }
@@ -336,4 +431,17 @@ export async function getLatestItsmSandboxConformance(
     throw new ApiRequestError("ITSM sandbox conformance lookup failed", response.status);
   }
   return readSandboxConformanceResponse(await response.json());
+}
+
+export async function getItsmSandboxOnboardingReadiness(
+  profileId: string,
+): Promise<ItsmSandboxOnboardingReadiness> {
+  const response = await apiFetch(
+    `/api/v1/itsm/integrations/${encodeURIComponent(profileId)}/sandbox-onboarding-readiness`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (!response.ok) {
+    throw new ApiRequestError("ITSM sandbox onboarding readiness failed", response.status);
+  }
+  return readSandboxOnboardingReadinessResponse(await response.json());
 }

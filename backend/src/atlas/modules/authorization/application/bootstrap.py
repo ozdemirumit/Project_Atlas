@@ -37,6 +37,7 @@ ITSM_INTEGRATION_CREATE = "itsm.integrations.create"
 ITSM_INTEGRATION_RETIRE = "itsm.integrations.retire"
 ITSM_SANDBOX_CONFORMANCE_READ = "itsm.integrations.sandbox-conformance.read"
 ITSM_SANDBOX_CONFORMANCE_CREATE = "itsm.integrations.sandbox-conformance.create"
+ITSM_SANDBOX_ONBOARDING_READ = "itsm.integrations.sandbox-onboarding.read"
 AI_GROUNDED_QUERY_CREATE = "ai.grounded-query.create"
 GRAPH_STORAGE_IMPACT_READ = "graph.storage-impact.read"
 HEALTH_CHECK_OVERVIEW_READ = "health-check.overview.read"
@@ -435,6 +436,10 @@ def itsm_integration_permission_definitions() -> tuple[PermissionDefinition, ...
         PermissionDefinition(
             permission_id=ITSM_SANDBOX_CONFORMANCE_CREATE,
             description="Run one fixed diagnostic against an exact ITSM sandbox profile.",
+        ),
+        PermissionDefinition(
+            permission_id=ITSM_SANDBOX_ONBOARDING_READ,
+            description="Read exact-profile ITSM sandbox adapter onboarding readiness.",
         ),
     )
 
@@ -2667,6 +2672,7 @@ def build_development_authorization_service(
                 ITSM_INTEGRATION_RETIRE,
                 ITSM_SANDBOX_CONFORMANCE_READ,
                 ITSM_SANDBOX_CONFORMANCE_CREATE,
+                ITSM_SANDBOX_ONBOARDING_READ,
                 AI_GROUNDED_QUERY_CREATE,
                 GRAPH_STORAGE_IMPACT_READ,
                 HEALTH_CHECK_OVERVIEW_READ,

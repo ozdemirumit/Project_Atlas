@@ -65,6 +65,16 @@ class ItsmSandboxConformanceState(StrEnum):
     ROUND_TRIP_FAILED = "round_trip_failed"
 
 
+class ItsmSandboxOnboardingState(StrEnum):
+    READY = "ready"
+    BLOCKED = "blocked"
+
+
+class ItsmSandboxOnboardingRequirementState(StrEnum):
+    SATISFIED = "satisfied"
+    BLOCKED = "blocked"
+
+
 @dataclass(frozen=True, slots=True)
 class ItsmFieldMapping:
     source_field: str
@@ -364,3 +374,192 @@ class ItsmSandboxConformanceAssessment:
             )
         ):
             raise ValueError("ITSM sandbox conformance assessment is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class ItsmSandboxOnboardingEvidence:
+    schema_version: str
+    version: int
+    organization_id: str
+    environment_id: str
+    site_id: str
+    profile_id: str
+    profile_version: int
+    profile_digest: str
+    mapping_version: int
+    adapter_id: str
+    adapter_version: str
+    adapter_registered: bool
+    adapter_sandbox_approved: bool
+    workload_identity_configured: bool
+    credential_reference_owned: bool
+    network_trust_approved: bool
+    mapping_change_control_configured: bool
+    rate_limit_and_backpressure_configured: bool
+    audit_routing_configured: bool
+    availability_and_recovery_configured: bool
+    security_approval_reference: str | None
+    deployment_approval_reference: str | None
+    observed_at: datetime
+    valid_until: datetime
+    canonical_digest: str
+    production_eligible: bool = False
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.schema_version,
+            self.organization_id,
+            self.environment_id,
+            self.site_id,
+            self.profile_id,
+            self.adapter_id,
+            self.adapter_version,
+        ):
+            validate_stable_identifier(value, "ITSM sandbox onboarding evidence identifier")
+        for reference in (
+            self.security_approval_reference,
+            self.deployment_approval_reference,
+        ):
+            if reference is not None:
+                validate_stable_identifier(reference, "ITSM sandbox onboarding approval reference")
+        if (
+            self.schema_version != "atlas.itsm-sandbox-onboarding-evidence.v1"
+            or self.version != 1
+            or self.profile_version < 1
+            or self.mapping_version < 1
+            or _DIGEST.fullmatch(self.profile_digest) is None
+            or _DIGEST.fullmatch(self.canonical_digest) is None
+            or self.observed_at.tzinfo is None
+            or self.valid_until.tzinfo is None
+            or self.valid_until <= self.observed_at
+        ):
+            raise ValueError("ITSM sandbox onboarding evidence is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class ItsmSandboxOnboardingRequirement:
+    requirement_id: str
+    state: ItsmSandboxOnboardingRequirementState
+    reason_code: str
+
+    def __post_init__(self) -> None:
+        validate_stable_identifier(self.requirement_id, "ITSM sandbox onboarding requirement")
+        validate_stable_identifier(self.reason_code, "ITSM sandbox onboarding reason")
+        if not self.requirement_id.startswith(
+            "itsm.sandbox-onboarding."
+        ) or not self.reason_code.startswith("itsm.sandbox-onboarding."):
+            raise ValueError("ITSM sandbox onboarding requirement is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class ItsmSandboxOnboardingReadiness:
+    schema_version: str
+    version: int
+    organization_id: str
+    environment_id: str
+    site_id: str
+    profile_id: str
+    profile_version: int
+    profile_digest: str
+    mapping_version: int
+    conformance_assessment_id: str | None
+    conformance_assessment_digest: str | None
+    adapter_id: str | None
+    adapter_version: str | None
+    policy_version: str
+    assessed_at: datetime
+    evidence_observed_at: datetime | None
+    evidence_valid_until: datetime | None
+    state: ItsmSandboxOnboardingState
+    requirements: tuple[ItsmSandboxOnboardingRequirement, ...]
+    canonical_digest: str
+    sandbox_onboarding_ready: bool = False
+    production_ready: bool = False
+    dispatch_authorized: bool = False
+    external_record_mutation_authorized: bool = False
+    workflow_approved: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_performed: bool = False
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.schema_version,
+            self.organization_id,
+            self.environment_id,
+            self.site_id,
+            self.profile_id,
+            self.policy_version,
+        ):
+            validate_stable_identifier(value, "ITSM sandbox onboarding readiness identifier")
+        optional_ids = (
+            self.conformance_assessment_id,
+            self.adapter_id,
+            self.adapter_version,
+        )
+        for optional_value in optional_ids:
+            if optional_value is not None:
+                validate_stable_identifier(
+                    optional_value, "ITSM sandbox onboarding readiness binding"
+                )
+        conformance_bound = (
+            self.conformance_assessment_id is not None
+            and self.conformance_assessment_digest is not None
+            and self.adapter_id is not None
+            and self.adapter_version is not None
+        )
+        if (
+            any(value is not None for value in (*optional_ids, self.conformance_assessment_digest))
+            and not conformance_bound
+        ):
+            raise ValueError("ITSM sandbox onboarding conformance binding is incomplete")
+        evidence_bound = (
+            self.evidence_observed_at is not None and self.evidence_valid_until is not None
+        )
+        if (
+            any(
+                value is not None
+                for value in (self.evidence_observed_at, self.evidence_valid_until)
+            )
+            and not evidence_bound
+        ):
+            raise ValueError("ITSM sandbox onboarding evidence interval is incomplete")
+        if (
+            self.schema_version != "atlas.itsm-sandbox-onboarding-readiness.v1"
+            or self.version != 1
+            or self.profile_version < 1
+            or self.mapping_version < 1
+            or _DIGEST.fullmatch(self.profile_digest) is None
+            or (
+                self.conformance_assessment_digest is not None
+                and _DIGEST.fullmatch(self.conformance_assessment_digest) is None
+            )
+            or self.assessed_at.tzinfo is None
+            or (
+                evidence_bound
+                and (
+                    self.evidence_observed_at is None
+                    or self.evidence_valid_until is None
+                    or self.evidence_valid_until <= self.evidence_observed_at
+                )
+            )
+            or len(self.requirements) != 12
+            or len({item.requirement_id for item in self.requirements}) != 12
+            or _DIGEST.fullmatch(self.canonical_digest) is None
+            or self.sandbox_onboarding_ready
+            != all(
+                item.state is ItsmSandboxOnboardingRequirementState.SATISFIED
+                for item in self.requirements
+            )
+            or (self.state is ItsmSandboxOnboardingState.READY) != self.sandbox_onboarding_ready
+            or self.production_ready
+            or any(
+                (
+                    self.dispatch_authorized,
+                    self.external_record_mutation_authorized,
+                    self.workflow_approved,
+                    self.execution_authorized,
+                    self.infrastructure_mutation_performed,
+                )
+            )
+        ):
+            raise ValueError("ITSM sandbox onboarding readiness violates its authority boundary")

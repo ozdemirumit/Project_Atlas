@@ -15,6 +15,8 @@ from atlas.api.itsm_integration_schemas import (
     ItsmIntegrationProfileResponse,
     ItsmSandboxConformanceData,
     ItsmSandboxConformanceResponse,
+    ItsmSandboxOnboardingReadinessData,
+    ItsmSandboxOnboardingReadinessResponse,
     RetireItsmIntegrationProfileInput,
 )
 from atlas.api.schemas import ResponseMeta
@@ -25,6 +27,7 @@ from atlas.api.security import (
     authorize_itsm_integration_retire,
     authorize_itsm_sandbox_conformance_create,
     authorize_itsm_sandbox_conformance_read,
+    authorize_itsm_sandbox_onboarding_read,
     itsm_integration_mutation_subject,
 )
 from atlas.modules.authorization.domain.models import AuthorizationDecision
@@ -230,4 +233,31 @@ async def latest_itsm_sandbox_conformance(
     response.headers["Cache-Control"] = "no-store"
     return ItsmSandboxConformanceResponse(
         data=ItsmSandboxConformanceData.from_domain(assessment), meta=_meta(request)
+    )
+
+
+@router.get(
+    "/{profile_id}/sandbox-onboarding-readiness",
+    response_model=ItsmSandboxOnboardingReadinessResponse,
+)
+async def get_itsm_sandbox_onboarding_readiness(
+    profile_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_itsm_sandbox_onboarding_read)],
+) -> ItsmSandboxOnboardingReadinessResponse:
+    service: ItsmIntegrationService = request.app.state.itsm_integration_service
+    try:
+        readiness = await service.sandbox_onboarding_readiness(
+            actor=subject,
+            profile_id=profile_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ItsmIntegrationError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ItsmSandboxOnboardingReadinessResponse(
+        data=ItsmSandboxOnboardingReadinessData.from_domain(readiness),
+        meta=_meta(request),
     )

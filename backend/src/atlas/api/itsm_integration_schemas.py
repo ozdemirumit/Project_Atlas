@@ -15,6 +15,9 @@ from atlas.modules.itsm.domain.models import (
     ItsmReadinessState,
     ItsmSandboxConformanceAssessment,
     ItsmSandboxConformanceState,
+    ItsmSandboxOnboardingReadiness,
+    ItsmSandboxOnboardingRequirementState,
+    ItsmSandboxOnboardingState,
     ItsmWriteSemantics,
 )
 
@@ -223,4 +226,57 @@ class ItsmSandboxConformanceResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: ItsmSandboxConformanceData
+    meta: ResponseMeta
+
+
+class ItsmSandboxOnboardingRequirementData(BaseModel):
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    requirement_id: str
+    state: ItsmSandboxOnboardingRequirementState
+    reason_code: str
+
+
+class ItsmSandboxOnboardingReadinessData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str
+    version: int
+    organization_id: str
+    environment_id: str
+    site_id: str
+    profile_id: str
+    profile_version: int
+    profile_digest: str
+    mapping_version: int
+    conformance_assessment_id: str | None
+    conformance_assessment_digest: str | None
+    adapter_id: str | None
+    adapter_version: str | None
+    policy_version: str
+    assessed_at: datetime
+    evidence_observed_at: datetime | None
+    evidence_valid_until: datetime | None
+    state: ItsmSandboxOnboardingState
+    requirements: list[ItsmSandboxOnboardingRequirementData]
+    canonical_digest: str
+    sandbox_onboarding_ready: bool
+    production_ready: bool
+    dispatch_authorized: bool
+    external_record_mutation_authorized: bool
+    workflow_approved: bool
+    execution_authorized: bool
+    infrastructure_mutation_performed: bool
+
+    @classmethod
+    def from_domain(
+        cls, readiness: ItsmSandboxOnboardingReadiness
+    ) -> ItsmSandboxOnboardingReadinessData:
+        return cls(**{field: getattr(readiness, field) for field in cls.model_fields})
+
+
+class ItsmSandboxOnboardingReadinessResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ItsmSandboxOnboardingReadinessData
     meta: ResponseMeta

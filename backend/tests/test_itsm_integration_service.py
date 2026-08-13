@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 
 import pytest
@@ -14,6 +14,9 @@ from atlas.modules.identity.domain.models import (
     SubjectKind,
 )
 from atlas.modules.itsm.adapters.memory import InMemoryItsmIntegrationProfileRepository
+from atlas.modules.itsm.adapters.onboarding import (
+    DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource,
+)
 from atlas.modules.itsm.adapters.postgres import PostgreSQLItsmIntegrationProfileRepository
 from atlas.modules.itsm.adapters.sandbox import (
     DeterministicNoNetworkItsmSandboxConformanceAdapter,
@@ -26,10 +29,60 @@ from atlas.modules.itsm.domain.models import (
     ItsmProviderFamily,
     ItsmReadinessState,
     ItsmSandboxConformanceState,
+    ItsmSandboxOnboardingState,
     ItsmWriteSemantics,
 )
 
 NOW = datetime(2026, 8, 13, 4, 0, tzinfo=UTC)
+
+
+class ProductionEligibleSandboxAdapter(DeterministicNoNetworkItsmSandboxConformanceAdapter):
+    async def assess(self, **values: object):  # type: ignore[no-untyped-def]
+        diagnostic = await super().assess(**values)  # type: ignore[arg-type]
+        return replace(diagnostic, production_eligible=True)
+
+
+class ApprovedSandboxOnboardingEvidenceSource(
+    DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource
+):
+    async def get(self, **values: object):  # type: ignore[no-untyped-def]
+        evidence = await super().get(**values)  # type: ignore[arg-type]
+        assert evidence is not None
+        evidence = replace(
+            evidence,
+            adapter_sandbox_approved=True,
+            security_approval_reference="approval.security.itsm-sandbox",
+            deployment_approval_reference="approval.deployment.itsm-sandbox",
+            production_eligible=True,
+            canonical_digest="0" * 64,
+        )
+        return replace(
+            evidence,
+            canonical_digest=ItsmIntegrationService._digest(
+                ItsmIntegrationService._onboarding_evidence_payload(evidence)
+            ),
+        )
+
+
+class MismatchedSandboxOnboardingEvidenceSource(
+    DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource
+):
+    async def get(self, **values: object):  # type: ignore[no-untyped-def]
+        evidence = await super().get(**values)  # type: ignore[arg-type]
+        assert evidence is not None
+        evidence = replace(evidence, profile_digest="f" * 64, canonical_digest="0" * 64)
+        return replace(
+            evidence,
+            canonical_digest=ItsmIntegrationService._digest(
+                ItsmIntegrationService._onboarding_evidence_payload(evidence)
+            ),
+        )
+
+
+class FailingSandboxOnboardingEvidenceSource:
+    async def get(self, **values: object):  # type: ignore[no-untyped-def]
+        del values
+        raise RuntimeError("provider-native failure must remain contained")
 
 
 class CollectingAuditSink:
@@ -345,3 +398,160 @@ async def test_sandbox_assessment_postgres_payload_round_trip_preserves_boundari
     assert restored == assessment
     assert restored.profile_digest == profile.canonical_digest
     assert restored.dispatch_authorized is False
+
+
+@pytest.mark.asyncio
+async def test_sandbox_onboarding_readiness_blocks_synthetic_deployment_evidence() -> None:
+    sink = CollectingAuditSink()
+    service = ItsmIntegrationService(
+        repository=InMemoryItsmIntegrationProfileRepository(),
+        audit_sink=sink,
+        environment_id="environment.test",
+        sandbox_conformance_adapter=DeterministicNoNetworkItsmSandboxConformanceAdapter(),
+        sandbox_onboarding_evidence_source=(
+            DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource()
+        ),
+        clock=lambda: NOW,
+    )
+    profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
+    await service.assess_sandbox_conformance(
+        actor=actor(),
+        profile_id=profile.profile_id,
+        expected_profile_version=profile.version,
+        acknowledged_diagnostic_only_and_no_dispatch=True,
+        idempotency_key="itsm-sandbox-onboarding-blocked",
+        correlation_id="correlation.itsm.sandbox.onboarding.assess",
+    )
+
+    dossier = await service.sandbox_onboarding_readiness(
+        actor=actor(),
+        profile_id=profile.profile_id,
+        correlation_id="correlation.itsm.sandbox.onboarding.read",
+    )
+
+    assert dossier.state is ItsmSandboxOnboardingState.BLOCKED
+    assert len(dossier.requirements) == 12
+    assert {item.reason_code for item in dossier.requirements if item.state.value == "blocked"} >= {
+        "itsm.sandbox-onboarding.adapter_not_onboarding_eligible",
+        "itsm.sandbox-onboarding.owner_approvals_missing",
+    }
+    assert not any(
+        (
+            dossier.sandbox_onboarding_ready,
+            dossier.production_ready,
+            dossier.dispatch_authorized,
+            dossier.external_record_mutation_authorized,
+            dossier.workflow_approved,
+            dossier.execution_authorized,
+            dossier.infrastructure_mutation_performed,
+        )
+    )
+    assert sink.records[-1].result_code == "itsm_sandbox_onboarding_blocked"
+
+
+@pytest.mark.asyncio
+async def test_sandbox_onboarding_readiness_distinguishes_missing_conformance() -> None:
+    service = ItsmIntegrationService(
+        repository=InMemoryItsmIntegrationProfileRepository(),
+        audit_sink=CollectingAuditSink(),
+        environment_id="environment.test",
+        sandbox_onboarding_evidence_source=(
+            DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource()
+        ),
+        clock=lambda: NOW,
+    )
+    profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
+
+    dossier = await service.sandbox_onboarding_readiness(
+        actor=actor(),
+        profile_id=profile.profile_id,
+        correlation_id="correlation.itsm.sandbox.onboarding.missing",
+    )
+
+    conformance = next(
+        item
+        for item in dossier.requirements
+        if item.requirement_id == "itsm.sandbox-onboarding.conformance-current"
+    )
+    assert conformance.reason_code == "itsm.sandbox-onboarding.conformance_missing"
+
+
+@pytest.mark.asyncio
+async def test_sandbox_onboarding_readiness_requires_all_authoritative_evidence() -> None:
+    service = ItsmIntegrationService(
+        repository=InMemoryItsmIntegrationProfileRepository(),
+        audit_sink=CollectingAuditSink(),
+        environment_id="environment.test",
+        sandbox_conformance_adapter=ProductionEligibleSandboxAdapter(),
+        sandbox_onboarding_evidence_source=ApprovedSandboxOnboardingEvidenceSource(),
+        clock=lambda: NOW,
+    )
+    profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
+    assessment = await service.assess_sandbox_conformance(
+        actor=actor(),
+        profile_id=profile.profile_id,
+        expected_profile_version=profile.version,
+        acknowledged_diagnostic_only_and_no_dispatch=True,
+        idempotency_key="itsm-sandbox-onboarding-ready",
+        correlation_id="correlation.itsm.sandbox.onboarding.ready.assess",
+    )
+
+    dossier = await service.sandbox_onboarding_readiness(
+        actor=actor(),
+        profile_id=profile.profile_id,
+        correlation_id="correlation.itsm.sandbox.onboarding.ready",
+    )
+
+    assert dossier.state is ItsmSandboxOnboardingState.READY
+    assert dossier.sandbox_onboarding_ready is True
+    assert dossier.conformance_assessment_id == assessment.assessment_id
+    assert dossier.conformance_assessment_digest == assessment.canonical_digest
+    assert all(item.state.value == "satisfied" for item in dossier.requirements)
+    assert dossier.production_ready is False
+    assert dossier.dispatch_authorized is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("evidence_source", "expected_reason"),
+    [
+        (
+            MismatchedSandboxOnboardingEvidenceSource(),
+            "itsm.sandbox-onboarding.evidence_binding_invalid",
+        ),
+        (
+            FailingSandboxOnboardingEvidenceSource(),
+            "itsm.sandbox-onboarding.evidence_source_unavailable",
+        ),
+    ],
+)
+async def test_sandbox_onboarding_readiness_contains_invalid_or_failed_evidence_sources(
+    evidence_source: object,
+    expected_reason: str,
+) -> None:
+    service = ItsmIntegrationService(
+        repository=InMemoryItsmIntegrationProfileRepository(),
+        audit_sink=CollectingAuditSink(),
+        environment_id="environment.test",
+        sandbox_conformance_adapter=DeterministicNoNetworkItsmSandboxConformanceAdapter(),
+        sandbox_onboarding_evidence_source=evidence_source,  # type: ignore[arg-type]
+        clock=lambda: NOW,
+    )
+    profile = await service.create(actor=actor(), **create_values())  # type: ignore[arg-type]
+    await service.assess_sandbox_conformance(
+        actor=actor(),
+        profile_id=profile.profile_id,
+        expected_profile_version=profile.version,
+        acknowledged_diagnostic_only_and_no_dispatch=True,
+        idempotency_key=f"itsm-sandbox-onboarding-{expected_reason.rsplit('.', 1)[-1]}",
+        correlation_id="correlation.itsm.sandbox.onboarding.evidence-failure",
+    )
+
+    dossier = await service.sandbox_onboarding_readiness(
+        actor=actor(),
+        profile_id=profile.profile_id,
+        correlation_id="correlation.itsm.sandbox.onboarding.evidence-failure.read",
+    )
+
+    assert dossier.state is ItsmSandboxOnboardingState.BLOCKED
+    assert {item.reason_code for item in dossier.requirements} >= {expected_reason}
