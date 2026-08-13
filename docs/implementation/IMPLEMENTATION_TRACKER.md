@@ -4,14 +4,69 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-185 |
-| Title | Durable workflow cancellation state and immutable transition history |
-| Status | Local implementation and validation complete; PR delivery in progress |
-| Branch | `agent/durable-workflow-cancellation-state` |
-| Pull Request | [#197](https://github.com/ozdemirumit/Project_Atlas/pull/197) |
-| Governing Documents | ATLAS-002 FR-014, ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ADR-134, ADR-135 |
-| Last Updated | 2026-08-13 |
-| Next Action | Deliver through exact-head PR CI, squash merge, main CI and local main synchronization |
+| Task ID | ATLAS-IMP-186 |
+| Title | Fenced workflow orchestration lease without execution authority |
+| Status | PR exact-head CI in progress |
+| Branch | `agent/workflow-worker-lease-foundation` |
+| Pull Request | [#198](https://github.com/ozdemirumit/Project_Atlas/pull/198) |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ADR-134, ADR-135, ADR-136 |
+| Last Updated | 2026-08-14 |
+| Next Action | Pass exact-head PR CI, squash-merge, verify main CI and synchronize local main |
+
+### ATLAS-IMP-186 Scope Rationale
+
+- Worker ownership must be durable and fenced before Atlas creates step runs, attempts or queues.
+  The lease is bound to one exact planned-plan digest and cannot change plan or step state.
+- Only a dedicated workload credential for `audience.workflow-worker` may mutate a lease. Humans
+  can inspect lease state but cannot acquire, heartbeat or release it from the UI.
+- Dispatch, run materialization, attempts, connector calls, approval, ITSM, runbook and all
+  infrastructure execution remain deferred.
+
+### ATLAS-IMP-186 Acceptance Criteria
+
+- Exact workload identities can idempotently acquire a bounded lease, then heartbeat or release it
+  through exact digest and fencing checks; competing live owners, stale digests, stale fencing
+  tokens and wrong identities fail closed.
+- Expired lease takeover increments a durable fencing token. Plan cancellation or digest change
+  invalidates later lease mutations and grants no authority to the stale holder.
+- PostgreSQL persists lease state and idempotency atomically with optimistic concurrency;
+  production never falls back to memory and development remains explicitly labeled.
+- Human UI presents authoritative active, released or expired lease status without mutation
+  controls, credentials, MFA prompts or any implication that a workflow step ran.
+
+### ATLAS-IMP-186 Validation Evidence
+
+- Domain, application, API, architecture-boundary and persistence tests cover exact-plan digest
+  binding, dedicated workload audience, explicit target authority, idempotent replay, contention,
+  expiry takeover, monotonically increasing fencing, heartbeat, release, stale-owner rejection,
+  cancellation invalidation, fail-closed audit and all-false execution authority.
+- PostgreSQL tests verify that first acquisition writes the lease and immutable idempotency claim in
+  one commit, takeover uses a fenced optimistic update, and heartbeat/release update only the exact
+  active lease. The application exposes the repository owned by the injected lease service, so the
+  status API and mutation service cannot diverge in custom deployments or tests.
+- Ruff format/lint and strict mypy passed across 1,016 source files. The full backend suite passed
+  1,590 tests with three expected Windows symlink skips. Alembic has one head at
+  `20260813_0109`.
+- The full frontend suite passed 299 tests across 95 files; zero-warning ESLint, TypeScript and the
+  production build passed with only the pre-existing chunk-size advisory.
+- Live validation at `http://127.0.0.1:5253/#/workspace/workflows` restarted the backend from this
+  branch and used one `atlas-demo` / `local-demo` username/password login. Plan
+  `workflow-plan.1e03cf32a4ba166d320a0a6a` was created and showed `Read-only coordination`,
+  `No human controls` and `No orchestration lease` without a second login or MFA prompt.
+- No acquire, heartbeat or release control is exposed to humans. The plan remained `planned`, both
+  steps remained `not_started`, and the UI continued to state that no connector, approval, ITSM,
+  runbook, worker or infrastructure action ran. Workload mutation was separately verified through
+  the API with an explicitly authorized target and never granted execution authority.
+
+### ATLAS-IMP-185 Delivery Evidence
+
+- Source head `603444f26deb153cc31c85f2c75df0e313034c16` passed exact-head PR CI run
+  `31735918634`; frontend completed in 3m57s and backend in 9m23s.
+- PR [#197](https://github.com/ozdemirumit/Project_Atlas/pull/197) was squash-merged as
+  `9ca40c2367d92045e2c1c7d99c6e7f2223780032`.
+- The exact merged commit independently passed `main` CI run `31736751871`; frontend completed in
+  4m44s and backend in 9m42s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-186 branched.
 
 ### ATLAS-IMP-185 Scope Rationale
 

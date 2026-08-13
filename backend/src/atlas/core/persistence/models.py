@@ -4308,3 +4308,98 @@ class WorkflowIdempotencyModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowOrchestrationLeaseModel(Base):
+    __tablename__ = "workflow_orchestration_leases"
+    __table_args__ = (
+        UniqueConstraint("plan_id", name="uq_workflow_orchestration_lease_plan"),
+        UniqueConstraint(
+            "canonical_digest",
+            name="uq_workflow_orchestration_lease_digest",
+        ),
+        CheckConstraint(
+            "state IN ('active', 'released')",
+            name="ck_workflow_orchestration_lease_state",
+        ),
+        CheckConstraint(
+            "fencing_token >= 1",
+            name="ck_workflow_orchestration_lease_fencing_token",
+        ),
+        CheckConstraint(
+            "version >= 1",
+            name="ck_workflow_orchestration_lease_version",
+        ),
+        CheckConstraint(
+            "last_heartbeat_at >= acquired_at",
+            name="ck_workflow_orchestration_lease_heartbeat_time",
+        ),
+        CheckConstraint(
+            "expires_at > last_heartbeat_at",
+            name="ck_workflow_orchestration_lease_expiry_time",
+        ),
+    )
+
+    lease_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    plan_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_run_plans.plan_id"),
+        nullable=False,
+        index=True,
+    )
+    plan_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    target_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    target_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    worker_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        index=True,
+    )
+    fencing_token: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowLeaseIdempotencyModel(Base):
+    __tablename__ = "workflow_lease_idempotency_records"
+    __table_args__ = (
+        UniqueConstraint(
+            "operation",
+            "idempotency_scope_id",
+            "idempotency_key",
+            name="uq_workflow_lease_operation_scope_idem",
+        ),
+        CheckConstraint(
+            "operation IN ('acquire', 'heartbeat', 'release')",
+            name="ck_workflow_lease_idempotency_operation",
+        ),
+    )
+
+    record_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    operation: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    idempotency_scope_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(128), nullable=False)
+    result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Historical idempotency records retain the exact lease snapshot after a
+    # newer fencing generation replaces the plan's current lease row.
+    lease_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    plan_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_run_plans.plan_id"),
+        nullable=False,
+        index=True,
+    )
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    worker_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

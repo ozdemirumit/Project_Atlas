@@ -1,3 +1,19 @@
+from atlas.modules.workflows.application.orchestration import (
+    WORKFLOW_WORKER_AUDIENCE,
+    WorkflowOrchestrationLeaseService,
+    WorkflowWorkerContext,
+)
+from atlas.modules.workflows.application.orchestration_ports import (
+    WorkflowLeaseAcquireIdempotencyRecord,
+    WorkflowLeaseAcquireRequest,
+    WorkflowLeaseAcquireResult,
+    WorkflowLeaseAcquireStatus,
+    WorkflowLeaseMutationRequest,
+    WorkflowLeaseMutationResult,
+    WorkflowLeaseMutationStatus,
+    WorkflowOrchestrationLeaseError,
+    WorkflowOrchestrationLeaseRepository,
+)
 from atlas.modules.workflows.application.ports import (
     WorkflowPlanCancellationIdempotencyRecord,
     WorkflowPlanCancellationRequest,
@@ -15,7 +31,18 @@ from atlas.modules.workflows.application.service import (
 )
 
 __all__ = [
+    "WORKFLOW_WORKER_AUDIENCE",
     "WorkflowAccessContext",
+    "WorkflowLeaseAcquireIdempotencyRecord",
+    "WorkflowLeaseAcquireRequest",
+    "WorkflowLeaseAcquireResult",
+    "WorkflowLeaseAcquireStatus",
+    "WorkflowLeaseMutationRequest",
+    "WorkflowLeaseMutationResult",
+    "WorkflowLeaseMutationStatus",
+    "WorkflowOrchestrationLeaseError",
+    "WorkflowOrchestrationLeaseRepository",
+    "WorkflowOrchestrationLeaseService",
     "WorkflowPlanCancellationIdempotencyRecord",
     "WorkflowPlanCancellationRequest",
     "WorkflowPlanCancellationResult",
@@ -26,4 +53,5 @@ __all__ = [
     "WorkflowPlanRepository",
     "WorkflowPlanningError",
     "WorkflowPlanningService",
+    "WorkflowWorkerContext",
 ]

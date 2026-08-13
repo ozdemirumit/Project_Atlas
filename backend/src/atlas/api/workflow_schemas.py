@@ -6,7 +6,11 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from atlas.api.schemas import ResponseMeta
-from atlas.modules.workflows.domain import WorkflowDefinition, WorkflowRunPlan
+from atlas.modules.workflows.domain import (
+    WorkflowDefinition,
+    WorkflowOrchestrationLease,
+    WorkflowRunPlan,
+)
 
 STABLE_ID = r"^[a-z][a-z0-9_.:-]{2,239}$"
 
@@ -29,6 +33,37 @@ class CancelWorkflowPlanInput(BaseModel):
     schema_version: Literal["atlas.workflow-run-plan-cancellation-input.v1"]
     reason: str = Field(min_length=1, max_length=500)
     acknowledge_no_external_undo: Literal[True]
+
+
+class AcquireWorkflowOrchestrationLeaseInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["atlas.workflow-orchestration-lease-acquire-input.v1"]
+    plan_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    target_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    target_type: Literal["storage"]
+    lease_duration_seconds: int = Field(ge=30, le=300)
+    acknowledged_coordination_only_no_execution_authority: Literal[True]
+
+
+class WorkflowOrchestrationLeaseMutationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    plan_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    target_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    target_type: Literal["storage"]
+    lease_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    fencing_token: int = Field(ge=1)
+    acknowledged_coordination_only_no_execution_authority: Literal[True]
+
+
+class HeartbeatWorkflowOrchestrationLeaseInput(WorkflowOrchestrationLeaseMutationInput):
+    schema_version: Literal["atlas.workflow-orchestration-lease-heartbeat-input.v1"]
+    lease_duration_seconds: int = Field(ge=30, le=300)
+
+
+class ReleaseWorkflowOrchestrationLeaseInput(WorkflowOrchestrationLeaseMutationInput):
+    schema_version: Literal["atlas.workflow-orchestration-lease-release-input.v1"]
 
 
 class WorkflowStepDefinitionData(BaseModel):
@@ -107,6 +142,60 @@ class WorkflowScopeData(BaseModel):
     organization_id: str
     environment_id: str
     site_id: str
+
+
+class WorkflowOrchestrationLeaseData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lease_id: str
+    plan_id: str
+    plan_digest: str
+    scope: WorkflowScopeData
+    target_id: str
+    target_type: Literal["storage"]
+    worker_subject_id: str
+    acquired_at: datetime
+    last_heartbeat_at: datetime
+    expires_at: datetime
+    fencing_token: int
+    state: Literal["active", "released"]
+    effective_state: Literal["active", "expired", "released"]
+    canonical_digest: str
+    grants_execution_authority: Literal[False]
+
+    @classmethod
+    def from_domain(
+        cls,
+        lease: WorkflowOrchestrationLease,
+        *,
+        requested_at: datetime,
+    ) -> WorkflowOrchestrationLeaseData:
+        return cls.model_validate(
+            lease.canonical_value()
+            | {
+                "effective_state": lease.effective_state(requested_at=requested_at).value,
+                "grants_execution_authority": False,
+            }
+        )
+
+
+class WorkflowOrchestrationLeaseStatusData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    plan_id: str
+    lease: WorkflowOrchestrationLeaseData | None
+    server_time: datetime
+    durable: bool
+
+
+class WorkflowOrchestrationLeaseResponse(BaseModel):
+    data: WorkflowOrchestrationLeaseData
+    meta: ResponseMeta
+
+
+class WorkflowOrchestrationLeaseStatusResponse(BaseModel):
+    data: WorkflowOrchestrationLeaseStatusData
+    meta: ResponseMeta
 
 
 class WorkflowPlanTransitionData(BaseModel):

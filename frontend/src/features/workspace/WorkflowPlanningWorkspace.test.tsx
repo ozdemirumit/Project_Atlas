@@ -10,6 +10,7 @@ import {
   listWorkflowPlans,
   WORKFLOW_PLAN_SAFETY_NOTICE,
   type WorkflowDefinition,
+  type WorkflowOrchestrationLease,
   type WorkflowRunPlan,
 } from "../../api/workflows";
 import WorkflowPlanningWorkspace from "./WorkflowPlanningWorkspace";
@@ -109,6 +110,42 @@ const cancelledPlan: WorkflowRunPlan = {
   ],
 };
 
+const activeLease: WorkflowOrchestrationLease = {
+  lease_id: "workflow-lease.1234567890abcdef",
+  plan_id: plan.plan_id,
+  plan_digest: plan.canonical_digest,
+  scope: plan.scope,
+  target_id: plan.target_id,
+  target_type: "storage",
+  worker_subject_id: "workload.worker",
+  acquired_at: "2026-08-13T10:01:00Z",
+  last_heartbeat_at: "2026-08-13T10:02:00Z",
+  expires_at: "2026-08-13T10:07:00Z",
+  fencing_token: 7,
+  state: "active",
+  effective_state: "active",
+  canonical_digest: "8".repeat(64),
+  grants_execution_authority: false,
+};
+
+function leaseResponse(lease: WorkflowOrchestrationLease | null, status = 200): Response {
+  return new Response(
+    JSON.stringify({
+      data: {
+        plan_id: plan.plan_id,
+        server_time: "2026-08-13T10:03:00Z",
+        durable: false,
+        lease,
+      },
+      meta: {
+        correlation_id: "correlation.workflow.lease",
+        generated_at: "2026-08-13T10:03:00Z",
+      },
+    }),
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function renderWorkspace() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -138,11 +175,13 @@ describe("WorkflowPlanningWorkspace", () => {
     vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [], durable: false, truncated: false });
     vi.mocked(createWorkflowPlan).mockResolvedValue(plan);
     vi.mocked(cancelWorkflowPlan).mockResolvedValue(cancelledPlan);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(leaseResponse(null)));
   });
 
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("creates and presents a planned-only workflow without requesting another login", async () => {
@@ -204,5 +243,102 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(screen.getByText(/The assessment is no longer required/)).toBeVisible();
     expect(screen.queryByRole("heading", { name: "Cancel this plan" })).toBeNull();
     expect(screen.queryByText(/authorized browser session|MFA/i)).toBeNull();
+  });
+
+  it.each([
+    ["active", activeLease],
+    [
+      "expired",
+      { ...activeLease, effective_state: "expired" } satisfies WorkflowOrchestrationLease,
+    ],
+    [
+      "released",
+      {
+        ...activeLease,
+        state: "released",
+        effective_state: "released",
+      } satisfies WorkflowOrchestrationLease,
+    ],
+  ] as const)("presents %s lease evidence without human mutation controls", async (state, lease) => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    vi.mocked(fetch).mockResolvedValue(leaseResponse(lease));
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    expect(await screen.findByText(state)).toBeVisible();
+    expect(screen.getByText("7")).toBeVisible();
+    expect(screen.getByText("workload.worker")).toBeVisible();
+    expect(screen.getByText(/coordinates ownership only/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /acquire|heartbeat|release/i })).toBeNull();
+    expect(screen.queryByText(/authorized browser session|MFA/i)).toBeNull();
+    expect(screen.getAllByText(/not_started/).length).toBeGreaterThan(0);
+  });
+
+  it("presents an empty lease result without inferring ownership", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    expect(
+      await screen.findByText("No orchestration lease is recorded for this plan."),
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: /acquire|heartbeat|release/i })).toBeNull();
+  });
+
+  it("fails closed when lease evidence is not bound to the selected plan digest", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    vi.mocked(fetch).mockResolvedValue(
+      leaseResponse({ ...activeLease, plan_digest: "0".repeat(64) }),
+    );
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    expect(await screen.findByText("Lease status is unavailable")).toBeVisible();
+    expect(screen.getByText(/No lease state is inferred/i)).toBeVisible();
+    expect(screen.queryByText("workload.worker")).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [403, "Lease status permission is missing", "current role cannot inspect"],
+    [503, "Lease status is unavailable", "No lease state is inferred"],
+  ])("handles lease read status %s without inventing another authentication step", async (
+    status,
+    title,
+    detail,
+  ) => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    vi.mocked(fetch).mockResolvedValue(new Response(null, { status }));
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    expect(await screen.findByText(title)).toBeVisible();
+    expect(screen.getByText(new RegExp(detail, "i"))).toBeVisible();
+    expect(screen.queryByText(/authorized browser session|MFA/i)).toBeNull();
+    if (status === 503) {
+      expect(screen.getByRole("button", { name: "Retry" })).toBeVisible();
+    } else {
+      expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    }
   });
 });

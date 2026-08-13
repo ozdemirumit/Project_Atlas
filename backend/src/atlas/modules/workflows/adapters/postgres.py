@@ -7,7 +7,7 @@ from enum import Enum
 from hashlib import sha256
 from typing import Any, cast
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import (
@@ -19,10 +19,20 @@ from sqlalchemy.ext.asyncio import (
 
 from atlas.core.persistence.models import (
     WorkflowIdempotencyModel,
+    WorkflowLeaseIdempotencyModel,
+    WorkflowOrchestrationLeaseModel,
     WorkflowPlanTransitionModel,
     WorkflowRunPlanModel,
 )
 from atlas.modules.workflows.application import (
+    WorkflowLeaseAcquireIdempotencyRecord,
+    WorkflowLeaseAcquireRequest,
+    WorkflowLeaseAcquireResult,
+    WorkflowLeaseAcquireStatus,
+    WorkflowLeaseMutationRequest,
+    WorkflowLeaseMutationResult,
+    WorkflowLeaseMutationStatus,
+    WorkflowOrchestrationLeaseError,
     WorkflowPlanCancellationIdempotencyRecord,
     WorkflowPlanCancellationRequest,
     WorkflowPlanCancellationResult,
@@ -34,6 +44,9 @@ from atlas.modules.workflows.application import (
 )
 from atlas.modules.workflows.domain import (
     WorkflowCapabilityClass,
+    WorkflowOrchestrationLease,
+    WorkflowOrchestrationLeaseEffectiveState,
+    WorkflowOrchestrationLeaseState,
     WorkflowPlanAuthority,
     WorkflowPlanState,
     WorkflowPlanStep,
@@ -276,8 +289,459 @@ class PostgreSQLWorkflowPlanRepository:
 
         return await self._cancellation_result_after_integrity_conflict(request=request)
 
+    async def get_lease_by_plan_id(self, *, plan_id: str) -> WorkflowOrchestrationLease | None:
+        async with self._sessions() as session:
+            row = cast(
+                WorkflowOrchestrationLeaseModel | None,
+                await session.scalar(
+                    select(WorkflowOrchestrationLeaseModel).where(
+                        WorkflowOrchestrationLeaseModel.plan_id == plan_id
+                    )
+                ),
+            )
+            return None if row is None else self._lease_from_row(row)
+
+    async def get_lease_acquire_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        worker_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowLeaseAcquireIdempotencyRecord | None:
+        async with self._sessions() as session:
+            claim = await self._load_lease_claim(
+                session,
+                operation="acquire",
+                scope=scope,
+                worker_subject_id=worker_subject_id,
+                idempotency_key=idempotency_key,
+            )
+            return None if claim is None else self._lease_record_from_claim(claim)
+
+    async def acquire_lease(
+        self, request: WorkflowLeaseAcquireRequest
+    ) -> WorkflowLeaseAcquireResult:
+        candidate = request.candidate
+        async with self._sessions() as session:
+            replay = await self._lease_acquire_replay(session, request=request)
+            if replay is not None:
+                return replay
+            plan_row = cast(
+                WorkflowRunPlanModel | None,
+                await session.scalar(
+                    select(WorkflowRunPlanModel)
+                    .where(WorkflowRunPlanModel.plan_id == candidate.plan_id)
+                    .with_for_update()
+                ),
+            )
+            if not self._lease_plan_matches(plan_row, candidate, request.expected_plan_digest):
+                await session.rollback()
+                return WorkflowLeaseAcquireResult(WorkflowLeaseAcquireStatus.PLAN_CONFLICT, None)
+
+            row = cast(
+                WorkflowOrchestrationLeaseModel | None,
+                await session.scalar(
+                    select(WorkflowOrchestrationLeaseModel)
+                    .where(WorkflowOrchestrationLeaseModel.plan_id == candidate.plan_id)
+                    .with_for_update()
+                ),
+            )
+            current = None if row is None else self._lease_from_row(row)
+            if not self._valid_lease_takeover(current, candidate, request):
+                await session.rollback()
+                return WorkflowLeaseAcquireResult(WorkflowLeaseAcquireStatus.CONTENDED, current)
+
+            try:
+                if row is None:
+                    session.add(self._lease_model(candidate, version=1))
+                else:
+                    result = cast(
+                        CursorResult[Any],
+                        await session.execute(
+                            update(WorkflowOrchestrationLeaseModel)
+                            .where(
+                                WorkflowOrchestrationLeaseModel.plan_id == candidate.plan_id,
+                                WorkflowOrchestrationLeaseModel.version == row.version,
+                                WorkflowOrchestrationLeaseModel.canonical_digest
+                                == request.expected_current_lease_digest,
+                                WorkflowOrchestrationLeaseModel.fencing_token
+                                == request.expected_current_fencing_token,
+                                or_(
+                                    WorkflowOrchestrationLeaseModel.expires_at
+                                    <= request.requested_at,
+                                    WorkflowOrchestrationLeaseModel.state
+                                    == WorkflowOrchestrationLeaseState.RELEASED.value,
+                                ),
+                            )
+                            .values(**self._lease_values(candidate, version=row.version + 1))
+                        ),
+                    )
+                    if result.rowcount != 1:
+                        await session.rollback()
+                        latest = await self.get_lease_by_plan_id(plan_id=candidate.plan_id)
+                        return WorkflowLeaseAcquireResult(
+                            WorkflowLeaseAcquireStatus.CONTENDED, latest
+                        )
+                session.add(self._lease_claim_model(request))
+                await session.commit()
+                return WorkflowLeaseAcquireResult(WorkflowLeaseAcquireStatus.ACQUIRED, candidate)
+            except IntegrityError:
+                await session.rollback()
+        return await self._lease_acquire_after_integrity(request=request)
+
+    async def heartbeat_lease(
+        self, request: WorkflowLeaseMutationRequest
+    ) -> WorkflowLeaseMutationResult:
+        return await self._mutate_lease(request)
+
+    async def release_lease(
+        self, request: WorkflowLeaseMutationRequest
+    ) -> WorkflowLeaseMutationResult:
+        return await self._mutate_lease(request)
+
+    async def _mutate_lease(
+        self, request: WorkflowLeaseMutationRequest
+    ) -> WorkflowLeaseMutationResult:
+        candidate = request.updated_lease
+        async with self._sessions() as session:
+            plan_row = cast(
+                WorkflowRunPlanModel | None,
+                await session.scalar(
+                    select(WorkflowRunPlanModel)
+                    .where(WorkflowRunPlanModel.plan_id == candidate.plan_id)
+                    .with_for_update()
+                ),
+            )
+            if not self._lease_plan_matches(plan_row, candidate, request.expected_plan_digest):
+                await session.rollback()
+                return WorkflowLeaseMutationResult(WorkflowLeaseMutationStatus.PLAN_CONFLICT, None)
+            row = cast(
+                WorkflowOrchestrationLeaseModel | None,
+                await session.scalar(
+                    select(WorkflowOrchestrationLeaseModel)
+                    .where(WorkflowOrchestrationLeaseModel.plan_id == candidate.plan_id)
+                    .with_for_update()
+                ),
+            )
+            if row is None:
+                await session.rollback()
+                return WorkflowLeaseMutationResult(WorkflowLeaseMutationStatus.NOT_FOUND, None)
+            current = self._lease_from_row(row)
+            if not self._valid_lease_mutation(current, candidate, request):
+                await session.rollback()
+                return WorkflowLeaseMutationResult(
+                    WorkflowLeaseMutationStatus.LEASE_CONFLICT, current
+                )
+            result = cast(
+                CursorResult[Any],
+                await session.execute(
+                    update(WorkflowOrchestrationLeaseModel)
+                    .where(
+                        WorkflowOrchestrationLeaseModel.plan_id == candidate.plan_id,
+                        WorkflowOrchestrationLeaseModel.lease_id == request.expected_lease_id,
+                        WorkflowOrchestrationLeaseModel.canonical_digest
+                        == request.expected_lease_digest,
+                        WorkflowOrchestrationLeaseModel.fencing_token
+                        == request.expected_fencing_token,
+                        WorkflowOrchestrationLeaseModel.worker_subject_id
+                        == request.worker_subject_id,
+                        WorkflowOrchestrationLeaseModel.version == row.version,
+                        WorkflowOrchestrationLeaseModel.state
+                        == WorkflowOrchestrationLeaseState.ACTIVE.value,
+                        WorkflowOrchestrationLeaseModel.expires_at > request.requested_at,
+                    )
+                    .values(**self._lease_values(candidate, version=row.version + 1))
+                ),
+            )
+            if result.rowcount != 1:
+                await session.rollback()
+                latest = await self.get_lease_by_plan_id(plan_id=candidate.plan_id)
+                return WorkflowLeaseMutationResult(
+                    WorkflowLeaseMutationStatus.LEASE_CONFLICT, latest
+                )
+            await session.commit()
+            return WorkflowLeaseMutationResult(WorkflowLeaseMutationStatus.UPDATED, candidate)
+
     async def close(self) -> None:
         await self._engine.dispose()
+
+    async def _lease_acquire_after_integrity(
+        self, *, request: WorkflowLeaseAcquireRequest
+    ) -> WorkflowLeaseAcquireResult:
+        async with self._sessions() as session:
+            replay = await self._lease_acquire_replay(session, request=request)
+            if replay is not None:
+                return replay
+        latest = await self.get_lease_by_plan_id(plan_id=request.candidate.plan_id)
+        return WorkflowLeaseAcquireResult(WorkflowLeaseAcquireStatus.CONTENDED, latest)
+
+    async def _lease_acquire_replay(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowLeaseAcquireRequest,
+    ) -> WorkflowLeaseAcquireResult | None:
+        candidate = request.candidate
+        claim = await self._load_lease_claim(
+            session,
+            operation="acquire",
+            scope=candidate.scope,
+            worker_subject_id=candidate.worker_subject_id,
+            idempotency_key=request.idempotency_key,
+        )
+        if claim is None:
+            return None
+        record = self._lease_record_from_claim(claim)
+        status = (
+            WorkflowLeaseAcquireStatus.REPLAY
+            if claim.request_fingerprint == request.request_fingerprint
+            else WorkflowLeaseAcquireStatus.IDEMPOTENCY_CONFLICT
+        )
+        return WorkflowLeaseAcquireResult(status, record.lease)
+
+    @classmethod
+    async def _load_lease_claim(
+        cls,
+        session: AsyncSession,
+        *,
+        operation: str,
+        scope: WorkflowScope,
+        worker_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowLeaseIdempotencyModel | None:
+        return cast(
+            WorkflowLeaseIdempotencyModel | None,
+            await session.scalar(
+                select(WorkflowLeaseIdempotencyModel).where(
+                    WorkflowLeaseIdempotencyModel.operation == operation,
+                    WorkflowLeaseIdempotencyModel.idempotency_scope_id
+                    == cls._lease_idempotency_scope(scope, worker_subject_id),
+                    WorkflowLeaseIdempotencyModel.idempotency_key == idempotency_key,
+                    WorkflowLeaseIdempotencyModel.organization_id == scope.organization_id,
+                    WorkflowLeaseIdempotencyModel.environment_id == scope.environment_id,
+                    WorkflowLeaseIdempotencyModel.site_id == scope.site_id,
+                    WorkflowLeaseIdempotencyModel.worker_subject_id == worker_subject_id,
+                )
+            ),
+        )
+
+    @classmethod
+    def _lease_record_from_claim(
+        cls, claim: WorkflowLeaseIdempotencyModel
+    ) -> WorkflowLeaseAcquireIdempotencyRecord:
+        raw = claim.payload.get("result_lease")
+        if not isinstance(raw, dict):
+            cls._lease_contract_violation()
+        try:
+            lease = cls._lease_to_domain(cast(dict[str, Any], raw))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowOrchestrationLeaseError(
+                "workflow_lease_repository_contract_violation",
+                "The workflow lease repository contains an invalid idempotency result.",
+            ) from exc
+        expected_payload: dict[str, Any] = {
+            "idempotency_key": claim.idempotency_key,
+            "idempotency_scope_id": claim.idempotency_scope_id,
+            "operation": claim.operation,
+            "request_fingerprint": claim.request_fingerprint,
+            "result_digest": claim.result_digest,
+            "result_lease": cls._lease_payload(lease),
+        }
+        if (
+            claim.operation != "acquire"
+            or claim.lease_id != lease.lease_id
+            or claim.plan_id != lease.plan_id
+            or claim.result_digest != lease.canonical_digest
+            or claim.organization_id != lease.scope.organization_id
+            or claim.environment_id != lease.scope.environment_id
+            or claim.site_id != lease.scope.site_id
+            or claim.worker_subject_id != lease.worker_subject_id
+            or claim.idempotency_scope_id
+            != cls._lease_idempotency_scope(lease.scope, lease.worker_subject_id)
+            or claim.payload != expected_payload
+            or claim.canonical_digest != canonical_digest(expected_payload)
+        ):
+            cls._lease_contract_violation()
+        return WorkflowLeaseAcquireIdempotencyRecord(claim.request_fingerprint, lease)
+
+    @classmethod
+    def _lease_from_row(cls, row: WorkflowOrchestrationLeaseModel) -> WorkflowOrchestrationLease:
+        try:
+            lease = cls._lease_to_domain(row.payload)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowOrchestrationLeaseError(
+                "workflow_lease_repository_contract_violation",
+                "The workflow lease repository contains an invalid lease.",
+            ) from exc
+        if (
+            row.lease_id != lease.lease_id
+            or row.plan_id != lease.plan_id
+            or row.plan_digest != lease.plan_digest
+            or row.organization_id != lease.scope.organization_id
+            or row.environment_id != lease.scope.environment_id
+            or row.site_id != lease.scope.site_id
+            or row.target_type != lease.target_type
+            or row.target_id != lease.target_id
+            or row.worker_subject_id != lease.worker_subject_id
+            or row.acquired_at != lease.acquired_at
+            or row.last_heartbeat_at != lease.last_heartbeat_at
+            or row.expires_at != lease.expires_at
+            or row.fencing_token != lease.fencing_token
+            or row.state != lease.state.value
+            or row.version < 1
+            or row.canonical_digest != lease.canonical_digest
+        ):
+            cls._lease_contract_violation()
+        return lease
+
+    @staticmethod
+    def _lease_contract_violation() -> None:
+        raise WorkflowOrchestrationLeaseError(
+            "workflow_lease_repository_contract_violation",
+            "The workflow lease record does not match its canonical payload.",
+        )
+
+    @classmethod
+    def _lease_model(
+        cls, lease: WorkflowOrchestrationLease, *, version: int
+    ) -> WorkflowOrchestrationLeaseModel:
+        return WorkflowOrchestrationLeaseModel(**cls._lease_values(lease, version=version))
+
+    @classmethod
+    def _lease_values(cls, lease: WorkflowOrchestrationLease, *, version: int) -> dict[str, Any]:
+        return {
+            "lease_id": lease.lease_id,
+            "plan_id": lease.plan_id,
+            "plan_digest": lease.plan_digest,
+            "organization_id": lease.scope.organization_id,
+            "environment_id": lease.scope.environment_id,
+            "site_id": lease.scope.site_id,
+            "target_type": lease.target_type,
+            "target_id": lease.target_id,
+            "worker_subject_id": lease.worker_subject_id,
+            "acquired_at": lease.acquired_at,
+            "last_heartbeat_at": lease.last_heartbeat_at,
+            "expires_at": lease.expires_at,
+            "fencing_token": lease.fencing_token,
+            "state": lease.state.value,
+            "version": version,
+            "canonical_digest": lease.canonical_digest,
+            "payload": cls._lease_payload(lease),
+        }
+
+    @classmethod
+    def _lease_claim_model(
+        cls, request: WorkflowLeaseAcquireRequest
+    ) -> WorkflowLeaseIdempotencyModel:
+        lease = request.candidate
+        scope_id = cls._lease_idempotency_scope(lease.scope, lease.worker_subject_id)
+        payload: dict[str, Any] = {
+            "idempotency_key": request.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "operation": "acquire",
+            "request_fingerprint": request.request_fingerprint,
+            "result_digest": lease.canonical_digest,
+            "result_lease": cls._lease_payload(lease),
+        }
+        digest = canonical_digest(payload)
+        return WorkflowLeaseIdempotencyModel(
+            record_id=f"workflow_lease_idem_{sha256(digest.encode()).hexdigest()[:32]}",
+            operation="acquire",
+            idempotency_scope_id=scope_id,
+            idempotency_key=request.idempotency_key,
+            request_fingerprint=request.request_fingerprint,
+            result_digest=lease.canonical_digest,
+            lease_id=lease.lease_id,
+            plan_id=lease.plan_id,
+            organization_id=lease.scope.organization_id,
+            environment_id=lease.scope.environment_id,
+            site_id=lease.scope.site_id,
+            worker_subject_id=lease.worker_subject_id,
+            created_at=request.requested_at,
+            canonical_digest=digest,
+            payload=payload,
+        )
+
+    @staticmethod
+    def _lease_idempotency_scope(scope: WorkflowScope, worker_subject_id: str) -> str:
+        return canonical_digest(
+            {"scope": scope.canonical_value(), "worker_subject_id": worker_subject_id}
+        )
+
+    @staticmethod
+    def _lease_plan_matches(
+        row: WorkflowRunPlanModel | None,
+        candidate: WorkflowOrchestrationLease,
+        expected_plan_digest: str,
+    ) -> bool:
+        return bool(
+            row is not None
+            and row.state == WorkflowPlanState.PLANNED.value
+            and row.canonical_digest == expected_plan_digest == candidate.plan_digest
+            and row.organization_id == candidate.scope.organization_id
+            and row.environment_id == candidate.scope.environment_id
+            and row.site_id == candidate.scope.site_id
+            and row.target_type == candidate.target_type
+            and row.target_id == candidate.target_id
+        )
+
+    @staticmethod
+    def _valid_lease_takeover(
+        current: WorkflowOrchestrationLease | None,
+        candidate: WorkflowOrchestrationLease,
+        request: WorkflowLeaseAcquireRequest,
+    ) -> bool:
+        if current is None:
+            return (
+                request.expected_current_lease_digest is None
+                and request.expected_current_fencing_token is None
+                and candidate.fencing_token == 1
+            )
+        return (
+            current.canonical_digest == request.expected_current_lease_digest
+            and current.fencing_token == request.expected_current_fencing_token
+            and current.effective_state(requested_at=request.requested_at)
+            is not WorkflowOrchestrationLeaseEffectiveState.ACTIVE
+            and candidate.fencing_token == current.fencing_token + 1
+        )
+
+    @staticmethod
+    def _valid_lease_mutation(
+        current: WorkflowOrchestrationLease,
+        candidate: WorkflowOrchestrationLease,
+        request: WorkflowLeaseMutationRequest,
+    ) -> bool:
+        return (
+            current.lease_id == request.expected_lease_id
+            and current.canonical_digest == request.expected_lease_digest
+            and current.fencing_token == request.expected_fencing_token
+            and current.worker_subject_id == request.worker_subject_id
+            and current.effective_state(requested_at=request.requested_at)
+            is WorkflowOrchestrationLeaseEffectiveState.ACTIVE
+            and candidate.lease_id == current.lease_id
+            and candidate.plan_id == current.plan_id
+            and candidate.plan_digest == current.plan_digest
+            and candidate.scope == current.scope
+            and candidate.target_id == current.target_id
+            and candidate.target_type == current.target_type
+            and candidate.worker_subject_id == current.worker_subject_id
+            and candidate.acquired_at == current.acquired_at
+            and candidate.fencing_token == current.fencing_token
+        )
+
+    @classmethod
+    def _lease_payload(cls, lease: WorkflowOrchestrationLease) -> dict[str, Any]:
+        return cast(dict[str, Any], cls._normalize(lease.canonical_value()))
+
+    @staticmethod
+    def _lease_to_domain(raw: dict[str, Any]) -> WorkflowOrchestrationLease:
+        payload = dict(raw)
+        payload["scope"] = WorkflowScope(**cast(Any, payload["scope"]))
+        payload["acquired_at"] = datetime.fromisoformat(str(payload["acquired_at"]))
+        payload["last_heartbeat_at"] = datetime.fromisoformat(str(payload["last_heartbeat_at"]))
+        payload["expires_at"] = datetime.fromisoformat(str(payload["expires_at"]))
+        payload["state"] = WorkflowOrchestrationLeaseState(str(payload["state"]))
+        return WorkflowOrchestrationLease(**cast(Any, payload))
 
     async def _cancellation_result_after_integrity_conflict(
         self,

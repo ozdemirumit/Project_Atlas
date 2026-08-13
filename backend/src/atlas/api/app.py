@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from typing import cast
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -1528,7 +1529,12 @@ from atlas.modules.upgrade.application.service import UpgradeService
 from atlas.modules.workflows.adapters.memory import InMemoryWorkflowPlanRepository
 from atlas.modules.workflows.adapters.postgres import PostgreSQLWorkflowPlanRepository
 from atlas.modules.workflows.adapters.unavailable import UnavailableWorkflowPlanRepository
-from atlas.modules.workflows.application import WorkflowPlanningService
+from atlas.modules.workflows.application import (
+    WorkflowOrchestrationLeaseRepository,
+    WorkflowOrchestrationLeaseService,
+    WorkflowPlanningService,
+    WorkflowPlanRepository,
+)
 from atlas.modules.workflows.domain import code_owned_workflow_registry
 
 
@@ -1553,6 +1559,7 @@ def create_app(
     conversation_service: ConversationService | None = None,
     conversation_target_access_source: ConversationTargetAccessSource | None = None,
     workflow_planning_service: WorkflowPlanningService | None = None,
+    workflow_orchestration_lease_service: WorkflowOrchestrationLeaseService | None = None,
     security_export_service: SecurityExportService | None = None,
     session_service: SessionService | None = None,
     api_credential_service: ApiCredentialService | None = None,
@@ -5272,9 +5279,9 @@ def create_app(
         if resolved_settings.environment == "development"
         else EmptyConversationTargetAccessSource()
     )
-    resolved_workflow_planning_service = workflow_planning_service or WorkflowPlanningService(
-        registry=code_owned_workflow_registry(),
-        repository=(
+    workflow_repository: WorkflowPlanRepository
+    if workflow_planning_service is None:
+        workflow_repository = (
             PostgreSQLWorkflowPlanRepository.from_url(resolved_settings.database_url)
             if resolved_settings.database_url
             else (
@@ -5282,9 +5289,42 @@ def create_app(
                 if resolved_settings.environment == "production"
                 else InMemoryWorkflowPlanRepository()
             )
-        ),
-        audit_sink=resolved_audit_sink,
-    )
+        )
+        resolved_workflow_planning_service = WorkflowPlanningService(
+            registry=code_owned_workflow_registry(),
+            repository=workflow_repository,
+            audit_sink=resolved_audit_sink,
+        )
+    else:
+        resolved_workflow_planning_service = workflow_planning_service
+        workflow_repository = workflow_planning_service.repository
+    if workflow_orchestration_lease_service is None:
+        lease_repository_methods = (
+            "get_lease_by_plan_id",
+            "get_lease_acquire_request",
+            "acquire_lease",
+            "heartbeat_lease",
+            "release_lease",
+        )
+        if not all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in lease_repository_methods
+        ):
+            raise ValueError(
+                "workflow planning repository does not implement orchestration leases; "
+                "inject workflow_orchestration_lease_service explicitly"
+            )
+        workflow_lease_repository = cast(
+            WorkflowOrchestrationLeaseRepository,
+            workflow_repository,
+        )
+        resolved_workflow_orchestration_lease_service = WorkflowOrchestrationLeaseService(
+            plan_repository=workflow_repository,
+            lease_repository=workflow_lease_repository,
+            audit_sink=resolved_audit_sink,
+        )
+    else:
+        resolved_workflow_orchestration_lease_service = workflow_orchestration_lease_service
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -5504,6 +5544,12 @@ def create_app(
         app.state.conversation_service = resolved_conversation_service
         app.state.conversation_target_access_source = resolved_conversation_target_access_source
         app.state.workflow_planning_service = resolved_workflow_planning_service
+        app.state.workflow_orchestration_lease_service = (
+            resolved_workflow_orchestration_lease_service
+        )
+        app.state.workflow_orchestration_lease_repository = (
+            resolved_workflow_orchestration_lease_service.repository
+        )
         yield
         await resolved_workflow_planning_service.close()
         await resolved_conversation_service.close()
