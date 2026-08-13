@@ -4,14 +4,48 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-173 |
-| Title | Provider-neutral ITSM sandbox onboarding policy governance |
-| Status | In Progress; implementation and local validation complete, delivery pending |
-| Branch | `agent/itsm-sandbox-onboarding-policy-governance` |
+| Task ID | ATLAS-IMP-174 |
+| Title | Provider-neutral ITSM onboarding policy provenance and authenticity |
+| Status | In Progress; architecture and implementation pending |
+| Branch | `agent/itsm-onboarding-policy-authenticity` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-124, ADR-125, ADR-126, ADR-127, ADR-128, ADR-129 |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-124, ADR-125, ADR-126, ADR-127, ADR-128, ADR-129, ADR-130 (planned) |
 | Last Updated | 2026-08-13 |
-| Next Action | Publish the validated IMP-173 branch, pass exact-head CI, merge, and validate main |
+| Next Action | Record ADR-130 and require trusted policy provenance before onboarding evaluation |
+
+### ATLAS-IMP-174 Scope Rationale
+
+- IMP-173 proves canonical policy integrity and exact lifecycle/scope binding, but a digest alone
+  does not establish who issued the snapshot or whether the issuer and signing key are currently
+  trusted. An attacker able to replace both payload and digest could still supply a self-consistent
+  policy.
+- No production policy authority, key management service, trust registry or signing algorithm has
+  been selected. The safe next step is a provider-neutral detached provenance envelope verified
+  through an injected trust source that remains empty in production.
+- This slice authenticates policy evidence only. It does not author or distribute policy, manage
+  production keys, configure an adapter, contact a provider, dispatch or mutate a ticket, approve
+  a workflow or authorize infrastructure execution.
+
+### ATLAS-IMP-174 Acceptance Criteria
+
+- An immutable detached provenance envelope binds exact policy ID/version/digest, issuer, scope,
+  signing-key ID, algorithm, signature, signed-at time and envelope digest without embedding key
+  material, credentials or secrets in ordinary API responses.
+- A separately injected trust registry supplies exact issuer/key/algorithm bindings and lifecycle.
+  Missing or failed trust authority, unknown/revoked/future/expired key, issuer or scope mismatch,
+  unsupported algorithm, malformed envelope, digest drift or invalid signature fails closed before
+  policy lifecycle or readiness evaluation.
+- The readiness dossier binds minimized provenance identity and verification time. Callers cannot
+  submit policy, envelope, issuer, key, algorithm, signature, trust decision, requirement result,
+  endpoint, credential, secret or approval assertions.
+- Production uses empty policy-provenance and trust sources. Deterministic development fixtures use
+  an explicitly non-production signing identity and can verify local contract behavior without
+  making the synthetic adapter onboarding-ready.
+- The Health governance UI presents provenance ID, signer and verification time as immutable
+  evidence with no upload, sign, rotate, revoke, trust, approve, adapter, dispatch or execution
+  controls.
+- ADR, focused/full backend and frontend gates, one Alembic head, production build and responsive
+  live verification pass before delivery; every authority flag remains false.
 
 ### ATLAS-IMP-173 Scope Rationale
 
@@ -76,6 +110,15 @@
 - The Health governance workspace had no page-level horizontal overflow at 1,280 x 720 or
   390 x 844. It exposed no policy upload/edit/approval, adapter configuration, dispatch, ticket
   mutation or execution control.
+
+### ATLAS-IMP-173 Delivery Evidence
+
+- Source head `2bc6812e9d9b4f115473d5be289c501d3d5296f8` passed exact-head PR CI run
+  `31667996178`; backend completed in 7m46s and frontend in 4m50s.
+- PR [#185](https://github.com/ozdemirumit/Project_Atlas/pull/185) was squash-merged as
+  `f6b9ea8aeda98f097fa2cf0af14e8796816f8d13`.
+- The exact merged commit independently passed `main` CI run `31668433619`; backend completed in
+  7m48s and frontend in 3m45s.
 
 ### ATLAS-IMP-172 Scope Rationale
 
