@@ -8,7 +8,7 @@
 | Title | Durable workflow cancellation state and immutable transition history |
 | Status | Local implementation and validation complete; PR delivery in progress |
 | Branch | `agent/durable-workflow-cancellation-state` |
-| Pull Request | Not opened |
+| Pull Request | [#197](https://github.com/ozdemirumit/Project_Atlas/pull/197) |
 | Governing Documents | ATLAS-002 FR-014, ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ADR-134, ADR-135 |
 | Last Updated | 2026-08-13 |
 | Next Action | Deliver through exact-head PR CI, squash merge, main CI and local main synchronization |
