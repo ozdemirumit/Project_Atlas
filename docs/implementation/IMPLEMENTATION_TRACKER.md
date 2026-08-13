@@ -4,14 +4,46 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-172 |
-| Title | Provider-neutral ITSM sandbox adapter onboarding readiness |
-| Status | In Progress; implementation and validation complete |
-| Branch | `agent/itsm-sandbox-onboarding-readiness` |
+| Task ID | ATLAS-IMP-173 |
+| Title | Provider-neutral ITSM sandbox onboarding policy governance |
+| Status | In Progress; architecture and implementation pending |
+| Branch | `agent/itsm-sandbox-onboarding-policy-governance` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-124, ADR-125, ADR-126, ADR-127, ADR-128 |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-010, ATLAS-013, ATLAS-016, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-033, ATLAS-036, ATLAS-047, ATLAS-050, ATLAS-052, ATLAS-055, ATLAS-056, ATLAS-057, ADR-124, ADR-125, ADR-126, ADR-127, ADR-128, ADR-129 (planned) |
 | Last Updated | 2026-08-13 |
-| Next Action | Complete exact-head delivery through PR, CI, merge and independent main validation |
+| Next Action | Record ADR-129 and bind onboarding readiness to an injected governed policy snapshot |
+
+### ATLAS-IMP-173 Scope Rationale
+
+- IMP-172 derives an exact-profile onboarding dossier, but policy identity, ordered requirements,
+  freshness limits and adapter eligibility rules are application constants. Deployments cannot
+  independently govern, expire or prove which policy produced a dossier.
+- No production ITSM vendor, sandbox adapter or policy issuer has been selected. The safe next step
+  is an injected immutable policy source that remains empty in production until security and
+  deployment owners provide reviewed inputs.
+- This slice governs read-only readiness evaluation only. It does not provide a policy editor,
+  configure an adapter, contact a provider, activate dispatch, mutate a ticket, approve a workflow
+  or authorize infrastructure execution.
+
+### ATLAS-IMP-173 Acceptance Criteria
+
+- An immutable policy snapshot binds exact organization, environment and site scope, policy ID and
+  version, issuer, ordered supported requirement identifiers, approved adapter identities and
+  versions, maximum conformance/evidence ages, adapter eligibility rules, lifecycle times and a
+  canonical digest.
+- Exactly one current policy is required. Missing, future, expired, ambiguous, scope-mismatched,
+  integrity-invalid, unsupported-requirement or ineligible-adapter policy state fails closed with
+  stable reason codes and cannot fall back to an application constant.
+- The onboarding dossier binds policy ID, version, digest, issuer and expiry, and evaluates
+  conformance/evidence freshness against policy limits. The API accepts no policy, issuer, adapter,
+  endpoint, credential, secret, requirement result or approval assertion from callers.
+- Production receives an empty policy source. A deterministic development policy supports local
+  contract verification but cannot make the synthetic no-network adapter onboarding-ready.
+- The Health governance UI presents immutable policy identity and validity as read-only evidence,
+  with no policy upload/edit/approve, adapter configuration, dispatch, ticket mutation, workflow
+  approval or execution control.
+- ADR, focused/full backend and frontend gates, one Alembic head, production build and responsive
+  live verification pass before delivery; every authority flag remains false.
 
 ### ATLAS-IMP-172 Scope Rationale
 
@@ -71,6 +103,15 @@
   synthetic adapter and absent security/deployment approvals remained fail-closed after reload.
   Desktop 1,280 x 720 and mobile 390 x 844 had no page-level horizontal overflow, alert, console
   warning/error or dispatch, ticket-mutation, adapter-configuration or execution control.
+
+### ATLAS-IMP-172 Delivery Evidence
+
+- Source head `b7f88d3c81adf8e9b6c4494cee5ab165e6aa4590` passed exact-head PR CI run
+  `31665069639`; backend completed in 5m50s and frontend in 4m51s.
+- PR [#184](https://github.com/ozdemirumit/Project_Atlas/pull/184) was squash-merged as
+  `105a4397c19994cd97377be59e66f75155d056cf`.
+- The exact merged commit independently passed `main` CI run `31665389310`; backend completed in
+  8m09s and frontend in 4m57s.
 
 ### ATLAS-IMP-171 Scope Rationale
 
