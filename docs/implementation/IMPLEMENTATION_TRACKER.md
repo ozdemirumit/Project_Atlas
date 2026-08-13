@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-183 |
 | Title | Residual legacy assurance-gate cleanup |
-| Status | Validation complete; PR preparation in progress |
+| Status | PR validation in progress |
 | Branch | `agent/residual-assurance-cleanup` |
-| Pull Request | Not opened |
+| Pull Request | [#195](https://github.com/ozdemirumit/Project_Atlas/pull/195) |
 | Governing Documents | ATLAS-003, ATLAS-025, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-037, ADR-132, ADR-133 |
 | Last Updated | 2026-08-13 |
-| Next Action | Commit and push the verified cleanup, open a PR, and complete exact-head and merged-main CI |
+| Next Action | Complete exact-head PR CI, squash-merge PR #195, verify merged main CI, and synchronize local main |
 
 ### ATLAS-IMP-183 Scope Rationale
 
