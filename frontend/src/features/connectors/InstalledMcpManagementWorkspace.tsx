@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
+import { ApiRequestError } from "../../api/client";
 import {
   assessConnectorUpgradeSigningProviderConformance,
   createConnectorUpgradeApprovalRequest,
@@ -66,6 +67,10 @@ import {
 } from "../../api/packageInstallations";
 
 type LifecycleFilter = "active" | "retired" | "all";
+
+function hasStatus(error: unknown, status: number): boolean {
+  return error instanceof ApiRequestError && error.status === status;
+}
 
 function AddMcpDialog({
   packages,
@@ -805,12 +810,10 @@ function SigningProviderOnboardingPolicyProvenance({
 }
 
 export default function InstalledMcpManagementWorkspace({
-  enterpriseMfaAvailable = true,
   onOpenBuilder,
   onRequestEnterpriseLogin,
   subjectId,
 }: {
-  enterpriseMfaAvailable?: boolean;
   onOpenBuilder?: () => void;
   onRequestEnterpriseLogin?: () => void;
   subjectId: string;
@@ -882,6 +885,14 @@ export default function InstalledMcpManagementWorkspace({
   const activeCount = instances.filter(
     (item) => item.instance_state === "disabled_unconfigured",
   ).length;
+  const lifecycleQueryErrors = [
+    instanceQuery.error,
+    packageQuery.error,
+    policyQuery.error,
+  ].filter((error) => error !== null);
+  const lifecycleQueryFailed = lifecycleQueryErrors.length > 0;
+  const sessionAuthenticationFailed = lifecycleQueryErrors.some((error) => hasStatus(error, 401));
+  const lifecycleAuthorizationFailed = lifecycleQueryErrors.some((error) => hasStatus(error, 403));
   const openBuilder = () => {
     setAdding(false);
     if (onOpenBuilder) {
@@ -914,13 +925,13 @@ export default function InstalledMcpManagementWorkspace({
         <div className="installed-mcp-heading-actions">
           <span className="state-badge neutral"><ShieldCheck size={14} /> no runtime authority</span>
           <button className="icon-button" type="button" title="Refresh MCP inventory" aria-label="Refresh MCP inventory" onClick={refresh}><RefreshCw size={17} /></button>
-          <button className="primary-button" type="button" disabled={!enterpriseMfaAvailable || packageQuery.isLoading || policyQuery.isLoading} title={enterpriseMfaAvailable ? "Add MCP" : "Directory-backed MFA session required"} onClick={() => { createMutation.reset(); setAdding(true); }}><PackagePlus size={16} />Add MCP</button>
+          <button className="primary-button" type="button" disabled={packageQuery.isLoading || packageQuery.isError || policyQuery.isLoading || policyQuery.isError} title="Add MCP" onClick={() => { createMutation.reset(); setAdding(true); }}><PackagePlus size={16} />Add MCP</button>
         </div>
       </div>
       <div className="installed-mcp-readiness" aria-label="MCP lifecycle prerequisites">
-        <span data-ready={enterpriseMfaAvailable}>
-          {enterpriseMfaAvailable ? <ShieldCheck size={15} /> : <AlertTriangle size={15} />}
-          {enterpriseMfaAvailable ? "Enterprise MFA present" : "Enterprise MFA required"}
+        <span data-ready="true">
+          <ShieldCheck size={15} />
+          Backend authorization enforced
         </span>
         <span data-ready={!packageQuery.isLoading && !packageQuery.isError && packages.length > 0}>
           {packageQuery.isLoading ? <RefreshCw className="spin" size={15} /> : <PackagePlus size={15} />}
@@ -1140,22 +1151,31 @@ export default function InstalledMcpManagementWorkspace({
         </div>
         <label className="installed-mcp-search"><Search size={16} /><span className="sr-only">Search installed MCPs</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search MCPs" maxLength={200} /></label>
       </div>
-      {!enterpriseMfaAvailable && (
-        <div className="installed-mcp-status enterprise-login-required" role="status">
-          <LogIn size={18} />
+      {lifecycleQueryFailed && (
+        <div className="installed-mcp-status error-state" role="alert">
+          <AlertTriangle size={18} />
           <div>
-            <strong>Enterprise MFA required for MCP lifecycle changes</strong>
-            <span>Local development sessions remain read-only for MCP creation and retirement.</span>
+            <strong>{sessionAuthenticationFailed
+              ? "Your session has expired"
+              : lifecycleAuthorizationFailed
+                ? "Connector lifecycle permission is required"
+                : "Connector lifecycle data is unavailable"}</strong>
+            <span>{sessionAuthenticationFailed
+              ? "Sign in again to renew the authorized browser session."
+              : lifecycleAuthorizationFailed
+                ? "This signed-in account is missing a required role or scope."
+                : "The instance, package or policy inventory could not be loaded. Retry the request."}</span>
           </div>
-          {onRequestEnterpriseLogin && (
+          {sessionAuthenticationFailed && onRequestEnterpriseLogin ? (
             <button type="button" onClick={onRequestEnterpriseLogin}>
-              <LogIn size={15} /> Sign in to manage
+              <LogIn size={15} /> Sign in again
             </button>
-          )}
+          ) : !sessionAuthenticationFailed && !lifecycleAuthorizationFailed ? (
+            <button type="button" onClick={refresh}>
+              <RefreshCw size={15} /> Retry
+            </button>
+          ) : null}
         </div>
-      )}
-      {(instanceQuery.isError || packageQuery.isError || policyQuery.isError) && (
-        <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={18} /><div><strong>Enterprise connector inventory is unavailable</strong><span>Sign in with an authorized MFA browser session and refresh.</span></div></div>
       )}
       {instanceQuery.isLoading && (
         <div className="installed-mcp-status" role="status"><RefreshCw className="spin" size={18} /><span>Loading MCP lifecycle inventory...</span></div>
@@ -1181,7 +1201,7 @@ export default function InstalledMcpManagementWorkspace({
                     </span>
                     {new Date(instance.retired_at ?? instance.created_at).toLocaleString()}
                   </td>
-                  <td>{instance.instance_state === "disabled_unconfigured" && <div className="installed-mcp-row-actions"><button className="secondary-button installed-mcp-row-action" type="button" disabled={!enterpriseMfaAvailable} title={enterpriseMfaAvailable ? "Review governed update evidence" : "Directory-backed MFA session required"} aria-label={`Review update for ${instance.display_name}`} onClick={() => setReviewing(instance)}><ArrowUpCircle size={15} /><span>Review update</span></button><button className="secondary-button installed-mcp-row-action danger" type="button" disabled={!enterpriseMfaAvailable} title={enterpriseMfaAvailable ? "Remove from active management and preserve history" : "Directory-backed MFA session required"} aria-label={`Remove ${instance.display_name}`} onClick={() => { retireMutation.reset(); setRetiring(instance); }}><Archive size={15} /><span>Remove</span></button></div>}</td>
+                  <td>{instance.instance_state === "disabled_unconfigured" && <div className="installed-mcp-row-actions"><button className="secondary-button installed-mcp-row-action" type="button" title="Review governed update evidence" aria-label={`Review update for ${instance.display_name}`} onClick={() => setReviewing(instance)}><ArrowUpCircle size={15} /><span>Review update</span></button><button className="secondary-button installed-mcp-row-action danger" type="button" title="Remove from active management and preserve history" aria-label={`Remove ${instance.display_name}`} onClick={() => { retireMutation.reset(); setRetiring(instance); }}><Archive size={15} /><span>Remove</span></button></div>}</td>
                 </tr>
               ))}
             </tbody>

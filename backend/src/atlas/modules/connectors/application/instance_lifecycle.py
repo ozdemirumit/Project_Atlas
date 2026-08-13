@@ -25,9 +25,7 @@ from atlas.modules.connectors.domain.instance_creation import (
     ConnectorInstanceRecord,
 )
 from atlas.modules.identity.domain.models import (
-    AssuranceLevel,
     AuthenticatedSubject,
-    AuthenticationMethod,
     SubjectKind,
 )
 
@@ -229,13 +227,8 @@ class ConnectorInstanceLifecycleService:
 
     @staticmethod
     def _require_enterprise_human(actor: AuthenticatedSubject) -> None:
-        if (
-            actor.kind is not SubjectKind.HUMAN
-            or actor.authentication_method is AuthenticationMethod.DEVELOPMENT
-            or actor.assurance_level
-            not in {AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED}
-        ):
-            raise ConnectorInstanceCreationError("connector_instance_enterprise_human_mfa_required")
+        if actor.kind is not SubjectKind.HUMAN:
+            raise ConnectorInstanceCreationError("connector_instance_human_required")
 
     async def _audit(
         self,

@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ApiRequestError } from "../../api/client";
 import {
   createConnectorInstance,
   getConnectorInstanceCreationPolicies,
@@ -751,7 +752,6 @@ vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
 
 function renderWorkspace(
   subjectId = "subject.connector-operator",
-  enterpriseMfaAvailable = true,
   onRequestEnterpriseLogin?: () => void,
   onOpenBuilder?: () => void,
 ) {
@@ -761,7 +761,6 @@ function renderWorkspace(
   return render(
     <QueryClientProvider client={queryClient}>
       <InstalledMcpManagementWorkspace
-        enterpriseMfaAvailable={enterpriseMfaAvailable}
         onOpenBuilder={onOpenBuilder}
         onRequestEnterpriseLogin={onRequestEnterpriseLogin}
         subjectId={subjectId}
@@ -828,7 +827,7 @@ describe("InstalledMcpManagementWorkspace", () => {
 
     expect(await screen.findByRole("heading", { name: "Installed MCPs" })).toBeVisible();
     expect(await screen.findByText("Storage East")).toBeVisible();
-    expect(screen.getByText("Enterprise MFA present")).toBeVisible();
+    expect(screen.getByText("Backend authorization enforced")).toBeVisible();
     expect(screen.getByText("1 governed package")).toBeVisible();
     expect(screen.getByText("1 creation policy")).toBeVisible();
     expect(screen.getByRole("button", { name: "Add MCP" })).toBeVisible();
@@ -940,19 +939,65 @@ describe("InstalledMcpManagementWorkspace", () => {
       .toBeNull();
   });
 
-  it("routes development-mode operators to enterprise login without enabling mutations", async () => {
+  it("does not block a single-factor identity solely because of its assurance level", async () => {
     const onRequestEnterpriseLogin = vi.fn();
-    renderWorkspace("subject.local-operator", false, onRequestEnterpriseLogin);
+    renderWorkspace("subject.local-operator", onRequestEnterpriseLogin);
 
-    expect(await screen.findByText(/Enterprise MFA required for MCP lifecycle changes/i))
-      .toBeVisible();
-    expect(screen.getByText("Enterprise MFA required")).toBeVisible();
     expect(await screen.findByText("Storage East")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Add MCP" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Remove Storage East" })).toBeDisabled();
+    expect(screen.getByText("Backend authorization enforced")).toBeVisible();
+    expect(screen.queryByText(/MFA/i)).toBeNull();
+    expect(screen.getByRole("button", { name: "Add MCP" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Review update for Storage East" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Remove Storage East" })).toBeEnabled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Sign in to manage" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add MCP" }));
+    expect(screen.getByRole("dialog", { name: "Add MCP" })).toBeVisible();
+    expect(onRequestEnterpriseLogin).not.toHaveBeenCalled();
+  });
+
+  it("offers retry without re-login guidance for generic lifecycle query failures", async () => {
+    const onRequestEnterpriseLogin = vi.fn();
+    vi.mocked(getConnectorPackageInstallations)
+      .mockRejectedValue(new Error("Connector package inventory failed with 503"));
+    renderWorkspace("subject.connector-operator", onRequestEnterpriseLogin);
+
+    expect(await screen.findByText("Connector lifecycle data is unavailable")).toBeVisible();
+    expect(screen.getByText(/could not be loaded\. Retry the request/i)).toBeVisible();
+    expect(screen.queryByText(/Sign in again|authorized browser session/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Sign in again" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() =>
+      expect(getConnectorPackageInstallations).toHaveBeenCalledTimes(2));
+    expect(onRequestEnterpriseLogin).not.toHaveBeenCalled();
+  });
+
+  it("offers re-login only for a verified 401 lifecycle response", async () => {
+    const onRequestEnterpriseLogin = vi.fn();
+    vi.mocked(getConnectorInstances)
+      .mockRejectedValue(new ApiRequestError("Connector instance inventory failed", 401));
+    renderWorkspace("subject.connector-operator", onRequestEnterpriseLogin);
+
+    expect(await screen.findByText("Your session has expired")).toBeVisible();
+    expect(screen.getByText(/Sign in again to renew the authorized browser session/i))
+      .toBeVisible();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
     expect(onRequestEnterpriseLogin).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a verified 403 as missing authorization without suggesting re-login", async () => {
+    const onRequestEnterpriseLogin = vi.fn();
+    vi.mocked(getConnectorInstances)
+      .mockRejectedValue(new ApiRequestError("Connector instance inventory failed", 403));
+    renderWorkspace("subject.connector-operator", onRequestEnterpriseLogin);
+
+    expect(await screen.findByText("Connector lifecycle permission is required")).toBeVisible();
+    expect(screen.getByText(/missing a required role or scope/i)).toBeVisible();
+    expect(screen.queryByText(/Sign in again|authorized browser session/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Sign in again" })).toBeNull();
+    expect(onRequestEnterpriseLogin).not.toHaveBeenCalled();
   });
 
   it("shows evidence-based upgrade readiness without exposing an update action", async () => {
@@ -1169,7 +1214,7 @@ describe("InstalledMcpManagementWorkspace", () => {
     const onOpenBuilder = vi.fn();
     vi.mocked(getConnectorPackageInstallations).mockResolvedValue([]);
     vi.mocked(getConnectorInstances).mockResolvedValue([]);
-    renderWorkspace("subject.connector-operator", true, undefined, onOpenBuilder);
+    renderWorkspace("subject.connector-operator", undefined, onOpenBuilder);
 
     expect(await screen.findByText(/Complete package installation/i)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Open Builder workflow" }));

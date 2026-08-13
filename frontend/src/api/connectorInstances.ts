@@ -1,4 +1,4 @@
-import { apiFetch } from "./client";
+import { apiFetch, ApiRequestError } from "./client";
 import type { ConnectorPackageInstallationReceipt } from "./packageInstallations";
 
 export type ConnectorInstanceRecord = {
@@ -217,7 +217,9 @@ export async function getConnectorInstanceCreationPolicies(): Promise<
   const response = await apiFetch("/api/v1/connectors/instances/creation-policies", {
     headers: { Accept: "application/json" },
   });
-  if (!response.ok) throw new Error(`Connector instance policies failed with ${response.status}`);
+  if (!response.ok) {
+    throw new ApiRequestError("Connector instance policies failed", response.status);
+  }
   const payload: unknown = await response.json();
   if (!payload || typeof payload !== "object" || !("data" in payload)) {
     throw new Error("Connector instance policies were malformed");
@@ -238,7 +240,9 @@ export async function getConnectorInstances(input: {
   const response = await apiFetch(`/api/v1/connectors/instances?${parameters.toString()}`, {
     headers: { Accept: "application/json" },
   });
-  if (!response.ok) throw new Error(`Connector instance inventory failed with ${response.status}`);
+  if (!response.ok) {
+    throw new ApiRequestError("Connector instance inventory failed", response.status);
+  }
   const payload: unknown = await response.json();
   if (!payload || typeof payload !== "object" || !("data" in payload)) {
     throw new Error("Connector instance inventory was malformed");

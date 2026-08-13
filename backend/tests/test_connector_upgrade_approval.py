@@ -98,6 +98,7 @@ from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticationM
 async def approval_fixture(
     *,
     clock: Callable[[], datetime] | None = None,
+    required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
     audit_readiness_source: InMemoryConnectorUpgradeAuditReadinessSource | None = None,
     itsm_change_evidence_source: InMemoryConnectorUpgradeItsmChangeEvidenceSource | None = None,
     maintenance_window_evidence_source: (
@@ -150,6 +151,20 @@ async def approval_fixture(
         issued_at=now - timedelta(hours=1),
         expires_at=now + timedelta(days=1),
     )
+    if required_assurance_level is not approval_policy.required_assurance_level:
+        approval_policy = replace(
+            approval_policy,
+            required_assurance_level=required_assurance_level,
+            canonical_digest="0" * 64,
+        )
+        approval_policy_payload = asdict(approval_policy)
+        approval_policy_payload.pop("canonical_digest")
+        approval_policy = replace(
+            approval_policy,
+            canonical_digest=ConnectorUpgradeApprovalService._digest(
+                ConnectorUpgradeApprovalService._normalize(approval_policy_payload)
+            ),
+        )
     onboarding_policy = build_development_connector_upgrade_signing_provider_onboarding_policy(
         organization_id=instance.organization_id,
         environment_id=instance.environment_id,
@@ -1330,7 +1345,11 @@ def test_signing_key_trust_effective_state_precedence_is_deterministic() -> None
 async def test_upgrade_approval_request_binds_exact_plan_without_granting_authority() -> None:
     service, upgrade_service, _, _, _, _, sources, audit = await approval_fixture()
     instance, candidate_receipt = sources
-    actor = instance_operator()
+    actor = replace(
+        instance_operator(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
     plan = await upgrade_service.plan(
         actor=actor,
         record_id=instance.record_id,
@@ -1376,6 +1395,36 @@ async def test_upgrade_approval_request_binds_exact_plan_without_granting_author
     assert [item.result_code for item in audit.records].count(
         "connector_upgrade_approval_request_created"
     ) == 1
+
+
+@pytest.mark.asyncio
+async def test_upgrade_approval_optional_hardware_step_up_remains_policy_enforced() -> None:
+    service, upgrade_service, _, _, _, _, sources, _ = await approval_fixture(
+        required_assurance_level=AssuranceLevel.HARDWARE_BACKED
+    )
+    instance, candidate_receipt = sources
+    actor = replace(instance_operator(), assurance_level=AssuranceLevel.SINGLE_FACTOR)
+    plan = await upgrade_service.plan(
+        actor=actor,
+        record_id=instance.record_id,
+        candidate_receipt_id=candidate_receipt.receipt_id,
+        correlation_id="correlation.connector-upgrade-optional-step-up-plan",
+    )
+
+    with pytest.raises(
+        ConnectorUpgradeApprovalError,
+        match="connector_upgrade_approval_assurance_insufficient",
+    ):
+        await service.create(
+            actor=actor,
+            record_id=instance.record_id,
+            candidate_receipt_id=candidate_receipt.receipt_id,
+            source_plan_digest=plan.canonical_digest,
+            purpose="Submit this exact connector upgrade plan for independent human review.",
+            acknowledged_request_is_not_approval_and_grants_no_execution_authority=True,
+            idempotency_key="connector-upgrade-optional-step-up",
+            correlation_id="correlation.connector-upgrade-optional-step-up",
+        )
 
 
 @pytest.mark.asyncio

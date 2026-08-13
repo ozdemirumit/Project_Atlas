@@ -29,6 +29,7 @@ from atlas.modules.connectors.domain.package_registration import (
     ConnectorPackageRegistrationRecord,
     ConnectorRegisteredCapability,
 )
+from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticationMethod
 
 
 class UpgradePackageSource:
@@ -109,7 +110,12 @@ def upgrade_package(
 async def test_upgrade_readiness_compares_exact_manifests_without_authorizing_execution() -> None:
     audit = CollectingAuditSink()
     instance_service, package_service, _, _, installation, policy = await instance_fixture()
-    instance = await create_instance(instance_service, installation, policy)
+    actor = replace(
+        instance_operator(),
+        authentication_method=AuthenticationMethod.DEVELOPMENT,
+        assurance_level=AssuranceLevel.DEVELOPMENT,
+    )
+    instance = await create_instance(instance_service, installation, policy, actor=actor)
     (
         current_receipt,
         _,
@@ -134,7 +140,7 @@ async def test_upgrade_readiness_compares_exact_manifests_without_authorizing_ex
     )
 
     readiness = await service.evaluate(
-        actor=instance_operator(),
+        actor=actor,
         record_id=instance.record_id,
         correlation_id="correlation.connector-upgrade-readiness",
     )

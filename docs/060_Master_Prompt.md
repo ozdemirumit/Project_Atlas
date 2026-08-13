@@ -11,7 +11,7 @@
 | Reviewers | Product Owner, Architecture Owner, Security Architecture, Backend Engineering, Frontend Engineering, Platform Engineering, Quality Engineering, Documentation Owner, Audit and Compliance |
 | Approver | Umit Ozdemir (acting Architecture Owner) |
 | Approval Date | 2026-08-03 |
-| Last Updated | 2026-08-03 |
+| Last Updated | 2026-08-13 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-004](004_Glossary.md), [ATLAS-020](020_MCP_Framework.md), [ATLAS-032](032_Audit.md), [ATLAS-040](040_AI_Agents.md), [ATLAS-047](047_Guardrails.md), [ATLAS-050](050_API.md), [ATLAS-055](055_Coding_Standards.md), [ATLAS-056](056_Testing.md), [ATLAS-058](058_CI_CD.md), [Documentation Governance](governance/DOCUMENT_GOVERNANCE.md) |
 | Supersedes | ATLAS-060 version 0.1.0 |
 
@@ -76,6 +76,11 @@ Every agent must preserve:
 - Generated code, connectors, workflows, policies, and runbooks are untrusted until reviewed and tested.
 - Connected and restricted-network deployment paths remain reproducible.
 - Current repository phase and document status constrain implementation.
+- Active Directory and LDAP remain authentication-only; do not create an AD MCP, arbitrary LDAP
+  access or directory-management surface.
+- Atlas does not implement or globally require MFA. Treat provider assurance as an optional,
+  named policy input and preserve RBAC, scope, acknowledgement, approval, separation of duties and
+  audit independently.
 
 ## 6. Task Modes
 
@@ -115,6 +120,8 @@ PRODUCT INVARIANTS
 - Do not give an LLM direct infrastructure credentials, unrestricted shell, arbitrary network access, approval authority, or C3-C5 connector execution.
 - All live infrastructure access must use registered, typed, scoped, policy-controlled, and audited MCP or platform capabilities.
 - Authentication, RBAC, policy, approval, audit, workflow state, and final execution status must be enforced by deterministic backend services.
+- Active Directory and LDAP are authentication-only. Never add an AD MCP, directory write path, or directory-management workflow.
+- Do not implement Atlas-owned MFA or hard-code MFA/hardware assurance as a global product gate. Optional step-up belongs in a named deployment policy and never substitutes for authorization or approval.
 - Preserve deny-by-default, least privilege, organization and classification isolation, evidence lineage, explainability, and safe failure.
 - A timeout, partial result, stale state, or unknown outcome is not success.
 - Never place secrets, tokens, private keys, customer names, real addresses, or sensitive infrastructure details in source, prompts, logs, tests, examples, reports, or commits.
