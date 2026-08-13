@@ -219,6 +219,7 @@ from atlas.modules.authorization.application.bootstrap import (
     RECOMMENDATION_TRACK_REVIEW_DECISION_READ,
     RELEASE_PREFLIGHT_READ,
     REPORT_CREATE,
+    REPORT_READ,
     SECURITY_EXPORT_OVERVIEW_READ,
     SECURITY_EXPORT_TEST_CREATE,
     SESSION_ADMIN_REVOKE,
@@ -1841,6 +1842,37 @@ async def authorize_report_create(
             code="authorization_denied",
             title="Request denied",
             detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_report_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=REPORT_READ,
+            resource_type="resource.report",
+            scope=report_scope(
+                subject.organization_id,
+                settings.environment,
+                CapabilityClass.C1_READ_ONLY,
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized to read this report.",
         )
     request.state.authorization_decision = decision
     return decision

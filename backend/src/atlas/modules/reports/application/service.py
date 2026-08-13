@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
@@ -10,7 +11,12 @@ from atlas import __version__
 from atlas.core.audit import AuditRecord, AuditSink
 from atlas.core.classification import DataClassification
 from atlas.modules.recommendations.domain.models import RecommendationArtifact
-from atlas.modules.reports.application.ports import RecommendationProvider, ReportAssembler
+from atlas.modules.reports.adapters.memory import InMemoryTechnicalReportRepository
+from atlas.modules.reports.application.ports import (
+    RecommendationProvider,
+    ReportAssembler,
+    TechnicalReportRepository,
+)
 from atlas.modules.reports.domain.models import ReportRequest, TechnicalReport
 
 REPORT_RESOURCE_ID = "resource.report.storage.synthetic"
@@ -46,14 +52,17 @@ class ReportService:
         source_provider: RecommendationProvider,
         assembler: ReportAssembler,
         audit_sink: AuditSink,
+        repository: TechnicalReportRepository | None = None,
     ) -> None:
         self._source_provider = source_provider
         self._assembler = assembler
         self._audit_sink = audit_sink
-        self._idempotent: dict[tuple[object, ...], TechnicalReport] = {}
-        self._latest: dict[tuple[object, ...], TechnicalReport] = {}
-        self._reports: dict[str, TechnicalReport] = {}
+        self._repository = repository or InMemoryTechnicalReportRepository()
         self._lock = asyncio.Lock()
+
+    @property
+    def repository(self) -> TechnicalReportRepository:
+        return self._repository
 
     async def create(
         self,
@@ -62,20 +71,28 @@ class ReportService:
         context: ReportAccessContext,
     ) -> TechnicalReport:
         self._validate_scope(request, context)
-        exact_key = (
+        request_fingerprint = self._fingerprint(
+            context.organization_id,
+            context.environment_id,
+            context.site_id,
+            context.subject_id,
             request.source_recommendation_id,
             request.source_recommendation_version,
             request.target_id,
-            request.report_type,
-            request.audience,
-            request.classification,
+            request.report_type.value,
+            request.audience.value,
+            request.classification.value,
             request.include_itsm_handoff,
             request.incident_reference,
         )
-        lineage_key = (
+        lineage_fingerprint = self._fingerprint(
+            context.organization_id,
+            context.environment_id,
+            context.site_id,
+            context.subject_id,
             request.target_id,
-            request.report_type,
-            request.audience,
+            request.report_type.value,
+            request.audience.value,
             request.incident_reference,
         )
         async with self._lock:
@@ -85,6 +102,19 @@ class ReportService:
                 outcome="accepted",
                 result_code="report_request_accepted",
             )
+            existing = await self._repository.get_by_request_fingerprint(
+                request_fingerprint=request_fingerprint
+            )
+            if existing is not None:
+                self._validate_persisted_request(existing, request, context)
+                await self._record_audit(
+                    context,
+                    event_type="atlas.report.completed",
+                    outcome="succeeded",
+                    result_code="report_artifact_reused",
+                )
+                return existing
+
             try:
                 source = await self._source_provider.get_recommendation(
                     request.source_recommendation_id,
@@ -97,18 +127,8 @@ class ReportService:
                     "The requested report source is unavailable.",
                 ) from exc
             self._validate_source(source, request, context)
-            existing = self._idempotent.get(exact_key)
-            if existing is not None:
-                self._validate_report(existing, source, request, context)
-                await self._record_audit(
-                    context,
-                    event_type="atlas.report.completed",
-                    outcome="succeeded",
-                    result_code="report_artifact_reused",
-                )
-                return existing
 
-            prior = self._latest.get(lineage_key)
+            prior = await self._repository.get_latest(lineage_fingerprint=lineage_fingerprint)
             try:
                 report = self._assembler.build(
                     request,
@@ -133,14 +153,67 @@ class ReportService:
                 outcome="succeeded",
                 result_code="report_artifact_returned",
             )
-            self._idempotent[exact_key] = report
-            self._latest[lineage_key] = report
-            self._reports[report.report_id] = report
+            added = await self._repository.add(
+                report,
+                request_fingerprint=request_fingerprint,
+                lineage_fingerprint=lineage_fingerprint,
+            )
+            if not added:
+                raced = await self._repository.get_by_request_fingerprint(
+                    request_fingerprint=request_fingerprint
+                )
+                if raced is not None:
+                    self._validate_persisted_request(raced, request, context)
+                    return raced
+                raise ReportOperationsError(
+                    "report_persistence_conflict",
+                    "The governed report could not be persisted atomically.",
+                )
             return report
 
     async def get(self, *, report_id: str) -> TechnicalReport | None:
-        async with self._lock:
-            return self._reports.get(report_id)
+        report = await self._repository.get(report_id=report_id)
+        if report is not None:
+            self._validate_integrity(report)
+        return report
+
+    async def read(self, *, report_id: str, context: ReportAccessContext) -> TechnicalReport:
+        if context.resource_id != REPORT_RESOURCE_ID:
+            raise ReportOperationsError(
+                "report_scope_mismatch",
+                "The report target is outside the authorized scope.",
+            )
+        report = await self.get(report_id=report_id)
+        if report is None:
+            raise ReportOperationsError("report_not_found", "The requested report was not found.")
+        if (
+            report.organization_id != context.organization_id
+            or report.environment_id != context.environment_id
+            or report.site_id != context.site_id
+            or report.requested_by != context.subject_id
+        ):
+            raise ReportOperationsError(
+                "report_scope_mismatch",
+                "The report did not match the authorized scope.",
+            )
+        if report.expires_at <= context.requested_at:
+            raise ReportOperationsError("report_expired", "The requested report has expired.")
+        if not context.classification_ceiling.permits(report.classification):
+            raise ReportOperationsError(
+                "report_classification_denied",
+                "The report classification exceeds the authorized boundary.",
+            )
+        await self._record_audit(
+            context,
+            event_type="atlas.report.read",
+            outcome="succeeded",
+            result_code="report_artifact_recovered",
+            permission_id="report.read",
+        )
+        return report
+
+    async def close(self) -> None:
+        await self._repository.close()
 
     @staticmethod
     def _validate_scope(request: ReportRequest, context: ReportAccessContext) -> None:
@@ -254,6 +327,68 @@ class ReportService:
                 "The report included an unrequested ITSM handoff draft.",
             )
 
+    @classmethod
+    def _validate_persisted_request(
+        cls,
+        report: TechnicalReport,
+        request: ReportRequest,
+        context: ReportAccessContext,
+    ) -> None:
+        if (
+            report.source.recommendation_id != request.source_recommendation_id
+            or report.source.recommendation_version != request.source_recommendation_version
+            or report.target_id != request.target_id
+            or report.organization_id != context.organization_id
+            or report.environment_id != context.environment_id
+            or report.site_id != context.site_id
+            or report.requested_by != context.subject_id
+            or report.report_type is not request.report_type
+            or report.audience is not request.audience
+            or report.classification is not request.classification
+            or (report.itsm_handoff is not None) is not request.include_itsm_handoff
+            or (
+                report.itsm_handoff is not None
+                and report.itsm_handoff.incident_reference != request.incident_reference
+            )
+            or report.expires_at <= context.requested_at
+        ):
+            raise ReportOperationsError(
+                "report_scope_mismatch",
+                "The persisted report did not match the authorized request and scope.",
+            )
+        cls._validate_integrity(report)
+
+    @staticmethod
+    def _validate_integrity(report: TechnicalReport) -> None:
+        digest = sha256(report.rendered_markdown.encode("utf-8")).hexdigest()
+        handoff = report.itsm_handoff
+        if digest != report.content_digest:
+            raise ReportOperationsError(
+                "report_digest_mismatch",
+                "The report content failed integrity validation.",
+            )
+        if report.execution_authorized or report.external_mutation_authorized:
+            raise ReportOperationsError(
+                "report_authority_denied",
+                "A report cannot authorize execution or external mutation.",
+            )
+        if handoff is not None and (
+            handoff.report_id != report.report_id
+            or handoff.report_version != report.version
+            or handoff.dispatch_authorized
+            or handoff.external_record_mutated
+            or not handoff.human_review_required
+        ):
+            raise ReportOperationsError(
+                "report_handoff_denied",
+                "The ITSM handoff draft failed the governed boundary.",
+            )
+
+    @staticmethod
+    def _fingerprint(*values: object) -> str:
+        canonical = json.dumps(values, separators=(",", ":"), ensure_ascii=True)
+        return sha256(canonical.encode("utf-8")).hexdigest()
+
     async def _record_audit(
         self,
         context: ReportAccessContext,
@@ -261,6 +396,7 @@ class ReportService:
         event_type: str,
         outcome: str,
         result_code: str,
+        permission_id: str = "report.create",
     ) -> None:
         await self._audit_sink.record(
             AuditRecord(
@@ -275,7 +411,7 @@ class ReportService:
                 actor_type=context.actor_type,
                 authentication_method=context.authentication_method,
                 assurance_level=context.assurance_level,
-                permission_id="report.create",
+                permission_id=permission_id,
                 resource_type="resource.report",
                 scope_reference="/".join(
                     (

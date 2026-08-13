@@ -1472,6 +1472,8 @@ from atlas.modules.reports.adapters.handoff_review_memory import (
 from atlas.modules.reports.adapters.handoff_review_postgres import (
     PostgreSQLItsmHandoffReviewRepository,
 )
+from atlas.modules.reports.adapters.memory import InMemoryTechnicalReportRepository
+from atlas.modules.reports.adapters.postgres import PostgreSQLTechnicalReportRepository
 from atlas.modules.reports.adapters.synthetic import SyntheticTechnicalReportAssembler
 from atlas.modules.reports.application.handoff_review_service import ItsmHandoffReviewService
 from atlas.modules.reports.application.service import ReportService
@@ -5054,6 +5056,11 @@ def create_app(
         source_provider=resolved_recommendation_service,
         assembler=SyntheticTechnicalReportAssembler(),
         audit_sink=resolved_audit_sink,
+        repository=(
+            PostgreSQLTechnicalReportRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryTechnicalReportRepository()
+        ),
     )
     resolved_itsm_handoff_review_service = itsm_handoff_review_service or ItsmHandoffReviewService(
         report_source=resolved_report_service,
@@ -5418,6 +5425,7 @@ def create_app(
         await resolved_support_bundle_service.close()
         await resolved_inventory_device_service.close()
         await resolved_itsm_handoff_review_service.close()
+        await resolved_report_service.close()
         await resolved_bootstrap_state_service.close()
         await database_probe.close()
 

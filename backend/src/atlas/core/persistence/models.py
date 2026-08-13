@@ -2044,6 +2044,32 @@ class ItsmHandoffHumanReviewModel(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class TechnicalReportModel(Base):
+    __tablename__ = "technical_reports"
+    __table_args__ = (
+        UniqueConstraint("request_fingerprint", name="uq_technical_reports_request"),
+        UniqueConstraint(
+            "lineage_fingerprint",
+            "version",
+            name="uq_technical_reports_lineage_version",
+        ),
+    )
+
+    report_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    lineage_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    prior_version_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    requested_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class ConnectorRuntimeActivationModel(Base):
     __tablename__ = "connector_runtime_activations"
     __table_args__ = (

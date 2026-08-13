@@ -8,7 +8,13 @@ from typing import cast
 import pytest
 from fastapi.testclient import TestClient
 from test_browser_sessions import BasicTestIdentityProvider, login, settings
-from test_report_api import TARGET, CollectingAuditSink, create_recommendation, report_payload
+from test_report_api import (
+    TARGET,
+    CollectingAuditSink,
+    CountingRecommendationProvider,
+    create_recommendation,
+    report_payload,
+)
 
 from atlas.api.app import create_app
 from atlas.core.persistence.models import ItsmHandoffHumanReviewModel
@@ -34,10 +40,13 @@ from atlas.modules.identity.domain.models import (
 from atlas.modules.reports.adapters.handoff_review_postgres import (
     PostgreSQLItsmHandoffReviewRepository,
 )
+from atlas.modules.reports.adapters.memory import InMemoryTechnicalReportRepository
+from atlas.modules.reports.adapters.synthetic import SyntheticTechnicalReportAssembler
 from atlas.modules.reports.application.handoff_review_service import (
     ItsmHandoffReviewError,
     ItsmHandoffReviewService,
 )
+from atlas.modules.reports.application.service import ReportService
 from atlas.modules.reports.domain.handoff_review import ItsmHandoffReviewOutcome
 
 NOW = datetime(2026, 8, 13, 1, 0, tzinfo=UTC)
@@ -297,3 +306,107 @@ def test_postgres_mapping_preserves_review_binding_and_authority_boundary() -> N
     assert restored.outcome is ItsmHandoffReviewOutcome.NEEDS_EVIDENCE
     assert restored.review_complete is False
     assert restored.execution_authorized is False
+
+
+def test_durable_review_revalidates_against_exact_report_after_restart() -> None:
+    sink = CollectingAuditSink()
+    app = create_app(settings(), audit_sink=sink)
+    with TestClient(app) as client:
+        report_data = generated_report(client)
+        handoff = report_data["itsm_handoff"]
+        assert isinstance(handoff, dict)
+        review_service: ItsmHandoffReviewService = app.state.itsm_handoff_review_service
+        review = asyncio.run(
+            review_service.decide(
+                actor=reviewer(),
+                report_id=str(report_data["report_id"]),
+                report_version=cast(int, report_data["version"]),
+                report_digest=str(report_data["content_digest"]),
+                handoff_draft_id=str(handoff["draft_id"]),
+                outcome=ItsmHandoffReviewOutcome.ACCEPT,
+                rationale=(
+                    "Revalidate this exact review against durable report content after restart."
+                ),
+                acknowledged_review_only=True,
+                idempotency_key="review-restart-safe-0001",
+                correlation_id="correlation.review.restart.create",
+            )
+        )
+        report_repository = app.state.report_service.repository
+        review_repository = review_service.repository
+
+    unavailable_source = CountingRecommendationProvider()
+    restarted_report_service = ReportService(
+        source_provider=unavailable_source,
+        assembler=SyntheticTechnicalReportAssembler(),
+        audit_sink=sink,
+        repository=report_repository,
+    )
+    restarted_review_service = ItsmHandoffReviewService(
+        report_source=restarted_report_service,
+        repository=review_repository,
+        audit_sink=sink,
+        environment_id="environment.test",
+    )
+    recovered = asyncio.run(
+        restarted_review_service.get_for_handoff(
+            actor=reviewer(),
+            report_id=str(report_data["report_id"]),
+            handoff_draft_id=str(handoff["draft_id"]),
+            correlation_id="correlation.review.restart.read",
+        )
+    )
+
+    assert recovered is not None
+    assert recovered.review_id == review.review_id
+    assert recovered.report_digest == report_data["content_digest"]
+    assert recovered.handoff_digest == review.handoff_digest
+    assert recovered.dispatch_authorized is False
+    assert unavailable_source.calls == 0
+
+    replayed = asyncio.run(
+        restarted_review_service.decide(
+            actor=reviewer(),
+            report_id=str(report_data["report_id"]),
+            report_version=cast(int, report_data["version"]),
+            report_digest=str(report_data["content_digest"]),
+            handoff_draft_id=str(handoff["draft_id"]),
+            outcome=ItsmHandoffReviewOutcome.ACCEPT,
+            rationale=(
+                "Revalidate this exact review against durable report content after restart."
+            ),
+            acknowledged_review_only=True,
+            idempotency_key="review-restart-safe-0001",
+            correlation_id="correlation.review.restart.replay",
+        )
+    )
+    assert replayed.reused is True
+
+    orphaned_review_service = ItsmHandoffReviewService(
+        report_source=ReportService(
+            source_provider=CountingRecommendationProvider(),
+            assembler=SyntheticTechnicalReportAssembler(),
+            audit_sink=sink,
+            repository=InMemoryTechnicalReportRepository(),
+        ),
+        repository=review_repository,
+        audit_sink=sink,
+        environment_id="environment.test",
+    )
+    with pytest.raises(ItsmHandoffReviewError, match="itsm_handoff_review_not_found"):
+        asyncio.run(
+            orphaned_review_service.decide(
+                actor=reviewer(),
+                report_id=str(report_data["report_id"]),
+                report_version=cast(int, report_data["version"]),
+                report_digest=str(report_data["content_digest"]),
+                handoff_draft_id=str(handoff["draft_id"]),
+                outcome=ItsmHandoffReviewOutcome.ACCEPT,
+                rationale=(
+                    "Revalidate this exact review against durable report content after restart."
+                ),
+                acknowledged_review_only=True,
+                idempotency_key="review-restart-safe-0001",
+                correlation_id="correlation.review.restart.orphaned",
+            )
+        )

@@ -158,6 +158,7 @@ import {
   createStorageTechnicalReport,
   decideItsmHandoffReview,
   getItsmHandoffReview,
+  getTechnicalReport,
   type ItsmHandoffReviewOutcome,
 } from "./api/reports";
 import {
@@ -379,6 +380,9 @@ export function OperationalApplication({
   const [enterpriseLoginRequested, setEnterpriseLoginRequested] = useState(false);
   const [approvalRequestId, setApprovalRequestId] = useState<string | null>(() =>
     new URLSearchParams(window.location.search).get("approval_request_id"),
+  );
+  const [technicalReportId, setTechnicalReportId] = useState<string | null>(() =>
+    new URLSearchParams(window.location.search).get("report_id"),
   );
   const [approvalRationale, setApprovalRationale] = useState("");
   const [itsmReviewRationale, setItsmReviewRationale] = useState("");
@@ -1136,12 +1140,18 @@ export function OperationalApplication({
       queryClient.removeQueries({ queryKey: ["health-check-overview"] });
       queryClient.removeQueries({ queryKey: ["security-export-overview"] });
       queryClient.removeQueries({ queryKey: ["approval-request"] });
+      queryClient.removeQueries({ queryKey: ["technical-report"] });
       queryClient.removeQueries({ queryKey: ["api-credentials"] });
       queryClient.removeQueries({ queryKey: ["identity-governance"] });
       queryClient.removeQueries({ queryKey: ["workload-identities"] });
       queryClient.removeQueries({ queryKey: ["audit-export-overview"] });
       queryClient.removeQueries({ queryKey: ["upgrade-human-review-inbox"] });
       setApprovalRequestId(null);
+      setTechnicalReportId(null);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("approval_request_id");
+      url.searchParams.delete("report_id");
+      window.history.replaceState({}, "", url);
       setApprovalRationale("");
       setIssuedApiToken(null);
       setPendingDisableSubjectId(null);
@@ -1971,8 +1981,29 @@ export function OperationalApplication({
         recommendationVersion,
         incidentReference,
       ),
+    onSuccess: (result) => {
+      const reportId = result.data.report_id;
+      setTechnicalReportId(reportId);
+      const url = new URL(window.location.href);
+      url.searchParams.set("report_id", reportId);
+      window.history.replaceState({}, "", url);
+    },
   });
-  const technicalReport = reportMutation.data?.data;
+  const technicalReportQuery = useQuery({
+    queryKey: ["technical-report", technicalReportId],
+    queryFn: () => getTechnicalReport(technicalReportId ?? ""),
+    enabled: Boolean(identity && technicalReportId),
+    retry: false,
+  });
+  const technicalReport = reportMutation.data?.data ?? technicalReportQuery.data?.data;
+  const clearTechnicalReportSelection = () => {
+    reportMutation.reset();
+    setTechnicalReportId(null);
+    queryClient.removeQueries({ queryKey: ["technical-report"] });
+    const url = new URL(window.location.href);
+    url.searchParams.delete("report_id");
+    window.history.replaceState({}, "", url);
+  };
   const canReadItsmHandoffReview = Boolean(technicalReport?.itsm_handoff && identity);
   const hasItsmHandoffReviewDecisionIdentity = Boolean(
     canReadItsmHandoffReview &&
@@ -8193,7 +8224,7 @@ export function OperationalApplication({
                         investigationMutation.reset();
                         rcaMutation.reset();
                         recommendationMutation.reset();
-                        reportMutation.reset();
+                        clearTechnicalReportSelection();
                       }}
                       overview={overview}
                       selectedAsset={selectedAsset}
@@ -11481,7 +11512,7 @@ export function OperationalApplication({
                           onBuildRca={() => {
                             if (reasoningArtifact && selectedAsset) {
                               recommendationMutation.reset();
-                              reportMutation.reset();
+                              clearTechnicalReportSelection();
                               rcaMutation.mutate({
                                 targetId: selectedAsset.asset_id,
                                 actualBehavior:
@@ -11492,7 +11523,7 @@ export function OperationalApplication({
                           }}
                           onCompareOptions={() => {
                             if (rcaCase) {
-                              reportMutation.reset();
+                              clearTechnicalReportSelection();
                               approvalCreateMutation.reset();
                               approvalDecisionMutation.reset();
                               setApprovalRequestId(null);
@@ -11626,8 +11657,8 @@ export function OperationalApplication({
                               });
                             }
                           }}
-                          reportError={reportMutation.isError}
-                          reportPending={reportMutation.isPending}
+                          reportError={reportMutation.isError || technicalReportQuery.isError}
+                          reportPending={reportMutation.isPending || technicalReportQuery.isLoading}
                           technicalReport={technicalReport}
                         />
                       </Suspense>
@@ -11648,7 +11679,7 @@ export function OperationalApplication({
                   if (selectedAsset && question) {
                     rcaMutation.reset();
                     recommendationMutation.reset();
-                    reportMutation.reset();
+                    clearTechnicalReportSelection();
                     investigationMutation.mutate({ targetId: selectedAsset.asset_id, question });
                   }
                 }}

@@ -19,6 +19,7 @@ from atlas.api.security import (
     authorize_itsm_handoff_review_decide,
     authorize_itsm_handoff_review_read,
     authorize_report_create,
+    authorize_report_read,
     browser_session_subject,
 )
 from atlas.core.classification import DataClassification
@@ -57,6 +58,29 @@ def _raise_handoff_review(error: ItsmHandoffReviewError) -> None:
     ) from error
 
 
+def _report_context(
+    *,
+    request: Request,
+    subject: AuthenticatedSubject,
+    decision: AuthorizationDecision,
+    requested_at: datetime,
+) -> ReportAccessContext:
+    scope = report_scope(subject.organization_id, request.app.state.settings.environment)
+    return ReportAccessContext(
+        subject_id=subject.subject_id,
+        actor_type=subject.kind.value,
+        authentication_method=subject.authentication_method.value,
+        assurance_level=subject.assurance_level.value,
+        organization_id=scope.organization_id,
+        environment_id=scope.environment_id,
+        site_id=scope.site_id,
+        resource_id=scope.resource_id,
+        correlation_id=str(request.state.correlation_id),
+        decision_id=decision.decision_id,
+        requested_at=requested_at,
+    )
+
+
 @router.post("/storage/{target_id}", response_model=TechnicalReportResponse)
 async def create_storage_report(
     target_id: str,
@@ -66,7 +90,6 @@ async def create_storage_report(
     decision: Annotated[AuthorizationDecision, Depends(authorize_report_create)],
 ) -> TechnicalReportResponse:
     now = datetime.now(UTC)
-    scope = report_scope(subject.organization_id, request.app.state.settings.environment)
     service: ReportService = request.app.state.report_service
     try:
         report = await service.create(
@@ -80,18 +103,8 @@ async def create_storage_report(
                 include_itsm_handoff=payload.include_itsm_handoff,
                 incident_reference=payload.incident_reference,
             ),
-            context=ReportAccessContext(
-                subject_id=subject.subject_id,
-                actor_type=subject.kind.value,
-                authentication_method=subject.authentication_method.value,
-                assurance_level=subject.assurance_level.value,
-                organization_id=scope.organization_id,
-                environment_id=scope.environment_id,
-                site_id=scope.site_id,
-                resource_id=scope.resource_id,
-                correlation_id=str(request.state.correlation_id),
-                decision_id=decision.decision_id,
-                requested_at=now,
+            context=_report_context(
+                request=request, subject=subject, decision=decision, requested_at=now
             ),
         )
     except ReportOperationsError as exc:
@@ -102,6 +115,38 @@ async def create_storage_report(
             title="Report unavailable",
             detail=exc.detail,
         ) from exc
+    return TechnicalReportResponse(
+        data=TechnicalReportData.from_domain(report),
+        meta=ResponseMeta(correlation_id=str(request.state.correlation_id), generated_at=now),
+    )
+
+
+@router.get("/{report_id}", response_model=TechnicalReportResponse)
+async def get_technical_report(
+    report_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+    decision: Annotated[AuthorizationDecision, Depends(authorize_report_read)],
+) -> TechnicalReportResponse:
+    now = datetime.now(UTC)
+    service: ReportService = request.app.state.report_service
+    try:
+        report = await service.read(
+            report_id=report_id,
+            context=_report_context(
+                request=request, subject=subject, decision=decision, requested_at=now
+            ),
+        )
+    except ReportOperationsError as exc:
+        status = 404 if exc.code == "report_not_found" else 409
+        raise AtlasError(
+            status=status,
+            code=exc.code,
+            title="Report unavailable",
+            detail=exc.detail,
+        ) from exc
+    response.headers["Cache-Control"] = "no-store"
     return TechnicalReportResponse(
         data=TechnicalReportData.from_domain(report),
         meta=ResponseMeta(correlation_id=str(request.state.correlation_id), generated_at=now),

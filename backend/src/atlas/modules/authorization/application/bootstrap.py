@@ -43,6 +43,7 @@ APPROVAL_REQUEST_CREATE = "approval.request.create"
 APPROVAL_REQUEST_READ = "approval.request.read"
 APPROVAL_REQUEST_DECIDE = "approval.request.decide"
 REPORT_CREATE = "report.create"
+REPORT_READ = "report.read"
 ITSM_HANDOFF_REVIEW_READ = "report.itsm-handoff-review.read"
 ITSM_HANDOFF_REVIEW_DECIDE = "report.itsm-handoff-review.decide"
 SECURITY_EXPORT_OVERVIEW_READ = "security-export.overview.read"
@@ -1794,6 +1795,10 @@ def build_development_authorization_service(
             description="Create a governed report and non-dispatching ITSM handoff draft.",
         ),
         PermissionDefinition(
+            permission_id=REPORT_READ,
+            description="Read an exact-scope immutable governed technical report.",
+        ),
+        PermissionDefinition(
             permission_id=ITSM_HANDOFF_REVIEW_READ,
             description="Read an exact-scope immutable ITSM handoff human review.",
         ),
@@ -2624,6 +2629,7 @@ def build_development_authorization_service(
                 APPROVAL_REQUEST_READ,
                 APPROVAL_REQUEST_DECIDE,
                 REPORT_CREATE,
+                REPORT_READ,
                 ITSM_HANDOFF_REVIEW_READ,
                 ITSM_HANDOFF_REVIEW_DECIDE,
                 SECURITY_EXPORT_OVERVIEW_READ,
@@ -4677,6 +4683,18 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=report_scope(settings.development_organization_id, settings.environment),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.report-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=report_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),
             RoleAssignment(
