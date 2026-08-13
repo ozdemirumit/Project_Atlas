@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-186 |
 | Title | Fenced workflow orchestration lease without execution authority |
-| Status | Local validation complete; PR delivery in progress |
+| Status | PR exact-head CI in progress |
 | Branch | `agent/workflow-worker-lease-foundation` |
-| Pull Request | Not opened |
+| Pull Request | [#198](https://github.com/ozdemirumit/Project_Atlas/pull/198) |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ADR-134, ADR-135, ADR-136 |
 | Last Updated | 2026-08-14 |
-| Next Action | Commit exact validated source, open PR, pass exact-head CI, merge and verify main CI |
+| Next Action | Pass exact-head PR CI, squash-merge, verify main CI and synchronize local main |
 
 ### ATLAS-IMP-186 Scope Rationale
 
