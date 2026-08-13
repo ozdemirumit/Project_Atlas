@@ -8,7 +8,7 @@
 | Title | Versioned workflow definition and non-executable run-plan foundation |
 | Status | Local implementation and validation complete; PR delivery in progress |
 | Branch | `agent/durable-readonly-workflow-foundation` |
-| Pull Request | Not opened |
+| Pull Request | [#196](https://github.com/ozdemirumit/Project_Atlas/pull/196) |
 | Governing Documents | ATLAS-002 FR-014, ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ATLAS-037, ADR-134 |
 | Last Updated | 2026-08-13 |
 | Next Action | Deliver through exact-head PR CI, squash merge, main CI and local main synchronization |
