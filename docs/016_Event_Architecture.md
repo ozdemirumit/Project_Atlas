@@ -289,6 +289,15 @@ profile snapshot and physical route snapshot. The minimal binding stores source 
 digests rather than copying route metadata, validates the chain atomically and grants no endpoint,
 credential, network, readiness, publication, delivery, dispatch or execution authority.
 
+Before endpoint resolution, a dedicated freshness-admitter next compares that exact physical
+binding and route snapshot with the deployment registry's authoritative unique current-selection
+head. The append-only admission records a bounded `valid_until`, monotonic head generation and
+fencing digest, but no endpoint, credential or runtime material. Ambiguity, drift, expiry,
+suspension, withdrawal or supersession fails closed. Admission grants no endpoint-resolution,
+route-selection, route-binding, credential, network, readiness, publication, delivery, dispatch or
+execution authority. A future resolver must use a separate workload boundary and revalidate both
+the admission lifetime and exact current-head fencing evidence immediately before resolution.
+
 ### 10.2 Publication State
 
 Outbox records track:

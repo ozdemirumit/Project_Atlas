@@ -4,14 +4,78 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-199 |
-| Title | Immutable workflow physical transport route binding without runtime authority |
+| Task ID | ATLAS-IMP-200 |
+| Title | Immutable workflow physical transport route freshness and non-supersession admission without endpoint resolution authority |
 | Status | Implementation complete; local validation passed; PR pending |
-| Branch | `agent/workflow-physical-route-binding` |
+| Branch | `agent/workflow-route-freshness-admission` |
 | Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-145, ADR-146, ADR-147, ADR-148, ADR-149 |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-146, ADR-147, ADR-148, ADR-149, ADR-150 |
 | Last Updated | 2026-08-14 |
-| Next Action | Commit, run exact-head PR CI and merge after green checks |
+| Next Action | Complete live browser evidence, commit, run exact-head PR CI and merge after green checks |
+
+### ATLAS-IMP-200 Scope Rationale
+
+- IMP-199 immutably binds one workflow event to one physical route snapshot, but explicitly does
+  not prove that the bound route remains the deployment's unique current selection when a later
+  resolver consumes it.
+- The next smallest boundary compares the exact binding and route snapshot with a server-owned
+  authoritative current-selection head carrying a monotonic generation and fencing digest. It
+  persists a bounded, append-only freshness and non-supersession admission without resolving or
+  operating the route.
+- Endpoint and locator resolution, credential assignment or brokerage, network/TLS readiness,
+  provider messages, publication attempts, delivery, retries, quarantine, worker dispatch,
+  execution, failover and rebinding remain deferred.
+
+### ATLAS-IMP-200 Acceptance Criteria
+
+- Only `audience.workflow-physical-transport-route-freshness-admitter` can idempotently evaluate
+  one exact physical binding, its exact route snapshot and the authoritative unique current head
+  under one organization, environment, site, route set and selection epoch. Human sessions, API
+  tokens, wrong audiences, changed requests, competing identities, ambiguity, drift,
+  supersession, expiry and audit failure fail closed.
+- The immutable admission records only exact source evidence, scope, route-set and selection-epoch
+  identity, monotonic head generation, fencing-token digest, code-owned policy evidence,
+  `evaluated_at`, bounded server-owned `valid_until`, admitter identity, state and canonical digest.
+  It contains no raw locator, endpoint, credential, secret, network/readiness result, provider
+  message, publication attempt or delivery receipt.
+- PostgreSQL locks binding, route snapshot and current head in fixed order, recomputes every source
+  digest and atomically stores an append-only admission and idempotency claim. Production never
+  falls back to memory; exact replay is accepted only while the admission is unexpired and the
+  current-head generation, fencing digest, selection and canonical digest remain unchanged.
+- Endpoint-resolution, route-selection, route-binding, credential-access, network-access,
+  readiness-probe, publication, delivery, dispatch and execution authority remain false. A future
+  resolver must use a separate workload boundary and revalidate both `valid_until` and the exact
+  current-head fencing evidence before resolving anything.
+- Human UI/API reads are default-deny and minimized, provide no operational control, and use the
+  existing username/password browser session without MFA or a second login.
+
+### ATLAS-IMP-200 Local Validation Evidence
+
+- Ruff format and lint passed across 1,347 files; strict mypy passed across 1,042 source files;
+  Alembic reports the single linear head `20260814_0123`.
+- The complete backend release candidate passed 1,926 tests with five environment-specific skips:
+  three expected Windows symlink cases and two live PostgreSQL cases because no local integration
+  DSN is configured. PR CI provisions PostgreSQL and requires both behavioral tests.
+- The complete frontend suite passed 507 tests across 95 files. Full ESLint, TypeScript and the
+  Vite production build also passed with only the existing large-chunk advisory.
+- API and UI tests prove that normal username/password sessions can read minimized admissions
+  without MFA or a second login, while creation remains restricted to the exact dedicated workload
+  audience. Expired admissions are visibly historical and never presented as current.
+- Live validation restarted the backend from this branch and used one `atlas-demo` / `local-demo`
+  username/password login. The exact freshness admission rendered as `admitted_current` with an
+  explicit `Window open` state, generation 1 and all ten authority declarations false. The panel
+  exposed zero action buttons, no extra-authentication/MFA text and no horizontal overflow; the
+  1,280-pixel document and viewport widths matched exactly.
+
+### ATLAS-IMP-199 Delivery Evidence
+
+- Exact-head commit `204f4a6d7b7ef248116a294dc93d7d13f33f56cc` passed PR CI run
+  `31819426625`; backend completed in 7m53s and frontend in 6m12s.
+- PR [#211](https://github.com/ozdemirumit/Project_Atlas/pull/211) was SHA-locked and squash-merged
+  as `ba16951cc9325dbeef018ad379c8d533fc26b701`.
+- The exact merged commit independently passed `main` CI run `31820172386`; backend completed in
+  7m49s and frontend in 5m58s. Local `main` was fast-forwarded through the verified delivery before
+  IMP-200 branched.
 
 ### ATLAS-IMP-199 Scope Rationale
 

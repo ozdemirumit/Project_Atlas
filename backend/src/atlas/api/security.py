@@ -248,6 +248,7 @@ from atlas.modules.authorization.application.bootstrap import (
     UPGRADE_ROLLBACK_SIMULATE,
     WORKFLOW_DEFINITION_READ,
     WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDING_READ,
+    WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMISSION_READ,
     WORKFLOW_PLAN_CANCEL,
     WORKFLOW_PLAN_CREATE,
     WORKFLOW_PLAN_READ,
@@ -359,6 +360,7 @@ from atlas.modules.authorization.application.bootstrap import (
     upgrade_human_review_scope,
     upgrade_simulation_scope,
     workflow_physical_transport_route_binding_scope,
+    workflow_physical_transport_route_freshness_admission_scope,
     workflow_scope,
     workflow_transport_compatibility_admission_scope,
     workflow_transport_profile_scope,
@@ -387,6 +389,7 @@ from atlas.modules.identity.domain.sessions import CredentialKind
 from atlas.modules.workflows.application import (
     WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDER_AUDIENCE,
+    WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMITTER_AUDIENCE,
     WORKFLOW_TRANSPORT_COMPATIBILITY_ADMITTER_AUDIENCE,
     WORKFLOW_TRANSPORT_PROFILE_REGISTRY_AUDIENCE,
     WORKFLOW_TRANSPORT_ROUTE_REGISTRY_AUDIENCE,
@@ -862,6 +865,70 @@ async def workflow_physical_transport_route_binder_subject(
         subject = await service.authenticate(
             token if valid_envelope else "",
             audience=WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDER_AUDIENCE,
+            environment_id=expected_environment,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except WorkloadIdentityError as exc:
+        raise AtlasError(
+            status=401,
+            code="workload_authentication_failed",
+            title="Workload authentication failed",
+            detail="The workload credential is invalid or unavailable for this operation.",
+        ) from exc
+    if (
+        subject.kind is not SubjectKind.SERVICE
+        or subject.authentication_method is not AuthenticationMethod.WORKLOAD_TOKEN
+    ):
+        raise AtlasError(
+            status=401,
+            code="workload_authentication_failed",
+            title="Workload authentication failed",
+            detail="The workload credential is invalid or unavailable for this operation.",
+        )
+    request.state.authenticated_subject = subject
+    return subject
+
+
+async def workflow_physical_transport_route_freshness_admitter_subject(
+    request: Request,
+    authorization: Annotated[
+        str | None, Header(alias="Authorization", min_length=1, max_length=8192)
+    ] = None,
+    audience: Annotated[
+        str | None,
+        Header(
+            alias="X-Atlas-Audience",
+            min_length=3,
+            max_length=127,
+            pattern=r"^[a-z][a-z0-9_.:-]{2,126}$",
+        ),
+    ] = None,
+    environment_id: Annotated[
+        str | None,
+        Header(
+            alias="X-Atlas-Environment",
+            min_length=3,
+            max_length=127,
+            pattern=r"^[a-z][a-z0-9_.:-]{2,126}$",
+        ),
+    ] = None,
+) -> AuthenticatedSubject:
+    """Authenticate only the workflow physical route freshness admitter workload."""
+
+    expected_environment = f"environment.{request.app.state.settings.environment}"
+    scheme, separator, token = (authorization or "").partition(" ")
+    valid_envelope = (
+        separator == " "
+        and scheme.lower() == "workload"
+        and bool(token)
+        and audience == WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMITTER_AUDIENCE
+        and environment_id == expected_environment
+    )
+    service: WorkloadIdentityService = request.app.state.workload_identity_service
+    try:
+        subject = await service.authenticate(
+            token if valid_envelope else "",
+            audience=WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMITTER_AUDIENCE,
             environment_id=expected_environment,
             correlation_id=str(request.state.correlation_id),
         )
@@ -2504,6 +2571,36 @@ async def authorize_workflow_physical_transport_route_binding_read(
             permission_id=WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDING_READ,
             resource_type="resource.workflow.physical-transport-route-binding",
             scope=workflow_physical_transport_route_binding_scope(
+                subject.organization_id,
+                settings.environment,
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_workflow_physical_transport_route_freshness_admission_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMISSION_READ,
+            resource_type="resource.workflow.physical-transport-route-freshness-admission",
+            scope=workflow_physical_transport_route_freshness_admission_scope(
                 subject.organization_id,
                 settings.environment,
             ),

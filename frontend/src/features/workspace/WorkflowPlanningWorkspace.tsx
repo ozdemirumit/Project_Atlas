@@ -36,6 +36,7 @@ import {
   listWorkflowEventTransportAdmissions,
   listWorkflowPlans,
   listWorkflowPhysicalTransportRouteBindings,
+  listWorkflowPhysicalTransportRouteFreshnessAdmissions,
   listWorkflowRunAttempts,
   listWorkflowTransportCompatibilityAdmissions,
   listWorkflowTransportProfileSnapshots,
@@ -68,6 +69,10 @@ function safeHolderIdentifier(value: string): string {
 
 function formatTimestamp(value: string): string {
   return new Date(value).toLocaleString();
+}
+
+function routeFreshnessWindowIsOpen(validUntil: string): boolean {
+  return Date.parse(validUntil) > Date.now();
 }
 
 function formatTransportEventContract(value: WorkflowTransportEventContract): string {
@@ -111,6 +116,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: () => listWorkflowPhysicalTransportRouteBindings({ scope }),
+    retry: false,
+  });
+  const physicalTransportRouteFreshnessAdmissionQuery = useQuery({
+    queryKey: [
+      "workflow-physical-transport-route-freshness-admissions",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () => listWorkflowPhysicalTransportRouteFreshnessAdmissions({ scope }),
     retry: false,
   });
   const targetQuery = useQuery({
@@ -536,6 +551,10 @@ export default function WorkflowPlanningWorkspace({
   const physicalTransportRouteBindingErrorStatus =
     physicalTransportRouteBindingQuery.error instanceof ApiRequestError
       ? physicalTransportRouteBindingQuery.error.status
+      : undefined;
+  const physicalTransportRouteFreshnessAdmissionErrorStatus =
+    physicalTransportRouteFreshnessAdmissionQuery.error instanceof ApiRequestError
+      ? physicalTransportRouteFreshnessAdmissionQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -1016,6 +1035,155 @@ export default function WorkflowPlanningWorkspace({
           <span>
             Binding records immutable lineage only. It grants no route selection, endpoint,
             credential, network, readiness, publication, delivery, dispatch, or execution authority.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band"
+        aria-labelledby="workflow-physical-route-freshness-admission-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">POINT-IN-TIME ROUTE FRESHNESS EVIDENCE</p>
+            <h2 id="workflow-physical-route-freshness-admission-title">
+              Physical transport route freshness admissions
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {physicalTransportRouteFreshnessAdmissionQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading physical transport route freshness admissions...</span>
+          </div>
+        )}
+        {physicalTransportRouteFreshnessAdmissionQuery.isError && (
+          <div className="inline-error" role="alert">
+            <div>
+              <strong>
+                {physicalTransportRouteFreshnessAdmissionErrorStatus === 401
+                  ? "Your session has expired"
+                  : physicalTransportRouteFreshnessAdmissionErrorStatus === 403
+                    ? "Physical transport route freshness permission is missing"
+                    : "Physical transport route freshness admissions are unavailable"}
+              </strong>
+              <span>
+                {physicalTransportRouteFreshnessAdmissionErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : physicalTransportRouteFreshnessAdmissionErrorStatus === 403
+                    ? "Your current role or scope cannot inspect route freshness evidence."
+                    : "No freshness or operational state is inferred from this failed read."}
+              </span>
+            </div>
+            {physicalTransportRouteFreshnessAdmissionErrorStatus !== 401 &&
+              physicalTransportRouteFreshnessAdmissionErrorStatus !== 403 && (
+                <button
+                  className="secondary-action"
+                  type="button"
+                  aria-label="Retry physical transport route freshness admission read"
+                  onClick={() => void physicalTransportRouteFreshnessAdmissionQuery.refetch()}
+                >
+                  <RefreshCw size={16} />
+                  Retry
+                </button>
+              )}
+          </div>
+        )}
+        {physicalTransportRouteFreshnessAdmissionQuery.isSuccess &&
+          physicalTransportRouteFreshnessAdmissionQuery.data
+            .physical_transport_route_freshness_admissions.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <CalendarClock size={19} /> No physical transport route freshness admissions are
+              recorded in this scope.
+            </div>
+          )}
+        {physicalTransportRouteFreshnessAdmissionQuery.isSuccess &&
+          physicalTransportRouteFreshnessAdmissionQuery.data
+            .physical_transport_route_freshness_admissions.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list"
+              aria-label="Physical transport route freshness admissions"
+            >
+              {physicalTransportRouteFreshnessAdmissionQuery.data.physical_transport_route_freshness_admissions.map(
+                (admission) => {
+                  const windowOpen = routeFreshnessWindowIsOpen(admission.valid_until);
+                  return (
+                  <li key={admission.freshness_admission_id}>
+                    <ShieldCheck size={18} />
+                    <div>
+                      <strong>
+                        <code title={admission.freshness_admission_id}>
+                          {safeHolderIdentifier(admission.freshness_admission_id)}
+                        </code>
+                        <span className="state-badge neutral">{admission.state}</span>
+                        <span className={`state-badge ${windowOpen ? "neutral" : "warning"}`}>
+                          {windowOpen ? "Window open" : "Expired"}
+                        </span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          Physical binding{" "}
+                          <code title={admission.physical_transport_route_binding_id}>
+                            {safeHolderIdentifier(
+                              admission.physical_transport_route_binding_id,
+                            )}
+                          </code>
+                        </span>
+                        <span>
+                          Route snapshot{" "}
+                          <code title={admission.transport_route_snapshot_id}>
+                            {safeHolderIdentifier(admission.transport_route_snapshot_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Selection head{" "}
+                          <code title={admission.selection_head_id}>
+                            {safeHolderIdentifier(admission.selection_head_id)}
+                          </code>{" "}
+                          | generation {admission.selection_generation}
+                        </span>
+                        <span>
+                          Policy <code title={admission.policy_id}>{safeHolderIdentifier(admission.policy_id)}</code>{" "}
+                          v{admission.policy_version}
+                        </span>
+                        <span>
+                          Organization {admission.scope.organization_id} | environment{" "}
+                          {admission.scope.environment_id} | site {admission.scope.site_id}
+                        </span>
+                        <span>
+                          Evaluated {formatTimestamp(admission.evaluated_at)} | valid until{" "}
+                          {formatTimestamp(admission.valid_until)}
+                        </span>
+                        <span>
+                          Admitted by{" "}
+                          <code title={admission.admitter_subject_id}>
+                            {safeHolderIdentifier(admission.admitter_subject_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Integrity reference{" "}
+                          <code title={admission.integrity_reference}>
+                            {safeHolderIdentifier(admission.integrity_reference)}
+                          </code>
+                        </span>
+                        <span className="workflow-physical-route-binding-authority">
+                          Authority route selection false | route binding false | endpoint resolution false | credential access false | network access false | readiness probe false | publication false | delivery false | dispatch false | execution false
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                  );
+                },
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            Freshness admissions are point-in-time evidence only. They expose no route details and
+            grant no endpoint, credential, network, readiness, publication, delivery, dispatch, or
+            execution authority.
           </span>
         </div>
       </section>

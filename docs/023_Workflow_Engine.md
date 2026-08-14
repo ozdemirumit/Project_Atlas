@@ -591,6 +591,11 @@ MVP workflows do not execute C3 through C5 capabilities.
   compatibility admission, transport profile snapshot and physical route snapshot. It copies no
   route metadata and grants no resolver, credential, network, readiness, publication, delivery,
   dispatch or execution authority.
+- ADR-150 establishes a bounded immutable freshness and non-supersession admission for the exact
+  physical binding and route snapshot against the authoritative unique current-selection head. It
+  records monotonic generation and fencing evidence, requires later resolver revalidation and
+  grants no endpoint-resolution, credential, network, readiness, publication, delivery, dispatch
+  or execution authority.
 
 ## 39. Assumptions
 
