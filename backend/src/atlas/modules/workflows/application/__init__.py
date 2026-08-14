@@ -91,12 +91,25 @@ from atlas.modules.workflows.application.service import (
     WorkflowAccessContext,
     WorkflowPlanningService,
 )
+from atlas.modules.workflows.application.transport_admission_ports import (
+    WorkflowEventTransportAdmissionError,
+    WorkflowEventTransportAdmissionIdempotencyRecord,
+    WorkflowEventTransportAdmissionRepository,
+    WorkflowEventTransportAdmissionRequest,
+    WorkflowEventTransportAdmissionResult,
+    WorkflowEventTransportAdmissionStatus,
+)
+from atlas.modules.workflows.application.transport_admissions import (
+    WORKFLOW_EVENT_TRANSPORT_ADMISSION_PRODUCER,
+    WorkflowEventTransportAdmissionService,
+)
 
 __all__ = [
     "WORKFLOW_DISPATCH_EVENT_PRODUCER",
     "WORKFLOW_DISPATCH_EVENT_SCHEMA_URI",
     "WORKFLOW_DISPATCH_EVENT_TYPE",
     "WORKFLOW_DISPATCH_EVENT_VERSION",
+    "WORKFLOW_EVENT_TRANSPORT_ADMISSION_PRODUCER",
     "WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE",
     "WORKFLOW_WORKER_AUDIENCE",
     "WorkflowAccessContext",
@@ -121,6 +134,13 @@ __all__ = [
     "WorkflowDispatchIntentStagingResult",
     "WorkflowDispatchIntentStagingService",
     "WorkflowDispatchIntentStagingStatus",
+    "WorkflowEventTransportAdmissionError",
+    "WorkflowEventTransportAdmissionIdempotencyRecord",
+    "WorkflowEventTransportAdmissionRepository",
+    "WorkflowEventTransportAdmissionRequest",
+    "WorkflowEventTransportAdmissionResult",
+    "WorkflowEventTransportAdmissionService",
+    "WorkflowEventTransportAdmissionStatus",
     "WorkflowLeaseAcquireIdempotencyRecord",
     "WorkflowLeaseAcquireRequest",
     "WorkflowLeaseAcquireResult",

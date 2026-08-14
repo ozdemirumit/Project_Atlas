@@ -11,6 +11,10 @@ from atlas.modules.workflows.domain.models import (
     WorkflowDispatchIntentState,
     WorkflowDispatchOutboxEntry,
     WorkflowDispatchOutboxState,
+    WorkflowEventTransportAdmission,
+    WorkflowEventTransportAdmissionAuthority,
+    WorkflowEventTransportAdmissionPolicy,
+    WorkflowEventTransportAdmissionState,
     WorkflowExecutionAttempt,
     WorkflowExecutionAttemptState,
     WorkflowExecutionRun,
@@ -33,6 +37,8 @@ from atlas.modules.workflows.domain.models import (
     WorkflowStepDefinition,
     WorkflowStepKind,
     canonical_digest,
+    canonical_json_byte_count,
+    code_owned_workflow_event_transport_admission_policy,
     code_owned_workflow_registry,
 )
 
@@ -49,6 +55,10 @@ __all__ = [
     "WorkflowDispatchIntentState",
     "WorkflowDispatchOutboxEntry",
     "WorkflowDispatchOutboxState",
+    "WorkflowEventTransportAdmission",
+    "WorkflowEventTransportAdmissionAuthority",
+    "WorkflowEventTransportAdmissionPolicy",
+    "WorkflowEventTransportAdmissionState",
     "WorkflowExecutionAttempt",
     "WorkflowExecutionAttemptState",
     "WorkflowExecutionRun",
@@ -71,5 +81,7 @@ __all__ = [
     "WorkflowStepDefinition",
     "WorkflowStepKind",
     "canonical_digest",
+    "canonical_json_byte_count",
+    "code_owned_workflow_event_transport_admission_policy",
     "code_owned_workflow_registry",
 ]

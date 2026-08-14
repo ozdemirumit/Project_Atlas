@@ -11,6 +11,7 @@ from atlas.modules.workflows.domain import (
     WorkflowDispatchEventEnvelope,
     WorkflowDispatchIntent,
     WorkflowDispatchOutboxEntry,
+    WorkflowEventTransportAdmission,
     WorkflowExecutionAttempt,
     WorkflowExecutionRun,
     WorkflowOrchestrationLease,
@@ -160,6 +161,22 @@ class PrepareWorkflowDispatchEventEnvelopeInput(BaseModel):
     publication_lease_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     publication_fencing_token: int = Field(ge=1)
     acknowledged_preparation_only_no_publication_delivery_dispatch_or_execution_authority: Literal[
+        True
+    ]
+
+
+class AdmitWorkflowEventTransportInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["atlas.workflow-event-transport-admission-input.v1"]
+    outbox_entry_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    event_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    policy_id: Literal["policy.workflow-event-transport-admission"]
+    policy_version: Literal["1.0"]
+    policy_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    publication_lease_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    publication_fencing_token: int = Field(ge=1)
+    acknowledged_admission_only_no_publication_delivery_dispatch_or_execution_authority: Literal[
         True
     ]
 
@@ -470,6 +487,138 @@ class WorkflowDispatchEventEnvelopeResponse(BaseModel):
 
 class WorkflowDispatchEventEnvelopeInventoryResponse(BaseModel):
     data: WorkflowDispatchEventEnvelopeInventoryData
+    meta: ResponseMeta
+
+
+class WorkflowEventTransportAdmissionPolicyData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy_id: str
+    policy_version: Literal["1.0"]
+    policy_digest: str
+    allowed_event_type: Literal["WorkflowStepDispatchRequested"]
+    allowed_event_version: Literal["1.0"]
+    allowed_schema_uri: Literal["urn:project-atlas:event:workflow-step-dispatch-requested:1.0"]
+    allowed_data_classification: Literal["internal"]
+    representation_name: Literal["canonical-json"]
+    encoding: Literal["utf-8"]
+    maximum_canonical_byte_count: int = Field(ge=1, le=1_048_576)
+
+
+class WorkflowEventTransportAdmissionData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    transport_admission_id: str
+    event_id: str
+    event_digest: str
+    outbox_entry_id: str
+    outbox_entry_digest: str
+    dispatch_intent_id: str
+    dispatch_intent_digest: str
+    plan_id: str
+    plan_digest: str
+    run_id: str
+    run_digest: str
+    step_run_id: str
+    step_run_digest: str
+    step_id: str
+    attempt_id: str
+    attempt_digest: str
+    attempt_number: Literal[1]
+    scope: WorkflowScopeData
+    target_id: str
+    target_type: Literal["storage"]
+    policy: WorkflowEventTransportAdmissionPolicyData
+    canonical_byte_count: int = Field(ge=1)
+    publisher_subject_id: str
+    orchestration_lease_id: str
+    orchestration_lease_digest: str
+    orchestration_fencing_token: int = Field(ge=1)
+    publication_lease_id: str
+    publication_lease_digest: str
+    publication_fencing_token: int = Field(ge=1)
+    admitted_at: datetime
+    state: Literal["admitted"]
+    authority: WorkflowDispatchEventAuthorityData
+    grants_publication_authority: Literal[False]
+    grants_delivery_authority: Literal[False]
+    grants_dispatch_authority: Literal[False]
+    grants_execution_authority: Literal[False]
+    canonical_digest: str
+
+    @classmethod
+    def from_domain(
+        cls, admission: WorkflowEventTransportAdmission
+    ) -> WorkflowEventTransportAdmissionData:
+        return cls.model_validate(
+            {
+                "transport_admission_id": admission.admission_id,
+                "event_id": admission.event_id,
+                "event_digest": admission.event_digest,
+                "outbox_entry_id": admission.outbox_entry_id,
+                "outbox_entry_digest": admission.outbox_entry_digest,
+                "dispatch_intent_id": admission.dispatch_intent_id,
+                "dispatch_intent_digest": admission.dispatch_intent_digest,
+                "plan_id": admission.plan_id,
+                "plan_digest": admission.plan_digest,
+                "run_id": admission.run_id,
+                "run_digest": admission.run_digest,
+                "step_run_id": admission.step_run_id,
+                "step_run_digest": admission.step_run_digest,
+                "step_id": admission.step_id,
+                "attempt_id": admission.attempt_id,
+                "attempt_digest": admission.attempt_digest,
+                "attempt_number": admission.attempt_number,
+                "scope": admission.scope.canonical_value(),
+                "target_id": admission.target_id,
+                "target_type": admission.target_type,
+                "policy": {
+                    "policy_id": admission.policy_id,
+                    "policy_version": admission.policy_version,
+                    "policy_digest": admission.policy_digest,
+                    "allowed_event_type": admission.event_type,
+                    "allowed_event_version": admission.event_version,
+                    "allowed_schema_uri": admission.schema_uri,
+                    "allowed_data_classification": admission.data_classification,
+                    "representation_name": admission.representation_name,
+                    "encoding": admission.encoding,
+                    "maximum_canonical_byte_count": (admission.maximum_canonical_byte_count),
+                },
+                "canonical_byte_count": admission.canonical_byte_count,
+                "publisher_subject_id": admission.publisher_subject_id,
+                "orchestration_lease_id": admission.orchestration_lease_id,
+                "orchestration_lease_digest": admission.orchestration_lease_digest,
+                "orchestration_fencing_token": admission.orchestration_fencing_token,
+                "publication_lease_id": admission.publication_lease_id,
+                "publication_lease_digest": admission.publication_lease_digest,
+                "publication_fencing_token": admission.publication_fencing_token,
+                "admitted_at": admission.admitted_at,
+                "state": admission.state.value,
+                "authority": admission.authority.canonical_value(),
+                "grants_publication_authority": False,
+                "grants_delivery_authority": False,
+                "grants_dispatch_authority": False,
+                "grants_execution_authority": False,
+                "canonical_digest": admission.canonical_digest,
+            }
+        )
+
+
+class WorkflowEventTransportAdmissionInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    transport_admissions: list[WorkflowEventTransportAdmissionData] = Field(max_length=1)
+    durable: bool
+
+
+class WorkflowEventTransportAdmissionResponse(BaseModel):
+    data: WorkflowEventTransportAdmissionData
+    meta: ResponseMeta
+
+
+class WorkflowEventTransportAdmissionInventoryResponse(BaseModel):
+    data: WorkflowEventTransportAdmissionInventoryData
     meta: ResponseMeta
 
 

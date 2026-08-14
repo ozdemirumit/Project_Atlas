@@ -4,14 +4,79 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-192 |
-| Title | Canonical workflow dispatch event envelope without transport authority |
-| Status | Implementation and validation complete; delivery in progress |
-| Branch | `agent/workflow-dispatch-event-envelope` |
+| Task ID | ATLAS-IMP-193 |
+| Title | Policy-governed workflow event transport admission without publication authority |
+| Status | Implementation and local validation complete; PR preparation in progress |
+| Branch | `agent/workflow-transport-admission` |
 | Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ADR-136, ADR-137, ADR-138, ADR-139, ADR-140, ADR-141, ADR-142 |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-136, ADR-137, ADR-138, ADR-139, ADR-140, ADR-141, ADR-142, ADR-143 |
 | Last Updated | 2026-08-14 |
-| Next Action | Commit, open PR, pass exact-head CI, merge and verify independent `main` CI |
+| Next Action | Open the ready PR and verify exact-head CI before merge |
+
+### ATLAS-IMP-193 Scope Rationale
+
+- IMP-192 makes event meaning durable but intentionally performs no policy admission for a future
+  transport boundary. The next smallest durable boundary is one immutable provider-neutral
+  admission decision for the exact prepared envelope.
+- Admission evaluates a code-owned policy covering event type/version, schema, classification,
+  canonical representation and maximum byte count while binding the current publication lease.
+- Provider and route selection, broker configuration, wire serialization, publication attempts,
+  delivery, retries, quarantine, worker dispatch and execution remain deferred.
+
+### ATLAS-IMP-193 Acceptance Criteria
+
+- A dedicated publisher workload identity can idempotently admit exactly one prepared envelope
+  under the current active publication lease; stale fences, expired/released leases, unsupported or
+  oversized envelopes, changed lineage and competing requests fail closed.
+- The admission binds the immutable policy, exact event/outbox/workflow lineage, scope, target,
+  canonical byte count, publisher and source/publication lease evidence while every authority flag
+  remains false.
+- PostgreSQL locks and revalidates the planned plan, pending outbox, current source lease, current
+  publication lease and prepared envelope before the atomic admission/idempotency write. Production
+  never falls back to memory and no provider- or route-specific field exists.
+- Human UI exposes authoritative read-only admission evidence through the normal username/password
+  session with no admission, serialization, publish, deliver, dispatch or execution control, no
+  credential material, no second-login or MFA prompt and no implication that bytes or a message
+  exist.
+
+### ATLAS-IMP-193 Validation Evidence
+
+- Domain and application services admit one deterministic immutable prepared event only under the
+  code-owned `policy.workflow-event-transport-admission` version `1.0` and the current exact source
+  orchestration and publication leases. Exact replay returns the same record; stale or released
+  leases, changed claims, tampered evidence, unsupported envelopes, oversized canonical data and
+  audit failure all fail closed.
+- The admission binds the exact policy, canonical UTF-8 JSON byte count, publisher workload
+  identity, scope, target and full event/outbox/intent/attempt/run/step/plan/lease lineage. Every
+  publication, delivery, dispatch and execution authority remains false, and no provider, broker,
+  endpoint, route, queue, topic, partition, credential, wire payload, serialized artifact,
+  publication attempt, receipt or delivery record exists.
+- PostgreSQL locks and revalidates all authoritative lineage before the atomic admission and
+  idempotency write. Migration `20260814_0116` preserves historical lease evidence without foreign
+  keys to replaceable lease rows; Alembic reports the single head `20260814_0116`. The focused
+  cross-regression suite passed 75 tests.
+- Ruff formatting and lint passed, strict mypy passed across 1,305 source files, and the full
+  backend suite passed 1,743 tests with three expected Windows symlink skips. The full frontend
+  suite passed 367 tests across 95 files; ESLint, TypeScript and the production build also passed
+  with only the pre-existing chunk-size advisory.
+- Live validation at `http://127.0.0.1:5253/#/workspace/workflows` used plan
+  `workflow-plan.5a56208a85aa250a786b6fb5`, event
+  `workflow-dispatch-event.954f9bf598823c202268c125` and admission
+  `workflow-event-transport-admission.148be282793e59a54086efcc`. One `atlas-demo` / `local-demo`
+  username/password login automatically loaded Connector Inventory and the same session read the
+  workflow evidence without manual refresh, MFA, second login or an authorized-browser prompt.
+  Browser measurements found one admission panel, zero extra-auth text, zero forbidden operational
+  buttons, no horizontal overflow and no console warning or error.
+
+### ATLAS-IMP-192 Delivery Evidence
+
+- Source commit `e546d8da8e4dc66c47950ed979a0a1451f8b8e5f` passed exact-head PR CI run
+  `31771560391`; frontend completed in 5m17s and backend in 9m00s.
+- PR [#204](https://github.com/ozdemirumit/Project_Atlas/pull/204) was squash-merged as
+  `8969b7beb7f306bd07b64a8a5eb8bac85f02cafc`.
+- The exact merged commit independently passed `main` CI run `31772068658`; frontend completed in
+  5m22s and backend in 8m12s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-193 branched.
 
 ### ATLAS-IMP-192 Scope Rationale
 

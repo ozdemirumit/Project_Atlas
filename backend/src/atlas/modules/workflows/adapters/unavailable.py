@@ -39,10 +39,17 @@ from atlas.modules.workflows.application.publication_lease_ports import (
     WorkflowOutboxPublicationLeaseMutationRequest,
     WorkflowOutboxPublicationLeaseMutationResult,
 )
+from atlas.modules.workflows.application.transport_admission_ports import (
+    WorkflowEventTransportAdmissionError,
+    WorkflowEventTransportAdmissionIdempotencyRecord,
+    WorkflowEventTransportAdmissionRequest,
+    WorkflowEventTransportAdmissionResult,
+)
 from atlas.modules.workflows.domain import (
     WorkflowDispatchEventEnvelope,
     WorkflowDispatchIntent,
     WorkflowDispatchOutboxEntry,
+    WorkflowEventTransportAdmission,
     WorkflowExecutionAttempt,
     WorkflowExecutionRun,
     WorkflowOrchestrationLease,
@@ -195,6 +202,30 @@ class UnavailableWorkflowPlanRepository:
     ) -> WorkflowDispatchEventEnvelopePrepareResult:
         self._raise_dispatch_event_envelope()
 
+    async def get_event_transport_admission_by_event_id(
+        self, *, event_id: str
+    ) -> WorkflowEventTransportAdmission | None:
+        self._raise_event_transport_admission()
+
+    async def get_event_transport_admission_by_outbox_entry_id(
+        self, *, outbox_entry_id: str
+    ) -> WorkflowEventTransportAdmission | None:
+        self._raise_event_transport_admission()
+
+    async def get_event_transport_admission_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        publisher_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventTransportAdmissionIdempotencyRecord | None:
+        self._raise_event_transport_admission()
+
+    async def admit_event_transport(
+        self, request: WorkflowEventTransportAdmissionRequest
+    ) -> WorkflowEventTransportAdmissionResult:
+        self._raise_event_transport_admission()
+
     async def acquire_publication_lease(
         self, request: WorkflowOutboxPublicationLeaseAcquireRequest
     ) -> WorkflowOutboxPublicationLeaseAcquireResult:
@@ -284,4 +315,11 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowDispatchEventEnvelopeError(
             "workflow_dispatch_event_envelope_repository_unavailable",
             "Durable workflow dispatch event envelope storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_event_transport_admission() -> NoReturn:
+        raise WorkflowEventTransportAdmissionError(
+            "workflow_event_transport_admission_repository_unavailable",
+            "Durable workflow event transport admission storage is not configured.",
         )

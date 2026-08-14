@@ -20,6 +20,7 @@ from atlas.api.security import (
 from atlas.api.workflow_schemas import (
     AcquireWorkflowOrchestrationLeaseInput,
     AcquireWorkflowOutboxPublicationLeaseInput,
+    AdmitWorkflowEventTransportInput,
     CancelWorkflowPlanInput,
     CreateWorkflowPlanInput,
     HeartbeatWorkflowOrchestrationLeaseInput,
@@ -46,6 +47,10 @@ from atlas.api.workflow_schemas import (
     WorkflowDispatchOutboxEntryData,
     WorkflowDispatchOutboxInventoryData,
     WorkflowDispatchOutboxInventoryResponse,
+    WorkflowEventTransportAdmissionData,
+    WorkflowEventTransportAdmissionInventoryData,
+    WorkflowEventTransportAdmissionInventoryResponse,
+    WorkflowEventTransportAdmissionResponse,
     WorkflowExecutionAttemptData,
     WorkflowExecutionAttemptResponse,
     WorkflowExecutionRunData,
@@ -103,12 +108,21 @@ from atlas.modules.workflows.application.event_envelope_ports import (
 from atlas.modules.workflows.application.event_envelopes import (
     WorkflowDispatchEventEnvelopeService,
 )
+from atlas.modules.workflows.application.transport_admission_ports import (
+    WorkflowEventTransportAdmissionError,
+)
+from atlas.modules.workflows.application.transport_admissions import (
+    WorkflowEventTransportAdmissionService,
+)
 from atlas.modules.workflows.domain import (
     WorkflowDispatchEventEnvelope,
     WorkflowDispatchIntent,
     WorkflowDispatchIntentState,
     WorkflowDispatchOutboxEntry,
     WorkflowDispatchOutboxState,
+    WorkflowEventTransportAdmission,
+    WorkflowEventTransportAdmissionPolicy,
+    WorkflowEventTransportAdmissionState,
     WorkflowExecutionAttempt,
     WorkflowExecutionAttemptState,
     WorkflowExecutionRun,
@@ -429,6 +443,44 @@ def _raise_dispatch_event_envelope(error: WorkflowDispatchEventEnvelopeError) ->
     ) from error
 
 
+def _raise_event_transport_admission(error: WorkflowEventTransportAdmissionError) -> NoReturn:
+    if error.code.endswith("_invalid") or error.code.endswith("_required"):
+        status = 422
+    elif "repository" in error.code:
+        status = 503
+    elif error.code.endswith("_not_found"):
+        status = 404
+    else:
+        status = 409
+    raise AtlasError(
+        status=status,
+        code=(
+            "workflow_event_transport_admission_request_invalid"
+            if status == 422
+            else "workflow_event_transport_admission_service_unavailable"
+            if status == 503
+            else "workflow_resource_unavailable"
+            if status == 404
+            else "workflow_event_transport_admission_conflict"
+        ),
+        title=(
+            "Workflow event transport admission request invalid"
+            if status == 422
+            else "Workflow event transport admission service unavailable"
+            if status == 503
+            else "Workflow resource unavailable"
+            if status == 404
+            else "Workflow event transport admission conflict"
+        ),
+        detail=(
+            "The transport admission request did not satisfy the bounded contract."
+            if status == 422
+            else "Workflow event transport admission evidence is unavailable."
+        ),
+        retryable=status == 503,
+    ) from error
+
+
 async def _worker_context(
     request: Request,
     subject: AuthenticatedSubject,
@@ -581,6 +633,18 @@ def _dispatch_event_envelope_response(
     _no_store(response)
     return WorkflowDispatchEventEnvelopeResponse(
         data=WorkflowDispatchEventEnvelopeData.from_domain(envelope),
+        meta=_meta(request),
+    )
+
+
+def _event_transport_admission_response(
+    admission: WorkflowEventTransportAdmission,
+    request: Request,
+    response: Response,
+) -> WorkflowEventTransportAdmissionResponse:
+    _no_store(response)
+    return WorkflowEventTransportAdmissionResponse(
+        data=WorkflowEventTransportAdmissionData.from_domain(admission),
         meta=_meta(request),
     )
 
@@ -829,6 +893,61 @@ def _dispatch_event_envelope_matches_outbox(
         and not envelope.grants_delivery_authority
         and not envelope.grants_dispatch_authority
         and not envelope.grants_execution_authority
+    )
+
+
+def _event_transport_admission_matches_envelope(
+    admission: WorkflowEventTransportAdmission,
+    envelope: WorkflowDispatchEventEnvelope,
+    entry: WorkflowDispatchOutboxEntry,
+    publication_lease: WorkflowOutboxPublicationLease,
+    policy: WorkflowEventTransportAdmissionPolicy,
+) -> bool:
+    return bool(
+        admission.policy_id == policy.policy_id
+        and admission.policy_version == policy.policy_version
+        and admission.policy_digest == policy.canonical_digest
+        and admission.event_id == envelope.event_id
+        and admission.event_digest == envelope.canonical_digest
+        and admission.event_type == envelope.event_type
+        and admission.event_version == envelope.event_version
+        and admission.schema_uri == envelope.schema_uri
+        and admission.data_classification == envelope.data_classification
+        and admission.representation_name == policy.representation_name
+        and admission.encoding == policy.encoding
+        and admission.maximum_canonical_byte_count == policy.maximum_canonical_byte_count
+        and 1 <= admission.canonical_byte_count <= policy.maximum_canonical_byte_count
+        and admission.outbox_entry_id == entry.outbox_entry_id
+        and admission.outbox_entry_digest == entry.canonical_digest
+        and admission.dispatch_intent_id == entry.dispatch_intent_id
+        and admission.dispatch_intent_digest == entry.dispatch_intent_digest
+        and admission.plan_id == entry.plan_id
+        and admission.plan_digest == entry.plan_digest
+        and admission.run_id == entry.run_id
+        and admission.run_digest == entry.run_digest
+        and admission.step_run_id == entry.step_run_id
+        and admission.step_run_digest == entry.step_run_digest
+        and admission.step_id == entry.step_id
+        and admission.attempt_id == entry.attempt_id
+        and admission.attempt_digest == entry.attempt_digest
+        and admission.attempt_number == entry.attempt_number
+        and admission.scope == entry.scope
+        and admission.target_id == entry.target_id
+        and admission.target_type == entry.target_type
+        and admission.orchestration_lease_id == envelope.orchestration_lease_id
+        and admission.orchestration_lease_digest == envelope.orchestration_lease_digest
+        and admission.orchestration_fencing_token == envelope.orchestration_fencing_token
+        and admission.publication_lease_id == publication_lease.publication_lease_id
+        and admission.publication_lease_digest == publication_lease.canonical_digest
+        and admission.publication_fencing_token == publication_lease.publication_fencing_token
+        and admission.publisher_subject_id == publication_lease.publisher_subject_id
+        and admission.admitted_at >= envelope.prepared_at
+        and admission.state is WorkflowEventTransportAdmissionState.ADMITTED
+        and not any(admission.authority.canonical_value().values())
+        and not admission.grants_publication_authority
+        and not admission.grants_delivery_authority
+        and not admission.grants_dispatch_authority
+        and not admission.grants_execution_authority
     )
 
 
@@ -1857,6 +1976,199 @@ async def prepare_workflow_dispatch_event_envelope(
     except WorkflowDispatchEventEnvelopeError as error:
         _raise_dispatch_event_envelope(error)
     return _dispatch_event_envelope_response(envelope, request, response)
+
+
+@router.get(
+    (
+        "/plans/{plan_id}/runs/{run_id}/attempts/{attempt_id}/dispatch-intents/"
+        "{dispatch_intent_id}/outbox/{outbox_entry_id}/event-envelope/{event_id}/"
+        "transport-admission"
+    ),
+    response_model=WorkflowEventTransportAdmissionInventoryResponse,
+)
+async def get_workflow_event_transport_admission(
+    plan_id: Annotated[str, SAFE_ID],
+    run_id: Annotated[str, SAFE_ID],
+    attempt_id: Annotated[str, SAFE_ID],
+    dispatch_intent_id: Annotated[str, SAFE_ID],
+    outbox_entry_id: Annotated[str, SAFE_ID],
+    event_id: Annotated[str, SAFE_ID],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[AuthorizationDecision, Depends(authorize_workflow_plan_read)],
+) -> WorkflowEventTransportAdmissionInventoryResponse:
+    planning_service: WorkflowPlanningService = request.app.state.workflow_planning_service
+    try:
+        plan = await planning_service.get_plan(
+            plan_id=plan_id,
+            context=await _context(request, subject, decision),
+        )
+    except WorkflowPlanningError as error:
+        _raise(error)
+    service: WorkflowEventTransportAdmissionService = (
+        request.app.state.workflow_event_transport_admission_service
+    )
+    repository = service.repository
+    try:
+        entry = await repository.get_outbox_entry_by_id(outbox_entry_id=outbox_entry_id)
+        envelope = await repository.get_dispatch_event_envelope_by_outbox_entry_id(
+            outbox_entry_id=outbox_entry_id
+        )
+        publication_lease = await repository.get_publication_lease_by_outbox_entry_id(
+            outbox_entry_id=outbox_entry_id
+        )
+        admission = await repository.get_event_transport_admission_by_event_id(event_id=event_id)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_event_transport_admission_service_unavailable",
+            title="Workflow event transport admission service unavailable",
+            detail="Workflow event transport admission evidence is unavailable.",
+            retryable=True,
+        ) from error
+    if (
+        entry is None
+        or envelope is None
+        or envelope.event_id != event_id
+        or not _outbox_entry_matches_route(
+            entry,
+            plan_id=plan_id,
+            run_id=run_id,
+            attempt_id=attempt_id,
+            dispatch_intent_id=dispatch_intent_id,
+            outbox_entry_id=outbox_entry_id,
+        )
+        or entry.plan_digest != plan.canonical_digest
+        or entry.scope != plan.scope
+        or entry.target_id != plan.target_id
+        or entry.target_type != plan.target_type
+    ):
+        raise AtlasError(
+            status=404,
+            code="workflow_resource_unavailable",
+            title="Workflow resource unavailable",
+            detail="The requested workflow resource is unavailable.",
+        )
+    if (
+        publication_lease is None
+        or not _dispatch_event_envelope_matches_outbox(envelope, entry)
+        or envelope.publication_lease_id != publication_lease.publication_lease_id
+        or envelope.publication_lease_digest != publication_lease.canonical_digest
+        or envelope.publication_fencing_token != publication_lease.publication_fencing_token
+        or envelope.publisher_subject_id != publication_lease.publisher_subject_id
+        or (
+            admission is not None
+            and not _event_transport_admission_matches_envelope(
+                admission,
+                envelope,
+                entry,
+                publication_lease,
+                service.policy,
+            )
+        )
+    ):
+        raise AtlasError(
+            status=503,
+            code="workflow_event_transport_admission_service_unavailable",
+            title="Workflow event transport admission service unavailable",
+            detail="Workflow event transport admission evidence is unavailable.",
+            retryable=True,
+        )
+    _no_store(response)
+    return WorkflowEventTransportAdmissionInventoryResponse(
+        data=WorkflowEventTransportAdmissionInventoryData(
+            event_id=envelope.event_id,
+            transport_admissions=(
+                []
+                if admission is None
+                else [WorkflowEventTransportAdmissionData.from_domain(admission)]
+            ),
+            durable=service.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    (
+        "/plans/{plan_id}/runs/{run_id}/attempts/{attempt_id}/dispatch-intents/"
+        "{dispatch_intent_id}/outbox/{outbox_entry_id}/publication-lease/"
+        "{publication_lease_id}/event-envelope/{event_id}/transport-admission"
+    ),
+    response_model=WorkflowEventTransportAdmissionResponse,
+    status_code=201,
+)
+async def admit_workflow_event_transport(
+    plan_id: Annotated[str, SAFE_ID],
+    run_id: Annotated[str, SAFE_ID],
+    attempt_id: Annotated[str, SAFE_ID],
+    dispatch_intent_id: Annotated[str, SAFE_ID],
+    outbox_entry_id: Annotated[str, SAFE_ID],
+    publication_lease_id: Annotated[str, SAFE_ID],
+    event_id: Annotated[str, SAFE_ID],
+    payload: AdmitWorkflowEventTransportInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(workflow_outbox_publisher_subject)],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> WorkflowEventTransportAdmissionResponse:
+    service: WorkflowEventTransportAdmissionService = (
+        request.app.state.workflow_event_transport_admission_service
+    )
+    entry = await _require_bound_publication_outbox(
+        repository=cast(WorkflowOutboxPublicationLeaseRepository, service.repository),
+        plan_id=plan_id,
+        run_id=run_id,
+        attempt_id=attempt_id,
+        dispatch_intent_id=dispatch_intent_id,
+        outbox_entry_id=outbox_entry_id,
+    )
+    try:
+        envelope = await service.repository.get_dispatch_event_envelope_by_outbox_entry_id(
+            outbox_entry_id=outbox_entry_id
+        )
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_event_transport_admission_service_unavailable",
+            title="Workflow event transport admission service unavailable",
+            detail="Workflow event transport admission evidence is unavailable.",
+            retryable=True,
+        ) from error
+    if envelope is None or envelope.event_id != event_id:
+        raise AtlasError(
+            status=404,
+            code="workflow_resource_unavailable",
+            title="Workflow resource unavailable",
+            detail="The requested workflow resource is unavailable.",
+        )
+    if not _dispatch_event_envelope_matches_outbox(envelope, entry):
+        raise AtlasError(
+            status=503,
+            code="workflow_event_transport_admission_service_unavailable",
+            title="Workflow event transport admission service unavailable",
+            detail="Workflow event transport admission evidence is unavailable.",
+            retryable=True,
+        )
+    try:
+        admission = await service.admit(
+            outbox_entry_id=outbox_entry_id,
+            outbox_entry_digest=payload.outbox_entry_digest,
+            event_id=event_id,
+            event_digest=payload.event_digest,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            policy_digest=payload.policy_digest,
+            publication_lease_id=publication_lease_id,
+            publication_lease_digest=payload.publication_lease_digest,
+            publication_fencing_token=payload.publication_fencing_token,
+            idempotency_key=idempotency_key,
+            context=await _publisher_context(request, subject, target_id=entry.target_id),
+        )
+    except WorkflowEventTransportAdmissionError as error:
+        _raise_event_transport_admission(error)
+    return _event_transport_admission_response(admission, request, response)
 
 
 @router.post(

@@ -15,6 +15,10 @@ from atlas.modules.workflows.application import (
     WorkflowDispatchIntentStagingRequest,
     WorkflowDispatchIntentStagingResult,
     WorkflowDispatchIntentStagingStatus,
+    WorkflowEventTransportAdmissionIdempotencyRecord,
+    WorkflowEventTransportAdmissionRequest,
+    WorkflowEventTransportAdmissionResult,
+    WorkflowEventTransportAdmissionStatus,
     WorkflowLeaseAcquireIdempotencyRecord,
     WorkflowLeaseAcquireRequest,
     WorkflowLeaseAcquireResult,
@@ -45,10 +49,13 @@ from atlas.modules.workflows.application.publication_lease_ports import (
 )
 from atlas.modules.workflows.domain import (
     WorkflowDispatchEventEnvelope,
+    WorkflowDispatchEventEnvelopeState,
     WorkflowDispatchIntent,
     WorkflowDispatchIntentState,
     WorkflowDispatchOutboxEntry,
     WorkflowDispatchOutboxState,
+    WorkflowEventTransportAdmission,
+    WorkflowEventTransportAdmissionState,
     WorkflowExecutionAttempt,
     WorkflowExecutionAttemptState,
     WorkflowExecutionRun,
@@ -61,6 +68,7 @@ from atlas.modules.workflows.domain import (
     WorkflowPlanState,
     WorkflowRunPlan,
     WorkflowScope,
+    canonical_json_byte_count,
 )
 
 
@@ -99,6 +107,11 @@ class InMemoryWorkflowPlanRepository:
         self._dispatch_event_envelope_prepare_requests: dict[
             tuple[WorkflowScope, str, str],
             WorkflowDispatchEventEnvelopePrepareIdempotencyRecord,
+        ] = {}
+        self._event_transport_admissions_by_event: dict[str, WorkflowEventTransportAdmission] = {}
+        self._event_transport_admission_requests: dict[
+            tuple[WorkflowScope, str, str],
+            WorkflowEventTransportAdmissionIdempotencyRecord,
         ] = {}
         self._lock = asyncio.Lock()
 
@@ -532,6 +545,78 @@ class InMemoryWorkflowPlanRepository:
             )
             return WorkflowDispatchEventEnvelopePrepareResult(
                 WorkflowDispatchEventEnvelopePrepareStatus.PREPARED, candidate
+            )
+
+    async def get_event_transport_admission_by_event_id(
+        self, *, event_id: str
+    ) -> WorkflowEventTransportAdmission | None:
+        async with self._lock:
+            return self._event_transport_admissions_by_event.get(event_id)
+
+    async def get_event_transport_admission_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        publisher_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventTransportAdmissionIdempotencyRecord | None:
+        async with self._lock:
+            return self._event_transport_admission_requests.get(
+                (scope, publisher_subject_id, idempotency_key)
+            )
+
+    async def admit_event_transport(
+        self, request: WorkflowEventTransportAdmissionRequest
+    ) -> WorkflowEventTransportAdmissionResult:
+        async with self._lock:
+            candidate = request.candidate
+            key = (candidate.scope, request.publisher_subject_id, request.idempotency_key)
+            prior = self._event_transport_admission_requests.get(key)
+            if prior is not None:
+                status = (
+                    WorkflowEventTransportAdmissionStatus.REPLAY
+                    if prior.request_fingerprint == request.request_fingerprint
+                    else WorkflowEventTransportAdmissionStatus.IDEMPOTENCY_CONFLICT
+                )
+                return WorkflowEventTransportAdmissionResult(status, prior.admission)
+
+            outbox = next(
+                (
+                    entry
+                    for entry in self._dispatch_outbox_entries_by_intent.values()
+                    if entry.outbox_entry_id == candidate.outbox_entry_id
+                ),
+                None,
+            )
+            plan = self._plans.get(candidate.plan_id)
+            orchestration_lease = self._leases_by_plan.get(candidate.plan_id)
+            publication_lease = self._publication_leases_by_outbox.get(candidate.outbox_entry_id)
+            envelope = self._dispatch_event_envelopes_by_outbox.get(candidate.outbox_entry_id)
+            if not self._event_transport_admission_evidence_matches(
+                outbox=outbox,
+                plan=plan,
+                orchestration_lease=orchestration_lease,
+                publication_lease=publication_lease,
+                envelope=envelope,
+                request=request,
+            ):
+                return WorkflowEventTransportAdmissionResult(
+                    WorkflowEventTransportAdmissionStatus.EVIDENCE_CONFLICT, None
+                )
+            current = self._event_transport_admissions_by_event.get(candidate.event_id)
+            if current is not None:
+                return WorkflowEventTransportAdmissionResult(
+                    WorkflowEventTransportAdmissionStatus.ALREADY_ADMITTED, current
+                )
+            self._event_transport_admissions_by_event[candidate.event_id] = candidate
+            self._event_transport_admission_requests[key] = (
+                WorkflowEventTransportAdmissionIdempotencyRecord(
+                    request_fingerprint=request.request_fingerprint,
+                    admission=candidate,
+                )
+            )
+            return WorkflowEventTransportAdmissionResult(
+                WorkflowEventTransportAdmissionStatus.ADMITTED, candidate
             )
 
     async def acquire_publication_lease(
@@ -1069,6 +1154,133 @@ class InMemoryWorkflowPlanRepository:
             and not publication_lease.grants_dispatch_authority
             and not publication_lease.grants_execution_authority
             and not candidate.extensions
+            and not any(candidate.authority.canonical_value().values())
+            and not candidate.grants_publication_authority
+            and not candidate.grants_delivery_authority
+            and not candidate.grants_dispatch_authority
+            and not candidate.grants_execution_authority
+        )
+
+    @staticmethod
+    def _event_transport_admission_evidence_matches(
+        *,
+        outbox: WorkflowDispatchOutboxEntry | None,
+        plan: WorkflowRunPlan | None,
+        orchestration_lease: WorkflowOrchestrationLease | None,
+        publication_lease: WorkflowOutboxPublicationLease | None,
+        envelope: WorkflowDispatchEventEnvelope | None,
+        request: WorkflowEventTransportAdmissionRequest,
+    ) -> bool:
+        candidate = request.candidate
+        return bool(
+            outbox is not None
+            and outbox.state is WorkflowDispatchOutboxState.PENDING_PUBLICATION
+            and outbox.outbox_entry_id == candidate.outbox_entry_id
+            and outbox.canonical_digest
+            == request.expected_outbox_entry_digest
+            == candidate.outbox_entry_digest
+            and outbox.dispatch_intent_id == candidate.dispatch_intent_id
+            and outbox.dispatch_intent_digest == candidate.dispatch_intent_digest
+            and outbox.plan_id == candidate.plan_id
+            and outbox.plan_digest == request.expected_plan_digest == candidate.plan_digest
+            and outbox.run_id == candidate.run_id
+            and outbox.run_digest == candidate.run_digest
+            and outbox.step_run_id == candidate.step_run_id
+            and outbox.step_run_digest == candidate.step_run_digest
+            and outbox.step_id == candidate.step_id
+            and outbox.attempt_id == candidate.attempt_id
+            and outbox.attempt_digest == candidate.attempt_digest
+            and outbox.attempt_number == candidate.attempt_number
+            and outbox.scope == candidate.scope
+            and outbox.target_id == candidate.target_id
+            and outbox.target_type == candidate.target_type
+            and not any(outbox.authority.canonical_value().values())
+            and plan is not None
+            and plan.state is WorkflowPlanState.PLANNED
+            and plan.canonical_digest == request.expected_plan_digest
+            and plan.scope == candidate.scope
+            and plan.target_id == candidate.target_id
+            and plan.target_type == candidate.target_type
+            and orchestration_lease is not None
+            and orchestration_lease.lease_id
+            == request.expected_orchestration_lease_id
+            == candidate.orchestration_lease_id
+            == outbox.lease_id
+            and orchestration_lease.canonical_digest
+            == request.expected_orchestration_lease_digest
+            == candidate.orchestration_lease_digest
+            == outbox.lease_digest
+            and orchestration_lease.fencing_token
+            == request.expected_orchestration_fencing_token
+            == candidate.orchestration_fencing_token
+            == outbox.fencing_token
+            and orchestration_lease.scope == candidate.scope
+            and orchestration_lease.target_id == candidate.target_id
+            and orchestration_lease.target_type == candidate.target_type
+            and orchestration_lease.effective_state(requested_at=request.requested_at)
+            is WorkflowOrchestrationLeaseEffectiveState.ACTIVE
+            and publication_lease is not None
+            and publication_lease.publication_lease_id
+            == request.expected_publication_lease_id
+            == candidate.publication_lease_id
+            and publication_lease.canonical_digest
+            == request.expected_publication_lease_digest
+            == candidate.publication_lease_digest
+            and publication_lease.publication_fencing_token
+            == request.expected_publication_fencing_token
+            == candidate.publication_fencing_token
+            and publication_lease.outbox_entry_id == outbox.outbox_entry_id
+            and publication_lease.outbox_entry_digest == outbox.canonical_digest
+            and publication_lease.orchestration_lease_id == orchestration_lease.lease_id
+            and publication_lease.orchestration_lease_digest == orchestration_lease.canonical_digest
+            and publication_lease.orchestration_fencing_token == orchestration_lease.fencing_token
+            and publication_lease.publisher_subject_id
+            == request.publisher_subject_id
+            == candidate.publisher_subject_id
+            and publication_lease.effective_state(requested_at=request.requested_at)
+            is WorkflowOutboxPublicationLeaseEffectiveState.ACTIVE
+            and not any(publication_lease.authority.canonical_value().values())
+            and envelope is not None
+            and envelope.state is WorkflowDispatchEventEnvelopeState.PREPARED
+            and envelope.event_id == request.expected_event_id == candidate.event_id
+            and envelope.canonical_digest == request.expected_event_digest == candidate.event_digest
+            and envelope.event_type == candidate.event_type
+            and envelope.event_version == candidate.event_version
+            and envelope.schema_uri == candidate.schema_uri
+            and envelope.data_classification == candidate.data_classification
+            and envelope.payload.outbox_entry_id == outbox.outbox_entry_id
+            and envelope.payload.outbox_entry_digest == outbox.canonical_digest
+            and envelope.payload.dispatch_intent_id == candidate.dispatch_intent_id
+            and envelope.payload.dispatch_intent_digest == candidate.dispatch_intent_digest
+            and envelope.payload.plan_id == candidate.plan_id
+            and envelope.payload.plan_digest == candidate.plan_digest
+            and envelope.payload.run_id == candidate.run_id
+            and envelope.payload.run_digest == candidate.run_digest
+            and envelope.payload.step_run_id == candidate.step_run_id
+            and envelope.payload.step_run_digest == candidate.step_run_digest
+            and envelope.payload.step_id == candidate.step_id
+            and envelope.payload.attempt_id == candidate.attempt_id
+            and envelope.payload.attempt_digest == candidate.attempt_digest
+            and envelope.payload.attempt_number == candidate.attempt_number
+            and envelope.payload.scope == candidate.scope
+            and envelope.payload.target_id == candidate.target_id
+            and envelope.payload.target_type == candidate.target_type
+            and envelope.orchestration_lease_id == orchestration_lease.lease_id
+            and envelope.orchestration_lease_digest == orchestration_lease.canonical_digest
+            and envelope.orchestration_fencing_token == orchestration_lease.fencing_token
+            and envelope.publication_lease_id == publication_lease.publication_lease_id
+            and envelope.publication_lease_digest == publication_lease.canonical_digest
+            and envelope.publication_fencing_token == publication_lease.publication_fencing_token
+            and envelope.publisher_subject_id == publication_lease.publisher_subject_id
+            and not envelope.extensions
+            and not any(envelope.authority.canonical_value().values())
+            and candidate.policy_digest == request.expected_policy_digest
+            and candidate.representation_name == "canonical-json"
+            and candidate.encoding == "utf-8"
+            and candidate.canonical_byte_count
+            == canonical_json_byte_count(envelope.canonical_value())
+            and candidate.canonical_byte_count <= candidate.maximum_canonical_byte_count
+            and candidate.state is WorkflowEventTransportAdmissionState.ADMITTED
             and not any(candidate.authority.canonical_value().values())
             and not candidate.grants_publication_authority
             and not candidate.grants_delivery_authority

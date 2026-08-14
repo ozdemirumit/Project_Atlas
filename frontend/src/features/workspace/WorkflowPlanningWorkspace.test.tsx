@@ -14,6 +14,7 @@ import {
   type WorkflowDispatchEventEnvelope,
   type WorkflowDispatchOutboxEntry,
   type WorkflowDispatchOutboxPublicationLease,
+  type WorkflowEventTransportAdmission,
   type WorkflowExecutionAttempt,
   type WorkflowExecutionRun,
   type WorkflowOrchestrationLease,
@@ -352,6 +353,57 @@ const preparedEventEnvelope: WorkflowDispatchEventEnvelope = {
   canonical_digest: "9".repeat(64),
 };
 
+const admittedTransport: WorkflowEventTransportAdmission = {
+  transport_admission_id: "workflow-transport-admission.1234567890abcdef",
+  event_id: preparedEventEnvelope.event_id,
+  event_digest: preparedEventEnvelope.canonical_digest,
+  outbox_entry_id: pendingOutboxEntry.outbox_entry_id,
+  outbox_entry_digest: pendingOutboxEntry.canonical_digest,
+  dispatch_intent_id: pendingOutboxEntry.dispatch_intent_id,
+  dispatch_intent_digest: pendingOutboxEntry.dispatch_intent_digest,
+  plan_id: pendingOutboxEntry.plan_id,
+  plan_digest: pendingOutboxEntry.plan_digest,
+  run_id: pendingOutboxEntry.run_id,
+  run_digest: pendingOutboxEntry.run_digest,
+  step_run_id: pendingOutboxEntry.step_run_id,
+  step_run_digest: pendingOutboxEntry.step_run_digest,
+  step_id: pendingOutboxEntry.step_id,
+  attempt_id: pendingOutboxEntry.attempt_id,
+  attempt_digest: pendingOutboxEntry.attempt_digest,
+  attempt_number: pendingOutboxEntry.attempt_number,
+  scope: pendingOutboxEntry.scope,
+  target_id: pendingOutboxEntry.target_id,
+  target_type: pendingOutboxEntry.target_type,
+  policy: {
+    policy_id: "policy.workflow-event-transport-admission",
+    policy_version: "1.0",
+    policy_digest: "a".repeat(64),
+    allowed_event_type: preparedEventEnvelope.event_type,
+    allowed_event_version: preparedEventEnvelope.event_version,
+    allowed_schema_uri: preparedEventEnvelope.schema_uri,
+    allowed_data_classification: preparedEventEnvelope.data_classification,
+    representation_name: "canonical-json",
+    encoding: "utf-8",
+    maximum_canonical_byte_count: 65_536,
+  },
+  canonical_byte_count: 2_048,
+  publisher_subject_id: activePublicationLease.publisher_subject_id,
+  orchestration_lease_id: preparedEventEnvelope.orchestration_lease_id,
+  orchestration_lease_digest: preparedEventEnvelope.orchestration_lease_digest,
+  orchestration_fencing_token: preparedEventEnvelope.orchestration_fencing_token,
+  publication_lease_id: preparedEventEnvelope.publication_lease_id,
+  publication_lease_digest: preparedEventEnvelope.publication_lease_digest,
+  publication_fencing_token: preparedEventEnvelope.publication_fencing_token,
+  admitted_at: "2026-08-13T10:16:00Z",
+  state: "admitted",
+  authority: { ...preparedEventEnvelope.authority },
+  grants_publication_authority: false,
+  grants_delivery_authority: false,
+  grants_dispatch_authority: false,
+  grants_execution_authority: false,
+  canonical_digest: "b".repeat(64),
+};
+
 function leaseResponse(lease: WorkflowOrchestrationLease | null, status = 200): Response {
   return new Response(
     JSON.stringify({
@@ -489,6 +541,25 @@ function eventEnvelopeResponse(eventEnvelopes: unknown[], status = 200): Respons
   );
 }
 
+function transportAdmissionResponse(transportAdmissions: unknown[], status = 200): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            event_id: preparedEventEnvelope.event_id,
+            transport_admissions: transportAdmissions,
+            durable: false,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.transport-admission",
+            generated_at: "2026-08-13T10:17:00Z",
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function mockReadResponses(input: {
   lease?: WorkflowOrchestrationLease | null;
   run?: WorkflowExecutionRun | null;
@@ -497,6 +568,8 @@ function mockReadResponses(input: {
   outboxEntries?: unknown[];
   publicationLeases?: unknown[];
   eventEnvelopes?: unknown[];
+  transportAdmissions?: unknown[];
+  pendingTransportAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
   runStatus?: number;
   attemptStatus?: number;
@@ -504,9 +577,22 @@ function mockReadResponses(input: {
   outboxStatus?: number;
   publicationLeaseStatus?: number;
   eventEnvelopeStatus?: number;
+  transportAdmissionStatus?: number;
+  transportAdmissionStatuses?: number[];
 }) {
+  let transportAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/transport-admission")) {
+      if (input.pendingTransportAdmissionResponse) {
+        return input.pendingTransportAdmissionResponse;
+      }
+      const status =
+        input.transportAdmissionStatuses?.[
+          Math.min(transportAdmissionReadCount++, input.transportAdmissionStatuses.length - 1)
+        ] ?? input.transportAdmissionStatus ?? 200;
+      return Promise.resolve(transportAdmissionResponse(input.transportAdmissions ?? [], status));
+    }
     if (url.endsWith("/event-envelope")) {
       return Promise.resolve(
         eventEnvelopeResponse(input.eventEnvelopes ?? [], input.eventEnvelopeStatus ?? 200),
@@ -1676,5 +1762,260 @@ describe("WorkflowPlanningWorkspace", () => {
         name: /prepare|serialize|publish|deliver|dispatch|execute/i,
       }),
     ).toBeNull();
+  });
+
+  it("loads and renders one exact transport-admission decision without operational controls", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [admittedTransport],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport-admission evidence",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Transport-admission evidence",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          `/outbox/${pendingOutboxEntry.outbox_entry_id}/event-envelope/${preparedEventEnvelope.event_id}/transport-admission`,
+        ),
+      ),
+    ).toBe(true);
+    expect(within(section).getByTitle(admittedTransport.transport_admission_id)).toBeVisible();
+    expect(records).toHaveTextContent("admitted");
+    expect(within(section).getByTitle(admittedTransport.policy.policy_id)).toBeVisible();
+    expect(records).toHaveTextContent("v1.0");
+    expect(records).toHaveTextContent("canonical-json");
+    expect(records).toHaveTextContent("utf-8");
+    expect(records).toHaveTextContent("WorkflowStepDispatchRequested v1.0");
+    expect(records).toHaveTextContent("classification internal");
+    expect(within(section).getByTitle(preparedEventEnvelope.schema_uri)).toBeVisible();
+    expect(records).toHaveTextContent("canonical size 2,048 bytes");
+    expect(records).toHaveTextContent("policy maximum 65,536 bytes");
+    expect(records).toHaveTextContent("organization organization.test");
+    expect(records).toHaveTextContent("environment environment.test");
+    expect(records).toHaveTextContent("site site.test");
+    expect(records).toHaveTextContent("target asset.storage.test");
+    expect(records).toHaveTextContent("publication fence 1");
+    expect(records).toHaveTextContent("source fence 7");
+    expect(records).toHaveTextContent("policy aaaaaaaaaaaa...aaaaaaaa");
+    expect(records).toHaveTextContent("event 999999999999...99999999");
+    expect(records).toHaveTextContent("outbox 666666666666...66666666");
+    expect(records).toHaveTextContent("intent 444444444444...44444444");
+    expect(records).toHaveTextContent("attempt 222222222222...22222222");
+    expect(records).toHaveTextContent("run 111111111111...11111111");
+    expect(records).toHaveTextContent("step 999999999999...99999999");
+    expect(records).toHaveTextContent("plan cccccccccccc...cccccccc");
+    expect(section).toHaveTextContent("Admission proves policy eligibility only");
+    expect(section).toHaveTextContent("No broker, provider, or route was selected");
+    expect(section).toHaveTextContent("no wire bytes or message were created");
+    expect(section).toHaveTextContent("nothing was serialized, published, delivered, dispatched, or executed");
+    expect(
+      within(section).queryByRole("button", {
+        name: /admit|serialize|publish|deliver|dispatch|execute|acquire|heartbeat|release/i,
+      }),
+    ).toBeNull();
+    expect(within(section).queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
+  });
+
+  it("renders zero transport-admission decisions as a healthy read-only state", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport-admission evidence",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(
+      await within(section).findByText("No transport-admission decision has been recorded."),
+    ).toBeVisible();
+    expect(within(section).queryByRole("alert")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("shows a loading state while the authoritative transport-admission read is pending", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      pendingTransportAdmissionResponse: new Promise<Response>(() => undefined),
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport-admission evidence",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(
+      await within(section).findByText("Loading authoritative transport-admission evidence..."),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("retries a failed transport-admission read without creating an admission action", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [admittedTransport],
+      transportAdmissionStatuses: [500, 200],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport-admission evidence",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText("Transport-admission evidence is unavailable")).toBeVisible();
+    expect(section).toHaveTextContent(
+      "No admission, serialization, publication, delivery, dispatch, or execution state is inferred",
+    );
+    fireEvent.click(within(section).getByRole("button", { name: "Retry transport-admission read" }));
+    expect(await within(section).findByTitle(admittedTransport.transport_admission_id)).toBeVisible();
+    expect(
+      within(section).queryByRole("button", {
+        name: /admit|serialize|publish|deliver|dispatch|execute|acquire|heartbeat|release/i,
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [403, "Transport-admission evidence permission is missing", "current role or scope cannot inspect"],
+  ])("handles transport-admission read status %s with the normal session boundary", async (status, title, detail) => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissionStatus: status,
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport-admission evidence",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText(title)).toBeVisible();
+    expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+    expect(within(section).queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
+    expect(
+      within(section).queryByRole("button", {
+        name: /admit|serialize|publish|deliver|dispatch|execute|acquire|heartbeat|release/i,
+      }),
+    ).toBeNull();
+  });
+
+  it("fails closed when duplicate transport-admission decisions are returned", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [
+        admittedTransport,
+        { ...admittedTransport, transport_admission_id: "workflow-transport-admission.other" },
+      ],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport-admission evidence",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText("Transport-admission evidence is unavailable")).toBeVisible();
+    expect(within(section).queryByRole("list", { name: "Transport-admission evidence" })).toBeNull();
+  });
+
+  it.each([
+    ["an extra key", { ...admittedTransport, unexpected: "unsafe" }],
+    ["a different event digest", { ...admittedTransport, event_digest: "0".repeat(64) }],
+    [
+      "a changed workflow lineage",
+      { ...admittedTransport, attempt_digest: "0".repeat(64) },
+    ],
+    [
+      "a changed policy schema",
+      {
+        ...admittedTransport,
+        policy: {
+          ...admittedTransport.policy,
+          allowed_schema_uri: "urn:project-atlas:event:unsafe:1.0",
+        },
+      },
+    ],
+    [
+      "an oversized canonical representation",
+      {
+        ...admittedTransport,
+        canonical_byte_count: admittedTransport.policy.maximum_canonical_byte_count + 1,
+      },
+    ],
+    [
+      "publication authority",
+      { ...admittedTransport, grants_publication_authority: true },
+    ],
+  ])("fails closed when transport-admission evidence contains %s", async (_case, unsafeAdmission) => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [unsafeAdmission],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport-admission evidence",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText("Transport-admission evidence is unavailable")).toBeVisible();
+    expect(section).toHaveTextContent(
+      "No admission, serialization, publication, delivery, dispatch, or execution state is inferred",
+    );
+    expect(within(section).queryByRole("list", { name: "Transport-admission evidence" })).toBeNull();
   });
 });
