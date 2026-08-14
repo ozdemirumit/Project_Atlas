@@ -11,6 +11,20 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: atlas_test
+          POSTGRES_USER: atlas
+          POSTGRES_PASSWORD: atlas
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U atlas -d atlas_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
@@ -32,8 +46,15 @@ jobs:
       - name: Type check
         working-directory: backend
         run: uv run mypy
+      - name: Migrate PostgreSQL integration database
+        working-directory: backend
+        env:
+          ATLAS_DATABASE_URL: postgresql+psycopg://atlas:atlas@localhost:5432/atlas_test
+        run: uv run alembic upgrade head
       - name: Test
         working-directory: backend
+        env:
+          ATLAS_TEST_POSTGRES_DSN: postgresql+psycopg://atlas:atlas@localhost:5432/atlas_test
         run: uv run pytest
 
   frontend:

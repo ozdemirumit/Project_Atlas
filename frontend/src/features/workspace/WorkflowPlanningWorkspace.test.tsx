@@ -20,6 +20,7 @@ import {
   type WorkflowExecutionAttempt,
   type WorkflowExecutionRun,
   type WorkflowOrchestrationLease,
+  type WorkflowPhysicalTransportRouteBinding,
   type WorkflowRunPlan,
   type WorkflowTransportCompatibilityAdmission,
   type WorkflowTransportProfileSnapshot,
@@ -617,6 +618,34 @@ const transportRouteSnapshot: WorkflowTransportRouteSnapshot = {
   canonical_digest: "8".repeat(64),
 };
 
+const physicalTransportRouteBinding: WorkflowPhysicalTransportRouteBinding = {
+  binding_id: "workflow-physical-transport-route-binding.1234567890abcdef",
+  logical_channel_binding_id: logicalChannelBinding.logical_channel_binding_id,
+  compatibility_admission_id:
+    "workflow-transport-compatibility-admission.1234567890abcdef",
+  transport_profile_snapshot_id: transportProfileSnapshot.snapshot_id,
+  transport_route_snapshot_id: transportRouteSnapshot.snapshot_id,
+  policy_id: "policy.workflow-physical-transport-route-binding",
+  policy_version: "1.0",
+  scope: { ...plan.scope },
+  binder_subject_id: "workload.workflow-physical-route-binder",
+  bound_at: "2026-08-14T10:06:00Z",
+  state: "bound",
+  authority: {
+    route_selection_authorized: false,
+    route_binding_authorized: false,
+    endpoint_resolution_authorized: false,
+    credential_access_authorized: false,
+    network_access_authorized: false,
+    readiness_probe_authorized: false,
+    publication_authorized: false,
+    delivery_authorized: false,
+    dispatch_authorized: false,
+    execution_authorized: false,
+  },
+  integrity_reference: "integrity-ref.workflow-physical-route-binding.1234567890abcdef",
+};
+
 const transportCompatibilityAdmission: WorkflowTransportCompatibilityAdmission = {
   compatibility_admission_id:
     "workflow-transport-compatibility-admission.1234567890abcdef",
@@ -889,6 +918,21 @@ function transportRouteSnapshotResponse(snapshots: unknown[], status = 200): Res
   );
 }
 
+function physicalTransportRouteBindingResponse(bindings: unknown[], status = 200): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: { physical_transport_route_bindings: bindings, durable: false },
+          meta: {
+            correlation_id: "correlation.workflow.physical-transport-route-binding",
+            generated_at: "2026-08-14T10:06:00Z",
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function transportCompatibilityAdmissionResponse(
   admissions: unknown[],
   status = 200,
@@ -924,12 +968,14 @@ function mockReadResponses(input: {
   logicalChannelBindings?: unknown[];
   transportProfileSnapshots?: unknown[];
   transportRouteSnapshots?: unknown[];
+  physicalTransportRouteBindings?: unknown[];
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
   pendingByteArtifactResponse?: Promise<Response>;
   pendingLogicalChannelBindingResponse?: Promise<Response>;
   pendingTransportProfileResponse?: Promise<Response>;
   pendingTransportRouteSnapshotResponse?: Promise<Response>;
+  pendingPhysicalTransportRouteBindingResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
   runStatus?: number;
@@ -948,6 +994,8 @@ function mockReadResponses(input: {
   transportProfileStatuses?: number[];
   transportRouteSnapshotStatus?: number;
   transportRouteSnapshotStatuses?: number[];
+  physicalTransportRouteBindingStatus?: number;
+  physicalTransportRouteBindingStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
   transportCompatibilityAdmissionStatuses?: number[];
 }) {
@@ -956,9 +1004,28 @@ function mockReadResponses(input: {
   let logicalChannelBindingReadCount = 0;
   let transportProfileReadCount = 0;
   let transportRouteSnapshotReadCount = 0;
+  let physicalTransportRouteBindingReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/api/v1/workflows/physical-transport-route-bindings")) {
+      if (input.pendingPhysicalTransportRouteBindingResponse) {
+        return input.pendingPhysicalTransportRouteBindingResponse;
+      }
+      const status =
+        input.physicalTransportRouteBindingStatuses?.[
+          Math.min(
+            physicalTransportRouteBindingReadCount++,
+            input.physicalTransportRouteBindingStatuses.length - 1,
+          )
+        ] ?? input.physicalTransportRouteBindingStatus ?? 200;
+      return Promise.resolve(
+        physicalTransportRouteBindingResponse(
+          input.physicalTransportRouteBindings ?? [],
+          status,
+        ),
+      );
+    }
     if (url.endsWith("/api/v1/workflows/transport-route-snapshots")) {
       if (input.pendingTransportRouteSnapshotResponse) {
         return input.pendingTransportRouteSnapshotResponse;
@@ -1326,7 +1393,7 @@ describe("WorkflowPlanningWorkspace", () => {
         name: /register|update|remove|select|bind|rebind|resolve|probe|credential|publish|deliver|dispatch|execute/i,
       }),
     ).toBeNull();
-    expect(screen.queryByRole("heading", { name: /route binding/i })).toBeNull();
+    expect(within(section).queryByRole("heading", { name: /route binding/i })).toBeNull();
     expect(section).not.toHaveTextContent(/authorized browser session|MFA|second login/i);
     expect(section).not.toHaveTextContent(
       /https?:\/\/|\b(?:\d{1,3}\.){3}\d{1,3}\b|broker\.internal|hidden-topic|field digest/i,
@@ -1440,6 +1507,181 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(section).not.toHaveTextContent(
       /broker\.internal|hidden-topic|hidden-credential|site\.other|tls-optional/i,
     );
+  });
+
+  it("loads immutable physical route bindings without digests, route details, or mutation controls", async () => {
+    mockReadResponses({ physicalTransportRouteBindings: [physicalTransportRouteBinding] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport route bindings",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Physical transport route bindings",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/physical-transport-route-bindings",
+        ),
+      ),
+    ).toBe(true);
+    expect(within(section).getByTitle(physicalTransportRouteBinding.binding_id)).toBeVisible();
+    expect(
+      within(section).getByTitle(physicalTransportRouteBinding.logical_channel_binding_id),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(physicalTransportRouteBinding.compatibility_admission_id),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(physicalTransportRouteBinding.transport_profile_snapshot_id),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(physicalTransportRouteBinding.transport_route_snapshot_id),
+    ).toBeVisible();
+    expect(within(section).getByTitle(physicalTransportRouteBinding.policy_id)).toBeVisible();
+    expect(
+      within(section).getByTitle(physicalTransportRouteBinding.binder_subject_id),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(physicalTransportRouteBinding.integrity_reference),
+    ).toBeVisible();
+    expect(records).toHaveTextContent("bound");
+    expect(records).toHaveTextContent("organization.test");
+    expect(records).toHaveTextContent(
+      "Authority route selection false | route binding false | endpoint resolution false | credential access false | network access false | readiness probe false | publication false | delivery false | dispatch false | execution false",
+    );
+    expect(
+      within(section).queryByRole("button", {
+        name: /create|register|update|remove|select|bind|rebind|resolve|probe|credential|publish|deliver|dispatch|execute/i,
+      }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(/digest|https?:\/\/|hostname|IP address|topic|stream|queue|partition|routing key|MFA|second login|authorized browser session/i);
+  });
+
+  it("renders an empty physical route binding inventory as a healthy read-only state", async () => {
+    mockReadResponses({ physicalTransportRouteBindings: [] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport route bindings",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "No physical transport route bindings are recorded in this scope.",
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("alert")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("retries a failed physical route binding read without mutation controls", async () => {
+    mockReadResponses({
+      physicalTransportRouteBindings: [physicalTransportRouteBinding],
+      physicalTransportRouteBindingStatuses: [500, 200],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport route bindings",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Physical transport route bindings are unavailable"),
+    ).toBeVisible();
+    fireEvent.click(
+      within(section).getByRole("button", {
+        name: "Retry physical transport route binding read",
+      }),
+    );
+    expect(await within(section).findByTitle(physicalTransportRouteBinding.binding_id)).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [
+      403,
+      "Physical transport route binding permission is missing",
+      "current role or scope cannot inspect",
+    ],
+  ])(
+    "handles physical route binding status %s with the normal session boundary",
+    async (status, title, detail) => {
+      mockReadResponses({ physicalTransportRouteBindingStatus: status });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Physical transport route bindings",
+      })).closest("section") as HTMLElement;
+      expect(await within(section).findByText(title)).toBeVisible();
+      expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+      expect(within(section).queryByRole("button")).toBeNull();
+      if (status !== 401) expect(section).not.toHaveTextContent("Sign in again");
+      expect(section).not.toHaveTextContent(/MFA|second login|authorized browser session/i);
+    },
+  );
+
+  it.each([
+    ["a digest", { ...physicalTransportRouteBinding, canonical_digest: "a".repeat(64) }],
+    ["route details", { ...physicalTransportRouteBinding, endpoint_url: "https://broker.internal" }],
+    ["credential material", { ...physicalTransportRouteBinding, credential: "hidden-secret" }],
+    [
+      "a changed scope",
+      {
+        ...physicalTransportRouteBinding,
+        scope: { ...physicalTransportRouteBinding.scope, site_id: "site.other" },
+      },
+    ],
+    [
+      "operational authority",
+      {
+        ...physicalTransportRouteBinding,
+        authority: {
+          ...physicalTransportRouteBinding.authority,
+          route_binding_authorized: true,
+        },
+      },
+    ],
+    ["an unbound state", { ...physicalTransportRouteBinding, state: "pending" }],
+  ])("fails closed when a physical route binding contains %s", async (_case, unsafeBinding) => {
+    mockReadResponses({ physicalTransportRouteBindings: [unsafeBinding] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport route bindings",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Physical transport route bindings are unavailable"),
+    ).toBeVisible();
+    expect(
+      within(section).queryByRole("list", { name: "Physical transport route bindings" }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(/broker\.internal|hidden-secret|site\.other|pending/i);
+  });
+
+  it("fails closed when one logical channel has duplicate physical route bindings", async () => {
+    mockReadResponses({
+      physicalTransportRouteBindings: [
+        physicalTransportRouteBinding,
+        {
+          ...physicalTransportRouteBinding,
+          binding_id: "workflow-physical-transport-route-binding.abcdef1234567890",
+          integrity_reference:
+            "integrity-ref.workflow-physical-route-binding.abcdef1234567890",
+        },
+      ],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport route bindings",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Physical transport route bindings are unavailable"),
+    ).toBeVisible();
+    expect(
+      within(section).queryByRole("list", { name: "Physical transport route bindings" }),
+    ).toBeNull();
   });
 
   it("creates and presents a planned-only workflow without requesting another login", async () => {

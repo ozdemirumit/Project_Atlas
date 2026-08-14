@@ -32,6 +32,8 @@ from atlas.core.persistence.models import (
     WorkflowEventByteArtifactModel,
     WorkflowEventLogicalChannelBindingClaimModel,
     WorkflowEventLogicalChannelBindingModel,
+    WorkflowEventPhysicalTransportRouteBindingClaimModel,
+    WorkflowEventPhysicalTransportRouteBindingModel,
     WorkflowEventTransportAdmissionClaimModel,
     WorkflowEventTransportAdmissionModel,
     WorkflowEventTransportCompatibilityAdmissionClaimModel,
@@ -103,6 +105,13 @@ from atlas.modules.workflows.application.logical_channel_binding_ports import (
     WorkflowEventLogicalChannelBindingResult,
     WorkflowEventLogicalChannelBindingStatus,
 )
+from atlas.modules.workflows.application.physical_route_binding_ports import (
+    WorkflowEventPhysicalTransportRouteBindingError,
+    WorkflowEventPhysicalTransportRouteBindingIdempotencyRecord,
+    WorkflowEventPhysicalTransportRouteBindingRequest,
+    WorkflowEventPhysicalTransportRouteBindingResult,
+    WorkflowEventPhysicalTransportRouteBindingStatus,
+)
 from atlas.modules.workflows.application.publication_lease_ports import (
     WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord,
     WorkflowOutboxPublicationLeaseAcquireRequest,
@@ -163,6 +172,9 @@ from atlas.modules.workflows.domain import (
     WorkflowEventLogicalChannelBinding,
     WorkflowEventLogicalChannelBindingAuthority,
     WorkflowEventLogicalChannelBindingState,
+    WorkflowEventPhysicalTransportRouteBinding,
+    WorkflowEventPhysicalTransportRouteBindingAuthority,
+    WorkflowEventPhysicalTransportRouteBindingState,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportAdmissionAuthority,
     WorkflowEventTransportAdmissionState,
@@ -1869,6 +1881,203 @@ class PostgreSQLWorkflowPlanRepository:
                 )
         return WorkflowEventTransportCompatibilityAdmissionResult(
             WorkflowEventTransportCompatibilityAdmissionStatus.EVIDENCE_CONFLICT,
+            None,
+        )
+
+    async def get_transport_compatibility_admission_by_id(
+        self, *, admission_id: str
+    ) -> WorkflowEventTransportCompatibilityAdmission | None:
+        async with self._sessions() as session:
+            row = await session.get(WorkflowEventTransportCompatibilityAdmissionModel, admission_id)
+            return None if row is None else self._transport_compatibility_admission_from_row(row)
+
+    async def get_transport_route_snapshot_by_id(
+        self, *, snapshot_id: str
+    ) -> EventPhysicalTransportRouteSnapshot | None:
+        async with self._sessions() as session:
+            row = await session.get(EventPhysicalTransportRouteSnapshotModel, snapshot_id)
+            return None if row is None else self._transport_route_snapshot_from_row(row)
+
+    async def get_physical_transport_route_binding(
+        self, *, logical_channel_binding_id: str
+    ) -> WorkflowEventPhysicalTransportRouteBinding | None:
+        async with self._sessions() as session:
+            row = cast(
+                WorkflowEventPhysicalTransportRouteBindingModel | None,
+                await session.scalar(
+                    select(WorkflowEventPhysicalTransportRouteBindingModel).where(
+                        WorkflowEventPhysicalTransportRouteBindingModel.logical_channel_binding_id
+                        == logical_channel_binding_id
+                    )
+                ),
+            )
+            return None if row is None else self._physical_transport_route_binding_from_row(row)
+
+    async def list_physical_transport_route_bindings(
+        self, *, scope: WorkflowScope, limit: int = 256
+    ) -> tuple[WorkflowEventPhysicalTransportRouteBinding, ...]:
+        async with self._sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(WorkflowEventPhysicalTransportRouteBindingModel)
+                    .where(
+                        WorkflowEventPhysicalTransportRouteBindingModel.organization_id
+                        == scope.organization_id,
+                        WorkflowEventPhysicalTransportRouteBindingModel.environment_id
+                        == scope.environment_id,
+                        WorkflowEventPhysicalTransportRouteBindingModel.site_id == scope.site_id,
+                    )
+                    .order_by(WorkflowEventPhysicalTransportRouteBindingModel.binding_id)
+                    .limit(limit)
+                )
+            ).all()
+            return tuple(self._physical_transport_route_binding_from_row(row) for row in rows)
+
+    async def get_physical_transport_route_binding_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        binder_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventPhysicalTransportRouteBindingIdempotencyRecord | None:
+        async with self._sessions() as session:
+            claim = await self._load_physical_transport_route_binding_claim(
+                session,
+                scope=scope,
+                binder_subject_id=binder_subject_id,
+                idempotency_key=idempotency_key,
+            )
+            if claim is None:
+                return None
+            binding_row = await session.get(
+                WorkflowEventPhysicalTransportRouteBindingModel, claim.binding_id
+            )
+            return self._physical_transport_route_binding_record_from_claim(claim, binding_row)
+
+    async def bind_physical_transport_route(
+        self, request: WorkflowEventPhysicalTransportRouteBindingRequest
+    ) -> WorkflowEventPhysicalTransportRouteBindingResult:
+        self._validate_physical_transport_route_binding_request(request)
+        candidate = request.candidate
+        async with self._sessions() as session:
+            replay = await self._physical_transport_route_binding_replay(session, request=request)
+            if replay is not None:
+                return replay
+
+            # This order is part of the repository contract. Every physical
+            # binding transaction acquires these exact immutable rows in the
+            # same sequence to avoid inverse lock-order deadlocks.
+            logical_row = cast(
+                WorkflowEventLogicalChannelBindingModel | None,
+                await session.scalar(
+                    select(WorkflowEventLogicalChannelBindingModel)
+                    .where(
+                        WorkflowEventLogicalChannelBindingModel.binding_id
+                        == candidate.logical_channel_binding_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            profile_row = cast(
+                EventPhysicalTransportProfileSnapshotModel | None,
+                await session.scalar(
+                    select(EventPhysicalTransportProfileSnapshotModel)
+                    .where(
+                        EventPhysicalTransportProfileSnapshotModel.snapshot_id
+                        == candidate.transport_profile_snapshot_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            admission_row = cast(
+                WorkflowEventTransportCompatibilityAdmissionModel | None,
+                await session.scalar(
+                    select(WorkflowEventTransportCompatibilityAdmissionModel)
+                    .where(
+                        WorkflowEventTransportCompatibilityAdmissionModel.compatibility_admission_id
+                        == candidate.transport_compatibility_admission_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            route_row = cast(
+                EventPhysicalTransportRouteSnapshotModel | None,
+                await session.scalar(
+                    select(EventPhysicalTransportRouteSnapshotModel)
+                    .where(
+                        EventPhysicalTransportRouteSnapshotModel.snapshot_id
+                        == candidate.transport_route_snapshot_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            if not self._physical_transport_route_binding_evidence_matches(
+                logical_row=logical_row,
+                profile_row=profile_row,
+                admission_row=admission_row,
+                route_row=route_row,
+                request=request,
+            ):
+                await session.rollback()
+                return WorkflowEventPhysicalTransportRouteBindingResult(
+                    WorkflowEventPhysicalTransportRouteBindingStatus.EVIDENCE_CONFLICT,
+                    None,
+                )
+
+            # A concurrent exact request may have committed its claim while
+            # this transaction waited on the fixed-order source locks.
+            replay = await self._physical_transport_route_binding_replay(session, request=request)
+            if replay is not None:
+                await session.rollback()
+                return replay
+
+            existing = cast(
+                WorkflowEventPhysicalTransportRouteBindingModel | None,
+                await session.scalar(
+                    select(WorkflowEventPhysicalTransportRouteBindingModel).where(
+                        WorkflowEventPhysicalTransportRouteBindingModel.logical_channel_binding_id
+                        == candidate.logical_channel_binding_id
+                    )
+                ),
+            )
+            if existing is not None:
+                await session.rollback()
+                return WorkflowEventPhysicalTransportRouteBindingResult(
+                    WorkflowEventPhysicalTransportRouteBindingStatus.ALREADY_BOUND,
+                    self._physical_transport_route_binding_from_row(existing),
+                )
+
+            try:
+                session.add(self._physical_transport_route_binding_model(candidate))
+                session.add(self._physical_transport_route_binding_claim_model(request))
+                await session.commit()
+                return WorkflowEventPhysicalTransportRouteBindingResult(
+                    WorkflowEventPhysicalTransportRouteBindingStatus.BOUND,
+                    candidate,
+                )
+            except IntegrityError:
+                await session.rollback()
+
+        async with self._sessions() as session:
+            replay = await self._physical_transport_route_binding_replay(session, request=request)
+            if replay is not None:
+                return replay
+            existing = cast(
+                WorkflowEventPhysicalTransportRouteBindingModel | None,
+                await session.scalar(
+                    select(WorkflowEventPhysicalTransportRouteBindingModel).where(
+                        WorkflowEventPhysicalTransportRouteBindingModel.logical_channel_binding_id
+                        == candidate.logical_channel_binding_id
+                    )
+                ),
+            )
+            if existing is not None:
+                return WorkflowEventPhysicalTransportRouteBindingResult(
+                    WorkflowEventPhysicalTransportRouteBindingStatus.ALREADY_BOUND,
+                    self._physical_transport_route_binding_from_row(existing),
+                )
+        return WorkflowEventPhysicalTransportRouteBindingResult(
+            WorkflowEventPhysicalTransportRouteBindingStatus.EVIDENCE_CONFLICT,
             None,
         )
 
@@ -6362,6 +6571,375 @@ class PostgreSQLWorkflowPlanRepository:
         raise WorkflowEventTransportCompatibilityAdmissionError(
             "workflow_transport_compatibility_admission_repository_contract_violation",
             "The workflow transport compatibility admission does not match its durable evidence.",
+        )
+
+    async def _physical_transport_route_binding_replay(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowEventPhysicalTransportRouteBindingRequest,
+    ) -> WorkflowEventPhysicalTransportRouteBindingResult | None:
+        claim = await self._load_physical_transport_route_binding_claim(
+            session,
+            scope=request.scope,
+            binder_subject_id=request.binder_subject_id,
+            idempotency_key=request.idempotency_key,
+        )
+        if claim is None:
+            return None
+        binding_row = await session.get(
+            WorkflowEventPhysicalTransportRouteBindingModel, claim.binding_id
+        )
+        record = self._physical_transport_route_binding_record_from_claim(claim, binding_row)
+        status = (
+            WorkflowEventPhysicalTransportRouteBindingStatus.REPLAY
+            if claim.request_fingerprint == request.request_fingerprint
+            else WorkflowEventPhysicalTransportRouteBindingStatus.IDEMPOTENCY_CONFLICT
+        )
+        return WorkflowEventPhysicalTransportRouteBindingResult(status, record.binding)
+
+    @classmethod
+    async def _load_physical_transport_route_binding_claim(
+        cls,
+        session: AsyncSession,
+        *,
+        scope: WorkflowScope,
+        binder_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventPhysicalTransportRouteBindingClaimModel | None:
+        return cast(
+            WorkflowEventPhysicalTransportRouteBindingClaimModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportRouteBindingClaimModel).where(
+                    WorkflowEventPhysicalTransportRouteBindingClaimModel.idempotency_scope_id
+                    == cls._physical_transport_route_binding_idempotency_scope(
+                        scope, binder_subject_id
+                    ),
+                    WorkflowEventPhysicalTransportRouteBindingClaimModel.idempotency_key
+                    == idempotency_key,
+                    WorkflowEventPhysicalTransportRouteBindingClaimModel.organization_id
+                    == scope.organization_id,
+                    WorkflowEventPhysicalTransportRouteBindingClaimModel.environment_id
+                    == scope.environment_id,
+                    WorkflowEventPhysicalTransportRouteBindingClaimModel.site_id == scope.site_id,
+                    WorkflowEventPhysicalTransportRouteBindingClaimModel.binder_subject_id
+                    == binder_subject_id,
+                )
+            ),
+        )
+
+    @classmethod
+    def _physical_transport_route_binding_record_from_claim(
+        cls,
+        claim: WorkflowEventPhysicalTransportRouteBindingClaimModel,
+        binding_row: WorkflowEventPhysicalTransportRouteBindingModel | None,
+    ) -> WorkflowEventPhysicalTransportRouteBindingIdempotencyRecord:
+        if binding_row is None:
+            cls._physical_transport_route_binding_contract_violation()
+        assert binding_row is not None
+        binding = cls._physical_transport_route_binding_from_row(binding_row)
+        scope_id = cls._physical_transport_route_binding_idempotency_scope(
+            binding.scope, binding.binder_subject_id
+        )
+        payload: dict[str, Any] = {
+            "idempotency_key": claim.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": claim.request_fingerprint,
+            "result_binding": cls._physical_transport_route_binding_payload(binding),
+            "result_digest": binding.canonical_digest,
+        }
+        if (
+            claim.idempotency_scope_id != scope_id
+            or claim.result_digest != binding.canonical_digest
+            or claim.binding_id != binding.binding_id
+            or claim.logical_channel_binding_id != binding.logical_channel_binding_id
+            or claim.transport_compatibility_admission_id
+            != binding.transport_compatibility_admission_id
+            or claim.transport_profile_snapshot_id != binding.transport_profile_snapshot_id
+            or claim.transport_route_snapshot_id != binding.transport_route_snapshot_id
+            or claim.policy_digest != binding.policy_digest
+            or claim.organization_id != binding.scope.organization_id
+            or claim.environment_id != binding.scope.environment_id
+            or claim.site_id != binding.scope.site_id
+            or claim.binder_subject_id != binding.binder_subject_id
+            or claim.created_at.tzinfo is None
+            or claim.created_at != binding.bound_at
+            or claim.payload != payload
+            or claim.canonical_digest != canonical_digest(payload)
+        ):
+            cls._physical_transport_route_binding_contract_violation()
+        return WorkflowEventPhysicalTransportRouteBindingIdempotencyRecord(
+            request_fingerprint=claim.request_fingerprint,
+            binding=binding,
+        )
+
+    @classmethod
+    def _physical_transport_route_binding_from_row(
+        cls, row: WorkflowEventPhysicalTransportRouteBindingModel
+    ) -> WorkflowEventPhysicalTransportRouteBinding:
+        try:
+            binding = cls._physical_transport_route_binding_to_domain(row.payload)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowEventPhysicalTransportRouteBindingError(
+                "workflow_physical_transport_route_binding_repository_contract_violation",
+                "The workflow physical transport route binding record is invalid.",
+            ) from exc
+        authority = binding.authority
+        if (
+            row.binding_id != binding.binding_id
+            or row.logical_channel_binding_id != binding.logical_channel_binding_id
+            or row.logical_channel_binding_digest != binding.logical_channel_binding_digest
+            or row.transport_compatibility_admission_id
+            != binding.transport_compatibility_admission_id
+            or row.transport_compatibility_admission_digest
+            != binding.transport_compatibility_admission_digest
+            or row.transport_profile_snapshot_id != binding.transport_profile_snapshot_id
+            or row.transport_profile_snapshot_digest != binding.transport_profile_snapshot_digest
+            or row.transport_route_snapshot_id != binding.transport_route_snapshot_id
+            or row.transport_route_snapshot_digest != binding.transport_route_snapshot_digest
+            or row.policy_id != binding.policy_id
+            or row.policy_version != binding.policy_version
+            or row.policy_digest != binding.policy_digest
+            or row.organization_id != binding.scope.organization_id
+            or row.environment_id != binding.scope.environment_id
+            or row.site_id != binding.scope.site_id
+            or row.binder_subject_id != binding.binder_subject_id
+            or row.bound_at != binding.bound_at
+            or row.state != binding.state.value
+            or row.endpoint_resolution_authority_granted != authority.endpoint_resolution_authorized
+            or row.route_selection_authority_granted != authority.route_selection_authorized
+            or row.route_binding_authority_granted != authority.route_binding_authorized
+            or row.credential_access_authority_granted != authority.credential_access_authorized
+            or row.network_access_authority_granted != authority.network_access_authorized
+            or row.readiness_probe_authority_granted != authority.readiness_probe_authorized
+            or row.publication_authority_granted != authority.publication_authorized
+            or row.delivery_authority_granted != authority.delivery_authorized
+            or row.dispatch_authority_granted != authority.dispatch_authorized
+            or row.execution_authority_granted != authority.execution_authorized
+            or row.canonical_digest != binding.canonical_digest
+            or row.payload != cls._physical_transport_route_binding_payload(binding)
+        ):
+            cls._physical_transport_route_binding_contract_violation()
+        return binding
+
+    @classmethod
+    def _physical_transport_route_binding_model(
+        cls, binding: WorkflowEventPhysicalTransportRouteBinding
+    ) -> WorkflowEventPhysicalTransportRouteBindingModel:
+        authority = binding.authority
+        return WorkflowEventPhysicalTransportRouteBindingModel(
+            binding_id=binding.binding_id,
+            logical_channel_binding_id=binding.logical_channel_binding_id,
+            logical_channel_binding_digest=binding.logical_channel_binding_digest,
+            transport_compatibility_admission_id=binding.transport_compatibility_admission_id,
+            transport_compatibility_admission_digest=(
+                binding.transport_compatibility_admission_digest
+            ),
+            transport_profile_snapshot_id=binding.transport_profile_snapshot_id,
+            transport_profile_snapshot_digest=binding.transport_profile_snapshot_digest,
+            transport_route_snapshot_id=binding.transport_route_snapshot_id,
+            transport_route_snapshot_digest=binding.transport_route_snapshot_digest,
+            policy_id=binding.policy_id,
+            policy_version=binding.policy_version,
+            policy_digest=binding.policy_digest,
+            organization_id=binding.scope.organization_id,
+            environment_id=binding.scope.environment_id,
+            site_id=binding.scope.site_id,
+            binder_subject_id=binding.binder_subject_id,
+            bound_at=binding.bound_at,
+            state=binding.state.value,
+            endpoint_resolution_authority_granted=authority.endpoint_resolution_authorized,
+            route_selection_authority_granted=authority.route_selection_authorized,
+            route_binding_authority_granted=authority.route_binding_authorized,
+            credential_access_authority_granted=authority.credential_access_authorized,
+            network_access_authority_granted=authority.network_access_authorized,
+            readiness_probe_authority_granted=authority.readiness_probe_authorized,
+            publication_authority_granted=authority.publication_authorized,
+            delivery_authority_granted=authority.delivery_authorized,
+            dispatch_authority_granted=authority.dispatch_authorized,
+            execution_authority_granted=authority.execution_authorized,
+            canonical_digest=binding.canonical_digest,
+            payload=cls._physical_transport_route_binding_payload(binding),
+        )
+
+    @classmethod
+    def _physical_transport_route_binding_claim_model(
+        cls, request: WorkflowEventPhysicalTransportRouteBindingRequest
+    ) -> WorkflowEventPhysicalTransportRouteBindingClaimModel:
+        binding = request.candidate
+        scope_id = cls._physical_transport_route_binding_idempotency_scope(
+            binding.scope, binding.binder_subject_id
+        )
+        payload: dict[str, Any] = {
+            "idempotency_key": request.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": request.request_fingerprint,
+            "result_binding": cls._physical_transport_route_binding_payload(binding),
+            "result_digest": binding.canonical_digest,
+        }
+        digest = canonical_digest(payload)
+        return WorkflowEventPhysicalTransportRouteBindingClaimModel(
+            claim_id=f"wf_physical_route_claim_{sha256(digest.encode()).hexdigest()[:32]}",
+            idempotency_scope_id=scope_id,
+            idempotency_key=request.idempotency_key,
+            request_fingerprint=request.request_fingerprint,
+            result_digest=binding.canonical_digest,
+            binding_id=binding.binding_id,
+            logical_channel_binding_id=binding.logical_channel_binding_id,
+            transport_compatibility_admission_id=(binding.transport_compatibility_admission_id),
+            transport_profile_snapshot_id=binding.transport_profile_snapshot_id,
+            transport_route_snapshot_id=binding.transport_route_snapshot_id,
+            policy_digest=binding.policy_digest,
+            organization_id=binding.scope.organization_id,
+            environment_id=binding.scope.environment_id,
+            site_id=binding.scope.site_id,
+            binder_subject_id=binding.binder_subject_id,
+            created_at=request.requested_at,
+            canonical_digest=digest,
+            payload=payload,
+        )
+
+    @classmethod
+    def _physical_transport_route_binding_evidence_matches(
+        cls,
+        *,
+        logical_row: WorkflowEventLogicalChannelBindingModel | None,
+        profile_row: EventPhysicalTransportProfileSnapshotModel | None,
+        admission_row: WorkflowEventTransportCompatibilityAdmissionModel | None,
+        route_row: EventPhysicalTransportRouteSnapshotModel | None,
+        request: WorkflowEventPhysicalTransportRouteBindingRequest,
+    ) -> bool:
+        if logical_row is None or profile_row is None or admission_row is None or route_row is None:
+            return False
+        logical = cls._event_logical_channel_binding_from_row(logical_row)
+        profile = cls._transport_profile_snapshot_from_row(profile_row)
+        admission = cls._transport_compatibility_admission_from_row(admission_row)
+        route = cls._transport_route_snapshot_from_row(route_row)
+        candidate = request.candidate
+        sources = (logical, admission, profile, route)
+        return bool(
+            all(
+                canonical_digest(source.digest_payload()) == source.canonical_digest
+                and source.scope == request.scope
+                and not any(source.authority.canonical_value().values())
+                for source in sources
+            )
+            and logical.state is WorkflowEventLogicalChannelBindingState.BOUND
+            and logical.binding_id
+            == request.expected_logical_channel_binding_id
+            == candidate.logical_channel_binding_id
+            and logical.canonical_digest
+            == request.expected_logical_channel_binding_digest
+            == candidate.logical_channel_binding_digest
+            and profile.state is EventPhysicalTransportProfileSnapshotState.SNAPSHOTTED
+            and profile.snapshot_id
+            == request.expected_transport_profile_snapshot_id
+            == candidate.transport_profile_snapshot_id
+            and profile.canonical_digest
+            == request.expected_transport_profile_snapshot_digest
+            == candidate.transport_profile_snapshot_digest
+            and admission.state is WorkflowEventTransportCompatibilityAdmissionState.ADMITTED
+            and admission.compatibility_admission_id
+            == request.expected_transport_compatibility_admission_id
+            == candidate.transport_compatibility_admission_id
+            and admission.canonical_digest
+            == request.expected_transport_compatibility_admission_digest
+            == candidate.transport_compatibility_admission_digest
+            and admission.logical_channel_binding_id == logical.binding_id
+            and admission.logical_channel_binding_digest == logical.canonical_digest
+            and admission.transport_profile_snapshot_id == profile.snapshot_id
+            and admission.transport_profile_snapshot_digest == profile.canonical_digest
+            and admission.transport_profile_id == profile.transport_profile_id
+            and admission.transport_profile_revision == profile.transport_profile_revision
+            and route.state is EventPhysicalTransportRouteSnapshotState.SNAPSHOTTED
+            and route.snapshot_id
+            == request.expected_transport_route_snapshot_id
+            == candidate.transport_route_snapshot_id
+            and route.canonical_digest
+            == request.expected_transport_route_snapshot_digest
+            == candidate.transport_route_snapshot_digest
+            and route.transport_profile_id == profile.transport_profile_id
+            and route.transport_profile_revision == profile.transport_profile_revision
+            and route.transport_resource_id == profile.transport_resource_id
+            and route.transport_resource_digest == profile.transport_resource_digest
+            and route.transport_implementation_id == profile.transport_implementation_id
+            and route.transport_implementation_version == profile.transport_implementation_version
+            and route.adapter_contract_id == profile.adapter_contract_id
+            and route.adapter_contract_version == profile.adapter_contract_version
+            and route.adapter_contract_digest == profile.adapter_contract_digest
+            and route.deployment_release_id == profile.deployment_release_id
+            and route.deployment_profile == profile.deployment_profile
+            and logical.scope == admission.scope == profile.scope == route.scope == candidate.scope
+            and profile.transport_encryption_required
+            and profile.restricted_network_supported
+            and route.minimum_tls_version == "1.3"
+            and route.server_authentication_required
+            and route.plaintext_fallback_prohibited
+            and route.restricted_network_enforced
+            and route.public_egress_prohibited
+            and route.proxy_mode in {"deployment-managed", "prohibited"}
+            and candidate.policy_digest == request.expected_policy_digest
+            and candidate.binder_subject_id == request.binder_subject_id
+            and candidate.bound_at == request.requested_at
+            and candidate.state is WorkflowEventPhysicalTransportRouteBindingState.BOUND
+            and canonical_digest(candidate.digest_payload()) == candidate.canonical_digest
+            and not any(candidate.authority.canonical_value().values())
+        )
+
+    @staticmethod
+    def _physical_transport_route_binding_idempotency_scope(
+        scope: WorkflowScope, binder_subject_id: str
+    ) -> str:
+        return canonical_digest(
+            {"binder_subject_id": binder_subject_id, "scope": scope.canonical_value()}
+        )
+
+    @staticmethod
+    def _physical_transport_route_binding_payload(
+        binding: WorkflowEventPhysicalTransportRouteBinding,
+    ) -> dict[str, Any]:
+        return cast(dict[str, Any], binding.canonical_value())
+
+    @staticmethod
+    def _physical_transport_route_binding_to_domain(
+        raw: dict[str, Any],
+    ) -> WorkflowEventPhysicalTransportRouteBinding:
+        values = dict(raw)
+        values["scope"] = WorkflowScope(**cast(Any, values["scope"]))
+        values["bound_at"] = datetime.fromisoformat(str(values["bound_at"]))
+        values["state"] = WorkflowEventPhysicalTransportRouteBindingState(str(values["state"]))
+        values["authority"] = WorkflowEventPhysicalTransportRouteBindingAuthority(
+            **cast(Any, values["authority"])
+        )
+        return WorkflowEventPhysicalTransportRouteBinding(**cast(Any, values))
+
+    @staticmethod
+    def _validate_physical_transport_route_binding_request(
+        request: WorkflowEventPhysicalTransportRouteBindingRequest,
+    ) -> None:
+        candidate = request.candidate
+        if candidate.scope != request.scope:
+            raise ValueError("workflow physical transport route binding scope is invalid")
+        if candidate.binder_subject_id != request.binder_subject_id:
+            raise ValueError("workflow physical transport route binding actor is invalid")
+        if candidate.bound_at != request.requested_at:
+            raise ValueError("workflow physical transport route binding time is invalid")
+        if candidate.state is not WorkflowEventPhysicalTransportRouteBindingState.BOUND:
+            raise ValueError("workflow physical transport route binding state is invalid")
+        if any(candidate.authority.canonical_value().values()):
+            raise ValueError("workflow physical transport route binding authority is unsafe")
+        if not request.idempotency_key or len(request.idempotency_key) > 128:
+            raise ValueError("workflow physical transport route binding idempotency key is invalid")
+        if len(request.request_fingerprint) != 64:
+            raise ValueError("workflow physical transport route binding fingerprint is invalid")
+        if request.requested_at.tzinfo is None or candidate.bound_at.tzinfo is None:
+            raise ValueError("workflow physical transport route binding time must be aware")
+
+    @staticmethod
+    def _physical_transport_route_binding_contract_violation() -> NoReturn:
+        raise WorkflowEventPhysicalTransportRouteBindingError(
+            "workflow_physical_transport_route_binding_repository_contract_violation",
+            "The workflow physical transport route binding does not match durable evidence.",
         )
 
     async def _publication_lease_acquire_replay(

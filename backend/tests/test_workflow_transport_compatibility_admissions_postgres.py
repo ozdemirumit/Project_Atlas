@@ -142,7 +142,7 @@ def test_persistence_schema_excludes_route_runtime_and_secret_fields() -> None:
 
 def test_postgres_locks_sources_in_fixed_order_and_writes_atomically() -> None:
     start = POSTGRES_SOURCE.index("    async def admit_transport_compatibility(")
-    end = POSTGRES_SOURCE.index("    async def get_dispatch_intent_staging_request(", start)
+    end = POSTGRES_SOURCE.index("\n    async def ", start + 1)
     method = POSTGRES_SOURCE[start:end]
     binding_lock = method.index("WorkflowEventLogicalChannelBindingModel")
     profile_lock = method.index("EventPhysicalTransportProfileSnapshotModel")
@@ -156,7 +156,7 @@ def test_postgres_locks_sources_in_fixed_order_and_writes_atomically() -> None:
 
 def test_postgres_race_distinguishes_exact_replay_from_conflict() -> None:
     start = POSTGRES_SOURCE.index("    async def admit_transport_compatibility(")
-    end = POSTGRES_SOURCE.index("    async def get_dispatch_intent_staging_request(", start)
+    end = POSTGRES_SOURCE.index("\n    async def ", start + 1)
     method = POSTGRES_SOURCE[start:end]
     integrity = method.index("except IntegrityError:")
     assert "await session.rollback()" in method[integrity:]

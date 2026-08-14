@@ -143,6 +143,10 @@ class EventPhysicalTransportRouteSnapshotState(StrEnum):
     SNAPSHOTTED = "snapshotted"
 
 
+class WorkflowEventPhysicalTransportRouteBindingState(StrEnum):
+    BOUND = "bound"
+
+
 @dataclass(frozen=True, slots=True)
 class WorkflowScope:
     organization_id: str
@@ -2948,6 +2952,231 @@ class WorkflowEventTransportCompatibilityAdmission:
 
     @property
     def grants_credential_access_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_publication_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_delivery_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_dispatch_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_execution_authority(self) -> bool:
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportRouteBindingPolicy:
+    """Code-owned requirements for binding an admitted event to one physical route."""
+
+    policy_id: str
+    policy_version: str
+    minimum_tls_version: str
+    server_authentication_required: bool
+    plaintext_fallback_prohibited: bool
+    restricted_network_required: bool
+    public_egress_prohibited: bool
+    allowed_proxy_modes: tuple[str, ...]
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        _require_identifier(self.policy_id, name="physical route binding policy_id")
+        _require_identifier(self.policy_version, name="physical route binding policy_version")
+        if self.minimum_tls_version != "1.3":
+            raise ValueError("physical route binding policy must require TLS 1.3")
+        if self.server_authentication_required is not True:
+            raise ValueError("physical route binding policy must require server authentication")
+        if self.plaintext_fallback_prohibited is not True:
+            raise ValueError("physical route binding policy must prohibit plaintext fallback")
+        if self.restricted_network_required is not True:
+            raise ValueError("physical route binding policy must require a restricted network")
+        if self.public_egress_prohibited is not True:
+            raise ValueError("physical route binding policy must prohibit public egress")
+        if self.allowed_proxy_modes != ("deployment-managed", "prohibited"):
+            raise ValueError("physical route binding policy proxy modes are unsupported")
+        _require_digest(self.canonical_digest, name="physical route binding policy digest")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("physical route binding policy canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "allowed_proxy_modes": self.allowed_proxy_modes,
+            "minimum_tls_version": self.minimum_tls_version,
+            "plaintext_fallback_prohibited": self.plaintext_fallback_prohibited,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "public_egress_prohibited": self.public_egress_prohibited,
+            "restricted_network_required": self.restricted_network_required,
+            "server_authentication_required": self.server_authentication_required,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+def code_owned_workflow_event_physical_transport_route_binding_policy() -> (
+    WorkflowEventPhysicalTransportRouteBindingPolicy
+):
+    values: dict[str, object] = {
+        "policy_id": "policy.workflow-event-physical-transport-route-binding",
+        "policy_version": "1.0",
+        "minimum_tls_version": "1.3",
+        "server_authentication_required": True,
+        "plaintext_fallback_prohibited": True,
+        "restricted_network_required": True,
+        "public_egress_prohibited": True,
+        "allowed_proxy_modes": ("deployment-managed", "prohibited"),
+    }
+    return WorkflowEventPhysicalTransportRouteBindingPolicy(
+        **cast(Any, values), canonical_digest=canonical_digest(values)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportRouteBindingAuthority:
+    endpoint_resolution_authorized: bool = False
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    credential_access_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        if any(self.canonical_value().values()):
+            raise ValueError("physical route bindings cannot grant operational authority")
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "credential_access_authorized": self.credential_access_authorized,
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "endpoint_resolution_authorized": self.endpoint_resolution_authorized,
+            "execution_authorized": self.execution_authorized,
+            "network_access_authorized": self.network_access_authorized,
+            "publication_authorized": self.publication_authorized,
+            "readiness_probe_authorized": self.readiness_probe_authorized,
+            "route_binding_authorized": self.route_binding_authorized,
+            "route_selection_authorized": self.route_selection_authorized,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportRouteBinding:
+    """Immutable evidence joining one admitted logical event to one physical route."""
+
+    binding_id: str
+    logical_channel_binding_id: str
+    logical_channel_binding_digest: str
+    transport_compatibility_admission_id: str
+    transport_compatibility_admission_digest: str
+    transport_profile_snapshot_id: str
+    transport_profile_snapshot_digest: str
+    transport_route_snapshot_id: str
+    transport_route_snapshot_digest: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    scope: WorkflowScope
+    binder_subject_id: str
+    bound_at: datetime
+    state: WorkflowEventPhysicalTransportRouteBindingState
+    authority: WorkflowEventPhysicalTransportRouteBindingAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.binding_id, "physical route binding id"),
+            (self.logical_channel_binding_id, "logical channel binding id"),
+            (
+                self.transport_compatibility_admission_id,
+                "transport compatibility admission id",
+            ),
+            (self.transport_profile_snapshot_id, "transport profile snapshot id"),
+            (self.transport_route_snapshot_id, "transport route snapshot id"),
+            (self.policy_id, "physical route binding policy id"),
+            (self.policy_version, "physical route binding policy version"),
+            (self.binder_subject_id, "physical route binder subject id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.logical_channel_binding_digest, "logical channel binding digest"),
+            (
+                self.transport_compatibility_admission_digest,
+                "transport compatibility admission digest",
+            ),
+            (self.transport_profile_snapshot_digest, "transport profile snapshot digest"),
+            (self.transport_route_snapshot_digest, "transport route snapshot digest"),
+            (self.policy_digest, "physical route binding policy digest"),
+            (self.canonical_digest, "physical route binding canonical digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.bound_at.tzinfo is None:
+            raise ValueError("physical route binding time must be timezone-aware")
+        if self.state is not WorkflowEventPhysicalTransportRouteBindingState.BOUND:
+            raise ValueError("physical route bindings must remain bound")
+        if any(self.authority.canonical_value().values()):
+            raise ValueError("physical route bindings cannot grant operational authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("physical route binding canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "authority": self.authority.canonical_value(),
+            "binder_subject_id": self.binder_subject_id,
+            "binding_id": self.binding_id,
+            "bound_at": self.bound_at.isoformat(),
+            "logical_channel_binding_digest": self.logical_channel_binding_digest,
+            "logical_channel_binding_id": self.logical_channel_binding_id,
+            "policy_digest": self.policy_digest,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "scope": self.scope.canonical_value(),
+            "state": self.state.value,
+            "transport_compatibility_admission_digest": (
+                self.transport_compatibility_admission_digest
+            ),
+            "transport_compatibility_admission_id": self.transport_compatibility_admission_id,
+            "transport_profile_snapshot_digest": self.transport_profile_snapshot_digest,
+            "transport_profile_snapshot_id": self.transport_profile_snapshot_id,
+            "transport_route_snapshot_digest": self.transport_route_snapshot_digest,
+            "transport_route_snapshot_id": self.transport_route_snapshot_id,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    @property
+    def grants_endpoint_resolution_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_route_selection_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_route_binding_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_credential_access_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_network_access_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_readiness_probe_authority(self) -> bool:
         return False
 
     @property

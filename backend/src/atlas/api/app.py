@@ -1542,6 +1542,8 @@ from atlas.modules.workflows.application import (
     WorkflowEventByteArtifactService,
     WorkflowEventLogicalChannelBindingRepository,
     WorkflowEventLogicalChannelBindingService,
+    WorkflowEventPhysicalTransportRouteBindingRepository,
+    WorkflowEventPhysicalTransportRouteBindingService,
     WorkflowEventTransportAdmissionRepository,
     WorkflowEventTransportAdmissionService,
     WorkflowEventTransportCompatibilityAdmissionRepository,
@@ -1800,6 +1802,9 @@ def create_app(
     | None = None,
     workflow_event_transport_compatibility_admission_service: (
         WorkflowEventTransportCompatibilityAdmissionService | None
+    ) = None,
+    workflow_event_physical_transport_route_binding_service: (
+        WorkflowEventPhysicalTransportRouteBindingService | None
     ) = None,
     workflow_transport_profile_snapshot_service: WorkflowTransportProfileSnapshotService
     | None = None,
@@ -5948,6 +5953,40 @@ def create_app(
         resolved_workflow_event_transport_compatibility_admission_service = (
             workflow_event_transport_compatibility_admission_service
         )
+    if workflow_event_physical_transport_route_binding_service is None:
+        physical_transport_route_binding_repository_methods = (
+            "get_event_logical_channel_binding_by_id",
+            "get_transport_profile_snapshot_by_id",
+            "get_transport_compatibility_admission_by_id",
+            "get_transport_route_snapshot_by_id",
+            "get_physical_transport_route_binding",
+            "list_physical_transport_route_bindings",
+            "get_physical_transport_route_binding_request",
+            "bind_physical_transport_route",
+        )
+        if not all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in physical_transport_route_binding_repository_methods
+        ):
+            raise ValueError(
+                "workflow planning repository does not implement physical transport route "
+                "bindings; inject workflow_event_physical_transport_route_binding_service "
+                "explicitly"
+            )
+        physical_transport_route_binding_repository = cast(
+            WorkflowEventPhysicalTransportRouteBindingRepository,
+            workflow_repository,
+        )
+        resolved_workflow_event_physical_transport_route_binding_service = (
+            WorkflowEventPhysicalTransportRouteBindingService(
+                binding_repository=physical_transport_route_binding_repository,
+                audit_sink=resolved_audit_sink,
+            )
+        )
+    else:
+        resolved_workflow_event_physical_transport_route_binding_service = (
+            workflow_event_physical_transport_route_binding_service
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -6233,6 +6272,12 @@ def create_app(
         )
         app.state.workflow_transport_route_snapshot_repository = (
             resolved_workflow_transport_route_snapshot_service.repository
+        )
+        app.state.workflow_event_physical_transport_route_binding_service = (
+            resolved_workflow_event_physical_transport_route_binding_service
+        )
+        app.state.workflow_event_physical_transport_route_binding_repository = (
+            resolved_workflow_event_physical_transport_route_binding_service.repository
         )
         app.state.workflow_transport_route_source_routes = configured_transport_routes
         app.state.workflow_event_transport_compatibility_admission_service = (

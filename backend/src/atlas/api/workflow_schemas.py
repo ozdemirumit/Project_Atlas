@@ -15,6 +15,7 @@ from atlas.modules.workflows.domain import (
     WorkflowDispatchOutboxEntry,
     WorkflowEventByteArtifact,
     WorkflowEventLogicalChannelBinding,
+    WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportCompatibilityAdmission,
     WorkflowExecutionAttempt,
@@ -1124,6 +1125,107 @@ class EventPhysicalTransportRouteSnapshotResponse(BaseModel):
 
 class EventPhysicalTransportRouteSnapshotInventoryResponse(BaseModel):
     data: EventPhysicalTransportRouteSnapshotInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowEventPhysicalTransportRouteBindingInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    logical_channel_binding_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    logical_channel_binding_digest: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    compatibility_admission_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    compatibility_admission_digest: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    transport_profile_snapshot_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    transport_profile_snapshot_digest: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    transport_route_snapshot_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    transport_route_snapshot_digest: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    policy_id: Literal["policy.workflow-event-physical-transport-route-binding"]
+    policy_version: Literal["1.0"]
+    policy_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowEventPhysicalTransportRouteBindingAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    endpoint_resolution_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+
+
+class WorkflowEventPhysicalTransportRouteBindingData(BaseModel):
+    """Human-safe immutable binding evidence without source or policy digests."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    binding_id: str
+    logical_channel_binding_id: str
+    compatibility_admission_id: str
+    transport_profile_snapshot_id: str
+    transport_route_snapshot_id: str
+    policy_id: str
+    policy_version: str
+    scope: WorkflowScopeData
+    binder_subject_id: str
+    bound_at: datetime
+    state: Literal["bound"]
+    authority: WorkflowEventPhysicalTransportRouteBindingAuthorityData
+    integrity_reference: str = Field(min_length=3, max_length=256, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls, binding: WorkflowEventPhysicalTransportRouteBinding
+    ) -> WorkflowEventPhysicalTransportRouteBindingData:
+        return cls(
+            binding_id=binding.binding_id,
+            logical_channel_binding_id=binding.logical_channel_binding_id,
+            compatibility_admission_id=binding.transport_compatibility_admission_id,
+            transport_profile_snapshot_id=binding.transport_profile_snapshot_id,
+            transport_route_snapshot_id=binding.transport_route_snapshot_id,
+            policy_id=binding.policy_id,
+            policy_version=binding.policy_version,
+            scope=WorkflowScopeData.model_validate(binding.scope.canonical_value()),
+            binder_subject_id=binding.binder_subject_id,
+            bound_at=binding.bound_at,
+            state="bound",
+            authority=WorkflowEventPhysicalTransportRouteBindingAuthorityData.model_validate(
+                binding.authority.canonical_value()
+            ),
+            integrity_reference=f"integrity.{binding.binding_id}",
+        )
+
+
+class WorkflowEventPhysicalTransportRouteBindingInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    physical_transport_route_bindings: list[WorkflowEventPhysicalTransportRouteBindingData] = Field(
+        max_length=256
+    )
+    durable: bool
+
+
+class WorkflowEventPhysicalTransportRouteBindingResponse(BaseModel):
+    data: WorkflowEventPhysicalTransportRouteBindingData
+    meta: ResponseMeta
+
+
+class WorkflowEventPhysicalTransportRouteBindingInventoryResponse(BaseModel):
+    data: WorkflowEventPhysicalTransportRouteBindingInventoryData
     meta: ResponseMeta
 
 

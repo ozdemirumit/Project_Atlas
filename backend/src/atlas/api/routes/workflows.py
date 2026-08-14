@@ -10,6 +10,7 @@ from atlas.api.schemas import ResponseMeta
 from atlas.api.security import (
     authenticated_subject,
     authorize_workflow_definition_read,
+    authorize_workflow_physical_transport_route_binding_read,
     authorize_workflow_plan_cancel,
     authorize_workflow_plan_create,
     authorize_workflow_plan_read,
@@ -18,6 +19,7 @@ from atlas.api.security import (
     authorize_workflow_transport_route_snapshot_read,
     browser_session_subject,
     workflow_outbox_publisher_subject,
+    workflow_physical_transport_route_binder_subject,
     workflow_transport_compatibility_admitter_subject,
     workflow_transport_profile_registry_subject,
     workflow_transport_route_registry_subject,
@@ -31,6 +33,7 @@ from atlas.api.workflow_schemas import (
     CancelWorkflowPlanInput,
     CreateEventPhysicalTransportProfileSnapshotInput,
     CreateEventPhysicalTransportRouteSnapshotInput,
+    CreateWorkflowEventPhysicalTransportRouteBindingInput,
     CreateWorkflowEventTransportCompatibilityAdmissionInput,
     CreateWorkflowPlanInput,
     EventPhysicalTransportProfileSnapshotData,
@@ -74,6 +77,10 @@ from atlas.api.workflow_schemas import (
     WorkflowEventLogicalChannelBindingInventoryData,
     WorkflowEventLogicalChannelBindingInventoryResponse,
     WorkflowEventLogicalChannelBindingResponse,
+    WorkflowEventPhysicalTransportRouteBindingData,
+    WorkflowEventPhysicalTransportRouteBindingInventoryData,
+    WorkflowEventPhysicalTransportRouteBindingInventoryResponse,
+    WorkflowEventPhysicalTransportRouteBindingResponse,
     WorkflowEventTransportAdmissionData,
     WorkflowEventTransportAdmissionInventoryData,
     WorkflowEventTransportAdmissionInventoryResponse,
@@ -110,6 +117,7 @@ from atlas.modules.conversations.domain.models import ConversationScope
 from atlas.modules.identity.domain.models import AuthenticatedSubject
 from atlas.modules.workflows.application import (
     WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE,
+    WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDER_AUDIENCE,
     WORKFLOW_TRANSPORT_COMPATIBILITY_ADMITTER_AUDIENCE,
     WORKFLOW_TRANSPORT_PROFILE_REGISTRY_AUDIENCE,
     WORKFLOW_TRANSPORT_ROUTE_REGISTRY_AUDIENCE,
@@ -125,6 +133,7 @@ from atlas.modules.workflows.application import (
     WorkflowEventByteArtifactService,
     WorkflowEventLogicalChannelBindingError,
     WorkflowEventLogicalChannelBindingService,
+    WorkflowEventPhysicalTransportRouteBindingService,
     WorkflowEventTransportCompatibilityAdmissionService,
     WorkflowOrchestrationLeaseError,
     WorkflowOrchestrationLeaseRepository,
@@ -133,6 +142,7 @@ from atlas.modules.workflows.application import (
     WorkflowOutboxPublicationLeaseRepository,
     WorkflowOutboxPublicationLeaseService,
     WorkflowOutboxPublisherContext,
+    WorkflowPhysicalTransportRouteBinderContext,
     WorkflowPlanningError,
     WorkflowPlanningService,
     WorkflowRunMaterializationError,
@@ -153,6 +163,9 @@ from atlas.modules.workflows.application.event_envelope_ports import (
 )
 from atlas.modules.workflows.application.event_envelopes import (
     WorkflowDispatchEventEnvelopeService,
+)
+from atlas.modules.workflows.application.physical_route_binding_ports import (
+    WorkflowEventPhysicalTransportRouteBindingError,
 )
 from atlas.modules.workflows.application.transport_admission_ports import (
     WorkflowEventTransportAdmissionError,
@@ -178,6 +191,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventLogicalChannelBinding,
     WorkflowEventLogicalChannelBindingState,
     WorkflowEventLogicalChannelPolicy,
+    WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportAdmissionPolicy,
     WorkflowEventTransportAdmissionState,
@@ -647,6 +661,26 @@ def _raise_transport_route_snapshot(error: WorkflowTransportRouteSnapshotError) 
         status, title = 404, "Workflow transport route source unavailable"
     else:
         status, title = 409, "Workflow transport route snapshot unavailable"
+    raise AtlasError(
+        status=status,
+        code=error.code,
+        title=title,
+        detail=error.detail,
+        retryable=status == 503,
+    ) from error
+
+
+def _raise_physical_transport_route_binding(
+    error: WorkflowEventPhysicalTransportRouteBindingError,
+) -> NoReturn:
+    if error.code.endswith("_invalid") or error.code.endswith("_required"):
+        status, title = 422, "Workflow physical transport route binding request invalid"
+    elif "repository" in error.code:
+        status, title = 503, "Workflow physical transport route binding service unavailable"
+    elif error.code.endswith("_not_found"):
+        status, title = 404, "Workflow physical transport route binding evidence unavailable"
+    else:
+        status, title = 409, "Workflow physical transport route binding unavailable"
     raise AtlasError(
         status=status,
         code=error.code,
@@ -1247,6 +1281,18 @@ def _transport_route_snapshot_response(
     _no_store(response)
     return EventPhysicalTransportRouteSnapshotResponse(
         data=EventPhysicalTransportRouteSnapshotData.from_domain(snapshot),
+        meta=_meta(request),
+    )
+
+
+def _physical_transport_route_binding_response(
+    binding: WorkflowEventPhysicalTransportRouteBinding,
+    request: Request,
+    response: Response,
+) -> WorkflowEventPhysicalTransportRouteBindingResponse:
+    _no_store(response)
+    return WorkflowEventPhysicalTransportRouteBindingResponse(
+        data=WorkflowEventPhysicalTransportRouteBindingData.from_domain(binding),
         meta=_meta(request),
     )
 
@@ -3520,6 +3566,113 @@ async def create_workflow_transport_route_snapshot(
     except WorkflowTransportRouteSnapshotError as error:
         _raise_transport_route_snapshot(error)
     return _transport_route_snapshot_response(snapshot, request, response)
+
+
+@router.get(
+    "/physical-transport-route-bindings",
+    response_model=WorkflowEventPhysicalTransportRouteBindingInventoryResponse,
+)
+async def list_workflow_physical_transport_route_bindings(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_physical_transport_route_binding_read),
+    ],
+) -> WorkflowEventPhysicalTransportRouteBindingInventoryResponse:
+    del decision
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service: WorkflowEventPhysicalTransportRouteBindingService = (
+        request.app.state.workflow_event_physical_transport_route_binding_service
+    )
+    try:
+        bindings = await service.repository.list_physical_transport_route_bindings(
+            scope=scope,
+            limit=256,
+        )
+        if any(binding.scope != scope for binding in bindings):
+            raise WorkflowEventPhysicalTransportRouteBindingError(
+                "workflow_physical_transport_route_binding_repository_scope_violation",
+                "Stored physical transport route binding metadata escaped its query scope.",
+            )
+    except WorkflowEventPhysicalTransportRouteBindingError as error:
+        _raise_physical_transport_route_binding(error)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_physical_transport_route_binding_repository_unavailable",
+            title="Workflow physical transport route binding service unavailable",
+            detail="Physical transport route binding metadata is unavailable.",
+            retryable=True,
+        ) from error
+    _no_store(response)
+    return WorkflowEventPhysicalTransportRouteBindingInventoryResponse(
+        data=WorkflowEventPhysicalTransportRouteBindingInventoryData(
+            physical_transport_route_bindings=[
+                WorkflowEventPhysicalTransportRouteBindingData.from_domain(binding)
+                for binding in sorted(bindings, key=lambda value: value.binding_id)
+            ],
+            durable=service.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/physical-transport-route-bindings",
+    response_model=WorkflowEventPhysicalTransportRouteBindingResponse,
+    status_code=201,
+)
+async def create_workflow_physical_transport_route_binding(
+    payload: CreateWorkflowEventPhysicalTransportRouteBindingInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_physical_transport_route_binder_subject),
+    ],
+) -> WorkflowEventPhysicalTransportRouteBindingResponse:
+    service: WorkflowEventPhysicalTransportRouteBindingService = (
+        request.app.state.workflow_event_physical_transport_route_binding_service
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        binding = await service.bind(
+            logical_channel_binding_id=payload.logical_channel_binding_id,
+            logical_channel_binding_digest=payload.logical_channel_binding_digest,
+            transport_compatibility_admission_id=payload.compatibility_admission_id,
+            transport_compatibility_admission_digest=payload.compatibility_admission_digest,
+            transport_profile_snapshot_id=payload.transport_profile_snapshot_id,
+            transport_profile_snapshot_digest=payload.transport_profile_snapshot_digest,
+            transport_route_snapshot_id=payload.transport_route_snapshot_id,
+            transport_route_snapshot_digest=payload.transport_route_snapshot_digest,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            policy_digest=payload.policy_digest,
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowPhysicalTransportRouteBinderContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDER_AUDIENCE,
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id="decision.workflow-physical-transport-route-binder-authenticated",
+                requested_at=datetime.now(UTC),
+            ),
+        )
+    except WorkflowEventPhysicalTransportRouteBindingError as error:
+        _raise_physical_transport_route_binding(error)
+    return _physical_transport_route_binding_response(binding, request, response)
 
 
 @router.get(

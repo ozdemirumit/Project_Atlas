@@ -35,6 +35,7 @@ import {
   listWorkflowEventLogicalChannelBindings,
   listWorkflowEventTransportAdmissions,
   listWorkflowPlans,
+  listWorkflowPhysicalTransportRouteBindings,
   listWorkflowRunAttempts,
   listWorkflowTransportCompatibilityAdmissions,
   listWorkflowTransportProfileSnapshots,
@@ -100,6 +101,16 @@ export default function WorkflowPlanningWorkspace({
   const transportRouteSnapshotQuery = useQuery({
     queryKey: ["workflow-transport-route-snapshots", organizationId, environmentId, siteId],
     queryFn: () => listWorkflowTransportRouteSnapshots({ scope }),
+    retry: false,
+  });
+  const physicalTransportRouteBindingQuery = useQuery({
+    queryKey: [
+      "workflow-physical-transport-route-bindings",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () => listWorkflowPhysicalTransportRouteBindings({ scope }),
     retry: false,
   });
   const targetQuery = useQuery({
@@ -522,6 +533,10 @@ export default function WorkflowPlanningWorkspace({
     transportRouteSnapshotQuery.error instanceof ApiRequestError
       ? transportRouteSnapshotQuery.error.status
       : undefined;
+  const physicalTransportRouteBindingErrorStatus =
+    physicalTransportRouteBindingQuery.error instanceof ApiRequestError
+      ? physicalTransportRouteBindingQuery.error.status
+      : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
   const byteArtifacts =
@@ -864,6 +879,143 @@ export default function WorkflowPlanningWorkspace({
           <span>
             These immutable snapshots expose opaque deployment references only. They do not bind,
             resolve, probe, credential, publish, deliver, dispatch, or execute a route.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band"
+        aria-labelledby="workflow-physical-route-binding-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">IMMUTABLE ROUTE BINDING EVIDENCE</p>
+            <h2 id="workflow-physical-route-binding-title">Physical transport route bindings</h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {physicalTransportRouteBindingQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading physical transport route bindings...</span>
+          </div>
+        )}
+        {physicalTransportRouteBindingQuery.isError && (
+          <div className="inline-error" role="alert">
+            <div>
+              <strong>
+                {physicalTransportRouteBindingErrorStatus === 401
+                  ? "Your session has expired"
+                  : physicalTransportRouteBindingErrorStatus === 403
+                    ? "Physical transport route binding permission is missing"
+                    : "Physical transport route bindings are unavailable"}
+              </strong>
+              <span>
+                {physicalTransportRouteBindingErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : physicalTransportRouteBindingErrorStatus === 403
+                    ? "Your current role or scope cannot inspect physical route binding evidence."
+                    : "No binding or operational state is inferred from this failed read."}
+              </span>
+            </div>
+            {physicalTransportRouteBindingErrorStatus !== 401 &&
+              physicalTransportRouteBindingErrorStatus !== 403 && (
+                <button
+                  className="secondary-action"
+                  type="button"
+                  aria-label="Retry physical transport route binding read"
+                  onClick={() => void physicalTransportRouteBindingQuery.refetch()}
+                >
+                  <RefreshCw size={16} />
+                  Retry
+                </button>
+              )}
+          </div>
+        )}
+        {physicalTransportRouteBindingQuery.isSuccess &&
+          physicalTransportRouteBindingQuery.data.physical_transport_route_bindings.length ===
+            0 && (
+            <div className="workflow-empty-state" role="status">
+              <Link2 size={19} /> No physical transport route bindings are recorded in this scope.
+            </div>
+          )}
+        {physicalTransportRouteBindingQuery.isSuccess &&
+          physicalTransportRouteBindingQuery.data.physical_transport_route_bindings.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list"
+              aria-label="Physical transport route bindings"
+            >
+              {physicalTransportRouteBindingQuery.data.physical_transport_route_bindings.map(
+                (binding) => (
+                  <li key={binding.binding_id}>
+                    <Link2 size={18} />
+                    <div>
+                      <strong>
+                        <code title={binding.binding_id}>
+                          {safeHolderIdentifier(binding.binding_id)}
+                        </code>
+                        <span className="state-badge neutral">{binding.state}</span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          Logical binding{" "}
+                          <code title={binding.logical_channel_binding_id}>
+                            {safeHolderIdentifier(binding.logical_channel_binding_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Compatibility admission{" "}
+                          <code title={binding.compatibility_admission_id}>
+                            {safeHolderIdentifier(binding.compatibility_admission_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Profile snapshot{" "}
+                          <code title={binding.transport_profile_snapshot_id}>
+                            {safeHolderIdentifier(binding.transport_profile_snapshot_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Route snapshot{" "}
+                          <code title={binding.transport_route_snapshot_id}>
+                            {safeHolderIdentifier(binding.transport_route_snapshot_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Policy <code title={binding.policy_id}>{safeHolderIdentifier(binding.policy_id)}</code>{" "}
+                          v{binding.policy_version}
+                        </span>
+                        <span>
+                          Organization {binding.scope.organization_id} | environment{" "}
+                          {binding.scope.environment_id} | site {binding.scope.site_id}
+                        </span>
+                        <span>
+                          Bound {formatTimestamp(binding.bound_at)} by{" "}
+                          <code title={binding.binder_subject_id}>
+                            {safeHolderIdentifier(binding.binder_subject_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Integrity reference{" "}
+                          <code title={binding.integrity_reference}>
+                            {safeHolderIdentifier(binding.integrity_reference)}
+                          </code>
+                        </span>
+                        <span className="workflow-physical-route-binding-authority">
+                          Authority route selection false | route binding false | endpoint resolution false | credential access false | network access false | readiness probe false | publication false | delivery false | dispatch false | execution false
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            Binding records immutable lineage only. It grants no route selection, endpoint,
+            credential, network, readiness, publication, delivery, dispatch, or execution authority.
           </span>
         </div>
       </section>

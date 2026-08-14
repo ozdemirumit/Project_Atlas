@@ -50,6 +50,12 @@ from atlas.modules.workflows.application.logical_channel_binding_ports import (
     WorkflowEventLogicalChannelBindingResult,
     WorkflowEventLogicalChannelBindingStatus,
 )
+from atlas.modules.workflows.application.physical_route_binding_ports import (
+    WorkflowEventPhysicalTransportRouteBindingIdempotencyRecord,
+    WorkflowEventPhysicalTransportRouteBindingRequest,
+    WorkflowEventPhysicalTransportRouteBindingResult,
+    WorkflowEventPhysicalTransportRouteBindingStatus,
+)
 from atlas.modules.workflows.application.publication_lease_ports import (
     WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord,
     WorkflowOutboxPublicationLeaseAcquireRequest,
@@ -92,6 +98,8 @@ from atlas.modules.workflows.domain import (
     WorkflowEventByteArtifactState,
     WorkflowEventLogicalChannelBinding,
     WorkflowEventLogicalChannelBindingState,
+    WorkflowEventPhysicalTransportRouteBinding,
+    WorkflowEventPhysicalTransportRouteBindingState,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportAdmissionState,
     WorkflowEventTransportCompatibilityAdmission,
@@ -108,6 +116,7 @@ from atlas.modules.workflows.domain import (
     WorkflowPlanState,
     WorkflowRunPlan,
     WorkflowScope,
+    canonical_digest,
     canonical_json_byte_count,
     canonical_json_bytes,
 )
@@ -188,6 +197,13 @@ class InMemoryWorkflowPlanRepository:
         self._transport_compatibility_admission_requests: dict[
             tuple[WorkflowScope, str, str],
             WorkflowEventTransportCompatibilityAdmissionIdempotencyRecord,
+        ] = {}
+        self._physical_transport_route_bindings: dict[
+            str, WorkflowEventPhysicalTransportRouteBinding
+        ] = {}
+        self._physical_transport_route_binding_requests: dict[
+            tuple[WorkflowScope, str, str],
+            WorkflowEventPhysicalTransportRouteBindingIdempotencyRecord,
         ] = {}
         self._lock = asyncio.Lock()
 
@@ -1116,6 +1132,134 @@ class InMemoryWorkflowPlanRepository:
             )
             return WorkflowEventTransportCompatibilityAdmissionResult(
                 WorkflowEventTransportCompatibilityAdmissionStatus.ADMITTED,
+                candidate,
+            )
+
+    async def get_transport_compatibility_admission_by_id(
+        self, *, admission_id: str
+    ) -> WorkflowEventTransportCompatibilityAdmission | None:
+        async with self._lock:
+            return self._transport_compatibility_admissions.get(admission_id)
+
+    async def get_transport_route_snapshot_by_id(
+        self, *, snapshot_id: str
+    ) -> EventPhysicalTransportRouteSnapshot | None:
+        async with self._lock:
+            return next(
+                (
+                    value
+                    for value in self._transport_route_snapshots.values()
+                    if value.snapshot_id == snapshot_id
+                ),
+                None,
+            )
+
+    async def get_physical_transport_route_binding(
+        self, *, logical_channel_binding_id: str
+    ) -> WorkflowEventPhysicalTransportRouteBinding | None:
+        async with self._lock:
+            return self._physical_transport_route_bindings.get(logical_channel_binding_id)
+
+    async def list_physical_transport_route_bindings(
+        self, *, scope: WorkflowScope, limit: int = 256
+    ) -> tuple[WorkflowEventPhysicalTransportRouteBinding, ...]:
+        async with self._lock:
+            return tuple(
+                sorted(
+                    (
+                        binding
+                        for binding in self._physical_transport_route_bindings.values()
+                        if binding.scope == scope
+                    ),
+                    key=lambda binding: binding.binding_id,
+                )[:limit]
+            )
+
+    async def get_physical_transport_route_binding_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        binder_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventPhysicalTransportRouteBindingIdempotencyRecord | None:
+        async with self._lock:
+            return self._physical_transport_route_binding_requests.get(
+                (scope, binder_subject_id, idempotency_key)
+            )
+
+    async def bind_physical_transport_route(
+        self, request: WorkflowEventPhysicalTransportRouteBindingRequest
+    ) -> WorkflowEventPhysicalTransportRouteBindingResult:
+        async with self._lock:
+            candidate = request.candidate
+            key = (candidate.scope, request.binder_subject_id, request.idempotency_key)
+            prior = self._physical_transport_route_binding_requests.get(key)
+            if prior is not None:
+                status = (
+                    WorkflowEventPhysicalTransportRouteBindingStatus.REPLAY
+                    if prior.request_fingerprint == request.request_fingerprint
+                    else WorkflowEventPhysicalTransportRouteBindingStatus.IDEMPOTENCY_CONFLICT
+                )
+                return WorkflowEventPhysicalTransportRouteBindingResult(status, prior.binding)
+
+            logical = next(
+                (
+                    value
+                    for value in self._event_logical_channel_bindings_by_artifact.values()
+                    if value.binding_id == candidate.logical_channel_binding_id
+                ),
+                None,
+            )
+            admission = self._transport_compatibility_admissions.get(
+                candidate.transport_compatibility_admission_id
+            )
+            profile = next(
+                (
+                    value
+                    for value in self._transport_profile_snapshots.values()
+                    if value.snapshot_id == candidate.transport_profile_snapshot_id
+                ),
+                None,
+            )
+            route = next(
+                (
+                    value
+                    for value in self._transport_route_snapshots.values()
+                    if value.snapshot_id == candidate.transport_route_snapshot_id
+                ),
+                None,
+            )
+            if not self._physical_transport_route_binding_evidence_matches(
+                logical=logical,
+                admission=admission,
+                profile=profile,
+                route=route,
+                request=request,
+            ):
+                return WorkflowEventPhysicalTransportRouteBindingResult(
+                    WorkflowEventPhysicalTransportRouteBindingStatus.EVIDENCE_CONFLICT,
+                    None,
+                )
+
+            current = self._physical_transport_route_bindings.get(
+                candidate.logical_channel_binding_id
+            )
+            if current is not None:
+                return WorkflowEventPhysicalTransportRouteBindingResult(
+                    WorkflowEventPhysicalTransportRouteBindingStatus.ALREADY_BOUND,
+                    current,
+                )
+            self._physical_transport_route_bindings[candidate.logical_channel_binding_id] = (
+                candidate
+            )
+            self._physical_transport_route_binding_requests[key] = (
+                WorkflowEventPhysicalTransportRouteBindingIdempotencyRecord(
+                    request_fingerprint=request.request_fingerprint,
+                    binding=candidate,
+                )
+            )
+            return WorkflowEventPhysicalTransportRouteBindingResult(
+                WorkflowEventPhysicalTransportRouteBindingStatus.BOUND,
                 candidate,
             )
 
@@ -2170,6 +2314,88 @@ class InMemoryWorkflowPlanRepository:
             and candidate.admitter_subject_id == request.admitter_subject_id
             and candidate.admitted_at == request.requested_at
             and candidate.state is WorkflowEventTransportCompatibilityAdmissionState.ADMITTED
+            and not any(candidate.authority.canonical_value().values())
+        )
+
+    @staticmethod
+    def _physical_transport_route_binding_evidence_matches(
+        *,
+        logical: WorkflowEventLogicalChannelBinding | None,
+        admission: WorkflowEventTransportCompatibilityAdmission | None,
+        profile: EventPhysicalTransportProfileSnapshot | None,
+        route: EventPhysicalTransportRouteSnapshot | None,
+        request: WorkflowEventPhysicalTransportRouteBindingRequest,
+    ) -> bool:
+        if logical is None or admission is None or profile is None or route is None:
+            return False
+        candidate = request.candidate
+        sources = (logical, admission, profile, route)
+        return bool(
+            all(
+                canonical_digest(source.digest_payload()) == source.canonical_digest
+                and source.scope == request.scope
+                and not any(source.authority.canonical_value().values())
+                for source in sources
+            )
+            and logical.state is WorkflowEventLogicalChannelBindingState.BOUND
+            and logical.binding_id
+            == request.expected_logical_channel_binding_id
+            == candidate.logical_channel_binding_id
+            and logical.canonical_digest
+            == request.expected_logical_channel_binding_digest
+            == candidate.logical_channel_binding_digest
+            and admission.state is WorkflowEventTransportCompatibilityAdmissionState.ADMITTED
+            and admission.compatibility_admission_id
+            == request.expected_transport_compatibility_admission_id
+            == candidate.transport_compatibility_admission_id
+            and admission.canonical_digest
+            == request.expected_transport_compatibility_admission_digest
+            == candidate.transport_compatibility_admission_digest
+            and admission.logical_channel_binding_id == logical.binding_id
+            and admission.logical_channel_binding_digest == logical.canonical_digest
+            and profile.state is EventPhysicalTransportProfileSnapshotState.SNAPSHOTTED
+            and profile.snapshot_id
+            == request.expected_transport_profile_snapshot_id
+            == candidate.transport_profile_snapshot_id
+            == admission.transport_profile_snapshot_id
+            and profile.canonical_digest
+            == request.expected_transport_profile_snapshot_digest
+            == candidate.transport_profile_snapshot_digest
+            == admission.transport_profile_snapshot_digest
+            and route.state is EventPhysicalTransportRouteSnapshotState.SNAPSHOTTED
+            and route.snapshot_id
+            == request.expected_transport_route_snapshot_id
+            == candidate.transport_route_snapshot_id
+            and route.canonical_digest
+            == request.expected_transport_route_snapshot_digest
+            == candidate.transport_route_snapshot_digest
+            and admission.transport_profile_id == profile.transport_profile_id
+            and admission.transport_profile_revision == profile.transport_profile_revision
+            and route.transport_profile_id == profile.transport_profile_id
+            and route.transport_profile_revision == profile.transport_profile_revision
+            and route.transport_resource_id == profile.transport_resource_id
+            and route.transport_resource_digest == profile.transport_resource_digest
+            and route.transport_implementation_id == profile.transport_implementation_id
+            and route.transport_implementation_version == profile.transport_implementation_version
+            and route.adapter_contract_id == profile.adapter_contract_id
+            and route.adapter_contract_version == profile.adapter_contract_version
+            and route.adapter_contract_digest == profile.adapter_contract_digest
+            and route.deployment_release_id == profile.deployment_release_id
+            and route.deployment_profile == profile.deployment_profile
+            and logical.scope == admission.scope == profile.scope == route.scope == candidate.scope
+            and profile.transport_encryption_required
+            and profile.restricted_network_supported
+            and route.minimum_tls_version == "1.3"
+            and route.server_authentication_required
+            and route.plaintext_fallback_prohibited
+            and route.restricted_network_enforced
+            and route.public_egress_prohibited
+            and route.proxy_mode in {"deployment-managed", "prohibited"}
+            and candidate.policy_digest == request.expected_policy_digest
+            and candidate.binder_subject_id == request.binder_subject_id
+            and candidate.bound_at == request.requested_at
+            and candidate.state is WorkflowEventPhysicalTransportRouteBindingState.BOUND
+            and canonical_digest(candidate.digest_payload()) == candidate.canonical_digest
             and not any(candidate.authority.canonical_value().values())
         )
 

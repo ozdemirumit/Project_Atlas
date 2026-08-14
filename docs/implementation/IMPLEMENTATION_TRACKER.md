@@ -4,14 +4,76 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-198 |
-| Title | Immutable deployment physical transport route snapshot without workflow binding |
-| Status | Local validation complete; pull request pending |
-| Branch | `agent/workflow-transport-route-snapshot` |
+| Task ID | ATLAS-IMP-199 |
+| Title | Immutable workflow physical transport route binding without runtime authority |
+| Status | Implementation complete; local validation passed; PR pending |
+| Branch | `agent/workflow-physical-route-binding` |
 | Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-136, ADR-137, ADR-138, ADR-139, ADR-140, ADR-141, ADR-142, ADR-143, ADR-144, ADR-145, ADR-146, ADR-147, ADR-148 |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-145, ADR-146, ADR-147, ADR-148, ADR-149 |
 | Last Updated | 2026-08-14 |
-| Next Action | Commit, open the pull request, and run exact-head CI |
+| Next Action | Commit, run exact-head PR CI and merge after green checks |
+
+### ATLAS-IMP-199 Scope Rationale
+
+- IMP-195 freezes one exact logical publication contract, IMP-197 proves that contract compatible
+  with one immutable deployment transport profile and IMP-198 freezes one exact physical route.
+  The next smallest boundary selects and binds those exact immutable records without resolving or
+  operating the route.
+- The binding transaction must lock and recompute the exact logical binding, compatibility
+  admission, profile snapshot and route snapshot evidence before committing one append-only record.
+  It may prove selection and binding as historical state, but grants no endpoint, credential,
+  network, readiness, publication, delivery, dispatch or execution authority.
+- Endpoint resolution, credential assignment or brokerage, network/TLS readiness, provider
+  messages, publication attempts, delivery, retries, quarantine, worker dispatch and execution
+  remain deferred.
+
+### ATLAS-IMP-199 Acceptance Criteria
+
+- Only the dedicated `audience.workflow-physical-transport-route-binder` workload can idempotently
+  bind one exact logical-channel binding, compatibility admission, transport-profile snapshot and
+  transport-route snapshot under one exact organization, environment and site scope. Human
+  sessions, API tokens, wrong workload audiences, changed requests, source drift, cross-scope
+  evidence, competing identities and audit failure fail closed.
+- The immutable binding records only the four exact source IDs/digests, code-owned policy evidence,
+  scope, binder identity, binding time, state and canonical digest. Route-set, selection-epoch,
+  endpoint-set, destination, routing, locator, credential, secret, readiness, provider-message,
+  publication, delivery, dispatch and execution material is not copied into the binding.
+- PostgreSQL locks logical binding, profile snapshot, compatibility admission and route snapshot in
+  one fixed order, rehydrates and recomputes all four source digests, then atomically stores one
+  append-only binding and idempotency claim. One logical binding can have only one physical route
+  binding in version 1, and production never falls back to memory.
+- Human UI/API reads are default-deny and repository-scope-filtered. They expose only stable source
+  IDs plus a server-generated opaque integrity reference, omit every source/policy/canonical digest
+  and route detail, provide no mutation or operation control and use the existing username/password
+  browser session without MFA or a second login.
+
+### ATLAS-IMP-199 Local Validation Evidence
+
+- Ruff format/lint passed across 1,341 files; strict mypy passed across 1,218 source files; Alembic
+  reports the single linear head `20260814_0122`.
+- Focused domain, application, PostgreSQL, API and compatibility-regression tests passed. The
+  complete backend release candidate passed 1,898 tests with three expected Windows symlink skips;
+  the live PostgreSQL test was skipped locally because no integration DSN is configured.
+- PR CI now provisions PostgreSQL, migrates it to head and requires a live behavioral test covering
+  concurrent exact replay, atomic binding/claim persistence and append-only UPDATE/DELETE triggers.
+- Full ESLint and TypeScript checks passed. The complete frontend suite passed 490 tests across 95
+  files, and the Vite production build completed successfully with only the existing chunk-size
+  advisory.
+- One normal `atlas-demo` / `local-demo` username/password login exposed immutable binding
+  `workflow-event-physical-transport-route-binding.704d250f135f588fbe6a8b64`. The panel contained
+  all ten false authority declarations, no button, digest, route-set, selection-epoch, endpoint,
+  routing, private-route, locator, MFA, second-login or authorized-browser-session text, and the
+  narrow in-app-browser screenshot showed no incoherent overlap or horizontal clipping.
+
+### ATLAS-IMP-198 Delivery Evidence
+
+- Exact-head commit `5fc5c1c72f9c40bc9c7e24fb04a01d444f6c48bd` passed PR CI run
+  `31805083829`; frontend completed in 5m56s and backend in 8m25s.
+- PR [#210](https://github.com/ozdemirumit/Project_Atlas/pull/210) was SHA-locked and squash-merged
+  as `d106eaf45b0a360f3c3292866e0c2a9431f90653`.
+- The exact merged commit independently passed `main` CI run `31805851900`; frontend completed in
+  6m11s and backend in 9m20s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-199 branched.
 
 ### ATLAS-IMP-198 Scope Rationale
 
