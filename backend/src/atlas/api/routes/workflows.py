@@ -13,9 +13,11 @@ from atlas.api.security import (
     authorize_workflow_plan_cancel,
     authorize_workflow_plan_create,
     authorize_workflow_plan_read,
+    authorize_workflow_transport_compatibility_admission_read,
     authorize_workflow_transport_profile_read,
     browser_session_subject,
     workflow_outbox_publisher_subject,
+    workflow_transport_compatibility_admitter_subject,
     workflow_transport_profile_registry_subject,
     workflow_worker_subject,
 )
@@ -26,6 +28,7 @@ from atlas.api.workflow_schemas import (
     BindWorkflowEventLogicalChannelInput,
     CancelWorkflowPlanInput,
     CreateEventPhysicalTransportProfileSnapshotInput,
+    CreateWorkflowEventTransportCompatibilityAdmissionInput,
     CreateWorkflowPlanInput,
     EventPhysicalTransportProfileSnapshotData,
     EventPhysicalTransportProfileSnapshotInventoryData,
@@ -68,6 +71,10 @@ from atlas.api.workflow_schemas import (
     WorkflowEventTransportAdmissionInventoryData,
     WorkflowEventTransportAdmissionInventoryResponse,
     WorkflowEventTransportAdmissionResponse,
+    WorkflowEventTransportCompatibilityAdmissionData,
+    WorkflowEventTransportCompatibilityAdmissionInventoryData,
+    WorkflowEventTransportCompatibilityAdmissionInventoryResponse,
+    WorkflowEventTransportCompatibilityAdmissionResponse,
     WorkflowExecutionAttemptData,
     WorkflowExecutionAttemptResponse,
     WorkflowExecutionRunData,
@@ -96,6 +103,7 @@ from atlas.modules.conversations.domain.models import ConversationScope
 from atlas.modules.identity.domain.models import AuthenticatedSubject
 from atlas.modules.workflows.application import (
     WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE,
+    WORKFLOW_TRANSPORT_COMPATIBILITY_ADMITTER_AUDIENCE,
     WORKFLOW_TRANSPORT_PROFILE_REGISTRY_AUDIENCE,
     WORKFLOW_WORKER_AUDIENCE,
     WorkflowAccessContext,
@@ -109,6 +117,7 @@ from atlas.modules.workflows.application import (
     WorkflowEventByteArtifactService,
     WorkflowEventLogicalChannelBindingError,
     WorkflowEventLogicalChannelBindingService,
+    WorkflowEventTransportCompatibilityAdmissionService,
     WorkflowOrchestrationLeaseError,
     WorkflowOrchestrationLeaseRepository,
     WorkflowOrchestrationLeaseService,
@@ -121,6 +130,7 @@ from atlas.modules.workflows.application import (
     WorkflowRunMaterializationError,
     WorkflowRunMaterializationRepository,
     WorkflowRunMaterializationService,
+    WorkflowTransportCompatibilityAdmitterContext,
     WorkflowTransportProfileRegistryContext,
     WorkflowTransportProfileSnapshotError,
     WorkflowTransportProfileSnapshotService,
@@ -139,6 +149,9 @@ from atlas.modules.workflows.application.transport_admission_ports import (
 from atlas.modules.workflows.application.transport_admissions import (
     WorkflowEventTransportAdmissionService,
 )
+from atlas.modules.workflows.application.transport_compatibility_admission_ports import (
+    WorkflowEventTransportCompatibilityAdmissionError,
+)
 from atlas.modules.workflows.domain import (
     DeploymentEventTransportProfile,
     EventPhysicalTransportProfileSnapshot,
@@ -155,6 +168,8 @@ from atlas.modules.workflows.domain import (
     WorkflowEventTransportAdmission,
     WorkflowEventTransportAdmissionPolicy,
     WorkflowEventTransportAdmissionState,
+    WorkflowEventTransportCompatibilityAdmission,
+    WorkflowEventTransportCompatibilityAdmissionState,
     WorkflowExecutionAttempt,
     WorkflowExecutionAttemptState,
     WorkflowExecutionRun,
@@ -165,6 +180,7 @@ from atlas.modules.workflows.domain import (
     WorkflowOutboxPublicationLease,
     WorkflowRunPlan,
     WorkflowScope,
+    canonical_digest,
 )
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
@@ -600,6 +616,26 @@ def _raise_transport_profile_snapshot(error: WorkflowTransportProfileSnapshotErr
         status, title = 404, "Workflow transport profile source unavailable"
     else:
         status, title = 409, "Workflow transport profile snapshot unavailable"
+    raise AtlasError(
+        status=status,
+        code=error.code,
+        title=title,
+        detail=error.detail,
+        retryable=status == 503,
+    ) from error
+
+
+def _raise_transport_compatibility_admission(
+    error: WorkflowEventTransportCompatibilityAdmissionError,
+) -> NoReturn:
+    if error.code.endswith("_invalid") or error.code.endswith("_required"):
+        status, title = 422, "Workflow transport compatibility admission request invalid"
+    elif "repository" in error.code:
+        status, title = 503, "Workflow transport compatibility admission service unavailable"
+    elif error.code.endswith("_not_found"):
+        status, title = 404, "Workflow transport compatibility evidence unavailable"
+    else:
+        status, title = 409, "Workflow transport compatibility admission unavailable"
     raise AtlasError(
         status=status,
         code=error.code,
@@ -1169,6 +1205,40 @@ def _transport_profile_snapshot_response(
     return EventPhysicalTransportProfileSnapshotResponse(
         data=EventPhysicalTransportProfileSnapshotData.from_domain(snapshot),
         meta=_meta(request),
+    )
+
+
+def _transport_compatibility_admission_response(
+    admission: WorkflowEventTransportCompatibilityAdmission,
+    request: Request,
+    response: Response,
+) -> WorkflowEventTransportCompatibilityAdmissionResponse:
+    _no_store(response)
+    return WorkflowEventTransportCompatibilityAdmissionResponse(
+        data=WorkflowEventTransportCompatibilityAdmissionData.from_domain(admission),
+        meta=_meta(request),
+    )
+
+
+def _transport_compatibility_admission_matches_request(
+    admission: WorkflowEventTransportCompatibilityAdmission,
+    *,
+    logical_channel_binding_id: str,
+    policy_id: str,
+    policy_version: str,
+    policy_digest: str,
+    scope: WorkflowScope,
+) -> bool:
+    return bool(
+        admission.compatibility_admission_id
+        and admission.logical_channel_binding_id == logical_channel_binding_id
+        and admission.policy_id == policy_id
+        and admission.policy_version == policy_version
+        and admission.policy_digest == policy_digest
+        and admission.scope == scope
+        and admission.state is WorkflowEventTransportCompatibilityAdmissionState.ADMITTED
+        and not any(admission.authority.canonical_value().values())
+        and admission.canonical_digest == canonical_digest(admission.digest_payload())
     )
 
 
@@ -3237,3 +3307,121 @@ async def create_workflow_transport_profile_snapshot(
     except WorkflowTransportProfileSnapshotError as error:
         _raise_transport_profile_snapshot(error)
     return _transport_profile_snapshot_response(snapshot, request, response)
+
+
+@router.get(
+    "/transport-compatibility-admissions",
+    response_model=WorkflowEventTransportCompatibilityAdmissionInventoryResponse,
+)
+async def get_workflow_transport_compatibility_admission(
+    logical_channel_binding_id: Annotated[
+        str, Query(min_length=3, max_length=128, pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")
+    ],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_transport_compatibility_admission_read),
+    ],
+) -> WorkflowEventTransportCompatibilityAdmissionInventoryResponse:
+    del decision
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service: WorkflowEventTransportCompatibilityAdmissionService = (
+        request.app.state.workflow_event_transport_compatibility_admission_service
+    )
+    try:
+        admissions = await service.repository.list_transport_compatibility_admissions_by_binding(
+            logical_channel_binding_id=logical_channel_binding_id
+        )
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_transport_compatibility_admission_repository_unavailable",
+            title="Workflow transport compatibility admission service unavailable",
+            detail="Transport compatibility admission metadata is unavailable.",
+            retryable=True,
+        ) from error
+    policy = service.policy
+    if len(admissions) > 256 or any(
+        not _transport_compatibility_admission_matches_request(
+            admission,
+            logical_channel_binding_id=logical_channel_binding_id,
+            policy_id=policy.policy_id,
+            policy_version=policy.policy_version,
+            policy_digest=policy.canonical_digest,
+            scope=scope,
+        )
+        for admission in admissions
+    ):
+        raise AtlasError(
+            status=503,
+            code="workflow_transport_compatibility_admission_repository_scope_violation",
+            title="Workflow transport compatibility admission service unavailable",
+            detail="Transport compatibility admission metadata is unavailable.",
+            retryable=True,
+        )
+    _no_store(response)
+    return WorkflowEventTransportCompatibilityAdmissionInventoryResponse(
+        data=WorkflowEventTransportCompatibilityAdmissionInventoryData(
+            logical_channel_binding_id=logical_channel_binding_id,
+            transport_compatibility_admissions=[
+                WorkflowEventTransportCompatibilityAdmissionData.from_domain(admission)
+                for admission in admissions
+            ],
+            durable=service.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/transport-compatibility-admissions",
+    response_model=WorkflowEventTransportCompatibilityAdmissionResponse,
+    status_code=201,
+)
+async def create_workflow_transport_compatibility_admission(
+    payload: CreateWorkflowEventTransportCompatibilityAdmissionInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_transport_compatibility_admitter_subject),
+    ],
+) -> WorkflowEventTransportCompatibilityAdmissionResponse:
+    service: WorkflowEventTransportCompatibilityAdmissionService = (
+        request.app.state.workflow_event_transport_compatibility_admission_service
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        admission = await service.admit(
+            logical_channel_binding_id=payload.logical_channel_binding_id,
+            logical_channel_binding_digest=payload.logical_channel_binding_digest,
+            transport_profile_snapshot_id=payload.transport_profile_snapshot_id,
+            transport_profile_snapshot_digest=payload.transport_profile_snapshot_digest,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            policy_digest=payload.policy_digest,
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowTransportCompatibilityAdmitterContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=WORKFLOW_TRANSPORT_COMPATIBILITY_ADMITTER_AUDIENCE,
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id="decision.workflow-transport-compatibility-admitter-authenticated",
+                requested_at=datetime.now(UTC),
+            ),
+        )
+    except WorkflowEventTransportCompatibilityAdmissionError as error:
+        _raise_transport_compatibility_admission(error)
+    return _transport_compatibility_admission_response(admission, request, response)

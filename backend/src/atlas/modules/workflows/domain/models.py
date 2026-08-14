@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from hashlib import sha256
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 NO_EXECUTION_SAFETY_NOTICE = (
     "Planning only. This record cannot dispatch workers, invoke connectors, create approvals, "
@@ -133,6 +133,10 @@ class WorkflowEventLogicalChannelBindingState(StrEnum):
 
 class EventPhysicalTransportProfileSnapshotState(StrEnum):
     SNAPSHOTTED = "snapshotted"
+
+
+class WorkflowEventTransportCompatibilityAdmissionState(StrEnum):
+    ADMITTED = "admitted"
 
 
 @dataclass(frozen=True, slots=True)
@@ -2227,6 +2231,266 @@ class EventPhysicalTransportProfileSnapshot:
 
     @property
     def grants_route_selection_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_publication_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_delivery_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_dispatch_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_execution_authority(self) -> bool:
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventTransportCompatibilityPolicy:
+    """Code-owned comparison contract that grants no physical transport authority."""
+
+    policy_id: str
+    policy_version: str
+    event_type: str
+    event_version: str
+    schema_uri: str
+    data_classification: str
+    representation_name: str
+    encoding: str
+    delivery_semantics: str
+    durability_required: bool
+    ordering_key_kind: str
+    retention_class: str
+    maximum_logical_byte_count: int
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        _require_identifier(self.policy_id, name="transport compatibility policy_id")
+        _require_identifier(self.policy_version, name="transport compatibility policy_version")
+        if self.event_type != "WorkflowStepDispatchRequested" or self.event_version != "1.0":
+            raise ValueError("transport compatibility event contract is unsupported")
+        if self.schema_uri != "urn:project-atlas:event:workflow-step-dispatch-requested:1.0":
+            raise ValueError("transport compatibility schema URI is unsupported")
+        if self.data_classification != "internal":
+            raise ValueError("transport compatibility classification is unsupported")
+        if self.representation_name != "canonical-json" or self.encoding != "utf-8":
+            raise ValueError("transport compatibility representation is unsupported")
+        if self.delivery_semantics != "at-least-once" or self.durability_required is not True:
+            raise ValueError("transport compatibility delivery contract is unsupported")
+        if self.ordering_key_kind != "workflow-run":
+            raise ValueError("transport compatibility ordering contract is unsupported")
+        if self.retention_class != "workflow-operational":
+            raise ValueError("transport compatibility retention contract is unsupported")
+        if self.maximum_logical_byte_count != 65_536:
+            raise ValueError("transport compatibility logical byte limit is unsupported")
+        _require_digest(self.canonical_digest, name="transport compatibility policy digest")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("transport compatibility policy canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "data_classification": self.data_classification,
+            "delivery_semantics": self.delivery_semantics,
+            "durability_required": self.durability_required,
+            "encoding": self.encoding,
+            "event_type": self.event_type,
+            "event_version": self.event_version,
+            "maximum_logical_byte_count": self.maximum_logical_byte_count,
+            "ordering_key_kind": self.ordering_key_kind,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "representation_name": self.representation_name,
+            "retention_class": self.retention_class,
+            "schema_uri": self.schema_uri,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+def code_owned_workflow_event_transport_compatibility_policy() -> (
+    WorkflowEventTransportCompatibilityPolicy
+):
+    values: dict[str, object] = {
+        "policy_id": "policy.workflow-event-transport-compatibility",
+        "policy_version": "1.0",
+        "event_type": "WorkflowStepDispatchRequested",
+        "event_version": "1.0",
+        "schema_uri": "urn:project-atlas:event:workflow-step-dispatch-requested:1.0",
+        "data_classification": "internal",
+        "representation_name": "canonical-json",
+        "encoding": "utf-8",
+        "delivery_semantics": "at-least-once",
+        "durability_required": True,
+        "ordering_key_kind": "workflow-run",
+        "retention_class": "workflow-operational",
+        "maximum_logical_byte_count": 65_536,
+    }
+    return WorkflowEventTransportCompatibilityPolicy(
+        **cast(Any, values), canonical_digest=canonical_digest(values)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventTransportCompatibilityAdmissionAuthority:
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    credential_access_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        if any(self.canonical_value().values()):
+            raise ValueError(
+                "transport compatibility admissions cannot grant operational authority"
+            )
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "credential_access_authorized": self.credential_access_authorized,
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "execution_authorized": self.execution_authorized,
+            "publication_authorized": self.publication_authorized,
+            "route_binding_authorized": self.route_binding_authorized,
+            "route_selection_authorized": self.route_selection_authorized,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventTransportCompatibilityAdmission:
+    """Immutable proof that two exact declared contracts match under one policy."""
+
+    compatibility_admission_id: str
+    logical_channel_binding_id: str
+    logical_channel_binding_digest: str
+    transport_profile_snapshot_id: str
+    transport_profile_snapshot_digest: str
+    transport_profile_id: str
+    transport_profile_revision: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    scope: WorkflowScope
+    event_type: str
+    event_version: str
+    schema_uri: str
+    data_classification: str
+    representation_name: str
+    encoding: str
+    delivery_semantics: str
+    durability_required: bool
+    ordering_key_kind: str
+    retention_class: str
+    logical_maximum_byte_count: int
+    artifact_byte_count: int
+    profile_maximum_message_byte_count: int
+    admitter_subject_id: str
+    admitted_at: datetime
+    state: WorkflowEventTransportCompatibilityAdmissionState
+    authority: WorkflowEventTransportCompatibilityAdmissionAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.compatibility_admission_id, "transport compatibility admission id"),
+            (self.logical_channel_binding_id, "logical channel binding id"),
+            (self.transport_profile_snapshot_id, "transport profile snapshot id"),
+            (self.transport_profile_id, "transport profile id"),
+            (self.transport_profile_revision, "transport profile revision"),
+            (self.policy_id, "transport compatibility policy id"),
+            (self.policy_version, "transport compatibility policy version"),
+            (self.admitter_subject_id, "transport compatibility admitter subject id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.logical_channel_binding_digest, "logical channel binding digest"),
+            (self.transport_profile_snapshot_digest, "transport profile snapshot digest"),
+            (self.policy_digest, "transport compatibility policy digest"),
+            (self.canonical_digest, "transport compatibility admission digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.event_type != "WorkflowStepDispatchRequested" or self.event_version != "1.0":
+            raise ValueError("transport compatibility event contract is unsupported")
+        if self.schema_uri != "urn:project-atlas:event:workflow-step-dispatch-requested:1.0":
+            raise ValueError("transport compatibility schema URI is unsupported")
+        if self.data_classification != "internal":
+            raise ValueError("transport compatibility classification is unsupported")
+        if self.representation_name != "canonical-json" or self.encoding != "utf-8":
+            raise ValueError("transport compatibility representation is unsupported")
+        if self.delivery_semantics != "at-least-once" or self.durability_required is not True:
+            raise ValueError("transport compatibility delivery contract is unsupported")
+        if self.ordering_key_kind != "workflow-run":
+            raise ValueError("transport compatibility ordering contract is unsupported")
+        if self.retention_class != "workflow-operational":
+            raise ValueError("transport compatibility retention contract is unsupported")
+        if not 1 <= self.artifact_byte_count <= self.logical_maximum_byte_count == 65_536:
+            raise ValueError("transport compatibility logical byte evidence is invalid")
+        if self.profile_maximum_message_byte_count < self.logical_maximum_byte_count:
+            raise ValueError("transport compatibility profile byte evidence is insufficient")
+        if self.admitted_at.tzinfo is None:
+            raise ValueError("transport compatibility admission time must be timezone-aware")
+        if self.state is not WorkflowEventTransportCompatibilityAdmissionState.ADMITTED:
+            raise ValueError("transport compatibility admissions must remain admitted")
+        if any(self.authority.canonical_value().values()):
+            raise ValueError(
+                "transport compatibility admissions cannot grant operational authority"
+            )
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("transport compatibility admission canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "admitted_at": self.admitted_at.isoformat(),
+            "admitter_subject_id": self.admitter_subject_id,
+            "artifact_byte_count": self.artifact_byte_count,
+            "authority": self.authority.canonical_value(),
+            "compatibility_admission_id": self.compatibility_admission_id,
+            "data_classification": self.data_classification,
+            "delivery_semantics": self.delivery_semantics,
+            "durability_required": self.durability_required,
+            "encoding": self.encoding,
+            "event_type": self.event_type,
+            "event_version": self.event_version,
+            "logical_channel_binding_digest": self.logical_channel_binding_digest,
+            "logical_channel_binding_id": self.logical_channel_binding_id,
+            "logical_maximum_byte_count": self.logical_maximum_byte_count,
+            "ordering_key_kind": self.ordering_key_kind,
+            "policy_digest": self.policy_digest,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "profile_maximum_message_byte_count": self.profile_maximum_message_byte_count,
+            "representation_name": self.representation_name,
+            "retention_class": self.retention_class,
+            "schema_uri": self.schema_uri,
+            "scope": self.scope.canonical_value(),
+            "state": self.state.value,
+            "transport_profile_id": self.transport_profile_id,
+            "transport_profile_revision": self.transport_profile_revision,
+            "transport_profile_snapshot_digest": self.transport_profile_snapshot_digest,
+            "transport_profile_snapshot_id": self.transport_profile_snapshot_id,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    @property
+    def grants_route_selection_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_route_binding_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_credential_access_authority(self) -> bool:
         return False
 
     @property

@@ -127,6 +127,20 @@ from atlas.modules.workflows.application.transport_admissions import (
     WORKFLOW_EVENT_TRANSPORT_ADMISSION_PRODUCER,
     WorkflowEventTransportAdmissionService,
 )
+from atlas.modules.workflows.application.transport_compatibility_admission_ports import (
+    WorkflowEventTransportCompatibilityAdmissionError,
+    WorkflowEventTransportCompatibilityAdmissionIdempotencyRecord,
+    WorkflowEventTransportCompatibilityAdmissionRepository,
+    WorkflowEventTransportCompatibilityAdmissionRequest,
+    WorkflowEventTransportCompatibilityAdmissionResult,
+    WorkflowEventTransportCompatibilityAdmissionStatus,
+)
+from atlas.modules.workflows.application.transport_compatibility_admissions import (
+    WORKFLOW_TRANSPORT_COMPATIBILITY_ADMISSION_PRODUCER,
+    WORKFLOW_TRANSPORT_COMPATIBILITY_ADMITTER_AUDIENCE,
+    WorkflowEventTransportCompatibilityAdmissionService,
+    WorkflowTransportCompatibilityAdmitterContext,
+)
 from atlas.modules.workflows.application.transport_profile_snapshot_ports import (
     DeploymentEventTransportProfileRegistry,
     WorkflowTransportProfileSnapshotError,
@@ -152,6 +166,8 @@ __all__ = [
     "WORKFLOW_EVENT_LOGICAL_CHANNEL_BINDING_PRODUCER",
     "WORKFLOW_EVENT_TRANSPORT_ADMISSION_PRODUCER",
     "WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE",
+    "WORKFLOW_TRANSPORT_COMPATIBILITY_ADMISSION_PRODUCER",
+    "WORKFLOW_TRANSPORT_COMPATIBILITY_ADMITTER_AUDIENCE",
     "WORKFLOW_TRANSPORT_PROFILE_REGISTRY_AUDIENCE",
     "WORKFLOW_TRANSPORT_PROFILE_SNAPSHOT_PRODUCER",
     "WORKFLOW_WORKER_AUDIENCE",
@@ -199,6 +215,13 @@ __all__ = [
     "WorkflowEventTransportAdmissionResult",
     "WorkflowEventTransportAdmissionService",
     "WorkflowEventTransportAdmissionStatus",
+    "WorkflowEventTransportCompatibilityAdmissionError",
+    "WorkflowEventTransportCompatibilityAdmissionIdempotencyRecord",
+    "WorkflowEventTransportCompatibilityAdmissionRepository",
+    "WorkflowEventTransportCompatibilityAdmissionRequest",
+    "WorkflowEventTransportCompatibilityAdmissionResult",
+    "WorkflowEventTransportCompatibilityAdmissionService",
+    "WorkflowEventTransportCompatibilityAdmissionStatus",
     "WorkflowLeaseAcquireIdempotencyRecord",
     "WorkflowLeaseAcquireRequest",
     "WorkflowLeaseAcquireResult",
@@ -237,6 +260,7 @@ __all__ = [
     "WorkflowRunMaterializationResult",
     "WorkflowRunMaterializationService",
     "WorkflowRunMaterializationStatus",
+    "WorkflowTransportCompatibilityAdmitterContext",
     "WorkflowTransportProfileRegistryContext",
     "WorkflowTransportProfileSnapshotError",
     "WorkflowTransportProfileSnapshotIdempotencyRecord",

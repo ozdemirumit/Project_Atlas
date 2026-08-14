@@ -21,6 +21,7 @@ import {
   type WorkflowExecutionRun,
   type WorkflowOrchestrationLease,
   type WorkflowRunPlan,
+  type WorkflowTransportCompatibilityAdmission,
   type WorkflowTransportProfileSnapshot,
 } from "../../api/workflows";
 import WorkflowPlanningWorkspace from "./WorkflowPlanningWorkspace";
@@ -554,6 +555,48 @@ const transportProfileSnapshot: WorkflowTransportProfileSnapshot = {
   canonical_digest: "5".repeat(64),
 };
 
+const transportCompatibilityAdmission: WorkflowTransportCompatibilityAdmission = {
+  compatibility_admission_id:
+    "workflow-transport-compatibility-admission.1234567890abcdef",
+  logical_channel_binding_id: logicalChannelBinding.logical_channel_binding_id,
+  logical_channel_binding_digest: logicalChannelBinding.canonical_digest,
+  transport_profile_snapshot_id: transportProfileSnapshot.snapshot_id,
+  transport_profile_snapshot_digest: transportProfileSnapshot.canonical_digest,
+  transport_profile_id: transportProfileSnapshot.transport_profile_id,
+  transport_profile_revision: transportProfileSnapshot.transport_profile_revision,
+  policy_id: "policy.workflow-event-transport-compatibility",
+  policy_version: "1.0",
+  policy_digest: "6".repeat(64),
+  scope: { ...logicalChannelBinding.scope },
+  event_type: "WorkflowStepDispatchRequested",
+  event_version: "1.0",
+  schema_uri: "urn:project-atlas:event:workflow-step-dispatch-requested:1.0",
+  data_classification: "internal",
+  representation_name: "canonical-json",
+  encoding: "utf-8",
+  delivery_semantics: logicalChannelBinding.delivery_semantics,
+  durability_required: logicalChannelBinding.durability_required,
+  ordering_key_kind: logicalChannelBinding.ordering_key_kind,
+  retention_class: logicalChannelBinding.retention_class,
+  logical_maximum_byte_count: 65_536,
+  artifact_byte_count: logicalChannelBinding.byte_count,
+  profile_maximum_message_byte_count:
+    transportProfileSnapshot.maximum_message_byte_count,
+  admitter_subject_id: "workload.workflow.transport-compatibility-admitter",
+  admitted_at: "2026-08-14T10:03:00Z",
+  state: "admitted",
+  authority: {
+    route_selection_authorized: false,
+    route_binding_authorized: false,
+    credential_access_authorized: false,
+    publication_authorized: false,
+    delivery_authorized: false,
+    dispatch_authorized: false,
+    execution_authorized: false,
+  },
+  canonical_digest: "7".repeat(64),
+};
+
 function leaseResponse(lease: WorkflowOrchestrationLease | null, status = 200): Response {
   return new Response(
     JSON.stringify({
@@ -769,6 +812,28 @@ function transportProfileSnapshotResponse(
   );
 }
 
+function transportCompatibilityAdmissionResponse(
+  admissions: unknown[],
+  status = 200,
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            logical_channel_binding_id: logicalChannelBinding.logical_channel_binding_id,
+            transport_compatibility_admissions: admissions,
+            durable: false,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.transport-compatibility-admission",
+            generated_at: "2026-08-14T10:04:00Z",
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function mockReadResponses(input: {
   lease?: WorkflowOrchestrationLease | null;
   run?: WorkflowExecutionRun | null;
@@ -781,10 +846,12 @@ function mockReadResponses(input: {
   byteArtifacts?: unknown[];
   logicalChannelBindings?: unknown[];
   transportProfileSnapshots?: unknown[];
+  transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
   pendingByteArtifactResponse?: Promise<Response>;
   pendingLogicalChannelBindingResponse?: Promise<Response>;
   pendingTransportProfileResponse?: Promise<Response>;
+  pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
   runStatus?: number;
   attemptStatus?: number;
@@ -800,13 +867,34 @@ function mockReadResponses(input: {
   logicalChannelBindingStatuses?: number[];
   transportProfileStatus?: number;
   transportProfileStatuses?: number[];
+  transportCompatibilityAdmissionStatus?: number;
+  transportCompatibilityAdmissionStatuses?: number[];
 }) {
   let transportAdmissionReadCount = 0;
   let byteArtifactReadCount = 0;
   let logicalChannelBindingReadCount = 0;
   let transportProfileReadCount = 0;
+  let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.includes("/api/v1/workflows/transport-compatibility-admissions?")) {
+      if (input.pendingTransportCompatibilityAdmissionResponse) {
+        return input.pendingTransportCompatibilityAdmissionResponse;
+      }
+      const status =
+        input.transportCompatibilityAdmissionStatuses?.[
+          Math.min(
+            transportCompatibilityAdmissionReadCount++,
+            input.transportCompatibilityAdmissionStatuses.length - 1,
+          )
+        ] ?? input.transportCompatibilityAdmissionStatus ?? 200;
+      return Promise.resolve(
+        transportCompatibilityAdmissionResponse(
+          input.transportCompatibilityAdmissions ?? [],
+          status,
+        ),
+      );
+    }
     if (url.endsWith("/api/v1/workflows/transport-profile-snapshots")) {
       if (input.pendingTransportProfileResponse) return input.pendingTransportProfileResponse;
       const status =
@@ -2767,6 +2855,282 @@ describe("WorkflowPlanningWorkspace", () => {
       }),
     ).toBeNull();
     expect(within(section).queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
+  });
+
+  it("loads read-only compatibility evidence for the exact logical binding", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [admittedTransport],
+      byteArtifacts: [materializedByteArtifact],
+      logicalChannelBindings: [logicalChannelBinding],
+      transportCompatibilityAdmissions: [transportCompatibilityAdmission],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const bindingHeading = await screen.findByRole("heading", {
+      name: "Logical channel binding",
+    });
+    const admissionHeading = await screen.findByRole("heading", {
+      name: "Transport compatibility admission",
+    });
+    expect(
+      bindingHeading.compareDocumentPosition(admissionHeading) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    const section = admissionHeading.closest("div[aria-labelledby]") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Transport compatibility admissions",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) => {
+        const url = request instanceof Request ? request.url : request.toString();
+        return url.includes(
+          `/api/v1/workflows/transport-compatibility-admissions?logical_channel_binding_id=${logicalChannelBinding.logical_channel_binding_id}`,
+        );
+      }),
+    ).toBe(true);
+    expect(
+      within(section).getByTitle(
+        transportCompatibilityAdmission.compatibility_admission_id,
+      ),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(transportCompatibilityAdmission.logical_channel_binding_id),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(transportCompatibilityAdmission.transport_profile_snapshot_id),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(transportCompatibilityAdmission.transport_profile_id),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(transportCompatibilityAdmission.policy_id),
+    ).toBeVisible();
+    expect(within(section).getByTitle(transportCompatibilityAdmission.schema_uri)).toBeVisible();
+    expect(
+      within(section).getByTitle(transportCompatibilityAdmission.admitter_subject_id),
+    ).toBeVisible();
+    expect(records).toHaveTextContent("admitted");
+    expect(records).toHaveTextContent("WorkflowStepDispatchRequested v1.0");
+    expect(records).toHaveTextContent("internal");
+    expect(records).toHaveTextContent("canonical-json");
+    expect(records).toHaveTextContent("utf-8");
+    expect(records).toHaveTextContent("at-least-once");
+    expect(records).toHaveTextContent("durable required");
+    expect(records).toHaveTextContent("workflow-run");
+    expect(records).toHaveTextContent("workflow-operational");
+    expect(records).toHaveTextContent("logical maximum 65,536 bytes");
+    expect(records).toHaveTextContent("artifact 2,048 bytes");
+    expect(records).toHaveTextContent("profile maximum 65,536 bytes");
+    expect(records).toHaveTextContent(
+      "authority route selection false | route binding false | credential access false | publication false | delivery false | dispatch false | execution false",
+    );
+    expect(section).toHaveTextContent("exact declared contracts match under the named policy");
+    expect(
+      within(section).queryByRole("button", {
+        name: /admit|recalculate|override|select|bind|probe|publish|deliver|dispatch|execute/i,
+      }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(
+      /hostname|URL|IP address|namespace|topic|stream|queue|partition|routing key|vault|certificate|healthy|reachable|ready/i,
+    );
+    expect(section).not.toHaveTextContent(/authorized browser session|MFA|second login/i);
+  });
+
+  it("renders zero compatibility admissions as a healthy read-only state", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [admittedTransport],
+      byteArtifacts: [materializedByteArtifact],
+      logicalChannelBindings: [logicalChannelBinding],
+      transportCompatibilityAdmissions: [],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport compatibility admission",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(
+      await within(section).findByText("No transport compatibility admission has been recorded."),
+    ).toBeVisible();
+    expect(within(section).queryByRole("alert")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("shows a loading state while compatibility evidence is pending", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [admittedTransport],
+      byteArtifacts: [materializedByteArtifact],
+      logicalChannelBindings: [logicalChannelBinding],
+      pendingTransportCompatibilityAdmissionResponse: new Promise<Response>(() => undefined),
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport compatibility admission",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(
+      await within(section).findByText("Loading transport compatibility admission..."),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("retries a failed compatibility read without exposing mutation controls", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [admittedTransport],
+      byteArtifacts: [materializedByteArtifact],
+      logicalChannelBindings: [logicalChannelBinding],
+      transportCompatibilityAdmissions: [transportCompatibilityAdmission],
+      transportCompatibilityAdmissionStatuses: [500, 200],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport compatibility admission",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(
+      await within(section).findByText("Transport compatibility admission is unavailable"),
+    ).toBeVisible();
+    expect(section).toHaveTextContent(
+      "No compatibility or operational state is inferred from this failed read.",
+    );
+    fireEvent.click(
+      within(section).getByRole("button", {
+        name: "Retry transport compatibility admission read",
+      }),
+    );
+    expect(
+      await within(section).findByTitle(
+        transportCompatibilityAdmission.compatibility_admission_id,
+      ),
+    ).toBeVisible();
+    expect(
+      within(section).queryByRole("button", {
+        name: /admit|recalculate|override|select|bind|probe|publish|deliver|dispatch|execute/i,
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [
+      403,
+      "Transport compatibility admission permission is missing",
+      "current role or scope cannot inspect compatibility evidence",
+    ],
+  ])(
+    "handles compatibility status %s at the normal session boundary",
+    async (status, title, detail) => {
+      vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+      mockReadResponses({
+        run: materializedRun,
+        attempts: [materializedAttempt],
+        dispatchIntents: [stagedDispatchIntent],
+        outboxEntries: [pendingOutboxEntry],
+        publicationLeases: [activePublicationLease],
+        eventEnvelopes: [preparedEventEnvelope],
+        transportAdmissions: [admittedTransport],
+        byteArtifacts: [materializedByteArtifact],
+        logicalChannelBindings: [logicalChannelBinding],
+        transportCompatibilityAdmissionStatus: status,
+      });
+      renderWorkspace();
+
+      fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+      const section = (await screen.findByRole("heading", {
+        name: "Transport compatibility admission",
+      })).closest("div[aria-labelledby]") as HTMLElement;
+      expect(await within(section).findByText(title)).toBeVisible();
+      expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+      expect(within(section).queryByRole("button")).toBeNull();
+      expect(within(section).queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
+    },
+  );
+
+  it.each([
+    ["an unexpected endpoint", { ...transportCompatibilityAdmission, endpoint: "broker.internal" }],
+    [
+      "a different binding digest",
+      { ...transportCompatibilityAdmission, logical_channel_binding_digest: "0".repeat(64) },
+    ],
+    [
+      "an insufficient profile maximum",
+      { ...transportCompatibilityAdmission, profile_maximum_message_byte_count: 1_024 },
+    ],
+    ["a readiness state", { ...transportCompatibilityAdmission, state: "ready" }],
+    [
+      "route selection authority",
+      {
+        ...transportCompatibilityAdmission,
+        authority: {
+          ...transportCompatibilityAdmission.authority,
+          route_selection_authorized: true,
+        },
+      },
+    ],
+  ])("fails closed when compatibility evidence contains %s", async (_case, unsafeAdmission) => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [admittedTransport],
+      byteArtifacts: [materializedByteArtifact],
+      logicalChannelBindings: [logicalChannelBinding],
+      transportCompatibilityAdmissions: [unsafeAdmission],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport compatibility admission",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(
+      await within(section).findByText("Transport compatibility admission is unavailable"),
+    ).toBeVisible();
+    expect(
+      within(section).queryByRole("list", { name: "Transport compatibility admissions" }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent("broker.internal");
   });
 
   it("renders zero logical channel bindings as a healthy read-only state", async () => {

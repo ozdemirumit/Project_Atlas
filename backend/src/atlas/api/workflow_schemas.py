@@ -15,6 +15,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventByteArtifact,
     WorkflowEventLogicalChannelBinding,
     WorkflowEventTransportAdmission,
+    WorkflowEventTransportCompatibilityAdmission,
     WorkflowExecutionAttempt,
     WorkflowExecutionRun,
     WorkflowOrchestrationLease,
@@ -1010,6 +1011,101 @@ class EventPhysicalTransportProfileSnapshotResponse(BaseModel):
 
 class EventPhysicalTransportProfileSnapshotInventoryResponse(BaseModel):
     data: EventPhysicalTransportProfileSnapshotInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowEventTransportCompatibilityAdmissionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    logical_channel_binding_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    logical_channel_binding_digest: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    transport_profile_snapshot_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    transport_profile_snapshot_digest: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    policy_id: Literal["policy.workflow-event-transport-compatibility"]
+    policy_version: Literal["1.0"]
+    policy_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowEventTransportCompatibilityAdmissionAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+
+
+class WorkflowEventTransportCompatibilityAdmissionData(BaseModel):
+    """Minimized immutable contract comparison without route or readiness claims."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    compatibility_admission_id: str
+    logical_channel_binding_id: str
+    logical_channel_binding_digest: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    transport_profile_snapshot_id: str
+    transport_profile_snapshot_digest: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    transport_profile_id: str
+    transport_profile_revision: str
+    policy_id: Literal["policy.workflow-event-transport-compatibility"]
+    policy_version: Literal["1.0"]
+    policy_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    scope: WorkflowScopeData
+    event_type: Literal["WorkflowStepDispatchRequested"]
+    event_version: Literal["1.0"]
+    schema_uri: Literal["urn:project-atlas:event:workflow-step-dispatch-requested:1.0"]
+    data_classification: Literal["internal"]
+    representation_name: Literal["canonical-json"]
+    encoding: Literal["utf-8"]
+    delivery_semantics: Literal["at-least-once"]
+    durability_required: Literal[True]
+    ordering_key_kind: Literal["workflow-run"]
+    retention_class: Literal["workflow-operational"]
+    logical_maximum_byte_count: Literal[65_536]
+    artifact_byte_count: int = Field(ge=1, le=65_536)
+    profile_maximum_message_byte_count: int = Field(ge=65_536, le=16_777_216)
+    admitter_subject_id: str
+    admitted_at: datetime
+    state: Literal["admitted"]
+    authority: WorkflowEventTransportCompatibilityAdmissionAuthorityData
+    canonical_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+
+    @classmethod
+    def from_domain(
+        cls, admission: WorkflowEventTransportCompatibilityAdmission
+    ) -> WorkflowEventTransportCompatibilityAdmissionData:
+        return cls.model_validate(admission.canonical_value())
+
+
+class WorkflowEventTransportCompatibilityAdmissionInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    logical_channel_binding_id: str
+    transport_compatibility_admissions: list[WorkflowEventTransportCompatibilityAdmissionData] = (
+        Field(max_length=256)
+    )
+    durable: bool
+
+
+class WorkflowEventTransportCompatibilityAdmissionResponse(BaseModel):
+    data: WorkflowEventTransportCompatibilityAdmissionData
+    meta: ResponseMeta
+
+
+class WorkflowEventTransportCompatibilityAdmissionInventoryResponse(BaseModel):
+    data: WorkflowEventTransportCompatibilityAdmissionInventoryData
     meta: ResponseMeta
 
 

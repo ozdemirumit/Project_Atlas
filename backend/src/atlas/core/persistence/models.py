@@ -5709,6 +5709,134 @@ class EventPhysicalTransportProfileSnapshotClaimModel(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
+class WorkflowEventTransportCompatibilityAdmissionModel(Base):
+    __tablename__ = "workflow_event_transport_compatibility_admissions"
+    __table_args__ = (
+        UniqueConstraint(
+            "logical_channel_binding_id",
+            "transport_profile_snapshot_id",
+            "policy_digest",
+            name="uq_wf_transport_compat_binding_profile_policy",
+        ),
+        UniqueConstraint(
+            "canonical_digest",
+            name="uq_wf_transport_compat_admission_digest",
+        ),
+        CheckConstraint(
+            "state = 'admitted'",
+            name="ck_wf_transport_compat_admission_state",
+        ),
+        CheckConstraint(
+            "logical_maximum_byte_count >= 1 "
+            "AND artifact_byte_count >= 1 "
+            "AND artifact_byte_count <= logical_maximum_byte_count "
+            "AND logical_maximum_byte_count <= profile_maximum_message_byte_count",
+            name="ck_wf_transport_compat_admission_bytes",
+        ),
+        CheckConstraint(
+            "NOT route_selection_authority_granted "
+            "AND NOT route_binding_authority_granted "
+            "AND NOT credential_access_authority_granted "
+            "AND NOT publication_authority_granted "
+            "AND NOT delivery_authority_granted "
+            "AND NOT dispatch_authority_granted "
+            "AND NOT execution_authority_granted",
+            name="ck_wf_transport_compat_admission_zero_auth",
+        ),
+    )
+
+    compatibility_admission_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    logical_channel_binding_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_event_channel_bindings.binding_id"), nullable=False, index=True
+    )
+    logical_channel_binding_digest: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
+    transport_profile_snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey("event_transport_profile_snapshots.snapshot_id"), nullable=False, index=True
+    )
+    transport_profile_snapshot_digest: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
+    transport_profile_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    transport_profile_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    event_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    schema_uri: Mapped[str] = mapped_column(String(512), nullable=False)
+    data_classification: Mapped[str] = mapped_column(String(64), nullable=False)
+    representation_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    encoding: Mapped[str] = mapped_column(String(32), nullable=False)
+    delivery_semantics: Mapped[str] = mapped_column(String(64), nullable=False)
+    durability_required: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    ordering_key_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    retention_class: Mapped[str] = mapped_column(String(64), nullable=False)
+    logical_maximum_byte_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    artifact_byte_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    profile_maximum_message_byte_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    admitter_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    admitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    route_selection_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    route_binding_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_access_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    publication_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    delivery_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    dispatch_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    execution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowEventTransportCompatibilityAdmissionClaimModel(Base):
+    __tablename__ = "workflow_event_transport_compatibility_admission_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "idempotency_scope_id",
+            "idempotency_key",
+            name="uq_wf_transport_compat_claim_scope_idem",
+        ),
+        UniqueConstraint(
+            "compatibility_admission_id",
+            name="uq_wf_transport_compat_claim_admission",
+        ),
+        UniqueConstraint(
+            "canonical_digest",
+            name="uq_wf_transport_compat_claim_digest",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    idempotency_scope_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    compatibility_admission_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_event_transport_compatibility_admissions.compatibility_admission_id"),
+        nullable=False,
+        index=True,
+    )
+    logical_channel_binding_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_event_channel_bindings.binding_id"), nullable=False, index=True
+    )
+    transport_profile_snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey("event_transport_profile_snapshots.snapshot_id"), nullable=False, index=True
+    )
+    policy_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    admitter_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class WorkflowDispatchIntentStagingClaimModel(Base):
     __tablename__ = "workflow_dispatch_intent_staging_claims"
     __table_args__ = (

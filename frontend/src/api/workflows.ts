@@ -622,6 +622,54 @@ export type WorkflowTransportProfileSnapshotInventory = {
   durable: boolean;
 };
 
+export type WorkflowTransportCompatibilityAuthority = {
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  credential_access_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+};
+
+export type WorkflowTransportCompatibilityAdmission = {
+  compatibility_admission_id: string;
+  logical_channel_binding_id: string;
+  logical_channel_binding_digest: string;
+  transport_profile_snapshot_id: string;
+  transport_profile_snapshot_digest: string;
+  transport_profile_id: string;
+  transport_profile_revision: string;
+  policy_id: "policy.workflow-event-transport-compatibility";
+  policy_version: "1.0";
+  policy_digest: string;
+  scope: WorkflowRunPlan["scope"];
+  event_type: "WorkflowStepDispatchRequested";
+  event_version: "1.0";
+  schema_uri: "urn:project-atlas:event:workflow-step-dispatch-requested:1.0";
+  data_classification: "internal";
+  representation_name: "canonical-json";
+  encoding: "utf-8";
+  delivery_semantics: "at-least-once";
+  durability_required: true;
+  ordering_key_kind: "workflow-run";
+  retention_class: "workflow-operational";
+  logical_maximum_byte_count: number;
+  artifact_byte_count: number;
+  profile_maximum_message_byte_count: number;
+  admitter_subject_id: string;
+  admitted_at: string;
+  state: "admitted";
+  authority: WorkflowTransportCompatibilityAuthority;
+  canonical_digest: string;
+};
+
+export type WorkflowTransportCompatibilityAdmissionInventory = {
+  logical_channel_binding_id: string;
+  transport_compatibility_admissions: WorkflowTransportCompatibilityAdmission[];
+  durable: boolean;
+};
+
 const digest = /^[a-f0-9]{64}$/;
 const capabilityClasses = new Set<WorkflowCapabilityClass>(["C0", "C1", "C2"]);
 const stepKinds = new Set<WorkflowStepKind>([
@@ -1078,6 +1126,51 @@ const transportProfileSnapshotFields = [
 ] as const;
 const transportProfileSnapshotInventoryFields = [
   "transport_profile_snapshots",
+  "durable",
+] as const;
+const transportCompatibilityAuthorityFields = [
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "credential_access_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+] as const;
+const transportCompatibilityAdmissionFields = [
+  "compatibility_admission_id",
+  "logical_channel_binding_id",
+  "logical_channel_binding_digest",
+  "transport_profile_snapshot_id",
+  "transport_profile_snapshot_digest",
+  "transport_profile_id",
+  "transport_profile_revision",
+  "policy_id",
+  "policy_version",
+  "policy_digest",
+  "scope",
+  "event_type",
+  "event_version",
+  "schema_uri",
+  "data_classification",
+  "representation_name",
+  "encoding",
+  "delivery_semantics",
+  "durability_required",
+  "ordering_key_kind",
+  "retention_class",
+  "logical_maximum_byte_count",
+  "artifact_byte_count",
+  "profile_maximum_message_byte_count",
+  "admitter_subject_id",
+  "admitted_at",
+  "state",
+  "authority",
+  "canonical_digest",
+] as const;
+const transportCompatibilityAdmissionInventoryFields = [
+  "logical_channel_binding_id",
+  "transport_compatibility_admissions",
   "durable",
 ] as const;
 const dispatchEventAuthorityFields = [
@@ -2015,6 +2108,71 @@ function isTransportProfileSnapshot(
   );
 }
 
+function hasZeroTransportCompatibilityAuthority(
+  value: unknown,
+): value is WorkflowTransportCompatibilityAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, transportCompatibilityAuthorityFields) &&
+    transportCompatibilityAuthorityFields.every((field) => value[field] === false)
+  );
+}
+
+function isTransportCompatibilityAdmissionBoundToLogicalChannel(
+  value: unknown,
+  binding: WorkflowEventLogicalChannelBinding,
+): value is WorkflowTransportCompatibilityAdmission {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, transportCompatibilityAdmissionFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value)
+  ) {
+    return false;
+  }
+  const admissionScope = value.scope;
+  return (
+    isIdentifier(value.compatibility_admission_id) &&
+    value.logical_channel_binding_id === binding.logical_channel_binding_id &&
+    value.logical_channel_binding_digest === binding.canonical_digest &&
+    isIdentifier(value.transport_profile_snapshot_id) &&
+    isDigest(value.transport_profile_snapshot_digest) &&
+    isIdentifier(value.transport_profile_id) &&
+    isIdentifier(value.transport_profile_revision) &&
+    value.policy_id === "policy.workflow-event-transport-compatibility" &&
+    value.policy_version === "1.0" &&
+    isDigest(value.policy_digest) &&
+    admissionScope.organization_id === binding.scope.organization_id &&
+    admissionScope.environment_id === binding.scope.environment_id &&
+    admissionScope.site_id === binding.scope.site_id &&
+    value.event_type === "WorkflowStepDispatchRequested" &&
+    value.event_version === "1.0" &&
+    value.schema_uri ===
+      "urn:project-atlas:event:workflow-step-dispatch-requested:1.0" &&
+    value.data_classification === "internal" &&
+    value.representation_name === "canonical-json" &&
+    value.encoding === "utf-8" &&
+    value.delivery_semantics === binding.delivery_semantics &&
+    value.durability_required === binding.durability_required &&
+    value.ordering_key_kind === binding.ordering_key_kind &&
+    value.retention_class === binding.retention_class &&
+    Number.isSafeInteger(value.logical_maximum_byte_count) &&
+    Number(value.logical_maximum_byte_count) === 65_536 &&
+    Number.isSafeInteger(value.artifact_byte_count) &&
+    Number(value.artifact_byte_count) === binding.byte_count &&
+    Number.isSafeInteger(value.profile_maximum_message_byte_count) &&
+    Number(value.profile_maximum_message_byte_count) >=
+      Number(value.logical_maximum_byte_count) &&
+    Number(value.profile_maximum_message_byte_count) <= 16_777_216 &&
+    isIdentifier(value.admitter_subject_id) &&
+    isTimestamp(value.admitted_at) &&
+    Date.parse(value.admitted_at) >= Date.parse(binding.bound_at) &&
+    value.state === "admitted" &&
+    hasZeroTransportCompatibilityAuthority(value.authority) &&
+    isDigest(value.canonical_digest)
+  );
+}
+
 function isRunPlan(value: unknown): value is WorkflowRunPlan {
   if (
     !isObject(value) ||
@@ -2550,6 +2708,73 @@ export async function listWorkflowTransportProfileSnapshots(input: {
     throw new ApiRequestError("Workflow transport capability profile response was unsafe", response.status);
   }
   return data as WorkflowTransportProfileSnapshotInventory;
+}
+
+export async function listWorkflowTransportCompatibilityAdmissions(input: {
+  logicalChannelBinding: WorkflowEventLogicalChannelBinding;
+  scope: WorkflowScope;
+  authorizedTargetIds: readonly string[];
+}): Promise<WorkflowTransportCompatibilityAdmissionInventory> {
+  const binding = input.logicalChannelBinding;
+  if (
+    binding.scope.organization_id !== input.scope.organizationId ||
+    binding.scope.environment_id !== input.scope.environmentId ||
+    binding.scope.site_id !== input.scope.siteId ||
+    !input.authorizedTargetIds.includes(binding.target_id) ||
+    !hasSafeDispatchEventAuthority(binding.authority) ||
+    binding.grants_publication_authority !== false ||
+    binding.grants_delivery_authority !== false ||
+    binding.grants_dispatch_authority !== false ||
+    binding.grants_execution_authority !== false
+  ) {
+    throw new ApiRequestError(
+      "Workflow logical channel binding is outside the authorized compatibility-admission scope",
+      403,
+    );
+  }
+  const response = await apiFetch(
+    `/api/v1/workflows/transport-compatibility-admissions?logical_channel_binding_id=${encodeURIComponent(binding.logical_channel_binding_id)}`,
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(response, "Workflow transport compatibility admission retrieval failed");
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, transportCompatibilityAdmissionInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    data.logical_channel_binding_id !== binding.logical_channel_binding_id ||
+    !Array.isArray(data.transport_compatibility_admissions) ||
+    typeof data.durable !== "boolean" ||
+    !data.transport_compatibility_admissions.every((admission) =>
+      isTransportCompatibilityAdmissionBoundToLogicalChannel(admission, binding),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow transport compatibility admission response was unsafe",
+      response.status,
+    );
+  }
+  const admissionIds = new Set(
+    data.transport_compatibility_admissions.map((admission) =>
+      isObject(admission) ? admission.compatibility_admission_id : undefined,
+    ),
+  );
+  const sourcePairs = new Set(
+    data.transport_compatibility_admissions.map((admission) =>
+      isObject(admission)
+        ? `${String(admission.transport_profile_snapshot_id)}:${String(admission.policy_digest)}`
+        : "",
+    ),
+  );
+  if (
+    admissionIds.size !== data.transport_compatibility_admissions.length ||
+    sourcePairs.size !== data.transport_compatibility_admissions.length
+  ) {
+    throw new ApiRequestError(
+      "Workflow transport compatibility admission response was unsafe",
+      response.status,
+    );
+  }
+  return data as WorkflowTransportCompatibilityAdmissionInventory;
 }
 
 export async function createWorkflowPlan(input: {

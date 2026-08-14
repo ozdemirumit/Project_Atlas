@@ -26,6 +26,10 @@ from atlas.modules.workflows.domain.models import (
     WorkflowEventTransportAdmissionAuthority,
     WorkflowEventTransportAdmissionPolicy,
     WorkflowEventTransportAdmissionState,
+    WorkflowEventTransportCompatibilityAdmission,
+    WorkflowEventTransportCompatibilityAdmissionAuthority,
+    WorkflowEventTransportCompatibilityAdmissionState,
+    WorkflowEventTransportCompatibilityPolicy,
     WorkflowExecutionAttempt,
     WorkflowExecutionAttemptState,
     WorkflowExecutionRun,
@@ -52,6 +56,7 @@ from atlas.modules.workflows.domain.models import (
     canonical_json_bytes,
     code_owned_workflow_event_logical_channel_policy,
     code_owned_workflow_event_transport_admission_policy,
+    code_owned_workflow_event_transport_compatibility_policy,
     code_owned_workflow_registry,
 )
 
@@ -83,6 +88,10 @@ __all__ = [
     "WorkflowEventTransportAdmissionAuthority",
     "WorkflowEventTransportAdmissionPolicy",
     "WorkflowEventTransportAdmissionState",
+    "WorkflowEventTransportCompatibilityAdmission",
+    "WorkflowEventTransportCompatibilityAdmissionAuthority",
+    "WorkflowEventTransportCompatibilityAdmissionState",
+    "WorkflowEventTransportCompatibilityPolicy",
     "WorkflowExecutionAttempt",
     "WorkflowExecutionAttemptState",
     "WorkflowExecutionRun",
@@ -109,5 +118,6 @@ __all__ = [
     "canonical_json_bytes",
     "code_owned_workflow_event_logical_channel_policy",
     "code_owned_workflow_event_transport_admission_policy",
+    "code_owned_workflow_event_transport_compatibility_policy",
     "code_owned_workflow_registry",
 ]

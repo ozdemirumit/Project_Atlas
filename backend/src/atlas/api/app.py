@@ -1543,6 +1543,8 @@ from atlas.modules.workflows.application import (
     WorkflowEventLogicalChannelBindingService,
     WorkflowEventTransportAdmissionRepository,
     WorkflowEventTransportAdmissionService,
+    WorkflowEventTransportCompatibilityAdmissionRepository,
+    WorkflowEventTransportCompatibilityAdmissionService,
     WorkflowOrchestrationLeaseRepository,
     WorkflowOrchestrationLeaseService,
     WorkflowOutboxPublicationLeaseRepository,
@@ -1679,6 +1681,9 @@ def create_app(
     workflow_event_byte_artifact_service: WorkflowEventByteArtifactService | None = None,
     workflow_event_logical_channel_binding_service: WorkflowEventLogicalChannelBindingService
     | None = None,
+    workflow_event_transport_compatibility_admission_service: (
+        WorkflowEventTransportCompatibilityAdmissionService | None
+    ) = None,
     workflow_transport_profile_snapshot_service: WorkflowTransportProfileSnapshotService
     | None = None,
     deployment_event_transport_profiles: tuple[DeploymentEventTransportProfile, ...] | None = None,
@@ -5747,6 +5752,37 @@ def create_app(
         resolved_workflow_transport_profile_snapshot_service = (
             workflow_transport_profile_snapshot_service
         )
+    if workflow_event_transport_compatibility_admission_service is None:
+        transport_compatibility_admission_repository_methods = (
+            "get_event_logical_channel_binding_by_id",
+            "get_transport_profile_snapshot_by_id",
+            "get_transport_compatibility_admission",
+            "get_transport_compatibility_admission_request",
+            "admit_transport_compatibility",
+        )
+        if not all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in transport_compatibility_admission_repository_methods
+        ):
+            raise ValueError(
+                "workflow planning repository does not implement transport compatibility "
+                "admissions; inject "
+                "workflow_event_transport_compatibility_admission_service explicitly"
+            )
+        workflow_event_transport_compatibility_admission_repository = cast(
+            WorkflowEventTransportCompatibilityAdmissionRepository,
+            workflow_repository,
+        )
+        resolved_workflow_event_transport_compatibility_admission_service = (
+            WorkflowEventTransportCompatibilityAdmissionService(
+                admission_repository=(workflow_event_transport_compatibility_admission_repository),
+                audit_sink=resolved_audit_sink,
+            )
+        )
+    else:
+        resolved_workflow_event_transport_compatibility_admission_service = (
+            workflow_event_transport_compatibility_admission_service
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -6027,6 +6063,12 @@ def create_app(
             resolved_workflow_transport_profile_snapshot_service.repository
         )
         app.state.workflow_transport_profile_source_profiles = configured_transport_profiles
+        app.state.workflow_event_transport_compatibility_admission_service = (
+            resolved_workflow_event_transport_compatibility_admission_service
+        )
+        app.state.workflow_event_transport_compatibility_admission_repository = (
+            resolved_workflow_event_transport_compatibility_admission_service.repository
+        )
         yield
         await resolved_workflow_planning_service.close()
         await resolved_conversation_service.close()
