@@ -1524,7 +1524,7 @@ class ConnectorUpgradeSigningProviderConformanceModel(Base):
         UniqueConstraint(
             "assessed_by",
             "idempotency_key",
-            name="uq_connector_upgrade_signing_provider_conformance_actor_idempotency",
+            name="uq_connector_upgrade_signing_conformance_actor_idem",
         ),
     )
 
