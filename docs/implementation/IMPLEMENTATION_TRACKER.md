@@ -4,14 +4,68 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-197 |
-| Title | Immutable workflow transport compatibility admission without route binding |
-| Status | Implementation complete; delivery validation in progress |
-| Branch | `agent/workflow-transport-profile-compatibility-admission` |
+| Task ID | ATLAS-IMP-198 |
+| Title | Immutable deployment physical transport route snapshot without workflow binding |
+| Status | Local validation complete; pull request pending |
+| Branch | `agent/workflow-transport-route-snapshot` |
 | Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-136, ADR-137, ADR-138, ADR-139, ADR-140, ADR-141, ADR-142, ADR-143, ADR-144, ADR-145, ADR-146, ADR-147 |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-136, ADR-137, ADR-138, ADR-139, ADR-140, ADR-141, ADR-142, ADR-143, ADR-144, ADR-145, ADR-146, ADR-147, ADR-148 |
 | Last Updated | 2026-08-14 |
-| Next Action | Open the exact-head pull request, pass CI, merge, and verify `main` |
+| Next Action | Commit, open the pull request, and run exact-head CI |
+
+### ATLAS-IMP-198 Scope Rationale
+
+- IMP-197 proves that one exact logical contract and one exact deployment capability profile are
+  compatible but intentionally identifies no physical destination. Binding directly to mutable
+  deployment configuration would create a time-of-check/time-of-use race, so the next smallest
+  boundary is an immutable snapshot of one server-owned route revision.
+- Route snapshotting records opaque endpoint-set, destination and routing-contract references plus
+  exact deployment/profile/resource/adapter and versioned security-requirement evidence. It binds
+  no workflow event, exposes no raw locator or field-level locator fingerprint, and performs no
+  endpoint resolution, secret access, network probe or provider call.
+- Workflow route binding, credential authorization, runtime readiness, publication attempts,
+  delivery, retries, quarantine, worker dispatch and execution remain deferred.
+
+### ATLAS-IMP-198 Acceptance Criteria
+
+- A dedicated route-registry workload can idempotently snapshot one exact active server-owned route
+  revision under an exact organization, environment and site scope; changed requests, competing
+  identities, inactive or drifted sources, malformed policy evidence and audit failure fail closed.
+- The immutable snapshot records exact source identity/digest, normalized opaque route references,
+  versioned credential-requirement, transport-security and network-policy evidence and zero
+  endpoint-resolution, route-selection, route-binding, credential, network, readiness,
+  publication, delivery, dispatch or execution authority.
+- PostgreSQL atomically stores immutable snapshot and idempotency records. Production never falls
+  back to memory, and the schema contains no raw endpoint, destination name, routing value,
+  credential assignment, secret, network-health, provider-message, attempt or receipt field.
+- Human UI exposes minimized read-only route snapshots through the normal username/password session
+  with no register, update, bind, resolve, probe, credential, publish, deliver, dispatch or execute
+  control and no second-login or MFA prompt.
+
+### ATLAS-IMP-198 Local Validation Evidence
+
+- Ruff format/lint passed; strict mypy passed across 1,213 source files; Alembic reports the single
+  linear head `20260814_0121`.
+- The focused route-snapshot suite passed 21 backend tests and 13 frontend tests. The IMP-196,
+  IMP-197, IMP-198, browser-session and API-health regression suite passed 96 backend tests; the
+  complete workflow workspace passed 189 frontend tests.
+- The complete local release candidate passed 1,875 backend tests with three expected Windows
+  symlink skips and 478 frontend tests across 95 files. Full ESLint, TypeScript and production build
+  checks also passed.
+- One normal `atlas-demo` / `local-demo` username/password login exposed immutable route snapshot
+  `event-physical-transport-route-snapshot.7ddc656c134f28006199d9bd`. The panel contained no raw
+  locator, private descriptor commitment, field-level locator digest, operational control,
+  second-login or MFA prompt, and had zero horizontal overflow at the 537-pixel content width.
+
+### ATLAS-IMP-197 Delivery Evidence
+
+- Exact-head commit `d3f2ca871afb26f7a580090d99b36a403de0061f` passed PR CI run
+  `31799436636`; frontend completed in 5m55s and backend in 9m42s.
+- PR [#209](https://github.com/ozdemirumit/Project_Atlas/pull/209) was squash-merged as
+  `c2d73a25e0e446e77be71876b58ee86831e9a8ff`.
+- The exact merged commit independently passed `main` CI run `31800148722`; frontend completed in
+  4m10s and backend in 9m57s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-198 branched.
 
 ### ATLAS-IMP-197 Scope Rationale
 

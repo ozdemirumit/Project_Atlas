@@ -20,6 +20,8 @@ from sqlalchemy.ext.asyncio import (
 from atlas.core.persistence.models import (
     EventPhysicalTransportProfileSnapshotClaimModel,
     EventPhysicalTransportProfileSnapshotModel,
+    EventPhysicalTransportRouteSnapshotClaimModel,
+    EventPhysicalTransportRouteSnapshotModel,
     WorkflowAttemptMaterializationClaimModel,
     WorkflowDispatchEventEnvelopeModel,
     WorkflowDispatchEventEnvelopePreparationClaimModel,
@@ -132,10 +134,20 @@ from atlas.modules.workflows.application.transport_profile_snapshot_ports import
     WorkflowTransportProfileSnapshotResult,
     WorkflowTransportProfileSnapshotStatus,
 )
+from atlas.modules.workflows.application.transport_route_snapshot_ports import (
+    WorkflowTransportRouteSnapshotError,
+    WorkflowTransportRouteSnapshotIdempotencyRecord,
+    WorkflowTransportRouteSnapshotRequest,
+    WorkflowTransportRouteSnapshotResult,
+    WorkflowTransportRouteSnapshotStatus,
+)
 from atlas.modules.workflows.domain import (
     EventPhysicalTransportProfileSnapshot,
     EventPhysicalTransportProfileSnapshotAuthority,
     EventPhysicalTransportProfileSnapshotState,
+    EventPhysicalTransportRouteSnapshot,
+    EventPhysicalTransportRouteSnapshotAuthority,
+    EventPhysicalTransportRouteSnapshotState,
     WorkflowCapabilityClass,
     WorkflowDispatchEventAuthority,
     WorkflowDispatchEventEnvelope,
@@ -1567,6 +1579,113 @@ class PostgreSQLWorkflowPlanRepository:
                 )
         return WorkflowTransportProfileSnapshotResult(
             WorkflowTransportProfileSnapshotStatus.SOURCE_CONFLICT, None
+        )
+
+    async def get_transport_route_snapshot(
+        self,
+        *,
+        route_id: str,
+        route_revision: str,
+    ) -> EventPhysicalTransportRouteSnapshot | None:
+        async with self._sessions() as session:
+            row = cast(
+                EventPhysicalTransportRouteSnapshotModel | None,
+                await session.scalar(
+                    select(EventPhysicalTransportRouteSnapshotModel).where(
+                        EventPhysicalTransportRouteSnapshotModel.route_id == route_id,
+                        EventPhysicalTransportRouteSnapshotModel.route_revision == route_revision,
+                    )
+                ),
+            )
+            return None if row is None else self._transport_route_snapshot_from_row(row)
+
+    async def get_transport_route_snapshot_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        snapshotter_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowTransportRouteSnapshotIdempotencyRecord | None:
+        async with self._sessions() as session:
+            claim = await self._load_transport_route_snapshot_claim(
+                session,
+                scope=scope,
+                snapshotter_subject_id=snapshotter_subject_id,
+                idempotency_key=idempotency_key,
+            )
+            if claim is None:
+                return None
+            snapshot_row = await session.get(
+                EventPhysicalTransportRouteSnapshotModel, claim.snapshot_id
+            )
+            return self._transport_route_snapshot_record_from_claim(claim, snapshot_row)
+
+    async def snapshot_transport_route(
+        self, request: WorkflowTransportRouteSnapshotRequest
+    ) -> WorkflowTransportRouteSnapshotResult:
+        self._validate_transport_route_snapshot_request(request)
+        candidate = request.candidate
+        async with self._sessions() as session:
+            replay = await self._transport_route_snapshot_replay(session, request=request)
+            if replay is not None:
+                return replay
+
+            existing = cast(
+                EventPhysicalTransportRouteSnapshotModel | None,
+                await session.scalar(
+                    select(EventPhysicalTransportRouteSnapshotModel)
+                    .where(
+                        EventPhysicalTransportRouteSnapshotModel.route_id == candidate.route_id,
+                        EventPhysicalTransportRouteSnapshotModel.route_revision
+                        == candidate.route_revision,
+                    )
+                    .with_for_update()
+                ),
+            )
+            if existing is not None:
+                await session.rollback()
+                return WorkflowTransportRouteSnapshotResult(
+                    WorkflowTransportRouteSnapshotStatus.ALREADY_SNAPSHOTTED,
+                    self._transport_route_snapshot_from_row(existing),
+                )
+
+            if not self._transport_route_snapshot_evidence_matches(request):
+                await session.rollback()
+                return WorkflowTransportRouteSnapshotResult(
+                    WorkflowTransportRouteSnapshotStatus.SOURCE_CONFLICT, None
+                )
+
+            try:
+                session.add(self._transport_route_snapshot_model(candidate))
+                session.add(self._transport_route_snapshot_claim_model(request))
+                await session.commit()
+                return WorkflowTransportRouteSnapshotResult(
+                    WorkflowTransportRouteSnapshotStatus.SNAPSHOTTED, candidate
+                )
+            except IntegrityError:
+                await session.rollback()
+
+        async with self._sessions() as session:
+            replay = await self._transport_route_snapshot_replay(session, request=request)
+            if replay is not None:
+                return replay
+            existing = cast(
+                EventPhysicalTransportRouteSnapshotModel | None,
+                await session.scalar(
+                    select(EventPhysicalTransportRouteSnapshotModel).where(
+                        EventPhysicalTransportRouteSnapshotModel.route_id == candidate.route_id,
+                        EventPhysicalTransportRouteSnapshotModel.route_revision
+                        == candidate.route_revision,
+                    )
+                ),
+            )
+            if existing is not None:
+                return WorkflowTransportRouteSnapshotResult(
+                    WorkflowTransportRouteSnapshotStatus.ALREADY_SNAPSHOTTED,
+                    self._transport_route_snapshot_from_row(existing),
+                )
+        return WorkflowTransportRouteSnapshotResult(
+            WorkflowTransportRouteSnapshotStatus.SOURCE_CONFLICT, None
         )
 
     async def get_event_logical_channel_binding_by_id(
@@ -5528,6 +5647,361 @@ class PostgreSQLWorkflowPlanRepository:
         raise WorkflowTransportProfileSnapshotError(
             "workflow_transport_profile_snapshot_repository_contract_violation",
             "The event transport profile snapshot does not match its durable evidence.",
+        )
+
+    async def _transport_route_snapshot_replay(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowTransportRouteSnapshotRequest,
+    ) -> WorkflowTransportRouteSnapshotResult | None:
+        candidate = request.candidate
+        claim = await self._load_transport_route_snapshot_claim(
+            session,
+            scope=candidate.scope,
+            snapshotter_subject_id=candidate.snapshotter_subject_id,
+            idempotency_key=request.idempotency_key,
+        )
+        if claim is None:
+            return None
+        snapshot_row = await session.get(
+            EventPhysicalTransportRouteSnapshotModel, claim.snapshot_id
+        )
+        record = self._transport_route_snapshot_record_from_claim(claim, snapshot_row)
+        status = (
+            WorkflowTransportRouteSnapshotStatus.REPLAY
+            if record.request_fingerprint == request.request_fingerprint
+            else WorkflowTransportRouteSnapshotStatus.IDEMPOTENCY_CONFLICT
+        )
+        return WorkflowTransportRouteSnapshotResult(status, record.snapshot)
+
+    @classmethod
+    async def _load_transport_route_snapshot_claim(
+        cls,
+        session: AsyncSession,
+        *,
+        scope: WorkflowScope,
+        snapshotter_subject_id: str,
+        idempotency_key: str,
+    ) -> EventPhysicalTransportRouteSnapshotClaimModel | None:
+        scope_id = cls._transport_route_snapshot_idempotency_scope(scope, snapshotter_subject_id)
+        return cast(
+            EventPhysicalTransportRouteSnapshotClaimModel | None,
+            await session.scalar(
+                select(EventPhysicalTransportRouteSnapshotClaimModel).where(
+                    EventPhysicalTransportRouteSnapshotClaimModel.idempotency_scope_id == scope_id,
+                    EventPhysicalTransportRouteSnapshotClaimModel.idempotency_key
+                    == idempotency_key,
+                    EventPhysicalTransportRouteSnapshotClaimModel.organization_id
+                    == scope.organization_id,
+                    EventPhysicalTransportRouteSnapshotClaimModel.environment_id
+                    == scope.environment_id,
+                    EventPhysicalTransportRouteSnapshotClaimModel.site_id == scope.site_id,
+                    EventPhysicalTransportRouteSnapshotClaimModel.snapshotter_subject_id
+                    == snapshotter_subject_id,
+                )
+            ),
+        )
+
+    @classmethod
+    def _transport_route_snapshot_record_from_claim(
+        cls,
+        claim: EventPhysicalTransportRouteSnapshotClaimModel,
+        snapshot_row: EventPhysicalTransportRouteSnapshotModel | None,
+    ) -> WorkflowTransportRouteSnapshotIdempotencyRecord:
+        if snapshot_row is None:
+            cls._transport_route_snapshot_contract_violation()
+        snapshot = cls._transport_route_snapshot_from_row(snapshot_row)
+        scope_id = cls._transport_route_snapshot_idempotency_scope(
+            snapshot.scope, snapshot.snapshotter_subject_id
+        )
+        payload: dict[str, Any] = {
+            "idempotency_key": claim.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": claim.request_fingerprint,
+            "result_digest": snapshot.canonical_digest,
+            "result_snapshot": cls._transport_route_snapshot_payload(snapshot),
+        }
+        if (
+            claim.idempotency_scope_id != scope_id
+            or claim.result_digest != snapshot.canonical_digest
+            or claim.snapshot_id != snapshot.snapshot_id
+            or claim.route_id != snapshot.route_id
+            or claim.route_revision != snapshot.route_revision
+            or claim.source_route_digest != snapshot.source_route_digest
+            or claim.organization_id != snapshot.scope.organization_id
+            or claim.environment_id != snapshot.scope.environment_id
+            or claim.site_id != snapshot.scope.site_id
+            or claim.snapshotter_subject_id != snapshot.snapshotter_subject_id
+            or claim.canonical_digest != canonical_digest(payload)
+            or claim.payload != payload
+        ):
+            cls._transport_route_snapshot_contract_violation()
+        return WorkflowTransportRouteSnapshotIdempotencyRecord(
+            request_fingerprint=claim.request_fingerprint,
+            snapshot=snapshot,
+        )
+
+    @classmethod
+    def _transport_route_snapshot_from_row(
+        cls, row: EventPhysicalTransportRouteSnapshotModel
+    ) -> EventPhysicalTransportRouteSnapshot:
+        try:
+            snapshot = cls._transport_route_snapshot_to_domain(row.payload)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowTransportRouteSnapshotError(
+                "workflow_transport_route_snapshot_repository_contract_violation",
+                "The event transport route snapshot does not match its durable evidence.",
+            ) from exc
+        authority = snapshot.authority
+        if (
+            row.snapshot_id != snapshot.snapshot_id
+            or row.route_id != snapshot.route_id
+            or row.route_revision != snapshot.route_revision
+            or row.route_set_id != snapshot.route_set_id
+            or row.route_set_revision != snapshot.route_set_revision
+            or row.selection_epoch_id != snapshot.selection_epoch_id
+            or row.selection_epoch_revision != snapshot.selection_epoch_revision
+            or row.source_route_digest != snapshot.source_route_digest
+            or row.deployment_release_id != snapshot.deployment_release_id
+            or row.deployment_profile != snapshot.deployment_profile
+            or row.organization_id != snapshot.scope.organization_id
+            or row.environment_id != snapshot.scope.environment_id
+            or row.site_id != snapshot.scope.site_id
+            or row.transport_profile_id != snapshot.transport_profile_id
+            or row.transport_profile_revision != snapshot.transport_profile_revision
+            or row.transport_resource_id != snapshot.transport_resource_id
+            or row.transport_resource_digest != snapshot.transport_resource_digest
+            or row.transport_implementation_id != snapshot.transport_implementation_id
+            or row.transport_implementation_version != snapshot.transport_implementation_version
+            or row.adapter_contract_id != snapshot.adapter_contract_id
+            or row.adapter_contract_version != snapshot.adapter_contract_version
+            or row.adapter_contract_digest != snapshot.adapter_contract_digest
+            or row.route_kind != snapshot.route_kind
+            or row.endpoint_set_id != snapshot.endpoint_set_id
+            or row.endpoint_set_revision != snapshot.endpoint_set_revision
+            or row.destination_id != snapshot.destination_id
+            or row.destination_revision != snapshot.destination_revision
+            or row.routing_contract_id != snapshot.routing_contract_id
+            or row.routing_contract_revision != snapshot.routing_contract_revision
+            or row.private_route_descriptor_commitment
+            != snapshot.private_route_descriptor_commitment
+            or row.transport_security_policy_id != snapshot.transport_security_policy_id
+            or row.transport_security_policy_version != snapshot.transport_security_policy_version
+            or row.transport_security_policy_digest != snapshot.transport_security_policy_digest
+            or row.minimum_tls_version != snapshot.minimum_tls_version
+            or row.server_authentication_required != snapshot.server_authentication_required
+            or row.client_authentication_required != snapshot.client_authentication_required
+            or row.plaintext_fallback_prohibited != snapshot.plaintext_fallback_prohibited
+            or row.network_policy_id != snapshot.network_policy_id
+            or row.network_policy_version != snapshot.network_policy_version
+            or row.network_policy_digest != snapshot.network_policy_digest
+            or row.source_zone_class != snapshot.source_zone_class
+            or row.destination_zone_class != snapshot.destination_zone_class
+            or row.restricted_network_enforced != snapshot.restricted_network_enforced
+            or row.public_egress_prohibited != snapshot.public_egress_prohibited
+            or row.proxy_mode != snapshot.proxy_mode
+            or row.credential_requirement_profile_id != snapshot.credential_requirement_profile_id
+            or row.credential_requirement_profile_version
+            != snapshot.credential_requirement_profile_version
+            or row.credential_requirement_profile_digest
+            != snapshot.credential_requirement_profile_digest
+            or row.authentication_mechanism_class != snapshot.authentication_mechanism_class
+            or row.principal_class != snapshot.principal_class
+            or row.snapshotter_subject_id != snapshot.snapshotter_subject_id
+            or row.captured_at != snapshot.captured_at
+            or row.state != snapshot.state.value
+            or row.route_selection_authority_granted != authority.route_selection_authorized
+            or row.route_binding_authority_granted != authority.route_binding_authorized
+            or row.endpoint_resolution_authority_granted != authority.endpoint_resolution_authorized
+            or row.credential_access_authority_granted != authority.credential_access_authorized
+            or row.network_access_authority_granted != authority.network_access_authorized
+            or row.readiness_probe_authority_granted != authority.readiness_probe_authorized
+            or row.publication_authority_granted != authority.publication_authorized
+            or row.delivery_authority_granted != authority.delivery_authorized
+            or row.dispatch_authority_granted != authority.dispatch_authorized
+            or row.execution_authority_granted != authority.execution_authorized
+            or row.canonical_digest != snapshot.canonical_digest
+            or row.payload != cls._transport_route_snapshot_payload(snapshot)
+        ):
+            cls._transport_route_snapshot_contract_violation()
+        return snapshot
+
+    @classmethod
+    def _transport_route_snapshot_model(
+        cls, snapshot: EventPhysicalTransportRouteSnapshot
+    ) -> EventPhysicalTransportRouteSnapshotModel:
+        authority = snapshot.authority
+        return EventPhysicalTransportRouteSnapshotModel(
+            snapshot_id=snapshot.snapshot_id,
+            route_id=snapshot.route_id,
+            route_revision=snapshot.route_revision,
+            route_set_id=snapshot.route_set_id,
+            route_set_revision=snapshot.route_set_revision,
+            selection_epoch_id=snapshot.selection_epoch_id,
+            selection_epoch_revision=snapshot.selection_epoch_revision,
+            source_route_digest=snapshot.source_route_digest,
+            deployment_release_id=snapshot.deployment_release_id,
+            deployment_profile=snapshot.deployment_profile,
+            organization_id=snapshot.scope.organization_id,
+            environment_id=snapshot.scope.environment_id,
+            site_id=snapshot.scope.site_id,
+            transport_profile_id=snapshot.transport_profile_id,
+            transport_profile_revision=snapshot.transport_profile_revision,
+            transport_resource_id=snapshot.transport_resource_id,
+            transport_resource_digest=snapshot.transport_resource_digest,
+            transport_implementation_id=snapshot.transport_implementation_id,
+            transport_implementation_version=snapshot.transport_implementation_version,
+            adapter_contract_id=snapshot.adapter_contract_id,
+            adapter_contract_version=snapshot.adapter_contract_version,
+            adapter_contract_digest=snapshot.adapter_contract_digest,
+            route_kind=snapshot.route_kind,
+            endpoint_set_id=snapshot.endpoint_set_id,
+            endpoint_set_revision=snapshot.endpoint_set_revision,
+            destination_id=snapshot.destination_id,
+            destination_revision=snapshot.destination_revision,
+            routing_contract_id=snapshot.routing_contract_id,
+            routing_contract_revision=snapshot.routing_contract_revision,
+            private_route_descriptor_commitment=snapshot.private_route_descriptor_commitment,
+            transport_security_policy_id=snapshot.transport_security_policy_id,
+            transport_security_policy_version=snapshot.transport_security_policy_version,
+            transport_security_policy_digest=snapshot.transport_security_policy_digest,
+            minimum_tls_version=snapshot.minimum_tls_version,
+            server_authentication_required=snapshot.server_authentication_required,
+            client_authentication_required=snapshot.client_authentication_required,
+            plaintext_fallback_prohibited=snapshot.plaintext_fallback_prohibited,
+            network_policy_id=snapshot.network_policy_id,
+            network_policy_version=snapshot.network_policy_version,
+            network_policy_digest=snapshot.network_policy_digest,
+            source_zone_class=snapshot.source_zone_class,
+            destination_zone_class=snapshot.destination_zone_class,
+            restricted_network_enforced=snapshot.restricted_network_enforced,
+            public_egress_prohibited=snapshot.public_egress_prohibited,
+            proxy_mode=snapshot.proxy_mode,
+            credential_requirement_profile_id=snapshot.credential_requirement_profile_id,
+            credential_requirement_profile_version=(
+                snapshot.credential_requirement_profile_version
+            ),
+            credential_requirement_profile_digest=snapshot.credential_requirement_profile_digest,
+            authentication_mechanism_class=snapshot.authentication_mechanism_class,
+            principal_class=snapshot.principal_class,
+            snapshotter_subject_id=snapshot.snapshotter_subject_id,
+            captured_at=snapshot.captured_at,
+            state=snapshot.state.value,
+            route_selection_authority_granted=authority.route_selection_authorized,
+            route_binding_authority_granted=authority.route_binding_authorized,
+            endpoint_resolution_authority_granted=authority.endpoint_resolution_authorized,
+            credential_access_authority_granted=authority.credential_access_authorized,
+            network_access_authority_granted=authority.network_access_authorized,
+            readiness_probe_authority_granted=authority.readiness_probe_authorized,
+            publication_authority_granted=authority.publication_authorized,
+            delivery_authority_granted=authority.delivery_authorized,
+            dispatch_authority_granted=authority.dispatch_authorized,
+            execution_authority_granted=authority.execution_authorized,
+            canonical_digest=snapshot.canonical_digest,
+            payload=cls._transport_route_snapshot_payload(snapshot),
+        )
+
+    @classmethod
+    def _transport_route_snapshot_claim_model(
+        cls, request: WorkflowTransportRouteSnapshotRequest
+    ) -> EventPhysicalTransportRouteSnapshotClaimModel:
+        snapshot = request.candidate
+        scope_id = cls._transport_route_snapshot_idempotency_scope(
+            snapshot.scope, snapshot.snapshotter_subject_id
+        )
+        payload: dict[str, Any] = {
+            "idempotency_key": request.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": request.request_fingerprint,
+            "result_digest": snapshot.canonical_digest,
+            "result_snapshot": cls._transport_route_snapshot_payload(snapshot),
+        }
+        digest = canonical_digest(payload)
+        return EventPhysicalTransportRouteSnapshotClaimModel(
+            claim_id=f"event_transport_route_claim_{sha256(digest.encode()).hexdigest()[:32]}",
+            idempotency_scope_id=scope_id,
+            idempotency_key=request.idempotency_key,
+            request_fingerprint=request.request_fingerprint,
+            result_digest=snapshot.canonical_digest,
+            snapshot_id=snapshot.snapshot_id,
+            route_id=snapshot.route_id,
+            route_revision=snapshot.route_revision,
+            source_route_digest=snapshot.source_route_digest,
+            organization_id=snapshot.scope.organization_id,
+            environment_id=snapshot.scope.environment_id,
+            site_id=snapshot.scope.site_id,
+            snapshotter_subject_id=snapshot.snapshotter_subject_id,
+            created_at=request.requested_at,
+            canonical_digest=digest,
+            payload=payload,
+        )
+
+    @staticmethod
+    def _transport_route_snapshot_evidence_matches(
+        request: WorkflowTransportRouteSnapshotRequest,
+    ) -> bool:
+        candidate = request.candidate
+        return bool(
+            candidate.route_id == request.expected_source_route_id
+            and candidate.route_revision == request.expected_source_route_revision
+            and candidate.source_route_digest == request.expected_source_route_digest
+            and candidate.scope == request.scope
+            and candidate.snapshotter_subject_id == request.snapshotter_subject_id
+            and candidate.captured_at == request.requested_at
+            and candidate.state is EventPhysicalTransportRouteSnapshotState.SNAPSHOTTED
+            and not any(candidate.authority.canonical_value().values())
+        )
+
+    @staticmethod
+    def _transport_route_snapshot_idempotency_scope(
+        scope: WorkflowScope, snapshotter_subject_id: str
+    ) -> str:
+        return canonical_digest(
+            {
+                "scope": scope.canonical_value(),
+                "snapshotter_subject_id": snapshotter_subject_id,
+            }
+        )
+
+    @staticmethod
+    def _transport_route_snapshot_payload(
+        snapshot: EventPhysicalTransportRouteSnapshot,
+    ) -> dict[str, Any]:
+        return cast(dict[str, Any], snapshot.canonical_value())
+
+    @staticmethod
+    def _transport_route_snapshot_to_domain(
+        raw: dict[str, Any],
+    ) -> EventPhysicalTransportRouteSnapshot:
+        values = dict(raw)
+        values["scope"] = WorkflowScope(**cast(Any, values["scope"]))
+        values["captured_at"] = datetime.fromisoformat(str(values["captured_at"]))
+        values["state"] = EventPhysicalTransportRouteSnapshotState(str(values["state"]))
+        values["authority"] = EventPhysicalTransportRouteSnapshotAuthority(
+            **cast(Any, values["authority"])
+        )
+        return EventPhysicalTransportRouteSnapshot(**cast(Any, values))
+
+    @staticmethod
+    def _validate_transport_route_snapshot_request(
+        request: WorkflowTransportRouteSnapshotRequest,
+    ) -> None:
+        candidate = request.candidate
+        if not PostgreSQLWorkflowPlanRepository._transport_route_snapshot_evidence_matches(request):
+            raise ValueError("event transport route snapshot payload is unsafe")
+        if not request.idempotency_key or len(request.idempotency_key) > 128:
+            raise ValueError("event transport route snapshot idempotency key is invalid")
+        if len(request.request_fingerprint) != 64:
+            raise ValueError("event transport route snapshot request fingerprint is invalid")
+        if request.requested_at.tzinfo is None or candidate.captured_at.tzinfo is None:
+            raise ValueError("event transport route snapshot time must be aware")
+
+    @staticmethod
+    def _transport_route_snapshot_contract_violation() -> NoReturn:
+        raise WorkflowTransportRouteSnapshotError(
+            "workflow_transport_route_snapshot_repository_contract_violation",
+            "The event transport route snapshot does not match its durable evidence.",
         )
 
     async def _transport_compatibility_admission_replay(

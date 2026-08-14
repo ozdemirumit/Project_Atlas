@@ -38,6 +38,7 @@ import {
   listWorkflowRunAttempts,
   listWorkflowTransportCompatibilityAdmissions,
   listWorkflowTransportProfileSnapshots,
+  listWorkflowTransportRouteSnapshots,
   WORKFLOW_PLAN_SAFETY_NOTICE,
   type WorkflowDefinition,
   type WorkflowRunPlan,
@@ -94,6 +95,11 @@ export default function WorkflowPlanningWorkspace({
   const transportProfileQuery = useQuery({
     queryKey: ["workflow-transport-profile-snapshots", organizationId, environmentId, siteId],
     queryFn: () => listWorkflowTransportProfileSnapshots({ scope }),
+    retry: false,
+  });
+  const transportRouteSnapshotQuery = useQuery({
+    queryKey: ["workflow-transport-route-snapshots", organizationId, environmentId, siteId],
+    queryFn: () => listWorkflowTransportRouteSnapshots({ scope }),
     retry: false,
   });
   const targetQuery = useQuery({
@@ -512,6 +518,10 @@ export default function WorkflowPlanningWorkspace({
     transportProfileQuery.error instanceof ApiRequestError
       ? transportProfileQuery.error.status
       : undefined;
+  const transportRouteSnapshotErrorStatus =
+    transportRouteSnapshotQuery.error instanceof ApiRequestError
+      ? transportRouteSnapshotQuery.error.status
+      : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
   const byteArtifacts =
@@ -701,6 +711,159 @@ export default function WorkflowPlanningWorkspace({
           <span>
             These immutable records describe declared deployment capabilities only. They do not
             select or operate a transport.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-transport-route-band"
+        aria-labelledby="workflow-transport-route-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">DEPLOYMENT ROUTE EVIDENCE</p>
+            <h2 id="workflow-transport-route-title">Transport route snapshots</h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {transportRouteSnapshotQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading transport route snapshots...</span>
+          </div>
+        )}
+        {transportRouteSnapshotQuery.isError && (
+          <div className="inline-error" role="alert">
+            <div>
+              <strong>
+                {transportRouteSnapshotErrorStatus === 401
+                  ? "Your session has expired"
+                  : transportRouteSnapshotErrorStatus === 403
+                    ? "Transport route snapshot permission is missing"
+                    : "Transport route snapshots are unavailable"}
+              </strong>
+              <span>
+                {transportRouteSnapshotErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : transportRouteSnapshotErrorStatus === 403
+                    ? "Your current role or scope cannot inspect transport route snapshots."
+                    : "No route, readiness, or operational state is inferred from this failed read."}
+              </span>
+            </div>
+            {transportRouteSnapshotErrorStatus !== 401 &&
+              transportRouteSnapshotErrorStatus !== 403 && (
+                <button
+                  className="secondary-action"
+                  type="button"
+                  aria-label="Retry transport route snapshot read"
+                  onClick={() => void transportRouteSnapshotQuery.refetch()}
+                >
+                  <RefreshCw size={16} />
+                  Retry
+                </button>
+              )}
+          </div>
+        )}
+        {transportRouteSnapshotQuery.isSuccess &&
+          transportRouteSnapshotQuery.data.transport_route_snapshots.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <Network size={19} /> No transport route snapshots are recorded in this scope.
+            </div>
+          )}
+        {transportRouteSnapshotQuery.isSuccess &&
+          transportRouteSnapshotQuery.data.transport_route_snapshots.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-transport-route-list"
+              aria-label="Transport route snapshots"
+            >
+              {transportRouteSnapshotQuery.data.transport_route_snapshots.map((route) => (
+                <li key={route.snapshot_id}>
+                  <Network size={18} />
+                  <div>
+                    <strong>
+                      <code title={route.route_id}>
+                        {safeHolderIdentifier(route.route_id)}
+                      </code>
+                      <span className="state-badge neutral">{route.state}</span>
+                    </strong>
+                    <div className="workflow-transport-route-grid">
+                      <span>
+                        Revision <b>{route.route_revision}</b> | deployment{" "}
+                        <code title={route.deployment_release_id}>
+                          {safeHolderIdentifier(route.deployment_release_id)}
+                        </code>{" "}
+                        | {route.deployment_profile}
+                      </span>
+                      <span>
+                        Route set <code>{safeHolderIdentifier(route.route_set_id)}</code> | revision {route.route_set_revision}
+                      </span>
+                      <span>
+                        Selection epoch <code>{safeHolderIdentifier(route.selection_epoch_id)}</code> | revision {route.selection_epoch_revision}
+                      </span>
+                      <span>
+                        Organization {route.scope.organization_id} | environment{" "}
+                        {route.scope.environment_id} | site {route.scope.site_id}
+                      </span>
+                      <span>
+                        Profile <code title={route.transport_profile_id}>{safeHolderIdentifier(route.transport_profile_id)}</code>{" "}
+                        | revision {route.transport_profile_revision}
+                      </span>
+                      <span>
+                        Resource <code title={route.transport_resource_id}>{safeHolderIdentifier(route.transport_resource_id)}</code>
+                      </span>
+                      <span>
+                        Implementation <code title={route.transport_implementation_id}>{safeHolderIdentifier(route.transport_implementation_id)}</code>{" "}
+                        v{route.transport_implementation_version}
+                      </span>
+                      <span>
+                        Adapter <code title={route.adapter_contract_id}>{safeHolderIdentifier(route.adapter_contract_id)}</code>{" "}
+                        v{route.adapter_contract_version}
+                      </span>
+                      <span>
+                        Endpoint set <code>{safeHolderIdentifier(route.endpoint_set_id)}</code>{" "}
+                        | revision {route.endpoint_set_revision}
+                      </span>
+                      <span>
+                        Destination <code>{safeHolderIdentifier(route.destination_id)}</code>{" "}
+                        | revision {route.destination_revision}
+                      </span>
+                      <span>
+                        Routing contract <code>{safeHolderIdentifier(route.routing_contract_id)}</code>{" "}
+                        | revision {route.routing_contract_revision}
+                      </span>
+                      <span>
+                        Security <code title={route.transport_security_policy_id}>{safeHolderIdentifier(route.transport_security_policy_id)}</code>{" "}
+                        v{route.transport_security_policy_version} | TLS {route.minimum_tls_version} minimum | server authentication required
+                      </span>
+                      <span>
+                        Network <code title={route.network_policy_id}>{safeHolderIdentifier(route.network_policy_id)}</code>{" "}
+                        v{route.network_policy_version} | {route.source_zone_class} to {route.destination_zone_class} | restricted internal
+                      </span>
+                      <span>
+                        Credential requirement <code title={route.credential_requirement_profile_id}>{safeHolderIdentifier(route.credential_requirement_profile_id)}</code>{" "}
+                        v{route.credential_requirement_profile_version} | {route.authentication_mechanism_class} | {route.principal_class}
+                      </span>
+                      <span>
+                        Captured {formatTimestamp(route.captured_at)} by{" "}
+                        <code title={route.snapshotter_subject_id}>{safeHolderIdentifier(route.snapshotter_subject_id)}</code>
+                      </span>
+                      <span>
+                        Snapshot <code title={route.snapshot_id}>{safeHolderIdentifier(route.snapshot_id)}</code>
+                      </span>
+                      <span className="workflow-transport-route-authority">
+                        Authority route selection false | route binding false | endpoint resolution false | credential access false | network access false | readiness probe false | publication false | delivery false | dispatch false | execution false
+                      </span>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            These immutable snapshots expose opaque deployment references only. They do not bind,
+            resolve, probe, credential, publish, deliver, dispatch, or execute a route.
           </span>
         </div>
       </section>

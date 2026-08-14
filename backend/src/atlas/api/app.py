@@ -1531,6 +1531,7 @@ from atlas.modules.workflows.adapters.postgres import PostgreSQLWorkflowPlanRepo
 from atlas.modules.workflows.adapters.unavailable import UnavailableWorkflowPlanRepository
 from atlas.modules.workflows.application import (
     DeploymentEventTransportProfileRegistry,
+    DeploymentEventTransportRouteRegistry,
     WorkflowAttemptMaterializationRepository,
     WorkflowAttemptMaterializationService,
     WorkflowDispatchEventEnvelopeRepository,
@@ -1555,9 +1556,12 @@ from atlas.modules.workflows.application import (
     WorkflowRunMaterializationService,
     WorkflowTransportProfileSnapshotRepository,
     WorkflowTransportProfileSnapshotService,
+    WorkflowTransportRouteSnapshotRepository,
+    WorkflowTransportRouteSnapshotService,
 )
 from atlas.modules.workflows.domain import (
     DeploymentEventTransportProfile,
+    DeploymentEventTransportRoute,
     WorkflowScope,
     canonical_digest,
     code_owned_workflow_registry,
@@ -1589,6 +1593,36 @@ class _ConfiguredDeploymentEventTransportProfileRegistry:
                 if profile.transport_profile_id == transport_profile_id
                 and profile.transport_profile_revision == transport_profile_revision
                 and profile.active
+            ),
+            None,
+        )
+
+
+class _ConfiguredDeploymentEventTransportRouteRegistry:
+    def __init__(self, routes: tuple[DeploymentEventTransportRoute, ...]) -> None:
+        self._routes = routes
+
+    @property
+    def durable(self) -> bool:
+        return True
+
+    @property
+    def routes(self) -> tuple[DeploymentEventTransportRoute, ...]:
+        return self._routes
+
+    async def get_active_transport_route(
+        self,
+        *,
+        route_id: str,
+        route_revision: str,
+    ) -> DeploymentEventTransportRoute | None:
+        return next(
+            (
+                route
+                for route in self._routes
+                if route.route_id == route_id
+                and route.route_revision == route_revision
+                and route.active
             ),
             None,
         )
@@ -1649,6 +1683,89 @@ def _deployment_event_transport_profiles(
     )
 
 
+def _deployment_event_transport_routes(
+    settings: Settings,
+) -> tuple[DeploymentEventTransportRoute, ...]:
+    if settings.environment != "development":
+        return ()
+    scope = WorkflowScope(
+        organization_id=settings.development_organization_id,
+        environment_id=f"environment.{settings.environment}",
+        site_id="site.local",
+    )
+    values: dict[str, Any] = {
+        "route_id": "transport-route.workflow.internal.primary",
+        "route_revision": "revision.1",
+        "route_set_id": "transport-route-set.workflow.internal",
+        "route_set_revision": "revision.1",
+        "selection_epoch_id": "selection-epoch.workflow.internal",
+        "selection_epoch_revision": "revision.1",
+        "deployment_release_id": f"release.project-atlas.{__version__}",
+        "deployment_profile": "developer",
+        "scope": scope,
+        "transport_profile_id": "transport-profile.workflow.internal",
+        "transport_profile_revision": "revision.1",
+        "transport_resource_id": "transport-resource.workflow.internal",
+        "transport_resource_digest": sha256(
+            f"transport-resource.workflow.internal:{settings.environment}".encode()
+        ).hexdigest(),
+        "transport_implementation_id": "transport.nats-jetstream",
+        "transport_implementation_version": "version.1",
+        "adapter_contract_id": "adapter.workflow-event-transport",
+        "adapter_contract_version": "version.1",
+        "adapter_contract_digest": sha256(
+            b"adapter.workflow-event-transport:version.1"
+        ).hexdigest(),
+        "route_kind": "message-broker",
+        "endpoint_set_id": "endpoint-set.workflow-route.primary",
+        "endpoint_set_revision": "revision.1",
+        "destination_id": "destination.workflow-route.primary",
+        "destination_revision": "revision.1",
+        "routing_contract_id": "routing-contract.workflow-route.primary",
+        "routing_contract_revision": "revision.1",
+        "private_route_descriptor_commitment": sha256(
+            b"private-route-descriptor.workflow-route.primary:revision.1"
+        ).hexdigest(),
+        "transport_security_policy_id": "policy.transport-security.workflow-internal",
+        "transport_security_policy_version": "version.1",
+        "transport_security_policy_digest": sha256(
+            b"policy.transport-security.workflow-internal:version.1"
+        ).hexdigest(),
+        "minimum_tls_version": "1.3",
+        "server_authentication_required": True,
+        "client_authentication_required": True,
+        "plaintext_fallback_prohibited": True,
+        "network_policy_id": "policy.network.workflow-restricted",
+        "network_policy_version": "version.1",
+        "network_policy_digest": sha256(
+            b"policy.network.workflow-restricted:version.1"
+        ).hexdigest(),
+        "source_zone_class": "zone.workload-internal",
+        "destination_zone_class": "zone.event-backbone-internal",
+        "restricted_network_enforced": True,
+        "public_egress_prohibited": True,
+        "proxy_mode": "prohibited",
+        "credential_requirement_profile_id": "credential-requirement.workflow-service",
+        "credential_requirement_profile_version": "version.1",
+        "credential_requirement_profile_digest": sha256(
+            b"credential-requirement.workflow-service:version.1"
+        ).hexdigest(),
+        "authentication_mechanism_class": "mutual-tls",
+        "principal_class": "service-workload",
+        "active": True,
+    }
+    digest_payload = {
+        key: value.canonical_value() if isinstance(value, WorkflowScope) else value
+        for key, value in values.items()
+    }
+    return (
+        DeploymentEventTransportRoute(
+            **values,
+            canonical_digest=canonical_digest(digest_payload),
+        ),
+    )
+
+
 def create_app(
     settings: Settings | None = None,
     *,
@@ -1687,6 +1804,8 @@ def create_app(
     workflow_transport_profile_snapshot_service: WorkflowTransportProfileSnapshotService
     | None = None,
     deployment_event_transport_profiles: tuple[DeploymentEventTransportProfile, ...] | None = None,
+    workflow_transport_route_snapshot_service: WorkflowTransportRouteSnapshotService | None = None,
+    deployment_event_transport_routes: tuple[DeploymentEventTransportRoute, ...] | None = None,
     security_export_service: SecurityExportService | None = None,
     session_service: SessionService | None = None,
     api_credential_service: ApiCredentialService | None = None,
@@ -5752,6 +5871,52 @@ def create_app(
         resolved_workflow_transport_profile_snapshot_service = (
             workflow_transport_profile_snapshot_service
         )
+    configured_transport_routes = (
+        _deployment_event_transport_routes(resolved_settings)
+        if deployment_event_transport_routes is None
+        else tuple(deployment_event_transport_routes)
+    )
+    route_keys = tuple(
+        (route.route_id, route.route_revision) for route in configured_transport_routes
+    )
+    if len(route_keys) != len(set(route_keys)):
+        raise ValueError("deployment transport route revisions must be unique")
+    expected_route_environment = f"environment.{resolved_settings.environment}"
+    if any(
+        route.scope.environment_id != expected_route_environment
+        for route in configured_transport_routes
+    ):
+        raise ValueError("deployment transport route scope does not match the environment")
+    if workflow_transport_route_snapshot_service is None:
+        transport_route_snapshot_repository_methods = (
+            "get_transport_route_snapshot",
+            "get_transport_route_snapshot_request",
+            "snapshot_transport_route",
+        )
+        if not all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in transport_route_snapshot_repository_methods
+        ):
+            raise ValueError(
+                "workflow planning repository does not implement transport route snapshots; "
+                "inject workflow_transport_route_snapshot_service explicitly"
+            )
+        transport_route_snapshot_repository = cast(
+            WorkflowTransportRouteSnapshotRepository,
+            workflow_repository,
+        )
+        transport_route_registry: DeploymentEventTransportRouteRegistry = (
+            _ConfiguredDeploymentEventTransportRouteRegistry(configured_transport_routes)
+        )
+        resolved_workflow_transport_route_snapshot_service = WorkflowTransportRouteSnapshotService(
+            transport_route_registry=transport_route_registry,
+            snapshot_repository=transport_route_snapshot_repository,
+            audit_sink=resolved_audit_sink,
+        )
+    else:
+        resolved_workflow_transport_route_snapshot_service = (
+            workflow_transport_route_snapshot_service
+        )
     if workflow_event_transport_compatibility_admission_service is None:
         transport_compatibility_admission_repository_methods = (
             "get_event_logical_channel_binding_by_id",
@@ -6063,6 +6228,13 @@ def create_app(
             resolved_workflow_transport_profile_snapshot_service.repository
         )
         app.state.workflow_transport_profile_source_profiles = configured_transport_profiles
+        app.state.workflow_transport_route_snapshot_service = (
+            resolved_workflow_transport_route_snapshot_service
+        )
+        app.state.workflow_transport_route_snapshot_repository = (
+            resolved_workflow_transport_route_snapshot_service.repository
+        )
+        app.state.workflow_transport_route_source_routes = configured_transport_routes
         app.state.workflow_event_transport_compatibility_admission_service = (
             resolved_workflow_event_transport_compatibility_admission_service
         )

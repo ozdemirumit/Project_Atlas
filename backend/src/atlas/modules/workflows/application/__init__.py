@@ -156,6 +156,21 @@ from atlas.modules.workflows.application.transport_profile_snapshots import (
     WorkflowTransportProfileRegistryContext,
     WorkflowTransportProfileSnapshotService,
 )
+from atlas.modules.workflows.application.transport_route_snapshot_ports import (
+    DeploymentEventTransportRouteRegistry,
+    WorkflowTransportRouteSnapshotError,
+    WorkflowTransportRouteSnapshotIdempotencyRecord,
+    WorkflowTransportRouteSnapshotRepository,
+    WorkflowTransportRouteSnapshotRequest,
+    WorkflowTransportRouteSnapshotResult,
+    WorkflowTransportRouteSnapshotStatus,
+)
+from atlas.modules.workflows.application.transport_route_snapshots import (
+    WORKFLOW_TRANSPORT_ROUTE_REGISTRY_AUDIENCE,
+    WORKFLOW_TRANSPORT_ROUTE_SNAPSHOT_PRODUCER,
+    WorkflowTransportRouteRegistryContext,
+    WorkflowTransportRouteSnapshotService,
+)
 
 __all__ = [
     "WORKFLOW_DISPATCH_EVENT_PRODUCER",
@@ -170,8 +185,11 @@ __all__ = [
     "WORKFLOW_TRANSPORT_COMPATIBILITY_ADMITTER_AUDIENCE",
     "WORKFLOW_TRANSPORT_PROFILE_REGISTRY_AUDIENCE",
     "WORKFLOW_TRANSPORT_PROFILE_SNAPSHOT_PRODUCER",
+    "WORKFLOW_TRANSPORT_ROUTE_REGISTRY_AUDIENCE",
+    "WORKFLOW_TRANSPORT_ROUTE_SNAPSHOT_PRODUCER",
     "WORKFLOW_WORKER_AUDIENCE",
     "DeploymentEventTransportProfileRegistry",
+    "DeploymentEventTransportRouteRegistry",
     "WorkflowAccessContext",
     "WorkflowAttemptMaterializationError",
     "WorkflowAttemptMaterializationIdempotencyRecord",
@@ -269,5 +287,13 @@ __all__ = [
     "WorkflowTransportProfileSnapshotResult",
     "WorkflowTransportProfileSnapshotService",
     "WorkflowTransportProfileSnapshotStatus",
+    "WorkflowTransportRouteRegistryContext",
+    "WorkflowTransportRouteSnapshotError",
+    "WorkflowTransportRouteSnapshotIdempotencyRecord",
+    "WorkflowTransportRouteSnapshotRepository",
+    "WorkflowTransportRouteSnapshotRequest",
+    "WorkflowTransportRouteSnapshotResult",
+    "WorkflowTransportRouteSnapshotService",
+    "WorkflowTransportRouteSnapshotStatus",
     "WorkflowWorkerContext",
 ]

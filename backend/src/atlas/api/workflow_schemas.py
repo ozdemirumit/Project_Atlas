@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from atlas.api.schemas import ResponseMeta
 from atlas.modules.workflows.domain import (
     EventPhysicalTransportProfileSnapshot,
+    EventPhysicalTransportRouteSnapshot,
     WorkflowDefinition,
     WorkflowDispatchEventEnvelope,
     WorkflowDispatchIntent,
@@ -1011,6 +1012,118 @@ class EventPhysicalTransportProfileSnapshotResponse(BaseModel):
 
 class EventPhysicalTransportProfileSnapshotInventoryResponse(BaseModel):
     data: EventPhysicalTransportProfileSnapshotInventoryData
+    meta: ResponseMeta
+
+
+class CreateEventPhysicalTransportRouteSnapshotInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_route_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    source_route_revision: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    source_route_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class EventPhysicalTransportRouteSnapshotAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    endpoint_resolution_authorized: Literal[False]
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+
+
+class EventPhysicalTransportRouteSnapshotData(BaseModel):
+    """Minimized immutable route metadata without locator or operational authority."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    snapshot_id: str
+    route_id: str
+    route_revision: str
+    route_set_id: str
+    route_set_revision: str
+    selection_epoch_id: str
+    selection_epoch_revision: str
+    source_route_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    deployment_release_id: str
+    deployment_profile: str
+    scope: WorkflowScopeData
+    transport_profile_id: str
+    transport_profile_revision: str
+    transport_resource_id: str
+    transport_implementation_id: str
+    transport_implementation_version: str
+    adapter_contract_id: str
+    adapter_contract_version: str
+    route_kind: Literal["message-broker"]
+    endpoint_set_id: str
+    endpoint_set_revision: str
+    destination_id: str
+    destination_revision: str
+    routing_contract_id: str
+    routing_contract_revision: str
+    transport_security_policy_id: str
+    transport_security_policy_version: str
+    minimum_tls_version: Literal["1.3"]
+    server_authentication_required: Literal[True]
+    client_authentication_required: bool
+    plaintext_fallback_prohibited: Literal[True]
+    network_policy_id: str
+    network_policy_version: str
+    source_zone_class: str
+    destination_zone_class: str
+    restricted_network_enforced: Literal[True]
+    public_egress_prohibited: Literal[True]
+    proxy_mode: Literal["prohibited", "deployment-managed"]
+    credential_requirement_profile_id: str
+    credential_requirement_profile_version: str
+    authentication_mechanism_class: Literal["mutual-tls", "workload-token"]
+    principal_class: Literal["service-workload"]
+    snapshotter_subject_id: str
+    captured_at: datetime
+    state: Literal["snapshotted"]
+    authority: EventPhysicalTransportRouteSnapshotAuthorityData
+    canonical_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+
+    @classmethod
+    def from_domain(
+        cls, snapshot: EventPhysicalTransportRouteSnapshot
+    ) -> EventPhysicalTransportRouteSnapshotData:
+        return cls.model_validate(
+            {
+                field_name: (
+                    snapshot.scope.canonical_value()
+                    if field_name == "scope"
+                    else getattr(snapshot, field_name)
+                )
+                for field_name in cls.model_fields
+                if field_name != "authority"
+            }
+            | {"authority": snapshot.authority.canonical_value()}
+        )
+
+
+class EventPhysicalTransportRouteSnapshotInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    transport_route_snapshots: list[EventPhysicalTransportRouteSnapshotData] = Field(max_length=256)
+    durable: bool
+
+
+class EventPhysicalTransportRouteSnapshotResponse(BaseModel):
+    data: EventPhysicalTransportRouteSnapshotData
+    meta: ResponseMeta
+
+
+class EventPhysicalTransportRouteSnapshotInventoryResponse(BaseModel):
+    data: EventPhysicalTransportRouteSnapshotInventoryData
     meta: ResponseMeta
 
 

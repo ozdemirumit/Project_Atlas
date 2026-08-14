@@ -15,10 +15,12 @@ from atlas.api.security import (
     authorize_workflow_plan_read,
     authorize_workflow_transport_compatibility_admission_read,
     authorize_workflow_transport_profile_read,
+    authorize_workflow_transport_route_snapshot_read,
     browser_session_subject,
     workflow_outbox_publisher_subject,
     workflow_transport_compatibility_admitter_subject,
     workflow_transport_profile_registry_subject,
+    workflow_transport_route_registry_subject,
     workflow_worker_subject,
 )
 from atlas.api.workflow_schemas import (
@@ -28,12 +30,17 @@ from atlas.api.workflow_schemas import (
     BindWorkflowEventLogicalChannelInput,
     CancelWorkflowPlanInput,
     CreateEventPhysicalTransportProfileSnapshotInput,
+    CreateEventPhysicalTransportRouteSnapshotInput,
     CreateWorkflowEventTransportCompatibilityAdmissionInput,
     CreateWorkflowPlanInput,
     EventPhysicalTransportProfileSnapshotData,
     EventPhysicalTransportProfileSnapshotInventoryData,
     EventPhysicalTransportProfileSnapshotInventoryResponse,
     EventPhysicalTransportProfileSnapshotResponse,
+    EventPhysicalTransportRouteSnapshotData,
+    EventPhysicalTransportRouteSnapshotInventoryData,
+    EventPhysicalTransportRouteSnapshotInventoryResponse,
+    EventPhysicalTransportRouteSnapshotResponse,
     HeartbeatWorkflowOrchestrationLeaseInput,
     HeartbeatWorkflowOutboxPublicationLeaseInput,
     MaterializeWorkflowAttemptInput,
@@ -105,6 +112,7 @@ from atlas.modules.workflows.application import (
     WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE,
     WORKFLOW_TRANSPORT_COMPATIBILITY_ADMITTER_AUDIENCE,
     WORKFLOW_TRANSPORT_PROFILE_REGISTRY_AUDIENCE,
+    WORKFLOW_TRANSPORT_ROUTE_REGISTRY_AUDIENCE,
     WORKFLOW_WORKER_AUDIENCE,
     WorkflowAccessContext,
     WorkflowAttemptMaterializationError,
@@ -134,6 +142,9 @@ from atlas.modules.workflows.application import (
     WorkflowTransportProfileRegistryContext,
     WorkflowTransportProfileSnapshotError,
     WorkflowTransportProfileSnapshotService,
+    WorkflowTransportRouteRegistryContext,
+    WorkflowTransportRouteSnapshotError,
+    WorkflowTransportRouteSnapshotService,
     WorkflowWorkerContext,
 )
 from atlas.modules.workflows.application.event_envelope_ports import (
@@ -154,7 +165,9 @@ from atlas.modules.workflows.application.transport_compatibility_admission_ports
 )
 from atlas.modules.workflows.domain import (
     DeploymentEventTransportProfile,
+    DeploymentEventTransportRoute,
     EventPhysicalTransportProfileSnapshot,
+    EventPhysicalTransportRouteSnapshot,
     WorkflowDispatchEventEnvelope,
     WorkflowDispatchIntent,
     WorkflowDispatchIntentState,
@@ -616,6 +629,24 @@ def _raise_transport_profile_snapshot(error: WorkflowTransportProfileSnapshotErr
         status, title = 404, "Workflow transport profile source unavailable"
     else:
         status, title = 409, "Workflow transport profile snapshot unavailable"
+    raise AtlasError(
+        status=status,
+        code=error.code,
+        title=title,
+        detail=error.detail,
+        retryable=status == 503,
+    ) from error
+
+
+def _raise_transport_route_snapshot(error: WorkflowTransportRouteSnapshotError) -> NoReturn:
+    if error.code.endswith("_invalid") or error.code.endswith("_required"):
+        status, title = 422, "Workflow transport route snapshot request invalid"
+    elif "repository" in error.code:
+        status, title = 503, "Workflow transport route snapshot service unavailable"
+    elif error.code.endswith("_source_not_active"):
+        status, title = 404, "Workflow transport route source unavailable"
+    else:
+        status, title = 409, "Workflow transport route snapshot unavailable"
     raise AtlasError(
         status=status,
         code=error.code,
@@ -1208,6 +1239,18 @@ def _transport_profile_snapshot_response(
     )
 
 
+def _transport_route_snapshot_response(
+    snapshot: EventPhysicalTransportRouteSnapshot,
+    request: Request,
+    response: Response,
+) -> EventPhysicalTransportRouteSnapshotResponse:
+    _no_store(response)
+    return EventPhysicalTransportRouteSnapshotResponse(
+        data=EventPhysicalTransportRouteSnapshotData.from_domain(snapshot),
+        meta=_meta(request),
+    )
+
+
 def _transport_compatibility_admission_response(
     admission: WorkflowEventTransportCompatibilityAdmission,
     request: Request,
@@ -1273,6 +1316,65 @@ def _transport_profile_snapshot_matches_source(
     )
     return bool(
         snapshot.source_profile_digest == source.canonical_digest
+        and all(getattr(snapshot, field) == getattr(source, field) for field in source_fields)
+        and not any(snapshot.authority.canonical_value().values())
+    )
+
+
+def _transport_route_snapshot_matches_source(
+    snapshot: EventPhysicalTransportRouteSnapshot,
+    source: DeploymentEventTransportRoute,
+) -> bool:
+    source_fields = (
+        "route_id",
+        "route_revision",
+        "route_set_id",
+        "route_set_revision",
+        "selection_epoch_id",
+        "selection_epoch_revision",
+        "deployment_release_id",
+        "deployment_profile",
+        "scope",
+        "transport_profile_id",
+        "transport_profile_revision",
+        "transport_resource_id",
+        "transport_resource_digest",
+        "transport_implementation_id",
+        "transport_implementation_version",
+        "adapter_contract_id",
+        "adapter_contract_version",
+        "adapter_contract_digest",
+        "route_kind",
+        "endpoint_set_id",
+        "endpoint_set_revision",
+        "destination_id",
+        "destination_revision",
+        "routing_contract_id",
+        "routing_contract_revision",
+        "private_route_descriptor_commitment",
+        "transport_security_policy_id",
+        "transport_security_policy_version",
+        "transport_security_policy_digest",
+        "minimum_tls_version",
+        "server_authentication_required",
+        "client_authentication_required",
+        "plaintext_fallback_prohibited",
+        "network_policy_id",
+        "network_policy_version",
+        "network_policy_digest",
+        "source_zone_class",
+        "destination_zone_class",
+        "restricted_network_enforced",
+        "public_egress_prohibited",
+        "proxy_mode",
+        "credential_requirement_profile_id",
+        "credential_requirement_profile_version",
+        "credential_requirement_profile_digest",
+        "authentication_mechanism_class",
+        "principal_class",
+    )
+    return bool(
+        snapshot.source_route_digest == source.canonical_digest
         and all(getattr(snapshot, field) == getattr(source, field) for field in source_fields)
         and not any(snapshot.authority.canonical_value().values())
     )
@@ -3307,6 +3409,117 @@ async def create_workflow_transport_profile_snapshot(
     except WorkflowTransportProfileSnapshotError as error:
         _raise_transport_profile_snapshot(error)
     return _transport_profile_snapshot_response(snapshot, request, response)
+
+
+@router.get(
+    "/transport-route-snapshots",
+    response_model=EventPhysicalTransportRouteSnapshotInventoryResponse,
+)
+async def list_workflow_transport_route_snapshots(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_transport_route_snapshot_read),
+    ],
+) -> EventPhysicalTransportRouteSnapshotInventoryResponse:
+    del decision
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service: WorkflowTransportRouteSnapshotService = (
+        request.app.state.workflow_transport_route_snapshot_service
+    )
+    sources: tuple[DeploymentEventTransportRoute, ...] = (
+        request.app.state.workflow_transport_route_source_routes
+    )
+    snapshots: list[EventPhysicalTransportRouteSnapshot] = []
+    try:
+        for source in sources:
+            if source.scope != scope:
+                continue
+            snapshot = await service.repository.get_transport_route_snapshot(
+                route_id=source.route_id,
+                route_revision=source.route_revision,
+            )
+            if snapshot is not None:
+                if not _transport_route_snapshot_matches_source(snapshot, source):
+                    raise WorkflowTransportRouteSnapshotError(
+                        "workflow_transport_route_snapshot_repository_scope_violation",
+                        "Stored transport route snapshot metadata does not match its source.",
+                    )
+                snapshots.append(snapshot)
+    except WorkflowTransportRouteSnapshotError as error:
+        _raise_transport_route_snapshot(error)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_transport_route_snapshot_repository_unavailable",
+            title="Workflow transport route snapshot service unavailable",
+            detail="Transport route snapshot metadata is unavailable.",
+            retryable=True,
+        ) from error
+    _no_store(response)
+    return EventPhysicalTransportRouteSnapshotInventoryResponse(
+        data=EventPhysicalTransportRouteSnapshotInventoryData(
+            transport_route_snapshots=[
+                EventPhysicalTransportRouteSnapshotData.from_domain(snapshot)
+                for snapshot in sorted(
+                    snapshots,
+                    key=lambda value: (value.route_id, value.route_revision),
+                )
+            ],
+            durable=service.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/transport-route-snapshots",
+    response_model=EventPhysicalTransportRouteSnapshotResponse,
+    status_code=201,
+)
+async def create_workflow_transport_route_snapshot(
+    payload: CreateEventPhysicalTransportRouteSnapshotInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_transport_route_registry_subject),
+    ],
+) -> EventPhysicalTransportRouteSnapshotResponse:
+    service: WorkflowTransportRouteSnapshotService = (
+        request.app.state.workflow_transport_route_snapshot_service
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        snapshot = await service.register(
+            route_id=payload.source_route_id,
+            route_revision=payload.source_route_revision,
+            source_route_digest=payload.source_route_digest,
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowTransportRouteRegistryContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=WORKFLOW_TRANSPORT_ROUTE_REGISTRY_AUDIENCE,
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id="decision.workflow-transport-route-registry-authenticated",
+                requested_at=datetime.now(UTC),
+            ),
+        )
+    except WorkflowTransportRouteSnapshotError as error:
+        _raise_transport_route_snapshot(error)
+    return _transport_route_snapshot_response(snapshot, request, response)
 
 
 @router.get(
