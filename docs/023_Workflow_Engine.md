@@ -587,6 +587,10 @@ MVP workflows do not execute C3 through C5 capabilities.
   snapshot using opaque route references and versioned security requirements, without workflow
   binding, credential selection, network calls, readiness claims, publication, delivery, dispatch
   or execution authority.
+- ADR-149 establishes one minimal immutable binding across the exact logical channel,
+  compatibility admission, transport profile snapshot and physical route snapshot. It copies no
+  route metadata and grants no resolver, credential, network, readiness, publication, delivery,
+  dispatch or execution authority.
 
 ## 39. Assumptions
 

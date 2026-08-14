@@ -43,6 +43,12 @@ from atlas.modules.workflows.application.logical_channel_binding_ports import (
     WorkflowEventLogicalChannelBindingRequest,
     WorkflowEventLogicalChannelBindingResult,
 )
+from atlas.modules.workflows.application.physical_route_binding_ports import (
+    WorkflowEventPhysicalTransportRouteBindingError,
+    WorkflowEventPhysicalTransportRouteBindingIdempotencyRecord,
+    WorkflowEventPhysicalTransportRouteBindingRequest,
+    WorkflowEventPhysicalTransportRouteBindingResult,
+)
 from atlas.modules.workflows.application.publication_lease_ports import (
     WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord,
     WorkflowOutboxPublicationLeaseAcquireRequest,
@@ -83,6 +89,7 @@ from atlas.modules.workflows.domain import (
     WorkflowDispatchOutboxEntry,
     WorkflowEventByteArtifact,
     WorkflowEventLogicalChannelBinding,
+    WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportCompatibilityAdmission,
     WorkflowExecutionAttempt,
@@ -386,6 +393,40 @@ class UnavailableWorkflowPlanRepository:
     ) -> WorkflowEventTransportCompatibilityAdmissionResult:
         self._raise_transport_compatibility_admission()
 
+    async def get_transport_compatibility_admission_by_id(
+        self, *, admission_id: str
+    ) -> WorkflowEventTransportCompatibilityAdmission | None:
+        self._raise_physical_transport_route_binding()
+
+    async def get_transport_route_snapshot_by_id(
+        self, *, snapshot_id: str
+    ) -> EventPhysicalTransportRouteSnapshot | None:
+        self._raise_physical_transport_route_binding()
+
+    async def get_physical_transport_route_binding(
+        self, *, logical_channel_binding_id: str
+    ) -> WorkflowEventPhysicalTransportRouteBinding | None:
+        self._raise_physical_transport_route_binding()
+
+    async def list_physical_transport_route_bindings(
+        self, *, scope: WorkflowScope, limit: int = 256
+    ) -> tuple[WorkflowEventPhysicalTransportRouteBinding, ...]:
+        self._raise_physical_transport_route_binding()
+
+    async def get_physical_transport_route_binding_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        binder_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventPhysicalTransportRouteBindingIdempotencyRecord | None:
+        self._raise_physical_transport_route_binding()
+
+    async def bind_physical_transport_route(
+        self, request: WorkflowEventPhysicalTransportRouteBindingRequest
+    ) -> WorkflowEventPhysicalTransportRouteBindingResult:
+        self._raise_physical_transport_route_binding()
+
     async def acquire_publication_lease(
         self, request: WorkflowOutboxPublicationLeaseAcquireRequest
     ) -> WorkflowOutboxPublicationLeaseAcquireResult:
@@ -517,4 +558,11 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowEventTransportCompatibilityAdmissionError(
             "workflow_transport_compatibility_admission_repository_unavailable",
             "Durable workflow transport compatibility storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_physical_transport_route_binding() -> NoReturn:
+        raise WorkflowEventPhysicalTransportRouteBindingError(
+            "workflow_physical_transport_route_binding_repository_unavailable",
+            "Durable workflow physical transport route binding storage is not configured.",
         )

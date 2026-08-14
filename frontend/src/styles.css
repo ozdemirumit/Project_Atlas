@@ -6334,7 +6334,8 @@ textarea:focus-visible {
 .workflow-logical-channel-binding-list li,
 .workflow-transport-compatibility-admission-list li,
 .workflow-transport-profile-list li,
-.workflow-transport-route-list li {
+.workflow-transport-route-list li,
+.workflow-physical-route-binding-list li {
   align-items: flex-start;
   min-width: 0;
 }
@@ -6346,7 +6347,8 @@ textarea:focus-visible {
 .workflow-logical-channel-binding-list li > div,
 .workflow-transport-compatibility-admission-list li > div,
 .workflow-transport-profile-list li > div,
-.workflow-transport-route-list li > div { min-width: 0; }
+.workflow-transport-route-list li > div,
+.workflow-physical-route-binding-list li > div { min-width: 0; }
 
 .workflow-publication-lease-list strong,
 .workflow-event-envelope-list strong,
@@ -6355,7 +6357,8 @@ textarea:focus-visible {
 .workflow-logical-channel-binding-list strong,
 .workflow-transport-compatibility-admission-list strong,
 .workflow-transport-profile-list strong,
-.workflow-transport-route-list strong {
+.workflow-transport-route-list strong,
+.workflow-physical-route-binding-list strong {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -6378,7 +6381,9 @@ textarea:focus-visible {
 .workflow-transport-profile-list code,
 .workflow-transport-profile-list span,
 .workflow-transport-route-list code,
-.workflow-transport-route-list span {
+.workflow-transport-route-list span,
+.workflow-physical-route-binding-list code,
+.workflow-physical-route-binding-list span {
   overflow-wrap: anywhere;
 }
 
@@ -6391,7 +6396,8 @@ textarea:focus-visible {
 }
 
 .workflow-transport-profile-grid,
-.workflow-transport-route-grid {
+.workflow-transport-route-grid,
+.workflow-physical-route-binding-grid {
   display: grid;
   min-width: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -6401,7 +6407,8 @@ textarea:focus-visible {
   line-height: 1.45;
 }
 
-.workflow-transport-route-authority {
+.workflow-transport-route-authority,
+.workflow-physical-route-binding-authority {
   grid-column: 1 / -1;
 }
 
@@ -6428,7 +6435,8 @@ textarea:focus-visible {
   .workflow-form-grid,
   .workflow-plan-detail dl,
   .workflow-transport-profile-grid,
-  .workflow-transport-route-grid { grid-template-columns: 1fr; }
+  .workflow-transport-route-grid,
+  .workflow-physical-route-binding-grid { grid-template-columns: 1fr; }
 }
 
 .operations-workspace {

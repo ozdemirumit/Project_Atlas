@@ -690,6 +690,40 @@ export type WorkflowTransportRouteSnapshotInventory = {
   durable: boolean;
 };
 
+export type WorkflowPhysicalTransportRouteBindingAuthority = {
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  endpoint_resolution_authorized: false;
+  credential_access_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+};
+
+export type WorkflowPhysicalTransportRouteBinding = {
+  binding_id: string;
+  logical_channel_binding_id: string;
+  compatibility_admission_id: string;
+  transport_profile_snapshot_id: string;
+  transport_route_snapshot_id: string;
+  policy_id: string;
+  policy_version: string;
+  scope: WorkflowRunPlan["scope"];
+  binder_subject_id: string;
+  bound_at: string;
+  state: "bound";
+  authority: WorkflowPhysicalTransportRouteBindingAuthority;
+  integrity_reference: string;
+};
+
+export type WorkflowPhysicalTransportRouteBindingInventory = {
+  physical_transport_route_bindings: WorkflowPhysicalTransportRouteBinding[];
+  durable: boolean;
+};
+
 export type WorkflowTransportCompatibilityAuthority = {
   route_selection_authorized: false;
   route_binding_authorized: false;
@@ -1258,6 +1292,37 @@ const transportRouteSnapshotFields = [
   "canonical_digest",
 ] as const;
 const transportRouteSnapshotInventoryFields = ["transport_route_snapshots", "durable"] as const;
+const physicalTransportRouteBindingAuthorityFields = [
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "endpoint_resolution_authorized",
+  "credential_access_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+] as const;
+const physicalTransportRouteBindingFields = [
+  "binding_id",
+  "logical_channel_binding_id",
+  "compatibility_admission_id",
+  "transport_profile_snapshot_id",
+  "transport_route_snapshot_id",
+  "policy_id",
+  "policy_version",
+  "scope",
+  "binder_subject_id",
+  "bound_at",
+  "state",
+  "authority",
+  "integrity_reference",
+] as const;
+const physicalTransportRouteBindingInventoryFields = [
+  "physical_transport_route_bindings",
+  "durable",
+] as const;
 const transportCompatibilityAuthorityFields = [
   "route_selection_authorized",
   "route_binding_authorized",
@@ -2316,6 +2381,48 @@ function isTransportRouteSnapshot(
   );
 }
 
+function hasZeroPhysicalTransportRouteBindingAuthority(
+  value: unknown,
+): value is WorkflowPhysicalTransportRouteBindingAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, physicalTransportRouteBindingAuthorityFields) &&
+    physicalTransportRouteBindingAuthorityFields.every((field) => value[field] === false)
+  );
+}
+
+function isPhysicalTransportRouteBinding(
+  value: unknown,
+  scope: WorkflowScope,
+): value is WorkflowPhysicalTransportRouteBinding {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, physicalTransportRouteBindingFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value)
+  ) {
+    return false;
+  }
+  const bindingScope = value.scope;
+  return (
+    isIdentifier(value.binding_id) &&
+    isIdentifier(value.logical_channel_binding_id) &&
+    isIdentifier(value.compatibility_admission_id) &&
+    isIdentifier(value.transport_profile_snapshot_id) &&
+    isIdentifier(value.transport_route_snapshot_id) &&
+    isIdentifier(value.policy_id) &&
+    isIdentifier(value.policy_version) &&
+    bindingScope.organization_id === scope.organizationId &&
+    bindingScope.environment_id === scope.environmentId &&
+    bindingScope.site_id === scope.siteId &&
+    isIdentifier(value.binder_subject_id) &&
+    isTimestamp(value.bound_at) &&
+    value.state === "bound" &&
+    hasZeroPhysicalTransportRouteBindingAuthority(value.authority) &&
+    isIdentifier(value.integrity_reference)
+  );
+}
+
 function hasZeroTransportCompatibilityAuthority(
   value: unknown,
 ): value is WorkflowTransportCompatibilityAuthority {
@@ -2956,6 +3063,51 @@ export async function listWorkflowTransportRouteSnapshots(input: {
     throw new ApiRequestError("Workflow transport route snapshot response was unsafe", response.status);
   }
   return data as WorkflowTransportRouteSnapshotInventory;
+}
+
+export async function listWorkflowPhysicalTransportRouteBindings(input: {
+  scope: WorkflowScope;
+}): Promise<WorkflowPhysicalTransportRouteBindingInventory> {
+  const response = await apiFetch("/api/v1/workflows/physical-transport-route-bindings", {
+    headers: { Accept: "application/json" },
+  });
+  const data = await readData(response, "Workflow physical transport route binding retrieval failed");
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, physicalTransportRouteBindingInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.physical_transport_route_bindings) ||
+    data.physical_transport_route_bindings.length > 256 ||
+    typeof data.durable !== "boolean" ||
+    !data.physical_transport_route_bindings.every((binding) =>
+      isPhysicalTransportRouteBinding(binding, input.scope),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport route binding response was unsafe",
+      response.status,
+    );
+  }
+  const bindingIds = new Set(
+    data.physical_transport_route_bindings.map((binding) =>
+      isObject(binding) ? binding.binding_id : undefined,
+    ),
+  );
+  const logicalBindingIds = new Set(
+    data.physical_transport_route_bindings.map((binding) =>
+      isObject(binding) ? binding.logical_channel_binding_id : undefined,
+    ),
+  );
+  if (
+    bindingIds.size !== data.physical_transport_route_bindings.length ||
+    logicalBindingIds.size !== data.physical_transport_route_bindings.length
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport route binding response was unsafe",
+      response.status,
+    );
+  }
+  return data as WorkflowPhysicalTransportRouteBindingInventory;
 }
 
 export async function listWorkflowTransportCompatibilityAdmissions(input: {

@@ -284,6 +284,11 @@ route-selection, route-binding, credential, network, publication, delivery, disp
 authority. Workflow route binding, credential/readiness verification and publication remain later
 boundaries.
 
+The next immutable boundary binds one exact logical channel, compatibility admission, transport
+profile snapshot and physical route snapshot. The minimal binding stores source identities and
+digests rather than copying route metadata, validates the chain atomically and grants no endpoint,
+credential, network, readiness, publication, delivery, dispatch or execution authority.
+
 ### 10.2 Publication State
 
 Outbox records track:

@@ -84,6 +84,20 @@ from atlas.modules.workflows.application.orchestration_ports import (
     WorkflowOrchestrationLeaseError,
     WorkflowOrchestrationLeaseRepository,
 )
+from atlas.modules.workflows.application.physical_route_binding_ports import (
+    WorkflowEventPhysicalTransportRouteBindingError,
+    WorkflowEventPhysicalTransportRouteBindingIdempotencyRecord,
+    WorkflowEventPhysicalTransportRouteBindingRepository,
+    WorkflowEventPhysicalTransportRouteBindingRequest,
+    WorkflowEventPhysicalTransportRouteBindingResult,
+    WorkflowEventPhysicalTransportRouteBindingStatus,
+)
+from atlas.modules.workflows.application.physical_route_bindings import (
+    WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDER_AUDIENCE,
+    WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDING_PRODUCER,
+    WorkflowEventPhysicalTransportRouteBindingService,
+    WorkflowPhysicalTransportRouteBinderContext,
+)
 from atlas.modules.workflows.application.ports import (
     WorkflowPlanCancellationIdempotencyRecord,
     WorkflowPlanCancellationRequest,
@@ -181,6 +195,8 @@ __all__ = [
     "WORKFLOW_EVENT_LOGICAL_CHANNEL_BINDING_PRODUCER",
     "WORKFLOW_EVENT_TRANSPORT_ADMISSION_PRODUCER",
     "WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE",
+    "WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDER_AUDIENCE",
+    "WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDING_PRODUCER",
     "WORKFLOW_TRANSPORT_COMPATIBILITY_ADMISSION_PRODUCER",
     "WORKFLOW_TRANSPORT_COMPATIBILITY_ADMITTER_AUDIENCE",
     "WORKFLOW_TRANSPORT_PROFILE_REGISTRY_AUDIENCE",
@@ -226,6 +242,13 @@ __all__ = [
     "WorkflowEventLogicalChannelBindingResult",
     "WorkflowEventLogicalChannelBindingService",
     "WorkflowEventLogicalChannelBindingStatus",
+    "WorkflowEventPhysicalTransportRouteBindingError",
+    "WorkflowEventPhysicalTransportRouteBindingIdempotencyRecord",
+    "WorkflowEventPhysicalTransportRouteBindingRepository",
+    "WorkflowEventPhysicalTransportRouteBindingRequest",
+    "WorkflowEventPhysicalTransportRouteBindingResult",
+    "WorkflowEventPhysicalTransportRouteBindingService",
+    "WorkflowEventPhysicalTransportRouteBindingStatus",
     "WorkflowEventTransportAdmissionError",
     "WorkflowEventTransportAdmissionIdempotencyRecord",
     "WorkflowEventTransportAdmissionRepository",
@@ -261,6 +284,7 @@ __all__ = [
     "WorkflowOutboxPublicationLeaseRepository",
     "WorkflowOutboxPublicationLeaseService",
     "WorkflowOutboxPublisherContext",
+    "WorkflowPhysicalTransportRouteBinderContext",
     "WorkflowPlanCancellationIdempotencyRecord",
     "WorkflowPlanCancellationRequest",
     "WorkflowPlanCancellationResult",
