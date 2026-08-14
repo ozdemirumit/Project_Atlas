@@ -291,7 +291,7 @@ export default function InventoryDeviceRegistryWorkspace({
             title={
               governedSessionAvailable
                 ? "Add infrastructure device"
-                : "Signed browser session required"
+                : "Sign in to manage devices"
             }
             onClick={() => {
               createMutation.reset();
@@ -323,8 +323,8 @@ export default function InventoryDeviceRegistryWorkspace({
         <div className="inventory-device-status enterprise-login-required" role="status">
           <LogIn size={17} />
           <div>
-            <strong>Signed browser session required for device lifecycle changes</strong>
-            <span>Development mode remains read-only and cannot register or retire devices.</span>
+            <strong>Sign in to manage inventory devices</strong>
+            <span>Username and password sign-in enables authorized registration and retirement.</span>
           </div>
           {onRequestEnterpriseLogin && (
             <button type="button" onClick={onRequestEnterpriseLogin}>
@@ -402,7 +402,7 @@ export default function InventoryDeviceRegistryWorkspace({
                         title={
                           governedSessionAvailable
                             ? "Remove from active inventory and preserve audit history"
-                            : "Signed browser session required"
+                            : "Sign in to manage devices"
                         }
                         aria-label={`Retire ${device.display_name}`}
                         onClick={() => {

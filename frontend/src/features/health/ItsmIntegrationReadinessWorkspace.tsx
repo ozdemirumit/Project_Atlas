@@ -326,7 +326,7 @@ export default function ItsmIntegrationReadinessWorkspace({
         <div><p className="eyebrow">ITSM ADAPTER READINESS</p><h2 id="itsm-readiness-title">Sandbox integration profiles</h2><p>Provider-neutral configuration, mappings, and deterministic readiness blockers.</p></div>
         <div className="inventory-device-heading-actions">
           {inventory && <span className={`inventory-persistence ${inventory.durable ? "durable" : "memory"}`}><Database size={14} /> {inventory.durable ? "Durable store" : "Development memory"}</span>}
-          <button type="button" disabled={!governedSessionAvailable} title={governedSessionAvailable ? "Register ITSM profile" : "Signed browser session required"} onClick={() => { createMutation.reset(); setCreating(true); }}><Plus size={15} /> Add profile</button>
+          <button type="button" disabled={!governedSessionAvailable} title={governedSessionAvailable ? "Register ITSM profile" : "Sign in to manage profiles"} onClick={() => { createMutation.reset(); setCreating(true); }}><Plus size={15} /> Add profile</button>
         </div>
       </div>
 
@@ -337,7 +337,7 @@ export default function ItsmIntegrationReadinessWorkspace({
         <div className="itsm-authority-boundary"><ShieldCheck size={15} /><span>Configuration only</span></div>
       </div>
 
-      {!governedSessionAvailable && <div className="inventory-device-status enterprise-login-required" role="status"><LogIn size={17} /><div><strong>Signed browser session required for profile lifecycle changes</strong><span>Readiness remains visible; registration and retirement stay protected.</span></div>{onRequestEnterpriseLogin && <button type="button" onClick={onRequestEnterpriseLogin}><LogIn size={15} /> Sign in to manage</button>}</div>}
+      {!governedSessionAvailable && <div className="inventory-device-status enterprise-login-required" role="status"><LogIn size={17} /><div><strong>Sign in to manage ITSM profiles</strong><span>Username and password sign-in enables authorized registration and retirement.</span></div>{onRequestEnterpriseLogin && <button type="button" onClick={onRequestEnterpriseLogin}><LogIn size={15} /> Sign in to manage</button>}</div>}
       {inventoryQuery.isLoading && <div className="inventory-device-status"><Clock3 size={17} /> Loading ITSM profile inventory</div>}
       {inventoryQuery.isError && <div className="inventory-device-status error-state" role="alert"><AlertTriangle size={17} /> ITSM integration inventory is unavailable.</div>}
       {createMutation.isError && <div className="inventory-device-status error-state" role="alert"><AlertTriangle size={17} /> Profile registration failed. Review identifiers, sandbox evidence, and the unique profile key.</div>}

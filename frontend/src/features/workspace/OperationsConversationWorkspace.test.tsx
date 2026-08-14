@@ -399,7 +399,8 @@ describe("OperationsConversationWorkspace", () => {
     const onRequestEnterpriseLogin = vi.fn();
     renderWorkspace({ governedSessionAvailable: false, onRequestEnterpriseLogin });
 
-    expect(await screen.findByText(/signed browser session is required/i)).toBeVisible();
+    expect(await screen.findByText(/username and password/i)).toBeVisible();
+    expect(screen.queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
     expect(screen.getByRole("button", { name: "New conversation" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(onRequestEnterpriseLogin).toHaveBeenCalledTimes(1);
