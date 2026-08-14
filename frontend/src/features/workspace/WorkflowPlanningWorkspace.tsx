@@ -25,6 +25,7 @@ import {
   listWorkflowDefinitions,
   listWorkflowAttemptDispatchIntents,
   listWorkflowDispatchOutboxEntries,
+  listWorkflowDispatchOutboxPublicationLeases,
   listWorkflowPlans,
   listWorkflowRunAttempts,
   WORKFLOW_PLAN_SAFETY_NOTICE,
@@ -203,6 +204,29 @@ export default function WorkflowPlanningWorkspace({
     enabled: dispatchIntentQuery.isSuccess && dispatchIntents.length > 0,
     retry: false,
   });
+  const dispatchOutboxEntries =
+    dispatchOutboxQuery.data?.flatMap((inventory) => inventory.outbox_entries) ?? [];
+  const publicationLeaseQuery = useQuery({
+    queryKey: [
+      "workflow-dispatch-outbox-publication-leases",
+      dispatchOutboxEntries.map((entry) => [entry.outbox_entry_id, entry.canonical_digest]),
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () =>
+      Promise.all(
+        dispatchOutboxEntries.map((outboxEntry) =>
+          listWorkflowDispatchOutboxPublicationLeases({
+            outboxEntry,
+            scope,
+            authorizedTargetIds,
+          }),
+        ),
+      ),
+    enabled: dispatchOutboxQuery.isSuccess && dispatchOutboxEntries.length > 0,
+    retry: false,
+  });
   const definitions = definitionQuery.data?.definitions ?? [];
   const selectedDefinition = definitions.find((item) => item.definition_id === definitionId);
   const createMutation = useMutation({
@@ -270,8 +294,12 @@ export default function WorkflowPlanningWorkspace({
     dispatchOutboxQuery.error instanceof ApiRequestError
       ? dispatchOutboxQuery.error.status
       : undefined;
-  const dispatchOutboxEntries =
-    dispatchOutboxQuery.data?.flatMap((inventory) => inventory.outbox_entries) ?? [];
+  const publicationLeaseErrorStatus =
+    publicationLeaseQuery.error instanceof ApiRequestError
+      ? publicationLeaseQuery.error.status
+      : undefined;
+  const publicationLeases =
+    publicationLeaseQuery.data?.flatMap((inventory) => inventory.publication_leases) ?? [];
 
   const selectPlan = (plan: WorkflowRunPlan) => {
     setSelectedPlan(plan);
@@ -764,6 +792,88 @@ export default function WorkflowPlanningWorkspace({
                   <div className="workflow-safety-boundary" role="note">
                     <LockKeyhole size={18} />
                     <span>Pending publication is durable database evidence only. No broker is selected and no broker address, topic, or routing key is recorded. No publication, delivery, dispatch, or execution occurred or is authorized.</span>
+                  </div>
+                </div>
+              )}
+
+              {dispatchOutboxQuery.isSuccess && dispatchOutboxEntries.length > 0 && (
+                <div aria-labelledby="workflow-publication-lease-evidence-title">
+                  <div className="workflow-section-heading">
+                    <div>
+                      <p className="eyebrow">READ-ONLY LEASE EVIDENCE</p>
+                      <h3 id="workflow-publication-lease-evidence-title">Publication lease evidence</h3>
+                    </div>
+                    <span>Current record only</span>
+                  </div>
+                  {publicationLeaseQuery.isLoading && (
+                    <div className="workflow-empty-state" role="status">
+                      <FileClock size={19} />
+                      <span>Loading authoritative publication lease evidence...</span>
+                    </div>
+                  )}
+                  {publicationLeaseQuery.isError && (
+                    <div className="inline-error" role="alert">
+                      <div>
+                        <strong>
+                          {publicationLeaseErrorStatus === 401
+                            ? "Your session has expired"
+                            : publicationLeaseErrorStatus === 403
+                              ? "Publication lease evidence permission is missing"
+                              : "Publication lease evidence is unavailable"}
+                        </strong>
+                        <span>
+                          {publicationLeaseErrorStatus === 401
+                            ? "Sign in again to continue."
+                            : publicationLeaseErrorStatus === 403
+                              ? "Your current role cannot inspect publication lease evidence."
+                              : "No lease or publication state is inferred from this failed read."}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {publicationLeaseQuery.isSuccess && publicationLeases.length > 0 && (
+                    <ol
+                      className="workflow-step-preview workflow-publication-lease-list"
+                      aria-label="Publication lease evidence"
+                    >
+                      {publicationLeases.map((lease) => (
+                        <li key={lease.publication_lease_id}>
+                          <FileClock size={17} />
+                          <div>
+                            <strong>
+                              <code title={lease.publication_lease_id}>
+                                {safeHolderIdentifier(lease.publication_lease_id)}
+                              </code>
+                              <span className={`state-badge ${lease.effective_state}`}>
+                                {lease.effective_state}
+                              </span>
+                            </strong>
+                            <small>
+                              publisher <code title={lease.publisher_subject_id}>{safeHolderIdentifier(lease.publisher_subject_id)}</code> | publication fence {lease.publication_fencing_token} | orchestration fence {lease.orchestration_fencing_token}
+                            </small>
+                            <small>
+                              acquired {formatTimestamp(lease.acquired_at)} | heartbeat {formatTimestamp(lease.last_heartbeat_at)} | expires {formatTimestamp(lease.expires_at)}
+                            </small>
+                            <small>
+                              outbox {shortDigest(lease.outbox_entry_digest)} | intent {shortDigest(lease.dispatch_intent_digest)} | attempt {shortDigest(lease.attempt_digest)}
+                            </small>
+                            <small>
+                              run {shortDigest(lease.run_digest)} | step {shortDigest(lease.step_run_digest)} | plan {shortDigest(lease.plan_digest)} | lease {shortDigest(lease.canonical_digest)}
+                            </small>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                  {publicationLeaseQuery.isSuccess && publicationLeases.length === 0 && (
+                    <div className="workflow-empty-state" role="status">
+                      <FileClock size={19} />
+                      <span>No publication lease has been acquired.</span>
+                    </div>
+                  )}
+                  <div className="workflow-safety-boundary" role="note">
+                    <LockKeyhole size={18} />
+                    <span>This lease is read-only coordination evidence. It grants no publication, delivery, dispatch, or execution authority.</span>
                   </div>
                 </div>
               )}

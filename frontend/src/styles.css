@@ -6320,6 +6320,26 @@ textarea:focus-visible {
 }
 .workflow-step-preview li div { display: grid; gap: 2px; }
 
+.workflow-publication-lease-list li {
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.workflow-publication-lease-list li > div { min-width: 0; }
+
+.workflow-publication-lease-list strong {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workflow-publication-lease-list code,
+.workflow-publication-lease-list small {
+  overflow-wrap: anywhere;
+}
+
 .workflow-empty-state {
   display: flex;
   align-items: center;

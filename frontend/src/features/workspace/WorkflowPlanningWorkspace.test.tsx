@@ -12,6 +12,7 @@ import {
   type WorkflowDefinition,
   type WorkflowDispatchIntent,
   type WorkflowDispatchOutboxEntry,
+  type WorkflowDispatchOutboxPublicationLease,
   type WorkflowExecutionAttempt,
   type WorkflowExecutionRun,
   type WorkflowOrchestrationLease,
@@ -254,6 +255,43 @@ const pendingOutboxEntry: WorkflowDispatchOutboxEntry = {
   canonical_digest: "6".repeat(64),
 };
 
+const activePublicationLease: WorkflowDispatchOutboxPublicationLease = {
+  publication_lease_id: "workflow-publication-lease.1234567890abcdef",
+  outbox_entry_id: pendingOutboxEntry.outbox_entry_id,
+  outbox_entry_digest: pendingOutboxEntry.canonical_digest,
+  dispatch_intent_id: pendingOutboxEntry.dispatch_intent_id,
+  dispatch_intent_digest: pendingOutboxEntry.dispatch_intent_digest,
+  plan_id: pendingOutboxEntry.plan_id,
+  plan_digest: pendingOutboxEntry.plan_digest,
+  run_id: pendingOutboxEntry.run_id,
+  run_digest: pendingOutboxEntry.run_digest,
+  step_run_id: pendingOutboxEntry.step_run_id,
+  step_run_digest: pendingOutboxEntry.step_run_digest,
+  step_id: pendingOutboxEntry.step_id,
+  attempt_id: pendingOutboxEntry.attempt_id,
+  attempt_digest: pendingOutboxEntry.attempt_digest,
+  attempt_number: 1,
+  scope: pendingOutboxEntry.scope,
+  target_id: pendingOutboxEntry.target_id,
+  target_type: "storage",
+  orchestration_lease_id: pendingOutboxEntry.lease_id,
+  orchestration_lease_digest: pendingOutboxEntry.lease_digest,
+  orchestration_fencing_token: pendingOutboxEntry.fencing_token,
+  publisher_subject_id: "workload.workflow.publisher",
+  acquired_at: "2026-08-13T10:11:00Z",
+  last_heartbeat_at: "2026-08-13T10:12:00Z",
+  expires_at: "2026-08-13T10:20:00Z",
+  publication_fencing_token: 1,
+  state: "active",
+  authority: { ...pendingOutboxEntry.authority },
+  grants_publication_authority: false,
+  grants_delivery_authority: false,
+  grants_dispatch_authority: false,
+  grants_execution_authority: false,
+  canonical_digest: "7".repeat(64),
+  effective_state: "active",
+};
+
 function leaseResponse(lease: WorkflowOrchestrationLease | null, status = 200): Response {
   return new Response(
     JSON.stringify({
@@ -352,20 +390,50 @@ function outboxResponse(outboxEntries: unknown[], status = 200): Response {
   );
 }
 
+function publicationLeaseResponse(publicationLeases: unknown[], status = 200): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            outbox_entry_id: pendingOutboxEntry.outbox_entry_id,
+            publication_leases: publicationLeases,
+            server_time: "2026-08-13T10:13:00Z",
+            durable: false,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.publication-lease",
+            generated_at: "2026-08-13T10:13:00Z",
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function mockReadResponses(input: {
   lease?: WorkflowOrchestrationLease | null;
   run?: WorkflowExecutionRun | null;
   attempts?: unknown[];
   dispatchIntents?: unknown[];
   outboxEntries?: unknown[];
+  publicationLeases?: unknown[];
   leaseStatus?: number;
   runStatus?: number;
   attemptStatus?: number;
   dispatchIntentStatus?: number;
   outboxStatus?: number;
+  publicationLeaseStatus?: number;
 }) {
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/publication-lease")) {
+      return Promise.resolve(
+        publicationLeaseResponse(
+          input.publicationLeases ?? [activePublicationLease],
+          input.publicationLeaseStatus ?? 200,
+        ),
+      );
+    }
     if (url.endsWith("/outbox")) {
       return Promise.resolve(outboxResponse(input.outboxEntries ?? [], input.outboxStatus ?? 200));
     }
@@ -1111,5 +1179,189 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
     expect(within(section).queryByRole("button")).toBeNull();
     expect(within(section).queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
+  });
+
+  it("renders the current publication lease as read-only evidence", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Publication lease evidence",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Publication lease evidence",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          `/dispatch-intents/${stagedDispatchIntent.dispatch_intent_id}/outbox/${pendingOutboxEntry.outbox_entry_id}/publication-lease`,
+        ),
+      ),
+    ).toBe(true);
+    expect(within(section).getByTitle(activePublicationLease.publication_lease_id)).toBeVisible();
+    expect(within(section).getByTitle(activePublicationLease.publisher_subject_id)).toBeVisible();
+    expect(records).toHaveTextContent("active");
+    expect(records).toHaveTextContent("publication fence 1");
+    expect(records).toHaveTextContent("orchestration fence 7");
+    expect(records).toHaveTextContent("outbox 666666666666...66666666");
+    expect(section).toHaveTextContent("grants no publication, delivery, dispatch, or execution authority");
+    expect(within(section).queryByRole("button", { name: /acquire|heartbeat|release|publish|deliver|dispatch|execute/i })).toBeNull();
+    expect(within(section).queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
+  });
+
+  it("renders an empty publication lease state without treating it as an integrity failure", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Publication lease evidence",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText("No publication lease has been acquired.")).toBeVisible();
+    expect(within(section).queryByRole("alert")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("fails closed when more than one current publication lease is returned", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [
+        activePublicationLease,
+        { ...activePublicationLease, publication_lease_id: "workflow-publication-lease.other" },
+      ],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Publication lease evidence",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText("Publication lease evidence is unavailable")).toBeVisible();
+    expect(within(section).queryByRole("list", { name: "Publication lease evidence" })).toBeNull();
+  });
+
+  it.each([
+    ["an extra key", { ...activePublicationLease, unexpected: "unsafe" }],
+    ["a broken lineage", { ...activePublicationLease, attempt_id: "workflow-attempt.other" }],
+    ["a broken digest", { ...activePublicationLease, outbox_entry_digest: "0".repeat(64) }],
+    [
+      "a different scope",
+      {
+        ...activePublicationLease,
+        scope: { ...activePublicationLease.scope, site_id: "site.other" },
+      },
+    ],
+    [
+      "unsafe embedded authority",
+      {
+        ...activePublicationLease,
+        authority: { ...activePublicationLease.authority, worker_dispatch_authorized: true },
+      },
+    ],
+    ["publication authority", { ...activePublicationLease, grants_publication_authority: true }],
+  ])("fails closed when publication lease evidence contains %s", async (_case, unsafeLease) => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [unsafeLease],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Publication lease evidence",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText("Publication lease evidence is unavailable")).toBeVisible();
+    expect(within(section).getByText(/No lease or publication state is inferred/i)).toBeVisible();
+    expect(within(section).queryByRole("list", { name: "Publication lease evidence" })).toBeNull();
+    expect(within(section).queryByRole("button", { name: /acquire|heartbeat|release|publish|deliver|dispatch|execute/i })).toBeNull();
+  });
+
+  it.each([
+    [
+      "expired",
+      {
+        ...activePublicationLease,
+        expires_at: "2026-08-13T10:12:30Z",
+        effective_state: "expired",
+      },
+    ],
+    [
+      "released",
+      {
+        ...activePublicationLease,
+        state: "released",
+        effective_state: "released",
+      },
+    ],
+  ])("renders %s publication lease state from validated server evidence", async (state, lease) => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [lease],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Publication lease evidence",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText(state)).toBeVisible();
+    expect(within(section).queryByRole("button", { name: /acquire|heartbeat|release|publish|deliver|dispatch|execute/i })).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [403, "Publication lease evidence permission is missing", "current role cannot inspect publication lease"],
+  ])("handles publication lease read status %s without another login or action controls", async (status, title, detail) => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeaseStatus: status,
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Publication lease evidence",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText(title)).toBeVisible();
+    expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+    expect(within(section).queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
+    expect(within(section).queryByRole("button", { name: /acquire|heartbeat|release|publish|deliver|dispatch|execute/i })).toBeNull();
   });
 });

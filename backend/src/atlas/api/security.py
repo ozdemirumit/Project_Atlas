@@ -376,7 +376,10 @@ from atlas.modules.identity.domain.models import (
     SubjectKind,
 )
 from atlas.modules.identity.domain.sessions import CredentialKind
-from atlas.modules.workflows.application import WORKFLOW_WORKER_AUDIENCE
+from atlas.modules.workflows.application import (
+    WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE,
+    WORKFLOW_WORKER_AUDIENCE,
+)
 
 
 def _presented_authorization(request: Request) -> tuple[str | None, str | None]:
@@ -528,6 +531,69 @@ async def workflow_worker_subject(
         subject = await service.authenticate(
             token if valid_envelope else "",
             audience=WORKFLOW_WORKER_AUDIENCE,
+            environment_id=expected_environment,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except WorkloadIdentityError as exc:
+        raise AtlasError(
+            status=401,
+            code="workload_authentication_failed",
+            title="Workload authentication failed",
+            detail="The workload credential is invalid or unavailable for this operation.",
+        ) from exc
+    if (
+        subject.kind is not SubjectKind.SERVICE
+        or subject.authentication_method is not AuthenticationMethod.WORKLOAD_TOKEN
+    ):
+        raise AtlasError(
+            status=401,
+            code="workload_authentication_failed",
+            title="Workload authentication failed",
+            detail="The workload credential is invalid or unavailable for this operation.",
+        )
+    request.state.authenticated_subject = subject
+    return subject
+
+
+async def workflow_outbox_publisher_subject(
+    request: Request,
+    authorization: Annotated[
+        str | None, Header(alias="Authorization", min_length=1, max_length=8192)
+    ] = None,
+    audience: Annotated[
+        str | None,
+        Header(
+            alias="X-Atlas-Audience",
+            min_length=3,
+            max_length=127,
+            pattern=r"^[a-z][a-z0-9_.:-]{2,126}$",
+        ),
+    ] = None,
+    environment_id: Annotated[
+        str | None,
+        Header(
+            alias="X-Atlas-Environment",
+            min_length=3,
+            max_length=127,
+            pattern=r"^[a-z][a-z0-9_.:-]{2,126}$",
+        ),
+    ] = None,
+) -> AuthenticatedSubject:
+    """Authenticate the dedicated outbox publisher without human-session semantics."""
+    expected_environment = f"environment.{request.app.state.settings.environment}"
+    scheme, separator, token = (authorization or "").partition(" ")
+    valid_envelope = (
+        separator == " "
+        and scheme.lower() == "workload"
+        and bool(token)
+        and audience == WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE
+        and environment_id == expected_environment
+    )
+    service: WorkloadIdentityService = request.app.state.workload_identity_service
+    try:
+        subject = await service.authenticate(
+            token if valid_envelope else "",
+            audience=WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE,
             environment_id=expected_environment,
             correlation_id=str(request.state.correlation_id),
         )

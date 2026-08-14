@@ -4760,6 +4760,154 @@ class WorkflowDispatchOutboxEntryModel(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
+class WorkflowOutboxPublicationLeaseModel(Base):
+    __tablename__ = "workflow_dispatch_outbox_publication_leases"
+    __table_args__ = (
+        UniqueConstraint(
+            "outbox_entry_id",
+            name="uq_workflow_dispatch_outbox_publication_lease_entry",
+        ),
+        UniqueConstraint(
+            "canonical_digest",
+            name="uq_workflow_dispatch_outbox_publication_lease_digest",
+        ),
+        CheckConstraint(
+            "publication_fencing_token >= 1",
+            name="ck_workflow_dispatch_outbox_publication_lease_fence",
+        ),
+        CheckConstraint(
+            "orchestration_fencing_token >= 1",
+            name="ck_workflow_dispatch_outbox_publication_orchestration_fence",
+        ),
+        CheckConstraint(
+            "attempt_number = 1",
+            name="ck_workflow_dispatch_outbox_publication_attempt_number",
+        ),
+        CheckConstraint(
+            "state IN ('active', 'released')",
+            name="ck_workflow_dispatch_outbox_publication_lease_state",
+        ),
+        CheckConstraint(
+            "version >= 1",
+            name="ck_workflow_dispatch_outbox_publication_lease_version",
+        ),
+        CheckConstraint(
+            "last_heartbeat_at >= acquired_at",
+            name="ck_workflow_dispatch_outbox_publication_lease_heartbeat_time",
+        ),
+        CheckConstraint(
+            "expires_at > last_heartbeat_at",
+            name="ck_workflow_dispatch_outbox_publication_lease_expiry_time",
+        ),
+    )
+
+    publication_lease_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    outbox_entry_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_dispatch_outbox_entries.outbox_entry_id"),
+        nullable=False,
+        index=True,
+    )
+    outbox_entry_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    dispatch_intent_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_dispatch_intents.dispatch_intent_id"),
+        nullable=False,
+        index=True,
+    )
+    dispatch_intent_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    plan_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_run_plans.plan_id"),
+        nullable=False,
+        index=True,
+    )
+    plan_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_execution_runs.run_id"),
+        nullable=False,
+        index=True,
+    )
+    run_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    step_run_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_execution_step_runs.step_run_id"),
+        nullable=False,
+        index=True,
+    )
+    step_run_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    step_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    attempt_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_execution_attempts.attempt_id"),
+        nullable=False,
+        index=True,
+    )
+    attempt_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    target_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    target_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    # The orchestration lease is a replaceable current row. This publication lease
+    # retains its exact lineage snapshot without an FK to that mutable identity.
+    orchestration_lease_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    orchestration_lease_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    orchestration_fencing_token: Mapped[int] = mapped_column(Integer, nullable=False)
+    publisher_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    publication_fencing_token: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowOutboxPublicationLeaseAcquireClaimModel(Base):
+    __tablename__ = "workflow_dispatch_outbox_publication_lease_acquire_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "idempotency_scope_id",
+            "idempotency_key",
+            name="uq_workflow_dispatch_outbox_publication_lease_scope_idem",
+        ),
+        UniqueConstraint(
+            "publication_lease_id",
+            name="uq_workflow_dispatch_outbox_publication_lease_claim_lease",
+        ),
+        UniqueConstraint(
+            "canonical_digest",
+            name="uq_workflow_dispatch_outbox_publication_lease_claim_digest",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    idempotency_scope_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    # No FK to the replaceable current publication-lease row: this claim is an
+    # immutable acquisition result retained across fencing takeovers.
+    publication_lease_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    outbox_entry_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_dispatch_outbox_entries.outbox_entry_id"),
+        nullable=False,
+        index=True,
+    )
+    plan_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_run_plans.plan_id"),
+        nullable=False,
+        index=True,
+    )
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    publisher_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class WorkflowDispatchIntentStagingClaimModel(Base):
     __tablename__ = "workflow_dispatch_intent_staging_claims"
     __table_args__ = (

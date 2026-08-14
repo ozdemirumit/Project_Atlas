@@ -562,6 +562,9 @@ MVP workflows do not execute C3 through C5 capabilities.
   dispatch or execution authority.
 - ADR-140 establishes atomic, provider-neutral pending-publication outbox evidence without broker
   publication, delivery, dispatch or execution authority.
+- ADR-141 establishes bounded, independently fenced publisher ownership of an exact pending outbox
+  entry without selecting a broker or granting publication, delivery, dispatch or execution
+  authority.
 
 ## 39. Assumptions
 

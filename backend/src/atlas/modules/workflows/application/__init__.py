@@ -56,12 +56,29 @@ from atlas.modules.workflows.application.ports import (
     WorkflowPlanningError,
     WorkflowPlanRepository,
 )
+from atlas.modules.workflows.application.publication_lease_ports import (
+    WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord,
+    WorkflowOutboxPublicationLeaseAcquireRequest,
+    WorkflowOutboxPublicationLeaseAcquireResult,
+    WorkflowOutboxPublicationLeaseAcquireStatus,
+    WorkflowOutboxPublicationLeaseError,
+    WorkflowOutboxPublicationLeaseMutationRequest,
+    WorkflowOutboxPublicationLeaseMutationResult,
+    WorkflowOutboxPublicationLeaseMutationStatus,
+    WorkflowOutboxPublicationLeaseRepository,
+)
+from atlas.modules.workflows.application.publication_leases import (
+    WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE,
+    WorkflowOutboxPublicationLeaseService,
+    WorkflowOutboxPublisherContext,
+)
 from atlas.modules.workflows.application.service import (
     WorkflowAccessContext,
     WorkflowPlanningService,
 )
 
 __all__ = [
+    "WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE",
     "WORKFLOW_WORKER_AUDIENCE",
     "WorkflowAccessContext",
     "WorkflowAttemptMaterializationError",
@@ -88,6 +105,17 @@ __all__ = [
     "WorkflowOrchestrationLeaseError",
     "WorkflowOrchestrationLeaseRepository",
     "WorkflowOrchestrationLeaseService",
+    "WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord",
+    "WorkflowOutboxPublicationLeaseAcquireRequest",
+    "WorkflowOutboxPublicationLeaseAcquireResult",
+    "WorkflowOutboxPublicationLeaseAcquireStatus",
+    "WorkflowOutboxPublicationLeaseError",
+    "WorkflowOutboxPublicationLeaseMutationRequest",
+    "WorkflowOutboxPublicationLeaseMutationResult",
+    "WorkflowOutboxPublicationLeaseMutationStatus",
+    "WorkflowOutboxPublicationLeaseRepository",
+    "WorkflowOutboxPublicationLeaseService",
+    "WorkflowOutboxPublisherContext",
     "WorkflowPlanCancellationIdempotencyRecord",
     "WorkflowPlanCancellationRequest",
     "WorkflowPlanCancellationResult",

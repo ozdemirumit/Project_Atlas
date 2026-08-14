@@ -675,8 +675,8 @@ function ReportPanel({
                   <div>
                     <strong>Enterprise reviewer required</strong>
                     <p>
-                      A separate human with the ITSM reviewer role and MFA-backed browser session
-                      must review this exact draft.
+                      A separate signed-in human with the ITSM reviewer role must review this
+                      exact draft.
                     </p>
                   </div>
                 </div>

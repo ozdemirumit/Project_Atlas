@@ -95,6 +95,17 @@ class WorkflowDispatchOutboxState(StrEnum):
     PENDING_PUBLICATION = "pending_publication"
 
 
+class WorkflowOutboxPublicationLeaseState(StrEnum):
+    ACTIVE = "active"
+    RELEASED = "released"
+
+
+class WorkflowOutboxPublicationLeaseEffectiveState(StrEnum):
+    ACTIVE = "active"
+    EXPIRED = "expired"
+    RELEASED = "released"
+
+
 @dataclass(frozen=True, slots=True)
 class WorkflowScope:
     organization_id: str
@@ -651,6 +662,156 @@ class WorkflowDispatchOutboxEntry:
 
     def canonical_value(self) -> dict[str, object]:
         return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    @property
+    def grants_publication_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_delivery_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_dispatch_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_execution_authority(self) -> bool:
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowOutboxPublicationLease:
+    """Fenced outbox ownership evidence that grants no operational authority."""
+
+    publication_lease_id: str
+    outbox_entry_id: str
+    outbox_entry_digest: str
+    dispatch_intent_id: str
+    dispatch_intent_digest: str
+    plan_id: str
+    plan_digest: str
+    run_id: str
+    run_digest: str
+    step_run_id: str
+    step_run_digest: str
+    step_id: str
+    attempt_id: str
+    attempt_digest: str
+    attempt_number: int
+    scope: WorkflowScope
+    target_id: str
+    target_type: str
+    orchestration_lease_id: str
+    orchestration_lease_digest: str
+    orchestration_fencing_token: int
+    publisher_subject_id: str
+    acquired_at: datetime
+    last_heartbeat_at: datetime
+    expires_at: datetime
+    publication_fencing_token: int
+    state: WorkflowOutboxPublicationLeaseState
+    authority: WorkflowPlanAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.publication_lease_id, "publication lease id"),
+            (self.outbox_entry_id, "publication lease outbox_entry_id"),
+            (self.dispatch_intent_id, "publication lease dispatch_intent_id"),
+            (self.plan_id, "publication lease plan_id"),
+            (self.run_id, "publication lease run_id"),
+            (self.step_run_id, "publication lease step_run_id"),
+            (self.step_id, "publication lease step_id"),
+            (self.attempt_id, "publication lease attempt_id"),
+            (self.target_id, "publication lease target_id"),
+            (self.orchestration_lease_id, "publication lease orchestration_lease_id"),
+            (self.publisher_subject_id, "publication lease publisher_subject_id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.outbox_entry_digest, "publication lease outbox_entry_digest"),
+            (self.dispatch_intent_digest, "publication lease dispatch_intent_digest"),
+            (self.plan_digest, "publication lease plan_digest"),
+            (self.run_digest, "publication lease run_digest"),
+            (self.step_run_digest, "publication lease step_run_digest"),
+            (self.attempt_digest, "publication lease attempt_digest"),
+            (
+                self.orchestration_lease_digest,
+                "publication lease orchestration_lease_digest",
+            ),
+            (self.canonical_digest, "publication lease canonical_digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.attempt_number != 1:
+            raise ValueError("publication leases support only attempt number one")
+        if self.target_type != "storage":
+            raise ValueError("workflow publication leases support only storage targets")
+        if self.orchestration_fencing_token < 1:
+            raise ValueError("orchestration_fencing_token must be at least one")
+        if self.publication_fencing_token < 1:
+            raise ValueError("publication_fencing_token must be at least one")
+        if any(
+            timestamp.tzinfo is None
+            for timestamp in (self.acquired_at, self.last_heartbeat_at, self.expires_at)
+        ):
+            raise ValueError("publication lease timestamps must be timezone-aware")
+        if self.last_heartbeat_at < self.acquired_at:
+            raise ValueError("publication lease heartbeat cannot precede acquisition")
+        if self.expires_at <= self.last_heartbeat_at:
+            raise ValueError("publication lease expiry must follow the latest heartbeat")
+        if not isinstance(self.state, WorkflowOutboxPublicationLeaseState):
+            raise ValueError("workflow publication lease state is unsupported")
+        if any(self.authority.canonical_value().values()):
+            raise ValueError("workflow publication leases cannot grant operational authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("workflow publication lease canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "acquired_at": self.acquired_at.isoformat(),
+            "attempt_digest": self.attempt_digest,
+            "attempt_id": self.attempt_id,
+            "attempt_number": self.attempt_number,
+            "authority": self.authority.canonical_value(),
+            "dispatch_intent_digest": self.dispatch_intent_digest,
+            "dispatch_intent_id": self.dispatch_intent_id,
+            "expires_at": self.expires_at.isoformat(),
+            "last_heartbeat_at": self.last_heartbeat_at.isoformat(),
+            "orchestration_fencing_token": self.orchestration_fencing_token,
+            "orchestration_lease_digest": self.orchestration_lease_digest,
+            "orchestration_lease_id": self.orchestration_lease_id,
+            "outbox_entry_digest": self.outbox_entry_digest,
+            "outbox_entry_id": self.outbox_entry_id,
+            "plan_digest": self.plan_digest,
+            "plan_id": self.plan_id,
+            "publication_fencing_token": self.publication_fencing_token,
+            "publication_lease_id": self.publication_lease_id,
+            "publisher_subject_id": self.publisher_subject_id,
+            "run_digest": self.run_digest,
+            "run_id": self.run_id,
+            "scope": self.scope.canonical_value(),
+            "state": self.state.value,
+            "step_id": self.step_id,
+            "step_run_digest": self.step_run_digest,
+            "step_run_id": self.step_run_id,
+            "target_id": self.target_id,
+            "target_type": self.target_type,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    def effective_state(
+        self, *, requested_at: datetime
+    ) -> WorkflowOutboxPublicationLeaseEffectiveState:
+        if requested_at.tzinfo is None:
+            raise ValueError("publication lease effective-state time must be timezone-aware")
+        if self.state is WorkflowOutboxPublicationLeaseState.RELEASED:
+            return WorkflowOutboxPublicationLeaseEffectiveState.RELEASED
+        if requested_at >= self.expires_at:
+            return WorkflowOutboxPublicationLeaseEffectiveState.EXPIRED
+        return WorkflowOutboxPublicationLeaseEffectiveState.ACTIVE
 
     @property
     def grants_publication_authority(self) -> bool:

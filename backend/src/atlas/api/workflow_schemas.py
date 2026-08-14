@@ -13,6 +13,7 @@ from atlas.modules.workflows.domain import (
     WorkflowExecutionAttempt,
     WorkflowExecutionRun,
     WorkflowOrchestrationLease,
+    WorkflowOutboxPublicationLease,
     WorkflowRunPlan,
 )
 
@@ -113,6 +114,41 @@ class StageWorkflowDispatchIntentInput(BaseModel):
     lease_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     fencing_token: int = Field(ge=1)
     acknowledged_staging_only_no_publication_delivery_dispatch_or_execution_authority: Literal[True]
+
+
+class AcquireWorkflowOutboxPublicationLeaseInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["atlas.workflow-outbox-publication-lease-acquire-input.v1"]
+    outbox_entry_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    target_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    target_type: Literal["storage"]
+    lease_duration_seconds: int = Field(ge=30, le=300)
+    acknowledged_coordination_only_no_publication_delivery_dispatch_or_execution_authority: Literal[
+        True
+    ]
+
+
+class WorkflowOutboxPublicationLeaseMutationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    outbox_entry_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    target_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    target_type: Literal["storage"]
+    publication_lease_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    publication_fencing_token: int = Field(ge=1)
+    acknowledged_coordination_only_no_publication_delivery_dispatch_or_execution_authority: Literal[
+        True
+    ]
+
+
+class HeartbeatWorkflowOutboxPublicationLeaseInput(WorkflowOutboxPublicationLeaseMutationInput):
+    schema_version: Literal["atlas.workflow-outbox-publication-lease-heartbeat-input.v1"]
+    lease_duration_seconds: int = Field(ge=30, le=300)
+
+
+class ReleaseWorkflowOutboxPublicationLeaseInput(WorkflowOutboxPublicationLeaseMutationInput):
+    schema_version: Literal["atlas.workflow-outbox-publication-lease-release-input.v1"]
 
 
 class WorkflowStepDefinitionData(BaseModel):
@@ -244,6 +280,82 @@ class WorkflowOrchestrationLeaseResponse(BaseModel):
 
 class WorkflowOrchestrationLeaseStatusResponse(BaseModel):
     data: WorkflowOrchestrationLeaseStatusData
+    meta: ResponseMeta
+
+
+class WorkflowOutboxPublicationLeaseData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    publication_lease_id: str
+    outbox_entry_id: str
+    outbox_entry_digest: str
+    dispatch_intent_id: str
+    dispatch_intent_digest: str
+    plan_id: str
+    plan_digest: str
+    run_id: str
+    run_digest: str
+    step_run_id: str
+    step_run_digest: str
+    step_id: str
+    attempt_id: str
+    attempt_digest: str
+    attempt_number: Literal[1]
+    scope: WorkflowScopeData
+    target_id: str
+    target_type: Literal["storage"]
+    orchestration_lease_id: str
+    orchestration_lease_digest: str
+    orchestration_fencing_token: int
+    publisher_subject_id: str
+    acquired_at: datetime
+    last_heartbeat_at: datetime
+    expires_at: datetime
+    publication_fencing_token: int
+    state: Literal["active", "released"]
+    effective_state: Literal["active", "expired", "released"]
+    authority: WorkflowPlanAuthorityData
+    grants_publication_authority: Literal[False]
+    grants_delivery_authority: Literal[False]
+    grants_dispatch_authority: Literal[False]
+    grants_execution_authority: Literal[False]
+    canonical_digest: str
+
+    @classmethod
+    def from_domain(
+        cls,
+        lease: WorkflowOutboxPublicationLease,
+        *,
+        requested_at: datetime,
+    ) -> WorkflowOutboxPublicationLeaseData:
+        return cls.model_validate(
+            lease.canonical_value()
+            | {
+                "effective_state": lease.effective_state(requested_at=requested_at).value,
+                "grants_publication_authority": False,
+                "grants_delivery_authority": False,
+                "grants_dispatch_authority": False,
+                "grants_execution_authority": False,
+            }
+        )
+
+
+class WorkflowOutboxPublicationLeaseInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    outbox_entry_id: str
+    publication_leases: list[WorkflowOutboxPublicationLeaseData]
+    server_time: datetime
+    durable: bool
+
+
+class WorkflowOutboxPublicationLeaseResponse(BaseModel):
+    data: WorkflowOutboxPublicationLeaseData
+    meta: ResponseMeta
+
+
+class WorkflowOutboxPublicationLeaseInventoryResponse(BaseModel):
+    data: WorkflowOutboxPublicationLeaseInventoryData
     meta: ResponseMeta
 
 

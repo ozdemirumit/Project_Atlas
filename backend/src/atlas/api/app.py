@@ -1536,6 +1536,8 @@ from atlas.modules.workflows.application import (
     WorkflowDispatchIntentStagingService,
     WorkflowOrchestrationLeaseRepository,
     WorkflowOrchestrationLeaseService,
+    WorkflowOutboxPublicationLeaseRepository,
+    WorkflowOutboxPublicationLeaseService,
     WorkflowPlanningService,
     WorkflowPlanRepository,
     WorkflowRunMaterializationRepository,
@@ -1569,6 +1571,7 @@ def create_app(
     workflow_run_materialization_service: WorkflowRunMaterializationService | None = None,
     workflow_attempt_materialization_service: WorkflowAttemptMaterializationService | None = None,
     workflow_dispatch_intent_staging_service: WorkflowDispatchIntentStagingService | None = None,
+    workflow_outbox_publication_lease_service: WorkflowOutboxPublicationLeaseService | None = None,
     security_export_service: SecurityExportService | None = None,
     session_service: SessionService | None = None,
     api_credential_service: ApiCredentialService | None = None,
@@ -5417,6 +5420,39 @@ def create_app(
         )
     else:
         resolved_workflow_dispatch_intent_staging_service = workflow_dispatch_intent_staging_service
+    if workflow_outbox_publication_lease_service is None:
+        publication_lease_repository_methods = (
+            "get_outbox_entry_by_id",
+            "get_publication_lease_by_outbox_entry_id",
+            "get_publication_lease_acquire_request",
+            "acquire_publication_lease",
+            "heartbeat_publication_lease",
+            "release_publication_lease",
+        )
+        if not all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in publication_lease_repository_methods
+        ):
+            raise ValueError(
+                "workflow planning repository does not implement outbox publication leases; "
+                "inject workflow_outbox_publication_lease_service explicitly"
+            )
+        workflow_outbox_publication_lease_repository = cast(
+            WorkflowOutboxPublicationLeaseRepository,
+            workflow_repository,
+        )
+        resolved_workflow_outbox_publication_lease_service = WorkflowOutboxPublicationLeaseService(
+            plan_repository=workflow_repository,
+            orchestration_lease_repository=(
+                resolved_workflow_orchestration_lease_service.repository
+            ),
+            publication_lease_repository=workflow_outbox_publication_lease_repository,
+            audit_sink=resolved_audit_sink,
+        )
+    else:
+        resolved_workflow_outbox_publication_lease_service = (
+            workflow_outbox_publication_lease_service
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -5659,6 +5695,12 @@ def create_app(
         )
         app.state.workflow_dispatch_intent_staging_repository = (
             resolved_workflow_dispatch_intent_staging_service.repository
+        )
+        app.state.workflow_outbox_publication_lease_service = (
+            resolved_workflow_outbox_publication_lease_service
+        )
+        app.state.workflow_outbox_publication_lease_repository = (
+            resolved_workflow_outbox_publication_lease_service.repository
         )
         yield
         await resolved_workflow_planning_service.close()

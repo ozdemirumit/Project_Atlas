@@ -217,7 +217,12 @@ When an event represents a committed local state transition, the producer writes
 The initial workflow implementation uses an immutable, provider-neutral `pending_publication`
 entry created atomically with dispatch-intent staging. This entry is durable publication input only;
 it contains no broker address, topic, routing key, delivery receipt, dispatch claim or execution
-authority. Publication lifecycle evidence is introduced separately when a broker profile is chosen.
+authority. Before a provider adapter may attempt publication, a dedicated workload publisher must
+hold a bounded, durable lease for the exact pending entry. The lease uses an independent,
+monotonically increasing publication fencing token and revalidates the current source orchestration
+lease. Lease ownership contains no transport configuration and grants no publication, delivery,
+dispatch or execution authority. Broker selection and publication lifecycle evidence remain
+separate later boundaries.
 
 ### 10.2 Publication State
 

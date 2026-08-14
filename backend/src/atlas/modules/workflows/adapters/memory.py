@@ -30,6 +30,15 @@ from atlas.modules.workflows.application import (
     WorkflowRunMaterializationResult,
     WorkflowRunMaterializationStatus,
 )
+from atlas.modules.workflows.application.publication_lease_ports import (
+    WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord,
+    WorkflowOutboxPublicationLeaseAcquireRequest,
+    WorkflowOutboxPublicationLeaseAcquireResult,
+    WorkflowOutboxPublicationLeaseAcquireStatus,
+    WorkflowOutboxPublicationLeaseMutationRequest,
+    WorkflowOutboxPublicationLeaseMutationResult,
+    WorkflowOutboxPublicationLeaseMutationStatus,
+)
 from atlas.modules.workflows.domain import (
     WorkflowDispatchIntent,
     WorkflowDispatchIntentState,
@@ -42,6 +51,8 @@ from atlas.modules.workflows.domain import (
     WorkflowExecutionStepRunState,
     WorkflowOrchestrationLease,
     WorkflowOrchestrationLeaseEffectiveState,
+    WorkflowOutboxPublicationLease,
+    WorkflowOutboxPublicationLeaseEffectiveState,
     WorkflowPlanState,
     WorkflowRunPlan,
     WorkflowScope,
@@ -73,6 +84,11 @@ class InMemoryWorkflowPlanRepository:
         self._dispatch_outbox_entries_by_intent: dict[str, WorkflowDispatchOutboxEntry] = {}
         self._dispatch_intent_staging_requests: dict[
             tuple[WorkflowScope, str, str], WorkflowDispatchIntentStagingIdempotencyRecord
+        ] = {}
+        self._publication_leases_by_outbox: dict[str, WorkflowOutboxPublicationLease] = {}
+        self._publication_lease_acquire_requests: dict[
+            tuple[WorkflowScope, str, str],
+            WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord,
         ] = {}
         self._lock = asyncio.Lock()
 
@@ -403,6 +419,104 @@ class InMemoryWorkflowPlanRepository:
                 )
             )
 
+    async def get_outbox_entry_by_id(
+        self, *, outbox_entry_id: str
+    ) -> WorkflowDispatchOutboxEntry | None:
+        async with self._lock:
+            return next(
+                (
+                    entry
+                    for entry in self._dispatch_outbox_entries_by_intent.values()
+                    if entry.outbox_entry_id == outbox_entry_id
+                ),
+                None,
+            )
+
+    async def get_publication_lease_by_outbox_entry_id(
+        self, *, outbox_entry_id: str
+    ) -> WorkflowOutboxPublicationLease | None:
+        async with self._lock:
+            return self._publication_leases_by_outbox.get(outbox_entry_id)
+
+    async def get_publication_lease_acquire_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        publisher_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord | None:
+        async with self._lock:
+            return self._publication_lease_acquire_requests.get(
+                (scope, publisher_subject_id, idempotency_key)
+            )
+
+    async def acquire_publication_lease(
+        self, request: WorkflowOutboxPublicationLeaseAcquireRequest
+    ) -> WorkflowOutboxPublicationLeaseAcquireResult:
+        async with self._lock:
+            candidate = request.candidate
+            key = (candidate.scope, candidate.publisher_subject_id, request.idempotency_key)
+            prior = self._publication_lease_acquire_requests.get(key)
+            if prior is not None:
+                status = (
+                    WorkflowOutboxPublicationLeaseAcquireStatus.REPLAY
+                    if prior.request_fingerprint == request.request_fingerprint
+                    else WorkflowOutboxPublicationLeaseAcquireStatus.IDEMPOTENCY_CONFLICT
+                )
+                return WorkflowOutboxPublicationLeaseAcquireResult(status, prior.lease)
+
+            outbox = next(
+                (
+                    entry
+                    for entry in self._dispatch_outbox_entries_by_intent.values()
+                    if entry.outbox_entry_id == candidate.outbox_entry_id
+                ),
+                None,
+            )
+            plan = self._plans.get(candidate.plan_id)
+            orchestration_lease = self._leases_by_plan.get(candidate.plan_id)
+            if not self._publication_evidence_matches(
+                outbox=outbox,
+                plan=plan,
+                orchestration_lease=orchestration_lease,
+                request=request,
+            ):
+                return WorkflowOutboxPublicationLeaseAcquireResult(
+                    WorkflowOutboxPublicationLeaseAcquireStatus.EVIDENCE_CONFLICT,
+                    None,
+                )
+
+            current = self._publication_leases_by_outbox.get(candidate.outbox_entry_id)
+            if not self._publication_acquire_generation_matches(
+                current=current,
+                request=request,
+            ):
+                return WorkflowOutboxPublicationLeaseAcquireResult(
+                    WorkflowOutboxPublicationLeaseAcquireStatus.CONTENDED,
+                    current,
+                )
+            self._publication_leases_by_outbox[candidate.outbox_entry_id] = candidate
+            self._publication_lease_acquire_requests[key] = (
+                WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord(
+                    request_fingerprint=request.request_fingerprint,
+                    lease=candidate,
+                )
+            )
+            return WorkflowOutboxPublicationLeaseAcquireResult(
+                WorkflowOutboxPublicationLeaseAcquireStatus.ACQUIRED,
+                candidate,
+            )
+
+    async def heartbeat_publication_lease(
+        self, request: WorkflowOutboxPublicationLeaseMutationRequest
+    ) -> WorkflowOutboxPublicationLeaseMutationResult:
+        return await self._mutate_publication_lease(request)
+
+    async def release_publication_lease(
+        self, request: WorkflowOutboxPublicationLeaseMutationRequest
+    ) -> WorkflowOutboxPublicationLeaseMutationResult:
+        return await self._mutate_publication_lease(request)
+
     async def get_dispatch_intent_staging_request(
         self,
         *,
@@ -665,6 +779,208 @@ class InMemoryWorkflowPlanRepository:
             return WorkflowLeaseMutationResult(
                 status=WorkflowLeaseMutationStatus.UPDATED, lease=updated
             )
+
+    async def _mutate_publication_lease(
+        self, request: WorkflowOutboxPublicationLeaseMutationRequest
+    ) -> WorkflowOutboxPublicationLeaseMutationResult:
+        async with self._lock:
+            updated = request.updated_lease
+            outbox = next(
+                (
+                    entry
+                    for entry in self._dispatch_outbox_entries_by_intent.values()
+                    if entry.outbox_entry_id == updated.outbox_entry_id
+                ),
+                None,
+            )
+            plan = self._plans.get(updated.plan_id)
+            orchestration_lease = self._leases_by_plan.get(updated.plan_id)
+            if not self._publication_mutation_evidence_matches(
+                outbox=outbox,
+                plan=plan,
+                orchestration_lease=orchestration_lease,
+                request=request,
+            ):
+                return WorkflowOutboxPublicationLeaseMutationResult(
+                    WorkflowOutboxPublicationLeaseMutationStatus.EVIDENCE_CONFLICT,
+                    None,
+                )
+            current = self._publication_leases_by_outbox.get(updated.outbox_entry_id)
+            if current is None:
+                return WorkflowOutboxPublicationLeaseMutationResult(
+                    WorkflowOutboxPublicationLeaseMutationStatus.NOT_FOUND,
+                    None,
+                )
+            if (
+                current.publication_lease_id != request.expected_publication_lease_id
+                or current.canonical_digest != request.expected_publication_lease_digest
+                or current.publication_fencing_token != request.expected_publication_fencing_token
+                or current.publisher_subject_id != request.publisher_subject_id
+                or current.effective_state(requested_at=request.requested_at)
+                is not WorkflowOutboxPublicationLeaseEffectiveState.ACTIVE
+                or not self._same_publication_lease_generation(current, updated)
+            ):
+                return WorkflowOutboxPublicationLeaseMutationResult(
+                    WorkflowOutboxPublicationLeaseMutationStatus.LEASE_CONFLICT,
+                    current,
+                )
+            self._publication_leases_by_outbox[updated.outbox_entry_id] = updated
+            return WorkflowOutboxPublicationLeaseMutationResult(
+                WorkflowOutboxPublicationLeaseMutationStatus.UPDATED,
+                updated,
+            )
+
+    @staticmethod
+    def _publication_evidence_matches(
+        *,
+        outbox: WorkflowDispatchOutboxEntry | None,
+        plan: WorkflowRunPlan | None,
+        orchestration_lease: WorkflowOrchestrationLease | None,
+        request: WorkflowOutboxPublicationLeaseAcquireRequest,
+    ) -> bool:
+        candidate = request.candidate
+        return bool(
+            outbox is not None
+            and outbox.state is WorkflowDispatchOutboxState.PENDING_PUBLICATION
+            and outbox.canonical_digest
+            == request.expected_outbox_entry_digest
+            == candidate.outbox_entry_digest
+            and outbox.outbox_entry_id == candidate.outbox_entry_id
+            and outbox.dispatch_intent_id == candidate.dispatch_intent_id
+            and outbox.dispatch_intent_digest == candidate.dispatch_intent_digest
+            and outbox.plan_id == candidate.plan_id
+            and outbox.plan_digest == candidate.plan_digest
+            and outbox.run_id == candidate.run_id
+            and outbox.run_digest == candidate.run_digest
+            and outbox.step_run_id == candidate.step_run_id
+            and outbox.step_run_digest == candidate.step_run_digest
+            and outbox.step_id == candidate.step_id
+            and outbox.attempt_id == candidate.attempt_id
+            and outbox.attempt_digest == candidate.attempt_digest
+            and outbox.attempt_number == candidate.attempt_number
+            and outbox.scope == candidate.scope
+            and outbox.target_id == candidate.target_id
+            and outbox.target_type == candidate.target_type
+            and not any(outbox.authority.canonical_value().values())
+            and not outbox.grants_publication_authority
+            and plan is not None
+            and plan.state is WorkflowPlanState.PLANNED
+            and plan.canonical_digest == candidate.plan_digest
+            and plan.scope == candidate.scope
+            and plan.target_id == candidate.target_id
+            and plan.target_type == candidate.target_type
+            and orchestration_lease is not None
+            and orchestration_lease.lease_id
+            == request.expected_orchestration_lease_id
+            == candidate.orchestration_lease_id
+            == outbox.lease_id
+            and orchestration_lease.canonical_digest
+            == request.expected_orchestration_lease_digest
+            == candidate.orchestration_lease_digest
+            == outbox.lease_digest
+            and orchestration_lease.fencing_token
+            == request.expected_orchestration_fencing_token
+            == candidate.orchestration_fencing_token
+            == outbox.fencing_token
+            and orchestration_lease.plan_id == candidate.plan_id
+            and orchestration_lease.plan_digest == candidate.plan_digest
+            and orchestration_lease.scope == candidate.scope
+            and orchestration_lease.target_id == candidate.target_id
+            and orchestration_lease.target_type == candidate.target_type
+            and orchestration_lease.worker_subject_id == outbox.worker_subject_id
+            and orchestration_lease.effective_state(requested_at=request.requested_at)
+            is WorkflowOrchestrationLeaseEffectiveState.ACTIVE
+            and not any(candidate.authority.canonical_value().values())
+            and not candidate.grants_publication_authority
+            and not candidate.grants_delivery_authority
+            and not candidate.grants_dispatch_authority
+            and not candidate.grants_execution_authority
+        )
+
+    @classmethod
+    def _publication_mutation_evidence_matches(
+        cls,
+        *,
+        outbox: WorkflowDispatchOutboxEntry | None,
+        plan: WorkflowRunPlan | None,
+        orchestration_lease: WorkflowOrchestrationLease | None,
+        request: WorkflowOutboxPublicationLeaseMutationRequest,
+    ) -> bool:
+        candidate = request.updated_lease
+        acquire_shape = WorkflowOutboxPublicationLeaseAcquireRequest(
+            expected_outbox_entry_digest=request.expected_outbox_entry_digest,
+            expected_orchestration_lease_id=request.expected_orchestration_lease_id,
+            expected_orchestration_lease_digest=request.expected_orchestration_lease_digest,
+            expected_orchestration_fencing_token=request.expected_orchestration_fencing_token,
+            candidate=candidate,
+            requested_at=request.requested_at,
+            idempotency_key="mutation-validation",
+            request_fingerprint="0" * 64,
+            expected_current_lease_digest=request.expected_publication_lease_digest,
+            expected_current_publication_fencing_token=(request.expected_publication_fencing_token),
+        )
+        return cls._publication_evidence_matches(
+            outbox=outbox,
+            plan=plan,
+            orchestration_lease=orchestration_lease,
+            request=acquire_shape,
+        )
+
+    @staticmethod
+    def _publication_acquire_generation_matches(
+        *,
+        current: WorkflowOutboxPublicationLease | None,
+        request: WorkflowOutboxPublicationLeaseAcquireRequest,
+    ) -> bool:
+        candidate = request.candidate
+        if current is None:
+            return bool(
+                request.expected_current_lease_digest is None
+                and request.expected_current_publication_fencing_token is None
+                and candidate.publication_fencing_token == 1
+            )
+        return bool(
+            current.canonical_digest == request.expected_current_lease_digest
+            and current.publication_fencing_token
+            == request.expected_current_publication_fencing_token
+            and current.effective_state(requested_at=request.requested_at)
+            is not WorkflowOutboxPublicationLeaseEffectiveState.ACTIVE
+            and candidate.publication_fencing_token == current.publication_fencing_token + 1
+        )
+
+    @staticmethod
+    def _same_publication_lease_generation(
+        current: WorkflowOutboxPublicationLease,
+        updated: WorkflowOutboxPublicationLease,
+    ) -> bool:
+        immutable_fields = (
+            "publication_lease_id",
+            "outbox_entry_id",
+            "outbox_entry_digest",
+            "dispatch_intent_id",
+            "dispatch_intent_digest",
+            "plan_id",
+            "plan_digest",
+            "run_id",
+            "run_digest",
+            "step_run_id",
+            "step_run_digest",
+            "step_id",
+            "attempt_id",
+            "attempt_digest",
+            "attempt_number",
+            "scope",
+            "target_id",
+            "target_type",
+            "orchestration_lease_id",
+            "orchestration_lease_digest",
+            "orchestration_fencing_token",
+            "publisher_subject_id",
+            "acquired_at",
+            "publication_fencing_token",
+            "authority",
+        )
+        return all(getattr(current, field) == getattr(updated, field) for field in immutable_fields)
 
     async def close(self) -> None:
         return None
