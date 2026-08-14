@@ -14,12 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async
 from test_workflow_event_logical_channel_bindings_postgres import (
     _binding as logical_binding_fixture,
 )
-from test_workflow_transport_profile_snapshots_postgres import (
-    _request as profile_snapshot_request,
-)
-from test_workflow_transport_route_snapshots_postgres import (
-    _request as route_snapshot_request,
-)
+from test_workflow_transport_profile_snapshots import profile_fixture
+from test_workflow_transport_route_snapshots import route_fixture
 
 from atlas.core.persistence.models import (
     WorkflowEventPhysicalTransportRouteBindingClaimModel,
@@ -38,10 +34,20 @@ from atlas.modules.workflows.application.physical_route_bindings import (
 from atlas.modules.workflows.application.transport_compatibility_admissions import (
     WorkflowEventTransportCompatibilityAdmissionService,
 )
+from atlas.modules.workflows.application.transport_profile_snapshots import (
+    WorkflowTransportProfileSnapshotService,
+)
+from atlas.modules.workflows.application.transport_route_snapshots import (
+    WorkflowTransportRouteSnapshotService,
+)
 from atlas.modules.workflows.domain import (
+    EventPhysicalTransportProfileSnapshot,
+    EventPhysicalTransportRouteSnapshot,
+    WorkflowEventLogicalChannelBinding,
     WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventPhysicalTransportRouteBindingAuthority,
     WorkflowEventPhysicalTransportRouteBindingState,
+    WorkflowEventTransportCompatibilityAdmission,
     WorkflowScope,
     canonical_digest,
     code_owned_workflow_event_physical_transport_route_binding_policy,
@@ -109,11 +115,23 @@ def _request() -> WorkflowEventPhysicalTransportRouteBindingRequest:
     )
 
 
-def _integration_request() -> WorkflowEventPhysicalTransportRouteBindingRequest:
+def _integration_sources() -> tuple[
+    WorkflowEventLogicalChannelBinding,
+    WorkflowEventTransportCompatibilityAdmission,
+    EventPhysicalTransportProfileSnapshot,
+    EventPhysicalTransportRouteSnapshot,
+]:
     logical = logical_binding_fixture()
-    profile = profile_snapshot_request().candidate
-    route = route_snapshot_request().candidate
-    assert logical.scope == profile.scope == route.scope
+    profile = WorkflowTransportProfileSnapshotService._build_snapshot(
+        profile=profile_fixture(scope=logical.scope),
+        snapshotter_subject_id="service.workflow-transport-profile-registry",
+        captured_at=datetime(2026, 8, 14, 16, 0, tzinfo=UTC),
+    )
+    route = WorkflowTransportRouteSnapshotService._build_snapshot(
+        route=route_fixture(scope=logical.scope),
+        snapshotter_subject_id="service.workflow-transport-route-registry",
+        captured_at=datetime(2026, 8, 14, 16, 0, tzinfo=UTC),
+    )
 
     compatibility_service = WorkflowEventTransportCompatibilityAdmissionService(
         admission_repository=cast(Any, object()),
@@ -125,6 +143,11 @@ def _integration_request() -> WorkflowEventPhysicalTransportRouteBindingRequest:
         admitter_subject_id="service.workflow-transport-compatibility-admitter",
         admitted_at=datetime(2026, 8, 14, 16, 1, tzinfo=UTC),
     )
+    return logical, admission, profile, route
+
+
+def _integration_request() -> WorkflowEventPhysicalTransportRouteBindingRequest:
+    logical, admission, profile, route = _integration_sources()
     binding_service = WorkflowEventPhysicalTransportRouteBindingService(
         binding_repository=cast(Any, object()),
         audit_sink=cast(Any, object()),
@@ -188,19 +211,7 @@ async def _seed_integration_sources(
     engine: AsyncEngine,
     request: WorkflowEventPhysicalTransportRouteBindingRequest,
 ) -> None:
-    logical = logical_binding_fixture()
-    profile = profile_snapshot_request().candidate
-    route = route_snapshot_request().candidate
-    compatibility_service = WorkflowEventTransportCompatibilityAdmissionService(
-        admission_repository=cast(Any, object()),
-        audit_sink=cast(Any, object()),
-    )
-    admission = compatibility_service._build_admission(
-        binding=logical,
-        snapshot=profile,
-        admitter_subject_id="service.workflow-transport-compatibility-admitter",
-        admitted_at=datetime(2026, 8, 14, 16, 1, tzinfo=UTC),
-    )
+    logical, admission, profile, route = _integration_sources()
     assert admission.compatibility_admission_id == (
         request.expected_transport_compatibility_admission_id
     )
@@ -338,6 +349,22 @@ async def test_unavailable_production_adapter_fails_closed_without_memory_fallba
     with pytest.raises(WorkflowEventPhysicalTransportRouteBindingError) as error:
         await repository.bind_physical_transport_route(_request())
     assert error.value.code == "workflow_physical_transport_route_binding_repository_unavailable"
+
+
+def test_live_postgres_fixture_is_one_exact_valid_scope_chain() -> None:
+    request = _integration_request()
+    logical, admission, profile, route = _integration_sources()
+
+    assert logical.scope == admission.scope == profile.scope == route.scope == request.scope
+    assert PostgreSQLWorkflowPlanRepository._physical_transport_route_binding_evidence_matches(
+        logical_row=PostgreSQLWorkflowPlanRepository._event_logical_channel_binding_model(logical),
+        admission_row=(
+            PostgreSQLWorkflowPlanRepository._transport_compatibility_admission_model(admission)
+        ),
+        profile_row=PostgreSQLWorkflowPlanRepository._transport_profile_snapshot_model(profile),
+        route_row=PostgreSQLWorkflowPlanRepository._transport_route_snapshot_model(route),
+        request=request,
+    )
 
 
 @pytest.mark.asyncio
