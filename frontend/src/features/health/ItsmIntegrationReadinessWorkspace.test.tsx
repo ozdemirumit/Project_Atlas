@@ -230,7 +230,8 @@ describe("ItsmIntegrationReadinessWorkspace", () => {
   it("keeps profile lifecycle changes behind a governed browser session", async () => {
     renderWorkspace(false);
 
-    expect(await screen.findByText(/Signed browser session required for profile lifecycle changes/i)).toBeVisible();
+    expect(await screen.findByText(/Sign in to manage ITSM profiles/i)).toBeVisible();
+    expect(screen.queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
     expect(await screen.findByText("Primary ITSM sandbox")).toBeVisible();
     expect(screen.getByRole("button", { name: "Add profile" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Retire Primary ITSM sandbox" })).toBeDisabled();

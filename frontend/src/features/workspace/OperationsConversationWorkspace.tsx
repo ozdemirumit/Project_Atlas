@@ -533,7 +533,7 @@ export default function OperationsConversationWorkspace({
       {!governedSessionAvailable && (
         <div className="operations-conversation-message access" role="status">
           <LogIn size={17} />
-          <span>A signed browser session is required to create or continue conversations.</span>
+          <span>Sign in with your username and password to create or continue conversations.</span>
           {onRequestEnterpriseLogin && (
             <button type="button" onClick={onRequestEnterpriseLogin}>
               <LogIn size={15} /> Sign in

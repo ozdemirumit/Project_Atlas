@@ -37,6 +37,7 @@ function statusLabel(status: string | undefined): string {
 interface ApplicationSidebarProps {
   activeWorkspace: WorkspaceId;
   authenticationMethod?: string;
+  credentialKind?: "identity_provider" | "browser_session" | "api_token";
   displayName?: string;
   onClose: () => void;
   onNavigate: (workspace: WorkspaceId) => void;
@@ -47,12 +48,22 @@ interface ApplicationSidebarProps {
 export function ApplicationSidebar({
   activeWorkspace,
   authenticationMethod,
+  credentialKind,
   displayName,
   onClose,
   onNavigate,
   open,
   platformState,
 }: ApplicationSidebarProps) {
+  const identityLabel =
+    credentialKind === "browser_session"
+      ? "Signed in"
+      : credentialKind === "api_token"
+        ? "API token"
+        : authenticationMethod
+          ? `${authenticationMethod} identity`
+          : "Sign-in required";
+
   return (
     <>
       <aside className={`sidebar ${open ? "sidebar-open" : ""}`}>
@@ -103,7 +114,7 @@ export function ApplicationSidebar({
             <div className="avatar">{initials(displayName)}</div>
             <div>
               <strong>{displayName ?? "Not authenticated"}</strong>
-              <span>{authenticationMethod ? `${authenticationMethod} identity` : "Sign-in required"}</span>
+              <span>{identityLabel}</span>
             </div>
           </div>
         </div>

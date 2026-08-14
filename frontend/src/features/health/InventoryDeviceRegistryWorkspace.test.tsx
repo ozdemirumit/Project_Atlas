@@ -192,8 +192,9 @@ describe("InventoryDeviceRegistryWorkspace", () => {
     const onRequestEnterpriseLogin = vi.fn();
     renderWorkspace(false, onRequestEnterpriseLogin);
 
-    expect(await screen.findByText(/Signed browser session required for device lifecycle changes/i))
+    expect(await screen.findByText(/Sign in to manage inventory devices/i))
       .toBeVisible();
+    expect(screen.queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
     expect(await screen.findByText("Primary VSP")).toBeVisible();
     expect(screen.getByRole("button", { name: "Add device" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Retire Primary VSP" })).toBeDisabled();

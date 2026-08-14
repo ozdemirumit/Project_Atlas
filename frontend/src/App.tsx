@@ -2143,6 +2143,7 @@ export function OperationalApplication({
       <ApplicationSidebar
         activeWorkspace={activeNavigation}
         authenticationMethod={identity?.authentication.method}
+        credentialKind={identity?.credential_kind}
         displayName={identity?.display_name}
         onClose={() => setSidebarOpen(false)}
         onNavigate={navigateToWorkspace}
@@ -2158,7 +2159,7 @@ export function OperationalApplication({
           onOpenNavigation={() => setSidebarOpen(true)}
           onToggleInspector={() => setInspectorOpen((open) => !open)}
           showInspector={activeNavigation === "Health"}
-          showLogout={Boolean(identity && identity.authentication.method !== "development")}
+          showLogout={identity?.credential_kind === "browser_session"}
         />
 
         <div

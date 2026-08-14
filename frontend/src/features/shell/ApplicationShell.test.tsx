@@ -10,6 +10,7 @@ describe("ApplicationShell", () => {
       <ApplicationSidebar
         activeWorkspace="Workspace"
         authenticationMethod="development"
+        credentialKind="browser_session"
         displayName="Atlas Operator"
         onClose={vi.fn()}
         onNavigate={onNavigate}
@@ -25,6 +26,8 @@ describe("ApplicationShell", () => {
     expect(screen.getByRole("navigation").querySelectorAll("button")).toHaveLength(3);
     expect(screen.queryByRole("button", { name: "Infrastructure" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Governance" })).not.toBeInTheDocument();
+    expect(screen.getByText("Signed in")).toBeVisible();
+    expect(screen.queryByText("development identity")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Health" }));
     expect(onNavigate).toHaveBeenCalledWith("Health");

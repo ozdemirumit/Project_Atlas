@@ -79,6 +79,7 @@ export function WorkspaceLanding({
       <ApplicationSidebar
         activeWorkspace="Workspace"
         authenticationMethod={identity.authentication.method}
+        credentialKind={identity.credential_kind}
         displayName={identity.display_name}
         onClose={() => setSidebarOpen(false)}
         onNavigate={(workspace) => {
@@ -97,7 +98,7 @@ export function WorkspaceLanding({
           onOpenNavigation={() => setSidebarOpen(true)}
           onToggleInspector={() => undefined}
           showInspector={false}
-          showLogout={identity.authentication.method !== "development"}
+          showLogout={identity.credential_kind === "browser_session"}
         />
 
         <div className="workspace-grid">
