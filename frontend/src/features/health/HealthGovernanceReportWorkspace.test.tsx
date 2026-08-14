@@ -273,6 +273,8 @@ describe("HealthGovernanceReportWorkspace", () => {
     expect(screen.getByText("Immutable source lineage")).toBeVisible();
     expect(screen.getByText("ITSM HANDOFF DRAFT")).toBeVisible();
     expect(screen.getByText("Enterprise reviewer required")).toBeVisible();
+    expect(screen.getByText(/A separate signed-in human with the ITSM reviewer role/)).toBeVisible();
+    expect(screen.queryByText(/MFA|authorized browser session|second login/i)).toBeNull();
     expect(screen.getByText("Not authorized")).toBeVisible();
     expect(screen.getAllByText("No execution authority")).toHaveLength(2);
     expect(screen.getByText("No external mutation authority")).toBeVisible();

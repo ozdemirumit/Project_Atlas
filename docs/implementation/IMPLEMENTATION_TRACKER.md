@@ -4,14 +4,76 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-190 |
-| Title | Transactional workflow dispatch outbox admission without publication authority |
-| Status | Implementation, full local validation and live validation complete; delivery gates in progress |
-| Branch | `agent/workflow-outbox-admission` |
+| Task ID | ATLAS-IMP-191 |
+| Title | Fenced workflow outbox publication lease without publication authority |
+| Status | Implementation and validation complete; delivery in progress |
+| Branch | `agent/workflow-outbox-publication-lease` |
 | Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ADR-134, ADR-135, ADR-136, ADR-137, ADR-138, ADR-139, ADR-140 |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ADR-136, ADR-137, ADR-138, ADR-139, ADR-140, ADR-141 |
 | Last Updated | 2026-08-14 |
-| Next Action | Commit the exact head, open the pull request, pass CI, merge and verify `main` |
+| Next Action | Commit, open the pull request, pass CI, merge and verify `main` |
+
+### ATLAS-IMP-191 Scope Rationale
+
+- IMP-190 creates durable provider-neutral publication input but intentionally provides no
+  ownership coordination for a future publisher. The next smallest durable boundary is an
+  independent bounded lease for one exact pending outbox entry.
+- The publication lease revalidates the exact current source orchestration lease and uses its own
+  monotonically increasing fencing token. It remains separate from orchestration ownership and
+  grants no publication, delivery, dispatch or execution authority.
+- Broker selection, transport credentials, message serialization, publication attempts, delivery
+  receipts, worker dispatch, running states, results, retries, timers, signals, connector/model
+  calls, approvals, ITSM, runbooks and infrastructure actions remain deferred.
+
+### ATLAS-IMP-191 Acceptance Criteria
+
+- A dedicated publisher workload identity can idempotently acquire, heartbeat and release one
+  bounded lease for an exact pending outbox entry; contention, stale fences, expired source leases,
+  changed lineage and competing requests fail closed.
+- Expired or released publication leases can be taken over with a higher publication fencing token
+  without changing workflow, intent or outbox state and without granting any operational authority.
+- PostgreSQL locks and revalidates the planned plan, pending outbox entry and current exact source
+  orchestration lease for every mutation. Production never falls back to memory and no
+  broker-specific field exists.
+- Human UI exposes authoritative read-only publication-lease evidence with no lease mutation,
+  publish, deliver, dispatch or execution control, no credential material, no second-login or MFA
+  prompt and no implication that a message or workload ran.
+
+### ATLAS-IMP-191 Validation Evidence
+
+- Domain and application services provide bounded idempotent acquire, heartbeat and release for one
+  exact pending outbox entry under a dedicated publisher workload identity. Active contention,
+  stale fences, expired source leases, changed lineage and competing requests fail closed; takeover
+  after expiry or release increments an independent publication fencing token.
+- PostgreSQL locks and revalidates the planned plan, exact pending outbox entry and current exact
+  source orchestration lease for every mutation. Migration `20260814_0114` creates the current lease
+  and immutable acquisition claims without a replaceable source-lease foreign key or broker-specific
+  fields. Alembic reports one head at `20260814_0114`.
+- The browser API and web client validate the complete plan, run, step-run, attempt, intent, outbox,
+  source-lease and publication-lease chain. Human browser sessions remain read-only and publisher
+  workload mutations grant no publication, delivery, dispatch or execution authority.
+- Ruff format/lint passed across 1,293 files and strict mypy passed across 1,024 source files. The
+  full backend suite passed 1,700 tests with three expected Windows symlink skips; four dedicated
+  PostgreSQL tests and 29 focused backend/API tests also passed.
+- The full frontend suite passed 339 tests across 95 files; the final focused workflow suite passed
+  50 tests, and ESLint, TypeScript and the production build passed with only the pre-existing
+  chunk-size advisory.
+- Live validation at `http://127.0.0.1:5253/#/workspace/workflows` used plan
+  `workflow-plan.5a56208a85aa250a786b6fb5`, publication lease
+  `workflow-outbox-publication-lease.67035eb6205ecd0d1b8eefa0` and one `atlas-demo` / `local-demo`
+  username/password login. The exact active lease, publisher, publication/source fences, lineage and
+  all-false authority evidence rendered without human mutation controls. Browser measurements found
+  zero additional-login/MFA text, zero operational action buttons and no horizontal overflow.
+
+### ATLAS-IMP-190 Delivery Evidence
+
+- Source commit `96d6b839d63e0e4f58bd29afc69ce080ca34a7b4` passed exact-head PR CI run
+  `31762150710`; frontend completed in 5m09s and backend in 9m38s.
+- PR [#202](https://github.com/ozdemirumit/Project_Atlas/pull/202) was squash-merged as
+  `166654eb81d3963c388e776d6c2ac393c2594720`.
+- The exact merged commit independently passed `main` CI run `31762686932`; frontend completed in
+  5m03s and backend in 7m05s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-191 branched.
 
 ### ATLAS-IMP-190 Scope Rationale
 

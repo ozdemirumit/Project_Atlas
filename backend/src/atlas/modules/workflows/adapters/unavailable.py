@@ -27,12 +27,21 @@ from atlas.modules.workflows.application import (
     WorkflowRunMaterializationRequest,
     WorkflowRunMaterializationResult,
 )
+from atlas.modules.workflows.application.publication_lease_ports import (
+    WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord,
+    WorkflowOutboxPublicationLeaseAcquireRequest,
+    WorkflowOutboxPublicationLeaseAcquireResult,
+    WorkflowOutboxPublicationLeaseError,
+    WorkflowOutboxPublicationLeaseMutationRequest,
+    WorkflowOutboxPublicationLeaseMutationResult,
+)
 from atlas.modules.workflows.domain import (
     WorkflowDispatchIntent,
     WorkflowDispatchOutboxEntry,
     WorkflowExecutionAttempt,
     WorkflowExecutionRun,
     WorkflowOrchestrationLease,
+    WorkflowOutboxPublicationLease,
     WorkflowRunPlan,
     WorkflowScope,
 )
@@ -143,6 +152,40 @@ class UnavailableWorkflowPlanRepository:
     ) -> tuple[WorkflowDispatchOutboxEntry, ...]:
         self._raise_dispatch_intent()
 
+    async def get_outbox_entry_by_id(
+        self, *, outbox_entry_id: str
+    ) -> WorkflowDispatchOutboxEntry | None:
+        self._raise_publication_lease()
+
+    async def get_publication_lease_by_outbox_entry_id(
+        self, *, outbox_entry_id: str
+    ) -> WorkflowOutboxPublicationLease | None:
+        self._raise_publication_lease()
+
+    async def get_publication_lease_acquire_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        publisher_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord | None:
+        self._raise_publication_lease()
+
+    async def acquire_publication_lease(
+        self, request: WorkflowOutboxPublicationLeaseAcquireRequest
+    ) -> WorkflowOutboxPublicationLeaseAcquireResult:
+        self._raise_publication_lease()
+
+    async def heartbeat_publication_lease(
+        self, request: WorkflowOutboxPublicationLeaseMutationRequest
+    ) -> WorkflowOutboxPublicationLeaseMutationResult:
+        self._raise_publication_lease()
+
+    async def release_publication_lease(
+        self, request: WorkflowOutboxPublicationLeaseMutationRequest
+    ) -> WorkflowOutboxPublicationLeaseMutationResult:
+        self._raise_publication_lease()
+
     async def get_dispatch_intent_staging_request(
         self,
         *,
@@ -203,4 +246,11 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowDispatchIntentStagingError(
             "workflow_dispatch_intent_repository_unavailable",
             "Durable workflow dispatch intent staging storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_publication_lease() -> NoReturn:
+        raise WorkflowOutboxPublicationLeaseError(
+            "workflow_outbox_publication_lease_repository_unavailable",
+            "Durable workflow outbox publication lease storage is not configured.",
         )

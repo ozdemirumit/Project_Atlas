@@ -14,16 +14,20 @@ from atlas.api.security import (
     authorize_workflow_plan_create,
     authorize_workflow_plan_read,
     browser_session_subject,
+    workflow_outbox_publisher_subject,
     workflow_worker_subject,
 )
 from atlas.api.workflow_schemas import (
     AcquireWorkflowOrchestrationLeaseInput,
+    AcquireWorkflowOutboxPublicationLeaseInput,
     CancelWorkflowPlanInput,
     CreateWorkflowPlanInput,
     HeartbeatWorkflowOrchestrationLeaseInput,
+    HeartbeatWorkflowOutboxPublicationLeaseInput,
     MaterializeWorkflowAttemptInput,
     MaterializeWorkflowRunInput,
     ReleaseWorkflowOrchestrationLeaseInput,
+    ReleaseWorkflowOutboxPublicationLeaseInput,
     StageWorkflowDispatchIntentInput,
     WorkflowAttemptInventoryData,
     WorkflowAttemptInventoryResponse,
@@ -47,6 +51,10 @@ from atlas.api.workflow_schemas import (
     WorkflowOrchestrationLeaseResponse,
     WorkflowOrchestrationLeaseStatusData,
     WorkflowOrchestrationLeaseStatusResponse,
+    WorkflowOutboxPublicationLeaseData,
+    WorkflowOutboxPublicationLeaseInventoryData,
+    WorkflowOutboxPublicationLeaseInventoryResponse,
+    WorkflowOutboxPublicationLeaseResponse,
     WorkflowPlanInventoryData,
     WorkflowPlanInventoryResponse,
     WorkflowRunPlanData,
@@ -60,6 +68,7 @@ from atlas.modules.conversations.application.ports import (
 from atlas.modules.conversations.domain.models import ConversationScope
 from atlas.modules.identity.domain.models import AuthenticatedSubject
 from atlas.modules.workflows.application import (
+    WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE,
     WORKFLOW_WORKER_AUDIENCE,
     WorkflowAccessContext,
     WorkflowAttemptMaterializationError,
@@ -71,6 +80,10 @@ from atlas.modules.workflows.application import (
     WorkflowOrchestrationLeaseError,
     WorkflowOrchestrationLeaseRepository,
     WorkflowOrchestrationLeaseService,
+    WorkflowOutboxPublicationLeaseError,
+    WorkflowOutboxPublicationLeaseRepository,
+    WorkflowOutboxPublicationLeaseService,
+    WorkflowOutboxPublisherContext,
     WorkflowPlanningError,
     WorkflowPlanningService,
     WorkflowRunMaterializationError,
@@ -89,6 +102,8 @@ from atlas.modules.workflows.domain import (
     WorkflowExecutionRunState,
     WorkflowExecutionStepRunState,
     WorkflowOrchestrationLease,
+    WorkflowOrchestrationLeaseEffectiveState,
+    WorkflowOutboxPublicationLease,
     WorkflowRunPlan,
     WorkflowScope,
 )
@@ -325,6 +340,44 @@ def _raise_dispatch_intent(error: WorkflowDispatchIntentStagingError) -> NoRetur
     ) from error
 
 
+def _raise_publication_lease(error: WorkflowOutboxPublicationLeaseError) -> NoReturn:
+    if error.code.endswith("_invalid") or error.code.endswith("_required"):
+        status = 422
+    elif "repository" in error.code:
+        status = 503
+    elif error.code.endswith("_not_found"):
+        status = 404
+    else:
+        status = 409
+    raise AtlasError(
+        status=status,
+        code=(
+            "workflow_outbox_publication_lease_request_invalid"
+            if status == 422
+            else "workflow_outbox_publication_lease_service_unavailable"
+            if status == 503
+            else "workflow_resource_unavailable"
+            if status == 404
+            else "workflow_outbox_publication_lease_conflict"
+        ),
+        title=(
+            "Workflow outbox publication lease request invalid"
+            if status == 422
+            else "Workflow outbox publication lease service unavailable"
+            if status == 503
+            else "Workflow resource unavailable"
+            if status == 404
+            else "Workflow outbox publication lease conflict"
+        ),
+        detail=(
+            "The publication lease request did not satisfy the bounded contract."
+            if status == 422
+            else "Workflow outbox publication lease evidence is unavailable."
+        ),
+        retryable=status == 503,
+    ) from error
+
+
 async def _worker_context(
     request: Request,
     subject: AuthenticatedSubject,
@@ -383,6 +436,64 @@ async def _worker_context(
     )
 
 
+async def _publisher_context(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    target_id: str,
+) -> WorkflowOutboxPublisherContext:
+    settings = request.app.state.settings
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{settings.environment}",
+        site_id="site.local",
+    )
+    source: ConversationTargetAccessSource = request.app.state.conversation_target_access_source
+    try:
+        targets = await source.authorized_storage_targets(
+            ConversationTargetAccessRequest(
+                subject_id=subject.subject_id,
+                principal_ids=frozenset((*subject.role_ids, *subject.group_ids)),
+                scope=ConversationScope(
+                    organization_id=scope.organization_id,
+                    environment_id=scope.environment_id,
+                    site_id=scope.site_id,
+                ),
+            )
+        )
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_target_authority_unavailable",
+            title="Workflow target authority unavailable",
+            detail="Authorized workflow targets could not be resolved safely.",
+            retryable=True,
+        ) from error
+    target_ids = tuple(target.target_id for target in targets)
+    if (
+        len(target_ids) > 100
+        or len(target_ids) != len(set(target_ids))
+        or target_id not in target_ids
+    ):
+        raise AtlasError(
+            status=404,
+            code="workflow_resource_unavailable",
+            title="Workflow resource unavailable",
+            detail="The requested workflow resource is unavailable.",
+        )
+    return WorkflowOutboxPublisherContext(
+        subject_id=subject.subject_id,
+        actor_type=subject.kind.value,
+        authentication_method=subject.authentication_method.value,
+        credential_audience=WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE,
+        scope=scope,
+        authorized_target_ids=frozenset(target_ids),
+        correlation_id=str(request.state.correlation_id),
+        decision_id="decision.workflow-outbox-publisher-authenticated",
+        requested_at=datetime.now(UTC),
+    )
+
+
 def _lease_response(
     lease: WorkflowOrchestrationLease,
     request: Request,
@@ -392,6 +503,21 @@ def _lease_response(
     _no_store(response)
     return WorkflowOrchestrationLeaseResponse(
         data=WorkflowOrchestrationLeaseData.from_domain(lease, requested_at=requested_at),
+        meta=_meta(request),
+    )
+
+
+def _publication_lease_response(
+    lease: WorkflowOutboxPublicationLease,
+    request: Request,
+    response: Response,
+) -> WorkflowOutboxPublicationLeaseResponse:
+    _no_store(response)
+    return WorkflowOutboxPublicationLeaseResponse(
+        data=WorkflowOutboxPublicationLeaseData.from_domain(
+            lease,
+            requested_at=datetime.now(UTC),
+        ),
         meta=_meta(request),
     )
 
@@ -542,6 +668,63 @@ def _outbox_entry_matches_intent(
         and not entry.grants_delivery_authority
         and not entry.grants_dispatch_authority
         and not entry.grants_execution_authority
+    )
+
+
+def _outbox_entry_matches_route(
+    entry: WorkflowDispatchOutboxEntry,
+    *,
+    plan_id: str,
+    run_id: str,
+    attempt_id: str,
+    dispatch_intent_id: str,
+    outbox_entry_id: str,
+) -> bool:
+    return bool(
+        entry.plan_id == plan_id
+        and entry.run_id == run_id
+        and entry.attempt_id == attempt_id
+        and entry.dispatch_intent_id == dispatch_intent_id
+        and entry.outbox_entry_id == outbox_entry_id
+        and entry.state is WorkflowDispatchOutboxState.PENDING_PUBLICATION
+        and not any(entry.authority.canonical_value().values())
+        and not entry.grants_publication_authority
+        and not entry.grants_delivery_authority
+        and not entry.grants_dispatch_authority
+        and not entry.grants_execution_authority
+    )
+
+
+def _publication_lease_matches_outbox(
+    lease: WorkflowOutboxPublicationLease,
+    entry: WorkflowDispatchOutboxEntry,
+) -> bool:
+    return bool(
+        lease.outbox_entry_id == entry.outbox_entry_id
+        and lease.outbox_entry_digest == entry.canonical_digest
+        and lease.dispatch_intent_id == entry.dispatch_intent_id
+        and lease.dispatch_intent_digest == entry.dispatch_intent_digest
+        and lease.plan_id == entry.plan_id
+        and lease.plan_digest == entry.plan_digest
+        and lease.run_id == entry.run_id
+        and lease.run_digest == entry.run_digest
+        and lease.step_run_id == entry.step_run_id
+        and lease.step_run_digest == entry.step_run_digest
+        and lease.step_id == entry.step_id
+        and lease.attempt_id == entry.attempt_id
+        and lease.attempt_digest == entry.attempt_digest
+        and lease.attempt_number == entry.attempt_number
+        and lease.scope == entry.scope
+        and lease.target_id == entry.target_id
+        and lease.target_type == entry.target_type
+        and lease.orchestration_lease_id == entry.lease_id
+        and lease.orchestration_lease_digest == entry.lease_digest
+        and lease.orchestration_fencing_token == entry.fencing_token
+        and not any(lease.authority.canonical_value().values())
+        and not lease.grants_publication_authority
+        and not lease.grants_delivery_authority
+        and not lease.grants_dispatch_authority
+        and not lease.grants_execution_authority
     )
 
 
@@ -1127,6 +1310,301 @@ async def list_workflow_dispatch_outbox_entries(
         ),
         meta=_meta(request),
     )
+
+
+@router.get(
+    (
+        "/plans/{plan_id}/runs/{run_id}/attempts/{attempt_id}/dispatch-intents/"
+        "{dispatch_intent_id}/outbox/{outbox_entry_id}/publication-lease"
+    ),
+    response_model=WorkflowOutboxPublicationLeaseInventoryResponse,
+)
+async def get_workflow_outbox_publication_lease(
+    plan_id: Annotated[str, SAFE_ID],
+    run_id: Annotated[str, SAFE_ID],
+    attempt_id: Annotated[str, SAFE_ID],
+    dispatch_intent_id: Annotated[str, SAFE_ID],
+    outbox_entry_id: Annotated[str, SAFE_ID],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[AuthorizationDecision, Depends(authorize_workflow_plan_read)],
+) -> WorkflowOutboxPublicationLeaseInventoryResponse:
+    planning_service: WorkflowPlanningService = request.app.state.workflow_planning_service
+    try:
+        plan = await planning_service.get_plan(
+            plan_id=plan_id,
+            context=await _context(request, subject, decision),
+        )
+    except WorkflowPlanningError as error:
+        _raise(error)
+    repository: WorkflowOutboxPublicationLeaseRepository = (
+        request.app.state.workflow_outbox_publication_lease_repository
+    )
+    try:
+        entry = await repository.get_outbox_entry_by_id(outbox_entry_id=outbox_entry_id)
+        lease = await repository.get_publication_lease_by_outbox_entry_id(
+            outbox_entry_id=outbox_entry_id
+        )
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_outbox_publication_lease_service_unavailable",
+            title="Workflow outbox publication lease service unavailable",
+            detail="Workflow outbox publication lease evidence is unavailable.",
+            retryable=True,
+        ) from error
+    if (
+        entry is None
+        or not _outbox_entry_matches_route(
+            entry,
+            plan_id=plan_id,
+            run_id=run_id,
+            attempt_id=attempt_id,
+            dispatch_intent_id=dispatch_intent_id,
+            outbox_entry_id=outbox_entry_id,
+        )
+        or entry.plan_digest != plan.canonical_digest
+        or entry.scope != plan.scope
+        or entry.target_id != plan.target_id
+        or entry.target_type != plan.target_type
+    ):
+        raise AtlasError(
+            status=404,
+            code="workflow_resource_unavailable",
+            title="Workflow resource unavailable",
+            detail="The requested workflow resource is unavailable.",
+        )
+    if lease is not None and not _publication_lease_matches_outbox(lease, entry):
+        raise AtlasError(
+            status=503,
+            code="workflow_outbox_publication_lease_service_unavailable",
+            title="Workflow outbox publication lease service unavailable",
+            detail="Workflow outbox publication lease evidence is unavailable.",
+            retryable=True,
+        )
+    server_time = datetime.now(UTC)
+    if lease is not None and lease.effective_state(requested_at=server_time).value == "active":
+        orchestration_repository: WorkflowOrchestrationLeaseRepository = (
+            request.app.state.workflow_orchestration_lease_repository
+        )
+        try:
+            orchestration_lease = await orchestration_repository.get_lease_by_plan_id(
+                plan_id=plan.plan_id
+            )
+        except Exception as error:
+            raise AtlasError(
+                status=503,
+                code="workflow_outbox_publication_lease_service_unavailable",
+                title="Workflow outbox publication lease service unavailable",
+                detail="Workflow outbox publication lease evidence is unavailable.",
+                retryable=True,
+            ) from error
+        if (
+            orchestration_lease is None
+            or orchestration_lease.lease_id != lease.orchestration_lease_id
+            or orchestration_lease.canonical_digest != lease.orchestration_lease_digest
+            or orchestration_lease.fencing_token != lease.orchestration_fencing_token
+            or orchestration_lease.effective_state(requested_at=server_time)
+            is not WorkflowOrchestrationLeaseEffectiveState.ACTIVE
+        ):
+            raise AtlasError(
+                status=503,
+                code="workflow_outbox_publication_lease_service_unavailable",
+                title="Workflow outbox publication lease service unavailable",
+                detail="Workflow outbox publication lease evidence is unavailable.",
+                retryable=True,
+            )
+    _no_store(response)
+    return WorkflowOutboxPublicationLeaseInventoryResponse(
+        data=WorkflowOutboxPublicationLeaseInventoryData(
+            outbox_entry_id=entry.outbox_entry_id,
+            publication_leases=(
+                []
+                if lease is None
+                else [
+                    WorkflowOutboxPublicationLeaseData.from_domain(
+                        lease,
+                        requested_at=server_time,
+                    )
+                ]
+            ),
+            server_time=server_time,
+            durable=repository.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+async def _require_bound_publication_outbox(
+    *,
+    repository: WorkflowOutboxPublicationLeaseRepository,
+    plan_id: str,
+    run_id: str,
+    attempt_id: str,
+    dispatch_intent_id: str,
+    outbox_entry_id: str,
+) -> WorkflowDispatchOutboxEntry:
+    try:
+        entry = await repository.get_outbox_entry_by_id(outbox_entry_id=outbox_entry_id)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_outbox_publication_lease_service_unavailable",
+            title="Workflow outbox publication lease service unavailable",
+            detail="Workflow outbox publication lease evidence is unavailable.",
+            retryable=True,
+        ) from error
+    if entry is None or not _outbox_entry_matches_route(
+        entry,
+        plan_id=plan_id,
+        run_id=run_id,
+        attempt_id=attempt_id,
+        dispatch_intent_id=dispatch_intent_id,
+        outbox_entry_id=outbox_entry_id,
+    ):
+        raise AtlasError(
+            status=404,
+            code="workflow_resource_unavailable",
+            title="Workflow resource unavailable",
+            detail="The requested workflow resource is unavailable.",
+        )
+    return entry
+
+
+@router.post(
+    (
+        "/plans/{plan_id}/runs/{run_id}/attempts/{attempt_id}/dispatch-intents/"
+        "{dispatch_intent_id}/outbox/{outbox_entry_id}/publication-lease/acquisition"
+    ),
+    response_model=WorkflowOutboxPublicationLeaseResponse,
+    status_code=201,
+)
+async def acquire_workflow_outbox_publication_lease(
+    plan_id: Annotated[str, SAFE_ID],
+    run_id: Annotated[str, SAFE_ID],
+    attempt_id: Annotated[str, SAFE_ID],
+    dispatch_intent_id: Annotated[str, SAFE_ID],
+    outbox_entry_id: Annotated[str, SAFE_ID],
+    payload: AcquireWorkflowOutboxPublicationLeaseInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(workflow_outbox_publisher_subject)],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> WorkflowOutboxPublicationLeaseResponse:
+    service: WorkflowOutboxPublicationLeaseService = (
+        request.app.state.workflow_outbox_publication_lease_service
+    )
+    await _require_bound_publication_outbox(
+        repository=service.repository,
+        plan_id=plan_id,
+        run_id=run_id,
+        attempt_id=attempt_id,
+        dispatch_intent_id=dispatch_intent_id,
+        outbox_entry_id=outbox_entry_id,
+    )
+    try:
+        lease = await service.acquire(
+            outbox_entry_id=outbox_entry_id,
+            outbox_entry_digest=payload.outbox_entry_digest,
+            lease_seconds=payload.lease_duration_seconds,
+            idempotency_key=idempotency_key,
+            context=await _publisher_context(request, subject, target_id=payload.target_id),
+        )
+    except WorkflowOutboxPublicationLeaseError as error:
+        _raise_publication_lease(error)
+    return _publication_lease_response(lease, request, response)
+
+
+@router.post(
+    (
+        "/plans/{plan_id}/runs/{run_id}/attempts/{attempt_id}/dispatch-intents/"
+        "{dispatch_intent_id}/outbox/{outbox_entry_id}/publication-lease/"
+        "{publication_lease_id}/heartbeat"
+    ),
+    response_model=WorkflowOutboxPublicationLeaseResponse,
+)
+async def heartbeat_workflow_outbox_publication_lease(
+    plan_id: Annotated[str, SAFE_ID],
+    run_id: Annotated[str, SAFE_ID],
+    attempt_id: Annotated[str, SAFE_ID],
+    dispatch_intent_id: Annotated[str, SAFE_ID],
+    outbox_entry_id: Annotated[str, SAFE_ID],
+    publication_lease_id: Annotated[str, SAFE_ID],
+    payload: HeartbeatWorkflowOutboxPublicationLeaseInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(workflow_outbox_publisher_subject)],
+) -> WorkflowOutboxPublicationLeaseResponse:
+    service: WorkflowOutboxPublicationLeaseService = (
+        request.app.state.workflow_outbox_publication_lease_service
+    )
+    await _require_bound_publication_outbox(
+        repository=service.repository,
+        plan_id=plan_id,
+        run_id=run_id,
+        attempt_id=attempt_id,
+        dispatch_intent_id=dispatch_intent_id,
+        outbox_entry_id=outbox_entry_id,
+    )
+    try:
+        lease = await service.heartbeat(
+            outbox_entry_id=outbox_entry_id,
+            outbox_entry_digest=payload.outbox_entry_digest,
+            publication_lease_id=publication_lease_id,
+            publication_lease_digest=payload.publication_lease_digest,
+            publication_fencing_token=payload.publication_fencing_token,
+            lease_seconds=payload.lease_duration_seconds,
+            context=await _publisher_context(request, subject, target_id=payload.target_id),
+        )
+    except WorkflowOutboxPublicationLeaseError as error:
+        _raise_publication_lease(error)
+    return _publication_lease_response(lease, request, response)
+
+
+@router.post(
+    (
+        "/plans/{plan_id}/runs/{run_id}/attempts/{attempt_id}/dispatch-intents/"
+        "{dispatch_intent_id}/outbox/{outbox_entry_id}/publication-lease/"
+        "{publication_lease_id}/release"
+    ),
+    response_model=WorkflowOutboxPublicationLeaseResponse,
+)
+async def release_workflow_outbox_publication_lease(
+    plan_id: Annotated[str, SAFE_ID],
+    run_id: Annotated[str, SAFE_ID],
+    attempt_id: Annotated[str, SAFE_ID],
+    dispatch_intent_id: Annotated[str, SAFE_ID],
+    outbox_entry_id: Annotated[str, SAFE_ID],
+    publication_lease_id: Annotated[str, SAFE_ID],
+    payload: ReleaseWorkflowOutboxPublicationLeaseInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(workflow_outbox_publisher_subject)],
+) -> WorkflowOutboxPublicationLeaseResponse:
+    service: WorkflowOutboxPublicationLeaseService = (
+        request.app.state.workflow_outbox_publication_lease_service
+    )
+    await _require_bound_publication_outbox(
+        repository=service.repository,
+        plan_id=plan_id,
+        run_id=run_id,
+        attempt_id=attempt_id,
+        dispatch_intent_id=dispatch_intent_id,
+        outbox_entry_id=outbox_entry_id,
+    )
+    try:
+        lease = await service.release(
+            outbox_entry_id=outbox_entry_id,
+            outbox_entry_digest=payload.outbox_entry_digest,
+            publication_lease_id=publication_lease_id,
+            publication_lease_digest=payload.publication_lease_digest,
+            publication_fencing_token=payload.publication_fencing_token,
+            context=await _publisher_context(request, subject, target_id=payload.target_id),
+        )
+    except WorkflowOutboxPublicationLeaseError as error:
+        _raise_publication_lease(error)
+    return _publication_lease_response(lease, request, response)
 
 
 @router.post(

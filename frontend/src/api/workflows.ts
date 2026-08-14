@@ -284,6 +284,50 @@ export type WorkflowDispatchOutboxInventory = {
   durable: boolean;
 };
 
+export type WorkflowDispatchOutboxPublicationLease = {
+  publication_lease_id: string;
+  outbox_entry_id: string;
+  outbox_entry_digest: string;
+  dispatch_intent_id: string;
+  dispatch_intent_digest: string;
+  plan_id: string;
+  plan_digest: string;
+  run_id: string;
+  run_digest: string;
+  step_run_id: string;
+  step_run_digest: string;
+  step_id: string;
+  attempt_id: string;
+  attempt_digest: string;
+  attempt_number: 1;
+  scope: WorkflowRunPlan["scope"];
+  target_id: string;
+  target_type: "storage";
+  orchestration_lease_id: string;
+  orchestration_lease_digest: string;
+  orchestration_fencing_token: number;
+  publisher_subject_id: string;
+  acquired_at: string;
+  last_heartbeat_at: string;
+  expires_at: string;
+  publication_fencing_token: number;
+  state: "active" | "released";
+  authority: WorkflowPlanAuthority;
+  grants_publication_authority: false;
+  grants_delivery_authority: false;
+  grants_dispatch_authority: false;
+  grants_execution_authority: false;
+  canonical_digest: string;
+  effective_state: "active" | "expired" | "released";
+};
+
+export type WorkflowDispatchOutboxPublicationLeaseInventory = {
+  outbox_entry_id: string;
+  publication_leases: WorkflowDispatchOutboxPublicationLease[];
+  server_time: string;
+  durable: boolean;
+};
+
 const digest = /^[a-f0-9]{64}$/;
 const capabilityClasses = new Set<WorkflowCapabilityClass>(["C0", "C1", "C2"]);
 const stepKinds = new Set<WorkflowStepKind>([
@@ -428,6 +472,48 @@ const dispatchOutboxEntryFields = [
 const dispatchOutboxInventoryFields = [
   "dispatch_intent_id",
   "outbox_entries",
+  "server_time",
+  "durable",
+] as const;
+const dispatchOutboxPublicationLeaseFields = [
+  "publication_lease_id",
+  "outbox_entry_id",
+  "outbox_entry_digest",
+  "dispatch_intent_id",
+  "dispatch_intent_digest",
+  "plan_id",
+  "plan_digest",
+  "run_id",
+  "run_digest",
+  "step_run_id",
+  "step_run_digest",
+  "step_id",
+  "attempt_id",
+  "attempt_digest",
+  "attempt_number",
+  "scope",
+  "target_id",
+  "target_type",
+  "orchestration_lease_id",
+  "orchestration_lease_digest",
+  "orchestration_fencing_token",
+  "publisher_subject_id",
+  "acquired_at",
+  "last_heartbeat_at",
+  "expires_at",
+  "publication_fencing_token",
+  "state",
+  "authority",
+  "grants_publication_authority",
+  "grants_delivery_authority",
+  "grants_dispatch_authority",
+  "grants_execution_authority",
+  "canonical_digest",
+  "effective_state",
+] as const;
+const dispatchOutboxPublicationLeaseInventoryFields = [
+  "outbox_entry_id",
+  "publication_leases",
   "server_time",
   "durable",
 ] as const;
@@ -883,6 +969,76 @@ function areDispatchOutboxEntriesBoundToIntent(
   });
 }
 
+function isDispatchOutboxPublicationLeaseBoundToEntry(
+  value: unknown,
+  entry: WorkflowDispatchOutboxEntry,
+  serverTime: string,
+): value is WorkflowDispatchOutboxPublicationLease {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, dispatchOutboxPublicationLeaseFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value)
+  ) {
+    return false;
+  }
+  if (
+    !isTimestamp(value.acquired_at) ||
+    !isTimestamp(value.last_heartbeat_at) ||
+    !isTimestamp(value.expires_at)
+  ) {
+    return false;
+  }
+  const acquiredAt = Date.parse(value.acquired_at);
+  const lastHeartbeatAt = Date.parse(value.last_heartbeat_at);
+  const expiresAt = Date.parse(value.expires_at);
+  const expectedEffectiveState =
+    value.state === "released"
+      ? "released"
+      : Date.parse(serverTime) >= expiresAt
+        ? "expired"
+        : "active";
+  return (
+    isIdentifier(value.publication_lease_id) &&
+    value.outbox_entry_id === entry.outbox_entry_id &&
+    value.outbox_entry_digest === entry.canonical_digest &&
+    value.dispatch_intent_id === entry.dispatch_intent_id &&
+    value.dispatch_intent_digest === entry.dispatch_intent_digest &&
+    value.plan_id === entry.plan_id &&
+    value.plan_digest === entry.plan_digest &&
+    value.run_id === entry.run_id &&
+    value.run_digest === entry.run_digest &&
+    value.step_run_id === entry.step_run_id &&
+    value.step_run_digest === entry.step_run_digest &&
+    value.step_id === entry.step_id &&
+    value.attempt_id === entry.attempt_id &&
+    value.attempt_digest === entry.attempt_digest &&
+    value.attempt_number === entry.attempt_number &&
+    value.scope.organization_id === entry.scope.organization_id &&
+    value.scope.environment_id === entry.scope.environment_id &&
+    value.scope.site_id === entry.scope.site_id &&
+    value.target_id === entry.target_id &&
+    value.target_type === entry.target_type &&
+    value.orchestration_lease_id === entry.lease_id &&
+    value.orchestration_lease_digest === entry.lease_digest &&
+    value.orchestration_fencing_token === entry.fencing_token &&
+    isIdentifier(value.publisher_subject_id) &&
+    acquiredAt >= Date.parse(entry.admitted_at) &&
+    acquiredAt <= lastHeartbeatAt &&
+    lastHeartbeatAt < expiresAt &&
+    Number.isInteger(value.publication_fencing_token) &&
+    Number(value.publication_fencing_token) >= 1 &&
+    (value.state === "active" || value.state === "released") &&
+    hasSafeAuthority(value.authority) &&
+    value.grants_publication_authority === false &&
+    value.grants_delivery_authority === false &&
+    value.grants_dispatch_authority === false &&
+    value.grants_execution_authority === false &&
+    isDigest(value.canonical_digest) &&
+    value.effective_state === expectedEffectiveState
+  );
+}
+
 function isRunPlan(value: unknown): value is WorkflowRunPlan {
   if (
     !isObject(value) ||
@@ -1164,6 +1320,53 @@ export async function listWorkflowDispatchOutboxEntries(input: {
     throw new ApiRequestError("Workflow dispatch outbox evidence response was unsafe", response.status);
   }
   return data as WorkflowDispatchOutboxInventory;
+}
+
+export async function listWorkflowDispatchOutboxPublicationLeases(input: {
+  outboxEntry: WorkflowDispatchOutboxEntry;
+  scope: WorkflowScope;
+  authorizedTargetIds: readonly string[];
+}): Promise<WorkflowDispatchOutboxPublicationLeaseInventory> {
+  const entry = input.outboxEntry;
+  if (
+    entry.scope.organization_id !== input.scope.organizationId ||
+    entry.scope.environment_id !== input.scope.environmentId ||
+    entry.scope.site_id !== input.scope.siteId ||
+    !input.authorizedTargetIds.includes(entry.target_id) ||
+    !hasSafeAuthority(entry.authority) ||
+    entry.grants_publication_authority !== false ||
+    entry.grants_delivery_authority !== false ||
+    entry.grants_dispatch_authority !== false ||
+    entry.grants_execution_authority !== false
+  ) {
+    throw new ApiRequestError("Workflow outbox entry is outside the authorized publication-lease scope", 403);
+  }
+  const response = await apiFetch(
+    `/api/v1/workflows/plans/${encodeURIComponent(entry.plan_id)}/runs/${encodeURIComponent(entry.run_id)}/attempts/${encodeURIComponent(entry.attempt_id)}/dispatch-intents/${encodeURIComponent(entry.dispatch_intent_id)}/outbox/${encodeURIComponent(entry.outbox_entry_id)}/publication-lease`,
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(response, "Workflow publication lease evidence retrieval failed");
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, dispatchOutboxPublicationLeaseInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    data.outbox_entry_id !== entry.outbox_entry_id ||
+    !Array.isArray(data.publication_leases) ||
+    data.publication_leases.length > 1 ||
+    !isTimestamp(data.server_time) ||
+    typeof data.durable !== "boolean"
+  ) {
+    throw new ApiRequestError("Workflow publication lease evidence response was unsafe", response.status);
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.publication_leases.every((lease) =>
+      isDispatchOutboxPublicationLeaseBoundToEntry(lease, entry, serverTime),
+    )
+  ) {
+    throw new ApiRequestError("Workflow publication lease evidence response was unsafe", response.status);
+  }
+  return data as WorkflowDispatchOutboxPublicationLeaseInventory;
 }
 
 export async function createWorkflowPlan(input: {
