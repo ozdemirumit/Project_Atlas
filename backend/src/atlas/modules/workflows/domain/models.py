@@ -14,33 +14,26 @@ NO_EXECUTION_SAFETY_NOTICE = (
 
 
 def canonical_digest(payload: object) -> str:
+    return sha256(canonical_json_bytes(payload)).hexdigest()
+
+
+def canonical_json_bytes(payload: object) -> bytes:
+    """Serialize finite JSON deterministically as UTF-8 bytes."""
     try:
-        encoded = json.dumps(
+        return json.dumps(
             payload,
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=True,
             allow_nan=False,
-        ).encode()
+        ).encode("utf-8")
     except (TypeError, ValueError) as exc:
         raise ValueError("canonical payload must contain finite JSON values") from exc
-    return sha256(encoded).hexdigest()
 
 
 def canonical_json_byte_count(payload: object) -> int:
     """Return canonical JSON's UTF-8 size without retaining a serialized artifact."""
-    try:
-        return len(
-            json.dumps(
-                payload,
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=True,
-                allow_nan=False,
-            ).encode("utf-8")
-        )
-    except (TypeError, ValueError) as exc:
-        raise ValueError("canonical payload must contain finite JSON values") from exc
+    return len(canonical_json_bytes(payload))
 
 
 def _require_text(value: str, *, name: str, maximum: int) -> None:
@@ -128,6 +121,10 @@ class WorkflowDispatchEventEnvelopeState(StrEnum):
 
 class WorkflowEventTransportAdmissionState(StrEnum):
     ADMITTED = "admitted"
+
+
+class WorkflowEventByteArtifactState(StrEnum):
+    MATERIALIZED = "materialized"
 
 
 @dataclass(frozen=True, slots=True)
@@ -1312,6 +1309,219 @@ class WorkflowEventTransportAdmission:
             "event_id": self.event_id,
             "event_type": self.event_type,
             "event_version": self.event_version,
+            "maximum_canonical_byte_count": self.maximum_canonical_byte_count,
+            "orchestration_fencing_token": self.orchestration_fencing_token,
+            "orchestration_lease_digest": self.orchestration_lease_digest,
+            "orchestration_lease_id": self.orchestration_lease_id,
+            "outbox_entry_digest": self.outbox_entry_digest,
+            "outbox_entry_id": self.outbox_entry_id,
+            "plan_digest": self.plan_digest,
+            "plan_id": self.plan_id,
+            "policy_digest": self.policy_digest,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "publication_fencing_token": self.publication_fencing_token,
+            "publication_lease_digest": self.publication_lease_digest,
+            "publication_lease_id": self.publication_lease_id,
+            "publisher_subject_id": self.publisher_subject_id,
+            "representation_name": self.representation_name,
+            "run_digest": self.run_digest,
+            "run_id": self.run_id,
+            "schema_uri": self.schema_uri,
+            "scope": self.scope.canonical_value(),
+            "state": self.state.value,
+            "step_id": self.step_id,
+            "step_run_digest": self.step_run_digest,
+            "step_run_id": self.step_run_id,
+            "target_id": self.target_id,
+            "target_type": self.target_type,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    @property
+    def grants_publication_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_delivery_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_dispatch_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_execution_authority(self) -> bool:
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventByteArtifactAuthority:
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        if any(self.canonical_value().values()):
+            raise ValueError("workflow event byte artifacts cannot grant operational authority")
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "execution_authorized": self.execution_authorized,
+            "publication_authorized": self.publication_authorized,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventByteArtifact:
+    """Immutable canonical bytes whose public evidence never exposes their content."""
+
+    artifact_id: str
+    admission_id: str
+    admission_digest: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    event_id: str
+    event_digest: str
+    event_type: str
+    event_version: str
+    schema_uri: str
+    data_classification: str
+    representation_name: str
+    encoding: str
+    canonical_bytes: bytes
+    canonical_byte_count: int
+    content_sha256: str
+    maximum_canonical_byte_count: int
+    outbox_entry_id: str
+    outbox_entry_digest: str
+    dispatch_intent_id: str
+    dispatch_intent_digest: str
+    plan_id: str
+    plan_digest: str
+    run_id: str
+    run_digest: str
+    step_run_id: str
+    step_run_digest: str
+    step_id: str
+    attempt_id: str
+    attempt_digest: str
+    attempt_number: int
+    scope: WorkflowScope
+    target_id: str
+    target_type: str
+    orchestration_lease_id: str
+    orchestration_lease_digest: str
+    orchestration_fencing_token: int
+    publication_lease_id: str
+    publication_lease_digest: str
+    publication_fencing_token: int
+    publisher_subject_id: str
+    materialized_at: datetime
+    state: WorkflowEventByteArtifactState
+    authority: WorkflowEventByteArtifactAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.artifact_id, "byte artifact id"),
+            (self.admission_id, "byte artifact admission_id"),
+            (self.policy_id, "byte artifact policy_id"),
+            (self.policy_version, "byte artifact policy_version"),
+            (self.event_id, "byte artifact event_id"),
+            (self.outbox_entry_id, "byte artifact outbox_entry_id"),
+            (self.dispatch_intent_id, "byte artifact dispatch_intent_id"),
+            (self.plan_id, "byte artifact plan_id"),
+            (self.run_id, "byte artifact run_id"),
+            (self.step_run_id, "byte artifact step_run_id"),
+            (self.step_id, "byte artifact step_id"),
+            (self.attempt_id, "byte artifact attempt_id"),
+            (self.target_id, "byte artifact target_id"),
+            (self.orchestration_lease_id, "byte artifact orchestration_lease_id"),
+            (self.publication_lease_id, "byte artifact publication_lease_id"),
+            (self.publisher_subject_id, "byte artifact publisher_subject_id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.admission_digest, "byte artifact admission_digest"),
+            (self.policy_digest, "byte artifact policy_digest"),
+            (self.event_digest, "byte artifact event_digest"),
+            (self.content_sha256, "byte artifact content_sha256"),
+            (self.outbox_entry_digest, "byte artifact outbox_entry_digest"),
+            (self.dispatch_intent_digest, "byte artifact dispatch_intent_digest"),
+            (self.plan_digest, "byte artifact plan_digest"),
+            (self.run_digest, "byte artifact run_digest"),
+            (self.step_run_digest, "byte artifact step_run_digest"),
+            (self.attempt_digest, "byte artifact attempt_digest"),
+            (self.orchestration_lease_digest, "byte artifact orchestration_lease_digest"),
+            (self.publication_lease_digest, "byte artifact publication_lease_digest"),
+            (self.canonical_digest, "byte artifact canonical_digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.event_type != "WorkflowStepDispatchRequested" or self.event_version != "1.0":
+            raise ValueError("workflow event byte artifact event contract is unsupported")
+        if self.schema_uri != "urn:project-atlas:event:workflow-step-dispatch-requested:1.0":
+            raise ValueError("workflow event byte artifact schema URI is unsupported")
+        if self.data_classification != "internal":
+            raise ValueError("workflow event byte artifact classification must be internal")
+        if self.representation_name != "canonical-json" or self.encoding != "utf-8":
+            raise ValueError("workflow event byte artifact representation is invalid")
+        if not isinstance(self.canonical_bytes, bytes) or not self.canonical_bytes:
+            raise ValueError("workflow event byte artifact requires immutable canonical bytes")
+        try:
+            decoded_value = json.loads(self.canonical_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("workflow event byte artifact bytes are not valid UTF-8 JSON") from exc
+        if (
+            not isinstance(decoded_value, dict)
+            or canonical_json_bytes(decoded_value) != self.canonical_bytes
+        ):
+            raise ValueError("workflow event byte artifact bytes are not canonical JSON")
+        if self.canonical_byte_count != len(self.canonical_bytes):
+            raise ValueError("workflow event byte artifact byte count mismatch")
+        if not 1 <= self.canonical_byte_count <= self.maximum_canonical_byte_count:
+            raise ValueError("workflow event byte artifact canonical byte count is invalid")
+        if self.content_sha256 != sha256(self.canonical_bytes).hexdigest():
+            raise ValueError("workflow event byte artifact content digest mismatch")
+        if self.attempt_number != 1 or self.target_type != "storage":
+            raise ValueError("workflow event byte artifact lineage is unsupported")
+        if self.orchestration_fencing_token < 1 or self.publication_fencing_token < 1:
+            raise ValueError("workflow event byte artifact fencing tokens are invalid")
+        if self.materialized_at.tzinfo is None:
+            raise ValueError("workflow event byte artifact time must be timezone-aware")
+        if self.state is not WorkflowEventByteArtifactState.MATERIALIZED:
+            raise ValueError("workflow event byte artifacts must remain materialized")
+        if any(self.authority.canonical_value().values()):
+            raise ValueError("workflow event byte artifacts cannot grant operational authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("workflow event byte artifact canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "admission_digest": self.admission_digest,
+            "admission_id": self.admission_id,
+            "artifact_id": self.artifact_id,
+            "attempt_digest": self.attempt_digest,
+            "attempt_id": self.attempt_id,
+            "attempt_number": self.attempt_number,
+            "authority": self.authority.canonical_value(),
+            "canonical_byte_count": self.canonical_byte_count,
+            "content_sha256": self.content_sha256,
+            "data_classification": self.data_classification,
+            "dispatch_intent_digest": self.dispatch_intent_digest,
+            "dispatch_intent_id": self.dispatch_intent_id,
+            "encoding": self.encoding,
+            "event_digest": self.event_digest,
+            "event_id": self.event_id,
+            "event_type": self.event_type,
+            "event_version": self.event_version,
+            "materialized_at": self.materialized_at.isoformat(),
             "maximum_canonical_byte_count": self.maximum_canonical_byte_count,
             "orchestration_fencing_token": self.orchestration_fencing_token,
             "orchestration_lease_digest": self.orchestration_lease_digest,

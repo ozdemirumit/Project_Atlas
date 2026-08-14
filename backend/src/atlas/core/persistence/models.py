@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -5241,6 +5242,177 @@ class WorkflowEventTransportAdmissionClaimModel(Base):
         ForeignKey("workflow_run_plans.plan_id"),
         nullable=False,
         index=True,
+    )
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    publisher_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowEventByteArtifactModel(Base):
+    __tablename__ = "workflow_event_byte_artifacts"
+    __table_args__ = (
+        UniqueConstraint("admission_id", name="uq_workflow_event_byte_artifact_admission"),
+        UniqueConstraint("event_id", name="uq_workflow_event_byte_artifact_event"),
+        UniqueConstraint("outbox_entry_id", name="uq_workflow_event_byte_artifact_outbox"),
+        UniqueConstraint("content_sha256", name="uq_workflow_event_byte_artifact_content"),
+        UniqueConstraint("canonical_digest", name="uq_workflow_event_byte_artifact_digest"),
+        CheckConstraint(
+            "attempt_number = 1",
+            name="ck_workflow_event_byte_artifact_attempt_number",
+        ),
+        CheckConstraint(
+            "canonical_byte_count >= 1 AND canonical_byte_count <= maximum_canonical_byte_count",
+            name="ck_workflow_event_byte_artifact_byte_count",
+        ),
+        CheckConstraint(
+            "octet_length(canonical_bytes) = canonical_byte_count",
+            name="ck_workflow_event_byte_artifact_binary_length",
+        ),
+        CheckConstraint(
+            "orchestration_fencing_token >= 1",
+            name="ck_workflow_event_byte_artifact_orchestration_fence",
+        ),
+        CheckConstraint(
+            "publication_fencing_token >= 1",
+            name="ck_workflow_event_byte_artifact_publication_fence",
+        ),
+        CheckConstraint(
+            "state = 'materialized'",
+            name="ck_workflow_event_byte_artifact_state",
+        ),
+        CheckConstraint(
+            "NOT publication_authority_granted "
+            "AND NOT delivery_authority_granted "
+            "AND NOT dispatch_authority_granted "
+            "AND NOT execution_authority_granted",
+            name="ck_workflow_event_byte_artifact_zero_authority",
+        ),
+    )
+
+    artifact_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    admission_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_event_transport_admissions.admission_id"),
+        nullable=False,
+        index=True,
+    )
+    admission_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    event_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_dispatch_event_envelopes.event_id"),
+        nullable=False,
+        index=True,
+    )
+    event_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    event_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    schema_uri: Mapped[str] = mapped_column(String(512), nullable=False)
+    data_classification: Mapped[str] = mapped_column(String(64), nullable=False)
+    outbox_entry_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_dispatch_outbox_entries.outbox_entry_id"),
+        nullable=False,
+        index=True,
+    )
+    outbox_entry_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    dispatch_intent_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_dispatch_intents.dispatch_intent_id"),
+        nullable=False,
+        index=True,
+    )
+    dispatch_intent_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    plan_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_run_plans.plan_id"),
+        nullable=False,
+        index=True,
+    )
+    plan_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_execution_runs.run_id"), nullable=False, index=True
+    )
+    run_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    step_run_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_execution_step_runs.step_run_id"), nullable=False, index=True
+    )
+    step_run_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    step_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    attempt_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_execution_attempts.attempt_id"), nullable=False, index=True
+    )
+    attempt_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    target_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    target_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    policy_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    representation_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    encoding: Mapped[str] = mapped_column(String(32), nullable=False)
+    maximum_canonical_byte_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    canonical_byte_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # Lease ownership rows are replaceable; preserve exact immutable fencing
+    # evidence without foreign keys to those mutable rows.
+    orchestration_lease_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    orchestration_lease_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    orchestration_fencing_token: Mapped[int] = mapped_column(Integer, nullable=False)
+    publication_lease_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    publication_lease_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    publication_fencing_token: Mapped[int] = mapped_column(Integer, nullable=False)
+    publisher_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    materialized_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    publication_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    delivery_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    dispatch_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    execution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    canonical_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowEventByteArtifactClaimModel(Base):
+    __tablename__ = "workflow_event_byte_artifact_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "idempotency_scope_id",
+            "idempotency_key",
+            name="uq_workflow_event_byte_artifact_scope_idem",
+        ),
+        UniqueConstraint("artifact_id", name="uq_workflow_event_byte_artifact_claim_artifact"),
+        UniqueConstraint("admission_id", name="uq_workflow_event_byte_artifact_claim_admission"),
+        UniqueConstraint("event_id", name="uq_workflow_event_byte_artifact_claim_event"),
+        UniqueConstraint("outbox_entry_id", name="uq_workflow_event_byte_artifact_claim_outbox"),
+        UniqueConstraint("canonical_digest", name="uq_workflow_event_byte_artifact_claim_digest"),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    idempotency_scope_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    artifact_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    admission_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_event_transport_admissions.admission_id"),
+        nullable=False,
+        index=True,
+    )
+    event_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_dispatch_event_envelopes.event_id"),
+        nullable=False,
+        index=True,
+    )
+    outbox_entry_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_dispatch_outbox_entries.outbox_entry_id"),
+        nullable=False,
+        index=True,
+    )
+    plan_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_run_plans.plan_id"), nullable=False, index=True
     )
     organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)

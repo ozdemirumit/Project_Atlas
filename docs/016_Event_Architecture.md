@@ -239,6 +239,14 @@ The decision contains no broker, endpoint, topic, routing key, credential, seria
 publication attempt or receipt and grants no publication, delivery, dispatch or execution authority.
 Provider selection, wire serialization and publication lifecycle evidence remain later boundaries.
 
+After admission, the same publisher may deterministically materialize one immutable
+provider-neutral UTF-8 canonical JSON byte artifact for the exact envelope. Materialization verifies
+the admitted byte count and policy maximum, records a SHA-256 content digest and preserves exact
+event, admission, outbox, workflow and lease lineage. Raw bytes remain server-side. No provider,
+route, credential or provider message is selected, no network call or publication attempt occurs,
+and no publication, delivery, dispatch or execution authority is granted. Provider and route
+selection and publication lifecycle evidence remain later boundaries.
+
 ### 10.2 Publication State
 
 Outbox records track:

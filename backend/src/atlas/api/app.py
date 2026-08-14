@@ -1536,6 +1536,8 @@ from atlas.modules.workflows.application import (
     WorkflowDispatchEventEnvelopeService,
     WorkflowDispatchIntentStagingRepository,
     WorkflowDispatchIntentStagingService,
+    WorkflowEventByteArtifactRepository,
+    WorkflowEventByteArtifactService,
     WorkflowEventTransportAdmissionRepository,
     WorkflowEventTransportAdmissionService,
     WorkflowOrchestrationLeaseRepository,
@@ -1579,6 +1581,7 @@ def create_app(
     workflow_dispatch_event_envelope_service: WorkflowDispatchEventEnvelopeService | None = None,
     workflow_event_transport_admission_service: WorkflowEventTransportAdmissionService
     | None = None,
+    workflow_event_byte_artifact_service: WorkflowEventByteArtifactService | None = None,
     security_export_service: SecurityExportService | None = None,
     session_service: SessionService | None = None,
     api_credential_service: ApiCredentialService | None = None,
@@ -5525,6 +5528,38 @@ def create_app(
         resolved_workflow_event_transport_admission_service = (
             workflow_event_transport_admission_service
         )
+    if workflow_event_byte_artifact_service is None:
+        byte_artifact_repository_methods = (
+            "get_outbox_entry_by_id",
+            "get_publication_lease_by_outbox_entry_id",
+            "get_dispatch_event_envelope_by_outbox_entry_id",
+            "get_event_transport_admission_by_event_id",
+            "get_event_byte_artifact_by_admission_id",
+            "get_event_byte_artifact_request",
+            "materialize_event_byte_artifact",
+        )
+        if not all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in byte_artifact_repository_methods
+        ):
+            raise ValueError(
+                "workflow planning repository does not implement event byte artifacts; "
+                "inject workflow_event_byte_artifact_service explicitly"
+            )
+        workflow_event_byte_artifact_repository = cast(
+            WorkflowEventByteArtifactRepository,
+            workflow_repository,
+        )
+        resolved_workflow_event_byte_artifact_service = WorkflowEventByteArtifactService(
+            plan_repository=workflow_repository,
+            orchestration_lease_repository=(
+                resolved_workflow_orchestration_lease_service.repository
+            ),
+            byte_artifact_repository=workflow_event_byte_artifact_repository,
+            audit_sink=resolved_audit_sink,
+        )
+    else:
+        resolved_workflow_event_byte_artifact_service = workflow_event_byte_artifact_service
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -5785,6 +5820,12 @@ def create_app(
         )
         app.state.workflow_event_transport_admission_repository = (
             resolved_workflow_event_transport_admission_service.repository
+        )
+        app.state.workflow_event_byte_artifact_service = (
+            resolved_workflow_event_byte_artifact_service
+        )
+        app.state.workflow_event_byte_artifact_repository = (
+            resolved_workflow_event_byte_artifact_service.repository
         )
         yield
         await resolved_workflow_planning_service.close()

@@ -14,6 +14,7 @@ import {
   type WorkflowDispatchEventEnvelope,
   type WorkflowDispatchOutboxEntry,
   type WorkflowDispatchOutboxPublicationLease,
+  type WorkflowEventByteArtifact,
   type WorkflowEventTransportAdmission,
   type WorkflowExecutionAttempt,
   type WorkflowExecutionRun,
@@ -404,6 +405,54 @@ const admittedTransport: WorkflowEventTransportAdmission = {
   canonical_digest: "b".repeat(64),
 };
 
+const materializedByteArtifact: WorkflowEventByteArtifact = {
+  byte_artifact_id: "workflow-event-byte-artifact.1234567890abcdef",
+  transport_admission_id: admittedTransport.transport_admission_id,
+  transport_admission_digest: admittedTransport.canonical_digest,
+  event_id: admittedTransport.event_id,
+  event_digest: admittedTransport.event_digest,
+  outbox_entry_id: admittedTransport.outbox_entry_id,
+  outbox_entry_digest: admittedTransport.outbox_entry_digest,
+  dispatch_intent_id: admittedTransport.dispatch_intent_id,
+  dispatch_intent_digest: admittedTransport.dispatch_intent_digest,
+  plan_id: admittedTransport.plan_id,
+  plan_digest: admittedTransport.plan_digest,
+  run_id: admittedTransport.run_id,
+  run_digest: admittedTransport.run_digest,
+  step_run_id: admittedTransport.step_run_id,
+  step_run_digest: admittedTransport.step_run_digest,
+  step_id: admittedTransport.step_id,
+  attempt_id: admittedTransport.attempt_id,
+  attempt_digest: admittedTransport.attempt_digest,
+  attempt_number: admittedTransport.attempt_number,
+  scope: admittedTransport.scope,
+  target_id: admittedTransport.target_id,
+  target_type: admittedTransport.target_type,
+  policy_id: admittedTransport.policy.policy_id,
+  policy_version: admittedTransport.policy.policy_version,
+  policy_digest: admittedTransport.policy.policy_digest,
+  representation_name: admittedTransport.policy.representation_name,
+  encoding: admittedTransport.policy.encoding,
+  media_type: "application/json",
+  byte_count: admittedTransport.canonical_byte_count,
+  content_sha256: "d".repeat(64),
+  publisher_subject_id: admittedTransport.publisher_subject_id,
+  orchestration_lease_id: admittedTransport.orchestration_lease_id,
+  orchestration_lease_digest: admittedTransport.orchestration_lease_digest,
+  orchestration_fencing_token: admittedTransport.orchestration_fencing_token,
+  publication_lease_id: admittedTransport.publication_lease_id,
+  publication_lease_digest: admittedTransport.publication_lease_digest,
+  publication_fencing_token: admittedTransport.publication_fencing_token,
+  materialized_at: "2026-08-13T10:18:00Z",
+  state: "materialized",
+  authority: { ...admittedTransport.authority },
+  grants_publication_authority: false,
+  grants_delivery_authority: false,
+  grants_dispatch_authority: false,
+  grants_execution_authority: false,
+  canonical_digest: "e".repeat(64),
+};
+
 function leaseResponse(lease: WorkflowOrchestrationLease | null, status = 200): Response {
   return new Response(
     JSON.stringify({
@@ -560,6 +609,25 @@ function transportAdmissionResponse(transportAdmissions: unknown[], status = 200
   );
 }
 
+function byteArtifactResponse(byteArtifacts: unknown[], status = 200): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            transport_admission_id: admittedTransport.transport_admission_id,
+            byte_artifacts: byteArtifacts,
+            durable: false,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.byte-artifact",
+            generated_at: "2026-08-13T10:19:00Z",
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function mockReadResponses(input: {
   lease?: WorkflowOrchestrationLease | null;
   run?: WorkflowExecutionRun | null;
@@ -569,7 +637,9 @@ function mockReadResponses(input: {
   publicationLeases?: unknown[];
   eventEnvelopes?: unknown[];
   transportAdmissions?: unknown[];
+  byteArtifacts?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
+  pendingByteArtifactResponse?: Promise<Response>;
   leaseStatus?: number;
   runStatus?: number;
   attemptStatus?: number;
@@ -579,10 +649,23 @@ function mockReadResponses(input: {
   eventEnvelopeStatus?: number;
   transportAdmissionStatus?: number;
   transportAdmissionStatuses?: number[];
+  byteArtifactStatus?: number;
+  byteArtifactStatuses?: number[];
 }) {
   let transportAdmissionReadCount = 0;
+  let byteArtifactReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/byte-artifact")) {
+      if (input.pendingByteArtifactResponse) {
+        return input.pendingByteArtifactResponse;
+      }
+      const status =
+        input.byteArtifactStatuses?.[
+          Math.min(byteArtifactReadCount++, input.byteArtifactStatuses.length - 1)
+        ] ?? input.byteArtifactStatus ?? 200;
+      return Promise.resolve(byteArtifactResponse(input.byteArtifacts ?? [], status));
+    }
     if (url.endsWith("/transport-admission")) {
       if (input.pendingTransportAdmissionResponse) {
         return input.pendingTransportAdmissionResponse;
@@ -2017,5 +2100,258 @@ describe("WorkflowPlanningWorkspace", () => {
       "No admission, serialization, publication, delivery, dispatch, or execution state is inferred",
     );
     expect(within(section).queryByRole("list", { name: "Transport-admission evidence" })).toBeNull();
+  });
+
+  it("loads and renders one exact byte-artifact metadata record without sensitive content or operational controls", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [admittedTransport],
+      byteArtifacts: [materializedByteArtifact],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Byte-artifact metadata",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Byte-artifact metadata",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          `/transport-admission/${admittedTransport.transport_admission_id}/byte-artifact`,
+        ),
+      ),
+    ).toBe(true);
+    expect(within(section).getByTitle(materializedByteArtifact.byte_artifact_id)).toBeVisible();
+    expect(records).toHaveTextContent("materialized");
+    expect(records).toHaveTextContent("canonical-json");
+    expect(records).toHaveTextContent("UTF-8");
+    expect(records).toHaveTextContent("application/json");
+    expect(records).toHaveTextContent("2,048 bytes");
+    expect(within(section).getByTitle(materializedByteArtifact.content_sha256)).toBeVisible();
+    expect(within(section).getByTitle(materializedByteArtifact.policy_id)).toBeVisible();
+    expect(within(section).getByTitle(materializedByteArtifact.transport_admission_id)).toBeVisible();
+    expect(within(section).getByTitle(materializedByteArtifact.event_id)).toBeVisible();
+    expect(within(section).getByTitle(materializedByteArtifact.outbox_entry_id)).toBeVisible();
+    expect(within(section).getByTitle(materializedByteArtifact.publication_lease_id)).toBeVisible();
+    expect(within(section).getByTitle(materializedByteArtifact.orchestration_lease_id)).toBeVisible();
+    expect(records).toHaveTextContent("digest aaaaaaaaaaaa...aaaaaaaa");
+    expect(records).toHaveTextContent("digest bbbbbbbbbbbb...bbbbbbbb");
+    expect(records).toHaveTextContent("digest 999999999999...99999999");
+    expect(records).toHaveTextContent("digest 666666666666...66666666");
+    expect(records).toHaveTextContent("intent 444444444444...44444444");
+    expect(records).toHaveTextContent("attempt 222222222222...22222222");
+    expect(records).toHaveTextContent("run 111111111111...11111111");
+    expect(records).toHaveTextContent("step 999999999999...99999999");
+    expect(records).toHaveTextContent("plan cccccccccccc...cccccccc");
+    expect(records).toHaveTextContent("publication fence 1");
+    expect(records).toHaveTextContent("source fence 7");
+    expect(section).toHaveTextContent("deterministic bytes exist in Atlas storage only");
+    expect(section).toHaveTextContent("Raw bytes and payload content are not exposed");
+    expect(section).toHaveTextContent("No provider, route, credential, message");
+    expect(
+      within(section).queryByRole("button", {
+        name: /materialize|serialize|download|publish|deliver|dispatch|execute|acquire|heartbeat|release/i,
+      }),
+    ).toBeNull();
+    expect(within(section).queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
+  });
+
+  it("renders zero byte artifacts as a healthy read-only state", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [admittedTransport],
+      byteArtifacts: [],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Byte-artifact metadata",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText("No byte artifact has been materialized.")).toBeVisible();
+    expect(within(section).queryByRole("alert")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("shows a loading state while the authoritative byte-artifact metadata read is pending", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [admittedTransport],
+      pendingByteArtifactResponse: new Promise<Response>(() => undefined),
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Byte-artifact metadata",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(
+      await within(section).findByText("Loading authoritative byte-artifact metadata..."),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("retries a failed byte-artifact metadata read without creating a materialization action", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [admittedTransport],
+      byteArtifacts: [materializedByteArtifact],
+      byteArtifactStatuses: [500, 200],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Byte-artifact metadata",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText("Byte-artifact metadata is unavailable")).toBeVisible();
+    expect(section).toHaveTextContent(
+      "No materialization, publication, delivery, dispatch, or execution state is inferred",
+    );
+    fireEvent.click(within(section).getByRole("button", { name: "Retry byte-artifact metadata read" }));
+    expect(await within(section).findByTitle(materializedByteArtifact.byte_artifact_id)).toBeVisible();
+    expect(
+      within(section).queryByRole("button", {
+        name: /materialize|serialize|download|publish|deliver|dispatch|execute|acquire|heartbeat|release/i,
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [403, "Byte-artifact metadata permission is missing", "current role or scope cannot inspect"],
+  ])("handles byte-artifact metadata read status %s with the normal session boundary", async (status, title, detail) => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [admittedTransport],
+      byteArtifactStatus: status,
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Byte-artifact metadata",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText(title)).toBeVisible();
+    expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+    expect(within(section).queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
+    expect(
+      within(section).queryByRole("button", {
+        name: /materialize|serialize|download|publish|deliver|dispatch|execute|acquire|heartbeat|release/i,
+      }),
+    ).toBeNull();
+  });
+
+  it("fails closed when duplicate byte-artifact metadata records are returned", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [admittedTransport],
+      byteArtifacts: [
+        materializedByteArtifact,
+        { ...materializedByteArtifact, byte_artifact_id: "workflow-event-byte-artifact.other" },
+      ],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Byte-artifact metadata",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText("Byte-artifact metadata is unavailable")).toBeVisible();
+    expect(within(section).queryByRole("list", { name: "Byte-artifact metadata" })).toBeNull();
+  });
+
+  it.each([
+    ["raw bytes", { ...materializedByteArtifact, raw_bytes: "raw-byte-secret" }],
+    ["payload", { ...materializedByteArtifact, payload: { secret: "payload-secret" } }],
+    ["base64", { ...materializedByteArtifact, base64: "cGF5bG9hZC1zZWNyZXQ=" }],
+    ["provider", { ...materializedByteArtifact, provider: "provider-secret" }],
+    ["route", { ...materializedByteArtifact, route: "route-secret" }],
+    ["credentials", { ...materializedByteArtifact, credentials: "credential-secret" }],
+    [
+      "a different admission digest",
+      { ...materializedByteArtifact, transport_admission_digest: "0".repeat(64) },
+    ],
+    ["a different event digest", { ...materializedByteArtifact, event_digest: "0".repeat(64) }],
+    ["a different outbox digest", { ...materializedByteArtifact, outbox_entry_digest: "0".repeat(64) }],
+    ["a changed workflow lineage", { ...materializedByteArtifact, attempt_digest: "0".repeat(64) }],
+    ["a changed policy", { ...materializedByteArtifact, policy_digest: "0".repeat(64) }],
+    ["a changed representation", { ...materializedByteArtifact, representation_name: "json" }],
+    ["a changed encoding", { ...materializedByteArtifact, encoding: "utf-16" }],
+    ["a changed media type", { ...materializedByteArtifact, media_type: "application/octet-stream" }],
+    ["a changed byte count", { ...materializedByteArtifact, byte_count: 2_049 }],
+    ["an invalid SHA-256", { ...materializedByteArtifact, content_sha256: "not-a-digest" }],
+    ["a stale publication fence", { ...materializedByteArtifact, publication_fencing_token: 2 }],
+    ["publication authority", { ...materializedByteArtifact, grants_publication_authority: true }],
+  ])("fails closed when byte-artifact metadata contains %s", async (_case, unsafeArtifact) => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [admittedTransport],
+      byteArtifacts: [unsafeArtifact],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Byte-artifact metadata",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText("Byte-artifact metadata is unavailable")).toBeVisible();
+    expect(section).toHaveTextContent(
+      "No materialization, publication, delivery, dispatch, or execution state is inferred",
+    );
+    expect(within(section).queryByRole("list", { name: "Byte-artifact metadata" })).toBeNull();
+    expect(section).not.toHaveTextContent(/raw-byte-secret|payload-secret|cGF5bG9hZC1zZWNyZXQ=|provider-secret|route-secret|credential-secret/);
   });
 });

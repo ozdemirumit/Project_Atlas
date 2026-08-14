@@ -11,6 +11,7 @@ from atlas.modules.workflows.domain import (
     WorkflowDispatchEventEnvelope,
     WorkflowDispatchIntent,
     WorkflowDispatchOutboxEntry,
+    WorkflowEventByteArtifact,
     WorkflowEventTransportAdmission,
     WorkflowExecutionAttempt,
     WorkflowExecutionRun,
@@ -179,6 +180,23 @@ class AdmitWorkflowEventTransportInput(BaseModel):
     acknowledged_admission_only_no_publication_delivery_dispatch_or_execution_authority: Literal[
         True
     ]
+
+
+class MaterializeWorkflowEventByteArtifactInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["atlas.workflow-event-byte-artifact-materialization-input.v1"]
+    outbox_entry_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    event_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    transport_admission_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    policy_id: Literal["policy.workflow-event-transport-admission"]
+    policy_version: Literal["1.0"]
+    policy_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    publication_lease_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    publication_fencing_token: int = Field(ge=1)
+    acknowledged_materialization_only_no_publication_delivery_dispatch_or_execution_authority: (
+        Literal[True]
+    )
 
 
 class WorkflowStepDefinitionData(BaseModel):
@@ -619,6 +637,128 @@ class WorkflowEventTransportAdmissionResponse(BaseModel):
 
 class WorkflowEventTransportAdmissionInventoryResponse(BaseModel):
     data: WorkflowEventTransportAdmissionInventoryData
+    meta: ResponseMeta
+
+
+class WorkflowEventByteArtifactData(BaseModel):
+    """Minimized artifact metadata; canonical bytes and event payload stay server-side."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    byte_artifact_id: str
+    transport_admission_id: str
+    transport_admission_digest: str
+    event_id: str
+    event_digest: str
+    outbox_entry_id: str
+    outbox_entry_digest: str
+    dispatch_intent_id: str
+    dispatch_intent_digest: str
+    plan_id: str
+    plan_digest: str
+    run_id: str
+    run_digest: str
+    step_run_id: str
+    step_run_digest: str
+    step_id: str
+    attempt_id: str
+    attempt_digest: str
+    attempt_number: Literal[1]
+    scope: WorkflowScopeData
+    target_id: str
+    target_type: Literal["storage"]
+    policy_id: Literal["policy.workflow-event-transport-admission"]
+    policy_version: Literal["1.0"]
+    policy_digest: str
+    representation_name: Literal["canonical-json"]
+    encoding: Literal["utf-8"]
+    media_type: Literal["application/json"]
+    byte_count: int = Field(ge=1)
+    content_sha256: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    publisher_subject_id: str
+    orchestration_lease_id: str
+    orchestration_lease_digest: str
+    orchestration_fencing_token: int = Field(ge=1)
+    publication_lease_id: str
+    publication_lease_digest: str
+    publication_fencing_token: int = Field(ge=1)
+    materialized_at: datetime
+    state: Literal["materialized"]
+    authority: WorkflowDispatchEventAuthorityData
+    grants_publication_authority: Literal[False]
+    grants_delivery_authority: Literal[False]
+    grants_dispatch_authority: Literal[False]
+    grants_execution_authority: Literal[False]
+    canonical_digest: str
+
+    @classmethod
+    def from_domain(cls, artifact: WorkflowEventByteArtifact) -> WorkflowEventByteArtifactData:
+        return cls.model_validate(
+            {
+                "byte_artifact_id": artifact.artifact_id,
+                "transport_admission_id": artifact.admission_id,
+                "transport_admission_digest": artifact.admission_digest,
+                "event_id": artifact.event_id,
+                "event_digest": artifact.event_digest,
+                "outbox_entry_id": artifact.outbox_entry_id,
+                "outbox_entry_digest": artifact.outbox_entry_digest,
+                "dispatch_intent_id": artifact.dispatch_intent_id,
+                "dispatch_intent_digest": artifact.dispatch_intent_digest,
+                "plan_id": artifact.plan_id,
+                "plan_digest": artifact.plan_digest,
+                "run_id": artifact.run_id,
+                "run_digest": artifact.run_digest,
+                "step_run_id": artifact.step_run_id,
+                "step_run_digest": artifact.step_run_digest,
+                "step_id": artifact.step_id,
+                "attempt_id": artifact.attempt_id,
+                "attempt_digest": artifact.attempt_digest,
+                "attempt_number": artifact.attempt_number,
+                "scope": artifact.scope.canonical_value(),
+                "target_id": artifact.target_id,
+                "target_type": artifact.target_type,
+                "policy_id": artifact.policy_id,
+                "policy_version": artifact.policy_version,
+                "policy_digest": artifact.policy_digest,
+                "representation_name": artifact.representation_name,
+                "encoding": artifact.encoding,
+                "media_type": "application/json",
+                "byte_count": artifact.canonical_byte_count,
+                "content_sha256": artifact.content_sha256,
+                "publisher_subject_id": artifact.publisher_subject_id,
+                "orchestration_lease_id": artifact.orchestration_lease_id,
+                "orchestration_lease_digest": artifact.orchestration_lease_digest,
+                "orchestration_fencing_token": artifact.orchestration_fencing_token,
+                "publication_lease_id": artifact.publication_lease_id,
+                "publication_lease_digest": artifact.publication_lease_digest,
+                "publication_fencing_token": artifact.publication_fencing_token,
+                "materialized_at": artifact.materialized_at,
+                "state": artifact.state.value,
+                "authority": artifact.authority.canonical_value(),
+                "grants_publication_authority": False,
+                "grants_delivery_authority": False,
+                "grants_dispatch_authority": False,
+                "grants_execution_authority": False,
+                "canonical_digest": artifact.canonical_digest,
+            }
+        )
+
+
+class WorkflowEventByteArtifactInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    transport_admission_id: str
+    byte_artifacts: list[WorkflowEventByteArtifactData] = Field(max_length=1)
+    durable: bool
+
+
+class WorkflowEventByteArtifactResponse(BaseModel):
+    data: WorkflowEventByteArtifactData
+    meta: ResponseMeta
+
+
+class WorkflowEventByteArtifactInventoryResponse(BaseModel):
+    data: WorkflowEventByteArtifactInventoryData
     meta: ResponseMeta
 
 
