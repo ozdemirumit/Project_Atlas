@@ -304,8 +304,18 @@ binding, route snapshot, freshness admission and authoritative current-head fenc
 Its code-owned lifetime is exactly 15 seconds and cannot exceed the freshness window. The lease
 contains no raw endpoint or credential material and grants only endpoint-resolution authority;
 route selection, binding, credential, network, readiness, publication, delivery, dispatch and
-execution authority remain false. A later materializer must consume the lease once atomically with
-its protected result while repeating the time and fence checks.
+execution authority remain false. A later materializer must consume the lease once while repeating
+the time and fence checks.
+
+Endpoint materialization uses a two-phase crash-safe boundary. PostgreSQL first locks binding,
+route snapshot, current head, freshness admission and lease in fixed order, evaluates
+`clock_timestamp()` and atomically commits one append-only consumption claim plus started attempt.
+That commit is the point of no return. Only then may the trusted materializer resolve sealed
+deployment-owned coordinates and write a short-lived encrypted protected artifact outside ordinary
+application persistence. Success or known failure is appended separately; claim-without-result is
+outcome-uncertain and never retried automatically. Ordinary events, APIs, audit and UI receive only
+minimized metadata and no endpoint, artifact access, credential, network, readiness, publication,
+delivery, dispatch or execution authority.
 
 ### 10.2 Publication State
 

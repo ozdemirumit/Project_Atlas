@@ -4,14 +4,88 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-201 |
-| Title | Bounded single-use workflow physical transport endpoint-resolution authorization lease without endpoint materialization |
-| Status | Implementation and local validation complete; PR CI pending |
-| Branch | `agent/workflow-endpoint-resolution-authorization-lease` |
-| Pull Request | [#214](https://github.com/ozdemirumit/Project_Atlas/pull/214) |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-148, ADR-149, ADR-150, ADR-151 |
-| Last Updated | 2026-08-14 |
-| Next Action | Publish the exact validated head, require green PR CI, squash-merge and independently verify the merged `main` commit |
+| Task ID | ATLAS-IMP-202 |
+| Title | Atomic single-use endpoint-resolution lease consumption and protected endpoint materialization without credential or network authority |
+| Status | Implementation and local validation complete; PR pending |
+| Branch | `agent/workflow-endpoint-materialization-consumption` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-148, ADR-149, ADR-150, ADR-151, ADR-152 |
+| Last Updated | 2026-08-15 |
+| Next Action | Open the pull request, require PostgreSQL-backed PR CI, then SHA-lock and merge only the exact green head |
+
+### ATLAS-IMP-202 Scope Rationale
+
+- IMP-201 proves that one exact resolver workload may attempt endpoint resolution for 15 seconds,
+  but it intentionally neither consumes that authority nor opens endpoint material.
+- The next smallest boundary irreversibly consumes one active lease before invoking one trusted
+  internal materializer. Raw endpoint coordinates remain sealed outside ordinary application
+  persistence and human/API presentation; Atlas stores only append-only attempt and receipt
+  evidence plus opaque protected-artifact identity and integrity commitments.
+- Credential assignment or brokerage, secret/key/certificate access, DNS/TLS/socket operations,
+  readiness probes, provider publication, delivery, retry, quarantine, dispatch and execution
+  remain deferred.
+
+### ATLAS-IMP-202 Acceptance Criteria
+
+- Only the exact resolver subject and
+  `audience.workflow-physical-transport-endpoint-resolver` named by the lease may request
+  materialization. The request supplies lease ID/digest, code-owned policy ID/version, explicit
+  one-way-consumption and uncertain-outcome acknowledgements and idempotency; it cannot select an
+  endpoint, route, artifact, credential, network, TTL or another subject.
+- After required intent audit succeeds, PostgreSQL locks binding, route snapshot, current head,
+  freshness admission and lease in that fixed order, revalidates database time and the exact
+  fenced source chain, then atomically appends one unique consumption claim and started-attempt
+  record. That commit is the point of no return and happens before the trusted materializer is
+  called.
+- The trusted materializer resolves deployment-owned endpoint material only from sealed lineage,
+  verifies route and private-descriptor commitments, writes an encrypted short-lived protected
+  artifact outside ordinary application persistence and returns only a signed minimized receipt.
+  Production fails closed without an approved adapter; development uses a deterministic synthetic
+  adapter with no DNS, network, credential, process or provider access.
+- Success, known failure and uncertain outcome are append-only. Every attempt consumes the lease;
+  failure, timeout, process loss, audit uncertainty or protected-store uncertainty never deletes
+  the claim and never causes automatic retry. Exact replay returns existing completed metadata or
+  fails as outcome-uncertain without invoking the adapter again.
+- A successful protected artifact is bound to the exact resolver and complete source chain, is
+  usable no later than the consumed lease's `valid_until`, and is revoked/rejected when completion
+  misses that deadline. Its opaque ID is not a bearer token and grants no credential, network,
+  readiness, publication, delivery, dispatch or execution authority.
+- Ordinary database/API/UI surfaces contain no hostname, URL, IP, port, namespace, topic, stream,
+  queue, routing value, private descriptor, credential, secret, certificate or provider payload.
+  Humans may read minimized attempt/receipt metadata through the existing username/password
+  session without MFA or a second login and receive no materialize, retry, reveal, credential,
+  probe, publish, deliver, dispatch or execute control.
+
+### ATLAS-IMP-202 Local Validation Evidence
+
+- Ruff format and lint passed across `src`, `tests` and `migrations`; strict mypy passed across
+  1,235 source and test files; Alembic reports the single linear head `20260814_0125`.
+- Focused domain, PostgreSQL-contract and API coverage passed 17 tests with one expected local
+  PostgreSQL skip. The full backend release candidate passed 1,983 tests with seven
+  environment-specific skips: three Windows symlink cases and four live PostgreSQL cases. PR CI
+  must provide PostgreSQL and run the lock-order, concurrent single-claim, append-only trigger and
+  database-time expiry coverage.
+- The complete frontend suite passed 562 tests across 95 files. Full ESLint, TypeScript and the
+  Vite production build passed with only the existing large-chunk advisory.
+- Live validation restarted the backend from this branch, created one deterministic protected
+  materialization through the synthetic no-I/O adapter and used one normal `atlas-demo` /
+  `local-demo` username/password login. The existing lease rendered `Consumed`; the result rendered
+  `Protected result stored`, protected storage verified, raw endpoint disclosed false and all ten
+  post-materialization authority declarations false.
+- The live result panel exposed no endpoint coordinate, protected-artifact handle, digest, endpoint
+  count, credential, secret, provider detail or operational button. DOM inspection found zero
+  materialization-panel buttons, no horizontal overflow at a 584-pixel viewport and no error-level
+  browser console entry. No MFA, second-login or authorized-browser-session prompt appeared.
+
+### ATLAS-IMP-201 Delivery Evidence
+
+- Exact-head commit `bd6458f52401b1606e3794d7bbb7a46b83408898` passed PR CI run
+  `31837266149`; backend completed in 9m54s and frontend in 6m18s.
+- PR [#214](https://github.com/ozdemirumit/Project_Atlas/pull/214) was SHA-locked and squash-merged
+  as `9178caabccdda1699f88fe67ef918a77ef390f82`.
+- The exact merged commit independently passed `main` CI run `31838281875`; backend completed in
+  10m34s and frontend in 6m47s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-202 branched.
 
 ### ATLAS-IMP-201 Scope Rationale
 

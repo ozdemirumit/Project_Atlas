@@ -160,6 +160,23 @@ class WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseEffectiv
     EXPIRED = "expired"
 
 
+class WorkflowEventPhysicalTransportEndpointMaterializationAttemptState(StrEnum):
+    MATERIALIZATION_STARTED = "materialization_started"
+
+
+class WorkflowEventPhysicalTransportEndpointMaterializationResultState(StrEnum):
+    MATERIALIZED_PROTECTED = "materialized_protected"
+    MATERIALIZATION_FAILED = "materialization_failed"
+
+
+class WorkflowEventPhysicalTransportEndpointMaterializationFailureClass(StrEnum):
+    SEALED_LINEAGE_REJECTED = "sealed_lineage_rejected"
+    ENDPOINT_SET_INVALID = "endpoint_set_invalid"
+    POLICY_LIMIT_EXCEEDED = "policy_limit_exceeded"
+    DEADLINE_EXPIRED = "deadline_expired"
+    PROTECTED_ARTIFACT_REVOKED = "protected_artifact_revoked"
+
+
 @dataclass(frozen=True, slots=True)
 class WorkflowScope:
     organization_id: str
@@ -3862,6 +3879,795 @@ class WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease:
     @property
     def grants_execution_authority(self) -> bool:
         return self.authority.execution_authorized
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportEndpointMaterializationPolicy:
+    """Code-owned protected endpoint-materialization requirements."""
+
+    policy_id: str
+    policy_version: str
+    required_materializer_contract_id: str
+    required_materializer_attestor_id: str
+    protected_artifact_schema_id: str
+    protected_artifact_schema_version: str
+    protected_artifact_profile_digest: str
+    maximum_endpoint_count: int
+    raw_endpoint_return_prohibited: bool
+    dns_activity_prohibited: bool
+    network_activity_prohibited: bool
+    credential_access_prohibited: bool
+    process_activity_prohibited: bool
+    provider_activity_prohibited: bool
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.policy_id, "endpoint materialization policy id"),
+            (self.policy_version, "endpoint materialization policy version"),
+            (
+                self.required_materializer_contract_id,
+                "endpoint materializer contract id",
+            ),
+            (
+                self.required_materializer_attestor_id,
+                "endpoint materializer attestor id",
+            ),
+            (self.protected_artifact_schema_id, "protected endpoint artifact schema id"),
+            (
+                self.protected_artifact_schema_version,
+                "protected endpoint artifact schema version",
+            ),
+        ):
+            _require_identifier(value, name=name)
+        _require_digest(
+            self.protected_artifact_profile_digest,
+            name="protected endpoint artifact profile digest",
+        )
+        if self.maximum_endpoint_count != 64:
+            raise ValueError("endpoint materialization policy maximum endpoint count must be 64")
+        if not all(
+            (
+                self.raw_endpoint_return_prohibited,
+                self.dns_activity_prohibited,
+                self.network_activity_prohibited,
+                self.credential_access_prohibited,
+                self.process_activity_prohibited,
+                self.provider_activity_prohibited,
+            )
+        ):
+            raise ValueError("endpoint materialization policy must prohibit runtime activity")
+        _require_digest(self.canonical_digest, name="endpoint materialization policy digest")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("endpoint materialization policy canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "credential_access_prohibited": self.credential_access_prohibited,
+            "dns_activity_prohibited": self.dns_activity_prohibited,
+            "maximum_endpoint_count": self.maximum_endpoint_count,
+            "network_activity_prohibited": self.network_activity_prohibited,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "process_activity_prohibited": self.process_activity_prohibited,
+            "protected_artifact_profile_digest": self.protected_artifact_profile_digest,
+            "protected_artifact_schema_id": self.protected_artifact_schema_id,
+            "protected_artifact_schema_version": self.protected_artifact_schema_version,
+            "provider_activity_prohibited": self.provider_activity_prohibited,
+            "raw_endpoint_return_prohibited": self.raw_endpoint_return_prohibited,
+            "required_materializer_attestor_id": self.required_materializer_attestor_id,
+            "required_materializer_contract_id": self.required_materializer_contract_id,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+def code_owned_workflow_event_physical_transport_endpoint_materialization_policy() -> (
+    WorkflowEventPhysicalTransportEndpointMaterializationPolicy
+):
+    protected_artifact_profile_digest = canonical_digest(
+        {
+            "encryption": "envelope-encryption-required",
+            "lineage_binding": "exact",
+            "resolver_binding": "exact",
+            "schema": "atlas.workflow-protected-endpoint-artifact.v1",
+        }
+    )
+    values: dict[str, object] = {
+        "policy_id": "policy.workflow-event-physical-transport-endpoint-materialization",
+        "policy_version": "1.0",
+        "required_materializer_contract_id": (
+            "contract.workflow-physical-transport-endpoint-materializer.v1"
+        ),
+        "required_materializer_attestor_id": (
+            "subject.workflow-physical-transport-endpoint-materializer-attestor"
+        ),
+        "protected_artifact_schema_id": "atlas.workflow-protected-endpoint-artifact",
+        "protected_artifact_schema_version": "1.0",
+        "protected_artifact_profile_digest": protected_artifact_profile_digest,
+        "maximum_endpoint_count": 64,
+        "raw_endpoint_return_prohibited": True,
+        "dns_activity_prohibited": True,
+        "network_activity_prohibited": True,
+        "credential_access_prohibited": True,
+        "process_activity_prohibited": True,
+        "provider_activity_prohibited": True,
+    }
+    return WorkflowEventPhysicalTransportEndpointMaterializationPolicy(
+        **cast(Any, values), canonical_digest=canonical_digest(values)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportEndpointMaterializationAuthority:
+    endpoint_resolution_authorized: bool = False
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    credential_access_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        if any(self.canonical_value().values()):
+            raise ValueError("endpoint materialization evidence cannot grant authority")
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "credential_access_authorized": self.credential_access_authorized,
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "endpoint_resolution_authorized": self.endpoint_resolution_authorized,
+            "execution_authorized": self.execution_authorized,
+            "network_access_authorized": self.network_access_authorized,
+            "publication_authorized": self.publication_authorized,
+            "readiness_probe_authorized": self.readiness_probe_authorized,
+            "route_binding_authorized": self.route_binding_authorized,
+            "route_selection_authorized": self.route_selection_authorized,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaim:
+    claim_id: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    freshness_admission_id: str
+    freshness_admission_digest: str
+    attempt_id: str
+    materialization_id: str
+    scope: WorkflowScope
+    resolver_subject_id: str
+    claimed_at: datetime
+    request_fingerprint: str
+    idempotency_digest: str
+    authority: WorkflowEventPhysicalTransportEndpointMaterializationAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.claim_id, "endpoint materialization claim id"),
+            (self.authorization_lease_id, "endpoint authorization lease id"),
+            (self.freshness_admission_id, "route freshness admission id"),
+            (self.attempt_id, "endpoint materialization attempt id"),
+            (self.materialization_id, "endpoint materialization id"),
+            (self.resolver_subject_id, "endpoint resolver subject id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.authorization_lease_digest, "endpoint authorization lease digest"),
+            (self.freshness_admission_digest, "route freshness admission digest"),
+            (self.request_fingerprint, "endpoint materialization request fingerprint"),
+            (self.idempotency_digest, "endpoint materialization idempotency digest"),
+            (self.canonical_digest, "endpoint materialization claim digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.claimed_at.tzinfo is None:
+            raise ValueError("endpoint materialization claim time must be timezone-aware")
+        if any(self.authority.canonical_value().values()):
+            raise ValueError("endpoint materialization claims cannot grant authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("endpoint materialization claim canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "attempt_id": self.attempt_id,
+            "authority": self.authority.canonical_value(),
+            "authorization_lease_digest": self.authorization_lease_digest,
+            "authorization_lease_id": self.authorization_lease_id,
+            "claim_id": self.claim_id,
+            "claimed_at": self.claimed_at.isoformat(),
+            "freshness_admission_digest": self.freshness_admission_digest,
+            "freshness_admission_id": self.freshness_admission_id,
+            "idempotency_digest": self.idempotency_digest,
+            "materialization_id": self.materialization_id,
+            "request_fingerprint": self.request_fingerprint,
+            "resolver_subject_id": self.resolver_subject_id,
+            "scope": self.scope.canonical_value(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportEndpointMaterializationAttempt:
+    attempt_id: str
+    materialization_id: str
+    consumption_claim_id: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    freshness_admission_id: str
+    freshness_admission_digest: str
+    physical_transport_route_binding_id: str
+    physical_transport_route_binding_digest: str
+    transport_route_snapshot_id: str
+    transport_route_snapshot_digest: str
+    current_selection_head_id: str
+    current_selection_head_digest: str
+    current_selection_head_generation: int
+    current_selection_head_fencing_token_digest: str
+    scope: WorkflowScope
+    resolver_subject_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    started_at: datetime
+    freshness_valid_until: datetime
+    lease_valid_until: datetime
+    state: WorkflowEventPhysicalTransportEndpointMaterializationAttemptState
+    authority: WorkflowEventPhysicalTransportEndpointMaterializationAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.attempt_id, "endpoint materialization attempt id"),
+            (self.materialization_id, "endpoint materialization id"),
+            (self.consumption_claim_id, "endpoint materialization claim id"),
+            (self.authorization_lease_id, "endpoint authorization lease id"),
+            (self.freshness_admission_id, "route freshness admission id"),
+            (self.physical_transport_route_binding_id, "physical route binding id"),
+            (self.transport_route_snapshot_id, "transport route snapshot id"),
+            (self.current_selection_head_id, "current selection head id"),
+            (self.resolver_subject_id, "endpoint resolver subject id"),
+            (self.policy_id, "endpoint materialization policy id"),
+            (self.policy_version, "endpoint materialization policy version"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.authorization_lease_digest, "endpoint authorization lease digest"),
+            (self.freshness_admission_digest, "route freshness admission digest"),
+            (self.physical_transport_route_binding_digest, "physical route binding digest"),
+            (self.transport_route_snapshot_digest, "transport route snapshot digest"),
+            (self.current_selection_head_digest, "current selection head digest"),
+            (
+                self.current_selection_head_fencing_token_digest,
+                "current selection head fencing token digest",
+            ),
+            (self.policy_digest, "endpoint materialization policy digest"),
+            (self.canonical_digest, "endpoint materialization attempt digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.current_selection_head_generation < 1:
+            raise ValueError("endpoint materialization head generation must be positive")
+        if any(
+            value.tzinfo is None
+            for value in (self.started_at, self.freshness_valid_until, self.lease_valid_until)
+        ):
+            raise ValueError("endpoint materialization attempt times must be timezone-aware")
+        if not self.started_at < min(self.freshness_valid_until, self.lease_valid_until):
+            raise ValueError("endpoint materialization attempt must start inside both windows")
+        if (
+            self.state
+            is not (
+                WorkflowEventPhysicalTransportEndpointMaterializationAttemptState
+            ).MATERIALIZATION_STARTED
+        ):
+            raise ValueError("endpoint materialization attempts must remain started")
+        if any(self.authority.canonical_value().values()):
+            raise ValueError("endpoint materialization attempts cannot grant authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("endpoint materialization attempt canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "attempt_id": self.attempt_id,
+            "authority": self.authority.canonical_value(),
+            "authorization_lease_digest": self.authorization_lease_digest,
+            "authorization_lease_id": self.authorization_lease_id,
+            "consumption_claim_id": self.consumption_claim_id,
+            "current_selection_head_digest": self.current_selection_head_digest,
+            "current_selection_head_fencing_token_digest": (
+                self.current_selection_head_fencing_token_digest
+            ),
+            "current_selection_head_generation": self.current_selection_head_generation,
+            "current_selection_head_id": self.current_selection_head_id,
+            "freshness_admission_digest": self.freshness_admission_digest,
+            "freshness_admission_id": self.freshness_admission_id,
+            "freshness_valid_until": self.freshness_valid_until.isoformat(),
+            "lease_valid_until": self.lease_valid_until.isoformat(),
+            "materialization_id": self.materialization_id,
+            "physical_transport_route_binding_digest": (
+                self.physical_transport_route_binding_digest
+            ),
+            "physical_transport_route_binding_id": self.physical_transport_route_binding_id,
+            "policy_digest": self.policy_digest,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "resolver_subject_id": self.resolver_subject_id,
+            "scope": self.scope.canonical_value(),
+            "started_at": self.started_at.isoformat(),
+            "state": self.state.value,
+            "transport_route_snapshot_digest": self.transport_route_snapshot_digest,
+            "transport_route_snapshot_id": self.transport_route_snapshot_id,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportEndpointMaterializationInstruction:
+    materialization_id: str
+    attempt_id: str
+    consumption_claim_id: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    transport_route_snapshot_id: str
+    transport_route_snapshot_digest: str
+    route_id: str
+    route_revision: str
+    source_route_digest: str
+    endpoint_set_id: str
+    endpoint_set_revision: str
+    destination_id: str
+    destination_revision: str
+    routing_contract_id: str
+    routing_contract_revision: str
+    private_route_descriptor_commitment: str
+    scope: WorkflowScope
+    resolver_subject_id: str
+    materializer_contract_id: str
+    materializer_attestor_id: str
+    protected_artifact_schema_id: str
+    protected_artifact_schema_version: str
+    protected_artifact_profile_digest: str
+    maximum_endpoint_count: int
+    lease_valid_until: datetime
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.materialization_id, "endpoint materialization id"),
+            (self.attempt_id, "endpoint materialization attempt id"),
+            (self.consumption_claim_id, "endpoint materialization claim id"),
+            (self.authorization_lease_id, "endpoint authorization lease id"),
+            (self.transport_route_snapshot_id, "transport route snapshot id"),
+            (self.route_id, "transport route id"),
+            (self.route_revision, "transport route revision"),
+            (self.endpoint_set_id, "endpoint set id"),
+            (self.endpoint_set_revision, "endpoint set revision"),
+            (self.destination_id, "destination id"),
+            (self.destination_revision, "destination revision"),
+            (self.routing_contract_id, "routing contract id"),
+            (self.routing_contract_revision, "routing contract revision"),
+            (self.resolver_subject_id, "endpoint resolver subject id"),
+            (self.materializer_contract_id, "endpoint materializer contract id"),
+            (self.materializer_attestor_id, "endpoint materializer attestor id"),
+            (self.protected_artifact_schema_id, "protected endpoint artifact schema id"),
+            (
+                self.protected_artifact_schema_version,
+                "protected endpoint artifact schema version",
+            ),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.authorization_lease_digest, "endpoint authorization lease digest"),
+            (self.transport_route_snapshot_digest, "transport route snapshot digest"),
+            (self.source_route_digest, "source route digest"),
+            (
+                self.private_route_descriptor_commitment,
+                "private route descriptor commitment",
+            ),
+            (self.protected_artifact_profile_digest, "protected endpoint profile digest"),
+            (self.canonical_digest, "endpoint materialization instruction digest"),
+        ):
+            _require_digest(value, name=name)
+        if not 1 <= self.maximum_endpoint_count <= 64:
+            raise ValueError("endpoint materialization instruction endpoint limit is invalid")
+        if self.lease_valid_until.tzinfo is None:
+            raise ValueError("endpoint materialization instruction deadline must be aware")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("endpoint materialization instruction canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "attempt_id": self.attempt_id,
+            "authorization_lease_digest": self.authorization_lease_digest,
+            "authorization_lease_id": self.authorization_lease_id,
+            "consumption_claim_id": self.consumption_claim_id,
+            "destination_id": self.destination_id,
+            "destination_revision": self.destination_revision,
+            "endpoint_set_id": self.endpoint_set_id,
+            "endpoint_set_revision": self.endpoint_set_revision,
+            "lease_valid_until": self.lease_valid_until.isoformat(),
+            "materialization_id": self.materialization_id,
+            "materializer_attestor_id": self.materializer_attestor_id,
+            "materializer_contract_id": self.materializer_contract_id,
+            "maximum_endpoint_count": self.maximum_endpoint_count,
+            "private_route_descriptor_commitment": (self.private_route_descriptor_commitment),
+            "protected_artifact_profile_digest": self.protected_artifact_profile_digest,
+            "protected_artifact_schema_id": self.protected_artifact_schema_id,
+            "protected_artifact_schema_version": self.protected_artifact_schema_version,
+            "resolver_subject_id": self.resolver_subject_id,
+            "route_id": self.route_id,
+            "route_revision": self.route_revision,
+            "routing_contract_id": self.routing_contract_id,
+            "routing_contract_revision": self.routing_contract_revision,
+            "scope": self.scope.canonical_value(),
+            "source_route_digest": self.source_route_digest,
+            "transport_route_snapshot_digest": self.transport_route_snapshot_digest,
+            "transport_route_snapshot_id": self.transport_route_snapshot_id,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportEndpointMaterializationReceipt:
+    materialization_id: str
+    attempt_id: str
+    consumption_claim_id: str
+    instruction_digest: str
+    materializer_contract_id: str
+    materializer_id: str
+    materializer_version: str
+    attested_by: str
+    resolver_subject_id: str
+    state: WorkflowEventPhysicalTransportEndpointMaterializationResultState
+    failure_class: WorkflowEventPhysicalTransportEndpointMaterializationFailureClass | None
+    protected_artifact_id: str | None
+    protected_artifact_digest: str | None
+    normalized_endpoint_set_digest: str | None
+    endpoint_count: int
+    protected_artifact_schema_id: str
+    protected_artifact_schema_version: str
+    protected_artifact_profile_digest: str
+    source_route_digest: str
+    private_route_descriptor_commitment: str
+    materialized_at: datetime | None
+    completed_at: datetime
+    usable_until: datetime | None
+    commitment_verified: bool
+    encrypted_at_rest: bool
+    resolver_bound: bool
+    lineage_bound: bool
+    raw_endpoint_returned: bool
+    dns_activity_performed: bool
+    network_activity_performed: bool
+    credential_access_performed: bool
+    process_activity_performed: bool
+    provider_activity_performed: bool
+    protected_artifact_revoked: bool
+    cleanup_confirmed: bool
+    signature_verified: bool
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.materialization_id, "endpoint materialization id"),
+            (self.attempt_id, "endpoint materialization attempt id"),
+            (self.consumption_claim_id, "endpoint materialization claim id"),
+            (self.materializer_contract_id, "endpoint materializer contract id"),
+            (self.materializer_id, "endpoint materializer id"),
+            (self.materializer_version, "endpoint materializer version"),
+            (self.attested_by, "endpoint materializer attestor"),
+            (self.resolver_subject_id, "endpoint resolver subject id"),
+            (self.protected_artifact_schema_id, "protected endpoint artifact schema id"),
+            (
+                self.protected_artifact_schema_version,
+                "protected endpoint artifact schema version",
+            ),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.instruction_digest, "endpoint materialization instruction digest"),
+            (self.protected_artifact_profile_digest, "protected endpoint profile digest"),
+            (self.source_route_digest, "source route digest"),
+            (
+                self.private_route_descriptor_commitment,
+                "private route descriptor commitment",
+            ),
+            (self.canonical_digest, "endpoint materialization receipt digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.completed_at.tzinfo is None:
+            raise ValueError("endpoint materialization receipt completion time must be aware")
+        prohibited_activity = (
+            self.raw_endpoint_returned,
+            self.dns_activity_performed,
+            self.network_activity_performed,
+            self.credential_access_performed,
+            self.process_activity_performed,
+            self.provider_activity_performed,
+        )
+        if any(prohibited_activity) or not self.signature_verified:
+            raise ValueError("endpoint materialization receipt reports prohibited activity")
+        if (
+            self.state
+            is (
+                WorkflowEventPhysicalTransportEndpointMaterializationResultState
+            ).MATERIALIZED_PROTECTED
+        ):
+            for optional_value, name in (
+                (self.protected_artifact_id, "protected endpoint artifact id"),
+                (self.protected_artifact_digest, "protected endpoint artifact digest"),
+                (self.normalized_endpoint_set_digest, "normalized endpoint set digest"),
+            ):
+                if optional_value is None:
+                    raise ValueError(f"{name} is required for successful materialization")
+            assert self.protected_artifact_id is not None
+            assert self.protected_artifact_digest is not None
+            assert self.normalized_endpoint_set_digest is not None
+            _require_identifier(
+                self.protected_artifact_id,
+                name="protected endpoint artifact id",
+            )
+            _require_digest(
+                self.protected_artifact_digest,
+                name="protected endpoint artifact digest",
+            )
+            _require_digest(
+                self.normalized_endpoint_set_digest,
+                name="normalized endpoint set digest",
+            )
+            if (
+                self.failure_class is not None
+                or self.materialized_at is None
+                or self.materialized_at.tzinfo is None
+                or self.usable_until is None
+                or self.usable_until.tzinfo is None
+                or not self.materialized_at <= self.completed_at < self.usable_until
+                or self.endpoint_count < 1
+                or not all(
+                    (
+                        self.commitment_verified,
+                        self.encrypted_at_rest,
+                        self.resolver_bound,
+                        self.lineage_bound,
+                    )
+                )
+                or self.protected_artifact_revoked
+                or not self.cleanup_confirmed
+            ):
+                raise ValueError("successful endpoint materialization receipt is invalid")
+        else:
+            if (
+                self.state
+                is not (
+                    WorkflowEventPhysicalTransportEndpointMaterializationResultState
+                ).MATERIALIZATION_FAILED
+                or self.failure_class is None
+                or any(
+                    value is not None
+                    for value in (
+                        self.protected_artifact_id,
+                        self.protected_artifact_digest,
+                        self.normalized_endpoint_set_digest,
+                        self.materialized_at,
+                        self.usable_until,
+                    )
+                )
+                or self.endpoint_count != 0
+                or not self.protected_artifact_revoked
+                or not self.cleanup_confirmed
+            ):
+                raise ValueError("failed endpoint materialization receipt is invalid")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("endpoint materialization receipt canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "attempt_id": self.attempt_id,
+            "attested_by": self.attested_by,
+            "cleanup_confirmed": self.cleanup_confirmed,
+            "commitment_verified": self.commitment_verified,
+            "completed_at": self.completed_at.isoformat(),
+            "consumption_claim_id": self.consumption_claim_id,
+            "credential_access_performed": self.credential_access_performed,
+            "dns_activity_performed": self.dns_activity_performed,
+            "encrypted_at_rest": self.encrypted_at_rest,
+            "endpoint_count": self.endpoint_count,
+            "failure_class": None if self.failure_class is None else self.failure_class.value,
+            "instruction_digest": self.instruction_digest,
+            "lineage_bound": self.lineage_bound,
+            "materialization_id": self.materialization_id,
+            "materialized_at": (
+                None if self.materialized_at is None else self.materialized_at.isoformat()
+            ),
+            "materializer_contract_id": self.materializer_contract_id,
+            "materializer_id": self.materializer_id,
+            "materializer_version": self.materializer_version,
+            "network_activity_performed": self.network_activity_performed,
+            "normalized_endpoint_set_digest": self.normalized_endpoint_set_digest,
+            "private_route_descriptor_commitment": (self.private_route_descriptor_commitment),
+            "process_activity_performed": self.process_activity_performed,
+            "protected_artifact_digest": self.protected_artifact_digest,
+            "protected_artifact_id": self.protected_artifact_id,
+            "protected_artifact_profile_digest": self.protected_artifact_profile_digest,
+            "protected_artifact_revoked": self.protected_artifact_revoked,
+            "protected_artifact_schema_id": self.protected_artifact_schema_id,
+            "protected_artifact_schema_version": self.protected_artifact_schema_version,
+            "provider_activity_performed": self.provider_activity_performed,
+            "raw_endpoint_returned": self.raw_endpoint_returned,
+            "resolver_bound": self.resolver_bound,
+            "resolver_subject_id": self.resolver_subject_id,
+            "signature_verified": self.signature_verified,
+            "source_route_digest": self.source_route_digest,
+            "state": self.state.value,
+            "usable_until": None if self.usable_until is None else self.usable_until.isoformat(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportEndpointMaterializationResult:
+    materialization_id: str
+    attempt_id: str
+    attempt_digest: str
+    consumption_claim_id: str
+    consumption_claim_digest: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    freshness_admission_id: str
+    freshness_admission_digest: str
+    transport_route_snapshot_id: str
+    transport_route_snapshot_digest: str
+    scope: WorkflowScope
+    resolver_subject_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    materializer_id: str
+    materializer_version: str
+    materialization_receipt_digest: str
+    state: WorkflowEventPhysicalTransportEndpointMaterializationResultState
+    failure_class: WorkflowEventPhysicalTransportEndpointMaterializationFailureClass | None
+    protected_artifact_id: str | None
+    protected_artifact_digest: str | None
+    normalized_endpoint_set_digest: str | None
+    endpoint_count: int
+    protected_artifact_schema_id: str
+    protected_artifact_schema_version: str
+    protected_artifact_profile_digest: str
+    completed_at: datetime
+    usable_until: datetime | None
+    protected_artifact_revoked: bool
+    cleanup_confirmed: bool
+    authority: WorkflowEventPhysicalTransportEndpointMaterializationAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.materialization_id, "endpoint materialization id"),
+            (self.attempt_id, "endpoint materialization attempt id"),
+            (self.consumption_claim_id, "endpoint materialization claim id"),
+            (self.authorization_lease_id, "endpoint authorization lease id"),
+            (self.freshness_admission_id, "route freshness admission id"),
+            (self.transport_route_snapshot_id, "transport route snapshot id"),
+            (self.resolver_subject_id, "endpoint resolver subject id"),
+            (self.policy_id, "endpoint materialization policy id"),
+            (self.policy_version, "endpoint materialization policy version"),
+            (self.materializer_id, "endpoint materializer id"),
+            (self.materializer_version, "endpoint materializer version"),
+            (self.protected_artifact_schema_id, "protected endpoint artifact schema id"),
+            (
+                self.protected_artifact_schema_version,
+                "protected endpoint artifact schema version",
+            ),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.attempt_digest, "endpoint materialization attempt digest"),
+            (self.consumption_claim_digest, "endpoint materialization claim digest"),
+            (self.authorization_lease_digest, "endpoint authorization lease digest"),
+            (self.freshness_admission_digest, "route freshness admission digest"),
+            (self.transport_route_snapshot_digest, "transport route snapshot digest"),
+            (self.policy_digest, "endpoint materialization policy digest"),
+            (self.materialization_receipt_digest, "endpoint materialization receipt digest"),
+            (self.protected_artifact_profile_digest, "protected endpoint profile digest"),
+            (self.canonical_digest, "endpoint materialization result digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.completed_at.tzinfo is None:
+            raise ValueError("endpoint materialization completion time must be timezone-aware")
+        if (
+            self.state
+            is (
+                WorkflowEventPhysicalTransportEndpointMaterializationResultState
+            ).MATERIALIZED_PROTECTED
+        ):
+            if (
+                self.failure_class is not None
+                or self.protected_artifact_id is None
+                or self.protected_artifact_digest is None
+                or self.normalized_endpoint_set_digest is None
+                or self.endpoint_count < 1
+                or self.usable_until is None
+                or self.usable_until.tzinfo is None
+                or not self.completed_at < self.usable_until
+                or self.protected_artifact_revoked
+                or not self.cleanup_confirmed
+            ):
+                raise ValueError("successful endpoint materialization result is invalid")
+            _require_identifier(
+                self.protected_artifact_id,
+                name="protected endpoint artifact id",
+            )
+            _require_digest(
+                self.protected_artifact_digest,
+                name="protected endpoint artifact digest",
+            )
+            _require_digest(
+                self.normalized_endpoint_set_digest,
+                name="normalized endpoint set digest",
+            )
+        elif (
+            self.state
+            is not (
+                WorkflowEventPhysicalTransportEndpointMaterializationResultState
+            ).MATERIALIZATION_FAILED
+            or self.failure_class is None
+            or any(
+                value is not None
+                for value in (
+                    self.protected_artifact_id,
+                    self.protected_artifact_digest,
+                    self.normalized_endpoint_set_digest,
+                    self.usable_until,
+                )
+            )
+            or self.endpoint_count != 0
+            or not self.protected_artifact_revoked
+            or not self.cleanup_confirmed
+        ):
+            raise ValueError("failed endpoint materialization result is invalid")
+        if any(self.authority.canonical_value().values()):
+            raise ValueError("endpoint materialization results cannot grant authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("endpoint materialization result canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "attempt_digest": self.attempt_digest,
+            "attempt_id": self.attempt_id,
+            "authority": self.authority.canonical_value(),
+            "authorization_lease_digest": self.authorization_lease_digest,
+            "authorization_lease_id": self.authorization_lease_id,
+            "canonical_materialization_receipt_digest": self.materialization_receipt_digest,
+            "cleanup_confirmed": self.cleanup_confirmed,
+            "completed_at": self.completed_at.isoformat(),
+            "consumption_claim_digest": self.consumption_claim_digest,
+            "consumption_claim_id": self.consumption_claim_id,
+            "endpoint_count": self.endpoint_count,
+            "failure_class": None if self.failure_class is None else self.failure_class.value,
+            "freshness_admission_digest": self.freshness_admission_digest,
+            "freshness_admission_id": self.freshness_admission_id,
+            "materialization_id": self.materialization_id,
+            "materializer_id": self.materializer_id,
+            "materializer_version": self.materializer_version,
+            "normalized_endpoint_set_digest": self.normalized_endpoint_set_digest,
+            "policy_digest": self.policy_digest,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "protected_artifact_digest": self.protected_artifact_digest,
+            "protected_artifact_id": self.protected_artifact_id,
+            "protected_artifact_profile_digest": self.protected_artifact_profile_digest,
+            "protected_artifact_revoked": self.protected_artifact_revoked,
+            "protected_artifact_schema_id": self.protected_artifact_schema_id,
+            "protected_artifact_schema_version": self.protected_artifact_schema_version,
+            "resolver_subject_id": self.resolver_subject_id,
+            "scope": self.scope.canonical_value(),
+            "state": self.state.value,
+            "transport_route_snapshot_digest": self.transport_route_snapshot_digest,
+            "transport_route_snapshot_id": self.transport_route_snapshot_id,
+            "usable_until": None if self.usable_until is None else self.usable_until.isoformat(),
+        }
 
 
 @dataclass(frozen=True, slots=True)

@@ -599,7 +599,12 @@ MVP workflows do not execute C3 through C5 capabilities.
 - ADR-151 establishes one non-transferable, 15-second endpoint-resolution authorization lease for
   the exact resolver workload after database-time revalidation of the complete physical route and
   freshness chain. It contains no endpoint or credential material, grants only endpoint-resolution
-  authority and requires a later materializer to consume it once atomically with protected output.
+  authority and requires a later materializer to consume it once under the crash-safe semantics
+  clarified by ADR-152.
+- ADR-152 establishes irreversible single-use lease consumption before one trusted protected
+  endpoint-materialization attempt. Claim and attempt commit before the adapter call; success,
+  known failure and uncertainty remain append-only, raw coordinates stay outside ordinary
+  persistence and all post-materialization authority declarations are false.
 
 ## 39. Assumptions
 

@@ -32,6 +32,7 @@ import {
   listWorkflowDispatchEventEnvelopes,
   listWorkflowDispatchOutboxPublicationLeases,
   listWorkflowEndpointResolutionAuthorizationLeases,
+  listWorkflowPhysicalTransportEndpointMaterializations,
   listWorkflowEventByteArtifacts,
   listWorkflowEventLogicalChannelBindings,
   listWorkflowEventTransportAdmissions,
@@ -137,6 +138,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: () => listWorkflowEndpointResolutionAuthorizationLeases({ scope }),
+    retry: false,
+  });
+  const endpointMaterializationQuery = useQuery({
+    queryKey: [
+      "workflow-physical-transport-endpoint-materializations",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () => listWorkflowPhysicalTransportEndpointMaterializations({ scope }),
     retry: false,
   });
   const targetQuery = useQuery({
@@ -570,6 +581,10 @@ export default function WorkflowPlanningWorkspace({
   const endpointResolutionAuthorizationLeaseErrorStatus =
     endpointResolutionAuthorizationLeaseQuery.error instanceof ApiRequestError
       ? endpointResolutionAuthorizationLeaseQuery.error.status
+      : undefined;
+  const endpointMaterializationErrorStatus =
+    endpointMaterializationQuery.error instanceof ApiRequestError
+      ? endpointMaterializationQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -1283,7 +1298,11 @@ export default function WorkflowPlanningWorkspace({
                             lease.effective_state === "active" ? "neutral" : "warning"
                           }`}
                         >
-                          {lease.effective_state === "active" ? "Active" : "Expired"}
+                          {lease.effective_state === "active"
+                            ? "Active"
+                            : lease.effective_state === "expired"
+                              ? "Expired"
+                              : "Consumed"}
                         </span>
                       </strong>
                       <div className="workflow-physical-route-binding-grid">
@@ -1340,6 +1359,178 @@ export default function WorkflowPlanningWorkspace({
             cannot issue, renew, transfer, consume, or resolve it, and no endpoint, locator,
             credential, network, readiness, publication, delivery, dispatch, or execution access is
             exposed.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band"
+        aria-labelledby="workflow-endpoint-materialization-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">PROTECTED MATERIALIZATION EVIDENCE</p>
+            <h2 id="workflow-endpoint-materialization-title">
+              Endpoint materialization results
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {endpointMaterializationQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading endpoint materialization results...</span>
+          </div>
+        )}
+        {endpointMaterializationQuery.isError && (
+          <div className="inline-error" role="alert">
+            <div>
+              <strong>
+                {endpointMaterializationErrorStatus === 401
+                  ? "Your session has expired"
+                  : endpointMaterializationErrorStatus === 403
+                    ? "Endpoint materialization evidence permission is missing"
+                    : "Endpoint materialization results are unavailable"}
+              </strong>
+              <span>
+                {endpointMaterializationErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : endpointMaterializationErrorStatus === 403
+                    ? "Your current role or scope cannot inspect endpoint materialization evidence."
+                    : "No materialization outcome or operational state is inferred from this failed read."}
+              </span>
+            </div>
+            {endpointMaterializationErrorStatus !== 401 &&
+              endpointMaterializationErrorStatus !== 403 && (
+                <button
+                  className="secondary-action"
+                  type="button"
+                  aria-label="Retry endpoint materialization result read"
+                  onClick={() => void endpointMaterializationQuery.refetch()}
+                >
+                  <RefreshCw size={16} />
+                  Retry
+                </button>
+              )}
+          </div>
+        )}
+        {endpointMaterializationQuery.isSuccess &&
+          endpointMaterializationQuery.data.physical_transport_endpoint_materializations.length ===
+            0 && (
+            <div className="workflow-empty-state" role="status">
+              <Database size={19} />
+              <span>No endpoint materialization results are recorded in this scope.</span>
+            </div>
+          )}
+        {endpointMaterializationQuery.isSuccess &&
+          endpointMaterializationQuery.data.physical_transport_endpoint_materializations.length >
+            0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list"
+              aria-label="Endpoint materialization results"
+            >
+              {endpointMaterializationQuery.data.physical_transport_endpoint_materializations.map(
+                (materialization) => {
+                  const outcomeLabel =
+                    materialization.outcome === "materialized_protected"
+                      ? "Protected result stored"
+                      : materialization.outcome === "failed_closed_consumed"
+                        ? "Failed closed"
+                        : "Outcome uncertain";
+                  return (
+                    <li key={materialization.materialization_id}>
+                      {materialization.outcome === "materialized_protected" ? (
+                        <ShieldCheck size={18} />
+                      ) : (
+                        <Ban size={18} />
+                      )}
+                      <div>
+                        <strong>
+                          <code title={materialization.materialization_id}>
+                            {safeHolderIdentifier(materialization.materialization_id)}
+                          </code>
+                          <span
+                            className={`state-badge ${
+                              materialization.outcome === "materialized_protected"
+                                ? "neutral"
+                                : "warning"
+                            }`}
+                          >
+                            {outcomeLabel}
+                          </span>
+                        </strong>
+                        <div className="workflow-physical-route-binding-grid">
+                          <span>
+                            Consumed lease{" "}
+                            <code title={materialization.lease_id}>
+                              {safeHolderIdentifier(materialization.lease_id)}
+                            </code>
+                          </span>
+                          <span>
+                            Freshness admission{" "}
+                            <code title={materialization.freshness_admission_id}>
+                              {safeHolderIdentifier(materialization.freshness_admission_id)}
+                            </code>{" "}
+                            | generation {materialization.selection_generation}
+                          </span>
+                          <span>
+                            Policy{" "}
+                            <code title={materialization.policy_id}>
+                              {safeHolderIdentifier(materialization.policy_id)}
+                            </code>{" "}
+                            v{materialization.policy_version}
+                          </span>
+                          <span>
+                            Organization {materialization.scope.organization_id} | environment{" "}
+                            {materialization.scope.environment_id} | site{" "}
+                            {materialization.scope.site_id}
+                          </span>
+                          <span>
+                            Resolver workload{" "}
+                            <code title={materialization.resolver_subject_id}>
+                              {safeHolderIdentifier(materialization.resolver_subject_id)}
+                            </code>
+                          </span>
+                          <span>Lease consumed {formatTimestamp(materialization.consumed_at)}</span>
+                          <span>
+                            Result recorded{" "}
+                            {materialization.recorded_at === null
+                              ? "Not recorded"
+                              : formatTimestamp(materialization.recorded_at)}
+                          </span>
+                          <span>
+                            Protected storage{" "}
+                            {materialization.protected_storage_verified
+                              ? "Verified"
+                              : "Not verified"}{" "}
+                            | raw endpoint disclosed false
+                          </span>
+                          <span>
+                            Integrity reference{" "}
+                            <code title={materialization.integrity_reference}>
+                              {safeHolderIdentifier(materialization.integrity_reference)}
+                            </code>
+                          </span>
+                          <span className="workflow-physical-route-binding-authority">
+                            Authority route selection false | route binding false | endpoint
+                            resolution false | credential access false | network access false |
+                            readiness probe false | publication false | delivery false | dispatch
+                            false | execution false
+                          </span>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                },
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            This read-only inventory confirms one-way lease consumption and minimized outcome
+            evidence only. It exposes no endpoint coordinates, credentials, protected storage
+            access, network access, or operational authority.
           </span>
         </div>
       </section>

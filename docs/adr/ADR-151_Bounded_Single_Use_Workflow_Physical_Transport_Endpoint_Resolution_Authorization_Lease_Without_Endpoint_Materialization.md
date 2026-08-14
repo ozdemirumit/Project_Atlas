@@ -90,6 +90,12 @@ attempt, including a failed materialization attempt, consume the lease exactly o
 defines this mandatory consumption contract but does not expose a consumption API or materialize
 an endpoint.
 
+ADR-152 clarifies the crash-safe implementation of this requirement: the unique claim and started
+attempt commit atomically before the trusted materializer runs, while success or known-failure
+evidence is appended afterward. A committed claim without terminal evidence is consumed with an
+uncertain outcome and is never retried. This clarification prevents process failure or transaction
+rollback from making already-opened protected material reusable.
+
 Authorized humans may read minimized lease evidence through a dedicated default-deny permission
 and the existing username/password browser session. Human API and UI views omit source, policy,
 fencing-token and canonical digests, expose no route or endpoint material and provide no issue,

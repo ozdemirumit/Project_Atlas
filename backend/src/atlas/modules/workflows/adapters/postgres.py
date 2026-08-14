@@ -33,8 +33,11 @@ from atlas.core.persistence.models import (
     WorkflowEventByteArtifactModel,
     WorkflowEventLogicalChannelBindingClaimModel,
     WorkflowEventLogicalChannelBindingModel,
+    WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel,
+    WorkflowEventPhysicalTransportEndpointMaterializationResultModel,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseClaimModel,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel,
+    WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaimModel,
     WorkflowEventPhysicalTransportRouteBindingClaimModel,
     WorkflowEventPhysicalTransportRouteBindingModel,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionClaimModel,
@@ -95,6 +98,15 @@ from atlas.modules.workflows.application.dispatch_intent_ports import (
     WorkflowDispatchIntentStagingRequest,
     WorkflowDispatchIntentStagingResult,
     WorkflowDispatchIntentStagingStatus,
+)
+from atlas.modules.workflows.application.endpoint_materialization_ports import (
+    WorkflowEventPhysicalTransportEndpointMaterializationClaimRequest,
+    WorkflowEventPhysicalTransportEndpointMaterializationClaimResult,
+    WorkflowEventPhysicalTransportEndpointMaterializationClaimStatus,
+    WorkflowEventPhysicalTransportEndpointMaterializationError,
+    WorkflowEventPhysicalTransportEndpointMaterializationResultRequest,
+    WorkflowEventPhysicalTransportEndpointMaterializationResultStatus,
+    WorkflowEventPhysicalTransportEndpointMaterializationResultWrite,
 )
 from atlas.modules.workflows.application.endpoint_resolution_authorization_lease_ports import (
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseError,
@@ -192,9 +204,16 @@ from atlas.modules.workflows.domain import (
     WorkflowEventLogicalChannelBinding,
     WorkflowEventLogicalChannelBindingAuthority,
     WorkflowEventLogicalChannelBindingState,
+    WorkflowEventPhysicalTransportEndpointMaterializationAttempt,
+    WorkflowEventPhysicalTransportEndpointMaterializationAttemptState,
+    WorkflowEventPhysicalTransportEndpointMaterializationAuthority,
+    WorkflowEventPhysicalTransportEndpointMaterializationFailureClass,
+    WorkflowEventPhysicalTransportEndpointMaterializationResult,
+    WorkflowEventPhysicalTransportEndpointMaterializationResultState,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseAuthority,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseState,
+    WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaim,
     WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventPhysicalTransportRouteBindingAuthority,
     WorkflowEventPhysicalTransportRouteBindingState,
@@ -231,6 +250,7 @@ from atlas.modules.workflows.domain import (
     canonical_json_byte_count,
     canonical_json_bytes,
     code_owned_workflow_event_logical_channel_policy,
+    code_owned_workflow_event_physical_transport_endpoint_materialization_policy,
     code_owned_workflow_event_physical_transport_endpoint_resolution_authorization_policy,
     code_owned_workflow_event_physical_transport_route_freshness_policy,
     code_owned_workflow_event_transport_admission_policy,
@@ -2505,6 +2525,72 @@ class PostgreSQLWorkflowPlanRepository:
             )
             return self._endpoint_resolution_authorization_lease_record_from_claim(claim, row)
 
+    async def get_endpoint_resolution_authorization_lease_by_id(
+        self, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease | None:
+        async with self._sessions() as session:
+            row = await session.get(
+                WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel,
+                authorization_lease_id,
+            )
+            return (
+                None if row is None else self._endpoint_resolution_authorization_lease_from_row(row)
+            )
+
+    async def get_endpoint_materialization_claim_by_lease(
+        self, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaim | None:
+        async with self._sessions() as session:
+            row = await self._load_endpoint_materialization_claim_row(
+                session, authorization_lease_id=authorization_lease_id
+            )
+            return None if row is None else self._endpoint_materialization_claim_from_row(row)
+
+    async def get_endpoint_materialization_attempt_by_lease(
+        self, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportEndpointMaterializationAttempt | None:
+        async with self._sessions() as session:
+            row = await self._load_endpoint_materialization_attempt_row(
+                session, authorization_lease_id=authorization_lease_id
+            )
+            return None if row is None else self._endpoint_materialization_attempt_from_row(row)
+
+    async def list_endpoint_materialization_attempts(
+        self, *, scope: WorkflowScope, limit: int
+    ) -> tuple[WorkflowEventPhysicalTransportEndpointMaterializationAttempt, ...]:
+        capped = min(max(limit, 0), 256)
+        if capped == 0:
+            return ()
+        async with self._sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel)
+                    .where(
+                        WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel.organization_id
+                        == scope.organization_id,
+                        WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel.environment_id
+                        == scope.environment_id,
+                        WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel.site_id
+                        == scope.site_id,
+                    )
+                    .order_by(
+                        WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel.started_at.desc(),
+                        WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel.attempt_id,
+                    )
+                    .limit(capped)
+                )
+            ).all()
+            return tuple(self._endpoint_materialization_attempt_from_row(row) for row in rows)
+
+    async def get_endpoint_materialization_result_by_lease(
+        self, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportEndpointMaterializationResult | None:
+        async with self._sessions() as session:
+            row = await self._load_endpoint_materialization_result_row(
+                session, authorization_lease_id=authorization_lease_id
+            )
+            return None if row is None else self._endpoint_materialization_result_from_row(row)
+
     async def authorize_endpoint_resolution(
         self,
         request: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRequest,
@@ -2635,6 +2721,147 @@ class PostgreSQLWorkflowPlanRepository:
                 )
         return WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResult(
             WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseStatus.EVIDENCE_CONFLICT,
+            None,
+        )
+
+    async def claim_endpoint_materialization(
+        self,
+        request: WorkflowEventPhysicalTransportEndpointMaterializationClaimRequest,
+    ) -> WorkflowEventPhysicalTransportEndpointMaterializationClaimResult:
+        self._validate_endpoint_materialization_claim_request(request)
+        async with self._sessions() as session:
+            locked = await self._lock_endpoint_materialization_sources(session, request=request)
+            observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+            replay = await self._endpoint_materialization_claim_replay(session, request=request)
+            if replay is not None:
+                await session.rollback()
+                return replay
+            if not self._endpoint_materialization_evidence_matches(
+                *locked, request=request, observed_at=observed_at
+            ):
+                await session.rollback()
+                return WorkflowEventPhysicalTransportEndpointMaterializationClaimResult(
+                    WorkflowEventPhysicalTransportEndpointMaterializationClaimStatus.EVIDENCE_CONFLICT,
+                    None,
+                    None,
+                    None,
+                )
+            claim = self._endpoint_materialization_claim(request, claimed_at=observed_at)
+            lease_row = locked[4]
+            assert lease_row is not None
+            attempt = self._endpoint_materialization_attempt(
+                request,
+                claim=claim,
+                started_at=observed_at,
+                lease_valid_until=lease_row.valid_until,
+            )
+            try:
+                session.add(self._endpoint_materialization_claim_model(claim))
+                await session.flush()
+                session.add(self._endpoint_materialization_attempt_model(attempt))
+                await session.commit()
+                return WorkflowEventPhysicalTransportEndpointMaterializationClaimResult(
+                    WorkflowEventPhysicalTransportEndpointMaterializationClaimStatus.CLAIMED,
+                    claim,
+                    attempt,
+                    None,
+                )
+            except IntegrityError:
+                await session.rollback()
+
+        async with self._sessions() as session:
+            await self._lock_endpoint_materialization_sources(session, request=request)
+            await session.scalar(select(func.clock_timestamp()))
+            replay = await self._endpoint_materialization_claim_replay(session, request=request)
+            await session.rollback()
+            if replay is not None:
+                return replay
+        return WorkflowEventPhysicalTransportEndpointMaterializationClaimResult(
+            WorkflowEventPhysicalTransportEndpointMaterializationClaimStatus.EVIDENCE_CONFLICT,
+            None,
+            None,
+            None,
+        )
+
+    async def record_endpoint_materialization_result(
+        self,
+        request: WorkflowEventPhysicalTransportEndpointMaterializationResultRequest,
+    ) -> WorkflowEventPhysicalTransportEndpointMaterializationResultWrite:
+        self._validate_endpoint_materialization_result_request(request)
+        result = request.result
+        async with self._sessions() as session:
+            seed = await self._load_endpoint_materialization_attempt_row(
+                session, authorization_lease_id=result.authorization_lease_id
+            )
+            lease_seed = await session.get(
+                WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel,
+                result.authorization_lease_id,
+            )
+            if seed is None or lease_seed is None:
+                return WorkflowEventPhysicalTransportEndpointMaterializationResultWrite(
+                    WorkflowEventPhysicalTransportEndpointMaterializationResultStatus.CONFLICT,
+                    None,
+                )
+            locked = await self._lock_endpoint_materialization_result_sources(
+                session, attempt_seed=seed, lease_seed=lease_seed
+            )
+            observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+            existing = await self._load_endpoint_materialization_result_row(
+                session, authorization_lease_id=result.authorization_lease_id
+            )
+            if existing is not None:
+                stored = self._endpoint_materialization_result_from_row(existing)
+                await session.rollback()
+                if stored == result:
+                    return WorkflowEventPhysicalTransportEndpointMaterializationResultWrite(
+                        WorkflowEventPhysicalTransportEndpointMaterializationResultStatus.REPLAY,
+                        stored,
+                    )
+                return WorkflowEventPhysicalTransportEndpointMaterializationResultWrite(
+                    WorkflowEventPhysicalTransportEndpointMaterializationResultStatus.CONFLICT,
+                    None,
+                )
+            claim_row = await self._load_endpoint_materialization_claim_row(
+                session, authorization_lease_id=result.authorization_lease_id
+            )
+            attempt_row = await self._load_endpoint_materialization_attempt_row(
+                session, authorization_lease_id=result.authorization_lease_id
+            )
+            if not self._endpoint_materialization_result_evidence_matches(
+                *locked,
+                claim_row=claim_row,
+                attempt_row=attempt_row,
+                request=request,
+                observed_at=observed_at,
+            ):
+                await session.rollback()
+                return WorkflowEventPhysicalTransportEndpointMaterializationResultWrite(
+                    WorkflowEventPhysicalTransportEndpointMaterializationResultStatus.CONFLICT,
+                    None,
+                )
+            try:
+                session.add(self._endpoint_materialization_result_model(result))
+                await session.commit()
+                return WorkflowEventPhysicalTransportEndpointMaterializationResultWrite(
+                    WorkflowEventPhysicalTransportEndpointMaterializationResultStatus.RECORDED,
+                    result,
+                )
+            except IntegrityError:
+                await session.rollback()
+
+        async with self._sessions() as session:
+            existing = await self._load_endpoint_materialization_result_row(
+                session, authorization_lease_id=result.authorization_lease_id
+            )
+            if existing is not None:
+                stored = self._endpoint_materialization_result_from_row(existing)
+                if stored == result:
+                    return WorkflowEventPhysicalTransportEndpointMaterializationResultWrite(
+                        WorkflowEventPhysicalTransportEndpointMaterializationResultStatus.REPLAY,
+                        stored,
+                    )
+        return WorkflowEventPhysicalTransportEndpointMaterializationResultWrite(
+            WorkflowEventPhysicalTransportEndpointMaterializationResultStatus.CONFLICT,
             None,
         )
 
@@ -7497,6 +7724,1022 @@ class PostgreSQLWorkflowPlanRepository:
         raise WorkflowEventPhysicalTransportRouteBindingError(
             "workflow_physical_transport_route_binding_repository_contract_violation",
             "The workflow physical transport route binding does not match durable evidence.",
+        )
+
+    async def _lock_endpoint_materialization_sources(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowEventPhysicalTransportEndpointMaterializationClaimRequest,
+    ) -> tuple[
+        WorkflowEventPhysicalTransportRouteBindingModel | None,
+        EventPhysicalTransportRouteSnapshotModel | None,
+        DeploymentEventTransportRouteSelectionHeadModel | None,
+        WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel | None,
+        WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel | None,
+    ]:
+        binding_row = cast(
+            WorkflowEventPhysicalTransportRouteBindingModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportRouteBindingModel)
+                .where(
+                    WorkflowEventPhysicalTransportRouteBindingModel.binding_id
+                    == request.expected_physical_transport_route_binding_id
+                )
+                .with_for_update()
+            ),
+        )
+        route_row = cast(
+            EventPhysicalTransportRouteSnapshotModel | None,
+            await session.scalar(
+                select(EventPhysicalTransportRouteSnapshotModel)
+                .where(
+                    EventPhysicalTransportRouteSnapshotModel.snapshot_id
+                    == request.expected_transport_route_snapshot_id
+                )
+                .with_for_update()
+            ),
+        )
+        head_rows = (
+            await session.scalars(
+                select(DeploymentEventTransportRouteSelectionHeadModel)
+                .where(
+                    DeploymentEventTransportRouteSelectionHeadModel.organization_id
+                    == request.scope.organization_id,
+                    DeploymentEventTransportRouteSelectionHeadModel.environment_id
+                    == request.scope.environment_id,
+                    DeploymentEventTransportRouteSelectionHeadModel.site_id
+                    == request.scope.site_id,
+                    DeploymentEventTransportRouteSelectionHeadModel.route_set_id
+                    == request.expected_route_set_id,
+                    DeploymentEventTransportRouteSelectionHeadModel.current.is_(True),
+                )
+                .limit(2)
+                .with_for_update()
+            )
+        ).all()
+        head_row = head_rows[0] if len(head_rows) == 1 else None
+        freshness_row = cast(
+            WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel)
+                .where(
+                    WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel.freshness_admission_id
+                    == request.expected_freshness_admission_id
+                )
+                .with_for_update()
+            ),
+        )
+        lease_row = cast(
+            WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel)
+                .where(
+                    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel.authorization_lease_id
+                    == request.authorization_lease_id
+                )
+                .with_for_update()
+            ),
+        )
+        return binding_row, route_row, head_row, freshness_row, lease_row
+
+    async def _lock_endpoint_materialization_result_sources(
+        self,
+        session: AsyncSession,
+        *,
+        attempt_seed: WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel,
+        lease_seed: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel,
+    ) -> tuple[
+        WorkflowEventPhysicalTransportRouteBindingModel | None,
+        EventPhysicalTransportRouteSnapshotModel | None,
+        DeploymentEventTransportRouteSelectionHeadModel | None,
+        WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel | None,
+        WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel | None,
+    ]:
+        binding_row = cast(
+            WorkflowEventPhysicalTransportRouteBindingModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportRouteBindingModel)
+                .where(
+                    WorkflowEventPhysicalTransportRouteBindingModel.binding_id
+                    == attempt_seed.physical_transport_route_binding_id
+                )
+                .with_for_update()
+            ),
+        )
+        route_row = cast(
+            EventPhysicalTransportRouteSnapshotModel | None,
+            await session.scalar(
+                select(EventPhysicalTransportRouteSnapshotModel)
+                .where(
+                    EventPhysicalTransportRouteSnapshotModel.snapshot_id
+                    == attempt_seed.transport_route_snapshot_id
+                )
+                .with_for_update()
+            ),
+        )
+        head_rows = (
+            await session.scalars(
+                select(DeploymentEventTransportRouteSelectionHeadModel)
+                .where(
+                    DeploymentEventTransportRouteSelectionHeadModel.organization_id
+                    == attempt_seed.organization_id,
+                    DeploymentEventTransportRouteSelectionHeadModel.environment_id
+                    == attempt_seed.environment_id,
+                    DeploymentEventTransportRouteSelectionHeadModel.site_id == attempt_seed.site_id,
+                    DeploymentEventTransportRouteSelectionHeadModel.route_set_id
+                    == lease_seed.route_set_id,
+                    DeploymentEventTransportRouteSelectionHeadModel.current.is_(True),
+                )
+                .limit(2)
+                .with_for_update()
+            )
+        ).all()
+        head_row = head_rows[0] if len(head_rows) == 1 else None
+        freshness_row = cast(
+            WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel)
+                .where(
+                    WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel.freshness_admission_id
+                    == attempt_seed.freshness_admission_id
+                )
+                .with_for_update()
+            ),
+        )
+        lease_row = cast(
+            WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel)
+                .where(
+                    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel.authorization_lease_id
+                    == attempt_seed.authorization_lease_id
+                )
+                .with_for_update()
+            ),
+        )
+        return binding_row, route_row, head_row, freshness_row, lease_row
+
+    async def _endpoint_materialization_claim_replay(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowEventPhysicalTransportEndpointMaterializationClaimRequest,
+    ) -> WorkflowEventPhysicalTransportEndpointMaterializationClaimResult | None:
+        claim_status = WorkflowEventPhysicalTransportEndpointMaterializationClaimStatus
+        row = await self._load_endpoint_materialization_claim_row(
+            session, authorization_lease_id=request.authorization_lease_id
+        )
+        if row is None:
+            idempotency_row = cast(
+                WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaimModel | None,
+                await session.scalar(
+                    select(
+                        WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaimModel
+                    ).where(
+                        WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaimModel.idempotency_digest
+                        == request.idempotency_digest
+                    )
+                ),
+            )
+            if idempotency_row is None:
+                return None
+            return WorkflowEventPhysicalTransportEndpointMaterializationClaimResult(
+                WorkflowEventPhysicalTransportEndpointMaterializationClaimStatus.IDEMPOTENCY_CONFLICT,
+                None,
+                None,
+                None,
+            )
+        claim = self._endpoint_materialization_claim_from_row(row)
+        attempt_row = await self._load_endpoint_materialization_attempt_row(
+            session, authorization_lease_id=request.authorization_lease_id
+        )
+        attempt = (
+            None
+            if attempt_row is None
+            else self._endpoint_materialization_attempt_from_row(attempt_row)
+        )
+        result_row = await self._load_endpoint_materialization_result_row(
+            session, authorization_lease_id=request.authorization_lease_id
+        )
+        result = (
+            None
+            if result_row is None
+            else self._endpoint_materialization_result_from_row(result_row)
+        )
+        exact = bool(
+            claim.claim_id == request.claim_id
+            and claim.attempt_id == request.attempt_id
+            and claim.materialization_id == request.materialization_id
+            and claim.authorization_lease_digest == request.authorization_lease_digest
+            and claim.scope == request.scope
+            and claim.resolver_subject_id == request.resolver_subject_id
+            and claim.request_fingerprint == request.request_fingerprint
+            and claim.idempotency_digest == request.idempotency_digest
+        )
+        if exact:
+            status = claim_status.CLAIM_ONLY_UNCERTAIN
+            if result is not None:
+                status = claim_status.REPLAY_COMPLETED
+            return WorkflowEventPhysicalTransportEndpointMaterializationClaimResult(
+                status,
+                claim,
+                attempt,
+                result,
+            )
+        status = (
+            WorkflowEventPhysicalTransportEndpointMaterializationClaimStatus.IDEMPOTENCY_CONFLICT
+            if claim.idempotency_digest == request.idempotency_digest
+            else WorkflowEventPhysicalTransportEndpointMaterializationClaimStatus.ALREADY_CONSUMED
+        )
+        return WorkflowEventPhysicalTransportEndpointMaterializationClaimResult(
+            status,
+            None,
+            None,
+            None,
+        )
+
+    @staticmethod
+    async def _load_endpoint_materialization_claim_row(
+        session: AsyncSession, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaimModel | None:
+        return cast(
+            WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaimModel | None,
+            await session.scalar(
+                select(
+                    WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaimModel
+                ).where(
+                    WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaimModel.authorization_lease_id
+                    == authorization_lease_id
+                )
+            ),
+        )
+
+    @staticmethod
+    async def _load_endpoint_materialization_attempt_row(
+        session: AsyncSession, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel | None:
+        return cast(
+            WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel).where(
+                    WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel.authorization_lease_id
+                    == authorization_lease_id
+                )
+            ),
+        )
+
+    @staticmethod
+    async def _load_endpoint_materialization_result_row(
+        session: AsyncSession, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportEndpointMaterializationResultModel | None:
+        return cast(
+            WorkflowEventPhysicalTransportEndpointMaterializationResultModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportEndpointMaterializationResultModel).where(
+                    WorkflowEventPhysicalTransportEndpointMaterializationResultModel.authorization_lease_id
+                    == authorization_lease_id
+                )
+            ),
+        )
+
+    @classmethod
+    def _endpoint_materialization_evidence_matches(
+        cls,
+        binding_row: WorkflowEventPhysicalTransportRouteBindingModel | None,
+        route_row: EventPhysicalTransportRouteSnapshotModel | None,
+        head_row: DeploymentEventTransportRouteSelectionHeadModel | None,
+        freshness_row: WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel | None,
+        lease_row: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel | None,
+        *,
+        request: WorkflowEventPhysicalTransportEndpointMaterializationClaimRequest,
+        observed_at: datetime,
+    ) -> bool:
+        if any(row is None for row in (binding_row, route_row, head_row, freshness_row, lease_row)):
+            return False
+        assert binding_row is not None
+        assert route_row is not None
+        assert head_row is not None
+        assert freshness_row is not None
+        assert lease_row is not None
+        try:
+            binding = cls._physical_transport_route_binding_from_row(binding_row)
+            route = cls._transport_route_snapshot_from_row(route_row)
+            head = cls._route_selection_head_from_row(head_row)
+            freshness = cls._route_freshness_admission_from_row(freshness_row)
+            lease = cls._endpoint_resolution_authorization_lease_from_row(lease_row)
+        except Exception:
+            return False
+        policy = code_owned_workflow_event_physical_transport_endpoint_materialization_policy()
+        return bool(
+            observed_at < freshness.valid_until
+            and observed_at < lease.valid_until
+            and freshness.valid_until == request.expected_freshness_valid_until
+            and lease.authorization_lease_id == request.authorization_lease_id
+            and lease.canonical_digest == request.authorization_lease_digest
+            and lease.freshness_admission_id
+            == freshness.freshness_admission_id
+            == request.expected_freshness_admission_id
+            and lease.freshness_admission_digest
+            == freshness.canonical_digest
+            == request.expected_freshness_admission_digest
+            and lease.physical_transport_route_binding_id
+            == binding.binding_id
+            == request.expected_physical_transport_route_binding_id
+            and lease.physical_transport_route_binding_digest
+            == binding.canonical_digest
+            == request.expected_physical_transport_route_binding_digest
+            and lease.transport_route_snapshot_id
+            == route.snapshot_id
+            == request.expected_transport_route_snapshot_id
+            and lease.transport_route_snapshot_digest
+            == route.canonical_digest
+            == request.expected_transport_route_snapshot_digest
+            and lease.current_selection_head_id
+            == head.head_id
+            == request.expected_current_selection_head_id
+            and lease.current_selection_head_digest
+            == head.canonical_digest
+            == request.expected_current_selection_head_digest
+            and lease.current_selection_head_generation
+            == head.generation
+            == request.expected_current_selection_head_generation
+            and lease.current_selection_head_fencing_token_digest
+            == head.fencing_token_digest
+            == request.expected_current_selection_head_fencing_token_digest
+            and lease.route_set_id
+            == route.route_set_id
+            == head.route_set_id
+            == request.expected_route_set_id
+            and lease.route_set_revision
+            == route.route_set_revision
+            == head.route_set_revision
+            == request.expected_route_set_revision
+            and lease.selection_epoch_id
+            == route.selection_epoch_id
+            == head.selection_epoch_id
+            == request.expected_selection_epoch_id
+            and lease.selection_epoch_revision
+            == route.selection_epoch_revision
+            == head.selection_epoch_revision
+            == request.expected_selection_epoch_revision
+            and lease.selected_route_id
+            == route.route_id
+            == head.selected_route_id
+            == request.expected_selected_route_id
+            and lease.selected_route_revision
+            == route.route_revision
+            == head.selected_route_revision
+            == request.expected_selected_route_revision
+            and lease.selected_route_digest
+            == route.source_route_digest
+            == head.selected_route_digest
+            == request.expected_selected_route_digest
+            and head.current
+            and lease.selection_active
+            == head.selection_active
+            == request.expected_selection_active
+            is True
+            and lease.selection_eligible
+            == head.selection_eligible
+            == request.expected_selection_eligible
+            is True
+            and lease.selection_suspended
+            == head.selection_suspended
+            == request.expected_selection_suspended
+            is False
+            and lease.selection_withdrawn
+            == head.selection_withdrawn
+            == request.expected_selection_withdrawn
+            is False
+            and lease.selection_superseded
+            == head.selection_superseded
+            == request.expected_selection_superseded
+            is False
+            and lease.state.value == request.expected_lease_state == "authorized_unconsumed"
+            and lease.authority.endpoint_resolution_authorized
+            == request.expected_endpoint_resolution_authorized
+            is True
+            and not any(
+                value
+                for key, value in lease.authority.canonical_value().items()
+                if key != "endpoint_resolution_authorized"
+            )
+            and binding.scope
+            == route.scope
+            == head.scope
+            == freshness.scope
+            == lease.scope
+            == request.scope
+            and lease.resolver_subject_id == request.resolver_subject_id
+            and policy.policy_id == request.expected_materialization_policy_id
+            and policy.policy_version == request.expected_materialization_policy_version
+            and policy.canonical_digest == request.expected_materialization_policy_digest
+            and request.irreversible_consumption_acknowledged
+            and request.uncertain_outcome_requires_new_authorization_acknowledged
+        )
+
+    @classmethod
+    def _endpoint_materialization_result_evidence_matches(
+        cls,
+        binding_row: WorkflowEventPhysicalTransportRouteBindingModel | None,
+        route_row: EventPhysicalTransportRouteSnapshotModel | None,
+        head_row: DeploymentEventTransportRouteSelectionHeadModel | None,
+        freshness_row: WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel | None,
+        lease_row: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel | None,
+        *,
+        claim_row: WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaimModel
+        | None,
+        attempt_row: WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel | None,
+        request: WorkflowEventPhysicalTransportEndpointMaterializationResultRequest,
+        observed_at: datetime,
+    ) -> bool:
+        if any(
+            row is None
+            for row in (
+                binding_row,
+                route_row,
+                head_row,
+                freshness_row,
+                lease_row,
+                claim_row,
+                attempt_row,
+            )
+        ):
+            return False
+        assert binding_row is not None
+        assert route_row is not None
+        assert head_row is not None
+        assert freshness_row is not None
+        assert lease_row is not None
+        assert claim_row is not None
+        assert attempt_row is not None
+        try:
+            binding = cls._physical_transport_route_binding_from_row(binding_row)
+            route = cls._transport_route_snapshot_from_row(route_row)
+            head = cls._route_selection_head_from_row(head_row)
+            freshness = cls._route_freshness_admission_from_row(freshness_row)
+            lease = cls._endpoint_resolution_authorization_lease_from_row(lease_row)
+            claim = cls._endpoint_materialization_claim_from_row(claim_row)
+            attempt = cls._endpoint_materialization_attempt_from_row(attempt_row)
+        except Exception:
+            return False
+        result = request.result
+        return bool(
+            observed_at < freshness.valid_until
+            and observed_at < lease.valid_until
+            and result.completed_at < freshness.valid_until
+            and result.completed_at < lease.valid_until
+            and request.expected_lease_valid_until == lease.valid_until
+            and claim.canonical_digest == request.expected_claim_digest
+            and attempt.canonical_digest == request.expected_attempt_digest
+            and result.consumption_claim_id == claim.claim_id == attempt.consumption_claim_id
+            and result.consumption_claim_digest == claim.canonical_digest
+            and result.attempt_id == attempt.attempt_id
+            and result.attempt_digest == attempt.canonical_digest
+            and result.materialization_id == claim.materialization_id == attempt.materialization_id
+            and result.authorization_lease_id
+            == claim.authorization_lease_id
+            == attempt.authorization_lease_id
+            == lease.authorization_lease_id
+            and result.authorization_lease_digest == lease.canonical_digest
+            and result.freshness_admission_id
+            == attempt.freshness_admission_id
+            == freshness.freshness_admission_id
+            and result.freshness_admission_digest == freshness.canonical_digest
+            and result.transport_route_snapshot_id == attempt.transport_route_snapshot_id
+            and result.transport_route_snapshot_digest == attempt.transport_route_snapshot_digest
+            and attempt.physical_transport_route_binding_id == binding.binding_id
+            and attempt.physical_transport_route_binding_digest == binding.canonical_digest
+            and attempt.transport_route_snapshot_id == route.snapshot_id
+            and attempt.transport_route_snapshot_digest == route.canonical_digest
+            and result.scope == claim.scope == attempt.scope == lease.scope
+            and result.resolver_subject_id
+            == claim.resolver_subject_id
+            == attempt.resolver_subject_id
+            == lease.resolver_subject_id
+            and result.policy_id == attempt.policy_id
+            and result.policy_version == attempt.policy_version
+            and result.policy_digest == attempt.policy_digest
+            and head.head_id
+            == attempt.current_selection_head_id
+            == lease.current_selection_head_id
+            == request.expected_current_selection_head_id
+            and head.canonical_digest
+            == attempt.current_selection_head_digest
+            == lease.current_selection_head_digest
+            == request.expected_current_selection_head_digest
+            and head.generation
+            == attempt.current_selection_head_generation
+            == lease.current_selection_head_generation
+            == request.expected_current_selection_head_generation
+            and head.fencing_token_digest
+            == attempt.current_selection_head_fencing_token_digest
+            == lease.current_selection_head_fencing_token_digest
+            == request.expected_current_selection_head_fencing_token_digest
+            and head.current
+            and head.selection_active
+            and head.selection_eligible
+            and not head.selection_suspended
+            and not head.selection_withdrawn
+            and not head.selection_superseded
+            and route.route_set_id == head.route_set_id == lease.route_set_id
+            and route.route_set_revision == head.route_set_revision == lease.route_set_revision
+            and route.selection_epoch_id == head.selection_epoch_id == lease.selection_epoch_id
+            and route.selection_epoch_revision
+            == head.selection_epoch_revision
+            == lease.selection_epoch_revision
+            and route.route_id == head.selected_route_id == lease.selected_route_id
+            and route.route_revision
+            == head.selected_route_revision
+            == lease.selected_route_revision
+            and route.source_route_digest
+            == head.selected_route_digest
+            == lease.selected_route_digest
+        )
+
+    @classmethod
+    def _endpoint_materialization_claim(
+        cls,
+        request: WorkflowEventPhysicalTransportEndpointMaterializationClaimRequest,
+        *,
+        claimed_at: datetime,
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaim:
+        values: dict[str, Any] = {
+            "claim_id": request.claim_id,
+            "authorization_lease_id": request.authorization_lease_id,
+            "authorization_lease_digest": request.authorization_lease_digest,
+            "freshness_admission_id": request.expected_freshness_admission_id,
+            "freshness_admission_digest": request.expected_freshness_admission_digest,
+            "attempt_id": request.attempt_id,
+            "materialization_id": request.materialization_id,
+            "scope": request.scope,
+            "resolver_subject_id": request.resolver_subject_id,
+            "claimed_at": claimed_at,
+            "request_fingerprint": request.request_fingerprint,
+            "idempotency_digest": request.idempotency_digest,
+            "authority": WorkflowEventPhysicalTransportEndpointMaterializationAuthority(),
+        }
+        payload = cls._endpoint_materialization_digest_payload(values)
+        return WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaim(
+            **values, canonical_digest=canonical_digest(payload)
+        )
+
+    @classmethod
+    def _endpoint_materialization_attempt(
+        cls,
+        request: WorkflowEventPhysicalTransportEndpointMaterializationClaimRequest,
+        *,
+        claim: WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaim,
+        started_at: datetime,
+        lease_valid_until: datetime,
+    ) -> WorkflowEventPhysicalTransportEndpointMaterializationAttempt:
+        values: dict[str, Any] = {
+            "attempt_id": request.attempt_id,
+            "materialization_id": request.materialization_id,
+            "consumption_claim_id": claim.claim_id,
+            "authorization_lease_id": request.authorization_lease_id,
+            "authorization_lease_digest": request.authorization_lease_digest,
+            "freshness_admission_id": request.expected_freshness_admission_id,
+            "freshness_admission_digest": request.expected_freshness_admission_digest,
+            "physical_transport_route_binding_id": (
+                request.expected_physical_transport_route_binding_id
+            ),
+            "physical_transport_route_binding_digest": (
+                request.expected_physical_transport_route_binding_digest
+            ),
+            "transport_route_snapshot_id": request.expected_transport_route_snapshot_id,
+            "transport_route_snapshot_digest": (request.expected_transport_route_snapshot_digest),
+            "current_selection_head_id": request.expected_current_selection_head_id,
+            "current_selection_head_digest": request.expected_current_selection_head_digest,
+            "current_selection_head_generation": (
+                request.expected_current_selection_head_generation
+            ),
+            "current_selection_head_fencing_token_digest": (
+                request.expected_current_selection_head_fencing_token_digest
+            ),
+            "scope": request.scope,
+            "resolver_subject_id": request.resolver_subject_id,
+            "policy_id": request.expected_materialization_policy_id,
+            "policy_version": request.expected_materialization_policy_version,
+            "policy_digest": request.expected_materialization_policy_digest,
+            "started_at": started_at,
+            "freshness_valid_until": request.expected_freshness_valid_until,
+            "lease_valid_until": lease_valid_until,
+            "state": (
+                WorkflowEventPhysicalTransportEndpointMaterializationAttemptState.MATERIALIZATION_STARTED
+            ),
+            "authority": WorkflowEventPhysicalTransportEndpointMaterializationAuthority(),
+        }
+        payload = cls._endpoint_materialization_digest_payload(values)
+        return WorkflowEventPhysicalTransportEndpointMaterializationAttempt(
+            **values, canonical_digest=canonical_digest(payload)
+        )
+
+    @staticmethod
+    def _endpoint_materialization_digest_payload(values: dict[str, Any]) -> dict[str, Any]:
+        return {
+            key: value.canonical_value()
+            if isinstance(
+                value,
+                (WorkflowScope, WorkflowEventPhysicalTransportEndpointMaterializationAuthority),
+            )
+            else value.value
+            if isinstance(value, Enum)
+            else value.isoformat()
+            if isinstance(value, datetime)
+            else value
+            for key, value in values.items()
+        }
+
+    @staticmethod
+    def _endpoint_materialization_payload(
+        evidence: WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaim
+        | WorkflowEventPhysicalTransportEndpointMaterializationAttempt
+        | WorkflowEventPhysicalTransportEndpointMaterializationResult,
+    ) -> dict[str, Any]:
+        return cast(
+            dict[str, Any],
+            {**evidence.digest_payload(), "canonical_digest": evidence.canonical_digest},
+        )
+
+    @classmethod
+    def _endpoint_materialization_claim_model(
+        cls, claim: WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaim
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaimModel:
+        authority = claim.authority
+        return WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaimModel(
+            claim_id=claim.claim_id,
+            authorization_lease_id=claim.authorization_lease_id,
+            authorization_lease_digest=claim.authorization_lease_digest,
+            freshness_admission_id=claim.freshness_admission_id,
+            freshness_admission_digest=claim.freshness_admission_digest,
+            attempt_id=claim.attempt_id,
+            materialization_id=claim.materialization_id,
+            organization_id=claim.scope.organization_id,
+            environment_id=claim.scope.environment_id,
+            site_id=claim.scope.site_id,
+            resolver_subject_id=claim.resolver_subject_id,
+            claimed_at=claim.claimed_at,
+            request_fingerprint=claim.request_fingerprint,
+            idempotency_digest=claim.idempotency_digest,
+            endpoint_resolution_authority_granted=authority.endpoint_resolution_authorized,
+            route_selection_authority_granted=authority.route_selection_authorized,
+            route_binding_authority_granted=authority.route_binding_authorized,
+            credential_access_authority_granted=authority.credential_access_authorized,
+            network_access_authority_granted=authority.network_access_authorized,
+            readiness_probe_authority_granted=authority.readiness_probe_authorized,
+            publication_authority_granted=authority.publication_authorized,
+            delivery_authority_granted=authority.delivery_authorized,
+            dispatch_authority_granted=authority.dispatch_authorized,
+            execution_authority_granted=authority.execution_authorized,
+            canonical_digest=claim.canonical_digest,
+            payload=cls._endpoint_materialization_payload(claim),
+        )
+
+    @classmethod
+    def _endpoint_materialization_attempt_model(
+        cls, attempt: WorkflowEventPhysicalTransportEndpointMaterializationAttempt
+    ) -> WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel:
+        authority = attempt.authority
+        return WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel(
+            attempt_id=attempt.attempt_id,
+            materialization_id=attempt.materialization_id,
+            consumption_claim_id=attempt.consumption_claim_id,
+            authorization_lease_id=attempt.authorization_lease_id,
+            authorization_lease_digest=attempt.authorization_lease_digest,
+            freshness_admission_id=attempt.freshness_admission_id,
+            freshness_admission_digest=attempt.freshness_admission_digest,
+            physical_transport_route_binding_id=attempt.physical_transport_route_binding_id,
+            physical_transport_route_binding_digest=(
+                attempt.physical_transport_route_binding_digest
+            ),
+            transport_route_snapshot_id=attempt.transport_route_snapshot_id,
+            transport_route_snapshot_digest=attempt.transport_route_snapshot_digest,
+            current_selection_head_id=attempt.current_selection_head_id,
+            current_selection_head_digest=attempt.current_selection_head_digest,
+            current_selection_head_generation=attempt.current_selection_head_generation,
+            current_selection_head_fencing_token_digest=(
+                attempt.current_selection_head_fencing_token_digest
+            ),
+            policy_id=attempt.policy_id,
+            policy_version=attempt.policy_version,
+            policy_digest=attempt.policy_digest,
+            organization_id=attempt.scope.organization_id,
+            environment_id=attempt.scope.environment_id,
+            site_id=attempt.scope.site_id,
+            resolver_subject_id=attempt.resolver_subject_id,
+            started_at=attempt.started_at,
+            freshness_valid_until=attempt.freshness_valid_until,
+            lease_valid_until=attempt.lease_valid_until,
+            state=attempt.state.value,
+            endpoint_resolution_authority_granted=authority.endpoint_resolution_authorized,
+            route_selection_authority_granted=authority.route_selection_authorized,
+            route_binding_authority_granted=authority.route_binding_authorized,
+            credential_access_authority_granted=authority.credential_access_authorized,
+            network_access_authority_granted=authority.network_access_authorized,
+            readiness_probe_authority_granted=authority.readiness_probe_authorized,
+            publication_authority_granted=authority.publication_authorized,
+            delivery_authority_granted=authority.delivery_authorized,
+            dispatch_authority_granted=authority.dispatch_authorized,
+            execution_authority_granted=authority.execution_authorized,
+            canonical_digest=attempt.canonical_digest,
+            payload=cls._endpoint_materialization_payload(attempt),
+        )
+
+    @classmethod
+    def _endpoint_materialization_result_model(
+        cls, result: WorkflowEventPhysicalTransportEndpointMaterializationResult
+    ) -> WorkflowEventPhysicalTransportEndpointMaterializationResultModel:
+        authority = result.authority
+        return WorkflowEventPhysicalTransportEndpointMaterializationResultModel(
+            materialization_id=result.materialization_id,
+            attempt_id=result.attempt_id,
+            attempt_digest=result.attempt_digest,
+            consumption_claim_id=result.consumption_claim_id,
+            consumption_claim_digest=result.consumption_claim_digest,
+            authorization_lease_id=result.authorization_lease_id,
+            authorization_lease_digest=result.authorization_lease_digest,
+            freshness_admission_id=result.freshness_admission_id,
+            freshness_admission_digest=result.freshness_admission_digest,
+            transport_route_snapshot_id=result.transport_route_snapshot_id,
+            transport_route_snapshot_digest=result.transport_route_snapshot_digest,
+            policy_id=result.policy_id,
+            policy_version=result.policy_version,
+            policy_digest=result.policy_digest,
+            organization_id=result.scope.organization_id,
+            environment_id=result.scope.environment_id,
+            site_id=result.scope.site_id,
+            resolver_subject_id=result.resolver_subject_id,
+            materializer_id=result.materializer_id,
+            materializer_version=result.materializer_version,
+            materialization_receipt_digest=result.materialization_receipt_digest,
+            state=result.state.value,
+            failure_class=(None if result.failure_class is None else result.failure_class.value),
+            protected_artifact_id=result.protected_artifact_id,
+            protected_artifact_digest=result.protected_artifact_digest,
+            normalized_endpoint_set_digest=result.normalized_endpoint_set_digest,
+            endpoint_count=result.endpoint_count,
+            protected_artifact_schema_id=result.protected_artifact_schema_id,
+            protected_artifact_schema_version=result.protected_artifact_schema_version,
+            protected_artifact_profile_digest=result.protected_artifact_profile_digest,
+            completed_at=result.completed_at,
+            usable_until=result.usable_until,
+            protected_artifact_revoked=result.protected_artifact_revoked,
+            cleanup_confirmed=result.cleanup_confirmed,
+            endpoint_resolution_authority_granted=authority.endpoint_resolution_authorized,
+            route_selection_authority_granted=authority.route_selection_authorized,
+            route_binding_authority_granted=authority.route_binding_authorized,
+            credential_access_authority_granted=authority.credential_access_authorized,
+            network_access_authority_granted=authority.network_access_authorized,
+            readiness_probe_authority_granted=authority.readiness_probe_authorized,
+            publication_authority_granted=authority.publication_authorized,
+            delivery_authority_granted=authority.delivery_authorized,
+            dispatch_authority_granted=authority.dispatch_authorized,
+            execution_authority_granted=authority.execution_authorized,
+            canonical_digest=result.canonical_digest,
+            payload=cls._endpoint_materialization_payload(result),
+        )
+
+    @classmethod
+    def _endpoint_materialization_claim_from_row(
+        cls,
+        row: WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaimModel,
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaim:
+        raw = dict(row.payload)
+        raw["scope"] = WorkflowScope(**cast(Any, raw["scope"]))
+        raw["claimed_at"] = datetime.fromisoformat(str(raw["claimed_at"]))
+        raw["authority"] = WorkflowEventPhysicalTransportEndpointMaterializationAuthority(
+            **cast(Any, raw["authority"])
+        )
+        try:
+            claim = WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaim(
+                **cast(Any, raw)
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowEventPhysicalTransportEndpointMaterializationError(
+                "endpoint_materialization_repository_contract_violation"
+            ) from exc
+        if (
+            row.claim_id != claim.claim_id
+            or row.authorization_lease_id != claim.authorization_lease_id
+            or row.authorization_lease_digest != claim.authorization_lease_digest
+            or row.freshness_admission_id != claim.freshness_admission_id
+            or row.freshness_admission_digest != claim.freshness_admission_digest
+            or row.attempt_id != claim.attempt_id
+            or row.materialization_id != claim.materialization_id
+            or row.organization_id != claim.scope.organization_id
+            or row.environment_id != claim.scope.environment_id
+            or row.site_id != claim.scope.site_id
+            or row.resolver_subject_id != claim.resolver_subject_id
+            or row.claimed_at != claim.claimed_at
+            or row.request_fingerprint != claim.request_fingerprint
+            or row.idempotency_digest != claim.idempotency_digest
+            or row.canonical_digest != claim.canonical_digest
+            or not cls._endpoint_materialization_authority_row_matches(row, claim.authority)
+            or row.payload != cls._endpoint_materialization_payload(claim)
+        ):
+            cls._endpoint_materialization_contract_violation()
+        return claim
+
+    @classmethod
+    def _endpoint_materialization_attempt_from_row(
+        cls, row: WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel
+    ) -> WorkflowEventPhysicalTransportEndpointMaterializationAttempt:
+        raw = dict(row.payload)
+        raw["scope"] = WorkflowScope(**cast(Any, raw["scope"]))
+        for key in ("started_at", "freshness_valid_until", "lease_valid_until"):
+            raw[key] = datetime.fromisoformat(str(raw[key]))
+        raw["state"] = WorkflowEventPhysicalTransportEndpointMaterializationAttemptState(
+            str(raw["state"])
+        )
+        raw["authority"] = WorkflowEventPhysicalTransportEndpointMaterializationAuthority(
+            **cast(Any, raw["authority"])
+        )
+        try:
+            attempt = WorkflowEventPhysicalTransportEndpointMaterializationAttempt(**cast(Any, raw))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowEventPhysicalTransportEndpointMaterializationError(
+                "endpoint_materialization_repository_contract_violation"
+            ) from exc
+        if (
+            row.attempt_id != attempt.attempt_id
+            or row.materialization_id != attempt.materialization_id
+            or row.consumption_claim_id != attempt.consumption_claim_id
+            or row.authorization_lease_id != attempt.authorization_lease_id
+            or row.authorization_lease_digest != attempt.authorization_lease_digest
+            or row.freshness_admission_id != attempt.freshness_admission_id
+            or row.freshness_admission_digest != attempt.freshness_admission_digest
+            or row.physical_transport_route_binding_id
+            != attempt.physical_transport_route_binding_id
+            or row.physical_transport_route_binding_digest
+            != attempt.physical_transport_route_binding_digest
+            or row.transport_route_snapshot_id != attempt.transport_route_snapshot_id
+            or row.transport_route_snapshot_digest != attempt.transport_route_snapshot_digest
+            or row.current_selection_head_id != attempt.current_selection_head_id
+            or row.current_selection_head_digest != attempt.current_selection_head_digest
+            or row.current_selection_head_generation != attempt.current_selection_head_generation
+            or row.current_selection_head_fencing_token_digest
+            != attempt.current_selection_head_fencing_token_digest
+            or row.organization_id != attempt.scope.organization_id
+            or row.environment_id != attempt.scope.environment_id
+            or row.site_id != attempt.scope.site_id
+            or row.resolver_subject_id != attempt.resolver_subject_id
+            or row.policy_id != attempt.policy_id
+            or row.policy_version != attempt.policy_version
+            or row.policy_digest != attempt.policy_digest
+            or row.started_at != attempt.started_at
+            or row.freshness_valid_until != attempt.freshness_valid_until
+            or row.lease_valid_until != attempt.lease_valid_until
+            or row.state != attempt.state.value
+            or row.canonical_digest != attempt.canonical_digest
+            or not cls._endpoint_materialization_authority_row_matches(row, attempt.authority)
+            or row.payload != cls._endpoint_materialization_payload(attempt)
+        ):
+            cls._endpoint_materialization_contract_violation()
+        return attempt
+
+    @classmethod
+    def _endpoint_materialization_result_from_row(
+        cls, row: WorkflowEventPhysicalTransportEndpointMaterializationResultModel
+    ) -> WorkflowEventPhysicalTransportEndpointMaterializationResult:
+        raw = dict(row.payload)
+        raw["scope"] = WorkflowScope(**cast(Any, raw["scope"]))
+        raw["completed_at"] = datetime.fromisoformat(str(raw["completed_at"]))
+        if raw["usable_until"] is not None:
+            raw["usable_until"] = datetime.fromisoformat(str(raw["usable_until"]))
+        raw["state"] = WorkflowEventPhysicalTransportEndpointMaterializationResultState(
+            str(raw["state"])
+        )
+        if raw["failure_class"] is not None:
+            raw["failure_class"] = (
+                WorkflowEventPhysicalTransportEndpointMaterializationFailureClass(
+                    str(raw["failure_class"])
+                )
+            )
+        raw["authority"] = WorkflowEventPhysicalTransportEndpointMaterializationAuthority(
+            **cast(Any, raw["authority"])
+        )
+        try:
+            result = WorkflowEventPhysicalTransportEndpointMaterializationResult(**cast(Any, raw))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowEventPhysicalTransportEndpointMaterializationError(
+                "endpoint_materialization_repository_contract_violation"
+            ) from exc
+        if (
+            row.materialization_id != result.materialization_id
+            or row.attempt_id != result.attempt_id
+            or row.attempt_digest != result.attempt_digest
+            or row.consumption_claim_id != result.consumption_claim_id
+            or row.consumption_claim_digest != result.consumption_claim_digest
+            or row.authorization_lease_id != result.authorization_lease_id
+            or row.authorization_lease_digest != result.authorization_lease_digest
+            or row.freshness_admission_id != result.freshness_admission_id
+            or row.freshness_admission_digest != result.freshness_admission_digest
+            or row.transport_route_snapshot_id != result.transport_route_snapshot_id
+            or row.transport_route_snapshot_digest != result.transport_route_snapshot_digest
+            or row.organization_id != result.scope.organization_id
+            or row.environment_id != result.scope.environment_id
+            or row.site_id != result.scope.site_id
+            or row.resolver_subject_id != result.resolver_subject_id
+            or row.policy_id != result.policy_id
+            or row.policy_version != result.policy_version
+            or row.policy_digest != result.policy_digest
+            or row.materializer_id != result.materializer_id
+            or row.materializer_version != result.materializer_version
+            or row.materialization_receipt_digest != result.materialization_receipt_digest
+            or row.state != result.state.value
+            or row.failure_class
+            != (None if result.failure_class is None else result.failure_class.value)
+            or row.protected_artifact_id != result.protected_artifact_id
+            or row.protected_artifact_digest != result.protected_artifact_digest
+            or row.normalized_endpoint_set_digest != result.normalized_endpoint_set_digest
+            or row.endpoint_count != result.endpoint_count
+            or row.protected_artifact_schema_id != result.protected_artifact_schema_id
+            or row.protected_artifact_schema_version != result.protected_artifact_schema_version
+            or row.protected_artifact_profile_digest != result.protected_artifact_profile_digest
+            or row.completed_at != result.completed_at
+            or row.usable_until != result.usable_until
+            or row.protected_artifact_revoked != result.protected_artifact_revoked
+            or row.cleanup_confirmed != result.cleanup_confirmed
+            or row.canonical_digest != result.canonical_digest
+            or not cls._endpoint_materialization_authority_row_matches(row, result.authority)
+            or row.payload != cls._endpoint_materialization_payload(result)
+        ):
+            cls._endpoint_materialization_contract_violation()
+        return result
+
+    @staticmethod
+    def _endpoint_materialization_authority_row_matches(
+        row: Any,
+        authority: WorkflowEventPhysicalTransportEndpointMaterializationAuthority,
+    ) -> bool:
+        return bool(
+            row.endpoint_resolution_authority_granted == authority.endpoint_resolution_authorized
+            and row.route_selection_authority_granted == authority.route_selection_authorized
+            and row.route_binding_authority_granted == authority.route_binding_authorized
+            and row.credential_access_authority_granted == authority.credential_access_authorized
+            and row.network_access_authority_granted == authority.network_access_authorized
+            and row.readiness_probe_authority_granted == authority.readiness_probe_authorized
+            and row.publication_authority_granted == authority.publication_authorized
+            and row.delivery_authority_granted == authority.delivery_authorized
+            and row.dispatch_authority_granted == authority.dispatch_authorized
+            and row.execution_authority_granted == authority.execution_authorized
+        )
+
+    @staticmethod
+    def _validate_endpoint_materialization_claim_request(
+        request: WorkflowEventPhysicalTransportEndpointMaterializationClaimRequest,
+    ) -> None:
+        identifiers = (
+            request.claim_id,
+            request.attempt_id,
+            request.materialization_id,
+            request.authorization_lease_id,
+            request.resolver_subject_id,
+            request.idempotency_key,
+        )
+        digests = (
+            request.authorization_lease_digest,
+            request.expected_freshness_admission_digest,
+            request.expected_physical_transport_route_binding_digest,
+            request.expected_transport_route_snapshot_digest,
+            request.expected_current_selection_head_digest,
+            request.expected_current_selection_head_fencing_token_digest,
+            request.expected_selected_route_digest,
+            request.expected_materialization_policy_digest,
+            request.idempotency_digest,
+            request.request_fingerprint,
+        )
+        if (
+            any(not value or value != value.strip() or len(value) > 240 for value in identifiers)
+            or any(len(value) != 64 for value in digests)
+            or request.expected_freshness_valid_until.tzinfo is None
+            or request.expected_current_selection_head_generation < 1
+            or request.irreversible_consumption_acknowledged is not True
+            or request.uncertain_outcome_requires_new_authorization_acknowledged is not True
+        ):
+            raise ValueError("endpoint materialization claim request is invalid")
+
+    @staticmethod
+    def _validate_endpoint_materialization_result_request(
+        request: WorkflowEventPhysicalTransportEndpointMaterializationResultRequest,
+    ) -> None:
+        if (
+            len(request.expected_claim_digest) != 64
+            or len(request.expected_attempt_digest) != 64
+            or len(request.expected_current_selection_head_digest) != 64
+            or len(request.expected_current_selection_head_fencing_token_digest) != 64
+            or request.expected_current_selection_head_generation < 1
+            or request.expected_lease_valid_until.tzinfo is None
+            or request.result.completed_at.tzinfo is None
+        ):
+            raise ValueError("endpoint materialization result request is invalid")
+
+    @staticmethod
+    def _endpoint_materialization_contract_violation() -> NoReturn:
+        raise WorkflowEventPhysicalTransportEndpointMaterializationError(
+            "endpoint_materialization_repository_contract_violation"
         )
 
     async def _lock_endpoint_resolution_authorization_sources(

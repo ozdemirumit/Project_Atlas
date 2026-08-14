@@ -22,6 +22,7 @@ import {
   type WorkflowExecutionRun,
   type WorkflowOrchestrationLease,
   type WorkflowPhysicalTransportRouteBinding,
+  type WorkflowPhysicalTransportEndpointMaterialization,
   type WorkflowPhysicalTransportRouteFreshnessAdmission,
   type WorkflowRunPlan,
   type WorkflowTransportCompatibilityAdmission,
@@ -705,6 +706,41 @@ const endpointResolutionAuthorizationLease: WorkflowEndpointResolutionAuthorizat
   integrity_reference: "integrity.workflow-endpoint-resolution-lease.1234567890abcdef",
 };
 
+const consumedEndpointResolutionAuthorizationLease: WorkflowEndpointResolutionAuthorizationLease = {
+  ...endpointResolutionAuthorizationLease,
+  effective_state: "consumed",
+};
+
+const endpointMaterialization: WorkflowPhysicalTransportEndpointMaterialization = {
+  materialization_id: "workflow-endpoint-materialization.1234567890abcdef",
+  lease_id: endpointResolutionAuthorizationLease.lease_id,
+  freshness_admission_id: endpointResolutionAuthorizationLease.freshness_admission_id,
+  selection_generation: endpointResolutionAuthorizationLease.selection_generation,
+  policy_id: "policy.workflow-event-physical-transport-endpoint-materialization",
+  policy_version: "1.0",
+  scope: { ...plan.scope },
+  resolver_subject_id: endpointResolutionAuthorizationLease.resolver_subject_id,
+  consumed_at: "2026-08-14T10:07:36Z",
+  recorded_at: "2026-08-14T10:07:37Z",
+  outcome: "materialized_protected",
+  lease_consumed: true,
+  protected_storage_verified: true,
+  raw_endpoint_disclosed: false,
+  authority: {
+    route_selection_authorized: false,
+    route_binding_authorized: false,
+    endpoint_resolution_authorized: false,
+    credential_access_authorized: false,
+    network_access_authorized: false,
+    readiness_probe_authorized: false,
+    publication_authorized: false,
+    delivery_authorized: false,
+    dispatch_authorized: false,
+    execution_authorized: false,
+  },
+  integrity_reference: "integrity.workflow-endpoint-materialization.1234567890abcdef",
+};
+
 const transportCompatibilityAdmission: WorkflowTransportCompatibilityAdmission = {
   compatibility_admission_id:
     "workflow-transport-compatibility-admission.1234567890abcdef",
@@ -1036,6 +1072,29 @@ function endpointResolutionAuthorizationLeaseResponse(
   );
 }
 
+function endpointMaterializationResponse(
+  materializations: unknown[],
+  status = 200,
+  serverTime = "2026-08-14T10:07:40Z",
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            physical_transport_endpoint_materializations: materializations,
+            server_time: serverTime,
+            durable: false,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.endpoint-materialization",
+            generated_at: serverTime,
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function transportCompatibilityAdmissionResponse(
   admissions: unknown[],
   status = 200,
@@ -1075,6 +1134,8 @@ function mockReadResponses(input: {
   physicalTransportRouteFreshnessAdmissions?: unknown[];
   endpointResolutionAuthorizationLeases?: unknown[];
   endpointResolutionAuthorizationLeaseServerTime?: string;
+  endpointMaterializations?: unknown[];
+  endpointMaterializationServerTime?: string;
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
   pendingByteArtifactResponse?: Promise<Response>;
@@ -1084,6 +1145,7 @@ function mockReadResponses(input: {
   pendingPhysicalTransportRouteBindingResponse?: Promise<Response>;
   pendingPhysicalTransportRouteFreshnessAdmissionResponse?: Promise<Response>;
   pendingEndpointResolutionAuthorizationLeaseResponse?: Promise<Response>;
+  pendingEndpointMaterializationResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
   runStatus?: number;
@@ -1108,6 +1170,8 @@ function mockReadResponses(input: {
   physicalTransportRouteFreshnessAdmissionStatuses?: number[];
   endpointResolutionAuthorizationLeaseStatus?: number;
   endpointResolutionAuthorizationLeaseStatuses?: number[];
+  endpointMaterializationStatus?: number;
+  endpointMaterializationStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
   transportCompatibilityAdmissionStatuses?: number[];
 }) {
@@ -1119,9 +1183,29 @@ function mockReadResponses(input: {
   let physicalTransportRouteBindingReadCount = 0;
   let physicalTransportRouteFreshnessAdmissionReadCount = 0;
   let endpointResolutionAuthorizationLeaseReadCount = 0;
+  let endpointMaterializationReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/api/v1/workflows/physical-transport-endpoint-materializations")) {
+      if (input.pendingEndpointMaterializationResponse) {
+        return input.pendingEndpointMaterializationResponse;
+      }
+      const status =
+        input.endpointMaterializationStatuses?.[
+          Math.min(
+            endpointMaterializationReadCount++,
+            input.endpointMaterializationStatuses.length - 1,
+          )
+        ] ?? input.endpointMaterializationStatus ?? 200;
+      return Promise.resolve(
+        endpointMaterializationResponse(
+          input.endpointMaterializations ?? [],
+          status,
+          input.endpointMaterializationServerTime,
+        ),
+      );
+    }
     if (
       url.endsWith(
         "/api/v1/workflows/physical-transport-endpoint-resolution-authorization-leases",
@@ -2218,6 +2302,20 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(within(section).queryByRole("button")).toBeNull();
   });
 
+  it("renders a consumed endpoint-resolution lease from the authoritative projection", async () => {
+    mockReadResponses({
+      endpointResolutionAuthorizationLeases: [consumedEndpointResolutionAuthorizationLease],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Endpoint-resolution authorization leases",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("Consumed")).toBeVisible();
+    expect(within(section).queryByText("Active")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
   it("retries a generic endpoint-resolution lease read failure without operational controls", async () => {
     mockReadResponses({
       endpointResolutionAuthorizationLeases: [endpointResolutionAuthorizationLease],
@@ -2374,6 +2472,255 @@ describe("WorkflowPlanningWorkspace", () => {
       within(section).queryByRole("list", {
         name: "Endpoint-resolution authorization leases",
       }),
+    ).toBeNull();
+  });
+
+  it("renders protected endpoint materialization as minimized read-only evidence", async () => {
+    mockReadResponses({ endpointMaterializations: [endpointMaterialization] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Endpoint materialization results",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Endpoint materialization results",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/physical-transport-endpoint-materializations",
+        ),
+      ),
+    ).toBe(true);
+    expect(within(section).getByTitle(endpointMaterialization.materialization_id)).toBeVisible();
+    expect(within(section).getByTitle(endpointMaterialization.lease_id)).toBeVisible();
+    expect(within(section).getByTitle(endpointMaterialization.freshness_admission_id)).toBeVisible();
+    expect(within(section).getByTitle(endpointMaterialization.resolver_subject_id)).toBeVisible();
+    expect(within(section).getByTitle(endpointMaterialization.policy_id)).toBeVisible();
+    expect(within(section).getByTitle(endpointMaterialization.integrity_reference)).toBeVisible();
+    expect(records).toHaveTextContent("Protected result stored");
+    expect(records).toHaveTextContent("Protected storage Verified");
+    expect(records).toHaveTextContent("raw endpoint disclosed false");
+    expect(records).toHaveTextContent(/endpoint resolution false.*execution false/i);
+    expect(section).toHaveTextContent("one-way lease consumption");
+    expect(
+      within(section).queryByRole("button", {
+        name: /materialize|retry materialization|reveal|credential|probe|publish|deliver|dispatch|execute/i,
+      }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(
+      /https?:\/\/|broker\.internal|10\.0\.0\.1|private-topic|hidden-secret|artifact|digest|hostname|routing key|provider|MFA|second login|authorized browser session/i,
+    );
+  });
+
+  it.each([
+    [
+      "failed_closed_consumed",
+      "Failed closed",
+      { protected_storage_verified: false, recorded_at: "2026-08-14T10:07:38Z" },
+      "Result recorded",
+    ],
+    [
+      "uncertain_consumed",
+      "Outcome uncertain",
+      { protected_storage_verified: false, recorded_at: null },
+      "Result recorded Not recorded",
+    ],
+  ] as const)(
+    "renders the %s endpoint materialization outcome without adding controls",
+    async (outcome, label, overrides, recordedText) => {
+      mockReadResponses({
+        endpointMaterializations: [{ ...endpointMaterialization, ...overrides, outcome }],
+      });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Endpoint materialization results",
+      })).closest("section") as HTMLElement;
+      const records = await within(section).findByRole("list", {
+        name: "Endpoint materialization results",
+      });
+      expect(records).toHaveTextContent(label);
+      expect(records).toHaveTextContent(recordedText);
+      expect(records).toHaveTextContent("Protected storage Not verified");
+      expect(within(section).queryByRole("button")).toBeNull();
+    },
+  );
+
+  it("renders an empty endpoint materialization inventory as a healthy read-only state", async () => {
+    mockReadResponses({ endpointMaterializations: [] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Endpoint materialization results",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "No endpoint materialization results are recorded in this scope.",
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("alert")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("shows a loading state while endpoint materialization results are pending", async () => {
+    mockReadResponses({
+      pendingEndpointMaterializationResponse: new Promise<Response>(() => undefined),
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Endpoint materialization results",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Loading endpoint materialization results..."),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("retries a generic endpoint materialization read failure without operational controls", async () => {
+    mockReadResponses({
+      endpointMaterializations: [endpointMaterialization],
+      endpointMaterializationStatuses: [500, 200],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Endpoint materialization results",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Endpoint materialization results are unavailable"),
+    ).toBeVisible();
+    expect(section).toHaveTextContent(
+      "No materialization outcome or operational state is inferred from this failed read.",
+    );
+    fireEvent.click(
+      within(section).getByRole("button", {
+        name: "Retry endpoint materialization result read",
+      }),
+    );
+    expect(await within(section).findByTitle(endpointMaterialization.materialization_id)).toBeVisible();
+    expect(
+      within(section).queryByRole("button", {
+        name: /materialize|reveal|credential|probe|publish|deliver|dispatch|execute/i,
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [
+      403,
+      "Endpoint materialization evidence permission is missing",
+      "current role or scope cannot inspect endpoint materialization evidence",
+    ],
+  ])(
+    "handles endpoint materialization read status %s with the normal browser session boundary",
+    async (status, title, detail) => {
+      mockReadResponses({ endpointMaterializationStatus: status });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Endpoint materialization results",
+      })).closest("section") as HTMLElement;
+      expect(await within(section).findByText(title)).toBeVisible();
+      expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+      expect(within(section).queryByRole("button")).toBeNull();
+      if (status !== 401) expect(section).not.toHaveTextContent("Sign in again");
+      expect(section).not.toHaveTextContent(/MFA|second login|authorized browser session/i);
+    },
+  );
+
+  it.each([
+    ["an extra artifact ID", { ...endpointMaterialization, artifact_id: "protected.item" }],
+    ["an extra digest", { ...endpointMaterialization, canonical_digest: "a".repeat(64) }],
+    ["an endpoint count", { ...endpointMaterialization, endpoint_count: 2 }],
+    ["a raw endpoint", { ...endpointMaterialization, hostname: "broker.internal" }],
+    ["a URL", { ...endpointMaterialization, url: "https://broker.internal/private-topic" }],
+    ["an IP address", { ...endpointMaterialization, ip: "10.0.0.1" }],
+    ["a port", { ...endpointMaterialization, port: 443 }],
+    ["routing material", { ...endpointMaterialization, routing_key: "private-topic" }],
+    ["credential material", { ...endpointMaterialization, credential: "hidden-secret" }],
+    ["provider detail", { ...endpointMaterialization, provider_message: "private detail" }],
+    ["a changed scope", { ...endpointMaterialization, scope: { ...plan.scope, site_id: "site.other" } }],
+    ["an unknown outcome", { ...endpointMaterialization, outcome: "completed" }],
+    ["a reusable lease", { ...endpointMaterialization, lease_consumed: false }],
+    ["raw disclosure", { ...endpointMaterialization, raw_endpoint_disclosed: true }],
+    ["success without verified storage", { ...endpointMaterialization, protected_storage_verified: false }],
+    [
+      "failure with verified storage",
+      {
+        ...endpointMaterialization,
+        outcome: "failed_closed_consumed",
+        protected_storage_verified: true,
+      },
+    ],
+    [
+      "uncertainty with a result record",
+      {
+        ...endpointMaterialization,
+        outcome: "uncertain_consumed",
+        protected_storage_verified: false,
+      },
+    ],
+    ["an invalid recorded time", { ...endpointMaterialization, recorded_at: "not-a-time" }],
+    ["a future consumption time", { ...endpointMaterialization, consumed_at: "2026-08-14T10:07:41Z" }],
+    ["a non-positive generation", { ...endpointMaterialization, selection_generation: 0 }],
+    [
+      "operational authority",
+      {
+        ...endpointMaterialization,
+        authority: { ...endpointMaterialization.authority, network_access_authorized: true },
+      },
+    ],
+    [
+      "an extra authority field",
+      {
+        ...endpointMaterialization,
+        authority: { ...endpointMaterialization.authority, materialize_authorized: false },
+      },
+    ],
+  ])(
+    "fails closed when endpoint materialization evidence contains %s",
+    async (_case, unsafeMaterialization) => {
+      mockReadResponses({ endpointMaterializations: [unsafeMaterialization] });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Endpoint materialization results",
+      })).closest("section") as HTMLElement;
+      expect(
+        await within(section).findByText("Endpoint materialization results are unavailable"),
+      ).toBeVisible();
+      expect(
+        within(section).queryByRole("list", { name: "Endpoint materialization results" }),
+      ).toBeNull();
+      expect(section).not.toHaveTextContent(
+        /protected\.item|broker\.internal|private-topic|hidden-secret|private detail|site\.other/i,
+      );
+    },
+  );
+
+  it("fails closed when endpoint materialization IDs or lease IDs are duplicated", async () => {
+    mockReadResponses({
+      endpointMaterializations: [
+        endpointMaterialization,
+        {
+          ...endpointMaterialization,
+          materialization_id: "workflow-endpoint-materialization.abcdef1234567890",
+        },
+      ],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Endpoint materialization results",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Endpoint materialization results are unavailable"),
+    ).toBeVisible();
+    expect(
+      within(section).queryByRole("list", { name: "Endpoint materialization results" }),
     ).toBeNull();
   });
 

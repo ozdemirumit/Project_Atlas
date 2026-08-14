@@ -38,6 +38,13 @@ from atlas.modules.workflows.application.byte_artifact_ports import (
     WorkflowEventByteArtifactRequest,
     WorkflowEventByteArtifactResult,
 )
+from atlas.modules.workflows.application.endpoint_materialization_ports import (
+    WorkflowEventPhysicalTransportEndpointMaterializationClaimRequest,
+    WorkflowEventPhysicalTransportEndpointMaterializationClaimResult,
+    WorkflowEventPhysicalTransportEndpointMaterializationError,
+    WorkflowEventPhysicalTransportEndpointMaterializationResultRequest,
+    WorkflowEventPhysicalTransportEndpointMaterializationResultWrite,
+)
 from atlas.modules.workflows.application.endpoint_resolution_authorization_lease_ports import (
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseError,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseIdempotencyRecord,
@@ -103,7 +110,10 @@ from atlas.modules.workflows.domain import (
     WorkflowDispatchOutboxEntry,
     WorkflowEventByteArtifact,
     WorkflowEventLogicalChannelBinding,
+    WorkflowEventPhysicalTransportEndpointMaterializationAttempt,
+    WorkflowEventPhysicalTransportEndpointMaterializationResult,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease,
+    WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaim,
     WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventPhysicalTransportRouteFreshnessAdmission,
     WorkflowEventTransportAdmission,
@@ -495,6 +505,31 @@ class UnavailableWorkflowPlanRepository:
     ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease | None:
         self._raise_endpoint_resolution_authorization()
 
+    async def get_endpoint_resolution_authorization_lease_by_id(
+        self, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease | None:
+        self._raise_endpoint_materialization()
+
+    async def get_endpoint_materialization_claim_by_lease(
+        self, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaim | None:
+        self._raise_endpoint_materialization()
+
+    async def get_endpoint_materialization_attempt_by_lease(
+        self, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportEndpointMaterializationAttempt | None:
+        self._raise_endpoint_materialization()
+
+    async def list_endpoint_materialization_attempts(
+        self, *, scope: WorkflowScope, limit: int
+    ) -> tuple[WorkflowEventPhysicalTransportEndpointMaterializationAttempt, ...]:
+        self._raise_endpoint_materialization()
+
+    async def get_endpoint_materialization_result_by_lease(
+        self, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportEndpointMaterializationResult | None:
+        self._raise_endpoint_materialization()
+
     async def list_endpoint_resolution_authorization_leases(
         self, *, scope: WorkflowScope, limit: int
     ) -> tuple[WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease, ...]:
@@ -514,6 +549,18 @@ class UnavailableWorkflowPlanRepository:
         request: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRequest,
     ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResult:
         self._raise_endpoint_resolution_authorization()
+
+    async def claim_endpoint_materialization(
+        self,
+        request: WorkflowEventPhysicalTransportEndpointMaterializationClaimRequest,
+    ) -> WorkflowEventPhysicalTransportEndpointMaterializationClaimResult:
+        self._raise_endpoint_materialization()
+
+    async def record_endpoint_materialization_result(
+        self,
+        request: WorkflowEventPhysicalTransportEndpointMaterializationResultRequest,
+    ) -> WorkflowEventPhysicalTransportEndpointMaterializationResultWrite:
+        self._raise_endpoint_materialization()
 
     async def acquire_publication_lease(
         self, request: WorkflowOutboxPublicationLeaseAcquireRequest
@@ -667,4 +714,11 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseError(
             "workflow_endpoint_resolution_authorization_repository_unavailable",
             "Durable endpoint-resolution authorization lease storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_endpoint_materialization() -> NoReturn:
+        raise WorkflowEventPhysicalTransportEndpointMaterializationError(
+            "workflow_endpoint_materialization_repository_unavailable",
+            "Durable workflow endpoint materialization storage is not configured.",
         )

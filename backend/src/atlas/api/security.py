@@ -247,6 +247,7 @@ from atlas.modules.authorization.application.bootstrap import (
     UPGRADE_READINESS_PREVIEW,
     UPGRADE_ROLLBACK_SIMULATE,
     WORKFLOW_DEFINITION_READ,
+    WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_MATERIALIZATION_READ,
     WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLUTION_AUTHORIZATION_LEASE_READ,
     WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDING_READ,
     WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMISSION_READ,
@@ -360,6 +361,7 @@ from atlas.modules.authorization.application.bootstrap import (
     upgrade_completion_receipt_scope,
     upgrade_human_review_scope,
     upgrade_simulation_scope,
+    workflow_physical_transport_endpoint_materialization_scope,
     workflow_physical_transport_endpoint_resolution_authorization_lease_scope,
     workflow_physical_transport_route_binding_scope,
     workflow_physical_transport_route_freshness_admission_scope,
@@ -2706,6 +2708,36 @@ async def authorize_workflow_physical_transport_endpoint_resolution_authorizatio
                     subject.organization_id,
                     settings.environment,
                 )
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_workflow_physical_transport_endpoint_materialization_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_MATERIALIZATION_READ,
+            resource_type=("resource.workflow.physical-transport-endpoint-materialization"),
+            scope=workflow_physical_transport_endpoint_materialization_scope(
+                subject.organization_id,
+                settings.environment,
             ),
             correlation_id=str(request.state.correlation_id),
             requested_at=datetime.now(UTC),

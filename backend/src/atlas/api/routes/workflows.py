@@ -10,6 +10,7 @@ from atlas.api.schemas import ResponseMeta
 from atlas.api.security import (
     authenticated_subject,
     authorize_workflow_definition_read,
+    authorize_workflow_physical_transport_endpoint_materialization_read,
     authorize_workflow_physical_transport_endpoint_resolution_authorization_lease_read,
     authorize_workflow_physical_transport_route_binding_read,
     authorize_workflow_physical_transport_route_freshness_admission_read,
@@ -37,6 +38,7 @@ from atlas.api.workflow_schemas import (
     CancelWorkflowPlanInput,
     CreateEventPhysicalTransportProfileSnapshotInput,
     CreateEventPhysicalTransportRouteSnapshotInput,
+    CreateWorkflowEventPhysicalTransportEndpointMaterializationInput,
     CreateWorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInput,
     CreateWorkflowEventPhysicalTransportRouteBindingInput,
     CreateWorkflowEventPhysicalTransportRouteFreshnessAdmissionInput,
@@ -83,6 +85,10 @@ from atlas.api.workflow_schemas import (
     WorkflowEventLogicalChannelBindingInventoryData,
     WorkflowEventLogicalChannelBindingInventoryResponse,
     WorkflowEventLogicalChannelBindingResponse,
+    WorkflowEventPhysicalTransportEndpointMaterializationData,
+    WorkflowEventPhysicalTransportEndpointMaterializationInventoryData,
+    WorkflowEventPhysicalTransportEndpointMaterializationInventoryResponse,
+    WorkflowEventPhysicalTransportEndpointMaterializationResponse,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseData,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInventoryData,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInventoryResponse,
@@ -149,6 +155,9 @@ from atlas.modules.workflows.application import (
     WorkflowEventByteArtifactService,
     WorkflowEventLogicalChannelBindingError,
     WorkflowEventLogicalChannelBindingService,
+    WorkflowEventPhysicalTransportEndpointMaterializationError,
+    WorkflowEventPhysicalTransportEndpointMaterializationService,
+    WorkflowEventPhysicalTransportEndpointMaterializationUncertainError,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseError,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseService,
     WorkflowEventPhysicalTransportRouteBindingService,
@@ -747,6 +756,30 @@ def _raise_physical_transport_endpoint_resolution_authorization_lease(
         title=title,
         detail=error.detail,
         retryable=status == 503,
+    ) from error
+
+
+def _raise_physical_transport_endpoint_materialization(
+    error: WorkflowEventPhysicalTransportEndpointMaterializationError,
+) -> NoReturn:
+    if error.code.endswith("_invalid") or error.code.endswith("_required"):
+        status, title = 422, "Workflow endpoint materialization request invalid"
+    elif "unavailable" in error.code or "persistence" in error.code:
+        status, title = 503, "Workflow endpoint materialization service unavailable"
+    else:
+        status, title = 409, "Workflow endpoint materialization unavailable"
+    raise AtlasError(
+        status=status,
+        code=error.code,
+        title=title,
+        detail=error.detail,
+        retryable=(
+            status == 503
+            and not isinstance(
+                error,
+                WorkflowEventPhysicalTransportEndpointMaterializationUncertainError,
+            )
+        ),
     ) from error
 
 
@@ -3925,6 +3958,26 @@ async def list_workflow_physical_transport_endpoint_resolution_authorization_lea
             retryable=True,
         ) from error
     server_time = datetime.now(UTC)
+    materialization_service: WorkflowEventPhysicalTransportEndpointMaterializationService = (
+        request.app.state.workflow_endpoint_materialization_service
+    )
+    materialization_repository = materialization_service.repository
+    consumed_lease_ids: set[str] = set()
+    try:
+        for lease in leases:
+            claim = await materialization_repository.get_endpoint_materialization_claim_by_lease(
+                authorization_lease_id=lease.authorization_lease_id,
+            )
+            if claim is not None:
+                consumed_lease_ids.add(lease.authorization_lease_id)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_endpoint_materialization_inventory_unavailable",
+            title="Workflow endpoint materialization service unavailable",
+            detail="Endpoint materialization consumption metadata is unavailable.",
+            retryable=True,
+        ) from error
     _no_store(response)
     return WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInventoryResponse(
         data=WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInventoryData(
@@ -3932,6 +3985,7 @@ async def list_workflow_physical_transport_endpoint_resolution_authorization_lea
                 WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseData.from_domain(
                     lease,
                     evaluated_at=server_time,
+                    consumed=lease.authorization_lease_id in consumed_lease_ids,
                 )
                 for lease in sorted(
                     leases,
@@ -3993,6 +4047,153 @@ async def create_workflow_physical_transport_endpoint_resolution_authorization_l
         lease,
         request,
         response,
+    )
+
+
+@router.get(
+    "/physical-transport-endpoint-materializations",
+    response_model=WorkflowEventPhysicalTransportEndpointMaterializationInventoryResponse,
+)
+async def list_workflow_physical_transport_endpoint_materializations(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_physical_transport_endpoint_materialization_read),
+    ],
+) -> WorkflowEventPhysicalTransportEndpointMaterializationInventoryResponse:
+    del decision
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service: WorkflowEventPhysicalTransportEndpointMaterializationService = (
+        request.app.state.workflow_endpoint_materialization_service
+    )
+    try:
+        attempts = await service.repository.list_endpoint_materialization_attempts(
+            scope=scope,
+            limit=256,
+        )
+        presentations: list[WorkflowEventPhysicalTransportEndpointMaterializationData] = []
+        for attempt in attempts:
+            if attempt.scope != scope:
+                raise WorkflowEventPhysicalTransportEndpointMaterializationError(
+                    "endpoint_materialization_repository_scope_violation"
+                )
+            claim = await service.repository.get_endpoint_materialization_claim_by_lease(
+                authorization_lease_id=attempt.authorization_lease_id
+            )
+            result = await service.repository.get_endpoint_materialization_result_by_lease(
+                authorization_lease_id=attempt.authorization_lease_id
+            )
+            if (
+                claim is None
+                or claim.scope != scope
+                or (result is not None and result.scope != scope)
+            ):
+                raise WorkflowEventPhysicalTransportEndpointMaterializationError(
+                    "endpoint_materialization_repository_scope_violation"
+                )
+            presentations.append(
+                WorkflowEventPhysicalTransportEndpointMaterializationData.from_domain(
+                    claim=claim,
+                    attempt=attempt,
+                    result=result,
+                )
+            )
+    except WorkflowEventPhysicalTransportEndpointMaterializationError as error:
+        _raise_physical_transport_endpoint_materialization(error)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_endpoint_materialization_repository_unavailable",
+            title="Workflow endpoint materialization service unavailable",
+            detail="Endpoint materialization metadata is unavailable.",
+            retryable=True,
+        ) from error
+    _no_store(response)
+    return WorkflowEventPhysicalTransportEndpointMaterializationInventoryResponse(
+        data=WorkflowEventPhysicalTransportEndpointMaterializationInventoryData(
+            physical_transport_endpoint_materializations=sorted(
+                presentations,
+                key=lambda value: value.materialization_id,
+            ),
+            server_time=datetime.now(UTC),
+            durable=service.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/physical-transport-endpoint-materializations",
+    response_model=WorkflowEventPhysicalTransportEndpointMaterializationResponse,
+    status_code=201,
+)
+async def create_workflow_physical_transport_endpoint_materialization(
+    payload: CreateWorkflowEventPhysicalTransportEndpointMaterializationInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_physical_transport_endpoint_resolver_subject),
+    ],
+) -> WorkflowEventPhysicalTransportEndpointMaterializationResponse:
+    service: WorkflowEventPhysicalTransportEndpointMaterializationService = (
+        request.app.state.workflow_endpoint_materialization_service
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        result = await service.materialize(
+            authorization_lease_id=payload.authorization_lease_id,
+            authorization_lease_digest=payload.authorization_lease_digest,
+            materialization_policy_id=payload.policy_id,
+            materialization_policy_version=payload.policy_version,
+            irreversible_consumption_acknowledged=(payload.irreversible_consumption_acknowledged),
+            uncertain_outcome_requires_new_authorization_acknowledged=(
+                payload.uncertain_outcome_requires_new_authorization_acknowledged
+            ),
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowPhysicalTransportEndpointResolverContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLVER_AUDIENCE,
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id=(
+                    "decision.workflow-physical-transport-endpoint-resolver-authenticated"
+                ),
+                requested_at=datetime.now(UTC),
+            ),
+        )
+        claim = await service.repository.get_endpoint_materialization_claim_by_lease(
+            authorization_lease_id=result.authorization_lease_id
+        )
+        attempt = await service.repository.get_endpoint_materialization_attempt_by_lease(
+            authorization_lease_id=result.authorization_lease_id
+        )
+        if claim is None or attempt is None:
+            raise WorkflowEventPhysicalTransportEndpointMaterializationUncertainError(
+                "endpoint_materialization_outcome_uncertain"
+            )
+    except WorkflowEventPhysicalTransportEndpointMaterializationError as error:
+        _raise_physical_transport_endpoint_materialization(error)
+    _no_store(response)
+    return WorkflowEventPhysicalTransportEndpointMaterializationResponse(
+        data=WorkflowEventPhysicalTransportEndpointMaterializationData.from_domain(
+            claim=claim,
+            attempt=attempt,
+            result=result,
+        ),
+        meta=_meta(request),
     )
 
 

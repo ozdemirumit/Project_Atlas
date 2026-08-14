@@ -783,7 +783,7 @@ export type WorkflowEndpointResolutionAuthorizationLease = {
   authorized_at: string;
   expires_at: string;
   state: "authorized_unconsumed";
-  effective_state: "active" | "expired";
+  effective_state: "active" | "expired" | "consumed";
   single_use: true;
   renewable: false;
   authority: WorkflowEndpointResolutionAuthorizationLeaseAuthority;
@@ -792,6 +792,44 @@ export type WorkflowEndpointResolutionAuthorizationLease = {
 
 export type WorkflowEndpointResolutionAuthorizationLeaseInventory = {
   endpoint_resolution_authorization_leases: WorkflowEndpointResolutionAuthorizationLease[];
+  server_time: string;
+  durable: boolean;
+};
+
+export type WorkflowPhysicalTransportEndpointMaterializationAuthority = {
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  endpoint_resolution_authorized: false;
+  credential_access_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+};
+
+export type WorkflowPhysicalTransportEndpointMaterialization = {
+  materialization_id: string;
+  lease_id: string;
+  freshness_admission_id: string;
+  selection_generation: number;
+  policy_id: string;
+  policy_version: "1.0";
+  scope: WorkflowRunPlan["scope"];
+  resolver_subject_id: string;
+  consumed_at: string;
+  recorded_at: string | null;
+  outcome: "materialized_protected" | "failed_closed_consumed" | "uncertain_consumed";
+  lease_consumed: true;
+  protected_storage_verified: boolean;
+  raw_endpoint_disclosed: false;
+  authority: WorkflowPhysicalTransportEndpointMaterializationAuthority;
+  integrity_reference: string;
+};
+
+export type WorkflowPhysicalTransportEndpointMaterializationInventory = {
+  physical_transport_endpoint_materializations: WorkflowPhysicalTransportEndpointMaterialization[];
   server_time: string;
   durable: boolean;
 };
@@ -1458,6 +1496,41 @@ const endpointResolutionAuthorizationLeaseFields = [
 ] as const;
 const endpointResolutionAuthorizationLeaseInventoryFields = [
   "endpoint_resolution_authorization_leases",
+  "server_time",
+  "durable",
+] as const;
+const physicalTransportEndpointMaterializationAuthorityFields = [
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "endpoint_resolution_authorized",
+  "credential_access_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+] as const;
+const physicalTransportEndpointMaterializationFields = [
+  "materialization_id",
+  "lease_id",
+  "freshness_admission_id",
+  "selection_generation",
+  "policy_id",
+  "policy_version",
+  "scope",
+  "resolver_subject_id",
+  "consumed_at",
+  "recorded_at",
+  "outcome",
+  "lease_consumed",
+  "protected_storage_verified",
+  "raw_endpoint_disclosed",
+  "authority",
+  "integrity_reference",
+] as const;
+const physicalTransportEndpointMaterializationInventoryFields = [
+  "physical_transport_endpoint_materializations",
   "server_time",
   "durable",
 ] as const;
@@ -2657,10 +2730,72 @@ function isEndpointResolutionAuthorizationLease(
     isStableIdentifier(value.resolver_subject_id) &&
     expiresAt - authorizedAt === 15_000 &&
     value.state === "authorized_unconsumed" &&
-    value.effective_state === expectedEffectiveState &&
+    (value.effective_state === "consumed" || value.effective_state === expectedEffectiveState) &&
     value.single_use === true &&
     value.renewable === false &&
     hasEndpointResolutionOnlyAuthority(value.authority) &&
+    isStableIdentifier(value.integrity_reference)
+  );
+}
+
+function hasZeroPhysicalTransportEndpointMaterializationAuthority(
+  value: unknown,
+): value is WorkflowPhysicalTransportEndpointMaterializationAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, physicalTransportEndpointMaterializationAuthorityFields) &&
+    physicalTransportEndpointMaterializationAuthorityFields.every(
+      (field) => value[field] === false,
+    )
+  );
+}
+
+function isPhysicalTransportEndpointMaterialization(
+  value: unknown,
+  scope: WorkflowScope,
+  serverTime: string,
+): value is WorkflowPhysicalTransportEndpointMaterialization {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, physicalTransportEndpointMaterializationFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value) ||
+    !isTimestamp(value.consumed_at) ||
+    (value.recorded_at !== null && !isTimestamp(value.recorded_at))
+  ) {
+    return false;
+  }
+  const materializationScope = value.scope;
+  const consumedAt = Date.parse(value.consumed_at);
+  const recordedAt = value.recorded_at === null ? null : Date.parse(value.recorded_at);
+  const resultIsConsistent =
+    (value.outcome === "materialized_protected" &&
+      value.protected_storage_verified === true &&
+      recordedAt !== null) ||
+    (value.outcome === "failed_closed_consumed" &&
+      value.protected_storage_verified === false &&
+      recordedAt !== null) ||
+    (value.outcome === "uncertain_consumed" &&
+      value.protected_storage_verified === false &&
+      recordedAt === null);
+  return (
+    isStableIdentifier(value.materialization_id) &&
+    isStableIdentifier(value.lease_id) &&
+    isStableIdentifier(value.freshness_admission_id) &&
+    Number.isSafeInteger(value.selection_generation) &&
+    Number(value.selection_generation) >= 1 &&
+    isStableIdentifier(value.policy_id) &&
+    value.policy_version === "1.0" &&
+    materializationScope.organization_id === scope.organizationId &&
+    materializationScope.environment_id === scope.environmentId &&
+    materializationScope.site_id === scope.siteId &&
+    isStableIdentifier(value.resolver_subject_id) &&
+    consumedAt <= Date.parse(serverTime) &&
+    (recordedAt === null || (recordedAt >= consumedAt && recordedAt <= Date.parse(serverTime))) &&
+    resultIsConsistent &&
+    value.lease_consumed === true &&
+    value.raw_endpoint_disclosed === false &&
+    hasZeroPhysicalTransportEndpointMaterializationAuthority(value.authority) &&
     isStableIdentifier(value.integrity_reference)
   );
 }
@@ -3448,6 +3583,63 @@ export async function listWorkflowEndpointResolutionAuthorizationLeases(input: {
     freshnessAdmissionIds.add(lease.freshness_admission_id);
   }
   return data as WorkflowEndpointResolutionAuthorizationLeaseInventory;
+}
+
+export async function listWorkflowPhysicalTransportEndpointMaterializations(input: {
+  scope: WorkflowScope;
+}): Promise<WorkflowPhysicalTransportEndpointMaterializationInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/physical-transport-endpoint-materializations",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow physical transport endpoint materialization retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, physicalTransportEndpointMaterializationInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.physical_transport_endpoint_materializations) ||
+    data.physical_transport_endpoint_materializations.length > 256 ||
+    !isTimestamp(data.server_time) ||
+    typeof data.durable !== "boolean"
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport endpoint materialization response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.physical_transport_endpoint_materializations.every((materialization) =>
+      isPhysicalTransportEndpointMaterialization(materialization, input.scope, serverTime),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport endpoint materialization response was unsafe",
+      response.status,
+    );
+  }
+  const materializationIds = new Set<string>();
+  const leaseIds = new Set<string>();
+  for (const materialization of data.physical_transport_endpoint_materializations) {
+    if (
+      !isObject(materialization) ||
+      typeof materialization.materialization_id !== "string" ||
+      typeof materialization.lease_id !== "string" ||
+      materializationIds.has(materialization.materialization_id) ||
+      leaseIds.has(materialization.lease_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow physical transport endpoint materialization response was unsafe",
+        response.status,
+      );
+    }
+    materializationIds.add(materialization.materialization_id);
+    leaseIds.add(materialization.lease_id);
+  }
+  return data as WorkflowPhysicalTransportEndpointMaterializationInventory;
 }
 
 export async function listWorkflowTransportCompatibilityAdmissions(input: {
