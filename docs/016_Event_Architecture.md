@@ -256,6 +256,16 @@ partition, routing key or credential, makes no network call and grants no public
 dispatch or execution authority. Physical transport profiles and publication lifecycle evidence
 remain later boundaries.
 
+Independently of any workflow event, a dedicated deployment-control workload may snapshot one
+exact active transport capability profile supplied by server-owned deployment configuration. The
+immutable snapshot records normalized implementation, adapter-contract, scope and declared
+event-contract, representation, classification, delivery, durability, ordering, retention and
+maximum-size capabilities. It contains no event or lease lineage, route, destination, endpoint,
+credential, secret reference or network-health result. Snapshotting makes no network call, proves
+no compatibility or readiness, selects no route and grants no publication, delivery, dispatch or
+execution authority. Logical-binding/profile compatibility admission and physical route binding
+remain separate later boundaries.
+
 ### 10.2 Publication State
 
 Outbox records track:

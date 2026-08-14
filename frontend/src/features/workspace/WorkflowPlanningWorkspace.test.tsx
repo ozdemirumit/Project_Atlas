@@ -21,6 +21,7 @@ import {
   type WorkflowExecutionRun,
   type WorkflowOrchestrationLease,
   type WorkflowRunPlan,
+  type WorkflowTransportProfileSnapshot,
 } from "../../api/workflows";
 import WorkflowPlanningWorkspace from "./WorkflowPlanningWorkspace";
 
@@ -508,6 +509,51 @@ const logicalChannelBinding: WorkflowEventLogicalChannelBinding = {
   canonical_digest: "1".repeat(64),
 };
 
+const transportProfileSnapshot: WorkflowTransportProfileSnapshot = {
+  snapshot_id: "workflow-transport-profile-snapshot.1234567890abcdef",
+  transport_profile_id: "transport-profile.primary-event-backbone",
+  transport_profile_revision: "revision.17",
+  source_profile_digest: "2".repeat(64),
+  deployment_release_id: "atlas-release.2026.08.14",
+  deployment_profile: "enterprise-test",
+  scope: { ...plan.scope },
+  transport_resource_id: "transport-resource.event-backbone-primary",
+  transport_resource_digest: "3".repeat(64),
+  transport_implementation_id: "transport.apache-kafka",
+  transport_implementation_version: "4.1.0",
+  adapter_contract_id: "atlas-transport-adapter.kafka",
+  adapter_contract_version: "1.0",
+  adapter_contract_digest: "4".repeat(64),
+  supported_event_contracts: [
+    {
+      event_type: "WorkflowStepDispatchRequested",
+      event_version: "1.0",
+      schema_uri: "urn:project-atlas:event:workflow-step-dispatch-requested:1.0",
+    },
+  ],
+  supported_classifications: ["internal"],
+  supported_representations: ["canonical-json"],
+  supported_encodings: ["utf-8"],
+  supported_delivery_semantics: ["at-least-once"],
+  durable_delivery_supported: true,
+  supported_ordering_key_kinds: ["workflow-run"],
+  supported_retention_classes: ["workflow-operational"],
+  maximum_message_byte_count: 65_536,
+  transport_encryption_required: true,
+  restricted_network_supported: true,
+  snapshotter_subject_id: "workload.workflow.transport-profile-registry",
+  captured_at: "2026-08-14T10:00:00Z",
+  state: "snapshotted",
+  authority: {
+    route_selection_authorized: false,
+    publication_authorized: false,
+    delivery_authorized: false,
+    dispatch_authorized: false,
+    execution_authorized: false,
+  },
+  canonical_digest: "5".repeat(64),
+};
+
 function leaseResponse(lease: WorkflowOrchestrationLease | null, status = 200): Response {
   return new Response(
     JSON.stringify({
@@ -705,6 +751,24 @@ function logicalChannelBindingResponse(
   );
 }
 
+function transportProfileSnapshotResponse(
+  snapshots: unknown[],
+  status = 200,
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: { transport_profile_snapshots: snapshots, durable: false },
+          meta: {
+            correlation_id: "correlation.workflow.transport-profile-snapshot",
+            generated_at: "2026-08-14T10:01:00Z",
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function mockReadResponses(input: {
   lease?: WorkflowOrchestrationLease | null;
   run?: WorkflowExecutionRun | null;
@@ -716,9 +780,11 @@ function mockReadResponses(input: {
   transportAdmissions?: unknown[];
   byteArtifacts?: unknown[];
   logicalChannelBindings?: unknown[];
+  transportProfileSnapshots?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
   pendingByteArtifactResponse?: Promise<Response>;
   pendingLogicalChannelBindingResponse?: Promise<Response>;
+  pendingTransportProfileResponse?: Promise<Response>;
   leaseStatus?: number;
   runStatus?: number;
   attemptStatus?: number;
@@ -732,12 +798,25 @@ function mockReadResponses(input: {
   byteArtifactStatuses?: number[];
   logicalChannelBindingStatus?: number;
   logicalChannelBindingStatuses?: number[];
+  transportProfileStatus?: number;
+  transportProfileStatuses?: number[];
 }) {
   let transportAdmissionReadCount = 0;
   let byteArtifactReadCount = 0;
   let logicalChannelBindingReadCount = 0;
+  let transportProfileReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/api/v1/workflows/transport-profile-snapshots")) {
+      if (input.pendingTransportProfileResponse) return input.pendingTransportProfileResponse;
+      const status =
+        input.transportProfileStatuses?.[
+          Math.min(transportProfileReadCount++, input.transportProfileStatuses.length - 1)
+        ] ?? input.transportProfileStatus ?? 200;
+      return Promise.resolve(
+        transportProfileSnapshotResponse(input.transportProfileSnapshots ?? [], status),
+      );
+    }
     if (url.endsWith("/logical-channel-binding")) {
       if (input.pendingLogicalChannelBindingResponse) {
         return input.pendingLogicalChannelBindingResponse;
@@ -845,6 +924,173 @@ describe("WorkflowPlanningWorkspace", () => {
     cleanup();
     vi.clearAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("loads global transport capability profiles before any plan is selected", async () => {
+    mockReadResponses({ transportProfileSnapshots: [transportProfileSnapshot] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport capability profiles",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Transport capability profiles",
+    });
+    expect(screen.queryByRole("heading", { name: plan.plan_id })).toBeNull();
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/transport-profile-snapshots",
+        ),
+      ),
+    ).toBe(true);
+    expect(within(section).getByTitle(transportProfileSnapshot.transport_profile_id)).toBeVisible();
+    expect(within(section).getByTitle(transportProfileSnapshot.snapshot_id)).toBeVisible();
+    expect(within(section).getByTitle(transportProfileSnapshot.transport_resource_id)).toBeVisible();
+    expect(within(section).getByTitle(transportProfileSnapshot.transport_implementation_id)).toBeVisible();
+    expect(within(section).getByTitle(transportProfileSnapshot.adapter_contract_id)).toBeVisible();
+    expect(within(section).getByTitle(transportProfileSnapshot.snapshotter_subject_id)).toBeVisible();
+    expect(within(section).getByTitle(transportProfileSnapshot.canonical_digest)).toBeVisible();
+    expect(records).toHaveTextContent("revision.17");
+    expect(records).toHaveTextContent("enterprise-test");
+    expect(records).toHaveTextContent("WorkflowStepDispatchRequested v1.0");
+    expect(records).toHaveTextContent("internal");
+    expect(records).toHaveTextContent("canonical-json");
+    expect(records).toHaveTextContent("utf-8");
+    expect(records).toHaveTextContent("at-least-once");
+    expect(records).toHaveTextContent("durable supported");
+    expect(records).toHaveTextContent("workflow-run");
+    expect(records).toHaveTextContent("workflow-operational");
+    expect(records).toHaveTextContent("65,536 bytes");
+    expect(records).toHaveTextContent("encryption required");
+    expect(records).toHaveTextContent("restricted network supported");
+    expect(records).toHaveTextContent(
+      "Authority route selection false | publication false | delivery false | dispatch false | execution false",
+    );
+    expect(
+      within(section).queryByRole("button", {
+        name: /register|update|remove|select|bind|probe|test connection|publish|deliver|dispatch|execute/i,
+      }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(/authorized browser session|MFA|second login/i);
+    expect(section).not.toHaveTextContent(/hostname|URL|IP address|namespace|topic|stream|queue|partition|routing key|credential|secret|publication lease|orchestration lease|raw payload/i);
+  });
+
+  it("renders an empty transport capability profile inventory as a healthy read-only state", async () => {
+    mockReadResponses({ transportProfileSnapshots: [] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport capability profiles",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("No transport capability profiles are recorded in this scope."),
+    ).toBeVisible();
+    expect(within(section).queryByRole("alert")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("shows a loading state while transport capability profiles are pending", async () => {
+    mockReadResponses({
+      pendingTransportProfileResponse: new Promise<Response>(() => undefined),
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport capability profiles",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("Loading transport capability profiles...")).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("retries a failed transport capability profile read without mutation controls", async () => {
+    mockReadResponses({
+      transportProfileSnapshots: [transportProfileSnapshot],
+      transportProfileStatuses: [500, 200],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport capability profiles",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("Transport capability profiles are unavailable")).toBeVisible();
+    fireEvent.click(
+      within(section).getByRole("button", { name: "Retry transport capability profile read" }),
+    );
+    expect(await within(section).findByTitle(transportProfileSnapshot.snapshot_id)).toBeVisible();
+    expect(
+      within(section).queryByRole("button", {
+        name: /register|update|remove|select|bind|probe|publish|deliver|dispatch|execute/i,
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [
+      403,
+      "Transport capability profile permission is missing",
+      "current role or scope cannot inspect",
+    ],
+  ])(
+    "handles transport capability profile status %s with the normal session boundary",
+    async (status, title, detail) => {
+      mockReadResponses({ transportProfileStatus: status });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Transport capability profiles",
+      })).closest("section") as HTMLElement;
+      expect(await within(section).findByText(title)).toBeVisible();
+      expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+      expect(within(section).queryByRole("button")).toBeNull();
+      expect(section).not.toHaveTextContent(/authorized browser session|MFA|second login/i);
+    },
+  );
+
+  it.each([
+    ["an unexpected physical field", { ...transportProfileSnapshot, topic: "hidden-topic" }],
+    ["a credential field", { ...transportProfileSnapshot, credential: "hidden-credential" }],
+    [
+      "an invalid event contract",
+      {
+        ...transportProfileSnapshot,
+        supported_event_contracts: [
+          "WorkflowStepDispatchRequested|1.0|urn:project-atlas:event:workflow-step-dispatch-requested:1.0",
+        ],
+      },
+    ],
+    [
+      "workflow lineage",
+      { ...transportProfileSnapshot, event_id: "workflow-event.hidden" },
+    ],
+    [
+      "a changed scope",
+      {
+        ...transportProfileSnapshot,
+        scope: { ...transportProfileSnapshot.scope, site_id: "site.other" },
+      },
+    ],
+    [
+      "route authority",
+      {
+        ...transportProfileSnapshot,
+        authority: {
+          ...transportProfileSnapshot.authority,
+          route_selection_authorized: true,
+        },
+      },
+    ],
+  ])("fails closed when a transport capability profile contains %s", async (_case, unsafeProfile) => {
+    mockReadResponses({ transportProfileSnapshots: [unsafeProfile] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport capability profiles",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("Transport capability profiles are unavailable")).toBeVisible();
+    expect(within(section).queryByRole("list", { name: "Transport capability profiles" })).toBeNull();
+    expect(section).not.toHaveTextContent(/hidden-topic|hidden-credential|workflow-event\.hidden|site\.other/i);
   });
 
   it("creates and presents a planned-only workflow without requesting another login", async () => {

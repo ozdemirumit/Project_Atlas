@@ -5586,6 +5586,129 @@ class WorkflowEventLogicalChannelBindingClaimModel(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
+class EventPhysicalTransportProfileSnapshotModel(Base):
+    __tablename__ = "event_transport_profile_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "transport_profile_id",
+            "transport_profile_revision",
+            name="uq_event_transport_profile_snapshot_revision",
+        ),
+        UniqueConstraint(
+            "source_profile_digest",
+            name="uq_event_transport_profile_snapshot_source_digest",
+        ),
+        UniqueConstraint(
+            "canonical_digest",
+            name="uq_event_transport_profile_snapshot_digest",
+        ),
+        CheckConstraint(
+            "maximum_message_byte_count >= 1",
+            name="ck_event_transport_profile_snapshot_max_bytes",
+        ),
+        CheckConstraint(
+            "state = 'snapshotted'",
+            name="ck_event_transport_profile_snapshot_state",
+        ),
+        CheckConstraint(
+            "NOT route_selection_authority_granted "
+            "AND NOT publication_authority_granted "
+            "AND NOT delivery_authority_granted "
+            "AND NOT dispatch_authority_granted "
+            "AND NOT execution_authority_granted",
+            name="ck_event_transport_profile_snapshot_zero_auth",
+        ),
+    )
+
+    snapshot_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    # The deployment profile is mutable outside this boundary. Preserve its
+    # exact historical identity without a foreign key to the current source row.
+    transport_profile_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    transport_profile_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_profile_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    deployment_release_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    deployment_profile: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    transport_resource_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    transport_resource_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    transport_implementation_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    transport_implementation_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    adapter_contract_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    adapter_contract_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    adapter_contract_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    supported_event_contracts: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    supported_classifications: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    supported_representations: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    supported_encodings: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    supported_delivery_semantics: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    durable_delivery_supported: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    supported_ordering_key_kinds: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    supported_retention_classes: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    maximum_message_byte_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    transport_encryption_required: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    restricted_network_supported: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    snapshotter_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    route_selection_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    publication_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    delivery_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    dispatch_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    execution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class EventPhysicalTransportProfileSnapshotClaimModel(Base):
+    __tablename__ = "event_transport_profile_snapshot_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "idempotency_scope_id",
+            "idempotency_key",
+            name="uq_event_transport_profile_claim_scope_idem",
+        ),
+        UniqueConstraint(
+            "snapshot_id",
+            name="uq_event_transport_profile_claim_snapshot",
+        ),
+        UniqueConstraint(
+            "transport_profile_id",
+            "transport_profile_revision",
+            name="uq_event_transport_profile_claim_revision",
+        ),
+        UniqueConstraint(
+            "canonical_digest",
+            name="uq_event_transport_profile_claim_digest",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    idempotency_scope_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey("event_transport_profile_snapshots.snapshot_id"),
+        nullable=False,
+        index=True,
+    )
+    # These fields are immutable history, not references to mutable deployment rows.
+    transport_profile_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    transport_profile_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_profile_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    snapshotter_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class WorkflowDispatchIntentStagingClaimModel(Base):
     __tablename__ = "workflow_dispatch_intent_staging_claims"
     __table_args__ = (

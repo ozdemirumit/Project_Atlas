@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from atlas.api.schemas import ResponseMeta
 from atlas.modules.workflows.domain import (
+    EventPhysicalTransportProfileSnapshot,
     WorkflowDefinition,
     WorkflowDispatchEventEnvelope,
     WorkflowDispatchIntent,
@@ -910,6 +911,105 @@ class WorkflowEventLogicalChannelBindingResponse(BaseModel):
 
 class WorkflowEventLogicalChannelBindingInventoryResponse(BaseModel):
     data: WorkflowEventLogicalChannelBindingInventoryData
+    meta: ResponseMeta
+
+
+class CreateEventPhysicalTransportProfileSnapshotInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_profile_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    source_profile_revision: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    source_profile_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class EventPhysicalTransportProfileSnapshotAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    route_selection_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+
+
+class EventPhysicalTransportEventContractData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_type: Literal["WorkflowStepDispatchRequested"]
+    event_version: Literal["1.0"]
+    schema_uri: Literal["urn:project-atlas:event:workflow-step-dispatch-requested:1.0"]
+
+
+class EventPhysicalTransportProfileSnapshotData(BaseModel):
+    """Minimized deployment capability evidence without route or credential metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    snapshot_id: str
+    transport_profile_id: str
+    transport_profile_revision: str
+    source_profile_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    deployment_release_id: str
+    deployment_profile: Literal["developer", "lab", "enterprise-test", "production", "offline"]
+    scope: WorkflowScopeData
+    transport_resource_id: str
+    transport_resource_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    transport_implementation_id: str
+    transport_implementation_version: str
+    adapter_contract_id: str
+    adapter_contract_version: str
+    adapter_contract_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    supported_event_contracts: list[EventPhysicalTransportEventContractData]
+    supported_classifications: list[str]
+    supported_representations: list[str]
+    supported_encodings: list[str]
+    supported_delivery_semantics: list[str]
+    durable_delivery_supported: bool
+    supported_ordering_key_kinds: list[str]
+    supported_retention_classes: list[str]
+    maximum_message_byte_count: int = Field(ge=1, le=16_777_216)
+    transport_encryption_required: bool
+    restricted_network_supported: bool
+    snapshotter_subject_id: str
+    captured_at: datetime
+    state: Literal["snapshotted"]
+    authority: EventPhysicalTransportProfileSnapshotAuthorityData
+    canonical_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+
+    @classmethod
+    def from_domain(
+        cls, snapshot: EventPhysicalTransportProfileSnapshot
+    ) -> EventPhysicalTransportProfileSnapshotData:
+        event_contracts = []
+        for contract in snapshot.supported_event_contracts:
+            event_type, event_version, schema_uri = contract.split("|", maxsplit=2)
+            event_contracts.append(
+                {
+                    "event_type": event_type,
+                    "event_version": event_version,
+                    "schema_uri": schema_uri,
+                }
+            )
+        return cls.model_validate(
+            snapshot.canonical_value() | {"supported_event_contracts": event_contracts}
+        )
+
+
+class EventPhysicalTransportProfileSnapshotInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    transport_profile_snapshots: list[EventPhysicalTransportProfileSnapshotData]
+    durable: bool
+
+
+class EventPhysicalTransportProfileSnapshotResponse(BaseModel):
+    data: EventPhysicalTransportProfileSnapshotData
+    meta: ResponseMeta
+
+
+class EventPhysicalTransportProfileSnapshotInventoryResponse(BaseModel):
+    data: EventPhysicalTransportProfileSnapshotInventoryData
     meta: ResponseMeta
 
 

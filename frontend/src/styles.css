@@ -6206,6 +6206,13 @@ textarea:focus-visible {
 .workflow-definition-list,
 .workflow-plan-list { display: grid; gap: 6px; margin-top: 12px; }
 
+.workflow-transport-profile-band {
+  min-width: 0;
+  padding: 18px 0;
+  border-top: 1px solid #dce4e1;
+  border-bottom: 1px solid #dce4e1;
+}
+
 .workflow-definition-row,
 .workflow-plan-list > button {
   width: 100%;
@@ -6324,7 +6331,8 @@ textarea:focus-visible {
 .workflow-event-envelope-list li,
 .workflow-transport-admission-list li,
 .workflow-byte-artifact-list li,
-.workflow-logical-channel-binding-list li {
+.workflow-logical-channel-binding-list li,
+.workflow-transport-profile-list li {
   align-items: flex-start;
   min-width: 0;
 }
@@ -6333,13 +6341,15 @@ textarea:focus-visible {
 .workflow-event-envelope-list li > div,
 .workflow-transport-admission-list li > div,
 .workflow-byte-artifact-list li > div,
-.workflow-logical-channel-binding-list li > div { min-width: 0; }
+.workflow-logical-channel-binding-list li > div,
+.workflow-transport-profile-list li > div { min-width: 0; }
 
 .workflow-publication-lease-list strong,
 .workflow-event-envelope-list strong,
 .workflow-transport-admission-list strong,
 .workflow-byte-artifact-list strong,
-.workflow-logical-channel-binding-list strong {
+.workflow-logical-channel-binding-list strong,
+.workflow-transport-profile-list strong {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -6356,7 +6366,9 @@ textarea:focus-visible {
 .workflow-byte-artifact-list code,
 .workflow-byte-artifact-list small,
 .workflow-logical-channel-binding-list code,
-.workflow-logical-channel-binding-list small {
+.workflow-logical-channel-binding-list small,
+.workflow-transport-profile-list code,
+.workflow-transport-profile-list span {
   overflow-wrap: anywhere;
 }
 
@@ -6364,6 +6376,16 @@ textarea:focus-visible {
 .workflow-transport-admission-list small,
 .workflow-byte-artifact-list small,
 .workflow-logical-channel-binding-list small {
+  line-height: 1.45;
+}
+
+.workflow-transport-profile-grid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 18px;
+  color: #61716d;
+  font-size: 0.84rem;
   line-height: 1.45;
 }
 
@@ -6388,7 +6410,8 @@ textarea:focus-visible {
   .workflow-planning-workspace { padding: 16px; }
   .workflow-planning-header { align-items: flex-start; flex-wrap: wrap; }
   .workflow-form-grid,
-  .workflow-plan-detail dl { grid-template-columns: 1fr; }
+  .workflow-plan-detail dl,
+  .workflow-transport-profile-grid { grid-template-columns: 1fr; }
 }
 
 .operations-workspace {

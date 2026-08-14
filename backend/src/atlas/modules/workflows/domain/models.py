@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from hashlib import sha256
-from typing import Any
+from typing import Any, Protocol
 
 NO_EXECUTION_SAFETY_NOTICE = (
     "Planning only. This record cannot dispatch workers, invoke connectors, create approvals, "
@@ -129,6 +129,10 @@ class WorkflowEventByteArtifactState(StrEnum):
 
 class WorkflowEventLogicalChannelBindingState(StrEnum):
     BOUND = "bound"
+
+
+class EventPhysicalTransportProfileSnapshotState(StrEnum):
+    SNAPSHOTTED = "snapshotted"
 
 
 @dataclass(frozen=True, slots=True)
@@ -1901,6 +1905,329 @@ class WorkflowEventLogicalChannelBinding:
 
     def canonical_value(self) -> dict[str, object]:
         return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    @property
+    def grants_publication_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_delivery_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_dispatch_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_execution_authority(self) -> bool:
+        return False
+
+
+_ALLOWED_DEPLOYMENT_PROFILES = frozenset(
+    {"developer", "lab", "enterprise-test", "production", "offline"}
+)
+_ALLOWED_TRANSPORT_IMPLEMENTATIONS = frozenset(
+    {"transport.apache-kafka", "transport.nats-jetstream", "transport.rabbitmq"}
+)
+_ALLOWED_EVENT_CONTRACTS = frozenset(
+    {
+        "WorkflowStepDispatchRequested|1.0|"
+        "urn:project-atlas:event:workflow-step-dispatch-requested:1.0"
+    }
+)
+_ALLOWED_CLASSIFICATIONS = frozenset({"internal"})
+_ALLOWED_REPRESENTATIONS = frozenset({"canonical-json"})
+_ALLOWED_ENCODINGS = frozenset({"utf-8"})
+_ALLOWED_DELIVERY_SEMANTICS = frozenset({"at-least-once"})
+_ALLOWED_ORDERING_KEY_KINDS = frozenset({"workflow-run"})
+_ALLOWED_RETENTION_CLASSES = frozenset({"workflow-operational"})
+
+
+def _require_allowlisted_values(
+    values: tuple[str, ...], *, name: str, allowed: frozenset[str]
+) -> None:
+    if not values or values != tuple(sorted(set(values))):
+        raise ValueError(f"{name} must be non-empty, sorted, and unique")
+    if not set(values).issubset(allowed):
+        raise ValueError(f"{name} contains an unsupported value")
+
+
+class _EventTransportCapabilities(Protocol):
+    @property
+    def supported_event_contracts(self) -> tuple[str, ...]: ...
+
+    @property
+    def supported_classifications(self) -> tuple[str, ...]: ...
+
+    @property
+    def supported_representations(self) -> tuple[str, ...]: ...
+
+    @property
+    def supported_encodings(self) -> tuple[str, ...]: ...
+
+    @property
+    def supported_delivery_semantics(self) -> tuple[str, ...]: ...
+
+    @property
+    def supported_ordering_key_kinds(self) -> tuple[str, ...]: ...
+
+    @property
+    def supported_retention_classes(self) -> tuple[str, ...]: ...
+
+
+def _validate_event_transport_capabilities(value: _EventTransportCapabilities) -> None:
+    for values, name, allowed in (
+        (value.supported_event_contracts, "supported_event_contracts", _ALLOWED_EVENT_CONTRACTS),
+        (
+            value.supported_classifications,
+            "supported_classifications",
+            _ALLOWED_CLASSIFICATIONS,
+        ),
+        (
+            value.supported_representations,
+            "supported_representations",
+            _ALLOWED_REPRESENTATIONS,
+        ),
+        (value.supported_encodings, "supported_encodings", _ALLOWED_ENCODINGS),
+        (
+            value.supported_delivery_semantics,
+            "supported_delivery_semantics",
+            _ALLOWED_DELIVERY_SEMANTICS,
+        ),
+        (
+            value.supported_ordering_key_kinds,
+            "supported_ordering_key_kinds",
+            _ALLOWED_ORDERING_KEY_KINDS,
+        ),
+        (
+            value.supported_retention_classes,
+            "supported_retention_classes",
+            _ALLOWED_RETENTION_CLASSES,
+        ),
+    ):
+        _require_allowlisted_values(values, name=name, allowed=allowed)
+
+
+@dataclass(frozen=True, slots=True)
+class EventPhysicalTransportProfileSnapshotAuthority:
+    route_selection_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        if any(self.canonical_value().values()):
+            raise ValueError("transport profile snapshots cannot grant operational authority")
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "execution_authorized": self.execution_authorized,
+            "publication_authorized": self.publication_authorized,
+            "route_selection_authorized": self.route_selection_authorized,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DeploymentEventTransportProfile:
+    """Server-owned, active deployment manifest from which snapshots are captured."""
+
+    transport_profile_id: str
+    transport_profile_revision: str
+    deployment_release_id: str
+    deployment_profile: str
+    scope: WorkflowScope
+    transport_resource_id: str
+    transport_resource_digest: str
+    transport_implementation_id: str
+    transport_implementation_version: str
+    adapter_contract_id: str
+    adapter_contract_version: str
+    adapter_contract_digest: str
+    supported_event_contracts: tuple[str, ...]
+    supported_classifications: tuple[str, ...]
+    supported_representations: tuple[str, ...]
+    supported_encodings: tuple[str, ...]
+    supported_delivery_semantics: tuple[str, ...]
+    durable_delivery_supported: bool
+    supported_ordering_key_kinds: tuple[str, ...]
+    supported_retention_classes: tuple[str, ...]
+    maximum_message_byte_count: int
+    transport_encryption_required: bool
+    restricted_network_supported: bool
+    active: bool
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.transport_profile_id, "transport_profile_id"),
+            (self.transport_profile_revision, "transport_profile_revision"),
+            (self.deployment_release_id, "deployment_release_id"),
+            (self.transport_resource_id, "transport_resource_id"),
+            (self.transport_implementation_id, "transport_implementation_id"),
+            (self.transport_implementation_version, "transport_implementation_version"),
+            (self.adapter_contract_id, "adapter_contract_id"),
+            (self.adapter_contract_version, "adapter_contract_version"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.transport_resource_digest, "transport_resource_digest"),
+            (self.adapter_contract_digest, "adapter_contract_digest"),
+            (self.canonical_digest, "transport profile canonical_digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.deployment_profile not in _ALLOWED_DEPLOYMENT_PROFILES:
+            raise ValueError("deployment_profile is unsupported")
+        if self.transport_implementation_id not in _ALLOWED_TRANSPORT_IMPLEMENTATIONS:
+            raise ValueError("transport_implementation_id is unsupported")
+        _validate_event_transport_capabilities(self)
+        if not 1 <= self.maximum_message_byte_count <= 16_777_216:
+            raise ValueError("maximum_message_byte_count is outside the supported range")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("transport profile canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "active": self.active,
+            "adapter_contract_digest": self.adapter_contract_digest,
+            "adapter_contract_id": self.adapter_contract_id,
+            "adapter_contract_version": self.adapter_contract_version,
+            "deployment_profile": self.deployment_profile,
+            "deployment_release_id": self.deployment_release_id,
+            "durable_delivery_supported": self.durable_delivery_supported,
+            "maximum_message_byte_count": self.maximum_message_byte_count,
+            "restricted_network_supported": self.restricted_network_supported,
+            "scope": self.scope.canonical_value(),
+            "supported_classifications": self.supported_classifications,
+            "supported_delivery_semantics": self.supported_delivery_semantics,
+            "supported_encodings": self.supported_encodings,
+            "supported_event_contracts": self.supported_event_contracts,
+            "supported_ordering_key_kinds": self.supported_ordering_key_kinds,
+            "supported_representations": self.supported_representations,
+            "supported_retention_classes": self.supported_retention_classes,
+            "transport_encryption_required": self.transport_encryption_required,
+            "transport_implementation_id": self.transport_implementation_id,
+            "transport_implementation_version": self.transport_implementation_version,
+            "transport_profile_id": self.transport_profile_id,
+            "transport_profile_revision": self.transport_profile_revision,
+            "transport_resource_digest": self.transport_resource_digest,
+            "transport_resource_id": self.transport_resource_id,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class EventPhysicalTransportProfileSnapshot:
+    """Immutable deployment capability evidence with no route or operation authority."""
+
+    snapshot_id: str
+    transport_profile_id: str
+    transport_profile_revision: str
+    source_profile_digest: str
+    deployment_release_id: str
+    deployment_profile: str
+    scope: WorkflowScope
+    transport_resource_id: str
+    transport_resource_digest: str
+    transport_implementation_id: str
+    transport_implementation_version: str
+    adapter_contract_id: str
+    adapter_contract_version: str
+    adapter_contract_digest: str
+    supported_event_contracts: tuple[str, ...]
+    supported_classifications: tuple[str, ...]
+    supported_representations: tuple[str, ...]
+    supported_encodings: tuple[str, ...]
+    supported_delivery_semantics: tuple[str, ...]
+    durable_delivery_supported: bool
+    supported_ordering_key_kinds: tuple[str, ...]
+    supported_retention_classes: tuple[str, ...]
+    maximum_message_byte_count: int
+    transport_encryption_required: bool
+    restricted_network_supported: bool
+    snapshotter_subject_id: str
+    captured_at: datetime
+    state: EventPhysicalTransportProfileSnapshotState
+    authority: EventPhysicalTransportProfileSnapshotAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.snapshot_id, "snapshot_id"),
+            (self.transport_profile_id, "transport_profile_id"),
+            (self.transport_profile_revision, "transport_profile_revision"),
+            (self.deployment_release_id, "deployment_release_id"),
+            (self.transport_resource_id, "transport_resource_id"),
+            (self.transport_implementation_id, "transport_implementation_id"),
+            (self.transport_implementation_version, "transport_implementation_version"),
+            (self.adapter_contract_id, "adapter_contract_id"),
+            (self.adapter_contract_version, "adapter_contract_version"),
+            (self.snapshotter_subject_id, "snapshotter_subject_id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.source_profile_digest, "source_profile_digest"),
+            (self.transport_resource_digest, "transport_resource_digest"),
+            (self.adapter_contract_digest, "adapter_contract_digest"),
+            (self.canonical_digest, "snapshot canonical_digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.deployment_profile not in _ALLOWED_DEPLOYMENT_PROFILES:
+            raise ValueError("deployment_profile is unsupported")
+        if self.transport_implementation_id not in _ALLOWED_TRANSPORT_IMPLEMENTATIONS:
+            raise ValueError("transport_implementation_id is unsupported")
+        _validate_event_transport_capabilities(self)
+        if not 1 <= self.maximum_message_byte_count <= 16_777_216:
+            raise ValueError("maximum_message_byte_count is outside the supported range")
+        if self.captured_at.tzinfo is None:
+            raise ValueError("snapshot capture time must be timezone-aware")
+        if self.state is not EventPhysicalTransportProfileSnapshotState.SNAPSHOTTED:
+            raise ValueError("transport profile snapshots must remain snapshotted")
+        if any(self.authority.canonical_value().values()):
+            raise ValueError("transport profile snapshots cannot grant operational authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("transport profile snapshot canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "adapter_contract_digest": self.adapter_contract_digest,
+            "adapter_contract_id": self.adapter_contract_id,
+            "adapter_contract_version": self.adapter_contract_version,
+            "authority": self.authority.canonical_value(),
+            "captured_at": self.captured_at.isoformat(),
+            "deployment_profile": self.deployment_profile,
+            "deployment_release_id": self.deployment_release_id,
+            "durable_delivery_supported": self.durable_delivery_supported,
+            "maximum_message_byte_count": self.maximum_message_byte_count,
+            "restricted_network_supported": self.restricted_network_supported,
+            "scope": self.scope.canonical_value(),
+            "snapshot_id": self.snapshot_id,
+            "snapshotter_subject_id": self.snapshotter_subject_id,
+            "source_profile_digest": self.source_profile_digest,
+            "state": self.state.value,
+            "supported_classifications": self.supported_classifications,
+            "supported_delivery_semantics": self.supported_delivery_semantics,
+            "supported_encodings": self.supported_encodings,
+            "supported_event_contracts": self.supported_event_contracts,
+            "supported_ordering_key_kinds": self.supported_ordering_key_kinds,
+            "supported_representations": self.supported_representations,
+            "supported_retention_classes": self.supported_retention_classes,
+            "transport_encryption_required": self.transport_encryption_required,
+            "transport_implementation_id": self.transport_implementation_id,
+            "transport_implementation_version": self.transport_implementation_version,
+            "transport_profile_id": self.transport_profile_id,
+            "transport_profile_revision": self.transport_profile_revision,
+            "transport_resource_digest": self.transport_resource_digest,
+            "transport_resource_id": self.transport_resource_id,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    @property
+    def grants_route_selection_authority(self) -> bool:
+        return False
 
     @property
     def grants_publication_authority(self) -> bool:

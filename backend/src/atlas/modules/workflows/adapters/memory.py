@@ -59,7 +59,15 @@ from atlas.modules.workflows.application.publication_lease_ports import (
     WorkflowOutboxPublicationLeaseMutationResult,
     WorkflowOutboxPublicationLeaseMutationStatus,
 )
+from atlas.modules.workflows.application.transport_profile_snapshot_ports import (
+    WorkflowTransportProfileSnapshotIdempotencyRecord,
+    WorkflowTransportProfileSnapshotRequest,
+    WorkflowTransportProfileSnapshotResult,
+    WorkflowTransportProfileSnapshotStatus,
+)
 from atlas.modules.workflows.domain import (
+    EventPhysicalTransportProfileSnapshot,
+    EventPhysicalTransportProfileSnapshotState,
     WorkflowDispatchEventEnvelope,
     WorkflowDispatchEventEnvelopeState,
     WorkflowDispatchIntent,
@@ -140,6 +148,13 @@ class InMemoryWorkflowPlanRepository:
         self._event_logical_channel_binding_requests: dict[
             tuple[WorkflowScope, str, str],
             WorkflowEventLogicalChannelBindingIdempotencyRecord,
+        ] = {}
+        self._transport_profile_snapshots: dict[
+            tuple[str, str], EventPhysicalTransportProfileSnapshot
+        ] = {}
+        self._transport_profile_snapshot_requests: dict[
+            tuple[WorkflowScope, str, str],
+            WorkflowTransportProfileSnapshotIdempotencyRecord,
         ] = {}
         self._lock = asyncio.Lock()
 
@@ -804,6 +819,68 @@ class InMemoryWorkflowPlanRepository:
             )
             return WorkflowEventLogicalChannelBindingResult(
                 WorkflowEventLogicalChannelBindingStatus.BOUND, candidate
+            )
+
+    async def get_transport_profile_snapshot(
+        self,
+        *,
+        transport_profile_id: str,
+        transport_profile_revision: str,
+    ) -> EventPhysicalTransportProfileSnapshot | None:
+        async with self._lock:
+            return self._transport_profile_snapshots.get(
+                (transport_profile_id, transport_profile_revision)
+            )
+
+    async def get_transport_profile_snapshot_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        snapshotter_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowTransportProfileSnapshotIdempotencyRecord | None:
+        async with self._lock:
+            return self._transport_profile_snapshot_requests.get(
+                (scope, snapshotter_subject_id, idempotency_key)
+            )
+
+    async def snapshot_transport_profile(
+        self, request: WorkflowTransportProfileSnapshotRequest
+    ) -> WorkflowTransportProfileSnapshotResult:
+        async with self._lock:
+            candidate = request.candidate
+            key = (candidate.scope, request.snapshotter_subject_id, request.idempotency_key)
+            prior = self._transport_profile_snapshot_requests.get(key)
+            if prior is not None:
+                status = (
+                    WorkflowTransportProfileSnapshotStatus.REPLAY
+                    if prior.request_fingerprint == request.request_fingerprint
+                    else WorkflowTransportProfileSnapshotStatus.IDEMPOTENCY_CONFLICT
+                )
+                return WorkflowTransportProfileSnapshotResult(status, prior.snapshot)
+
+            if not self._transport_profile_snapshot_evidence_matches(request):
+                return WorkflowTransportProfileSnapshotResult(
+                    WorkflowTransportProfileSnapshotStatus.SOURCE_CONFLICT, None
+                )
+            profile_key = (
+                candidate.transport_profile_id,
+                candidate.transport_profile_revision,
+            )
+            current = self._transport_profile_snapshots.get(profile_key)
+            if current is not None:
+                return WorkflowTransportProfileSnapshotResult(
+                    WorkflowTransportProfileSnapshotStatus.ALREADY_SNAPSHOTTED, current
+                )
+            self._transport_profile_snapshots[profile_key] = candidate
+            self._transport_profile_snapshot_requests[key] = (
+                WorkflowTransportProfileSnapshotIdempotencyRecord(
+                    request_fingerprint=request.request_fingerprint,
+                    snapshot=candidate,
+                )
+            )
+            return WorkflowTransportProfileSnapshotResult(
+                WorkflowTransportProfileSnapshotStatus.SNAPSHOTTED, candidate
             )
 
     async def acquire_publication_lease(
@@ -1756,6 +1833,27 @@ class InMemoryWorkflowPlanRepository:
             and candidate.policy_digest == request.expected_policy_digest
             and candidate.state is WorkflowEventLogicalChannelBindingState.BOUND
             and not any(candidate.authority.canonical_value().values())
+            and not candidate.grants_publication_authority
+            and not candidate.grants_delivery_authority
+            and not candidate.grants_dispatch_authority
+            and not candidate.grants_execution_authority
+        )
+
+    @staticmethod
+    def _transport_profile_snapshot_evidence_matches(
+        request: WorkflowTransportProfileSnapshotRequest,
+    ) -> bool:
+        candidate = request.candidate
+        return bool(
+            candidate.transport_profile_id == request.expected_source_profile_id
+            and candidate.transport_profile_revision == request.expected_source_profile_revision
+            and candidate.source_profile_digest == request.expected_source_profile_digest
+            and candidate.scope == request.scope
+            and candidate.snapshotter_subject_id == request.snapshotter_subject_id
+            and candidate.captured_at == request.requested_at
+            and candidate.state is EventPhysicalTransportProfileSnapshotState.SNAPSHOTTED
+            and not any(candidate.authority.canonical_value().values())
+            and not candidate.grants_route_selection_authority
             and not candidate.grants_publication_authority
             and not candidate.grants_delivery_authority
             and not candidate.grants_dispatch_authority
