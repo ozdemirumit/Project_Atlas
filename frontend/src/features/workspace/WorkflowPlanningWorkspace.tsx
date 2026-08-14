@@ -28,6 +28,7 @@ import {
   listWorkflowDispatchOutboxEntries,
   listWorkflowDispatchEventEnvelopes,
   listWorkflowDispatchOutboxPublicationLeases,
+  listWorkflowEventTransportAdmissions,
   listWorkflowPlans,
   listWorkflowRunAttempts,
   WORKFLOW_PLAN_SAFETY_NOTICE,
@@ -257,6 +258,53 @@ export default function WorkflowPlanningWorkspace({
     enabled: publicationLeaseQuery.isSuccess && dispatchOutboxEntries.length > 0,
     retry: false,
   });
+  const eventEnvelopesForAdmission =
+    eventEnvelopeQuery.data?.flatMap((inventory) => inventory.event_envelopes) ?? [];
+  const transportAdmissionSources = eventEnvelopesForAdmission.flatMap((eventEnvelope) => {
+    const outboxEntry = dispatchOutboxEntries.find(
+      (entry) => entry.outbox_entry_id === eventEnvelope.payload.outbox_entry_id,
+    );
+    if (!outboxEntry) return [];
+    return [
+      {
+        eventEnvelope,
+        outboxEntry,
+        publicationLease:
+          publicationLeases.find(
+            (lease) => lease.publication_lease_id === eventEnvelope.publication_lease_id,
+          ) ?? null,
+      },
+    ];
+  });
+  const transportAdmissionQuery = useQuery({
+    queryKey: [
+      "workflow-event-transport-admissions",
+      transportAdmissionSources.map(({ eventEnvelope }) => [
+        eventEnvelope.event_id,
+        eventEnvelope.canonical_digest,
+      ]),
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () =>
+      Promise.all(
+        transportAdmissionSources.map(({ eventEnvelope, outboxEntry, publicationLease }) =>
+          listWorkflowEventTransportAdmissions({
+            eventEnvelope,
+            outboxEntry,
+            publicationLease,
+            scope,
+            authorizedTargetIds,
+          }),
+        ),
+      ),
+    enabled:
+      eventEnvelopeQuery.isSuccess &&
+      eventEnvelopesForAdmission.length > 0 &&
+      transportAdmissionSources.length === eventEnvelopesForAdmission.length,
+    retry: false,
+  });
   const definitions = definitionQuery.data?.definitions ?? [];
   const selectedDefinition = definitions.find((item) => item.definition_id === definitionId);
   const createMutation = useMutation({
@@ -332,8 +380,13 @@ export default function WorkflowPlanningWorkspace({
     eventEnvelopeQuery.error instanceof ApiRequestError
       ? eventEnvelopeQuery.error.status
       : undefined;
-  const eventEnvelopes =
-    eventEnvelopeQuery.data?.flatMap((inventory) => inventory.event_envelopes) ?? [];
+  const transportAdmissionErrorStatus =
+    transportAdmissionQuery.error instanceof ApiRequestError
+      ? transportAdmissionQuery.error.status
+      : undefined;
+  const eventEnvelopes = eventEnvelopesForAdmission;
+  const transportAdmissions =
+    transportAdmissionQuery.data?.flatMap((inventory) => inventory.transport_admissions) ?? [];
 
   const selectPlan = (plan: WorkflowRunPlan) => {
     setSelectedPlan(plan);
@@ -1029,6 +1082,126 @@ export default function WorkflowPlanningWorkspace({
                       Prepared canonical data only. No transport is selected, no bytes were
                       serialized, no message was published or delivered, no worker was dispatched,
                       and no action was executed.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {eventEnvelopeQuery.isSuccess && eventEnvelopes.length > 0 && (
+                <div aria-labelledby="workflow-transport-admission-evidence-title">
+                  <div className="workflow-section-heading">
+                    <div>
+                      <p className="eyebrow">READ-ONLY POLICY EVIDENCE</p>
+                      <h3 id="workflow-transport-admission-evidence-title">
+                        Transport-admission evidence
+                      </h3>
+                    </div>
+                    <span>Eligibility only</span>
+                  </div>
+                  {transportAdmissionQuery.isLoading && (
+                    <div className="workflow-empty-state" role="status">
+                      <FileJson2 size={19} />
+                      <span>Loading authoritative transport-admission evidence...</span>
+                    </div>
+                  )}
+                  {transportAdmissionQuery.isError && (
+                    <div className="inline-error" role="alert">
+                      <div>
+                        <strong>
+                          {transportAdmissionErrorStatus === 401
+                            ? "Your session has expired"
+                            : transportAdmissionErrorStatus === 403
+                              ? "Transport-admission evidence permission is missing"
+                              : "Transport-admission evidence is unavailable"}
+                        </strong>
+                        <span>
+                          {transportAdmissionErrorStatus === 401
+                            ? "Sign in again to continue."
+                            : transportAdmissionErrorStatus === 403
+                              ? "Your current role or scope cannot inspect transport-admission evidence."
+                              : "No admission, serialization, publication, delivery, dispatch, or execution state is inferred from this failed read."}
+                        </span>
+                      </div>
+                      <button
+                        className="secondary-action"
+                        type="button"
+                        aria-label="Retry transport-admission read"
+                        onClick={() => void transportAdmissionQuery.refetch()}
+                      >
+                        <RefreshCw size={16} />
+                        Retry
+                      </button>
+                    </div>
+                  )}
+                  {transportAdmissionQuery.isSuccess && transportAdmissions.length > 0 && (
+                    <ol
+                      className="workflow-step-preview workflow-transport-admission-list"
+                      aria-label="Transport-admission evidence"
+                    >
+                      {transportAdmissions.map((admission) => (
+                        <li key={admission.transport_admission_id}>
+                          <FileJson2 size={17} />
+                          <div>
+                            <strong>
+                              <code title={admission.transport_admission_id}>
+                                {safeHolderIdentifier(admission.transport_admission_id)}
+                              </code>
+                              <span className="state-badge neutral">{admission.state}</span>
+                            </strong>
+                            <small>
+                              policy <code title={admission.policy.policy_id}>{safeHolderIdentifier(admission.policy.policy_id)}</code>{" "}
+                              v{admission.policy.policy_version} | {admission.policy.representation_name} | {admission.policy.encoding}
+                            </small>
+                            <small>
+                              allowed {admission.policy.allowed_event_type} v{admission.policy.allowed_event_version} | classification{" "}
+                              {admission.policy.allowed_data_classification}
+                            </small>
+                            <small>
+                              schema <code title={admission.policy.allowed_schema_uri}>{admission.policy.allowed_schema_uri}</code>
+                            </small>
+                            <small>
+                              canonical size {admission.canonical_byte_count.toLocaleString()} bytes | policy maximum{" "}
+                              {admission.policy.maximum_canonical_byte_count.toLocaleString()} bytes
+                            </small>
+                            <small>
+                              admitted {formatTimestamp(admission.admitted_at)} | organization {admission.scope.organization_id} | environment{" "}
+                              {admission.scope.environment_id} | site {admission.scope.site_id} | target {admission.target_id}
+                            </small>
+                            <small>
+                              publisher <code title={admission.publisher_subject_id}>{safeHolderIdentifier(admission.publisher_subject_id)}</code>{" "}
+                              | publication fence {admission.publication_fencing_token} | source fence{" "}
+                              {admission.orchestration_fencing_token}
+                            </small>
+                            <small>
+                              policy {shortDigest(admission.policy.policy_digest)} | event {shortDigest(admission.event_digest)} | admission{" "}
+                              {shortDigest(admission.canonical_digest)}
+                            </small>
+                            <small>
+                              publication lease {shortDigest(admission.publication_lease_digest)} | source lease{" "}
+                              {shortDigest(admission.orchestration_lease_digest)} | outbox {shortDigest(admission.outbox_entry_digest)}
+                            </small>
+                            <small>
+                              intent {shortDigest(admission.dispatch_intent_digest)} | attempt {shortDigest(admission.attempt_digest)} | run{" "}
+                              {shortDigest(admission.run_digest)} | step {shortDigest(admission.step_run_digest)} | plan{" "}
+                              {shortDigest(admission.plan_digest)}
+                            </small>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                  {transportAdmissionQuery.isSuccess && transportAdmissions.length === 0 && (
+                    <div className="workflow-empty-state" role="status">
+                      <FileJson2 size={19} />
+                      <span>No transport-admission decision has been recorded.</span>
+                    </div>
+                  )}
+                  <div className="workflow-safety-boundary" role="note">
+                    <LockKeyhole size={18} />
+                    <span>
+                      Admission proves policy eligibility only. No broker, provider, or route was
+                      selected; no wire bytes or message were created; nothing was serialized,
+                      published, delivered, dispatched, or executed.
                     </span>
                   </div>
                 </div>

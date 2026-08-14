@@ -231,6 +231,14 @@ broker or route, creates no wire serialization or transport attempt, and grants 
 delivery, dispatch or execution authority. Transport admission and publication lifecycle evidence
 remain separate later boundaries.
 
+Before any provider, route or wire representation can be selected, the same publisher may record
+one immutable provider-neutral transport-admission decision for the exact prepared envelope under
+the current publication lease. Admission evaluates a code-owned policy covering the exact event
+type/version, schema, classification, canonical representation contract and maximum byte count.
+The decision contains no broker, endpoint, topic, routing key, credential, serialized artifact,
+publication attempt or receipt and grants no publication, delivery, dispatch or execution authority.
+Provider selection, wire serialization and publication lifecycle evidence remain later boundaries.
+
 ### 10.2 Publication State
 
 Outbox records track:

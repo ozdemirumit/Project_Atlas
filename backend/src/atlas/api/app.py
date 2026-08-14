@@ -1536,6 +1536,8 @@ from atlas.modules.workflows.application import (
     WorkflowDispatchEventEnvelopeService,
     WorkflowDispatchIntentStagingRepository,
     WorkflowDispatchIntentStagingService,
+    WorkflowEventTransportAdmissionRepository,
+    WorkflowEventTransportAdmissionService,
     WorkflowOrchestrationLeaseRepository,
     WorkflowOrchestrationLeaseService,
     WorkflowOutboxPublicationLeaseRepository,
@@ -1575,6 +1577,8 @@ def create_app(
     workflow_dispatch_intent_staging_service: WorkflowDispatchIntentStagingService | None = None,
     workflow_outbox_publication_lease_service: WorkflowOutboxPublicationLeaseService | None = None,
     workflow_dispatch_event_envelope_service: WorkflowDispatchEventEnvelopeService | None = None,
+    workflow_event_transport_admission_service: WorkflowEventTransportAdmissionService
+    | None = None,
     security_export_service: SecurityExportService | None = None,
     session_service: SessionService | None = None,
     api_credential_service: ApiCredentialService | None = None,
@@ -5486,6 +5490,41 @@ def create_app(
         )
     else:
         resolved_workflow_dispatch_event_envelope_service = workflow_dispatch_event_envelope_service
+    if workflow_event_transport_admission_service is None:
+        transport_admission_repository_methods = (
+            "get_outbox_entry_by_id",
+            "get_publication_lease_by_outbox_entry_id",
+            "get_dispatch_event_envelope_by_outbox_entry_id",
+            "get_event_transport_admission_by_event_id",
+            "get_event_transport_admission_request",
+            "admit_event_transport",
+        )
+        if not all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in transport_admission_repository_methods
+        ):
+            raise ValueError(
+                "workflow planning repository does not implement event transport admission; "
+                "inject workflow_event_transport_admission_service explicitly"
+            )
+        workflow_event_transport_admission_repository = cast(
+            WorkflowEventTransportAdmissionRepository,
+            workflow_repository,
+        )
+        resolved_workflow_event_transport_admission_service = (
+            WorkflowEventTransportAdmissionService(
+                plan_repository=workflow_repository,
+                orchestration_lease_repository=(
+                    resolved_workflow_orchestration_lease_service.repository
+                ),
+                transport_admission_repository=(workflow_event_transport_admission_repository),
+                audit_sink=resolved_audit_sink,
+            )
+        )
+    else:
+        resolved_workflow_event_transport_admission_service = (
+            workflow_event_transport_admission_service
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -5740,6 +5779,12 @@ def create_app(
         )
         app.state.workflow_dispatch_event_envelope_repository = (
             resolved_workflow_dispatch_event_envelope_service.repository
+        )
+        app.state.workflow_event_transport_admission_service = (
+            resolved_workflow_event_transport_admission_service
+        )
+        app.state.workflow_event_transport_admission_repository = (
+            resolved_workflow_event_transport_admission_service.repository
         )
         yield
         await resolved_workflow_planning_service.close()

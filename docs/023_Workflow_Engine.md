@@ -568,6 +568,9 @@ MVP workflows do not execute C3 through C5 capabilities.
 - ADR-142 establishes one immutable canonical dispatch-event envelope under the exact active
   publication lease without transport selection, wire serialization, publication, delivery,
   dispatch or execution authority.
+- ADR-143 establishes immutable policy-governed transport admission for the exact prepared event
+  envelope without provider or route selection, wire serialization, publication, delivery,
+  dispatch or execution authority.
 
 ## 39. Assumptions
 

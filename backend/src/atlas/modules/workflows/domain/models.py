@@ -27,6 +27,22 @@ def canonical_digest(payload: object) -> str:
     return sha256(encoded).hexdigest()
 
 
+def canonical_json_byte_count(payload: object) -> int:
+    """Return canonical JSON's UTF-8 size without retaining a serialized artifact."""
+    try:
+        return len(
+            json.dumps(
+                payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+                allow_nan=False,
+            ).encode("utf-8")
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("canonical payload must contain finite JSON values") from exc
+
+
 def _require_text(value: str, *, name: str, maximum: int) -> None:
     if value != value.strip() or not value or len(value) > maximum:
         raise ValueError(f"{name} must contain 1 to {maximum} normalized characters")
@@ -108,6 +124,10 @@ class WorkflowOutboxPublicationLeaseEffectiveState(StrEnum):
 
 class WorkflowDispatchEventEnvelopeState(StrEnum):
     PREPARED = "prepared"
+
+
+class WorkflowEventTransportAdmissionState(StrEnum):
+    ADMITTED = "admitted"
 
 
 @dataclass(frozen=True, slots=True)
@@ -1048,6 +1068,276 @@ class WorkflowDispatchEventEnvelope:
             "subject_id": self.subject_id,
             "subject_type": self.subject_type,
             "workflow_id": self.workflow_id,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    @property
+    def grants_publication_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_delivery_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_dispatch_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_execution_authority(self) -> bool:
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventTransportAdmissionPolicy:
+    """Immutable provider-neutral eligibility policy owned by Atlas code."""
+
+    policy_id: str
+    policy_version: str
+    allowed_event_types: tuple[str, ...]
+    allowed_event_versions: tuple[str, ...]
+    allowed_schema_uris: tuple[str, ...]
+    allowed_data_classifications: tuple[str, ...]
+    representation_name: str
+    encoding: str
+    maximum_canonical_byte_count: int
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        _require_identifier(self.policy_id, name="transport admission policy_id")
+        _require_identifier(self.policy_version, name="transport admission policy_version")
+        for values, name in (
+            (self.allowed_event_types, "allowed event types"),
+            (self.allowed_event_versions, "allowed event versions"),
+            (self.allowed_schema_uris, "allowed schema URIs"),
+            (self.allowed_data_classifications, "allowed data classifications"),
+        ):
+            if not values or tuple(sorted(set(values))) != values:
+                raise ValueError(f"transport admission {name} must be unique and sorted")
+            for value in values:
+                _require_text(value, name=f"transport admission {name}", maximum=240)
+        if self.representation_name != "canonical-json":
+            raise ValueError("transport admission representation must be canonical-json")
+        if self.encoding != "utf-8":
+            raise ValueError("transport admission encoding must be utf-8")
+        if not 1 <= self.maximum_canonical_byte_count <= 1_048_576:
+            raise ValueError("transport admission canonical byte limit is invalid")
+        _require_digest(self.canonical_digest, name="transport admission policy digest")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("transport admission policy canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "allowed_data_classifications": list(self.allowed_data_classifications),
+            "allowed_event_types": list(self.allowed_event_types),
+            "allowed_event_versions": list(self.allowed_event_versions),
+            "allowed_schema_uris": list(self.allowed_schema_uris),
+            "encoding": self.encoding,
+            "maximum_canonical_byte_count": self.maximum_canonical_byte_count,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "representation_name": self.representation_name,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+def code_owned_workflow_event_transport_admission_policy() -> WorkflowEventTransportAdmissionPolicy:
+    values: dict[str, object] = {
+        "policy_id": "policy.workflow-event-transport-admission",
+        "policy_version": "1.0",
+        "allowed_event_types": ("WorkflowStepDispatchRequested",),
+        "allowed_event_versions": ("1.0",),
+        "allowed_schema_uris": ("urn:project-atlas:event:workflow-step-dispatch-requested:1.0",),
+        "allowed_data_classifications": ("internal",),
+        "representation_name": "canonical-json",
+        "encoding": "utf-8",
+        "maximum_canonical_byte_count": 65_536,
+    }
+    digest_payload = {
+        key: list(value) if isinstance(value, tuple) else value for key, value in values.items()
+    }
+    return WorkflowEventTransportAdmissionPolicy(
+        policy_id="policy.workflow-event-transport-admission",
+        policy_version="1.0",
+        allowed_event_types=("WorkflowStepDispatchRequested",),
+        allowed_event_versions=("1.0",),
+        allowed_schema_uris=("urn:project-atlas:event:workflow-step-dispatch-requested:1.0",),
+        allowed_data_classifications=("internal",),
+        representation_name="canonical-json",
+        encoding="utf-8",
+        maximum_canonical_byte_count=65_536,
+        canonical_digest=canonical_digest(digest_payload),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventTransportAdmissionAuthority:
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        if any(self.canonical_value().values()):
+            raise ValueError(
+                "workflow event transport admission cannot grant operational authority"
+            )
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "execution_authorized": self.execution_authorized,
+            "publication_authorized": self.publication_authorized,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventTransportAdmission:
+    """Immutable policy admission evidence with no transport authority."""
+
+    admission_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    event_id: str
+    event_digest: str
+    event_type: str
+    event_version: str
+    schema_uri: str
+    data_classification: str
+    representation_name: str
+    encoding: str
+    canonical_byte_count: int
+    maximum_canonical_byte_count: int
+    outbox_entry_id: str
+    outbox_entry_digest: str
+    dispatch_intent_id: str
+    dispatch_intent_digest: str
+    plan_id: str
+    plan_digest: str
+    run_id: str
+    run_digest: str
+    step_run_id: str
+    step_run_digest: str
+    step_id: str
+    attempt_id: str
+    attempt_digest: str
+    attempt_number: int
+    scope: WorkflowScope
+    target_id: str
+    target_type: str
+    orchestration_lease_id: str
+    orchestration_lease_digest: str
+    orchestration_fencing_token: int
+    publication_lease_id: str
+    publication_lease_digest: str
+    publication_fencing_token: int
+    publisher_subject_id: str
+    admitted_at: datetime
+    state: WorkflowEventTransportAdmissionState
+    authority: WorkflowEventTransportAdmissionAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.admission_id, "transport admission id"),
+            (self.policy_id, "transport admission policy_id"),
+            (self.policy_version, "transport admission policy_version"),
+            (self.event_id, "transport admission event_id"),
+            (self.outbox_entry_id, "transport admission outbox_entry_id"),
+            (self.dispatch_intent_id, "transport admission dispatch_intent_id"),
+            (self.plan_id, "transport admission plan_id"),
+            (self.run_id, "transport admission run_id"),
+            (self.step_run_id, "transport admission step_run_id"),
+            (self.step_id, "transport admission step_id"),
+            (self.attempt_id, "transport admission attempt_id"),
+            (self.target_id, "transport admission target_id"),
+            (self.orchestration_lease_id, "transport admission orchestration_lease_id"),
+            (self.publication_lease_id, "transport admission publication_lease_id"),
+            (self.publisher_subject_id, "transport admission publisher_subject_id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.policy_digest, "transport admission policy_digest"),
+            (self.event_digest, "transport admission event_digest"),
+            (self.outbox_entry_digest, "transport admission outbox_entry_digest"),
+            (self.dispatch_intent_digest, "transport admission dispatch_intent_digest"),
+            (self.plan_digest, "transport admission plan_digest"),
+            (self.run_digest, "transport admission run_digest"),
+            (self.step_run_digest, "transport admission step_run_digest"),
+            (self.attempt_digest, "transport admission attempt_digest"),
+            (self.orchestration_lease_digest, "transport admission orchestration_lease_digest"),
+            (self.publication_lease_digest, "transport admission publication_lease_digest"),
+            (self.canonical_digest, "transport admission canonical_digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.representation_name != "canonical-json" or self.encoding != "utf-8":
+            raise ValueError("workflow event transport admission representation is invalid")
+        if not 1 <= self.canonical_byte_count <= self.maximum_canonical_byte_count:
+            raise ValueError("workflow event transport admission canonical byte count is invalid")
+        if self.attempt_number != 1 or self.target_type != "storage":
+            raise ValueError("workflow event transport admission lineage is unsupported")
+        if self.orchestration_fencing_token < 1 or self.publication_fencing_token < 1:
+            raise ValueError("workflow event transport admission fencing tokens are invalid")
+        if self.admitted_at.tzinfo is None:
+            raise ValueError("workflow event transport admission time must be timezone-aware")
+        if self.state is not WorkflowEventTransportAdmissionState.ADMITTED:
+            raise ValueError("workflow event transport admission must remain admitted")
+        if any(self.authority.canonical_value().values()):
+            raise ValueError(
+                "workflow event transport admission cannot grant operational authority"
+            )
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("workflow event transport admission canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "admission_id": self.admission_id,
+            "admitted_at": self.admitted_at.isoformat(),
+            "attempt_digest": self.attempt_digest,
+            "attempt_id": self.attempt_id,
+            "attempt_number": self.attempt_number,
+            "authority": self.authority.canonical_value(),
+            "canonical_byte_count": self.canonical_byte_count,
+            "data_classification": self.data_classification,
+            "dispatch_intent_digest": self.dispatch_intent_digest,
+            "dispatch_intent_id": self.dispatch_intent_id,
+            "encoding": self.encoding,
+            "event_digest": self.event_digest,
+            "event_id": self.event_id,
+            "event_type": self.event_type,
+            "event_version": self.event_version,
+            "maximum_canonical_byte_count": self.maximum_canonical_byte_count,
+            "orchestration_fencing_token": self.orchestration_fencing_token,
+            "orchestration_lease_digest": self.orchestration_lease_digest,
+            "orchestration_lease_id": self.orchestration_lease_id,
+            "outbox_entry_digest": self.outbox_entry_digest,
+            "outbox_entry_id": self.outbox_entry_id,
+            "plan_digest": self.plan_digest,
+            "plan_id": self.plan_id,
+            "policy_digest": self.policy_digest,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "publication_fencing_token": self.publication_fencing_token,
+            "publication_lease_digest": self.publication_lease_digest,
+            "publication_lease_id": self.publication_lease_id,
+            "publisher_subject_id": self.publisher_subject_id,
+            "representation_name": self.representation_name,
+            "run_digest": self.run_digest,
+            "run_id": self.run_id,
+            "schema_uri": self.schema_uri,
+            "scope": self.scope.canonical_value(),
+            "state": self.state.value,
+            "step_id": self.step_id,
+            "step_run_digest": self.step_run_digest,
+            "step_run_id": self.step_run_id,
+            "target_id": self.target_id,
+            "target_type": self.target_type,
         }
 
     def canonical_value(self) -> dict[str, object]:

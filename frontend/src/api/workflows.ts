@@ -397,6 +397,65 @@ export type WorkflowDispatchEventEnvelopeInventory = {
   durable: boolean;
 };
 
+export type WorkflowEventTransportAdmissionPolicy = {
+  policy_id: "policy.workflow-event-transport-admission";
+  policy_version: "1.0";
+  policy_digest: string;
+  allowed_event_type: "WorkflowStepDispatchRequested";
+  allowed_event_version: "1.0";
+  allowed_schema_uri: "urn:project-atlas:event:workflow-step-dispatch-requested:1.0";
+  allowed_data_classification: "internal";
+  representation_name: "canonical-json";
+  encoding: "utf-8";
+  maximum_canonical_byte_count: 65_536;
+};
+
+export type WorkflowEventTransportAdmission = {
+  transport_admission_id: string;
+  event_id: string;
+  event_digest: string;
+  outbox_entry_id: string;
+  outbox_entry_digest: string;
+  dispatch_intent_id: string;
+  dispatch_intent_digest: string;
+  plan_id: string;
+  plan_digest: string;
+  run_id: string;
+  run_digest: string;
+  step_run_id: string;
+  step_run_digest: string;
+  step_id: string;
+  attempt_id: string;
+  attempt_digest: string;
+  attempt_number: 1;
+  scope: WorkflowRunPlan["scope"];
+  target_id: string;
+  target_type: "storage";
+  policy: WorkflowEventTransportAdmissionPolicy;
+  canonical_byte_count: number;
+  publisher_subject_id: string;
+  orchestration_lease_id: string;
+  orchestration_lease_digest: string;
+  orchestration_fencing_token: number;
+  publication_lease_id: string;
+  publication_lease_digest: string;
+  publication_fencing_token: number;
+  admitted_at: string;
+  state: "admitted";
+  authority: WorkflowDispatchEventAuthority;
+  grants_publication_authority: false;
+  grants_delivery_authority: false;
+  grants_dispatch_authority: false;
+  grants_execution_authority: false;
+  canonical_digest: string;
+};
+
+export type WorkflowEventTransportAdmissionInventory = {
+  event_id: string;
+  transport_admissions: WorkflowEventTransportAdmission[];
+  durable: boolean;
+};
+
 const digest = /^[a-f0-9]{64}$/;
 const capabilityClasses = new Set<WorkflowCapabilityClass>(["C0", "C1", "C2"]);
 const stepKinds = new Set<WorkflowStepKind>([
@@ -643,6 +702,62 @@ const dispatchEventEnvelopeFields = [
 const dispatchEventEnvelopeInventoryFields = [
   "outbox_entry_id",
   "event_envelopes",
+  "durable",
+] as const;
+const eventTransportAdmissionPolicyFields = [
+  "policy_id",
+  "policy_version",
+  "policy_digest",
+  "allowed_event_type",
+  "allowed_event_version",
+  "allowed_schema_uri",
+  "allowed_data_classification",
+  "representation_name",
+  "encoding",
+  "maximum_canonical_byte_count",
+] as const;
+const eventTransportAdmissionFields = [
+  "transport_admission_id",
+  "event_id",
+  "event_digest",
+  "outbox_entry_id",
+  "outbox_entry_digest",
+  "dispatch_intent_id",
+  "dispatch_intent_digest",
+  "plan_id",
+  "plan_digest",
+  "run_id",
+  "run_digest",
+  "step_run_id",
+  "step_run_digest",
+  "step_id",
+  "attempt_id",
+  "attempt_digest",
+  "attempt_number",
+  "scope",
+  "target_id",
+  "target_type",
+  "policy",
+  "canonical_byte_count",
+  "publisher_subject_id",
+  "orchestration_lease_id",
+  "orchestration_lease_digest",
+  "orchestration_fencing_token",
+  "publication_lease_id",
+  "publication_lease_digest",
+  "publication_fencing_token",
+  "admitted_at",
+  "state",
+  "authority",
+  "grants_publication_authority",
+  "grants_delivery_authority",
+  "grants_dispatch_authority",
+  "grants_execution_authority",
+  "canonical_digest",
+] as const;
+const eventTransportAdmissionInventoryFields = [
+  "event_id",
+  "transport_admissions",
   "durable",
 ] as const;
 const dispatchEventAuthorityFields = [
@@ -1258,6 +1373,79 @@ function isDispatchEventEnvelopeBoundToEntry(
   );
 }
 
+function isEventTransportAdmissionBoundToEnvelope(
+  value: unknown,
+  envelope: WorkflowDispatchEventEnvelope,
+  entry: WorkflowDispatchOutboxEntry,
+  publicationLease: WorkflowDispatchOutboxPublicationLease,
+): value is WorkflowEventTransportAdmission {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, eventTransportAdmissionFields) ||
+    !isExactScope(value.scope) ||
+    !isObject(value.policy) ||
+    !hasExactKeys(value.policy, eventTransportAdmissionPolicyFields) ||
+    containsCredentialMaterial(value)
+  ) {
+    return false;
+  }
+  const policy = value.policy;
+  const admissionScope = value.scope;
+  return (
+    isIdentifier(value.transport_admission_id) &&
+    value.event_id === envelope.event_id &&
+    value.event_digest === envelope.canonical_digest &&
+    value.outbox_entry_id === entry.outbox_entry_id &&
+    value.outbox_entry_digest === entry.canonical_digest &&
+    value.dispatch_intent_id === entry.dispatch_intent_id &&
+    value.dispatch_intent_digest === entry.dispatch_intent_digest &&
+    value.plan_id === entry.plan_id &&
+    value.plan_digest === entry.plan_digest &&
+    value.run_id === entry.run_id &&
+    value.run_digest === entry.run_digest &&
+    value.step_run_id === entry.step_run_id &&
+    value.step_run_digest === entry.step_run_digest &&
+    value.step_id === entry.step_id &&
+    value.attempt_id === entry.attempt_id &&
+    value.attempt_digest === entry.attempt_digest &&
+    value.attempt_number === entry.attempt_number &&
+    admissionScope.organization_id === entry.scope.organization_id &&
+    admissionScope.environment_id === entry.scope.environment_id &&
+    admissionScope.site_id === entry.scope.site_id &&
+    value.target_id === entry.target_id &&
+    value.target_type === entry.target_type &&
+    policy.policy_id === "policy.workflow-event-transport-admission" &&
+    policy.policy_version === "1.0" &&
+    isDigest(policy.policy_digest) &&
+    policy.allowed_event_type === envelope.event_type &&
+    policy.allowed_event_version === envelope.event_version &&
+    policy.allowed_schema_uri === envelope.schema_uri &&
+    policy.allowed_data_classification === envelope.data_classification &&
+    policy.representation_name === "canonical-json" &&
+    policy.encoding === "utf-8" &&
+    policy.maximum_canonical_byte_count === 65_536 &&
+    Number.isInteger(value.canonical_byte_count) &&
+    Number(value.canonical_byte_count) >= 1 &&
+    Number(value.canonical_byte_count) <= Number(policy.maximum_canonical_byte_count) &&
+    value.publisher_subject_id === publicationLease.publisher_subject_id &&
+    value.orchestration_lease_id === envelope.orchestration_lease_id &&
+    value.orchestration_lease_digest === envelope.orchestration_lease_digest &&
+    value.orchestration_fencing_token === envelope.orchestration_fencing_token &&
+    value.publication_lease_id === envelope.publication_lease_id &&
+    value.publication_lease_digest === envelope.publication_lease_digest &&
+    value.publication_fencing_token === envelope.publication_fencing_token &&
+    isTimestamp(value.admitted_at) &&
+    Date.parse(value.admitted_at) >= Date.parse(envelope.prepared_at) &&
+    value.state === "admitted" &&
+    hasSafeDispatchEventAuthority(value.authority) &&
+    value.grants_publication_authority === false &&
+    value.grants_delivery_authority === false &&
+    value.grants_dispatch_authority === false &&
+    value.grants_execution_authority === false &&
+    isDigest(value.canonical_digest)
+  );
+}
+
 function isRunPlan(value: unknown): value is WorkflowRunPlan {
   if (
     !isObject(value) ||
@@ -1628,6 +1816,46 @@ export async function listWorkflowDispatchEventEnvelopes(input: {
     throw new ApiRequestError("Workflow event-envelope evidence response was unsafe", response.status);
   }
   return data as WorkflowDispatchEventEnvelopeInventory;
+}
+
+export async function listWorkflowEventTransportAdmissions(input: {
+  eventEnvelope: WorkflowDispatchEventEnvelope;
+  outboxEntry: WorkflowDispatchOutboxEntry;
+  publicationLease: WorkflowDispatchOutboxPublicationLease | null;
+  scope: WorkflowScope;
+  authorizedTargetIds: readonly string[];
+}): Promise<WorkflowEventTransportAdmissionInventory> {
+  const { eventEnvelope: envelope, outboxEntry: entry, publicationLease } = input;
+  if (
+    publicationLease === null ||
+    entry.scope.organization_id !== input.scope.organizationId ||
+    entry.scope.environment_id !== input.scope.environmentId ||
+    entry.scope.site_id !== input.scope.siteId ||
+    !input.authorizedTargetIds.includes(entry.target_id) ||
+    !isDispatchEventEnvelopeBoundToEntry(envelope, entry, publicationLease)
+  ) {
+    throw new ApiRequestError("Workflow event envelope is outside the authorized transport-admission scope", 403);
+  }
+  const response = await apiFetch(
+    `/api/v1/workflows/plans/${encodeURIComponent(entry.plan_id)}/runs/${encodeURIComponent(entry.run_id)}/attempts/${encodeURIComponent(entry.attempt_id)}/dispatch-intents/${encodeURIComponent(entry.dispatch_intent_id)}/outbox/${encodeURIComponent(entry.outbox_entry_id)}/event-envelope/${encodeURIComponent(envelope.event_id)}/transport-admission`,
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(response, "Workflow transport-admission evidence retrieval failed");
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, eventTransportAdmissionInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    data.event_id !== envelope.event_id ||
+    !Array.isArray(data.transport_admissions) ||
+    data.transport_admissions.length > 1 ||
+    typeof data.durable !== "boolean" ||
+    !data.transport_admissions.every((admission) =>
+      isEventTransportAdmissionBoundToEnvelope(admission, envelope, entry, publicationLease),
+    )
+  ) {
+    throw new ApiRequestError("Workflow transport-admission evidence response was unsafe", response.status);
+  }
+  return data as WorkflowEventTransportAdmissionInventory;
 }
 
 export async function createWorkflowPlan(input: {
