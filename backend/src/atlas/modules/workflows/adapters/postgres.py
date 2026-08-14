@@ -33,6 +33,8 @@ from atlas.core.persistence.models import (
     WorkflowEventByteArtifactModel,
     WorkflowEventLogicalChannelBindingClaimModel,
     WorkflowEventLogicalChannelBindingModel,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseClaimModel,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel,
     WorkflowEventPhysicalTransportRouteBindingClaimModel,
     WorkflowEventPhysicalTransportRouteBindingModel,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionClaimModel,
@@ -93,6 +95,13 @@ from atlas.modules.workflows.application.dispatch_intent_ports import (
     WorkflowDispatchIntentStagingRequest,
     WorkflowDispatchIntentStagingResult,
     WorkflowDispatchIntentStagingStatus,
+)
+from atlas.modules.workflows.application.endpoint_resolution_authorization_lease_ports import (
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseError,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseIdempotencyRecord,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRequest,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResult,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseStatus,
 )
 from atlas.modules.workflows.application.event_envelope_ports import (
     WorkflowDispatchEventEnvelopeError,
@@ -183,6 +192,9 @@ from atlas.modules.workflows.domain import (
     WorkflowEventLogicalChannelBinding,
     WorkflowEventLogicalChannelBindingAuthority,
     WorkflowEventLogicalChannelBindingState,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseAuthority,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseState,
     WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventPhysicalTransportRouteBindingAuthority,
     WorkflowEventPhysicalTransportRouteBindingState,
@@ -219,6 +231,7 @@ from atlas.modules.workflows.domain import (
     canonical_json_byte_count,
     canonical_json_bytes,
     code_owned_workflow_event_logical_channel_policy,
+    code_owned_workflow_event_physical_transport_endpoint_resolution_authorization_policy,
     code_owned_workflow_event_physical_transport_route_freshness_policy,
     code_owned_workflow_event_transport_admission_policy,
 )
@@ -241,6 +254,10 @@ class PostgreSQLWorkflowPlanRepository:
     @property
     def durable(self) -> bool:
         return True
+
+    async def get_authoritative_time(self) -> datetime:
+        async with self._sessions() as session:
+            return cast(datetime, await session.scalar(select(func.now())))
 
     async def get_by_id(self, *, plan_id: str) -> WorkflowRunPlan | None:
         async with self._sessions() as session:
@@ -2255,6 +2272,16 @@ class PostgreSQLWorkflowPlanRepository:
             )
             return None if row is None else self._route_freshness_admission_from_row(row)
 
+    async def get_route_freshness_admission_by_id(
+        self, *, freshness_admission_id: str
+    ) -> WorkflowEventPhysicalTransportRouteFreshnessAdmission | None:
+        async with self._sessions() as session:
+            row = await session.get(
+                WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel,
+                freshness_admission_id,
+            )
+            return None if row is None else self._route_freshness_admission_from_row(row)
+
     async def list_route_freshness_admissions(
         self, *, scope: WorkflowScope, limit: int
     ) -> tuple[WorkflowEventPhysicalTransportRouteFreshnessAdmission, ...]:
@@ -2405,6 +2432,209 @@ class PostgreSQLWorkflowPlanRepository:
                 )
         return WorkflowEventPhysicalTransportRouteFreshnessAdmissionResult(
             WorkflowEventPhysicalTransportRouteFreshnessAdmissionStatus.EVIDENCE_CONFLICT,
+            None,
+        )
+
+    async def get_endpoint_resolution_authorization_lease(
+        self, *, freshness_admission_id: str
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease | None:
+        async with self._sessions() as session:
+            row = cast(
+                WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel | None,
+                await session.scalar(
+                    select(
+                        WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel
+                    ).where(
+                        WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel.freshness_admission_id
+                        == freshness_admission_id
+                    )
+                ),
+            )
+            return (
+                None if row is None else self._endpoint_resolution_authorization_lease_from_row(row)
+            )
+
+    async def list_endpoint_resolution_authorization_leases(
+        self, *, scope: WorkflowScope, limit: int
+    ) -> tuple[WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease, ...]:
+        capped = min(max(limit, 0), 256)
+        if capped == 0:
+            return ()
+        async with self._sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel)
+                    .where(
+                        WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel.organization_id
+                        == scope.organization_id,
+                        WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel.environment_id
+                        == scope.environment_id,
+                        WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel.site_id
+                        == scope.site_id,
+                    )
+                    .order_by(
+                        WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel.issued_at.desc(),
+                        WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel.authorization_lease_id,
+                    )
+                    .limit(capped)
+                )
+            ).all()
+            return tuple(
+                self._endpoint_resolution_authorization_lease_from_row(row) for row in rows
+            )
+
+    async def get_endpoint_resolution_authorization_lease_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        resolver_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseIdempotencyRecord | None:
+        async with self._sessions() as session:
+            claim = await self._load_endpoint_resolution_authorization_lease_claim(
+                session,
+                scope=scope,
+                resolver_subject_id=resolver_subject_id,
+                idempotency_key=idempotency_key,
+            )
+            if claim is None:
+                return None
+            row = await session.get(
+                WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel,
+                claim.authorization_lease_id,
+            )
+            return self._endpoint_resolution_authorization_lease_record_from_claim(claim, row)
+
+    async def authorize_endpoint_resolution(
+        self,
+        request: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRequest,
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResult:
+        self._validate_endpoint_resolution_authorization_request(request)
+        async with self._sessions() as session:
+            (
+                binding_row,
+                route_row,
+                head_row,
+                freshness_row,
+            ) = await self._lock_endpoint_resolution_authorization_sources(session, request=request)
+            observed_at = cast(datetime, await session.scalar(select(func.now())))
+            if not self._endpoint_resolution_authorization_evidence_matches(
+                binding_row=binding_row,
+                route_row=route_row,
+                head_row=head_row,
+                freshness_row=freshness_row,
+                request=request,
+                observed_at=observed_at,
+            ):
+                await session.rollback()
+                return WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResult(
+                    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseStatus.EVIDENCE_CONFLICT,
+                    None,
+                )
+
+            replay = await self._endpoint_resolution_authorization_replay(
+                session,
+                request=request,
+                head_row=head_row,
+                freshness_row=freshness_row,
+                observed_at=observed_at,
+            )
+            if replay is not None:
+                await session.rollback()
+                return replay
+
+            assert freshness_row is not None
+            if observed_at + timedelta(seconds=15) > freshness_row.valid_until:
+                await session.rollback()
+                return WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResult(
+                    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseStatus.EVIDENCE_CONFLICT,
+                    None,
+                )
+
+            existing = cast(
+                WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel | None,
+                await session.scalar(
+                    select(
+                        WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel
+                    ).where(
+                        WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel.freshness_admission_id
+                        == request.expected_freshness_admission_id
+                    )
+                ),
+            )
+            if existing is not None:
+                await session.rollback()
+                return WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResult(
+                    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseStatus.ALREADY_AUTHORIZED,
+                    self._endpoint_resolution_authorization_lease_from_row(existing),
+                )
+
+            freshness = self._route_freshness_admission_from_row(freshness_row)
+            lease = self._endpoint_resolution_authorization_lease(
+                request=request,
+                freshness=freshness,
+                issued_at=observed_at,
+            )
+            try:
+                session.add(self._endpoint_resolution_authorization_lease_model(lease))
+                await session.flush()
+                session.add(
+                    self._endpoint_resolution_authorization_lease_claim_model(request, lease)
+                )
+                await session.commit()
+                return WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResult(
+                    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseStatus.AUTHORIZED,
+                    lease,
+                )
+            except IntegrityError:
+                await session.rollback()
+
+        async with self._sessions() as session:
+            (
+                _,
+                _,
+                head_row,
+                freshness_row,
+            ) = await self._lock_endpoint_resolution_authorization_sources(session, request=request)
+            observed_at = cast(datetime, await session.scalar(select(func.now())))
+            replay = await self._endpoint_resolution_authorization_replay(
+                session,
+                request=request,
+                head_row=head_row,
+                freshness_row=freshness_row,
+                observed_at=observed_at,
+            )
+            if replay is not None:
+                await session.rollback()
+                return replay
+            if (
+                freshness_row is None
+                or observed_at + timedelta(seconds=15) > freshness_row.valid_until
+            ):
+                await session.rollback()
+                return WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResult(
+                    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseStatus.EVIDENCE_CONFLICT,
+                    None,
+                )
+            existing = cast(
+                WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel | None,
+                await session.scalar(
+                    select(
+                        WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel
+                    ).where(
+                        WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel.freshness_admission_id
+                        == request.expected_freshness_admission_id
+                    )
+                ),
+            )
+            await session.rollback()
+            if existing is not None:
+                return WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResult(
+                    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseStatus.ALREADY_AUTHORIZED,
+                    self._endpoint_resolution_authorization_lease_from_row(existing),
+                )
+        return WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResult(
+            WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseStatus.EVIDENCE_CONFLICT,
             None,
         )
 
@@ -7269,6 +7499,198 @@ class PostgreSQLWorkflowPlanRepository:
             "The workflow physical transport route binding does not match durable evidence.",
         )
 
+    async def _lock_endpoint_resolution_authorization_sources(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRequest,
+    ) -> tuple[
+        WorkflowEventPhysicalTransportRouteBindingModel | None,
+        EventPhysicalTransportRouteSnapshotModel | None,
+        DeploymentEventTransportRouteSelectionHeadModel | None,
+        WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel | None,
+    ]:
+        binding_row = cast(
+            WorkflowEventPhysicalTransportRouteBindingModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportRouteBindingModel)
+                .where(
+                    WorkflowEventPhysicalTransportRouteBindingModel.binding_id
+                    == request.expected_physical_transport_route_binding_id
+                )
+                .with_for_update()
+            ),
+        )
+        route_row = cast(
+            EventPhysicalTransportRouteSnapshotModel | None,
+            await session.scalar(
+                select(EventPhysicalTransportRouteSnapshotModel)
+                .where(
+                    EventPhysicalTransportRouteSnapshotModel.snapshot_id
+                    == request.expected_transport_route_snapshot_id
+                )
+                .with_for_update()
+            ),
+        )
+        head_rows = (
+            await session.scalars(
+                select(DeploymentEventTransportRouteSelectionHeadModel)
+                .where(
+                    DeploymentEventTransportRouteSelectionHeadModel.organization_id
+                    == request.scope.organization_id,
+                    DeploymentEventTransportRouteSelectionHeadModel.environment_id
+                    == request.scope.environment_id,
+                    DeploymentEventTransportRouteSelectionHeadModel.site_id
+                    == request.scope.site_id,
+                    DeploymentEventTransportRouteSelectionHeadModel.route_set_id
+                    == request.expected_route_set_id,
+                    DeploymentEventTransportRouteSelectionHeadModel.current.is_(True),
+                )
+                .limit(2)
+                .with_for_update()
+            )
+        ).all()
+        head_row = head_rows[0] if len(head_rows) == 1 else None
+        freshness_row = cast(
+            WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel)
+                .where(
+                    WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel.freshness_admission_id
+                    == request.expected_freshness_admission_id
+                )
+                .with_for_update()
+            ),
+        )
+        return binding_row, route_row, head_row, freshness_row
+
+    async def _endpoint_resolution_authorization_replay(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRequest,
+        head_row: DeploymentEventTransportRouteSelectionHeadModel | None,
+        freshness_row: WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel | None,
+        observed_at: datetime,
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResult | None:
+        claim = await self._load_endpoint_resolution_authorization_lease_claim(
+            session,
+            scope=request.scope,
+            resolver_subject_id=request.resolver_subject_id,
+            idempotency_key=request.idempotency_key,
+        )
+        if claim is None:
+            return None
+        lease_row = await session.get(
+            WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel,
+            claim.authorization_lease_id,
+        )
+        record = self._endpoint_resolution_authorization_lease_record_from_claim(claim, lease_row)
+        if claim.request_fingerprint != request.request_fingerprint:
+            return WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResult(
+                WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseStatus.IDEMPOTENCY_CONFLICT,
+                record.lease,
+            )
+        if (
+            head_row is None
+            or freshness_row is None
+            or not self._endpoint_resolution_authorization_remains_current(
+                record.lease,
+                head_row=head_row,
+                freshness_row=freshness_row,
+                observed_at=observed_at,
+            )
+        ):
+            return WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResult(
+                WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseStatus.EVIDENCE_CONFLICT,
+                None,
+            )
+        return WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResult(
+            WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseStatus.REPLAY,
+            record.lease,
+        )
+
+    @classmethod
+    async def _load_endpoint_resolution_authorization_lease_claim(
+        cls,
+        session: AsyncSession,
+        *,
+        scope: WorkflowScope,
+        resolver_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseClaimModel | None:
+        return cast(
+            WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseClaimModel | None,
+            await session.scalar(
+                select(
+                    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseClaimModel
+                ).where(
+                    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseClaimModel.idempotency_scope_id
+                    == cls._endpoint_resolution_authorization_idempotency_scope(
+                        scope, resolver_subject_id
+                    ),
+                    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseClaimModel.idempotency_key
+                    == idempotency_key,
+                    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseClaimModel.organization_id
+                    == scope.organization_id,
+                    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseClaimModel.environment_id
+                    == scope.environment_id,
+                    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseClaimModel.site_id
+                    == scope.site_id,
+                    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseClaimModel.resolver_subject_id
+                    == resolver_subject_id,
+                )
+            ),
+        )
+
+    @classmethod
+    def _endpoint_resolution_authorization_lease_record_from_claim(
+        cls,
+        claim: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseClaimModel,
+        lease_row: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel | None,
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseIdempotencyRecord:
+        if lease_row is None:
+            cls._endpoint_resolution_authorization_contract_violation()
+        assert lease_row is not None
+        lease = cls._endpoint_resolution_authorization_lease_from_row(lease_row)
+        scope_id = cls._endpoint_resolution_authorization_idempotency_scope(
+            lease.scope, lease.resolver_subject_id
+        )
+        payload: dict[str, Any] = {
+            "idempotency_key": claim.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": claim.request_fingerprint,
+            "result_digest": lease.canonical_digest,
+            "result_lease": cls._endpoint_resolution_authorization_lease_payload(lease),
+        }
+        if (
+            claim.idempotency_scope_id != scope_id
+            or claim.result_digest != lease.canonical_digest
+            or claim.authorization_lease_id != lease.authorization_lease_id
+            or claim.freshness_admission_id != lease.freshness_admission_id
+            or claim.physical_transport_route_binding_id
+            != lease.physical_transport_route_binding_id
+            or claim.transport_route_snapshot_id != lease.transport_route_snapshot_id
+            or claim.current_selection_head_id != lease.current_selection_head_id
+            or claim.current_selection_head_generation != lease.current_selection_head_generation
+            or claim.current_selection_head_fencing_token_digest
+            != lease.current_selection_head_fencing_token_digest
+            or claim.policy_digest != lease.policy_digest
+            or claim.organization_id != lease.scope.organization_id
+            or claim.environment_id != lease.scope.environment_id
+            or claim.site_id != lease.scope.site_id
+            or claim.resolver_subject_id != lease.resolver_subject_id
+            or claim.created_at.tzinfo is None
+            or claim.created_at != lease.issued_at
+            or claim.payload != payload
+            or claim.canonical_digest != canonical_digest(payload)
+        ):
+            cls._endpoint_resolution_authorization_contract_violation()
+        return WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseIdempotencyRecord(
+            request_fingerprint=claim.request_fingerprint,
+            lease=lease,
+        )
+
     async def _lock_route_freshness_sources(
         self,
         session: AsyncSession,
@@ -7529,6 +7951,464 @@ class PostgreSQLWorkflowPlanRepository:
             "payload",
         ):
             setattr(row, attribute, getattr(replacement, attribute))
+
+    @classmethod
+    def _endpoint_resolution_authorization_lease_from_row(
+        cls, row: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease:
+        try:
+            lease = cls._endpoint_resolution_authorization_lease_to_domain(row.payload)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseError(
+                "workflow_endpoint_resolution_authorization_repository_contract_violation",
+                "The endpoint-resolution authorization lease record is invalid.",
+            ) from exc
+        authority = lease.authority
+        if (
+            row.authorization_lease_id != lease.authorization_lease_id
+            or row.freshness_admission_id != lease.freshness_admission_id
+            or row.freshness_admission_digest != lease.freshness_admission_digest
+            or row.physical_transport_route_binding_id != lease.physical_transport_route_binding_id
+            or row.physical_transport_route_binding_digest
+            != lease.physical_transport_route_binding_digest
+            or row.transport_route_snapshot_id != lease.transport_route_snapshot_id
+            or row.transport_route_snapshot_digest != lease.transport_route_snapshot_digest
+            or row.current_selection_head_id != lease.current_selection_head_id
+            or row.current_selection_head_digest != lease.current_selection_head_digest
+            or row.current_selection_head_generation != lease.current_selection_head_generation
+            or row.current_selection_head_fencing_token_digest
+            != lease.current_selection_head_fencing_token_digest
+            or row.route_set_id != lease.route_set_id
+            or row.route_set_revision != lease.route_set_revision
+            or row.selection_epoch_id != lease.selection_epoch_id
+            or row.selection_epoch_revision != lease.selection_epoch_revision
+            or row.selected_route_id != lease.selected_route_id
+            or row.selected_route_revision != lease.selected_route_revision
+            or row.selected_route_digest != lease.selected_route_digest
+            or row.selection_active != lease.selection_active
+            or row.selection_eligible != lease.selection_eligible
+            or row.selection_suspended != lease.selection_suspended
+            or row.selection_withdrawn != lease.selection_withdrawn
+            or row.selection_superseded != lease.selection_superseded
+            or row.policy_id != lease.policy_id
+            or row.policy_version != lease.policy_version
+            or row.policy_digest != lease.policy_digest
+            or row.organization_id != lease.scope.organization_id
+            or row.environment_id != lease.scope.environment_id
+            or row.site_id != lease.scope.site_id
+            or row.resolver_subject_id != lease.resolver_subject_id
+            or row.issued_at != lease.issued_at
+            or row.valid_until != lease.valid_until
+            or row.state != lease.state.value
+            or row.endpoint_resolution_authority_granted != authority.endpoint_resolution_authorized
+            or row.route_selection_authority_granted != authority.route_selection_authorized
+            or row.route_binding_authority_granted != authority.route_binding_authorized
+            or row.credential_access_authority_granted != authority.credential_access_authorized
+            or row.network_access_authority_granted != authority.network_access_authorized
+            or row.readiness_probe_authority_granted != authority.readiness_probe_authorized
+            or row.publication_authority_granted != authority.publication_authorized
+            or row.delivery_authority_granted != authority.delivery_authorized
+            or row.dispatch_authority_granted != authority.dispatch_authorized
+            or row.execution_authority_granted != authority.execution_authorized
+            or row.canonical_digest != lease.canonical_digest
+            or row.payload != cls._endpoint_resolution_authorization_lease_payload(lease)
+        ):
+            cls._endpoint_resolution_authorization_contract_violation()
+        return lease
+
+    @classmethod
+    def _endpoint_resolution_authorization_lease_model(
+        cls, lease: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel:
+        authority = lease.authority
+        return WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel(
+            authorization_lease_id=lease.authorization_lease_id,
+            freshness_admission_id=lease.freshness_admission_id,
+            freshness_admission_digest=lease.freshness_admission_digest,
+            physical_transport_route_binding_id=lease.physical_transport_route_binding_id,
+            physical_transport_route_binding_digest=lease.physical_transport_route_binding_digest,
+            transport_route_snapshot_id=lease.transport_route_snapshot_id,
+            transport_route_snapshot_digest=lease.transport_route_snapshot_digest,
+            current_selection_head_id=lease.current_selection_head_id,
+            current_selection_head_digest=lease.current_selection_head_digest,
+            current_selection_head_generation=lease.current_selection_head_generation,
+            current_selection_head_fencing_token_digest=(
+                lease.current_selection_head_fencing_token_digest
+            ),
+            route_set_id=lease.route_set_id,
+            route_set_revision=lease.route_set_revision,
+            selection_epoch_id=lease.selection_epoch_id,
+            selection_epoch_revision=lease.selection_epoch_revision,
+            selected_route_id=lease.selected_route_id,
+            selected_route_revision=lease.selected_route_revision,
+            selected_route_digest=lease.selected_route_digest,
+            selection_active=lease.selection_active,
+            selection_eligible=lease.selection_eligible,
+            selection_suspended=lease.selection_suspended,
+            selection_withdrawn=lease.selection_withdrawn,
+            selection_superseded=lease.selection_superseded,
+            policy_id=lease.policy_id,
+            policy_version=lease.policy_version,
+            policy_digest=lease.policy_digest,
+            organization_id=lease.scope.organization_id,
+            environment_id=lease.scope.environment_id,
+            site_id=lease.scope.site_id,
+            resolver_subject_id=lease.resolver_subject_id,
+            issued_at=lease.issued_at,
+            valid_until=lease.valid_until,
+            state=lease.state.value,
+            endpoint_resolution_authority_granted=authority.endpoint_resolution_authorized,
+            route_selection_authority_granted=authority.route_selection_authorized,
+            route_binding_authority_granted=authority.route_binding_authorized,
+            credential_access_authority_granted=authority.credential_access_authorized,
+            network_access_authority_granted=authority.network_access_authorized,
+            readiness_probe_authority_granted=authority.readiness_probe_authorized,
+            publication_authority_granted=authority.publication_authorized,
+            delivery_authority_granted=authority.delivery_authorized,
+            dispatch_authority_granted=authority.dispatch_authorized,
+            execution_authority_granted=authority.execution_authorized,
+            canonical_digest=lease.canonical_digest,
+            payload=cls._endpoint_resolution_authorization_lease_payload(lease),
+        )
+
+    @classmethod
+    def _endpoint_resolution_authorization_lease_claim_model(
+        cls,
+        request: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRequest,
+        lease: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease,
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseClaimModel:
+        scope_id = cls._endpoint_resolution_authorization_idempotency_scope(
+            lease.scope, lease.resolver_subject_id
+        )
+        payload: dict[str, Any] = {
+            "idempotency_key": request.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": request.request_fingerprint,
+            "result_digest": lease.canonical_digest,
+            "result_lease": cls._endpoint_resolution_authorization_lease_payload(lease),
+        }
+        digest = canonical_digest(payload)
+        return WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseClaimModel(
+            claim_id=f"wf_endpoint_res_claim_{sha256(digest.encode()).hexdigest()[:32]}",
+            idempotency_scope_id=scope_id,
+            idempotency_key=request.idempotency_key,
+            request_fingerprint=request.request_fingerprint,
+            result_digest=lease.canonical_digest,
+            authorization_lease_id=lease.authorization_lease_id,
+            freshness_admission_id=lease.freshness_admission_id,
+            physical_transport_route_binding_id=lease.physical_transport_route_binding_id,
+            transport_route_snapshot_id=lease.transport_route_snapshot_id,
+            current_selection_head_id=lease.current_selection_head_id,
+            current_selection_head_generation=lease.current_selection_head_generation,
+            current_selection_head_fencing_token_digest=(
+                lease.current_selection_head_fencing_token_digest
+            ),
+            policy_digest=lease.policy_digest,
+            organization_id=lease.scope.organization_id,
+            environment_id=lease.scope.environment_id,
+            site_id=lease.scope.site_id,
+            resolver_subject_id=lease.resolver_subject_id,
+            created_at=lease.issued_at,
+            canonical_digest=digest,
+            payload=payload,
+        )
+
+    @classmethod
+    def _endpoint_resolution_authorization_evidence_matches(
+        cls,
+        *,
+        binding_row: WorkflowEventPhysicalTransportRouteBindingModel | None,
+        route_row: EventPhysicalTransportRouteSnapshotModel | None,
+        head_row: DeploymentEventTransportRouteSelectionHeadModel | None,
+        freshness_row: WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel | None,
+        request: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRequest,
+        observed_at: datetime,
+    ) -> bool:
+        if (
+            binding_row is None
+            or route_row is None
+            or head_row is None
+            or freshness_row is None
+            or not head_row.current
+            or not head_row.selection_active
+            or not head_row.selection_eligible
+            or head_row.selection_suspended
+            or head_row.selection_withdrawn
+            or head_row.selection_superseded
+        ):
+            return False
+        try:
+            binding = cls._physical_transport_route_binding_from_row(binding_row)
+            route = cls._transport_route_snapshot_from_row(route_row)
+            head = cls._route_selection_head_from_row(head_row)
+            freshness = cls._route_freshness_admission_from_row(freshness_row)
+        except (
+            WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseError,
+            WorkflowEventPhysicalTransportRouteBindingError,
+            WorkflowEventPhysicalTransportRouteFreshnessAdmissionError,
+            WorkflowTransportRouteSnapshotError,
+        ):
+            return False
+        policy = (
+            code_owned_workflow_event_physical_transport_endpoint_resolution_authorization_policy()
+        )
+        return bool(
+            binding.state is WorkflowEventPhysicalTransportRouteBindingState.BOUND
+            and route.state is EventPhysicalTransportRouteSnapshotState.SNAPSHOTTED
+            and freshness.state
+            is WorkflowEventPhysicalTransportRouteFreshnessAdmissionState.ADMITTED_CURRENT
+            and binding.binding_id
+            == freshness.physical_transport_route_binding_id
+            == request.expected_physical_transport_route_binding_id
+            and binding.canonical_digest
+            == freshness.physical_transport_route_binding_digest
+            == request.expected_physical_transport_route_binding_digest
+            and binding.transport_route_snapshot_id
+            == route.snapshot_id
+            == freshness.transport_route_snapshot_id
+            == request.expected_transport_route_snapshot_id
+            and binding.transport_route_snapshot_digest
+            == route.canonical_digest
+            == freshness.transport_route_snapshot_digest
+            == request.expected_transport_route_snapshot_digest
+            and freshness.freshness_admission_id == request.expected_freshness_admission_id
+            and freshness.canonical_digest == request.expected_freshness_admission_digest
+            and freshness.valid_until == request.expected_freshness_admission_valid_until
+            and head.head_id
+            == freshness.current_selection_head_id
+            == request.expected_current_selection_head_id
+            and head.canonical_digest
+            == freshness.current_selection_head_digest
+            == request.expected_current_selection_head_digest
+            and head.generation
+            == freshness.current_selection_head_generation
+            == request.expected_current_selection_head_generation
+            and head.fencing_token_digest
+            == freshness.current_selection_head_fencing_token_digest
+            == request.expected_current_selection_head_fencing_token_digest
+            and head.route_set_id
+            == route.route_set_id
+            == freshness.route_set_id
+            == request.expected_route_set_id
+            and head.route_set_revision
+            == route.route_set_revision
+            == freshness.route_set_revision
+            == request.expected_route_set_revision
+            and head.selection_epoch_id
+            == route.selection_epoch_id
+            == freshness.selection_epoch_id
+            == request.expected_selection_epoch_id
+            and head.selection_epoch_revision
+            == route.selection_epoch_revision
+            == freshness.selection_epoch_revision
+            == request.expected_selection_epoch_revision
+            and head.selected_route_id
+            == route.route_id
+            == freshness.selected_route_id
+            == request.expected_selected_route_id
+            and head.selected_route_revision
+            == route.route_revision
+            == freshness.selected_route_revision
+            == request.expected_selected_route_revision
+            and head.selected_route_digest
+            == route.source_route_digest
+            == freshness.selected_route_digest
+            == request.expected_selected_route_digest
+            and head.selection_active
+            == freshness.selection_active
+            == request.expected_selection_active
+            is True
+            and head.selection_eligible
+            == freshness.selection_eligible
+            == request.expected_selection_eligible
+            is True
+            and head.selection_suspended
+            == freshness.selection_suspended
+            == request.expected_selection_suspended
+            is False
+            and head.selection_withdrawn
+            == freshness.selection_withdrawn
+            == request.expected_selection_withdrawn
+            is False
+            and head.selection_superseded
+            == freshness.selection_superseded
+            == request.expected_selection_superseded
+            is False
+            and binding.scope == route.scope == head.scope == freshness.scope == request.scope
+            and route.captured_at <= binding.bound_at <= freshness.evaluated_at <= observed_at
+            and request.expected_policy_id == policy.policy_id
+            and request.expected_policy_version == policy.policy_version
+            and request.expected_policy_digest == policy.canonical_digest
+            and request.expected_validity_window_seconds == policy.validity_window_seconds
+            and not any(binding.authority.canonical_value().values())
+            and not any(route.authority.canonical_value().values())
+            and not any(freshness.authority.canonical_value().values())
+        )
+
+    @classmethod
+    def _endpoint_resolution_authorization_remains_current(
+        cls,
+        lease: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease,
+        *,
+        head_row: DeploymentEventTransportRouteSelectionHeadModel,
+        freshness_row: WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel,
+        observed_at: datetime,
+    ) -> bool:
+        if observed_at >= lease.valid_until:
+            return False
+        try:
+            head = cls._route_selection_head_from_row(head_row)
+            freshness = cls._route_freshness_admission_from_row(freshness_row)
+        except WorkflowEventPhysicalTransportRouteFreshnessAdmissionError:
+            return False
+        return bool(
+            observed_at < freshness.valid_until
+            and lease.freshness_admission_id == freshness.freshness_admission_id
+            and lease.freshness_admission_digest == freshness.canonical_digest
+            and lease.current_selection_head_id == head.head_id
+            and lease.current_selection_head_digest == head.canonical_digest
+            and lease.current_selection_head_generation == head.generation
+            and lease.current_selection_head_fencing_token_digest == head.fencing_token_digest
+            and lease.selected_route_id == head.selected_route_id
+            and lease.selected_route_revision == head.selected_route_revision
+            and lease.selected_route_digest == head.selected_route_digest
+            and head.current
+            and head.selection_active
+            and head.selection_eligible
+            and not head.selection_suspended
+            and not head.selection_withdrawn
+            and not head.selection_superseded
+        )
+
+    @staticmethod
+    def _endpoint_resolution_authorization_lease(
+        *,
+        request: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRequest,
+        freshness: WorkflowEventPhysicalTransportRouteFreshnessAdmission,
+        issued_at: datetime,
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease:
+        policy = (
+            code_owned_workflow_event_physical_transport_endpoint_resolution_authorization_policy()
+        )
+        values: dict[str, Any] = {
+            "authorization_lease_id": request.authorization_lease_id,
+            "freshness_admission_id": freshness.freshness_admission_id,
+            "freshness_admission_digest": freshness.canonical_digest,
+            "physical_transport_route_binding_id": freshness.physical_transport_route_binding_id,
+            "physical_transport_route_binding_digest": (
+                freshness.physical_transport_route_binding_digest
+            ),
+            "transport_route_snapshot_id": freshness.transport_route_snapshot_id,
+            "transport_route_snapshot_digest": freshness.transport_route_snapshot_digest,
+            "current_selection_head_id": freshness.current_selection_head_id,
+            "current_selection_head_digest": freshness.current_selection_head_digest,
+            "current_selection_head_generation": freshness.current_selection_head_generation,
+            "current_selection_head_fencing_token_digest": (
+                freshness.current_selection_head_fencing_token_digest
+            ),
+            "route_set_id": freshness.route_set_id,
+            "route_set_revision": freshness.route_set_revision,
+            "selection_epoch_id": freshness.selection_epoch_id,
+            "selection_epoch_revision": freshness.selection_epoch_revision,
+            "selected_route_id": freshness.selected_route_id,
+            "selected_route_revision": freshness.selected_route_revision,
+            "selected_route_digest": freshness.selected_route_digest,
+            "selection_active": freshness.selection_active,
+            "selection_eligible": freshness.selection_eligible,
+            "selection_suspended": freshness.selection_suspended,
+            "selection_withdrawn": freshness.selection_withdrawn,
+            "selection_superseded": freshness.selection_superseded,
+            "policy_id": policy.policy_id,
+            "policy_version": policy.policy_version,
+            "policy_digest": policy.canonical_digest,
+            "scope": request.scope,
+            "resolver_subject_id": request.resolver_subject_id,
+            "issued_at": issued_at,
+            "valid_until": issued_at + timedelta(seconds=policy.validity_window_seconds),
+            "state": (
+                WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseState.AUTHORIZED_UNCONSUMED
+            ),
+            "authority": (
+                WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseAuthority()
+            ),
+        }
+        payload = {
+            key: value.canonical_value()
+            if isinstance(
+                value,
+                (
+                    WorkflowScope,
+                    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseAuthority,
+                ),
+            )
+            else value.value
+            if isinstance(value, Enum)
+            else value.isoformat()
+            if isinstance(value, datetime)
+            else value
+            for key, value in values.items()
+        }
+        return WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease(
+            **values, canonical_digest=canonical_digest(payload)
+        )
+
+    @staticmethod
+    def _endpoint_resolution_authorization_lease_payload(
+        lease: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease,
+    ) -> dict[str, Any]:
+        return cast(dict[str, Any], lease.canonical_value())
+
+    @staticmethod
+    def _endpoint_resolution_authorization_lease_to_domain(
+        raw: dict[str, Any],
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease:
+        values = dict(raw)
+        values["scope"] = WorkflowScope(**cast(Any, values["scope"]))
+        values["issued_at"] = datetime.fromisoformat(str(values["issued_at"]))
+        values["valid_until"] = datetime.fromisoformat(str(values["valid_until"]))
+        values["state"] = WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseState(
+            str(values["state"])
+        )
+        values["authority"] = (
+            WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseAuthority(
+                **cast(Any, values["authority"])
+            )
+        )
+        return WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease(
+            **cast(Any, values)
+        )
+
+    @staticmethod
+    def _endpoint_resolution_authorization_idempotency_scope(
+        scope: WorkflowScope, resolver_subject_id: str
+    ) -> str:
+        return canonical_digest(
+            {"resolver_subject_id": resolver_subject_id, "scope": scope.canonical_value()}
+        )
+
+    @staticmethod
+    def _validate_endpoint_resolution_authorization_request(
+        request: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRequest,
+    ) -> None:
+        if not request.authorization_lease_id or len(request.authorization_lease_id) > 128:
+            raise ValueError("endpoint-resolution authorization lease id is invalid")
+        if not request.resolver_subject_id or len(request.resolver_subject_id) > 240:
+            raise ValueError("endpoint-resolution authorization resolver is invalid")
+        if not request.idempotency_key or len(request.idempotency_key) > 128:
+            raise ValueError("endpoint-resolution authorization idempotency key is invalid")
+        if len(request.request_fingerprint) != 64:
+            raise ValueError("endpoint-resolution authorization fingerprint is invalid")
+        if request.expected_freshness_admission_valid_until.tzinfo is None:
+            raise ValueError("endpoint-resolution freshness expiry must be timezone-aware")
+        if request.expected_current_selection_head_generation < 1:
+            raise ValueError("endpoint-resolution authorization head generation is invalid")
+
+    @staticmethod
+    def _endpoint_resolution_authorization_contract_violation() -> NoReturn:
+        raise WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseError(
+            "workflow_endpoint_resolution_authorization_repository_contract_violation",
+            "Endpoint-resolution authorization evidence does not match durable storage.",
+        )
 
     @classmethod
     def _route_freshness_admission_from_row(

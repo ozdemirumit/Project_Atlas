@@ -1542,6 +1542,8 @@ from atlas.modules.workflows.application import (
     WorkflowEventByteArtifactService,
     WorkflowEventLogicalChannelBindingRepository,
     WorkflowEventLogicalChannelBindingService,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRepository,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseService,
     WorkflowEventPhysicalTransportRouteBindingRepository,
     WorkflowEventPhysicalTransportRouteBindingService,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionRepository,
@@ -1868,6 +1870,9 @@ def create_app(
     ) = None,
     workflow_event_physical_transport_route_freshness_admission_service: (
         WorkflowEventPhysicalTransportRouteFreshnessAdmissionService | None
+    ) = None,
+    workflow_event_physical_transport_endpoint_resolution_authorization_lease_service: (
+        WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseService | None
     ) = None,
     workflow_transport_profile_snapshot_service: WorkflowTransportProfileSnapshotService
     | None = None,
@@ -6087,6 +6092,42 @@ def create_app(
         resolved_workflow_event_physical_transport_route_freshness_admission_service = (
             workflow_event_physical_transport_route_freshness_admission_service
         )
+    if workflow_event_physical_transport_endpoint_resolution_authorization_lease_service is None:
+        endpoint_resolution_authorization_repository_methods = (
+            "get_authoritative_time",
+            "get_route_freshness_admission_by_id",
+            "get_physical_transport_route_binding_by_id",
+            "get_transport_route_snapshot_by_id",
+            "get_current_route_selection_head",
+            "get_endpoint_resolution_authorization_lease",
+            "list_endpoint_resolution_authorization_leases",
+            "get_endpoint_resolution_authorization_lease_request",
+            "authorize_endpoint_resolution",
+        )
+        if not all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in endpoint_resolution_authorization_repository_methods
+        ):
+            raise ValueError(
+                "workflow planning repository does not implement physical transport endpoint "
+                "resolution authorization leases; inject "
+                "workflow_event_physical_transport_endpoint_resolution_authorization_lease_"
+                "service explicitly"
+            )
+        endpoint_resolution_authorization_repository = cast(
+            WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRepository,
+            workflow_repository,
+        )
+        resolved_endpoint_resolution_authorization_lease_service = (
+            WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseService(
+                authorization_repository=endpoint_resolution_authorization_repository,
+                audit_sink=resolved_audit_sink,
+            )
+        )
+    else:
+        resolved_endpoint_resolution_authorization_lease_service = (
+            workflow_event_physical_transport_endpoint_resolution_authorization_lease_service
+        )
     configured_transport_route_selection_heads = (
         _deployment_event_transport_route_selection_heads(
             resolved_settings,
@@ -6421,6 +6462,12 @@ def create_app(
         )
         app.state.workflow_event_physical_transport_route_freshness_admission_repository = (
             resolved_workflow_event_physical_transport_route_freshness_admission_service.repository
+        )
+        app.state.workflow_endpoint_resolution_authorization_lease_service = (
+            resolved_endpoint_resolution_authorization_lease_service
+        )
+        app.state.workflow_endpoint_resolution_authorization_lease_repository = (
+            resolved_endpoint_resolution_authorization_lease_service.repository
         )
         app.state.workflow_transport_route_selection_heads = (
             configured_transport_route_selection_heads

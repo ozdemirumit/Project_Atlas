@@ -6352,6 +6352,179 @@ class WorkflowEventPhysicalTransportRouteFreshnessAdmissionClaimModel(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
+class WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel(Base):
+    __tablename__ = "workflow_event_endpoint_resolution_authorization_leases"
+    __table_args__ = (
+        UniqueConstraint(
+            "freshness_admission_id",
+            name="uq_wf_endpoint_res_lease_freshness",
+        ),
+        UniqueConstraint(
+            "canonical_digest",
+            name="uq_wf_endpoint_res_lease_digest",
+        ),
+        CheckConstraint(
+            "state = 'authorized_unconsumed'",
+            name="ck_wf_endpoint_res_lease_state",
+        ),
+        CheckConstraint(
+            "valid_until = issued_at + INTERVAL '15 seconds'",
+            name="ck_wf_endpoint_res_lease_window",
+        ),
+        CheckConstraint(
+            "endpoint_resolution_authority_granted "
+            "AND NOT route_selection_authority_granted "
+            "AND NOT route_binding_authority_granted "
+            "AND NOT credential_access_authority_granted "
+            "AND NOT network_access_authority_granted "
+            "AND NOT readiness_probe_authority_granted "
+            "AND NOT publication_authority_granted "
+            "AND NOT delivery_authority_granted "
+            "AND NOT dispatch_authority_granted "
+            "AND NOT execution_authority_granted",
+            name="ck_wf_endpoint_res_lease_authority",
+        ),
+        CheckConstraint(
+            "current_selection_head_generation > 0",
+            name="ck_wf_endpoint_res_lease_generation",
+        ),
+        CheckConstraint(
+            "selection_active AND selection_eligible "
+            "AND NOT selection_suspended AND NOT selection_withdrawn "
+            "AND NOT selection_superseded",
+            name="ck_wf_endpoint_res_lease_selection",
+        ),
+    )
+
+    authorization_lease_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    freshness_admission_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_physical_transport_route_freshness_admissions.freshness_admission_id"
+        ),
+        nullable=False,
+        index=True,
+    )
+    freshness_admission_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    physical_transport_route_binding_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_event_physical_transport_route_bindings.binding_id"),
+        nullable=False,
+        index=True,
+    )
+    physical_transport_route_binding_digest: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
+    transport_route_snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey("event_transport_route_snapshots.snapshot_id"), nullable=False, index=True
+    )
+    transport_route_snapshot_digest: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
+    current_selection_head_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    current_selection_head_digest: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
+    current_selection_head_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    current_selection_head_fencing_token_digest: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
+    route_set_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    route_set_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    selection_epoch_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    selection_epoch_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    selected_route_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    selected_route_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    selected_route_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    selection_active: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    selection_eligible: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    selection_suspended: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    selection_withdrawn: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    selection_superseded: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    policy_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    resolver_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    valid_until: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    endpoint_resolution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    route_selection_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    route_binding_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_access_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    network_access_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    readiness_probe_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    publication_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    delivery_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    dispatch_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    execution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseClaimModel(Base):
+    __tablename__ = "workflow_event_endpoint_resolution_authorization_lease_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "idempotency_scope_id",
+            "idempotency_key",
+            name="uq_wf_endpoint_res_claim_scope_idem",
+        ),
+        UniqueConstraint(
+            "authorization_lease_id",
+            name="uq_wf_endpoint_res_claim_lease",
+        ),
+        UniqueConstraint(
+            "canonical_digest",
+            name="uq_wf_endpoint_res_claim_digest",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    idempotency_scope_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    authorization_lease_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_endpoint_resolution_authorization_leases.authorization_lease_id"
+        ),
+        nullable=False,
+        index=True,
+    )
+    freshness_admission_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_physical_transport_route_freshness_admissions.freshness_admission_id"
+        ),
+        nullable=False,
+        index=True,
+    )
+    physical_transport_route_binding_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_event_physical_transport_route_bindings.binding_id"),
+        nullable=False,
+        index=True,
+    )
+    transport_route_snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey("event_transport_route_snapshots.snapshot_id"), nullable=False, index=True
+    )
+    current_selection_head_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    current_selection_head_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    current_selection_head_fencing_token_digest: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
+    policy_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    resolver_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class WorkflowDispatchIntentStagingClaimModel(Base):
     __tablename__ = "workflow_dispatch_intent_staging_claims"
     __table_args__ = (

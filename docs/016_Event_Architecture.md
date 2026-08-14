@@ -298,6 +298,15 @@ route-selection, route-binding, credential, network, readiness, publication, del
 execution authority. A future resolver must use a separate workload boundary and revalidate both
 the admission lifetime and exact current-head fencing evidence immediately before resolution.
 
+Before endpoint materialization, a dedicated endpoint-resolver workload must then obtain one
+non-transferable authorization lease for itself. The lease transaction revalidates the exact
+binding, route snapshot, freshness admission and authoritative current-head fence at database time.
+Its code-owned lifetime is exactly 15 seconds and cannot exceed the freshness window. The lease
+contains no raw endpoint or credential material and grants only endpoint-resolution authority;
+route selection, binding, credential, network, readiness, publication, delivery, dispatch and
+execution authority remain false. A later materializer must consume the lease once atomically with
+its protected result while repeating the time and fence checks.
+
 ### 10.2 Publication State
 
 Outbox records track:

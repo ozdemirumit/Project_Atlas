@@ -31,6 +31,7 @@ import {
   listWorkflowDispatchOutboxEntries,
   listWorkflowDispatchEventEnvelopes,
   listWorkflowDispatchOutboxPublicationLeases,
+  listWorkflowEndpointResolutionAuthorizationLeases,
   listWorkflowEventByteArtifacts,
   listWorkflowEventLogicalChannelBindings,
   listWorkflowEventTransportAdmissions,
@@ -126,6 +127,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: () => listWorkflowPhysicalTransportRouteFreshnessAdmissions({ scope }),
+    retry: false,
+  });
+  const endpointResolutionAuthorizationLeaseQuery = useQuery({
+    queryKey: [
+      "workflow-physical-transport-endpoint-resolution-authorization-leases",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () => listWorkflowEndpointResolutionAuthorizationLeases({ scope }),
     retry: false,
   });
   const targetQuery = useQuery({
@@ -555,6 +566,10 @@ export default function WorkflowPlanningWorkspace({
   const physicalTransportRouteFreshnessAdmissionErrorStatus =
     physicalTransportRouteFreshnessAdmissionQuery.error instanceof ApiRequestError
       ? physicalTransportRouteFreshnessAdmissionQuery.error.status
+      : undefined;
+  const endpointResolutionAuthorizationLeaseErrorStatus =
+    endpointResolutionAuthorizationLeaseQuery.error instanceof ApiRequestError
+      ? endpointResolutionAuthorizationLeaseQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -1184,6 +1199,147 @@ export default function WorkflowPlanningWorkspace({
             Freshness admissions are point-in-time evidence only. They expose no route details and
             grant no endpoint, credential, network, readiness, publication, delivery, dispatch, or
             execution authority.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band"
+        aria-labelledby="workflow-endpoint-resolution-authorization-lease-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">BOUNDED SINGLE-USE AUTHORIZATION EVIDENCE</p>
+            <h2 id="workflow-endpoint-resolution-authorization-lease-title">
+              Endpoint-resolution authorization leases
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {endpointResolutionAuthorizationLeaseQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading endpoint-resolution authorization leases...</span>
+          </div>
+        )}
+        {endpointResolutionAuthorizationLeaseQuery.isError && (
+          <div className="inline-error" role="alert">
+            <div>
+              <strong>
+                {endpointResolutionAuthorizationLeaseErrorStatus === 401
+                  ? "Your session has expired"
+                  : endpointResolutionAuthorizationLeaseErrorStatus === 403
+                    ? "Endpoint-resolution lease permission is missing"
+                    : "Endpoint-resolution authorization leases are unavailable"}
+              </strong>
+              <span>
+                {endpointResolutionAuthorizationLeaseErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : endpointResolutionAuthorizationLeaseErrorStatus === 403
+                    ? "Your current role or scope cannot inspect endpoint-resolution lease evidence."
+                    : "No authorization, endpoint, or operational state is inferred from this failed read."}
+              </span>
+            </div>
+            {endpointResolutionAuthorizationLeaseErrorStatus !== 401 &&
+              endpointResolutionAuthorizationLeaseErrorStatus !== 403 && (
+                <button
+                  className="secondary-action"
+                  type="button"
+                  aria-label="Retry endpoint-resolution authorization lease read"
+                  onClick={() => void endpointResolutionAuthorizationLeaseQuery.refetch()}
+                >
+                  <RefreshCw size={16} />
+                  Retry
+                </button>
+              )}
+          </div>
+        )}
+        {endpointResolutionAuthorizationLeaseQuery.isSuccess &&
+          endpointResolutionAuthorizationLeaseQuery.data.endpoint_resolution_authorization_leases
+            .length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <CalendarClock size={19} />
+              <span>
+                No endpoint-resolution authorization leases are recorded in this scope.
+              </span>
+            </div>
+          )}
+        {endpointResolutionAuthorizationLeaseQuery.isSuccess &&
+          endpointResolutionAuthorizationLeaseQuery.data.endpoint_resolution_authorization_leases
+            .length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list"
+              aria-label="Endpoint-resolution authorization leases"
+            >
+              {endpointResolutionAuthorizationLeaseQuery.data.endpoint_resolution_authorization_leases.map(
+                (lease) => (
+                  <li key={lease.lease_id}>
+                    <ShieldCheck size={18} />
+                    <div>
+                      <strong>
+                        <code title={lease.lease_id}>{safeHolderIdentifier(lease.lease_id)}</code>
+                        <span
+                          className={`state-badge ${
+                            lease.effective_state === "active" ? "neutral" : "warning"
+                          }`}
+                        >
+                          {lease.effective_state === "active" ? "Active" : "Expired"}
+                        </span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          Freshness admission{" "}
+                          <code title={lease.freshness_admission_id}>
+                            {safeHolderIdentifier(lease.freshness_admission_id)}
+                          </code>{" "}
+                          | generation {lease.selection_generation}
+                        </span>
+                        <span>
+                          Policy <code title={lease.policy_id}>{safeHolderIdentifier(lease.policy_id)}</code>{" "}
+                          v{lease.policy_version}
+                        </span>
+                        <span>
+                          Organization {lease.scope.organization_id} | environment{" "}
+                          {lease.scope.environment_id} | site {lease.scope.site_id}
+                        </span>
+                        <span>
+                          Resolver workload{" "}
+                          <code title={lease.resolver_subject_id}>
+                            {safeHolderIdentifier(lease.resolver_subject_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Authorized {formatTimestamp(lease.authorized_at)} | expires{" "}
+                          {formatTimestamp(lease.expires_at)}
+                        </span>
+                        <span>Single use true | renewable false</span>
+                        <span>
+                          Integrity reference{" "}
+                          <code title={lease.integrity_reference}>
+                            {safeHolderIdentifier(lease.integrity_reference)}
+                          </code>
+                        </span>
+                        <span className="workflow-physical-route-binding-authority">
+                          Authority endpoint resolution true for the named resolver workload only |
+                          route selection false | route binding false | credential access false |
+                          network access false | readiness probe false | publication false | delivery
+                          false | dispatch false | execution false
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            Lease metadata is read-only. Only the named resolver workload may use an independently
+            revalidated, unexpired lease for one future protected resolution attempt. The browser
+            cannot issue, renew, transfer, consume, or resolve it, and no endpoint, locator,
+            credential, network, readiness, publication, delivery, dispatch, or execution access is
+            exposed.
           </span>
         </div>
       </section>

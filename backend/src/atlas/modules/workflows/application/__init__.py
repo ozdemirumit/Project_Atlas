@@ -30,6 +30,20 @@ from atlas.modules.workflows.application.dispatch_intent_ports import (
 from atlas.modules.workflows.application.dispatch_intents import (
     WorkflowDispatchIntentStagingService,
 )
+from atlas.modules.workflows.application.endpoint_resolution_authorization_lease_ports import (
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseError,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseIdempotencyRecord,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRepository,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRequest,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResult,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseStatus,
+)
+from atlas.modules.workflows.application.endpoint_resolution_authorization_leases import (
+    WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLUTION_AUTHORIZATION_LEASE_PRODUCER,
+    WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLVER_AUDIENCE,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseService,
+    WorkflowPhysicalTransportEndpointResolverContext,
+)
 from atlas.modules.workflows.application.event_envelope_ports import (
     WorkflowDispatchEventEnvelopeError,
     WorkflowDispatchEventEnvelopePrepareIdempotencyRecord,
@@ -209,6 +223,8 @@ __all__ = [
     "WORKFLOW_EVENT_LOGICAL_CHANNEL_BINDING_PRODUCER",
     "WORKFLOW_EVENT_TRANSPORT_ADMISSION_PRODUCER",
     "WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE",
+    "WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLUTION_AUTHORIZATION_LEASE_PRODUCER",
+    "WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLVER_AUDIENCE",
     "WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDER_AUDIENCE",
     "WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDING_PRODUCER",
     "WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMISSION_PRODUCER",
@@ -258,6 +274,13 @@ __all__ = [
     "WorkflowEventLogicalChannelBindingResult",
     "WorkflowEventLogicalChannelBindingService",
     "WorkflowEventLogicalChannelBindingStatus",
+    "WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseError",
+    "WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseIdempotencyRecord",
+    "WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRepository",
+    "WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRequest",
+    "WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResult",
+    "WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseService",
+    "WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseStatus",
     "WorkflowEventPhysicalTransportRouteBindingError",
     "WorkflowEventPhysicalTransportRouteBindingIdempotencyRecord",
     "WorkflowEventPhysicalTransportRouteBindingRepository",
@@ -307,6 +330,7 @@ __all__ = [
     "WorkflowOutboxPublicationLeaseRepository",
     "WorkflowOutboxPublicationLeaseService",
     "WorkflowOutboxPublisherContext",
+    "WorkflowPhysicalTransportEndpointResolverContext",
     "WorkflowPhysicalTransportRouteBinderContext",
     "WorkflowPhysicalTransportRouteFreshnessAdmitterContext",
     "WorkflowPlanCancellationIdempotencyRecord",

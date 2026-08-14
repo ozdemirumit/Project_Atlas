@@ -4,14 +4,86 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-200 |
-| Title | Immutable workflow physical transport route freshness and non-supersession admission without endpoint resolution authority |
-| Status | Implementation complete; local validation passed; PR pending |
-| Branch | `agent/workflow-route-freshness-admission` |
-| Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-146, ADR-147, ADR-148, ADR-149, ADR-150 |
+| Task ID | ATLAS-IMP-201 |
+| Title | Bounded single-use workflow physical transport endpoint-resolution authorization lease without endpoint materialization |
+| Status | Implementation and local validation complete; PR CI pending |
+| Branch | `agent/workflow-endpoint-resolution-authorization-lease` |
+| Pull Request | [#214](https://github.com/ozdemirumit/Project_Atlas/pull/214) |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-148, ADR-149, ADR-150, ADR-151 |
 | Last Updated | 2026-08-14 |
-| Next Action | Complete live browser evidence, commit, run exact-head PR CI and merge after green checks |
+| Next Action | Publish the exact validated head, require green PR CI, squash-merge and independently verify the merged `main` commit |
+
+### ATLAS-IMP-201 Scope Rationale
+
+- IMP-200 proves that one exact physical binding is current and non-superseded at a bounded point
+  in time, but it intentionally grants no endpoint-resolution authority.
+- The next smallest boundary revalidates the exact binding, route snapshot, freshness admission and
+  authoritative selection-head fence immediately before issuing one non-transferable, 15-second
+  authorization lease to the exact resolver workload. The lease permits a later internal endpoint
+  materialization attempt but contains no endpoint material itself.
+- Endpoint materialization and lease consumption, raw locator disclosure, credential assignment or
+  brokerage, DNS/TLS/socket/network operations, readiness probes, provider calls, publication,
+  delivery, worker dispatch and execution remain deferred.
+
+### ATLAS-IMP-201 Acceptance Criteria
+
+- Only `audience.workflow-physical-transport-endpoint-resolver` can idempotently request a lease
+  for itself. Human sessions, API tokens, wrong audiences, caller-selected assignees, changed
+  requests, competing identities and audit failure fail closed.
+- PostgreSQL locks and recomputes the exact physical binding, route snapshot, current-selection
+  head and freshness admission in one fixed order. The admission must remain unexpired and its
+  generation, fencing digest, selected route and head digest must still match the authoritative
+  head at database time.
+- The code-owned TTL is exactly 15 seconds and cannot exceed the freshness admission's
+  `valid_until`. A lease is denied unless the full 15-second window remains. It cannot be renewed,
+  heartbeated, transferred or reopened; exact replay succeeds only while the same lease and head
+  evidence remain active.
+- The immutable lease contains only source IDs/digests, scope, current-head fence, resolver
+  subject, policy evidence, issue/expiry times, state and canonical digest. It contains no raw
+  hostname, URL, IP, port, namespace, topic, stream, queue, routing key, private descriptor,
+  credential, secret, certificate, network result or provider message.
+- `endpoint_resolution_authority` is true only for a later internal materialization attempt. Route
+  selection, route binding, credential access, network access, readiness probe, publication,
+  delivery, dispatch and execution authority remain false. The lease ID is not a bearer token.
+- Production never falls back to memory. Lease and idempotency rows are append-only and atomic; one
+  freshness admission can produce at most one lease. A future materializer must atomically consume
+  the lease once while revalidating database time and the same authoritative head fence.
+- Human UI/API reads are default-deny, minimized and read-only. They show active/expired evidence
+  through the existing username/password browser session without MFA or a second login and expose
+  no issue, renew, transfer, consume, resolve, credential, probe, publish, deliver, dispatch or
+  execute control.
+
+### ATLAS-IMP-201 Local Validation Evidence
+
+- Ruff format and lint passed; strict mypy passed across 1,227 source files; Alembic reports the
+  single linear head `20260814_0124`.
+- Focused domain, API, freshness-regression and health tests passed 20/20. PostgreSQL schema,
+  fixed-lock-order, migration and fail-closed adapter tests passed 4/4; the live PostgreSQL case is
+  intentionally deferred to CI because no local `ATLAS_TEST_POSTGRES_DSN` is configured.
+- The complete backend release candidate passed 1,950 tests with six environment-specific skips:
+  three expected Windows symlink cases and three live PostgreSQL cases. PR CI provisions
+  PostgreSQL and must execute the new concurrent replay, atomic lease/claim and append-only trigger
+  test.
+- The complete frontend suite passed 530 tests across 95 files. Full ESLint, TypeScript and the
+  Vite production build passed with only the existing large-chunk advisory.
+- Live validation restarted the backend from this branch and used one `atlas-demo` / `local-demo`
+  username/password login. The endpoint-resolution authorization lease rendered as read-only,
+  expired historical evidence after its exact 15-second window, with `single use true`,
+  `renewable false`, endpoint-resolution authority true only for the named resolver workload and
+  the other nine authority declarations false.
+- The live DOM and visual review found no issue, renew, transfer, consume, resolve, credential,
+  probe, publish, deliver, dispatch or execute controls and no MFA, second-login or
+  `authorized browser session` language. No endpoint, locator or credential material was exposed.
+
+### ATLAS-IMP-200 Delivery Evidence
+
+- Exact-head commit `2b6032a0d1a2c7751be7eaddb937c63616ca8767` passed PR CI run
+  `31830517247`; backend completed in 9m49s and frontend in 5m46s.
+- PR [#213](https://github.com/ozdemirumit/Project_Atlas/pull/213) was SHA-locked and squash-merged
+  as `4ac1dee5873143c6e684ebb762776c7cef6092a4`.
+- The exact merged commit independently passed `main` CI run `31831311131`; backend completed in
+  10m48s and frontend in 5m00s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-201 branched.
 
 ### ATLAS-IMP-200 Scope Rationale
 

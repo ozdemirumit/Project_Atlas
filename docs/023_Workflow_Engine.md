@@ -596,6 +596,10 @@ MVP workflows do not execute C3 through C5 capabilities.
   records monotonic generation and fencing evidence, requires later resolver revalidation and
   grants no endpoint-resolution, credential, network, readiness, publication, delivery, dispatch
   or execution authority.
+- ADR-151 establishes one non-transferable, 15-second endpoint-resolution authorization lease for
+  the exact resolver workload after database-time revalidation of the complete physical route and
+  freshness chain. It contains no endpoint or credential material, grants only endpoint-resolution
+  authority and requires a later materializer to consume it once atomically with protected output.
 
 ## 39. Assumptions
 
