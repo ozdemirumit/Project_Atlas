@@ -14,6 +14,7 @@ import {
   type WorkflowDispatchEventEnvelope,
   type WorkflowDispatchOutboxEntry,
   type WorkflowDispatchOutboxPublicationLease,
+  type WorkflowEndpointResolutionAuthorizationLease,
   type WorkflowEventByteArtifact,
   type WorkflowEventLogicalChannelBinding,
   type WorkflowEventTransportAdmission,
@@ -675,6 +676,35 @@ const physicalTransportRouteFreshnessAdmission: WorkflowPhysicalTransportRouteFr
   integrity_reference: "integrity-ref.workflow-route-freshness.1234567890abcdef",
 };
 
+const endpointResolutionAuthorizationLease: WorkflowEndpointResolutionAuthorizationLease = {
+  lease_id: "workflow-endpoint-resolution-authorization-lease.1234567890abcdef",
+  freshness_admission_id: physicalTransportRouteFreshnessAdmission.freshness_admission_id,
+  selection_generation: physicalTransportRouteFreshnessAdmission.selection_generation,
+  policy_id: "policy.workflow-event-physical-transport-endpoint-resolution-authorization",
+  policy_version: "1.0",
+  scope: { ...plan.scope },
+  resolver_subject_id: "workload.workflow-physical-transport-endpoint-resolver",
+  authorized_at: "2026-08-14T10:07:30Z",
+  expires_at: "2026-08-14T10:07:45Z",
+  state: "authorized_unconsumed",
+  effective_state: "active",
+  single_use: true,
+  renewable: false,
+  authority: {
+    route_selection_authorized: false,
+    route_binding_authorized: false,
+    endpoint_resolution_authorized: true,
+    credential_access_authorized: false,
+    network_access_authorized: false,
+    readiness_probe_authorized: false,
+    publication_authorized: false,
+    delivery_authorized: false,
+    dispatch_authorized: false,
+    execution_authorized: false,
+  },
+  integrity_reference: "integrity.workflow-endpoint-resolution-lease.1234567890abcdef",
+};
+
 const transportCompatibilityAdmission: WorkflowTransportCompatibilityAdmission = {
   compatibility_admission_id:
     "workflow-transport-compatibility-admission.1234567890abcdef",
@@ -983,6 +1013,29 @@ function physicalTransportRouteFreshnessAdmissionResponse(
   );
 }
 
+function endpointResolutionAuthorizationLeaseResponse(
+  leases: unknown[],
+  status = 200,
+  serverTime = "2026-08-14T10:07:35Z",
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            endpoint_resolution_authorization_leases: leases,
+            server_time: serverTime,
+            durable: false,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.endpoint-resolution-authorization-lease",
+            generated_at: serverTime,
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function transportCompatibilityAdmissionResponse(
   admissions: unknown[],
   status = 200,
@@ -1020,6 +1073,8 @@ function mockReadResponses(input: {
   transportRouteSnapshots?: unknown[];
   physicalTransportRouteBindings?: unknown[];
   physicalTransportRouteFreshnessAdmissions?: unknown[];
+  endpointResolutionAuthorizationLeases?: unknown[];
+  endpointResolutionAuthorizationLeaseServerTime?: string;
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
   pendingByteArtifactResponse?: Promise<Response>;
@@ -1028,6 +1083,7 @@ function mockReadResponses(input: {
   pendingTransportRouteSnapshotResponse?: Promise<Response>;
   pendingPhysicalTransportRouteBindingResponse?: Promise<Response>;
   pendingPhysicalTransportRouteFreshnessAdmissionResponse?: Promise<Response>;
+  pendingEndpointResolutionAuthorizationLeaseResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
   runStatus?: number;
@@ -1050,6 +1106,8 @@ function mockReadResponses(input: {
   physicalTransportRouteBindingStatuses?: number[];
   physicalTransportRouteFreshnessAdmissionStatus?: number;
   physicalTransportRouteFreshnessAdmissionStatuses?: number[];
+  endpointResolutionAuthorizationLeaseStatus?: number;
+  endpointResolutionAuthorizationLeaseStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
   transportCompatibilityAdmissionStatuses?: number[];
 }) {
@@ -1060,9 +1118,33 @@ function mockReadResponses(input: {
   let transportRouteSnapshotReadCount = 0;
   let physicalTransportRouteBindingReadCount = 0;
   let physicalTransportRouteFreshnessAdmissionReadCount = 0;
+  let endpointResolutionAuthorizationLeaseReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (
+      url.endsWith(
+        "/api/v1/workflows/physical-transport-endpoint-resolution-authorization-leases",
+      )
+    ) {
+      if (input.pendingEndpointResolutionAuthorizationLeaseResponse) {
+        return input.pendingEndpointResolutionAuthorizationLeaseResponse;
+      }
+      const status =
+        input.endpointResolutionAuthorizationLeaseStatuses?.[
+          Math.min(
+            endpointResolutionAuthorizationLeaseReadCount++,
+            input.endpointResolutionAuthorizationLeaseStatuses.length - 1,
+          )
+        ] ?? input.endpointResolutionAuthorizationLeaseStatus ?? 200;
+      return Promise.resolve(
+        endpointResolutionAuthorizationLeaseResponse(
+          input.endpointResolutionAuthorizationLeases ?? [],
+          status,
+          input.endpointResolutionAuthorizationLeaseServerTime,
+        ),
+      );
+    }
     if (url.endsWith("/api/v1/workflows/physical-transport-route-freshness-admissions")) {
       if (input.pendingPhysicalTransportRouteFreshnessAdmissionResponse) {
         return input.pendingPhysicalTransportRouteFreshnessAdmissionResponse;
@@ -2038,6 +2120,259 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(
       within(section).queryByRole("list", {
         name: "Physical transport route freshness admissions",
+      }),
+    ).toBeNull();
+  });
+
+  it("renders one active endpoint-resolution authorization lease as minimized read-only evidence", async () => {
+    mockReadResponses({
+      endpointResolutionAuthorizationLeases: [endpointResolutionAuthorizationLease],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Endpoint-resolution authorization leases",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Endpoint-resolution authorization leases",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/physical-transport-endpoint-resolution-authorization-leases",
+        ),
+      ),
+    ).toBe(true);
+    expect(within(section).getByTitle(endpointResolutionAuthorizationLease.lease_id)).toBeVisible();
+    expect(
+      within(section).getByTitle(endpointResolutionAuthorizationLease.freshness_admission_id),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(endpointResolutionAuthorizationLease.resolver_subject_id),
+    ).toBeVisible();
+    expect(within(section).getByTitle(endpointResolutionAuthorizationLease.policy_id)).toBeVisible();
+    expect(
+      within(section).getByTitle(endpointResolutionAuthorizationLease.integrity_reference),
+    ).toBeVisible();
+    expect(records).toHaveTextContent("Active");
+    expect(records).toHaveTextContent("generation 7");
+    expect(records).toHaveTextContent("Single use true | renewable false");
+    expect(records).toHaveTextContent(/endpoint resolution true for the named resolver workload only/i);
+    expect(records).toHaveTextContent(/route selection false.*execution false/i);
+    expect(section).toHaveTextContent("The browser cannot issue, renew, transfer, consume, or resolve it");
+    expect(
+      within(section).queryByRole("button", {
+        name: /issue|renew|transfer|consume|resolve|credential|probe|publish|deliver|dispatch|execute/i,
+      }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(
+      /https?:\/\/|broker\.internal|10\.0\.0\.1|private-topic|hidden-secret|MFA|second login|authorized browser session/i,
+    );
+  });
+
+  it("renders an empty endpoint-resolution lease inventory as a healthy read-only state", async () => {
+    mockReadResponses({ endpointResolutionAuthorizationLeases: [] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Endpoint-resolution authorization leases",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "No endpoint-resolution authorization leases are recorded in this scope.",
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("alert")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("shows a loading state while endpoint-resolution authorization leases are pending", async () => {
+    mockReadResponses({
+      pendingEndpointResolutionAuthorizationLeaseResponse: new Promise<Response>(() => undefined),
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Endpoint-resolution authorization leases",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Loading endpoint-resolution authorization leases..."),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("renders endpoint-resolution lease expiry from validated server time", async () => {
+    mockReadResponses({
+      endpointResolutionAuthorizationLeases: [
+        { ...endpointResolutionAuthorizationLease, effective_state: "expired" },
+      ],
+      endpointResolutionAuthorizationLeaseServerTime: "2026-08-14T10:07:45Z",
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Endpoint-resolution authorization leases",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("Expired")).toBeVisible();
+    expect(section).not.toHaveTextContent(/still valid|current head confirmed/i);
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("retries a generic endpoint-resolution lease read failure without operational controls", async () => {
+    mockReadResponses({
+      endpointResolutionAuthorizationLeases: [endpointResolutionAuthorizationLease],
+      endpointResolutionAuthorizationLeaseStatuses: [500, 200],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Endpoint-resolution authorization leases",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "Endpoint-resolution authorization leases are unavailable",
+      ),
+    ).toBeVisible();
+    expect(section).toHaveTextContent(
+      "No authorization, endpoint, or operational state is inferred from this failed read.",
+    );
+    fireEvent.click(
+      within(section).getByRole("button", {
+        name: "Retry endpoint-resolution authorization lease read",
+      }),
+    );
+    expect(
+      await within(section).findByTitle(endpointResolutionAuthorizationLease.lease_id),
+    ).toBeVisible();
+    expect(
+      within(section).queryByRole("button", {
+        name: /issue|renew|transfer|consume|resolve|credential|probe|publish|deliver|dispatch|execute/i,
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [
+      403,
+      "Endpoint-resolution lease permission is missing",
+      "current role or scope cannot inspect endpoint-resolution lease evidence",
+    ],
+  ])(
+    "handles endpoint-resolution lease read status %s with the normal browser session boundary",
+    async (status, title, detail) => {
+      mockReadResponses({ endpointResolutionAuthorizationLeaseStatus: status });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Endpoint-resolution authorization leases",
+      })).closest("section") as HTMLElement;
+      expect(await within(section).findByText(title)).toBeVisible();
+      expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+      expect(within(section).queryByRole("button")).toBeNull();
+      if (status !== 401) expect(section).not.toHaveTextContent("Sign in again");
+      expect(section).not.toHaveTextContent(/MFA|second login|authorized browser session/i);
+    },
+  );
+
+  it.each([
+    ["an extra digest", { ...endpointResolutionAuthorizationLease, canonical_digest: "a".repeat(64) }],
+    [
+      "private endpoint material",
+      { ...endpointResolutionAuthorizationLease, endpoint_url: "https://broker.internal/private-topic" },
+    ],
+    ["credential material", { ...endpointResolutionAuthorizationLease, credential: "hidden-secret" }],
+    [
+      "a changed scope",
+      {
+        ...endpointResolutionAuthorizationLease,
+        scope: { ...endpointResolutionAuthorizationLease.scope, site_id: "site.other" },
+      },
+    ],
+    [
+      "missing endpoint-resolution authority",
+      {
+        ...endpointResolutionAuthorizationLease,
+        authority: {
+          ...endpointResolutionAuthorizationLease.authority,
+          endpoint_resolution_authorized: false,
+        },
+      },
+    ],
+    [
+      "extra operational authority",
+      {
+        ...endpointResolutionAuthorizationLease,
+        authority: {
+          ...endpointResolutionAuthorizationLease.authority,
+          network_access_authorized: true,
+        },
+      },
+    ],
+    [
+      "an extra authority field",
+      {
+        ...endpointResolutionAuthorizationLease,
+        authority: { ...endpointResolutionAuthorizationLease.authority, consume_authorized: false },
+      },
+    ],
+    [
+      "a non-v1 lease window",
+      { ...endpointResolutionAuthorizationLease, expires_at: "2026-08-14T10:07:46Z" },
+    ],
+    ["a consumed state", { ...endpointResolutionAuthorizationLease, state: "consumed" }],
+    ["a consumption field", { ...endpointResolutionAuthorizationLease, consumed_at: null }],
+    ["a reusable lease", { ...endpointResolutionAuthorizationLease, single_use: false }],
+    ["a renewable lease", { ...endpointResolutionAuthorizationLease, renewable: true }],
+    ["a non-positive generation", { ...endpointResolutionAuthorizationLease, selection_generation: 0 }],
+    ["an effective-state mismatch", { ...endpointResolutionAuthorizationLease, effective_state: "expired" }],
+    ["a locator-shaped identifier", { ...endpointResolutionAuthorizationLease, lease_id: "https://broker.internal" }],
+  ])(
+    "fails closed when endpoint-resolution authorization lease evidence contains %s",
+    async (_case, unsafeLease) => {
+      mockReadResponses({ endpointResolutionAuthorizationLeases: [unsafeLease] });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Endpoint-resolution authorization leases",
+      })).closest("section") as HTMLElement;
+      expect(
+        await within(section).findByText(
+          "Endpoint-resolution authorization leases are unavailable",
+        ),
+      ).toBeVisible();
+      expect(
+        within(section).queryByRole("list", {
+          name: "Endpoint-resolution authorization leases",
+        }),
+      ).toBeNull();
+      expect(section).not.toHaveTextContent(/broker\.internal|private-topic|hidden-secret|site\.other/i);
+    },
+  );
+
+  it("fails closed when endpoint-resolution leases duplicate a lease or freshness admission", async () => {
+    mockReadResponses({
+      endpointResolutionAuthorizationLeases: [
+        endpointResolutionAuthorizationLease,
+        {
+          ...endpointResolutionAuthorizationLease,
+          resolver_subject_id: "workload.workflow-physical-transport-endpoint-resolver.other",
+        },
+      ],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Endpoint-resolution authorization leases",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "Endpoint-resolution authorization leases are unavailable",
+      ),
+    ).toBeVisible();
+    expect(
+      within(section).queryByRole("list", {
+        name: "Endpoint-resolution authorization leases",
       }),
     ).toBeNull();
   });

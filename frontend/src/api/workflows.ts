@@ -759,6 +759,43 @@ export type WorkflowPhysicalTransportRouteFreshnessAdmissionInventory = {
   durable: boolean;
 };
 
+export type WorkflowEndpointResolutionAuthorizationLeaseAuthority = {
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  endpoint_resolution_authorized: true;
+  credential_access_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+};
+
+export type WorkflowEndpointResolutionAuthorizationLease = {
+  lease_id: string;
+  freshness_admission_id: string;
+  selection_generation: number;
+  policy_id: string;
+  policy_version: "1.0";
+  scope: WorkflowRunPlan["scope"];
+  resolver_subject_id: string;
+  authorized_at: string;
+  expires_at: string;
+  state: "authorized_unconsumed";
+  effective_state: "active" | "expired";
+  single_use: true;
+  renewable: false;
+  authority: WorkflowEndpointResolutionAuthorizationLeaseAuthority;
+  integrity_reference: string;
+};
+
+export type WorkflowEndpointResolutionAuthorizationLeaseInventory = {
+  endpoint_resolution_authorization_leases: WorkflowEndpointResolutionAuthorizationLease[];
+  server_time: string;
+  durable: boolean;
+};
+
 export type WorkflowTransportCompatibilityAuthority = {
   route_selection_authorized: false;
   route_binding_authorized: false;
@@ -1390,6 +1427,40 @@ const physicalTransportRouteFreshnessAdmissionInventoryFields = [
   "physical_transport_route_freshness_admissions",
   "durable",
 ] as const;
+const endpointResolutionAuthorizationLeaseAuthorityFields = [
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "endpoint_resolution_authorized",
+  "credential_access_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+] as const;
+const endpointResolutionAuthorizationLeaseFields = [
+  "lease_id",
+  "freshness_admission_id",
+  "selection_generation",
+  "policy_id",
+  "policy_version",
+  "scope",
+  "resolver_subject_id",
+  "authorized_at",
+  "expires_at",
+  "state",
+  "effective_state",
+  "single_use",
+  "renewable",
+  "authority",
+  "integrity_reference",
+] as const;
+const endpointResolutionAuthorizationLeaseInventoryFields = [
+  "endpoint_resolution_authorization_leases",
+  "server_time",
+  "durable",
+] as const;
 const transportCompatibilityAuthorityFields = [
   "route_selection_authorized",
   "route_binding_authorized",
@@ -1476,6 +1547,10 @@ function containsCredentialMaterial(value: unknown): boolean {
 
 function isIdentifier(value: unknown): value is string {
   return typeof value === "string" && value.length >= 1 && value.length <= 240 && !/\s/.test(value);
+}
+
+function isStableIdentifier(value: unknown): value is string {
+  return typeof value === "string" && /^[a-z][a-z0-9_.:-]{2,239}$/.test(value);
 }
 
 function isText(value: unknown, maximum: number): value is string {
@@ -2539,6 +2614,57 @@ function isPhysicalTransportRouteFreshnessAdmission(
   );
 }
 
+function hasEndpointResolutionOnlyAuthority(
+  value: unknown,
+): value is WorkflowEndpointResolutionAuthorizationLeaseAuthority {
+  if (!isObject(value) || !hasExactKeys(value, endpointResolutionAuthorizationLeaseAuthorityFields)) {
+    return false;
+  }
+  return endpointResolutionAuthorizationLeaseAuthorityFields.every((field) =>
+    field === "endpoint_resolution_authorized" ? value[field] === true : value[field] === false,
+  );
+}
+
+function isEndpointResolutionAuthorizationLease(
+  value: unknown,
+  scope: WorkflowScope,
+  serverTime: string,
+): value is WorkflowEndpointResolutionAuthorizationLease {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, endpointResolutionAuthorizationLeaseFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value) ||
+    !isTimestamp(value.authorized_at) ||
+    !isTimestamp(value.expires_at)
+  ) {
+    return false;
+  }
+  const leaseScope = value.scope;
+  const authorizedAt = Date.parse(value.authorized_at);
+  const expiresAt = Date.parse(value.expires_at);
+  const expectedEffectiveState = Date.parse(serverTime) >= expiresAt ? "expired" : "active";
+  return (
+    isStableIdentifier(value.lease_id) &&
+    isStableIdentifier(value.freshness_admission_id) &&
+    Number.isSafeInteger(value.selection_generation) &&
+    Number(value.selection_generation) >= 1 &&
+    isStableIdentifier(value.policy_id) &&
+    value.policy_version === "1.0" &&
+    leaseScope.organization_id === scope.organizationId &&
+    leaseScope.environment_id === scope.environmentId &&
+    leaseScope.site_id === scope.siteId &&
+    isStableIdentifier(value.resolver_subject_id) &&
+    expiresAt - authorizedAt === 15_000 &&
+    value.state === "authorized_unconsumed" &&
+    value.effective_state === expectedEffectiveState &&
+    value.single_use === true &&
+    value.renewable === false &&
+    hasEndpointResolutionOnlyAuthority(value.authority) &&
+    isStableIdentifier(value.integrity_reference)
+  );
+}
+
 function hasZeroTransportCompatibilityAuthority(
   value: unknown,
 ): value is WorkflowTransportCompatibilityAuthority {
@@ -3265,6 +3391,63 @@ export async function listWorkflowPhysicalTransportRouteFreshnessAdmissions(inpu
     );
   }
   return data as WorkflowPhysicalTransportRouteFreshnessAdmissionInventory;
+}
+
+export async function listWorkflowEndpointResolutionAuthorizationLeases(input: {
+  scope: WorkflowScope;
+}): Promise<WorkflowEndpointResolutionAuthorizationLeaseInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/physical-transport-endpoint-resolution-authorization-leases",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow endpoint-resolution authorization lease retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, endpointResolutionAuthorizationLeaseInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.endpoint_resolution_authorization_leases) ||
+    data.endpoint_resolution_authorization_leases.length > 256 ||
+    !isTimestamp(data.server_time) ||
+    typeof data.durable !== "boolean"
+  ) {
+    throw new ApiRequestError(
+      "Workflow endpoint-resolution authorization lease response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.endpoint_resolution_authorization_leases.every((lease) =>
+      isEndpointResolutionAuthorizationLease(lease, input.scope, serverTime),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow endpoint-resolution authorization lease response was unsafe",
+      response.status,
+    );
+  }
+  const leaseIds = new Set<string>();
+  const freshnessAdmissionIds = new Set<string>();
+  for (const lease of data.endpoint_resolution_authorization_leases) {
+    if (
+      !isObject(lease) ||
+      typeof lease.lease_id !== "string" ||
+      typeof lease.freshness_admission_id !== "string" ||
+      leaseIds.has(lease.lease_id) ||
+      freshnessAdmissionIds.has(lease.freshness_admission_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow endpoint-resolution authorization lease response was unsafe",
+        response.status,
+      );
+    }
+    leaseIds.add(lease.lease_id);
+    freshnessAdmissionIds.add(lease.freshness_admission_id);
+  }
+  return data as WorkflowEndpointResolutionAuthorizationLeaseInventory;
 }
 
 export async function listWorkflowTransportCompatibilityAdmissions(input: {

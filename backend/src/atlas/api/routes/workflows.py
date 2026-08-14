@@ -10,6 +10,7 @@ from atlas.api.schemas import ResponseMeta
 from atlas.api.security import (
     authenticated_subject,
     authorize_workflow_definition_read,
+    authorize_workflow_physical_transport_endpoint_resolution_authorization_lease_read,
     authorize_workflow_physical_transport_route_binding_read,
     authorize_workflow_physical_transport_route_freshness_admission_read,
     authorize_workflow_plan_cancel,
@@ -20,6 +21,7 @@ from atlas.api.security import (
     authorize_workflow_transport_route_snapshot_read,
     browser_session_subject,
     workflow_outbox_publisher_subject,
+    workflow_physical_transport_endpoint_resolver_subject,
     workflow_physical_transport_route_binder_subject,
     workflow_physical_transport_route_freshness_admitter_subject,
     workflow_transport_compatibility_admitter_subject,
@@ -35,6 +37,7 @@ from atlas.api.workflow_schemas import (
     CancelWorkflowPlanInput,
     CreateEventPhysicalTransportProfileSnapshotInput,
     CreateEventPhysicalTransportRouteSnapshotInput,
+    CreateWorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInput,
     CreateWorkflowEventPhysicalTransportRouteBindingInput,
     CreateWorkflowEventPhysicalTransportRouteFreshnessAdmissionInput,
     CreateWorkflowEventTransportCompatibilityAdmissionInput,
@@ -80,6 +83,10 @@ from atlas.api.workflow_schemas import (
     WorkflowEventLogicalChannelBindingInventoryData,
     WorkflowEventLogicalChannelBindingInventoryResponse,
     WorkflowEventLogicalChannelBindingResponse,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseData,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInventoryData,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInventoryResponse,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResponse,
     WorkflowEventPhysicalTransportRouteBindingData,
     WorkflowEventPhysicalTransportRouteBindingInventoryData,
     WorkflowEventPhysicalTransportRouteBindingInventoryResponse,
@@ -124,6 +131,7 @@ from atlas.modules.conversations.domain.models import ConversationScope
 from atlas.modules.identity.domain.models import AuthenticatedSubject
 from atlas.modules.workflows.application import (
     WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE,
+    WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLVER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMITTER_AUDIENCE,
     WORKFLOW_TRANSPORT_COMPATIBILITY_ADMITTER_AUDIENCE,
@@ -141,6 +149,8 @@ from atlas.modules.workflows.application import (
     WorkflowEventByteArtifactService,
     WorkflowEventLogicalChannelBindingError,
     WorkflowEventLogicalChannelBindingService,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseError,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseService,
     WorkflowEventPhysicalTransportRouteBindingService,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionError,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionService,
@@ -152,6 +162,7 @@ from atlas.modules.workflows.application import (
     WorkflowOutboxPublicationLeaseRepository,
     WorkflowOutboxPublicationLeaseService,
     WorkflowOutboxPublisherContext,
+    WorkflowPhysicalTransportEndpointResolverContext,
     WorkflowPhysicalTransportRouteBinderContext,
     WorkflowPhysicalTransportRouteFreshnessAdmitterContext,
     WorkflowPlanningError,
@@ -202,6 +213,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventLogicalChannelBinding,
     WorkflowEventLogicalChannelBindingState,
     WorkflowEventLogicalChannelPolicy,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease,
     WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventPhysicalTransportRouteFreshnessAdmission,
     WorkflowEventTransportAdmission,
@@ -711,6 +723,24 @@ def _raise_physical_transport_route_freshness_admission(
         status, title = 503, "Workflow physical route freshness service unavailable"
     else:
         status, title = 409, "Workflow physical route freshness admission unavailable"
+    raise AtlasError(
+        status=status,
+        code=error.code,
+        title=title,
+        detail=error.detail,
+        retryable=status == 503,
+    ) from error
+
+
+def _raise_physical_transport_endpoint_resolution_authorization_lease(
+    error: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseError,
+) -> NoReturn:
+    if error.code.endswith("_invalid") or error.code.endswith("_required"):
+        status, title = 422, "Workflow endpoint-resolution authorization request invalid"
+    elif "repository" in error.code or "persistence" in error.code:
+        status, title = 503, "Workflow endpoint-resolution authorization service unavailable"
+    else:
+        status, title = 409, "Workflow endpoint-resolution authorization unavailable"
     raise AtlasError(
         status=status,
         code=error.code,
@@ -1335,6 +1365,24 @@ def _physical_transport_route_freshness_admission_response(
     _no_store(response)
     return WorkflowEventPhysicalTransportRouteFreshnessAdmissionResponse(
         data=WorkflowEventPhysicalTransportRouteFreshnessAdmissionData.from_domain(admission),
+        meta=_meta(request),
+    )
+
+
+def _physical_transport_endpoint_resolution_authorization_lease_response(
+    lease: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease,
+    request: Request,
+    response: Response,
+) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResponse:
+    server_time = datetime.now(UTC)
+    _no_store(response)
+    return WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResponse(
+        data=(
+            WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseData.from_domain(
+                lease,
+                evaluated_at=server_time,
+            )
+        ),
         meta=_meta(request),
     )
 
@@ -3823,6 +3871,126 @@ async def create_workflow_physical_transport_route_freshness_admission(
         _raise_physical_transport_route_freshness_admission(error)
     return _physical_transport_route_freshness_admission_response(
         admission,
+        request,
+        response,
+    )
+
+
+@router.get(
+    "/physical-transport-endpoint-resolution-authorization-leases",
+    response_model=(
+        WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInventoryResponse
+    ),
+)
+async def list_workflow_physical_transport_endpoint_resolution_authorization_leases(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_physical_transport_endpoint_resolution_authorization_lease_read),
+    ],
+) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInventoryResponse:
+    del decision
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseService = (
+        request.app.state.workflow_endpoint_resolution_authorization_lease_service
+    )
+    try:
+        leases = await service.repository.list_endpoint_resolution_authorization_leases(
+            scope=scope,
+            limit=256,
+        )
+        if any(lease.scope != scope for lease in leases):
+            raise WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseError(
+                "workflow_physical_transport_endpoint_resolution_authorization_repository_"
+                "scope_violation",
+                "Stored endpoint-resolution authorization lease metadata escaped its query scope.",
+            )
+    except WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseError as error:
+        _raise_physical_transport_endpoint_resolution_authorization_lease(error)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code=(
+                "workflow_physical_transport_endpoint_resolution_authorization_repository_"
+                "unavailable"
+            ),
+            title="Workflow endpoint-resolution authorization service unavailable",
+            detail="Endpoint-resolution authorization lease metadata is unavailable.",
+            retryable=True,
+        ) from error
+    server_time = datetime.now(UTC)
+    _no_store(response)
+    return WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInventoryResponse(
+        data=WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInventoryData(
+            endpoint_resolution_authorization_leases=[
+                WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseData.from_domain(
+                    lease,
+                    evaluated_at=server_time,
+                )
+                for lease in sorted(
+                    leases,
+                    key=lambda value: value.authorization_lease_id,
+                )
+            ],
+            server_time=server_time,
+            durable=service.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/physical-transport-endpoint-resolution-authorization-leases",
+    response_model=WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResponse,
+    status_code=201,
+)
+async def create_workflow_physical_transport_endpoint_resolution_authorization_lease(
+    payload: CreateWorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_physical_transport_endpoint_resolver_subject),
+    ],
+) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResponse:
+    service: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseService = (
+        request.app.state.workflow_endpoint_resolution_authorization_lease_service
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        lease = await service.authorize(
+            freshness_admission_id=payload.freshness_admission_id,
+            freshness_admission_digest=payload.freshness_admission_digest,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowPhysicalTransportEndpointResolverContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLVER_AUDIENCE,
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id=(
+                    "decision.workflow-physical-transport-endpoint-resolver-authenticated"
+                ),
+                requested_at=datetime.now(UTC),
+            ),
+        )
+    except WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseError as error:
+        _raise_physical_transport_endpoint_resolution_authorization_lease(error)
+    return _physical_transport_endpoint_resolution_authorization_lease_response(
+        lease,
         request,
         response,
     )

@@ -15,6 +15,7 @@ from atlas.modules.workflows.domain import (
     WorkflowDispatchOutboxEntry,
     WorkflowEventByteArtifact,
     WorkflowEventLogicalChannelBinding,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease,
     WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventPhysicalTransportRouteFreshnessAdmission,
     WorkflowEventTransportAdmission,
@@ -1321,6 +1322,104 @@ class WorkflowEventPhysicalTransportRouteFreshnessAdmissionResponse(BaseModel):
 
 class WorkflowEventPhysicalTransportRouteFreshnessAdmissionInventoryResponse(BaseModel):
     data: WorkflowEventPhysicalTransportRouteFreshnessAdmissionInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    freshness_admission_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    freshness_admission_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    policy_id: Literal["policy.workflow-event-physical-transport-endpoint-resolution-authorization"]
+    policy_version: Literal["1.0"]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    endpoint_resolution_authorized: Literal[True]
+    credential_access_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+
+
+class WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseData(BaseModel):
+    """Human-safe authorization evidence without endpoint or source material."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    lease_id: str
+    freshness_admission_id: str
+    selection_generation: int = Field(ge=1)
+    policy_id: str
+    policy_version: str
+    scope: WorkflowScopeData
+    resolver_subject_id: str
+    authorized_at: datetime
+    expires_at: datetime
+    state: Literal["authorized_unconsumed"]
+    effective_state: Literal["active", "expired"]
+    single_use: Literal[True]
+    renewable: Literal[False]
+    authority: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseAuthorityData
+    integrity_reference: str = Field(min_length=3, max_length=256, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls,
+        lease: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease,
+        *,
+        evaluated_at: datetime,
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseData:
+        return cls(
+            lease_id=lease.authorization_lease_id,
+            freshness_admission_id=lease.freshness_admission_id,
+            selection_generation=lease.current_selection_head_generation,
+            policy_id=lease.policy_id,
+            policy_version=lease.policy_version,
+            scope=WorkflowScopeData.model_validate(lease.scope.canonical_value()),
+            resolver_subject_id=lease.resolver_subject_id,
+            authorized_at=lease.issued_at,
+            expires_at=lease.valid_until,
+            state="authorized_unconsumed",
+            effective_state=lease.effective_state(evaluated_at=evaluated_at).value,
+            single_use=True,
+            renewable=False,
+            authority=(
+                WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseAuthorityData.model_validate(
+                    lease.authority.canonical_value()
+                )
+            ),
+            integrity_reference=f"integrity.{lease.authorization_lease_id}",
+        )
+
+
+class WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    endpoint_resolution_authorization_leases: list[
+        WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseData
+    ] = Field(max_length=256)
+    server_time: datetime
+    durable: bool
+
+
+class WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResponse(BaseModel):
+    data: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseData
+    meta: ResponseMeta
+
+
+class WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInventoryResponse(
+    BaseModel
+):
+    data: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInventoryData
     meta: ResponseMeta
 
 

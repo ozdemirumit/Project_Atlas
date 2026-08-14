@@ -56,6 +56,9 @@ WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDING_READ = "workflow.physical-transport-ro
 WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMISSION_READ = (
     "workflow.physical-transport-route-freshness-admissions.read"
 )
+WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLUTION_AUTHORIZATION_LEASE_READ = (
+    "workflow.physical-transport-endpoint-resolution-authorization-leases.read"
+)
 INVESTIGATION_CREATE = "investigation.create"
 RCA_CREATE = "rca.create"
 RECOMMENDATION_CREATE = "recommendation.create"
@@ -1714,6 +1717,22 @@ def workflow_physical_transport_route_freshness_admission_scope(
     )
 
 
+def workflow_physical_transport_endpoint_resolution_authorization_lease_scope(
+    organization_id: str,
+    environment: str,
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.workflow",
+        resource_id=(
+            "resource.workflow.physical-transport-endpoint-resolution-authorization-leases"
+        ),
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
 def investigation_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -1971,6 +1990,15 @@ def build_development_authorization_service(
             permission_id=WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMISSION_READ,
             description=(
                 "Read minimized immutable workflow physical transport route freshness admissions."
+            ),
+        ),
+        PermissionDefinition(
+            permission_id=(
+                WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLUTION_AUTHORIZATION_LEASE_READ
+            ),
+            description=(
+                "Read minimized immutable workflow physical transport endpoint resolution "
+                "authorization leases."
             ),
         ),
         PermissionDefinition(
@@ -2849,6 +2877,7 @@ def build_development_authorization_service(
                 WORKFLOW_TRANSPORT_ROUTE_SNAPSHOT_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDING_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMISSION_READ,
+                WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLUTION_AUTHORIZATION_LEASE_READ,
                 INVESTIGATION_CREATE,
                 RCA_CREATE,
                 RECOMMENDATION_CREATE,
@@ -4964,6 +4993,22 @@ def build_development_authorization_service(
                 scope=workflow_physical_transport_route_freshness_admission_scope(
                     settings.development_organization_id,
                     settings.environment,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id=(
+                    "assignment.development."
+                    "workflow-physical-transport-endpoint-resolution-authorization-leases"
+                ),
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=(
+                    workflow_physical_transport_endpoint_resolution_authorization_lease_scope(
+                        settings.development_organization_id,
+                        settings.environment,
+                    )
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),

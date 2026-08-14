@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import NoReturn
 
 from atlas.modules.workflows.application import (
@@ -36,6 +37,12 @@ from atlas.modules.workflows.application.byte_artifact_ports import (
     WorkflowEventByteArtifactIdempotencyRecord,
     WorkflowEventByteArtifactRequest,
     WorkflowEventByteArtifactResult,
+)
+from atlas.modules.workflows.application.endpoint_resolution_authorization_lease_ports import (
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseError,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseIdempotencyRecord,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRequest,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResult,
 )
 from atlas.modules.workflows.application.logical_channel_binding_ports import (
     WorkflowEventLogicalChannelBindingError,
@@ -96,6 +103,7 @@ from atlas.modules.workflows.domain import (
     WorkflowDispatchOutboxEntry,
     WorkflowEventByteArtifact,
     WorkflowEventLogicalChannelBinding,
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease,
     WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventPhysicalTransportRouteFreshnessAdmission,
     WorkflowEventTransportAdmission,
@@ -115,6 +123,9 @@ class UnavailableWorkflowPlanRepository:
     @property
     def durable(self) -> bool:
         return False
+
+    async def get_authoritative_time(self) -> datetime:
+        self._raise_endpoint_resolution_authorization()
 
     @staticmethod
     def _raise() -> NoReturn:
@@ -455,6 +466,11 @@ class UnavailableWorkflowPlanRepository:
     ) -> WorkflowEventPhysicalTransportRouteFreshnessAdmission | None:
         self._raise_route_freshness_admission()
 
+    async def get_route_freshness_admission_by_id(
+        self, *, freshness_admission_id: str
+    ) -> WorkflowEventPhysicalTransportRouteFreshnessAdmission | None:
+        self._raise_endpoint_resolution_authorization()
+
     async def list_route_freshness_admissions(
         self, *, scope: WorkflowScope, limit: int
     ) -> tuple[WorkflowEventPhysicalTransportRouteFreshnessAdmission, ...]:
@@ -473,6 +489,31 @@ class UnavailableWorkflowPlanRepository:
         self, request: WorkflowEventPhysicalTransportRouteFreshnessAdmissionRequest
     ) -> WorkflowEventPhysicalTransportRouteFreshnessAdmissionResult:
         self._raise_route_freshness_admission()
+
+    async def get_endpoint_resolution_authorization_lease(
+        self, *, freshness_admission_id: str
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease | None:
+        self._raise_endpoint_resolution_authorization()
+
+    async def list_endpoint_resolution_authorization_leases(
+        self, *, scope: WorkflowScope, limit: int
+    ) -> tuple[WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease, ...]:
+        self._raise_endpoint_resolution_authorization()
+
+    async def get_endpoint_resolution_authorization_lease_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        resolver_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseIdempotencyRecord | None:
+        self._raise_endpoint_resolution_authorization()
+
+    async def authorize_endpoint_resolution(
+        self,
+        request: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRequest,
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseResult:
+        self._raise_endpoint_resolution_authorization()
 
     async def acquire_publication_lease(
         self, request: WorkflowOutboxPublicationLeaseAcquireRequest
@@ -619,4 +660,11 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowEventPhysicalTransportRouteFreshnessAdmissionError(
             "workflow_route_freshness_admission_repository_unavailable",
             "Durable workflow route freshness admission storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_endpoint_resolution_authorization() -> NoReturn:
+        raise WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseError(
+            "workflow_endpoint_resolution_authorization_repository_unavailable",
+            "Durable endpoint-resolution authorization lease storage is not configured.",
         )

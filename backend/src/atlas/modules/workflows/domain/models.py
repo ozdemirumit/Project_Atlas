@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 from hashlib import sha256
 from typing import Any, Protocol, cast
@@ -149,6 +149,15 @@ class WorkflowEventPhysicalTransportRouteBindingState(StrEnum):
 
 class WorkflowEventPhysicalTransportRouteFreshnessAdmissionState(StrEnum):
     ADMITTED_CURRENT = "admitted_current"
+
+
+class WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseState(StrEnum):
+    AUTHORIZED_UNCONSUMED = "authorized_unconsumed"
+
+
+class WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseEffectiveState(StrEnum):
+    ACTIVE = "active"
+    EXPIRED = "expired"
 
 
 @dataclass(frozen=True, slots=True)
@@ -3546,6 +3555,313 @@ class WorkflowEventPhysicalTransportRouteFreshnessAdmission:
     @property
     def grants_execution_authority(self) -> bool:
         return False
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportEndpointResolutionAuthorizationPolicy:
+    """Code-owned requirements for one bounded endpoint-resolution authorization."""
+
+    policy_id: str
+    policy_version: str
+    validity_window_seconds: int
+    full_freshness_window_required: bool
+    resolver_subject_bound: bool
+    single_use_required: bool
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        _require_identifier(self.policy_id, name="endpoint resolution authorization policy id")
+        _require_identifier(
+            self.policy_version,
+            name="endpoint resolution authorization policy version",
+        )
+        if self.validity_window_seconds != 15:
+            raise ValueError(
+                "endpoint resolution authorization policy validity window must be 15 seconds"
+            )
+        if self.full_freshness_window_required is not True:
+            raise ValueError(
+                "endpoint resolution authorization policy must require the full freshness window"
+            )
+        if self.resolver_subject_bound is not True:
+            raise ValueError(
+                "endpoint resolution authorization policy must bind the resolver subject"
+            )
+        if self.single_use_required is not True:
+            raise ValueError("endpoint resolution authorization policy must require single use")
+        _require_digest(
+            self.canonical_digest,
+            name="endpoint resolution authorization policy digest",
+        )
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("endpoint resolution authorization policy canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "full_freshness_window_required": self.full_freshness_window_required,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "resolver_subject_bound": self.resolver_subject_bound,
+            "single_use_required": self.single_use_required,
+            "validity_window_seconds": self.validity_window_seconds,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+def code_owned_workflow_event_physical_transport_endpoint_resolution_authorization_policy() -> (
+    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationPolicy
+):
+    values: dict[str, object] = {
+        "policy_id": ("policy.workflow-event-physical-transport-endpoint-resolution-authorization"),
+        "policy_version": "1.0",
+        "validity_window_seconds": 15,
+        "full_freshness_window_required": True,
+        "resolver_subject_bound": True,
+        "single_use_required": True,
+    }
+    return WorkflowEventPhysicalTransportEndpointResolutionAuthorizationPolicy(
+        **cast(Any, values), canonical_digest=canonical_digest(values)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseAuthority:
+    endpoint_resolution_authorized: bool = True
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    credential_access_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        values = self.canonical_value()
+        if values["endpoint_resolution_authorized"] is not True or any(
+            value for name, value in values.items() if name != "endpoint_resolution_authorized"
+        ):
+            raise ValueError(
+                "endpoint resolution authorization leases must grant only endpoint resolution"
+            )
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "credential_access_authorized": self.credential_access_authorized,
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "endpoint_resolution_authorized": self.endpoint_resolution_authorized,
+            "execution_authorized": self.execution_authorized,
+            "network_access_authorized": self.network_access_authorized,
+            "publication_authorized": self.publication_authorized,
+            "readiness_probe_authorized": self.readiness_probe_authorized,
+            "route_binding_authorized": self.route_binding_authorized,
+            "route_selection_authorized": self.route_selection_authorized,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease:
+    """Single-use resolver authorization without endpoint materialization."""
+
+    authorization_lease_id: str
+    freshness_admission_id: str
+    freshness_admission_digest: str
+    physical_transport_route_binding_id: str
+    physical_transport_route_binding_digest: str
+    transport_route_snapshot_id: str
+    transport_route_snapshot_digest: str
+    current_selection_head_id: str
+    current_selection_head_digest: str
+    current_selection_head_generation: int
+    current_selection_head_fencing_token_digest: str
+    route_set_id: str
+    route_set_revision: str
+    selection_epoch_id: str
+    selection_epoch_revision: str
+    selected_route_id: str
+    selected_route_revision: str
+    selected_route_digest: str
+    selection_active: bool
+    selection_eligible: bool
+    selection_suspended: bool
+    selection_withdrawn: bool
+    selection_superseded: bool
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    scope: WorkflowScope
+    resolver_subject_id: str
+    issued_at: datetime
+    valid_until: datetime
+    state: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseState
+    authority: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.authorization_lease_id, "endpoint resolution authorization lease id"),
+            (self.freshness_admission_id, "route freshness admission id"),
+            (self.physical_transport_route_binding_id, "physical route binding id"),
+            (self.transport_route_snapshot_id, "transport route snapshot id"),
+            (self.current_selection_head_id, "current selection head id"),
+            (self.route_set_id, "endpoint resolution route set id"),
+            (self.route_set_revision, "endpoint resolution route set revision"),
+            (self.selection_epoch_id, "endpoint resolution selection epoch id"),
+            (self.selection_epoch_revision, "endpoint resolution selection epoch revision"),
+            (self.selected_route_id, "endpoint resolution selected route id"),
+            (self.selected_route_revision, "endpoint resolution selected route revision"),
+            (self.policy_id, "endpoint resolution authorization policy id"),
+            (self.policy_version, "endpoint resolution authorization policy version"),
+            (self.resolver_subject_id, "endpoint resolver subject id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.freshness_admission_digest, "route freshness admission digest"),
+            (self.physical_transport_route_binding_digest, "physical route binding digest"),
+            (self.transport_route_snapshot_digest, "transport route snapshot digest"),
+            (self.current_selection_head_digest, "current selection head digest"),
+            (
+                self.current_selection_head_fencing_token_digest,
+                "current selection head fencing token digest",
+            ),
+            (self.selected_route_digest, "selected route digest"),
+            (self.policy_digest, "endpoint resolution authorization policy digest"),
+            (self.canonical_digest, "endpoint resolution authorization lease digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.current_selection_head_generation < 1:
+            raise ValueError("endpoint resolution authorization head generation must be positive")
+        if (
+            self.selection_active is not True
+            or self.selection_eligible is not True
+            or self.selection_suspended
+            or self.selection_withdrawn
+            or self.selection_superseded
+        ):
+            raise ValueError("endpoint resolution authorization selection state is not admissible")
+        if self.issued_at.tzinfo is None or self.valid_until.tzinfo is None:
+            raise ValueError("endpoint resolution authorization times must be timezone-aware")
+        if self.valid_until - self.issued_at != timedelta(seconds=15):
+            raise ValueError(
+                "endpoint resolution authorization lease must have an exact 15-second window"
+            )
+        if (
+            self.state
+            is not (
+                WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseState
+            ).AUTHORIZED_UNCONSUMED
+        ):
+            raise ValueError(
+                "endpoint resolution authorization leases must remain authorized_unconsumed"
+            )
+        if self.authority != (
+            WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseAuthority()
+        ):
+            raise ValueError(
+                "endpoint resolution authorization lease has invalid authority declarations"
+            )
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("endpoint resolution authorization lease canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "authority": self.authority.canonical_value(),
+            "authorization_lease_id": self.authorization_lease_id,
+            "current_selection_head_digest": self.current_selection_head_digest,
+            "current_selection_head_fencing_token_digest": (
+                self.current_selection_head_fencing_token_digest
+            ),
+            "current_selection_head_generation": self.current_selection_head_generation,
+            "current_selection_head_id": self.current_selection_head_id,
+            "freshness_admission_digest": self.freshness_admission_digest,
+            "freshness_admission_id": self.freshness_admission_id,
+            "issued_at": self.issued_at.isoformat(),
+            "physical_transport_route_binding_digest": (
+                self.physical_transport_route_binding_digest
+            ),
+            "physical_transport_route_binding_id": self.physical_transport_route_binding_id,
+            "policy_digest": self.policy_digest,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "resolver_subject_id": self.resolver_subject_id,
+            "route_set_id": self.route_set_id,
+            "route_set_revision": self.route_set_revision,
+            "scope": self.scope.canonical_value(),
+            "selection_active": self.selection_active,
+            "selection_eligible": self.selection_eligible,
+            "selection_superseded": self.selection_superseded,
+            "selection_suspended": self.selection_suspended,
+            "selection_withdrawn": self.selection_withdrawn,
+            "selected_route_digest": self.selected_route_digest,
+            "selected_route_id": self.selected_route_id,
+            "selected_route_revision": self.selected_route_revision,
+            "selection_epoch_id": self.selection_epoch_id,
+            "selection_epoch_revision": self.selection_epoch_revision,
+            "state": self.state.value,
+            "transport_route_snapshot_digest": self.transport_route_snapshot_digest,
+            "transport_route_snapshot_id": self.transport_route_snapshot_id,
+            "valid_until": self.valid_until.isoformat(),
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    def effective_state(
+        self, *, evaluated_at: datetime
+    ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseEffectiveState:
+        if evaluated_at.tzinfo is None:
+            raise ValueError("endpoint resolution authorization evaluation time must be aware")
+        if evaluated_at < self.valid_until:
+            return (
+                WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseEffectiveState
+            ).ACTIVE
+        return (
+            WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseEffectiveState.EXPIRED
+        )
+
+    @property
+    def grants_endpoint_resolution_authority(self) -> bool:
+        return self.authority.endpoint_resolution_authorized
+
+    @property
+    def grants_route_selection_authority(self) -> bool:
+        return self.authority.route_selection_authorized
+
+    @property
+    def grants_route_binding_authority(self) -> bool:
+        return self.authority.route_binding_authorized
+
+    @property
+    def grants_credential_access_authority(self) -> bool:
+        return self.authority.credential_access_authorized
+
+    @property
+    def grants_network_access_authority(self) -> bool:
+        return self.authority.network_access_authorized
+
+    @property
+    def grants_readiness_probe_authority(self) -> bool:
+        return self.authority.readiness_probe_authorized
+
+    @property
+    def grants_publication_authority(self) -> bool:
+        return self.authority.publication_authorized
+
+    @property
+    def grants_delivery_authority(self) -> bool:
+        return self.authority.delivery_authorized
+
+    @property
+    def grants_dispatch_authority(self) -> bool:
+        return self.authority.dispatch_authorized
+
+    @property
+    def grants_execution_authority(self) -> bool:
+        return self.authority.execution_authorized
 
 
 @dataclass(frozen=True, slots=True)
