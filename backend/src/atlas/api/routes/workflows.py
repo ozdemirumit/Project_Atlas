@@ -26,6 +26,7 @@ from atlas.api.workflow_schemas import (
     HeartbeatWorkflowOrchestrationLeaseInput,
     HeartbeatWorkflowOutboxPublicationLeaseInput,
     MaterializeWorkflowAttemptInput,
+    MaterializeWorkflowEventByteArtifactInput,
     MaterializeWorkflowRunInput,
     PrepareWorkflowDispatchEventEnvelopeInput,
     ReleaseWorkflowOrchestrationLeaseInput,
@@ -47,6 +48,10 @@ from atlas.api.workflow_schemas import (
     WorkflowDispatchOutboxEntryData,
     WorkflowDispatchOutboxInventoryData,
     WorkflowDispatchOutboxInventoryResponse,
+    WorkflowEventByteArtifactData,
+    WorkflowEventByteArtifactInventoryData,
+    WorkflowEventByteArtifactInventoryResponse,
+    WorkflowEventByteArtifactResponse,
     WorkflowEventTransportAdmissionData,
     WorkflowEventTransportAdmissionInventoryData,
     WorkflowEventTransportAdmissionInventoryResponse,
@@ -87,6 +92,8 @@ from atlas.modules.workflows.application import (
     WorkflowDispatchIntentStagingError,
     WorkflowDispatchIntentStagingRepository,
     WorkflowDispatchIntentStagingService,
+    WorkflowEventByteArtifactError,
+    WorkflowEventByteArtifactService,
     WorkflowOrchestrationLeaseError,
     WorkflowOrchestrationLeaseRepository,
     WorkflowOrchestrationLeaseService,
@@ -120,6 +127,8 @@ from atlas.modules.workflows.domain import (
     WorkflowDispatchIntentState,
     WorkflowDispatchOutboxEntry,
     WorkflowDispatchOutboxState,
+    WorkflowEventByteArtifact,
+    WorkflowEventByteArtifactState,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportAdmissionPolicy,
     WorkflowEventTransportAdmissionState,
@@ -476,6 +485,44 @@ def _raise_event_transport_admission(error: WorkflowEventTransportAdmissionError
             "The transport admission request did not satisfy the bounded contract."
             if status == 422
             else "Workflow event transport admission evidence is unavailable."
+        ),
+        retryable=status == 503,
+    ) from error
+
+
+def _raise_event_byte_artifact(error: WorkflowEventByteArtifactError) -> NoReturn:
+    if error.code.endswith("_invalid") or error.code.endswith("_required"):
+        status = 422
+    elif "repository" in error.code:
+        status = 503
+    elif error.code.endswith("_not_found"):
+        status = 404
+    else:
+        status = 409
+    raise AtlasError(
+        status=status,
+        code=(
+            "workflow_event_byte_artifact_request_invalid"
+            if status == 422
+            else "workflow_event_byte_artifact_service_unavailable"
+            if status == 503
+            else "workflow_resource_unavailable"
+            if status == 404
+            else "workflow_event_byte_artifact_conflict"
+        ),
+        title=(
+            "Workflow event byte artifact request invalid"
+            if status == 422
+            else "Workflow event byte artifact service unavailable"
+            if status == 503
+            else "Workflow resource unavailable"
+            if status == 404
+            else "Workflow event byte artifact conflict"
+        ),
+        detail=(
+            "The byte artifact request did not satisfy the bounded contract."
+            if status == 422
+            else "Workflow event byte artifact evidence is unavailable."
         ),
         retryable=status == 503,
     ) from error
@@ -948,6 +995,75 @@ def _event_transport_admission_matches_envelope(
         and not admission.grants_delivery_authority
         and not admission.grants_dispatch_authority
         and not admission.grants_execution_authority
+    )
+
+
+def _event_byte_artifact_response(
+    artifact: WorkflowEventByteArtifact,
+    request: Request,
+    response: Response,
+) -> WorkflowEventByteArtifactResponse:
+    _no_store(response)
+    return WorkflowEventByteArtifactResponse(
+        data=WorkflowEventByteArtifactData.from_domain(artifact),
+        meta=_meta(request),
+    )
+
+
+def _event_byte_artifact_matches_admission(
+    artifact: WorkflowEventByteArtifact,
+    admission: WorkflowEventTransportAdmission,
+    envelope: WorkflowDispatchEventEnvelope,
+    entry: WorkflowDispatchOutboxEntry,
+    publication_lease: WorkflowOutboxPublicationLease,
+) -> bool:
+    return bool(
+        artifact.admission_id == admission.admission_id
+        and artifact.admission_digest == admission.canonical_digest
+        and artifact.policy_id == admission.policy_id
+        and artifact.policy_version == admission.policy_version
+        and artifact.policy_digest == admission.policy_digest
+        and artifact.event_id == envelope.event_id
+        and artifact.event_digest == envelope.canonical_digest
+        and artifact.event_type == envelope.event_type
+        and artifact.event_version == envelope.event_version
+        and artifact.schema_uri == envelope.schema_uri
+        and artifact.data_classification == envelope.data_classification
+        and artifact.representation_name == admission.representation_name
+        and artifact.encoding == admission.encoding
+        and artifact.canonical_byte_count == admission.canonical_byte_count
+        and artifact.maximum_canonical_byte_count == admission.maximum_canonical_byte_count
+        and artifact.outbox_entry_id == entry.outbox_entry_id
+        and artifact.outbox_entry_digest == entry.canonical_digest
+        and artifact.dispatch_intent_id == entry.dispatch_intent_id
+        and artifact.dispatch_intent_digest == entry.dispatch_intent_digest
+        and artifact.plan_id == entry.plan_id
+        and artifact.plan_digest == entry.plan_digest
+        and artifact.run_id == entry.run_id
+        and artifact.run_digest == entry.run_digest
+        and artifact.step_run_id == entry.step_run_id
+        and artifact.step_run_digest == entry.step_run_digest
+        and artifact.step_id == entry.step_id
+        and artifact.attempt_id == entry.attempt_id
+        and artifact.attempt_digest == entry.attempt_digest
+        and artifact.attempt_number == entry.attempt_number
+        and artifact.scope == entry.scope
+        and artifact.target_id == entry.target_id
+        and artifact.target_type == entry.target_type
+        and artifact.orchestration_lease_id == admission.orchestration_lease_id
+        and artifact.orchestration_lease_digest == admission.orchestration_lease_digest
+        and artifact.orchestration_fencing_token == admission.orchestration_fencing_token
+        and artifact.publication_lease_id == publication_lease.publication_lease_id
+        and artifact.publication_lease_digest == publication_lease.canonical_digest
+        and artifact.publication_fencing_token == publication_lease.publication_fencing_token
+        and artifact.publisher_subject_id == publication_lease.publisher_subject_id
+        and artifact.materialized_at >= admission.admitted_at
+        and artifact.state is WorkflowEventByteArtifactState.MATERIALIZED
+        and not any(artifact.authority.canonical_value().values())
+        and not artifact.grants_publication_authority
+        and not artifact.grants_delivery_authority
+        and not artifact.grants_dispatch_authority
+        and not artifact.grants_execution_authority
     )
 
 
@@ -2088,6 +2204,232 @@ async def get_workflow_event_transport_admission(
         ),
         meta=_meta(request),
     )
+
+
+@router.get(
+    (
+        "/plans/{plan_id}/runs/{run_id}/attempts/{attempt_id}/dispatch-intents/"
+        "{dispatch_intent_id}/outbox/{outbox_entry_id}/event-envelope/{event_id}/"
+        "transport-admission/{transport_admission_id}/byte-artifact"
+    ),
+    response_model=WorkflowEventByteArtifactInventoryResponse,
+)
+async def get_workflow_event_byte_artifact(
+    plan_id: Annotated[str, SAFE_ID],
+    run_id: Annotated[str, SAFE_ID],
+    attempt_id: Annotated[str, SAFE_ID],
+    dispatch_intent_id: Annotated[str, SAFE_ID],
+    outbox_entry_id: Annotated[str, SAFE_ID],
+    event_id: Annotated[str, SAFE_ID],
+    transport_admission_id: Annotated[str, SAFE_ID],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[AuthorizationDecision, Depends(authorize_workflow_plan_read)],
+) -> WorkflowEventByteArtifactInventoryResponse:
+    planning_service: WorkflowPlanningService = request.app.state.workflow_planning_service
+    try:
+        plan = await planning_service.get_plan(
+            plan_id=plan_id,
+            context=await _context(request, subject, decision),
+        )
+    except WorkflowPlanningError as error:
+        _raise(error)
+    service: WorkflowEventByteArtifactService = (
+        request.app.state.workflow_event_byte_artifact_service
+    )
+    repository = service.repository
+    try:
+        entry = await repository.get_outbox_entry_by_id(outbox_entry_id=outbox_entry_id)
+        envelope = await repository.get_dispatch_event_envelope_by_outbox_entry_id(
+            outbox_entry_id=outbox_entry_id
+        )
+        publication_lease = await repository.get_publication_lease_by_outbox_entry_id(
+            outbox_entry_id=outbox_entry_id
+        )
+        admission = await repository.get_event_transport_admission_by_event_id(event_id=event_id)
+        artifact = await repository.get_event_byte_artifact_by_admission_id(
+            admission_id=transport_admission_id
+        )
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_event_byte_artifact_service_unavailable",
+            title="Workflow event byte artifact service unavailable",
+            detail="Workflow event byte artifact metadata is unavailable.",
+            retryable=True,
+        ) from error
+    if (
+        entry is None
+        or envelope is None
+        or admission is None
+        or envelope.event_id != event_id
+        or admission.admission_id != transport_admission_id
+        or not _outbox_entry_matches_route(
+            entry,
+            plan_id=plan_id,
+            run_id=run_id,
+            attempt_id=attempt_id,
+            dispatch_intent_id=dispatch_intent_id,
+            outbox_entry_id=outbox_entry_id,
+        )
+        or entry.plan_digest != plan.canonical_digest
+        or entry.scope != plan.scope
+        or entry.target_id != plan.target_id
+        or entry.target_type != plan.target_type
+    ):
+        raise AtlasError(
+            status=404,
+            code="workflow_resource_unavailable",
+            title="Workflow resource unavailable",
+            detail="The requested workflow resource is unavailable.",
+        )
+    if (
+        publication_lease is None
+        or not _dispatch_event_envelope_matches_outbox(envelope, entry)
+        or not _event_transport_admission_matches_envelope(
+            admission,
+            envelope,
+            entry,
+            publication_lease,
+            request.app.state.workflow_event_transport_admission_service.policy,
+        )
+        or (
+            artifact is not None
+            and not _event_byte_artifact_matches_admission(
+                artifact,
+                admission,
+                envelope,
+                entry,
+                publication_lease,
+            )
+        )
+    ):
+        raise AtlasError(
+            status=503,
+            code="workflow_event_byte_artifact_service_unavailable",
+            title="Workflow event byte artifact service unavailable",
+            detail="Workflow event byte artifact metadata is unavailable.",
+            retryable=True,
+        )
+    _no_store(response)
+    return WorkflowEventByteArtifactInventoryResponse(
+        data=WorkflowEventByteArtifactInventoryData(
+            transport_admission_id=admission.admission_id,
+            byte_artifacts=(
+                [] if artifact is None else [WorkflowEventByteArtifactData.from_domain(artifact)]
+            ),
+            durable=service.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    (
+        "/plans/{plan_id}/runs/{run_id}/attempts/{attempt_id}/dispatch-intents/"
+        "{dispatch_intent_id}/outbox/{outbox_entry_id}/publication-lease/"
+        "{publication_lease_id}/event-envelope/{event_id}/transport-admission/"
+        "{transport_admission_id}/byte-artifact"
+    ),
+    response_model=WorkflowEventByteArtifactResponse,
+    status_code=201,
+)
+async def materialize_workflow_event_byte_artifact(
+    plan_id: Annotated[str, SAFE_ID],
+    run_id: Annotated[str, SAFE_ID],
+    attempt_id: Annotated[str, SAFE_ID],
+    dispatch_intent_id: Annotated[str, SAFE_ID],
+    outbox_entry_id: Annotated[str, SAFE_ID],
+    publication_lease_id: Annotated[str, SAFE_ID],
+    event_id: Annotated[str, SAFE_ID],
+    transport_admission_id: Annotated[str, SAFE_ID],
+    payload: MaterializeWorkflowEventByteArtifactInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(workflow_outbox_publisher_subject)],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> WorkflowEventByteArtifactResponse:
+    service: WorkflowEventByteArtifactService = (
+        request.app.state.workflow_event_byte_artifact_service
+    )
+    entry = await _require_bound_publication_outbox(
+        repository=cast(WorkflowOutboxPublicationLeaseRepository, service.repository),
+        plan_id=plan_id,
+        run_id=run_id,
+        attempt_id=attempt_id,
+        dispatch_intent_id=dispatch_intent_id,
+        outbox_entry_id=outbox_entry_id,
+    )
+    try:
+        envelope = await service.repository.get_dispatch_event_envelope_by_outbox_entry_id(
+            outbox_entry_id=outbox_entry_id
+        )
+        admission = await service.repository.get_event_transport_admission_by_event_id(
+            event_id=event_id
+        )
+        publication_lease = await service.repository.get_publication_lease_by_outbox_entry_id(
+            outbox_entry_id=outbox_entry_id
+        )
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_event_byte_artifact_service_unavailable",
+            title="Workflow event byte artifact service unavailable",
+            detail="Workflow event byte artifact evidence is unavailable.",
+            retryable=True,
+        ) from error
+    if (
+        envelope is None
+        or admission is None
+        or envelope.event_id != event_id
+        or admission.admission_id != transport_admission_id
+    ):
+        raise AtlasError(
+            status=404,
+            code="workflow_resource_unavailable",
+            title="Workflow resource unavailable",
+            detail="The requested workflow resource is unavailable.",
+        )
+    if (
+        publication_lease is None
+        or publication_lease.publication_lease_id != publication_lease_id
+        or not _dispatch_event_envelope_matches_outbox(envelope, entry)
+        or not _event_transport_admission_matches_envelope(
+            admission,
+            envelope,
+            entry,
+            publication_lease,
+            request.app.state.workflow_event_transport_admission_service.policy,
+        )
+    ):
+        raise AtlasError(
+            status=503,
+            code="workflow_event_byte_artifact_service_unavailable",
+            title="Workflow event byte artifact service unavailable",
+            detail="Workflow event byte artifact evidence is unavailable.",
+            retryable=True,
+        )
+    try:
+        artifact = await service.materialize(
+            outbox_entry_id=outbox_entry_id,
+            outbox_entry_digest=payload.outbox_entry_digest,
+            event_id=event_id,
+            event_digest=payload.event_digest,
+            admission_id=transport_admission_id,
+            admission_digest=payload.transport_admission_digest,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            policy_digest=payload.policy_digest,
+            publication_lease_id=publication_lease_id,
+            publication_lease_digest=payload.publication_lease_digest,
+            publication_fencing_token=payload.publication_fencing_token,
+            idempotency_key=idempotency_key,
+            context=await _publisher_context(request, subject, target_id=entry.target_id),
+        )
+    except WorkflowEventByteArtifactError as error:
+        _raise_event_byte_artifact(error)
+    return _event_byte_artifact_response(artifact, request, response)
 
 
 @router.post(

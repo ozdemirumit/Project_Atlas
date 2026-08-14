@@ -31,6 +31,12 @@ from atlas.modules.workflows.application import (
     WorkflowRunMaterializationRequest,
     WorkflowRunMaterializationResult,
 )
+from atlas.modules.workflows.application.byte_artifact_ports import (
+    WorkflowEventByteArtifactError,
+    WorkflowEventByteArtifactIdempotencyRecord,
+    WorkflowEventByteArtifactRequest,
+    WorkflowEventByteArtifactResult,
+)
 from atlas.modules.workflows.application.publication_lease_ports import (
     WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord,
     WorkflowOutboxPublicationLeaseAcquireRequest,
@@ -49,6 +55,7 @@ from atlas.modules.workflows.domain import (
     WorkflowDispatchEventEnvelope,
     WorkflowDispatchIntent,
     WorkflowDispatchOutboxEntry,
+    WorkflowEventByteArtifact,
     WorkflowEventTransportAdmission,
     WorkflowExecutionAttempt,
     WorkflowExecutionRun,
@@ -226,6 +233,25 @@ class UnavailableWorkflowPlanRepository:
     ) -> WorkflowEventTransportAdmissionResult:
         self._raise_event_transport_admission()
 
+    async def get_event_byte_artifact_by_admission_id(
+        self, *, admission_id: str
+    ) -> WorkflowEventByteArtifact | None:
+        self._raise_event_byte_artifact()
+
+    async def get_event_byte_artifact_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        publisher_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventByteArtifactIdempotencyRecord | None:
+        self._raise_event_byte_artifact()
+
+    async def materialize_event_byte_artifact(
+        self, request: WorkflowEventByteArtifactRequest
+    ) -> WorkflowEventByteArtifactResult:
+        self._raise_event_byte_artifact()
+
     async def acquire_publication_lease(
         self, request: WorkflowOutboxPublicationLeaseAcquireRequest
     ) -> WorkflowOutboxPublicationLeaseAcquireResult:
@@ -322,4 +348,11 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowEventTransportAdmissionError(
             "workflow_event_transport_admission_repository_unavailable",
             "Durable workflow event transport admission storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_event_byte_artifact() -> NoReturn:
+        raise WorkflowEventByteArtifactError(
+            "workflow_event_byte_artifact_repository_unavailable",
+            "Durable workflow event byte artifact storage is not configured.",
         )

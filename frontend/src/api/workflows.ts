@@ -456,6 +456,60 @@ export type WorkflowEventTransportAdmissionInventory = {
   durable: boolean;
 };
 
+export type WorkflowEventByteArtifact = {
+  byte_artifact_id: string;
+  transport_admission_id: string;
+  transport_admission_digest: string;
+  event_id: string;
+  event_digest: string;
+  outbox_entry_id: string;
+  outbox_entry_digest: string;
+  dispatch_intent_id: string;
+  dispatch_intent_digest: string;
+  plan_id: string;
+  plan_digest: string;
+  run_id: string;
+  run_digest: string;
+  step_run_id: string;
+  step_run_digest: string;
+  step_id: string;
+  attempt_id: string;
+  attempt_digest: string;
+  attempt_number: 1;
+  scope: WorkflowRunPlan["scope"];
+  target_id: string;
+  target_type: "storage";
+  policy_id: "policy.workflow-event-transport-admission";
+  policy_version: "1.0";
+  policy_digest: string;
+  representation_name: "canonical-json";
+  encoding: "utf-8";
+  media_type: "application/json";
+  byte_count: number;
+  content_sha256: string;
+  publisher_subject_id: string;
+  orchestration_lease_id: string;
+  orchestration_lease_digest: string;
+  orchestration_fencing_token: number;
+  publication_lease_id: string;
+  publication_lease_digest: string;
+  publication_fencing_token: number;
+  materialized_at: string;
+  state: "materialized";
+  authority: WorkflowDispatchEventAuthority;
+  grants_publication_authority: false;
+  grants_delivery_authority: false;
+  grants_dispatch_authority: false;
+  grants_execution_authority: false;
+  canonical_digest: string;
+};
+
+export type WorkflowEventByteArtifactInventory = {
+  transport_admission_id: string;
+  byte_artifacts: WorkflowEventByteArtifact[];
+  durable: boolean;
+};
+
 const digest = /^[a-f0-9]{64}$/;
 const capabilityClasses = new Set<WorkflowCapabilityClass>(["C0", "C1", "C2"]);
 const stepKinds = new Set<WorkflowStepKind>([
@@ -758,6 +812,58 @@ const eventTransportAdmissionFields = [
 const eventTransportAdmissionInventoryFields = [
   "event_id",
   "transport_admissions",
+  "durable",
+] as const;
+const eventByteArtifactFields = [
+  "byte_artifact_id",
+  "transport_admission_id",
+  "transport_admission_digest",
+  "event_id",
+  "event_digest",
+  "outbox_entry_id",
+  "outbox_entry_digest",
+  "dispatch_intent_id",
+  "dispatch_intent_digest",
+  "plan_id",
+  "plan_digest",
+  "run_id",
+  "run_digest",
+  "step_run_id",
+  "step_run_digest",
+  "step_id",
+  "attempt_id",
+  "attempt_digest",
+  "attempt_number",
+  "scope",
+  "target_id",
+  "target_type",
+  "policy_id",
+  "policy_version",
+  "policy_digest",
+  "representation_name",
+  "encoding",
+  "media_type",
+  "byte_count",
+  "content_sha256",
+  "publisher_subject_id",
+  "orchestration_lease_id",
+  "orchestration_lease_digest",
+  "orchestration_fencing_token",
+  "publication_lease_id",
+  "publication_lease_digest",
+  "publication_fencing_token",
+  "materialized_at",
+  "state",
+  "authority",
+  "grants_publication_authority",
+  "grants_delivery_authority",
+  "grants_dispatch_authority",
+  "grants_execution_authority",
+  "canonical_digest",
+] as const;
+const eventByteArtifactInventoryFields = [
+  "transport_admission_id",
+  "byte_artifacts",
   "durable",
 ] as const;
 const dispatchEventAuthorityFields = [
@@ -1446,6 +1552,78 @@ function isEventTransportAdmissionBoundToEnvelope(
   );
 }
 
+function isEventByteArtifactBoundToAdmission(
+  value: unknown,
+  admission: WorkflowEventTransportAdmission,
+  envelope: WorkflowDispatchEventEnvelope,
+  entry: WorkflowDispatchOutboxEntry,
+  publicationLease: WorkflowDispatchOutboxPublicationLease,
+): value is WorkflowEventByteArtifact {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, eventByteArtifactFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value) ||
+    !isEventTransportAdmissionBoundToEnvelope(admission, envelope, entry, publicationLease)
+  ) {
+    return false;
+  }
+  const artifactScope = value.scope;
+  return (
+    isIdentifier(value.byte_artifact_id) &&
+    value.transport_admission_id === admission.transport_admission_id &&
+    value.transport_admission_digest === admission.canonical_digest &&
+    value.event_id === admission.event_id &&
+    value.event_digest === admission.event_digest &&
+    value.outbox_entry_id === admission.outbox_entry_id &&
+    value.outbox_entry_digest === admission.outbox_entry_digest &&
+    value.dispatch_intent_id === admission.dispatch_intent_id &&
+    value.dispatch_intent_digest === admission.dispatch_intent_digest &&
+    value.plan_id === admission.plan_id &&
+    value.plan_digest === admission.plan_digest &&
+    value.run_id === admission.run_id &&
+    value.run_digest === admission.run_digest &&
+    value.step_run_id === admission.step_run_id &&
+    value.step_run_digest === admission.step_run_digest &&
+    value.step_id === admission.step_id &&
+    value.attempt_id === admission.attempt_id &&
+    value.attempt_digest === admission.attempt_digest &&
+    value.attempt_number === admission.attempt_number &&
+    artifactScope.organization_id === admission.scope.organization_id &&
+    artifactScope.environment_id === admission.scope.environment_id &&
+    artifactScope.site_id === admission.scope.site_id &&
+    value.target_id === admission.target_id &&
+    value.target_type === admission.target_type &&
+    value.policy_id === admission.policy.policy_id &&
+    value.policy_version === admission.policy.policy_version &&
+    value.policy_digest === admission.policy.policy_digest &&
+    value.representation_name === admission.policy.representation_name &&
+    value.encoding === admission.policy.encoding &&
+    value.media_type === "application/json" &&
+    Number.isInteger(value.byte_count) &&
+    Number(value.byte_count) === admission.canonical_byte_count &&
+    Number(value.byte_count) >= 1 &&
+    Number(value.byte_count) <= admission.policy.maximum_canonical_byte_count &&
+    isDigest(value.content_sha256) &&
+    value.publisher_subject_id === admission.publisher_subject_id &&
+    value.orchestration_lease_id === admission.orchestration_lease_id &&
+    value.orchestration_lease_digest === admission.orchestration_lease_digest &&
+    value.orchestration_fencing_token === admission.orchestration_fencing_token &&
+    value.publication_lease_id === admission.publication_lease_id &&
+    value.publication_lease_digest === admission.publication_lease_digest &&
+    value.publication_fencing_token === admission.publication_fencing_token &&
+    isTimestamp(value.materialized_at) &&
+    Date.parse(value.materialized_at) >= Date.parse(admission.admitted_at) &&
+    value.state === "materialized" &&
+    hasSafeDispatchEventAuthority(value.authority) &&
+    value.grants_publication_authority === false &&
+    value.grants_delivery_authority === false &&
+    value.grants_dispatch_authority === false &&
+    value.grants_execution_authority === false &&
+    isDigest(value.canonical_digest)
+  );
+}
+
 function isRunPlan(value: unknown): value is WorkflowRunPlan {
   if (
     !isObject(value) ||
@@ -1856,6 +2034,58 @@ export async function listWorkflowEventTransportAdmissions(input: {
     throw new ApiRequestError("Workflow transport-admission evidence response was unsafe", response.status);
   }
   return data as WorkflowEventTransportAdmissionInventory;
+}
+
+export async function listWorkflowEventByteArtifacts(input: {
+  transportAdmission: WorkflowEventTransportAdmission;
+  eventEnvelope: WorkflowDispatchEventEnvelope;
+  outboxEntry: WorkflowDispatchOutboxEntry;
+  publicationLease: WorkflowDispatchOutboxPublicationLease | null;
+  scope: WorkflowScope;
+  authorizedTargetIds: readonly string[];
+}): Promise<WorkflowEventByteArtifactInventory> {
+  const {
+    transportAdmission: admission,
+    eventEnvelope: envelope,
+    outboxEntry: entry,
+    publicationLease,
+  } = input;
+  if (
+    publicationLease === null ||
+    entry.scope.organization_id !== input.scope.organizationId ||
+    entry.scope.environment_id !== input.scope.environmentId ||
+    entry.scope.site_id !== input.scope.siteId ||
+    !input.authorizedTargetIds.includes(entry.target_id) ||
+    !isEventTransportAdmissionBoundToEnvelope(admission, envelope, entry, publicationLease)
+  ) {
+    throw new ApiRequestError("Workflow transport admission is outside the authorized byte-artifact scope", 403);
+  }
+  const response = await apiFetch(
+    `/api/v1/workflows/plans/${encodeURIComponent(entry.plan_id)}/runs/${encodeURIComponent(entry.run_id)}/attempts/${encodeURIComponent(entry.attempt_id)}/dispatch-intents/${encodeURIComponent(entry.dispatch_intent_id)}/outbox/${encodeURIComponent(entry.outbox_entry_id)}/event-envelope/${encodeURIComponent(envelope.event_id)}/transport-admission/${encodeURIComponent(admission.transport_admission_id)}/byte-artifact`,
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(response, "Workflow event byte-artifact metadata retrieval failed");
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, eventByteArtifactInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    data.transport_admission_id !== admission.transport_admission_id ||
+    !Array.isArray(data.byte_artifacts) ||
+    data.byte_artifacts.length > 1 ||
+    typeof data.durable !== "boolean" ||
+    !data.byte_artifacts.every((artifact) =>
+      isEventByteArtifactBoundToAdmission(
+        artifact,
+        admission,
+        envelope,
+        entry,
+        publicationLease,
+      ),
+    )
+  ) {
+    throw new ApiRequestError("Workflow event byte-artifact metadata response was unsafe", response.status);
+  }
+  return data as WorkflowEventByteArtifactInventory;
 }
 
 export async function createWorkflowPlan(input: {

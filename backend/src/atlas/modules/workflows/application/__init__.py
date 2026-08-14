@@ -7,6 +7,18 @@ from atlas.modules.workflows.application.attempt_ports import (
     WorkflowAttemptMaterializationStatus,
 )
 from atlas.modules.workflows.application.attempts import WorkflowAttemptMaterializationService
+from atlas.modules.workflows.application.byte_artifact_ports import (
+    WorkflowEventByteArtifactError,
+    WorkflowEventByteArtifactIdempotencyRecord,
+    WorkflowEventByteArtifactRepository,
+    WorkflowEventByteArtifactRequest,
+    WorkflowEventByteArtifactResult,
+    WorkflowEventByteArtifactStatus,
+)
+from atlas.modules.workflows.application.byte_artifacts import (
+    WORKFLOW_EVENT_BYTE_ARTIFACT_PRODUCER,
+    WorkflowEventByteArtifactService,
+)
 from atlas.modules.workflows.application.dispatch_intent_ports import (
     WorkflowDispatchIntentStagingError,
     WorkflowDispatchIntentStagingIdempotencyRecord,
@@ -109,6 +121,7 @@ __all__ = [
     "WORKFLOW_DISPATCH_EVENT_SCHEMA_URI",
     "WORKFLOW_DISPATCH_EVENT_TYPE",
     "WORKFLOW_DISPATCH_EVENT_VERSION",
+    "WORKFLOW_EVENT_BYTE_ARTIFACT_PRODUCER",
     "WORKFLOW_EVENT_TRANSPORT_ADMISSION_PRODUCER",
     "WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE",
     "WORKFLOW_WORKER_AUDIENCE",
@@ -134,6 +147,13 @@ __all__ = [
     "WorkflowDispatchIntentStagingResult",
     "WorkflowDispatchIntentStagingService",
     "WorkflowDispatchIntentStagingStatus",
+    "WorkflowEventByteArtifactError",
+    "WorkflowEventByteArtifactIdempotencyRecord",
+    "WorkflowEventByteArtifactRepository",
+    "WorkflowEventByteArtifactRequest",
+    "WorkflowEventByteArtifactResult",
+    "WorkflowEventByteArtifactService",
+    "WorkflowEventByteArtifactStatus",
     "WorkflowEventTransportAdmissionError",
     "WorkflowEventTransportAdmissionIdempotencyRecord",
     "WorkflowEventTransportAdmissionRepository",

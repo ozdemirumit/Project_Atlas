@@ -5,7 +5,7 @@ from dataclasses import asdict
 from datetime import datetime
 from enum import Enum
 from hashlib import sha256
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 
 from sqlalchemy import or_, select, update
 from sqlalchemy.engine import CursorResult
@@ -24,6 +24,8 @@ from atlas.core.persistence.models import (
     WorkflowDispatchIntentModel,
     WorkflowDispatchIntentStagingClaimModel,
     WorkflowDispatchOutboxEntryModel,
+    WorkflowEventByteArtifactClaimModel,
+    WorkflowEventByteArtifactModel,
     WorkflowEventTransportAdmissionClaimModel,
     WorkflowEventTransportAdmissionModel,
     WorkflowExecutionAttemptModel,
@@ -64,6 +66,13 @@ from atlas.modules.workflows.application import (
     WorkflowRunMaterializationRequest,
     WorkflowRunMaterializationResult,
     WorkflowRunMaterializationStatus,
+)
+from atlas.modules.workflows.application.byte_artifact_ports import (
+    WorkflowEventByteArtifactError,
+    WorkflowEventByteArtifactIdempotencyRecord,
+    WorkflowEventByteArtifactRequest,
+    WorkflowEventByteArtifactResult,
+    WorkflowEventByteArtifactStatus,
 )
 from atlas.modules.workflows.application.dispatch_intent_ports import (
     WorkflowDispatchIntentStagingError,
@@ -106,6 +115,9 @@ from atlas.modules.workflows.domain import (
     WorkflowDispatchIntentState,
     WorkflowDispatchOutboxEntry,
     WorkflowDispatchOutboxState,
+    WorkflowEventByteArtifact,
+    WorkflowEventByteArtifactAuthority,
+    WorkflowEventByteArtifactState,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportAdmissionAuthority,
     WorkflowEventTransportAdmissionState,
@@ -131,6 +143,7 @@ from atlas.modules.workflows.domain import (
     WorkflowStepKind,
     canonical_digest,
     canonical_json_byte_count,
+    canonical_json_bytes,
     code_owned_workflow_event_transport_admission_policy,
 )
 
@@ -1091,6 +1104,157 @@ class PostgreSQLWorkflowPlanRepository:
         return WorkflowEventTransportAdmissionResult(
             WorkflowEventTransportAdmissionStatus.EVIDENCE_CONFLICT,
             None,
+        )
+
+    async def get_event_byte_artifact_by_admission_id(
+        self, *, admission_id: str
+    ) -> WorkflowEventByteArtifact | None:
+        async with self._sessions() as session:
+            row = cast(
+                WorkflowEventByteArtifactModel | None,
+                await session.scalar(
+                    select(WorkflowEventByteArtifactModel).where(
+                        WorkflowEventByteArtifactModel.admission_id == admission_id
+                    )
+                ),
+            )
+            return None if row is None else self._event_byte_artifact_from_row(row)
+
+    async def get_event_byte_artifact_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        publisher_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventByteArtifactIdempotencyRecord | None:
+        async with self._sessions() as session:
+            claim = await self._load_event_byte_artifact_claim(
+                session,
+                scope=scope,
+                publisher_subject_id=publisher_subject_id,
+                idempotency_key=idempotency_key,
+            )
+            if claim is None:
+                return None
+            artifact_row = await session.get(WorkflowEventByteArtifactModel, claim.artifact_id)
+            return self._event_byte_artifact_record_from_claim(claim, artifact_row)
+
+    async def materialize_event_byte_artifact(
+        self, request: WorkflowEventByteArtifactRequest
+    ) -> WorkflowEventByteArtifactResult:
+        self._validate_event_byte_artifact_request(request)
+        candidate = request.candidate
+        async with self._sessions() as session:
+            replay = await self._event_byte_artifact_replay(session, request=request)
+            if replay is not None:
+                return replay
+
+            plan_row = cast(
+                WorkflowRunPlanModel | None,
+                await session.scalar(
+                    select(WorkflowRunPlanModel)
+                    .where(WorkflowRunPlanModel.plan_id == candidate.plan_id)
+                    .with_for_update()
+                ),
+            )
+            outbox_row = cast(
+                WorkflowDispatchOutboxEntryModel | None,
+                await session.scalar(
+                    select(WorkflowDispatchOutboxEntryModel)
+                    .where(
+                        WorkflowDispatchOutboxEntryModel.outbox_entry_id
+                        == candidate.outbox_entry_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            orchestration_lease_row = cast(
+                WorkflowOrchestrationLeaseModel | None,
+                await session.scalar(
+                    select(WorkflowOrchestrationLeaseModel)
+                    .where(WorkflowOrchestrationLeaseModel.plan_id == candidate.plan_id)
+                    .with_for_update()
+                ),
+            )
+            publication_lease_row = cast(
+                WorkflowOutboxPublicationLeaseModel | None,
+                await session.scalar(
+                    select(WorkflowOutboxPublicationLeaseModel)
+                    .where(
+                        WorkflowOutboxPublicationLeaseModel.outbox_entry_id
+                        == candidate.outbox_entry_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            envelope_row = cast(
+                WorkflowDispatchEventEnvelopeModel | None,
+                await session.scalar(
+                    select(WorkflowDispatchEventEnvelopeModel)
+                    .where(WorkflowDispatchEventEnvelopeModel.event_id == candidate.event_id)
+                    .with_for_update()
+                ),
+            )
+            admission_row = cast(
+                WorkflowEventTransportAdmissionModel | None,
+                await session.scalar(
+                    select(WorkflowEventTransportAdmissionModel)
+                    .where(
+                        WorkflowEventTransportAdmissionModel.admission_id == candidate.admission_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            if not self._event_byte_artifact_evidence_matches(
+                plan_row=plan_row,
+                outbox_row=outbox_row,
+                orchestration_lease_row=orchestration_lease_row,
+                publication_lease_row=publication_lease_row,
+                envelope_row=envelope_row,
+                admission_row=admission_row,
+                request=request,
+            ):
+                await session.rollback()
+                return WorkflowEventByteArtifactResult(
+                    WorkflowEventByteArtifactStatus.EVIDENCE_CONFLICT, None
+                )
+
+            existing = cast(
+                WorkflowEventByteArtifactModel | None,
+                await session.scalar(
+                    select(WorkflowEventByteArtifactModel).where(
+                        or_(
+                            WorkflowEventByteArtifactModel.admission_id == candidate.admission_id,
+                            WorkflowEventByteArtifactModel.event_id == candidate.event_id,
+                            WorkflowEventByteArtifactModel.outbox_entry_id
+                            == candidate.outbox_entry_id,
+                        )
+                    )
+                ),
+            )
+            if existing is not None:
+                await session.rollback()
+                return WorkflowEventByteArtifactResult(
+                    WorkflowEventByteArtifactStatus.ALREADY_MATERIALIZED,
+                    self._event_byte_artifact_from_row(existing),
+                )
+
+            try:
+                session.add(self._event_byte_artifact_model(candidate))
+                session.add(self._event_byte_artifact_claim_model(request))
+                await session.commit()
+                return WorkflowEventByteArtifactResult(
+                    WorkflowEventByteArtifactStatus.MATERIALIZED, candidate
+                )
+            except IntegrityError:
+                await session.rollback()
+
+        async with self._sessions() as session:
+            replay = await self._event_byte_artifact_replay(session, request=request)
+            if replay is not None:
+                return replay
+        return WorkflowEventByteArtifactResult(
+            WorkflowEventByteArtifactStatus.EVIDENCE_CONFLICT, None
         )
 
     async def get_dispatch_intent_staging_request(
@@ -3630,6 +3794,435 @@ class PostgreSQLWorkflowPlanRepository:
         raise WorkflowEventTransportAdmissionError(
             "workflow_event_transport_admission_repository_contract_violation",
             "The workflow event transport admission does not match its canonical payload.",
+        )
+
+    async def _event_byte_artifact_replay(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowEventByteArtifactRequest,
+    ) -> WorkflowEventByteArtifactResult | None:
+        candidate = request.candidate
+        claim = await self._load_event_byte_artifact_claim(
+            session,
+            scope=candidate.scope,
+            publisher_subject_id=candidate.publisher_subject_id,
+            idempotency_key=request.idempotency_key,
+        )
+        if claim is None:
+            return None
+        artifact_row = await session.get(WorkflowEventByteArtifactModel, claim.artifact_id)
+        record = self._event_byte_artifact_record_from_claim(claim, artifact_row)
+        status = (
+            WorkflowEventByteArtifactStatus.REPLAY
+            if record.request_fingerprint == request.request_fingerprint
+            else WorkflowEventByteArtifactStatus.IDEMPOTENCY_CONFLICT
+        )
+        return WorkflowEventByteArtifactResult(status, record.artifact)
+
+    @classmethod
+    async def _load_event_byte_artifact_claim(
+        cls,
+        session: AsyncSession,
+        *,
+        scope: WorkflowScope,
+        publisher_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventByteArtifactClaimModel | None:
+        scope_id = cls._event_byte_artifact_idempotency_scope(scope, publisher_subject_id)
+        return cast(
+            WorkflowEventByteArtifactClaimModel | None,
+            await session.scalar(
+                select(WorkflowEventByteArtifactClaimModel).where(
+                    WorkflowEventByteArtifactClaimModel.idempotency_scope_id == scope_id,
+                    WorkflowEventByteArtifactClaimModel.idempotency_key == idempotency_key,
+                    WorkflowEventByteArtifactClaimModel.organization_id == scope.organization_id,
+                    WorkflowEventByteArtifactClaimModel.environment_id == scope.environment_id,
+                    WorkflowEventByteArtifactClaimModel.site_id == scope.site_id,
+                    WorkflowEventByteArtifactClaimModel.publisher_subject_id
+                    == publisher_subject_id,
+                )
+            ),
+        )
+
+    @classmethod
+    def _event_byte_artifact_record_from_claim(
+        cls,
+        claim: WorkflowEventByteArtifactClaimModel,
+        artifact_row: WorkflowEventByteArtifactModel | None,
+    ) -> WorkflowEventByteArtifactIdempotencyRecord:
+        if artifact_row is None:
+            cls._event_byte_artifact_contract_violation()
+        assert artifact_row is not None
+        artifact = cls._event_byte_artifact_from_row(artifact_row)
+        scope_id = cls._event_byte_artifact_idempotency_scope(
+            artifact.scope, artifact.publisher_subject_id
+        )
+        payload: dict[str, Any] = {
+            "idempotency_key": claim.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": claim.request_fingerprint,
+            "result_artifact": cls._event_byte_artifact_payload(artifact),
+            "result_digest": artifact.canonical_digest,
+        }
+        if (
+            claim.idempotency_scope_id != scope_id
+            or claim.result_digest != artifact.canonical_digest
+            or claim.artifact_id != artifact.artifact_id
+            or claim.admission_id != artifact.admission_id
+            or claim.event_id != artifact.event_id
+            or claim.outbox_entry_id != artifact.outbox_entry_id
+            or claim.plan_id != artifact.plan_id
+            or claim.organization_id != artifact.scope.organization_id
+            or claim.environment_id != artifact.scope.environment_id
+            or claim.site_id != artifact.scope.site_id
+            or claim.publisher_subject_id != artifact.publisher_subject_id
+            or claim.payload != payload
+            or claim.canonical_digest != canonical_digest(payload)
+        ):
+            cls._event_byte_artifact_contract_violation()
+        return WorkflowEventByteArtifactIdempotencyRecord(
+            request_fingerprint=claim.request_fingerprint,
+            artifact=artifact,
+        )
+
+    @classmethod
+    def _event_byte_artifact_from_row(
+        cls, row: WorkflowEventByteArtifactModel
+    ) -> WorkflowEventByteArtifact:
+        try:
+            artifact = cls._event_byte_artifact_to_domain(row.payload, row.canonical_bytes)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowEventByteArtifactError(
+                "workflow_event_byte_artifact_repository_contract_violation",
+                "The byte-artifact repository contains an invalid artifact.",
+            ) from exc
+        if (
+            row.artifact_id != artifact.artifact_id
+            or row.admission_id != artifact.admission_id
+            or row.admission_digest != artifact.admission_digest
+            or row.event_id != artifact.event_id
+            or row.event_digest != artifact.event_digest
+            or row.event_type != artifact.event_type
+            or row.event_version != artifact.event_version
+            or row.schema_uri != artifact.schema_uri
+            or row.data_classification != artifact.data_classification
+            or row.outbox_entry_id != artifact.outbox_entry_id
+            or row.outbox_entry_digest != artifact.outbox_entry_digest
+            or row.dispatch_intent_id != artifact.dispatch_intent_id
+            or row.dispatch_intent_digest != artifact.dispatch_intent_digest
+            or row.plan_id != artifact.plan_id
+            or row.plan_digest != artifact.plan_digest
+            or row.run_id != artifact.run_id
+            or row.run_digest != artifact.run_digest
+            or row.step_run_id != artifact.step_run_id
+            or row.step_run_digest != artifact.step_run_digest
+            or row.step_id != artifact.step_id
+            or row.attempt_id != artifact.attempt_id
+            or row.attempt_digest != artifact.attempt_digest
+            or row.attempt_number != artifact.attempt_number
+            or row.organization_id != artifact.scope.organization_id
+            or row.environment_id != artifact.scope.environment_id
+            or row.site_id != artifact.scope.site_id
+            or row.target_type != artifact.target_type
+            or row.target_id != artifact.target_id
+            or row.policy_id != artifact.policy_id
+            or row.policy_version != artifact.policy_version
+            or row.policy_digest != artifact.policy_digest
+            or row.representation_name != artifact.representation_name
+            or row.encoding != artifact.encoding
+            or row.maximum_canonical_byte_count != artifact.maximum_canonical_byte_count
+            or row.canonical_byte_count != artifact.canonical_byte_count
+            or row.content_sha256 != artifact.content_sha256
+            or row.orchestration_lease_id != artifact.orchestration_lease_id
+            or row.orchestration_lease_digest != artifact.orchestration_lease_digest
+            or row.orchestration_fencing_token != artifact.orchestration_fencing_token
+            or row.publication_lease_id != artifact.publication_lease_id
+            or row.publication_lease_digest != artifact.publication_lease_digest
+            or row.publication_fencing_token != artifact.publication_fencing_token
+            or row.publisher_subject_id != artifact.publisher_subject_id
+            or row.materialized_at != artifact.materialized_at
+            or row.state != artifact.state.value
+            or row.publication_authority_granted != artifact.authority.publication_authorized
+            or row.delivery_authority_granted != artifact.authority.delivery_authorized
+            or row.dispatch_authority_granted != artifact.authority.dispatch_authorized
+            or row.execution_authority_granted != artifact.authority.execution_authorized
+            or row.canonical_digest != artifact.canonical_digest
+            or row.canonical_bytes != artifact.canonical_bytes
+            or row.payload != cls._event_byte_artifact_payload(artifact)
+        ):
+            cls._event_byte_artifact_contract_violation()
+        return artifact
+
+    @classmethod
+    def _event_byte_artifact_model(
+        cls, artifact: WorkflowEventByteArtifact
+    ) -> WorkflowEventByteArtifactModel:
+        return WorkflowEventByteArtifactModel(
+            artifact_id=artifact.artifact_id,
+            admission_id=artifact.admission_id,
+            admission_digest=artifact.admission_digest,
+            event_id=artifact.event_id,
+            event_digest=artifact.event_digest,
+            event_type=artifact.event_type,
+            event_version=artifact.event_version,
+            schema_uri=artifact.schema_uri,
+            data_classification=artifact.data_classification,
+            outbox_entry_id=artifact.outbox_entry_id,
+            outbox_entry_digest=artifact.outbox_entry_digest,
+            dispatch_intent_id=artifact.dispatch_intent_id,
+            dispatch_intent_digest=artifact.dispatch_intent_digest,
+            plan_id=artifact.plan_id,
+            plan_digest=artifact.plan_digest,
+            run_id=artifact.run_id,
+            run_digest=artifact.run_digest,
+            step_run_id=artifact.step_run_id,
+            step_run_digest=artifact.step_run_digest,
+            step_id=artifact.step_id,
+            attempt_id=artifact.attempt_id,
+            attempt_digest=artifact.attempt_digest,
+            attempt_number=artifact.attempt_number,
+            organization_id=artifact.scope.organization_id,
+            environment_id=artifact.scope.environment_id,
+            site_id=artifact.scope.site_id,
+            target_type=artifact.target_type,
+            target_id=artifact.target_id,
+            policy_id=artifact.policy_id,
+            policy_version=artifact.policy_version,
+            policy_digest=artifact.policy_digest,
+            representation_name=artifact.representation_name,
+            encoding=artifact.encoding,
+            maximum_canonical_byte_count=artifact.maximum_canonical_byte_count,
+            canonical_byte_count=artifact.canonical_byte_count,
+            content_sha256=artifact.content_sha256,
+            orchestration_lease_id=artifact.orchestration_lease_id,
+            orchestration_lease_digest=artifact.orchestration_lease_digest,
+            orchestration_fencing_token=artifact.orchestration_fencing_token,
+            publication_lease_id=artifact.publication_lease_id,
+            publication_lease_digest=artifact.publication_lease_digest,
+            publication_fencing_token=artifact.publication_fencing_token,
+            publisher_subject_id=artifact.publisher_subject_id,
+            materialized_at=artifact.materialized_at,
+            state=artifact.state.value,
+            publication_authority_granted=artifact.authority.publication_authorized,
+            delivery_authority_granted=artifact.authority.delivery_authorized,
+            dispatch_authority_granted=artifact.authority.dispatch_authorized,
+            execution_authority_granted=artifact.authority.execution_authorized,
+            canonical_digest=artifact.canonical_digest,
+            canonical_bytes=artifact.canonical_bytes,
+            payload=cls._event_byte_artifact_payload(artifact),
+        )
+
+    @classmethod
+    def _event_byte_artifact_claim_model(
+        cls, request: WorkflowEventByteArtifactRequest
+    ) -> WorkflowEventByteArtifactClaimModel:
+        artifact = request.candidate
+        scope_id = cls._event_byte_artifact_idempotency_scope(
+            artifact.scope, artifact.publisher_subject_id
+        )
+        payload: dict[str, Any] = {
+            "idempotency_key": request.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": request.request_fingerprint,
+            "result_artifact": cls._event_byte_artifact_payload(artifact),
+            "result_digest": artifact.canonical_digest,
+        }
+        digest = canonical_digest(payload)
+        return WorkflowEventByteArtifactClaimModel(
+            claim_id=f"workflow_event_byte_claim_{sha256(digest.encode()).hexdigest()[:32]}",
+            idempotency_scope_id=scope_id,
+            idempotency_key=request.idempotency_key,
+            request_fingerprint=request.request_fingerprint,
+            result_digest=artifact.canonical_digest,
+            artifact_id=artifact.artifact_id,
+            admission_id=artifact.admission_id,
+            event_id=artifact.event_id,
+            outbox_entry_id=artifact.outbox_entry_id,
+            plan_id=artifact.plan_id,
+            organization_id=artifact.scope.organization_id,
+            environment_id=artifact.scope.environment_id,
+            site_id=artifact.scope.site_id,
+            publisher_subject_id=artifact.publisher_subject_id,
+            created_at=request.requested_at,
+            canonical_digest=digest,
+            payload=payload,
+        )
+
+    @classmethod
+    def _event_byte_artifact_evidence_matches(
+        cls,
+        *,
+        plan_row: WorkflowRunPlanModel | None,
+        outbox_row: WorkflowDispatchOutboxEntryModel | None,
+        orchestration_lease_row: WorkflowOrchestrationLeaseModel | None,
+        publication_lease_row: WorkflowOutboxPublicationLeaseModel | None,
+        envelope_row: WorkflowDispatchEventEnvelopeModel | None,
+        admission_row: WorkflowEventTransportAdmissionModel | None,
+        request: WorkflowEventByteArtifactRequest,
+    ) -> bool:
+        if any(
+            row is None
+            for row in (
+                plan_row,
+                outbox_row,
+                orchestration_lease_row,
+                publication_lease_row,
+                envelope_row,
+                admission_row,
+            )
+        ):
+            return False
+        assert plan_row is not None
+        assert outbox_row is not None
+        assert orchestration_lease_row is not None
+        assert publication_lease_row is not None
+        assert envelope_row is not None
+        assert admission_row is not None
+        try:
+            envelope = cls._dispatch_event_envelope_from_row(envelope_row)
+            admission = cls._event_transport_admission_from_row(admission_row)
+        except (WorkflowDispatchEventEnvelopeError, WorkflowEventTransportAdmissionError) as exc:
+            raise WorkflowEventByteArtifactError(
+                "workflow_event_byte_artifact_repository_contract_violation",
+                "Workflow evidence is inconsistent during byte materialization.",
+            ) from exc
+        transport_request = WorkflowEventTransportAdmissionRequest(
+            expected_plan_digest=request.expected_plan_digest,
+            expected_outbox_entry_digest=request.expected_outbox_entry_digest,
+            expected_event_id=request.expected_event_id,
+            expected_event_digest=request.expected_event_digest,
+            expected_policy_digest=request.expected_policy_digest,
+            expected_orchestration_lease_id=request.expected_orchestration_lease_id,
+            expected_orchestration_lease_digest=request.expected_orchestration_lease_digest,
+            expected_orchestration_fencing_token=request.expected_orchestration_fencing_token,
+            expected_publication_lease_id=request.expected_publication_lease_id,
+            expected_publication_lease_digest=request.expected_publication_lease_digest,
+            expected_publication_fencing_token=request.expected_publication_fencing_token,
+            publisher_subject_id=request.publisher_subject_id,
+            requested_at=request.requested_at,
+            candidate=admission,
+            idempotency_key="byte-artifact-evidence-validation",
+            request_fingerprint="0" * 64,
+        )
+        if not cls._event_transport_admission_evidence_matches(
+            plan_row=plan_row,
+            outbox_row=outbox_row,
+            orchestration_lease_row=orchestration_lease_row,
+            publication_lease_row=publication_lease_row,
+            envelope_row=envelope_row,
+            request=transport_request,
+        ):
+            return False
+        candidate = request.candidate
+        shared_fields = (
+            "policy_id",
+            "policy_version",
+            "policy_digest",
+            "event_id",
+            "event_digest",
+            "event_type",
+            "event_version",
+            "schema_uri",
+            "data_classification",
+            "representation_name",
+            "encoding",
+            "canonical_byte_count",
+            "maximum_canonical_byte_count",
+            "outbox_entry_id",
+            "outbox_entry_digest",
+            "dispatch_intent_id",
+            "dispatch_intent_digest",
+            "plan_id",
+            "plan_digest",
+            "run_id",
+            "run_digest",
+            "step_run_id",
+            "step_run_digest",
+            "step_id",
+            "attempt_id",
+            "attempt_digest",
+            "attempt_number",
+            "scope",
+            "target_id",
+            "target_type",
+            "orchestration_lease_id",
+            "orchestration_lease_digest",
+            "orchestration_fencing_token",
+            "publication_lease_id",
+            "publication_lease_digest",
+            "publication_fencing_token",
+            "publisher_subject_id",
+        )
+        return bool(
+            admission.admission_id == request.expected_admission_id == candidate.admission_id
+            and admission.canonical_digest
+            == request.expected_admission_digest
+            == candidate.admission_digest
+            and all(
+                getattr(admission, field) == getattr(candidate, field) for field in shared_fields
+            )
+            and candidate.canonical_bytes == canonical_json_bytes(envelope.canonical_value())
+            and candidate.state is WorkflowEventByteArtifactState.MATERIALIZED
+            and not any(admission.authority.canonical_value().values())
+            and not any(candidate.authority.canonical_value().values())
+            and not candidate.grants_publication_authority
+            and not candidate.grants_delivery_authority
+            and not candidate.grants_dispatch_authority
+            and not candidate.grants_execution_authority
+        )
+
+    @staticmethod
+    def _event_byte_artifact_idempotency_scope(
+        scope: WorkflowScope, publisher_subject_id: str
+    ) -> str:
+        return canonical_digest(
+            {"publisher_subject_id": publisher_subject_id, "scope": scope.canonical_value()}
+        )
+
+    @staticmethod
+    def _event_byte_artifact_payload(artifact: WorkflowEventByteArtifact) -> dict[str, Any]:
+        return cast(dict[str, Any], artifact.canonical_value())
+
+    @staticmethod
+    def _event_byte_artifact_to_domain(
+        raw: dict[str, Any], canonical_bytes_value: bytes
+    ) -> WorkflowEventByteArtifact:
+        values = dict(raw)
+        values["canonical_bytes"] = bytes(canonical_bytes_value)
+        values["scope"] = WorkflowScope(**cast(Any, values["scope"]))
+        values["materialized_at"] = datetime.fromisoformat(str(values["materialized_at"]))
+        values["state"] = WorkflowEventByteArtifactState(str(values["state"]))
+        values["authority"] = WorkflowEventByteArtifactAuthority(**cast(Any, values["authority"]))
+        return WorkflowEventByteArtifact(**cast(Any, values))
+
+    @staticmethod
+    def _validate_event_byte_artifact_request(
+        request: WorkflowEventByteArtifactRequest,
+    ) -> None:
+        candidate = request.candidate
+        if (
+            candidate.state is not WorkflowEventByteArtifactState.MATERIALIZED
+            or candidate.attempt_number != 1
+            or candidate.publisher_subject_id != request.publisher_subject_id
+            or candidate.grants_publication_authority
+            or candidate.grants_delivery_authority
+            or candidate.grants_dispatch_authority
+            or candidate.grants_execution_authority
+        ):
+            raise ValueError("workflow event byte artifact payload is unsafe")
+        if not request.idempotency_key or len(request.idempotency_key) > 128:
+            raise ValueError("workflow event byte artifact idempotency key is invalid")
+        if len(request.request_fingerprint) != 64:
+            raise ValueError("workflow event byte artifact request fingerprint is invalid")
+        if request.requested_at.tzinfo is None:
+            raise ValueError("workflow event byte artifact time must be aware")
+
+    @staticmethod
+    def _event_byte_artifact_contract_violation() -> NoReturn:
+        raise WorkflowEventByteArtifactError(
+            "workflow_event_byte_artifact_repository_contract_violation",
+            "The workflow event byte artifact does not match its durable evidence.",
         )
 
     async def _publication_lease_acquire_replay(

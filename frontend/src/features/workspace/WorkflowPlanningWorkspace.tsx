@@ -28,6 +28,7 @@ import {
   listWorkflowDispatchOutboxEntries,
   listWorkflowDispatchEventEnvelopes,
   listWorkflowDispatchOutboxPublicationLeases,
+  listWorkflowEventByteArtifacts,
   listWorkflowEventTransportAdmissions,
   listWorkflowPlans,
   listWorkflowRunAttempts,
@@ -305,6 +306,45 @@ export default function WorkflowPlanningWorkspace({
       transportAdmissionSources.length === eventEnvelopesForAdmission.length,
     retry: false,
   });
+  const transportAdmissionsForArtifacts =
+    transportAdmissionQuery.data?.flatMap((inventory) => inventory.transport_admissions) ?? [];
+  const byteArtifactSources = transportAdmissionsForArtifacts.flatMap((transportAdmission) => {
+    const source = transportAdmissionSources.find(
+      ({ eventEnvelope }) => eventEnvelope.event_id === transportAdmission.event_id,
+    );
+    return source ? [{ ...source, transportAdmission }] : [];
+  });
+  const byteArtifactQuery = useQuery({
+    queryKey: [
+      "workflow-event-byte-artifacts",
+      byteArtifactSources.map(({ transportAdmission }) => [
+        transportAdmission.transport_admission_id,
+        transportAdmission.canonical_digest,
+      ]),
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () =>
+      Promise.all(
+        byteArtifactSources.map(
+          ({ transportAdmission, eventEnvelope, outboxEntry, publicationLease }) =>
+            listWorkflowEventByteArtifacts({
+              transportAdmission,
+              eventEnvelope,
+              outboxEntry,
+              publicationLease,
+              scope,
+              authorizedTargetIds,
+            }),
+        ),
+      ),
+    enabled:
+      transportAdmissionQuery.isSuccess &&
+      transportAdmissionsForArtifacts.length > 0 &&
+      byteArtifactSources.length === transportAdmissionsForArtifacts.length,
+    retry: false,
+  });
   const definitions = definitionQuery.data?.definitions ?? [];
   const selectedDefinition = definitions.find((item) => item.definition_id === definitionId);
   const createMutation = useMutation({
@@ -384,9 +424,14 @@ export default function WorkflowPlanningWorkspace({
     transportAdmissionQuery.error instanceof ApiRequestError
       ? transportAdmissionQuery.error.status
       : undefined;
+  const byteArtifactErrorStatus =
+    byteArtifactQuery.error instanceof ApiRequestError
+      ? byteArtifactQuery.error.status
+      : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
-  const transportAdmissions =
-    transportAdmissionQuery.data?.flatMap((inventory) => inventory.transport_admissions) ?? [];
+  const transportAdmissions = transportAdmissionsForArtifacts;
+  const byteArtifacts =
+    byteArtifactQuery.data?.flatMap((inventory) => inventory.byte_artifacts) ?? [];
 
   const selectPlan = (plan: WorkflowRunPlan) => {
     setSelectedPlan(plan);
@@ -1202,6 +1247,134 @@ export default function WorkflowPlanningWorkspace({
                       Admission proves policy eligibility only. No broker, provider, or route was
                       selected; no wire bytes or message were created; nothing was serialized,
                       published, delivered, dispatched, or executed.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {transportAdmissionQuery.isSuccess && transportAdmissions.length > 0 && (
+                <div aria-labelledby="workflow-byte-artifact-evidence-title">
+                  <div className="workflow-section-heading">
+                    <div>
+                      <p className="eyebrow">READ-ONLY INTEGRITY EVIDENCE</p>
+                      <h3 id="workflow-byte-artifact-evidence-title">
+                        Byte-artifact metadata
+                      </h3>
+                    </div>
+                    <span>Server-side bytes only</span>
+                  </div>
+                  {byteArtifactQuery.isLoading && (
+                    <div className="workflow-empty-state" role="status">
+                      <FileJson2 size={19} />
+                      <span>Loading authoritative byte-artifact metadata...</span>
+                    </div>
+                  )}
+                  {byteArtifactQuery.isError && (
+                    <div className="inline-error" role="alert">
+                      <div>
+                        <strong>
+                          {byteArtifactErrorStatus === 401
+                            ? "Your session has expired"
+                            : byteArtifactErrorStatus === 403
+                              ? "Byte-artifact metadata permission is missing"
+                              : "Byte-artifact metadata is unavailable"}
+                        </strong>
+                        <span>
+                          {byteArtifactErrorStatus === 401
+                            ? "Sign in again to continue."
+                            : byteArtifactErrorStatus === 403
+                              ? "Your current role or scope cannot inspect byte-artifact metadata."
+                              : "No materialization, publication, delivery, dispatch, or execution state is inferred from this failed read."}
+                        </span>
+                      </div>
+                      <button
+                        className="secondary-action"
+                        type="button"
+                        aria-label="Retry byte-artifact metadata read"
+                        onClick={() => void byteArtifactQuery.refetch()}
+                      >
+                        <RefreshCw size={16} />
+                        Retry
+                      </button>
+                    </div>
+                  )}
+                  {byteArtifactQuery.isSuccess && byteArtifacts.length > 0 && (
+                    <ol
+                      className="workflow-step-preview workflow-byte-artifact-list"
+                      aria-label="Byte-artifact metadata"
+                    >
+                      {byteArtifacts.map((artifact) => (
+                        <li key={artifact.byte_artifact_id}>
+                          <FileJson2 size={17} />
+                          <div>
+                            <strong>
+                              <code title={artifact.byte_artifact_id}>
+                                {safeHolderIdentifier(artifact.byte_artifact_id)}
+                              </code>
+                              <span className="state-badge neutral">{artifact.state}</span>
+                            </strong>
+                            <small>
+                              {artifact.representation_name} | {artifact.encoding.toUpperCase()} | {artifact.media_type}
+                            </small>
+                            <small>
+                              {artifact.byte_count.toLocaleString()} bytes | SHA-256{" "}
+                              <code title={artifact.content_sha256}>
+                                {shortDigest(artifact.content_sha256)}
+                              </code>
+                            </small>
+                            <small>
+                              materialized {formatTimestamp(artifact.materialized_at)} | organization{" "}
+                              {artifact.scope.organization_id} | environment {artifact.scope.environment_id} | site{" "}
+                              {artifact.scope.site_id} | target {artifact.target_id}
+                            </small>
+                            <small>
+                              publisher <code title={artifact.publisher_subject_id}>{safeHolderIdentifier(artifact.publisher_subject_id)}</code>{" "}
+                              | publication fence {artifact.publication_fencing_token} | source fence{" "}
+                              {artifact.orchestration_fencing_token}
+                            </small>
+                            <small>
+                              policy <code title={artifact.policy_id}>{safeHolderIdentifier(artifact.policy_id)}</code>{" "}
+                              v{artifact.policy_version} | digest {shortDigest(artifact.policy_digest)}
+                            </small>
+                            <small>
+                              admission <code title={artifact.transport_admission_id}>{safeHolderIdentifier(artifact.transport_admission_id)}</code>{" "}
+                              | digest {shortDigest(artifact.transport_admission_digest)}
+                            </small>
+                            <small>
+                              event <code title={artifact.event_id}>{safeHolderIdentifier(artifact.event_id)}</code>{" "}
+                              | digest {shortDigest(artifact.event_digest)} | outbox{" "}
+                              <code title={artifact.outbox_entry_id}>{safeHolderIdentifier(artifact.outbox_entry_id)}</code>{" "}
+                              | digest {shortDigest(artifact.outbox_entry_digest)}
+                            </small>
+                            <small>
+                              intent {shortDigest(artifact.dispatch_intent_digest)} | attempt{" "}
+                              {shortDigest(artifact.attempt_digest)} | run {shortDigest(artifact.run_digest)} | step{" "}
+                              {shortDigest(artifact.step_run_digest)} | plan {shortDigest(artifact.plan_digest)}
+                            </small>
+                            <small>
+                              publication lease <code title={artifact.publication_lease_id}>{safeHolderIdentifier(artifact.publication_lease_id)}</code>{" "}
+                              | {shortDigest(artifact.publication_lease_digest)} | source lease{" "}
+                              <code title={artifact.orchestration_lease_id}>{safeHolderIdentifier(artifact.orchestration_lease_id)}</code>{" "}
+                              | {shortDigest(artifact.orchestration_lease_digest)}
+                            </small>
+                            <small>metadata digest {shortDigest(artifact.canonical_digest)}</small>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                  {byteArtifactQuery.isSuccess && byteArtifacts.length === 0 && (
+                    <div className="workflow-empty-state" role="status">
+                      <FileJson2 size={19} />
+                      <span>No byte artifact has been materialized.</span>
+                    </div>
+                  )}
+                  <div className="workflow-safety-boundary" role="note">
+                    <LockKeyhole size={18} />
+                    <span>
+                      Materialized means deterministic bytes exist in Atlas storage only. Raw bytes
+                      and payload content are not exposed. No provider, route, credential, message,
+                      publication, delivery, worker dispatch, or execution authority is present.
                     </span>
                   </div>
                 </div>

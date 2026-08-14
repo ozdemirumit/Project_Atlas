@@ -571,6 +571,9 @@ MVP workflows do not execute C3 through C5 capabilities.
 - ADR-143 establishes immutable policy-governed transport admission for the exact prepared event
   envelope without provider or route selection, wire serialization, publication, delivery,
   dispatch or execution authority.
+- ADR-144 establishes deterministic provider-neutral UTF-8 canonical JSON byte-artifact
+  materialization for the exact admitted event without exposing raw bytes to humans and without
+  provider or route selection, publication, delivery, dispatch or execution authority.
 
 ## 39. Assumptions
 

@@ -6322,18 +6322,21 @@ textarea:focus-visible {
 
 .workflow-publication-lease-list li,
 .workflow-event-envelope-list li,
-.workflow-transport-admission-list li {
+.workflow-transport-admission-list li,
+.workflow-byte-artifact-list li {
   align-items: flex-start;
   min-width: 0;
 }
 
 .workflow-publication-lease-list li > div,
 .workflow-event-envelope-list li > div,
-.workflow-transport-admission-list li > div { min-width: 0; }
+.workflow-transport-admission-list li > div,
+.workflow-byte-artifact-list li > div { min-width: 0; }
 
 .workflow-publication-lease-list strong,
 .workflow-event-envelope-list strong,
-.workflow-transport-admission-list strong {
+.workflow-transport-admission-list strong,
+.workflow-byte-artifact-list strong {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -6346,12 +6349,15 @@ textarea:focus-visible {
 .workflow-event-envelope-list code,
 .workflow-event-envelope-list small,
 .workflow-transport-admission-list code,
-.workflow-transport-admission-list small {
+.workflow-transport-admission-list small,
+.workflow-byte-artifact-list code,
+.workflow-byte-artifact-list small {
   overflow-wrap: anywhere;
 }
 
 .workflow-event-envelope-list small,
-.workflow-transport-admission-list small {
+.workflow-transport-admission-list small,
+.workflow-byte-artifact-list small {
   line-height: 1.45;
 }
 

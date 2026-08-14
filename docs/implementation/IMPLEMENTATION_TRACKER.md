@@ -4,14 +4,76 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-193 |
-| Title | Policy-governed workflow event transport admission without publication authority |
-| Status | Implementation and local validation complete; PR preparation in progress |
-| Branch | `agent/workflow-transport-admission` |
+| Task ID | ATLAS-IMP-194 |
+| Title | Deterministic workflow event byte-artifact materialization without transport selection |
+| Status | Local validation complete; ready for pull request |
+| Branch | `agent/workflow-wire-artifact-materialization` |
 | Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-136, ADR-137, ADR-138, ADR-139, ADR-140, ADR-141, ADR-142, ADR-143 |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-136, ADR-137, ADR-138, ADR-139, ADR-140, ADR-141, ADR-142, ADR-143, ADR-144 |
 | Last Updated | 2026-08-14 |
-| Next Action | Open the ready PR and verify exact-head CI before merge |
+| Next Action | Commit, open PR, pass exact-head CI and merge only after green checks |
+
+### ATLAS-IMP-194 Scope Rationale
+
+- IMP-193 proves policy eligibility but intentionally creates no bytes. The next smallest durable
+  boundary is one deterministic server-side UTF-8 canonical JSON artifact for the exact admitted
+  event.
+- Artifact materialization verifies the admitted canonical byte count, computes a SHA-256 digest
+  and binds the exact admission, event, outbox, workflow, scope, publisher and lease lineage.
+- Provider and route selection, credentials, provider messages, publication attempts, delivery,
+  retries, quarantine, worker dispatch and execution remain deferred.
+
+### ATLAS-IMP-194 Acceptance Criteria
+
+- A dedicated publisher workload identity can idempotently materialize exactly one artifact for an
+  admitted envelope under the current active publication lease; stale fences, expired/released
+  leases, changed lineage, byte-count mismatch, tampered evidence and competing requests fail
+  closed.
+- The artifact uses exact canonical JSON and UTF-8, stores server-side bytes, records deterministic
+  byte count and SHA-256 digest and binds the complete immutable lineage while every authority flag
+  remains false.
+- PostgreSQL locks and revalidates plan, outbox, current leases, envelope and admission before the
+  atomic artifact/idempotency write. Production never falls back to memory and no provider- or
+  route-specific field exists.
+- Human UI exposes minimized read-only artifact metadata through the normal username/password
+  session with no raw bytes or payload, no materialize, serialize, download, publish, deliver,
+  dispatch or execution control and no second-login or MFA prompt.
+
+### ATLAS-IMP-194 Validation Evidence
+
+- Domain and application services materialize one deterministic immutable UTF-8 canonical JSON
+  byte artifact only for the exact admitted event under the current source orchestration and
+  publication leases. Exact replay returns the same artifact; stale or released leases, changed
+  claims, tampered evidence, byte-count mismatch, competing requests and audit failure fail closed.
+- PostgreSQL stores the actual bytes server-side, validates their persisted length and preserves
+  immutable artifact and idempotency claims. Migration `20260814_0117` retains historical lease
+  evidence without foreign keys to replaceable lease rows, and Alembic reports the single head
+  `20260814_0117`.
+- The public API and web client expose only minimized byte count, SHA-256, representation, encoding
+  and exact lineage metadata. Raw bytes, payload content and base64 are absent, every publication,
+  delivery, dispatch and execution authority remains false, and no provider, broker, endpoint,
+  route, queue, topic, partition, routing key, credential, message or network attempt exists.
+- Ruff format/lint passed across 1,311 files, strict mypy passed across 1,030 source files, and the
+  full backend suite passed 1,764 tests with three expected Windows symlink skips. The full frontend
+  suite passed 392 tests across 95 files; ESLint, TypeScript and the production build passed with
+  only the pre-existing chunk-size advisory.
+- Live validation used plan `workflow-plan.5a56208a85aa250a786b6fb5`, event
+  `workflow-dispatch-event.434177f73698afe4b8887cbc`, admission
+  `workflow-event-transport-admission.a472aa10da8df65c35a28cc8` and artifact
+  `workflow-event-byte-artifact.24b8704cecbc897be9a6fd19`. One `atlas-demo` / `local-demo`
+  username/password login automatically loaded Connector Inventory and the same session read one
+  byte-artifact panel without manual refresh, MFA, second login or an authorized-browser prompt.
+  Browser measurements found zero forbidden operational buttons and no horizontal overflow.
+
+### ATLAS-IMP-193 Delivery Evidence
+
+- Source commit `e37a8f295da4e2d6c34790fdf6630e80ba8cec0e` passed exact-head PR CI run
+  `31776417716`; frontend completed in 4m08s and backend in 9m08s.
+- PR [#205](https://github.com/ozdemirumit/Project_Atlas/pull/205) was squash-merged as
+  `337f0c3ae02a8afd83061bda0f53e53cf6ec7a75`.
+- The exact merged commit independently passed `main` CI run `31776996299`; frontend completed in
+  5m21s and backend in 9m21s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-194 branched.
 
 ### ATLAS-IMP-193 Scope Rationale
 
