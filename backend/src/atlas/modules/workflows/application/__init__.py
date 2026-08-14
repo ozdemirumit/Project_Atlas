@@ -7,6 +7,17 @@ from atlas.modules.workflows.application.attempt_ports import (
     WorkflowAttemptMaterializationStatus,
 )
 from atlas.modules.workflows.application.attempts import WorkflowAttemptMaterializationService
+from atlas.modules.workflows.application.dispatch_intent_ports import (
+    WorkflowDispatchIntentStagingError,
+    WorkflowDispatchIntentStagingIdempotencyRecord,
+    WorkflowDispatchIntentStagingRepository,
+    WorkflowDispatchIntentStagingRequest,
+    WorkflowDispatchIntentStagingResult,
+    WorkflowDispatchIntentStagingStatus,
+)
+from atlas.modules.workflows.application.dispatch_intents import (
+    WorkflowDispatchIntentStagingService,
+)
 from atlas.modules.workflows.application.materialization import (
     WorkflowRunMaterializationService,
 )
@@ -60,6 +71,13 @@ __all__ = [
     "WorkflowAttemptMaterializationResult",
     "WorkflowAttemptMaterializationService",
     "WorkflowAttemptMaterializationStatus",
+    "WorkflowDispatchIntentStagingError",
+    "WorkflowDispatchIntentStagingIdempotencyRecord",
+    "WorkflowDispatchIntentStagingRepository",
+    "WorkflowDispatchIntentStagingRequest",
+    "WorkflowDispatchIntentStagingResult",
+    "WorkflowDispatchIntentStagingService",
+    "WorkflowDispatchIntentStagingStatus",
     "WorkflowLeaseAcquireIdempotencyRecord",
     "WorkflowLeaseAcquireRequest",
     "WorkflowLeaseAcquireResult",

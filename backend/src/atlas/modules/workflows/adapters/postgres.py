@@ -19,6 +19,8 @@ from sqlalchemy.ext.asyncio import (
 
 from atlas.core.persistence.models import (
     WorkflowAttemptMaterializationClaimModel,
+    WorkflowDispatchIntentModel,
+    WorkflowDispatchIntentStagingClaimModel,
     WorkflowExecutionAttemptModel,
     WorkflowExecutionRunModel,
     WorkflowExecutionStepRunModel,
@@ -56,8 +58,17 @@ from atlas.modules.workflows.application import (
     WorkflowRunMaterializationResult,
     WorkflowRunMaterializationStatus,
 )
+from atlas.modules.workflows.application.dispatch_intent_ports import (
+    WorkflowDispatchIntentStagingError,
+    WorkflowDispatchIntentStagingIdempotencyRecord,
+    WorkflowDispatchIntentStagingRequest,
+    WorkflowDispatchIntentStagingResult,
+    WorkflowDispatchIntentStagingStatus,
+)
 from atlas.modules.workflows.domain import (
     WorkflowCapabilityClass,
+    WorkflowDispatchIntent,
+    WorkflowDispatchIntentState,
     WorkflowExecutionAttempt,
     WorkflowExecutionAttemptState,
     WorkflowExecutionRun,
@@ -549,6 +560,141 @@ class PostgreSQLWorkflowPlanRepository:
                 return replay
         return WorkflowAttemptMaterializationResult(
             WorkflowAttemptMaterializationStatus.STATE_CONFLICT,
+            None,
+        )
+
+    async def list_dispatch_intents_by_run_id(
+        self, *, run_id: str
+    ) -> tuple[WorkflowDispatchIntent, ...]:
+        statement = (
+            select(WorkflowDispatchIntentModel)
+            .where(WorkflowDispatchIntentModel.run_id == run_id)
+            .order_by(
+                WorkflowDispatchIntentModel.staged_at,
+                WorkflowDispatchIntentModel.dispatch_intent_id,
+            )
+        )
+        async with self._sessions() as session:
+            rows = tuple((await session.scalars(statement)).all())
+            return tuple(self._dispatch_intent_from_row(row) for row in rows)
+
+    async def get_dispatch_intent_staging_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        worker_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowDispatchIntentStagingIdempotencyRecord | None:
+        async with self._sessions() as session:
+            claim = await self._load_dispatch_intent_staging_claim(
+                session,
+                scope=scope,
+                worker_subject_id=worker_subject_id,
+                idempotency_key=idempotency_key,
+            )
+            if claim is None:
+                return None
+            return WorkflowDispatchIntentStagingIdempotencyRecord(
+                request_fingerprint=claim.request_fingerprint,
+                dispatch_intent=self._dispatch_intent_from_claim(claim),
+            )
+
+    async def stage_dispatch_intent(
+        self, request: WorkflowDispatchIntentStagingRequest
+    ) -> WorkflowDispatchIntentStagingResult:
+        self._validate_dispatch_intent_staging_request(request)
+        intent = request.candidate
+        async with self._sessions() as session:
+            replay = await self._dispatch_intent_staging_replay(session, request=request)
+            if replay is not None:
+                return replay
+
+            plan_row = cast(
+                WorkflowRunPlanModel | None,
+                await session.scalar(
+                    select(WorkflowRunPlanModel)
+                    .where(WorkflowRunPlanModel.plan_id == intent.plan_id)
+                    .with_for_update()
+                ),
+            )
+            lease_row = cast(
+                WorkflowOrchestrationLeaseModel | None,
+                await session.scalar(
+                    select(WorkflowOrchestrationLeaseModel)
+                    .where(WorkflowOrchestrationLeaseModel.plan_id == intent.plan_id)
+                    .with_for_update()
+                ),
+            )
+            run_row = cast(
+                WorkflowExecutionRunModel | None,
+                await session.scalar(
+                    select(WorkflowExecutionRunModel)
+                    .where(WorkflowExecutionRunModel.run_id == intent.run_id)
+                    .with_for_update()
+                ),
+            )
+            step_row = cast(
+                WorkflowExecutionStepRunModel | None,
+                await session.scalar(
+                    select(WorkflowExecutionStepRunModel)
+                    .where(WorkflowExecutionStepRunModel.step_run_id == intent.step_run_id)
+                    .with_for_update()
+                ),
+            )
+            attempt_row = cast(
+                WorkflowExecutionAttemptModel | None,
+                await session.scalar(
+                    select(WorkflowExecutionAttemptModel)
+                    .where(WorkflowExecutionAttemptModel.attempt_id == intent.attempt_id)
+                    .with_for_update()
+                ),
+            )
+            if not self._dispatch_intent_sources_match(
+                plan_row=plan_row,
+                lease_row=lease_row,
+                run_row=run_row,
+                step_row=step_row,
+                attempt_row=attempt_row,
+                request=request,
+            ):
+                await session.rollback()
+                return WorkflowDispatchIntentStagingResult(
+                    WorkflowDispatchIntentStagingStatus.STATE_CONFLICT,
+                    None,
+                )
+
+            existing = cast(
+                WorkflowDispatchIntentModel | None,
+                await session.scalar(
+                    select(WorkflowDispatchIntentModel)
+                    .where(WorkflowDispatchIntentModel.attempt_id == intent.attempt_id)
+                    .with_for_update()
+                ),
+            )
+            if existing is not None:
+                await session.rollback()
+                return WorkflowDispatchIntentStagingResult(
+                    WorkflowDispatchIntentStagingStatus.STATE_CONFLICT,
+                    self._dispatch_intent_from_row(existing),
+                )
+
+            try:
+                session.add(self._dispatch_intent_model(intent))
+                session.add(self._dispatch_intent_staging_claim_model(request))
+                await session.commit()
+                return WorkflowDispatchIntentStagingResult(
+                    WorkflowDispatchIntentStagingStatus.STAGED,
+                    intent,
+                )
+            except IntegrityError:
+                await session.rollback()
+
+        async with self._sessions() as session:
+            replay = await self._dispatch_intent_staging_replay(session, request=request)
+            if replay is not None:
+                return replay
+        return WorkflowDispatchIntentStagingResult(
+            WorkflowDispatchIntentStagingStatus.STATE_CONFLICT,
             None,
         )
 
@@ -1373,6 +1519,350 @@ class PostgreSQLWorkflowPlanRepository:
         raise WorkflowAttemptMaterializationError(
             "workflow_attempt_materialization_repository_contract_violation",
             "The workflow attempt materialization record does not match its canonical payload.",
+        )
+
+    async def _dispatch_intent_staging_replay(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowDispatchIntentStagingRequest,
+    ) -> WorkflowDispatchIntentStagingResult | None:
+        intent = request.candidate
+        claim = cast(
+            WorkflowDispatchIntentStagingClaimModel | None,
+            await session.scalar(
+                select(WorkflowDispatchIntentStagingClaimModel).where(
+                    WorkflowDispatchIntentStagingClaimModel.idempotency_scope_id
+                    == self._dispatch_intent_staging_scope_id(intent),
+                    WorkflowDispatchIntentStagingClaimModel.idempotency_key
+                    == request.idempotency_key,
+                    WorkflowDispatchIntentStagingClaimModel.organization_id
+                    == intent.scope.organization_id,
+                    WorkflowDispatchIntentStagingClaimModel.environment_id
+                    == intent.scope.environment_id,
+                    WorkflowDispatchIntentStagingClaimModel.site_id == intent.scope.site_id,
+                    WorkflowDispatchIntentStagingClaimModel.worker_subject_id
+                    == intent.worker_subject_id,
+                )
+            ),
+        )
+        if claim is None:
+            return None
+        result = self._dispatch_intent_from_claim(claim)
+        status = (
+            WorkflowDispatchIntentStagingStatus.REPLAY
+            if claim.request_fingerprint == request.request_fingerprint
+            else WorkflowDispatchIntentStagingStatus.IDEMPOTENCY_CONFLICT
+        )
+        return WorkflowDispatchIntentStagingResult(status, result)
+
+    @classmethod
+    async def _load_dispatch_intent_staging_claim(
+        cls,
+        session: AsyncSession,
+        *,
+        scope: WorkflowScope,
+        worker_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowDispatchIntentStagingClaimModel | None:
+        scope_id = canonical_digest(
+            {
+                "scope": scope.canonical_value(),
+                "worker_subject_id": worker_subject_id,
+            }
+        )
+        return cast(
+            WorkflowDispatchIntentStagingClaimModel | None,
+            await session.scalar(
+                select(WorkflowDispatchIntentStagingClaimModel).where(
+                    WorkflowDispatchIntentStagingClaimModel.idempotency_scope_id == scope_id,
+                    WorkflowDispatchIntentStagingClaimModel.idempotency_key == idempotency_key,
+                    WorkflowDispatchIntentStagingClaimModel.organization_id
+                    == scope.organization_id,
+                    WorkflowDispatchIntentStagingClaimModel.environment_id == scope.environment_id,
+                    WorkflowDispatchIntentStagingClaimModel.site_id == scope.site_id,
+                    WorkflowDispatchIntentStagingClaimModel.worker_subject_id == worker_subject_id,
+                )
+            ),
+        )
+
+    @classmethod
+    def _dispatch_intent_from_row(cls, row: WorkflowDispatchIntentModel) -> WorkflowDispatchIntent:
+        try:
+            intent = cls._dispatch_intent_to_domain(row.payload)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowDispatchIntentStagingError(
+                "workflow_dispatch_intent_repository_contract_violation",
+                "The workflow dispatch-intent repository contains an invalid intent.",
+            ) from exc
+        if (
+            row.dispatch_intent_id != intent.dispatch_intent_id
+            or row.plan_id != intent.plan_id
+            or row.plan_digest != intent.plan_digest
+            or row.run_id != intent.run_id
+            or row.run_digest != intent.run_digest
+            or row.step_run_id != intent.step_run_id
+            or row.step_run_digest != intent.step_run_digest
+            or row.step_id != intent.step_id
+            or row.attempt_id != intent.attempt_id
+            or row.attempt_digest != intent.attempt_digest
+            or row.attempt_number != intent.attempt_number
+            or row.organization_id != intent.scope.organization_id
+            or row.environment_id != intent.scope.environment_id
+            or row.site_id != intent.scope.site_id
+            or row.target_type != intent.target_type
+            or row.target_id != intent.target_id
+            or row.lease_id != intent.lease_id
+            or row.lease_digest != intent.lease_digest
+            or row.lease_fencing_token != intent.fencing_token
+            or row.worker_subject_id != intent.worker_subject_id
+            or row.staged_at != intent.staged_at
+            or row.state != intent.state.value
+            or row.canonical_digest != intent.canonical_digest
+        ):
+            cls._dispatch_intent_contract_violation()
+        return intent
+
+    @classmethod
+    def _dispatch_intent_from_claim(
+        cls, claim: WorkflowDispatchIntentStagingClaimModel
+    ) -> WorkflowDispatchIntent:
+        raw = claim.payload.get("result_dispatch_intent")
+        if not isinstance(raw, dict):
+            cls._dispatch_intent_contract_violation()
+        try:
+            intent = cls._dispatch_intent_to_domain(cast(dict[str, Any], raw))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowDispatchIntentStagingError(
+                "workflow_dispatch_intent_repository_contract_violation",
+                "The dispatch-intent repository contains an invalid idempotency result.",
+            ) from exc
+        intent_payload = cls._dispatch_intent_payload(intent)
+        scope_id = cls._dispatch_intent_staging_scope_id(intent)
+        expected: dict[str, Any] = {
+            "idempotency_key": claim.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": claim.request_fingerprint,
+            "result_dispatch_intent": intent_payload,
+            "result_digest": intent.canonical_digest,
+        }
+        if (
+            claim.idempotency_scope_id != scope_id
+            or claim.result_digest != intent.canonical_digest
+            or claim.dispatch_intent_id != intent.dispatch_intent_id
+            or claim.attempt_id != intent.attempt_id
+            or claim.run_id != intent.run_id
+            or claim.plan_id != intent.plan_id
+            or claim.organization_id != intent.scope.organization_id
+            or claim.environment_id != intent.scope.environment_id
+            or claim.site_id != intent.scope.site_id
+            or claim.worker_subject_id != intent.worker_subject_id
+            or claim.payload != expected
+            or claim.canonical_digest != canonical_digest(expected)
+        ):
+            cls._dispatch_intent_contract_violation()
+        return intent
+
+    @classmethod
+    def _dispatch_intent_model(cls, intent: WorkflowDispatchIntent) -> WorkflowDispatchIntentModel:
+        return WorkflowDispatchIntentModel(
+            dispatch_intent_id=intent.dispatch_intent_id,
+            plan_id=intent.plan_id,
+            plan_digest=intent.plan_digest,
+            run_id=intent.run_id,
+            run_digest=intent.run_digest,
+            step_run_id=intent.step_run_id,
+            step_run_digest=intent.step_run_digest,
+            step_id=intent.step_id,
+            attempt_id=intent.attempt_id,
+            attempt_digest=intent.attempt_digest,
+            attempt_number=intent.attempt_number,
+            organization_id=intent.scope.organization_id,
+            environment_id=intent.scope.environment_id,
+            site_id=intent.scope.site_id,
+            target_type=intent.target_type,
+            target_id=intent.target_id,
+            lease_id=intent.lease_id,
+            lease_digest=intent.lease_digest,
+            lease_fencing_token=intent.fencing_token,
+            worker_subject_id=intent.worker_subject_id,
+            staged_at=intent.staged_at,
+            state=intent.state.value,
+            canonical_digest=intent.canonical_digest,
+            payload=cls._dispatch_intent_payload(intent),
+        )
+
+    @classmethod
+    def _dispatch_intent_staging_claim_model(
+        cls, request: WorkflowDispatchIntentStagingRequest
+    ) -> WorkflowDispatchIntentStagingClaimModel:
+        intent = request.candidate
+        scope_id = cls._dispatch_intent_staging_scope_id(intent)
+        payload: dict[str, Any] = {
+            "idempotency_key": request.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": request.request_fingerprint,
+            "result_dispatch_intent": cls._dispatch_intent_payload(intent),
+            "result_digest": intent.canonical_digest,
+        }
+        digest = canonical_digest(payload)
+        return WorkflowDispatchIntentStagingClaimModel(
+            claim_id=f"workflow_dispatch_intent_claim_{sha256(digest.encode()).hexdigest()[:32]}",
+            idempotency_scope_id=scope_id,
+            idempotency_key=request.idempotency_key,
+            request_fingerprint=request.request_fingerprint,
+            result_digest=intent.canonical_digest,
+            dispatch_intent_id=intent.dispatch_intent_id,
+            attempt_id=intent.attempt_id,
+            run_id=intent.run_id,
+            plan_id=intent.plan_id,
+            organization_id=intent.scope.organization_id,
+            environment_id=intent.scope.environment_id,
+            site_id=intent.scope.site_id,
+            worker_subject_id=intent.worker_subject_id,
+            created_at=request.requested_at,
+            canonical_digest=digest,
+            payload=payload,
+        )
+
+    @classmethod
+    def _validate_dispatch_intent_staging_request(
+        cls, request: WorkflowDispatchIntentStagingRequest
+    ) -> None:
+        intent = request.candidate
+        if (
+            intent.state is not WorkflowDispatchIntentState.STAGED
+            or intent.attempt_number != 1
+            or intent.grants_dispatch_authority
+            or intent.grants_execution_authority
+        ):
+            raise ValueError("workflow dispatch-intent staging payload is unsafe")
+        if len(request.idempotency_key) > 128 or not request.idempotency_key:
+            raise ValueError("workflow dispatch-intent idempotency key is invalid")
+        if len(request.request_fingerprint) != 64:
+            raise ValueError("workflow dispatch-intent request fingerprint is invalid")
+        if request.requested_at.tzinfo is None:
+            raise ValueError("workflow dispatch-intent staging time must be timezone-aware")
+
+    @classmethod
+    def _dispatch_intent_sources_match(
+        cls,
+        *,
+        plan_row: WorkflowRunPlanModel | None,
+        lease_row: WorkflowOrchestrationLeaseModel | None,
+        run_row: WorkflowExecutionRunModel | None,
+        step_row: WorkflowExecutionStepRunModel | None,
+        attempt_row: WorkflowExecutionAttemptModel | None,
+        request: WorkflowDispatchIntentStagingRequest,
+    ) -> bool:
+        if any(item is None for item in (plan_row, lease_row, run_row, step_row, attempt_row)):
+            return False
+        assert plan_row is not None
+        assert lease_row is not None
+        assert run_row is not None
+        assert step_row is not None
+        assert attempt_row is not None
+        intent = request.candidate
+        try:
+            run = cls._materialized_run_from_row(run_row)
+            step = cls._materialized_step_from_row(step_row)
+            attempt = cls._attempt_from_row(attempt_row)
+        except (
+            WorkflowAttemptMaterializationError,
+            WorkflowPlanningError,
+        ) as exc:
+            raise WorkflowDispatchIntentStagingError(
+                "workflow_dispatch_intent_repository_contract_violation",
+                "Workflow execution evidence is inconsistent during dispatch-intent staging.",
+            ) from exc
+        return bool(
+            plan_row.plan_id == intent.plan_id
+            and plan_row.state == WorkflowPlanState.PLANNED.value
+            and plan_row.canonical_digest == request.expected_plan_digest == intent.plan_digest
+            and plan_row.organization_id == intent.scope.organization_id
+            and plan_row.environment_id == intent.scope.environment_id
+            and plan_row.site_id == intent.scope.site_id
+            and plan_row.target_type == intent.target_type
+            and plan_row.target_id == intent.target_id
+            and run.run_id == intent.run_id
+            and run.canonical_digest == request.expected_run_digest == intent.run_digest
+            and run.plan_id == intent.plan_id
+            and run.plan_digest == intent.plan_digest
+            and run.scope == intent.scope
+            and run.target_type == intent.target_type
+            and run.target_id == intent.target_id
+            and run.lease_id == intent.lease_id
+            and run.fencing_token == intent.fencing_token
+            and run.materialized_by_subject_id == intent.worker_subject_id
+            and run.state is WorkflowExecutionRunState.CREATED
+            and not run.grants_execution_authority
+            and step in run.step_runs
+            and step.step_run_id == intent.step_run_id
+            and step.canonical_digest == request.expected_step_run_digest == intent.step_run_digest
+            and step.run_id == intent.run_id
+            and step.step_id == intent.step_id
+            and step.state is WorkflowExecutionStepRunState.NOT_STARTED
+            and not step.depends_on
+            and attempt.attempt_id == intent.attempt_id
+            and attempt.canonical_digest == request.expected_attempt_digest == intent.attempt_digest
+            and attempt.run_id == intent.run_id
+            and attempt.run_digest == intent.run_digest
+            and attempt.step_run_id == intent.step_run_id
+            and attempt.step_run_digest == intent.step_run_digest
+            and attempt.step_id == intent.step_id
+            and attempt.attempt_number == intent.attempt_number == 1
+            and attempt.plan_id == intent.plan_id
+            and attempt.plan_digest == intent.plan_digest
+            and attempt.scope == intent.scope
+            and attempt.target_type == intent.target_type
+            and attempt.target_id == intent.target_id
+            and attempt.lease_id == intent.lease_id
+            and attempt.fencing_token == intent.fencing_token
+            and attempt.materialized_by_subject_id == intent.worker_subject_id
+            and attempt.state is WorkflowExecutionAttemptState.CREATED
+            and not attempt.grants_execution_authority
+            and lease_row.plan_id == intent.plan_id
+            and lease_row.plan_digest == intent.plan_digest
+            and lease_row.organization_id == intent.scope.organization_id
+            and lease_row.environment_id == intent.scope.environment_id
+            and lease_row.site_id == intent.scope.site_id
+            and lease_row.target_type == intent.target_type
+            and lease_row.target_id == intent.target_id
+            and lease_row.lease_id == request.expected_lease_id == intent.lease_id
+            and lease_row.canonical_digest == request.expected_lease_digest == intent.lease_digest
+            and lease_row.fencing_token == request.expected_fencing_token == intent.fencing_token
+            and lease_row.worker_subject_id == request.worker_subject_id == intent.worker_subject_id
+            and lease_row.state == WorkflowOrchestrationLeaseState.ACTIVE.value
+            and lease_row.expires_at > request.requested_at
+        )
+
+    @staticmethod
+    def _dispatch_intent_staging_scope_id(intent: WorkflowDispatchIntent) -> str:
+        return canonical_digest(
+            {
+                "scope": intent.scope.canonical_value(),
+                "worker_subject_id": intent.worker_subject_id,
+            }
+        )
+
+    @staticmethod
+    def _dispatch_intent_payload(intent: WorkflowDispatchIntent) -> dict[str, Any]:
+        return cast(dict[str, Any], intent.canonical_value())
+
+    @staticmethod
+    def _dispatch_intent_to_domain(raw: dict[str, Any]) -> WorkflowDispatchIntent:
+        payload = dict(raw)
+        payload["scope"] = WorkflowScope(**cast(Any, payload["scope"]))
+        payload["staged_at"] = datetime.fromisoformat(str(payload["staged_at"]))
+        payload["state"] = WorkflowDispatchIntentState(str(payload["state"]))
+        payload["authority"] = WorkflowPlanAuthority(**cast(Any, payload["authority"]))
+        return WorkflowDispatchIntent(**cast(Any, payload))
+
+    @staticmethod
+    def _dispatch_intent_contract_violation() -> None:
+        raise WorkflowDispatchIntentStagingError(
+            "workflow_dispatch_intent_repository_contract_violation",
+            "The workflow dispatch-intent record does not match its canonical payload.",
         )
 
     async def _lease_acquire_after_integrity(

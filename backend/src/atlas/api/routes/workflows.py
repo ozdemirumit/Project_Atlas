@@ -24,11 +24,16 @@ from atlas.api.workflow_schemas import (
     MaterializeWorkflowAttemptInput,
     MaterializeWorkflowRunInput,
     ReleaseWorkflowOrchestrationLeaseInput,
+    StageWorkflowDispatchIntentInput,
     WorkflowAttemptInventoryData,
     WorkflowAttemptInventoryResponse,
     WorkflowDefinitionData,
     WorkflowDefinitionInventoryData,
     WorkflowDefinitionInventoryResponse,
+    WorkflowDispatchIntentData,
+    WorkflowDispatchIntentInventoryData,
+    WorkflowDispatchIntentInventoryResponse,
+    WorkflowDispatchIntentResponse,
     WorkflowExecutionAttemptData,
     WorkflowExecutionAttemptResponse,
     WorkflowExecutionRunData,
@@ -57,6 +62,9 @@ from atlas.modules.workflows.application import (
     WorkflowAttemptMaterializationError,
     WorkflowAttemptMaterializationRepository,
     WorkflowAttemptMaterializationService,
+    WorkflowDispatchIntentStagingError,
+    WorkflowDispatchIntentStagingRepository,
+    WorkflowDispatchIntentStagingService,
     WorkflowOrchestrationLeaseError,
     WorkflowOrchestrationLeaseRepository,
     WorkflowOrchestrationLeaseService,
@@ -68,6 +76,8 @@ from atlas.modules.workflows.application import (
     WorkflowWorkerContext,
 )
 from atlas.modules.workflows.domain import (
+    WorkflowDispatchIntent,
+    WorkflowDispatchIntentState,
     WorkflowExecutionAttempt,
     WorkflowExecutionAttemptState,
     WorkflowExecutionRun,
@@ -278,6 +288,38 @@ def _raise_attempt(error: WorkflowAttemptMaterializationError) -> NoReturn:
     ) from error
 
 
+def _raise_dispatch_intent(error: WorkflowDispatchIntentStagingError) -> NoReturn:
+    if error.code.endswith("_invalid") or error.code.endswith("_required"):
+        status = 422
+    elif "repository" in error.code:
+        status = 503
+    else:
+        status = 409
+    raise AtlasError(
+        status=status,
+        code=(
+            "workflow_dispatch_intent_request_invalid"
+            if status == 422
+            else "workflow_dispatch_intent_service_unavailable"
+            if status == 503
+            else "workflow_dispatch_intent_conflict"
+        ),
+        title=(
+            "Workflow dispatch intent request invalid"
+            if status == 422
+            else "Workflow dispatch intent service unavailable"
+            if status == 503
+            else "Workflow dispatch intent conflict"
+        ),
+        detail=(
+            "The dispatch intent request did not satisfy the bounded contract."
+            if status == 422
+            else "Workflow dispatch intent evidence is unavailable."
+        ),
+        retryable=status == 503,
+    ) from error
+
+
 async def _worker_context(
     request: Request,
     subject: AuthenticatedSubject,
@@ -373,6 +415,17 @@ def _attempt_response(
     )
 
 
+def _dispatch_intent_response(
+    intent: WorkflowDispatchIntent,
+    request: Request,
+    response: Response,
+) -> WorkflowDispatchIntentResponse:
+    _no_store(response)
+    return WorkflowDispatchIntentResponse(
+        data=WorkflowDispatchIntentData.from_domain(intent), meta=_meta(request)
+    )
+
+
 def _run_matches_plan(run: WorkflowExecutionRun, plan: WorkflowRunPlan) -> bool:
     return (
         run.plan_id == plan.plan_id
@@ -421,6 +474,35 @@ def _attempt_matches_run(attempt: WorkflowExecutionAttempt, run: WorkflowExecuti
         and attempt.state is WorkflowExecutionAttemptState.CREATED
         and not any(attempt.authority.canonical_value().values())
         and not attempt.grants_execution_authority
+    )
+
+
+def _dispatch_intent_matches_attempt(
+    intent: WorkflowDispatchIntent,
+    attempt: WorkflowExecutionAttempt,
+) -> bool:
+    return bool(
+        intent.plan_id == attempt.plan_id
+        and intent.plan_digest == attempt.plan_digest
+        and intent.run_id == attempt.run_id
+        and intent.run_digest == attempt.run_digest
+        and intent.step_run_id == attempt.step_run_id
+        and intent.step_run_digest == attempt.step_run_digest
+        and intent.step_id == attempt.step_id
+        and intent.attempt_id == attempt.attempt_id
+        and intent.attempt_digest == attempt.canonical_digest
+        and intent.attempt_number == attempt.attempt_number
+        and intent.scope == attempt.scope
+        and intent.target_id == attempt.target_id
+        and intent.target_type == attempt.target_type
+        and intent.lease_id == attempt.lease_id
+        and intent.fencing_token == attempt.fencing_token
+        and intent.state is WorkflowDispatchIntentState.STAGED
+        and not any(intent.authority.canonical_value().values())
+        and not intent.grants_publication_authority
+        and not intent.grants_delivery_authority
+        and not intent.grants_dispatch_authority
+        and not intent.grants_execution_authority
     )
 
 
@@ -783,6 +865,136 @@ async def materialize_workflow_attempt(
     except WorkflowAttemptMaterializationError as error:
         _raise_attempt(error)
     return _attempt_response(attempt, request, response)
+
+
+@router.get(
+    "/plans/{plan_id}/runs/{run_id}/attempts/{attempt_id}/dispatch-intents",
+    response_model=WorkflowDispatchIntentInventoryResponse,
+)
+async def list_workflow_dispatch_intents(
+    plan_id: Annotated[str, SAFE_ID],
+    run_id: Annotated[str, SAFE_ID],
+    attempt_id: Annotated[str, SAFE_ID],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[AuthorizationDecision, Depends(authorize_workflow_plan_read)],
+) -> WorkflowDispatchIntentInventoryResponse:
+    planning_service: WorkflowPlanningService = request.app.state.workflow_planning_service
+    try:
+        plan = await planning_service.get_plan(
+            plan_id=plan_id,
+            context=await _context(request, subject, decision),
+        )
+    except WorkflowPlanningError as error:
+        _raise(error)
+    run_repository: WorkflowRunMaterializationRepository = (
+        request.app.state.workflow_run_materialization_repository
+    )
+    attempt_repository: WorkflowAttemptMaterializationRepository = (
+        request.app.state.workflow_attempt_materialization_repository
+    )
+    intent_repository: WorkflowDispatchIntentStagingRepository = (
+        request.app.state.workflow_dispatch_intent_staging_repository
+    )
+    try:
+        run = await run_repository.get_materialized_run_by_plan_id(plan_id=plan.plan_id)
+        if run is None or run.run_id != run_id or not _run_matches_plan(run, plan):
+            raise AtlasError(
+                status=404,
+                code="workflow_resource_unavailable",
+                title="Workflow resource unavailable",
+                detail="The requested workflow resource is unavailable.",
+            )
+        attempts = await attempt_repository.list_attempts_by_run_id(run_id=run.run_id)
+        if any(not _attempt_matches_run(item, run) for item in attempts):
+            raise RuntimeError("unsafe workflow attempt evidence")
+        attempt = next((item for item in attempts if item.attempt_id == attempt_id), None)
+        if attempt is None:
+            raise AtlasError(
+                status=404,
+                code="workflow_resource_unavailable",
+                title="Workflow resource unavailable",
+                detail="The requested workflow resource is unavailable.",
+            )
+        all_intents = await intent_repository.list_dispatch_intents_by_run_id(run_id=run.run_id)
+    except AtlasError:
+        raise
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_dispatch_intent_service_unavailable",
+            title="Workflow dispatch intent service unavailable",
+            detail="Workflow dispatch intent evidence is unavailable.",
+            retryable=True,
+        ) from error
+    attempt_by_id = {item.attempt_id: item for item in attempts}
+    if (
+        len({item.dispatch_intent_id for item in all_intents}) != len(all_intents)
+        or len({item.attempt_id for item in all_intents}) != len(all_intents)
+        or any(
+            item.attempt_id not in attempt_by_id
+            or not _dispatch_intent_matches_attempt(item, attempt_by_id[item.attempt_id])
+            for item in all_intents
+        )
+    ):
+        raise AtlasError(
+            status=503,
+            code="workflow_dispatch_intent_service_unavailable",
+            title="Workflow dispatch intent service unavailable",
+            detail="Workflow dispatch intent evidence is unavailable.",
+            retryable=True,
+        )
+    intents = [item for item in all_intents if item.attempt_id == attempt.attempt_id]
+    _no_store(response)
+    return WorkflowDispatchIntentInventoryResponse(
+        data=WorkflowDispatchIntentInventoryData(
+            attempt_id=attempt.attempt_id,
+            dispatch_intents=[WorkflowDispatchIntentData.from_domain(item) for item in intents],
+            server_time=datetime.now(UTC),
+            durable=intent_repository.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/plans/{plan_id}/runs/{run_id}/attempts/{attempt_id}/dispatch-intents",
+    response_model=WorkflowDispatchIntentResponse,
+    status_code=201,
+)
+async def stage_workflow_dispatch_intent(
+    plan_id: Annotated[str, SAFE_ID],
+    run_id: Annotated[str, SAFE_ID],
+    attempt_id: Annotated[str, SAFE_ID],
+    payload: StageWorkflowDispatchIntentInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(workflow_worker_subject)],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> WorkflowDispatchIntentResponse:
+    service: WorkflowDispatchIntentStagingService = (
+        request.app.state.workflow_dispatch_intent_staging_service
+    )
+    try:
+        intent = await service.stage(
+            plan_id=plan_id,
+            plan_digest=payload.plan_digest,
+            run_id=run_id,
+            run_digest=payload.run_digest,
+            step_run_id=payload.step_run_id,
+            step_run_digest=payload.step_run_digest,
+            attempt_id=attempt_id,
+            attempt_digest=payload.attempt_digest,
+            lease_id=payload.lease_id,
+            lease_digest=payload.lease_digest,
+            fencing_token=payload.fencing_token,
+            idempotency_key=idempotency_key,
+            context=await _worker_context(request, subject, target_id=payload.target_id),
+        )
+    except WorkflowDispatchIntentStagingError as error:
+        _raise_dispatch_intent(error)
+    return _dispatch_intent_response(intent, request, response)
 
 
 @router.post(

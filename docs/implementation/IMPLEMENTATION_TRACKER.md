@@ -4,14 +4,69 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-188 |
-| Title | Durable workflow step attempt materialization without dispatch authority |
+| Task ID | ATLAS-IMP-189 |
+| Title | Durable workflow dispatch-intent staging without publication authority |
 | Status | Implementation and local validation complete; delivery gates in progress |
-| Branch | `agent/workflow-attempt-materialization` |
+| Branch | `agent/workflow-dispatch-intent-staging` |
 | Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ADR-134, ADR-135, ADR-136, ADR-137, ADR-138 |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ADR-134, ADR-135, ADR-136, ADR-137, ADR-138, ADR-139 |
 | Last Updated | 2026-08-14 |
 | Next Action | Open the exact-head pull request, pass CI, merge and verify `main` |
+
+### ATLAS-IMP-189 Scope Rationale
+
+- IMP-188 creates one immutable attempt but intentionally creates no queue or dispatch record. The
+  next smallest durable boundary is a broker-neutral intent record bound to the exact attempt and
+  current fenced lease.
+- Staging preserves attempt `created`, run `created` and step-run `not_started` states. It grants no
+  publication, delivery, dispatch, worker or execution authority.
+- Queue or broker selection, message serialization, outbox publication, delivery acknowledgement,
+  worker dispatch, running states, results, retries, timers, signals, connector/model calls,
+  approvals, ITSM, runbooks and infrastructure actions remain deferred.
+
+### ATLAS-IMP-189 Acceptance Criteria
+
+- A dedicated workflow workload identity can idempotently stage exactly one immutable dispatch
+  intent for an exact `created` attempt under the active unexpired lease; stale, changed or
+  competing requests fail closed without revealing unauthorized state.
+- The intent remains `staged`; plan, run, step-run and attempt state remain unchanged; every
+  publication, delivery, dispatch and execution authority field remains structurally false.
+- PostgreSQL locks and revalidates plan, current lease, run, step run and attempt, then writes the
+  intent and immutable idempotency claim in one transaction. Production never falls back to memory.
+- Human UI exposes authoritative read-only intent evidence with no stage, publish, dispatch or
+  execution controls, no credential material, no second-login or MFA prompt and no implication
+  that a message or workload ran.
+
+### ATLAS-IMP-189 Validation Evidence
+
+- Domain and application services stage one deterministic immutable intent only for an exact
+  `created` attempt under the current active fenced lease. Exact replay returns the same `staged`
+  record; stale, expired, changed, competing or mismatched requests fail closed.
+- PostgreSQL locks and revalidates plan, current lease, run, step run and attempt, then persists the
+  intent and immutable idempotency claim atomically. Historical lease evidence has no foreign key
+  to the replaceable current-lease row. Alembic has one head at `20260814_0112`.
+- API tests prove workload-token-only staging and username/password browser-session read access.
+  Plan remains `planned`, run and attempt remain `created`, step run remains `not_started`, and
+  publication, delivery, dispatch and execution authority are all false.
+- Ruff format/lint passed across 1,286 files and strict mypy passed across 1,173 source files. The
+  full backend suite passed 1,671 tests with three expected Windows symlink skips. The full frontend
+  suite passed 322 tests across 95 files; ESLint, TypeScript and the production build passed with
+  only the pre-existing chunk-size advisory.
+- Live validation at `http://127.0.0.1:5253/#/workspace/workflows` restarted the backend from this
+  branch and used one `atlas-demo` / `local-demo` login. Plan
+  `workflow-plan.e81901a7cf7e7c0b381f1984` displayed read-only coordination and run evidence with
+  no human dispatch controls or infrastructure action. No MFA or additional authorized-browser
+  login was requested; restart of the in-memory development backend alone cleared the old session.
+
+### ATLAS-IMP-188 Delivery Evidence
+
+- Source commit `0b8d49a0c6614ff8e5b84be32b1b29c06dc5069a` passed exact-head PR CI run
+  `31754400483`; frontend completed in 4m57s and backend in 9m37s.
+- PR [#200](https://github.com/ozdemirumit/Project_Atlas/pull/200) was squash-merged as
+  `3b99c7817bbbbbf75f64c4dc219d4690e4d903ef`.
+- The exact merged commit independently passed `main` CI run `31755004933`; frontend completed in
+  4m00s and backend in 9m34s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-189 branched.
 
 ### ATLAS-IMP-188 Scope Rationale
 

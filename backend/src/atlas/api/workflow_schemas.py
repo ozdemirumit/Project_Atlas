@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from atlas.api.schemas import ResponseMeta
 from atlas.modules.workflows.domain import (
     WorkflowDefinition,
+    WorkflowDispatchIntent,
     WorkflowExecutionAttempt,
     WorkflowExecutionRun,
     WorkflowOrchestrationLease,
@@ -94,6 +95,23 @@ class MaterializeWorkflowAttemptInput(BaseModel):
     lease_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     fencing_token: int = Field(ge=1)
     acknowledged_attempt_only_no_queue_dispatch_or_execution_authority: Literal[True]
+
+
+class StageWorkflowDispatchIntentInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["atlas.workflow-dispatch-intent-staging-input.v1"]
+    plan_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    run_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    step_run_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    step_run_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    attempt_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    target_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    target_type: Literal["storage"]
+    lease_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    lease_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    fencing_token: int = Field(ge=1)
+    acknowledged_staging_only_no_publication_delivery_dispatch_or_execution_authority: Literal[True]
 
 
 class WorkflowStepDefinitionData(BaseModel):
@@ -339,6 +357,68 @@ class WorkflowExecutionAttemptResponse(BaseModel):
 
 class WorkflowAttemptInventoryResponse(BaseModel):
     data: WorkflowAttemptInventoryData
+    meta: ResponseMeta
+
+
+class WorkflowDispatchIntentData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dispatch_intent_id: str
+    plan_id: str
+    plan_digest: str
+    run_id: str
+    run_digest: str
+    step_run_id: str
+    step_run_digest: str
+    step_id: str
+    attempt_id: str
+    attempt_digest: str
+    attempt_number: Literal[1]
+    scope: WorkflowScopeData
+    target_id: str
+    target_type: Literal["storage"]
+    lease_id: str
+    lease_digest: str
+    fencing_token: int
+    worker_subject_id: str
+    staged_at: datetime
+    state: Literal["staged"]
+    authority: WorkflowPlanAuthorityData
+    grants_publication_authority: Literal[False]
+    grants_delivery_authority: Literal[False]
+    grants_dispatch_authority: Literal[False]
+    grants_execution_authority: Literal[False]
+    canonical_digest: str
+
+    @classmethod
+    def from_domain(cls, intent: WorkflowDispatchIntent) -> WorkflowDispatchIntentData:
+        return cls.model_validate(
+            intent.canonical_value()
+            | {
+                "grants_publication_authority": intent.grants_publication_authority,
+                "grants_delivery_authority": intent.grants_delivery_authority,
+                "grants_dispatch_authority": intent.grants_dispatch_authority,
+                "grants_execution_authority": intent.grants_execution_authority,
+            }
+        )
+
+
+class WorkflowDispatchIntentInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    attempt_id: str
+    dispatch_intents: list[WorkflowDispatchIntentData]
+    server_time: datetime
+    durable: bool
+
+
+class WorkflowDispatchIntentResponse(BaseModel):
+    data: WorkflowDispatchIntentData
+    meta: ResponseMeta
+
+
+class WorkflowDispatchIntentInventoryResponse(BaseModel):
+    data: WorkflowDispatchIntentInventoryData
     meta: ResponseMeta
 
 

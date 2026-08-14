@@ -10,6 +10,7 @@ import {
   listWorkflowPlans,
   WORKFLOW_PLAN_SAFETY_NOTICE,
   type WorkflowDefinition,
+  type WorkflowDispatchIntent,
   type WorkflowExecutionAttempt,
   type WorkflowExecutionRun,
   type WorkflowOrchestrationLease,
@@ -192,6 +193,35 @@ const materializedAttempt: WorkflowExecutionAttempt = {
   canonical_digest: "2".repeat(64),
 };
 
+const stagedDispatchIntent: WorkflowDispatchIntent = {
+  dispatch_intent_id: "workflow-dispatch-intent.1234567890abcdef",
+  plan_id: materializedAttempt.plan_id,
+  plan_digest: materializedAttempt.plan_digest,
+  run_id: materializedAttempt.run_id,
+  run_digest: materializedAttempt.run_digest,
+  step_run_id: materializedAttempt.step_run_id,
+  step_run_digest: materializedAttempt.step_run_digest,
+  step_id: materializedAttempt.step_id,
+  attempt_id: materializedAttempt.attempt_id,
+  attempt_digest: materializedAttempt.canonical_digest,
+  attempt_number: 1,
+  scope: materializedAttempt.scope,
+  target_id: materializedAttempt.target_id,
+  target_type: "storage",
+  lease_id: materializedAttempt.lease_id,
+  lease_digest: "3".repeat(64),
+  fencing_token: materializedAttempt.fencing_token,
+  worker_subject_id: "workload.workflow.worker",
+  staged_at: "2026-08-13T10:07:00Z",
+  state: "staged",
+  authority: { ...materializedAttempt.authority },
+  grants_publication_authority: false,
+  grants_delivery_authority: false,
+  grants_dispatch_authority: false,
+  grants_execution_authority: false,
+  canonical_digest: "4".repeat(64),
+};
+
 function leaseResponse(lease: WorkflowOrchestrationLease | null, status = 200): Response {
   return new Response(
     JSON.stringify({
@@ -250,16 +280,46 @@ function attemptResponse(attempts: unknown[], status = 200): Response {
   );
 }
 
+function dispatchIntentResponse(dispatchIntents: unknown[], status = 200): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            attempt_id: materializedAttempt.attempt_id,
+            dispatch_intents: dispatchIntents,
+            server_time: "2026-08-13T10:08:00Z",
+            durable: false,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.dispatch-intent",
+            generated_at: "2026-08-13T10:08:00Z",
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function mockReadResponses(input: {
   lease?: WorkflowOrchestrationLease | null;
   run?: WorkflowExecutionRun | null;
   attempts?: unknown[];
+  dispatchIntents?: unknown[];
   leaseStatus?: number;
   runStatus?: number;
   attemptStatus?: number;
+  dispatchIntentStatus?: number;
 }) {
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/dispatch-intents")) {
+      return Promise.resolve(
+        dispatchIntentResponse(
+          input.dispatchIntents ?? [],
+          input.dispatchIntentStatus ?? 200,
+        ),
+      );
+    }
     if (url.endsWith("/attempts")) {
       return Promise.resolve(attemptResponse(input.attempts ?? [], input.attemptStatus ?? 200));
     }
@@ -738,5 +798,180 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(attemptReads).toBe(2);
     expect(screen.queryByRole("button", { name: /attempt|materialize|dispatch|execute/i })).toBeNull();
     expect(screen.getByText(/No action ran, and no execution authority/i)).toBeVisible();
+  });
+
+  it("shows dispatch-intent evidence only after a materialized attempt exists", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    mockReadResponses({ run: materializedRun, attempts: [] });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    expect(await screen.findByText("No materialized attempts are recorded for this run.")).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Staged dispatch-intent records" })).toBeNull();
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith("/dispatch-intents"),
+      ),
+    ).toBe(false);
+  });
+
+  it("presents an empty read-only dispatch-intent inventory", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    mockReadResponses({ run: materializedRun, attempts: [materializedAttempt], dispatchIntents: [] });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    expect(await screen.findByRole("heading", { name: "Staged dispatch-intent records" })).toBeVisible();
+    expect(await screen.findByText("No dispatch intents are staged for these attempts.")).toBeVisible();
+    expect(screen.getByText(/No message was published, no worker or action ran/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /stage|publish|dispatch|execute/i })).toBeNull();
+  });
+
+  it("shows a control-free loading state for dispatch-intent evidence", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    vi.mocked(fetch).mockImplementation((request) => {
+      const url = request instanceof Request ? request.url : request.toString();
+      if (url.endsWith("/dispatch-intents")) return new Promise<Response>(() => undefined);
+      if (url.endsWith("/attempts")) return Promise.resolve(attemptResponse([materializedAttempt]));
+      if (url.endsWith("/materialized-run")) return Promise.resolve(materializedRunResponse(materializedRun));
+      return Promise.resolve(leaseResponse(null));
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    expect(await screen.findByText("Loading authoritative dispatch-intent records...")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /stage|publish|dispatch|execute/i })).toBeNull();
+  });
+
+  it("renders an exact attempt-bound dispatch intent as read-only evidence", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const records = await screen.findByRole("list", { name: "Staged dispatch-intent records" });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          `/api/v1/workflows/plans/${plan.plan_id}/runs/${materializedRun.run_id}/attempts/${materializedAttempt.attempt_id}/dispatch-intents`,
+        ),
+      ),
+    ).toBe(true);
+    expect(await screen.findByTitle(stagedDispatchIntent.dispatch_intent_id)).toBeVisible();
+    expect(records).toHaveTextContent("step query-authorized-evidence");
+    expect(records).toHaveTextContent("staged");
+    expect(records).toHaveTextContent("worker workload.workflow.worker");
+    expect(records).toHaveTextContent("attempt 222222222222...22222222");
+    expect(records).toHaveTextContent("intent 444444444444...44444444");
+    expect(screen.getByText(/No message was published, no worker or action ran/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /stage|publish|dispatch|execute/i })).toBeNull();
+    expect(screen.queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
+  });
+
+  it("fails closed on unsafe or unbound dispatch-intent evidence", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [
+        { ...stagedDispatchIntent, attempt_digest: "0".repeat(64), password: "unsafe" },
+      ],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    expect(await screen.findByText("Dispatch-intent evidence is unavailable")).toBeVisible();
+    expect(screen.getByText(/No dispatch state is inferred/i)).toBeVisible();
+    expect(screen.queryByText(/workflow-dispatch-intent.1234567890abcdef/i)).toBeNull();
+    expect(screen.queryByText(/unsafe/i)).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [403, "Dispatch-intent evidence permission is missing", "current role cannot inspect staged"],
+    [503, "Dispatch-intent evidence is unavailable", "No dispatch state is inferred"],
+  ])("handles dispatch-intent read status %s without exposing an action", async (status, title, detail) => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntentStatus: status,
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    expect(await screen.findByText(title)).toBeVisible();
+    expect(screen.getByText(new RegExp(detail, "i"))).toBeVisible();
+    expect(screen.queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /stage|publish|dispatch|execute/i })).toBeNull();
+    if (status === 503) {
+      expect(screen.getByRole("button", { name: "Retry intent evidence" })).toBeVisible();
+    } else {
+      expect(screen.queryByRole("button", { name: "Retry intent evidence" })).toBeNull();
+    }
+  });
+
+  it("retries a generic dispatch-intent read failure without adding authority controls", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({
+      plans: [plan],
+      durable: false,
+      truncated: false,
+    });
+    let dispatchIntentReads = 0;
+    vi.mocked(fetch).mockImplementation((request) => {
+      const url = request instanceof Request ? request.url : request.toString();
+      if (url.endsWith("/dispatch-intents")) {
+        dispatchIntentReads += 1;
+        return Promise.resolve(
+          dispatchIntentResponse([], dispatchIntentReads === 1 ? 503 : 200),
+        );
+      }
+      if (url.endsWith("/attempts")) return Promise.resolve(attemptResponse([materializedAttempt]));
+      if (url.endsWith("/materialized-run")) return Promise.resolve(materializedRunResponse(materializedRun));
+      return Promise.resolve(leaseResponse(null));
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retry intent evidence" }));
+
+    expect(await screen.findByText("No dispatch intents are staged for these attempts.")).toBeVisible();
+    expect(dispatchIntentReads).toBe(2);
+    expect(screen.getByText(/No message was published, no worker or action ran/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /stage|publish|dispatch|execute/i })).toBeNull();
   });
 });
