@@ -2049,6 +2049,7 @@ class PostgreSQLWorkflowPlanRepository:
 
             try:
                 session.add(self._physical_transport_route_binding_model(candidate))
+                await session.flush()
                 session.add(self._physical_transport_route_binding_claim_model(request))
                 await session.commit()
                 return WorkflowEventPhysicalTransportRouteBindingResult(

@@ -355,9 +355,10 @@ def test_repository_uses_required_fixed_lock_order_and_atomic_commit() -> None:
     assert positions == sorted(positions)
     assert source.count(".with_for_update()") == 4
     binding_add = source.index("session.add(self._physical_transport_route_binding_model")
+    binding_flush = source.index("await session.flush()", binding_add)
     claim_add = source.index("session.add(self._physical_transport_route_binding_claim_model")
     commit = source.index("await session.commit()", claim_add)
-    assert binding_add < claim_add < commit
+    assert binding_add < binding_flush < claim_add < commit
 
 
 def test_repository_rechecks_exact_replay_after_waiting_on_source_locks() -> None:
