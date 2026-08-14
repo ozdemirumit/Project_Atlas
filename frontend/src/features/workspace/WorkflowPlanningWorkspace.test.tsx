@@ -23,6 +23,7 @@ import {
   type WorkflowRunPlan,
   type WorkflowTransportCompatibilityAdmission,
   type WorkflowTransportProfileSnapshot,
+  type WorkflowTransportRouteSnapshot,
 } from "../../api/workflows";
 import WorkflowPlanningWorkspace from "./WorkflowPlanningWorkspace";
 
@@ -555,6 +556,67 @@ const transportProfileSnapshot: WorkflowTransportProfileSnapshot = {
   canonical_digest: "5".repeat(64),
 };
 
+const transportRouteSnapshot: WorkflowTransportRouteSnapshot = {
+  snapshot_id: "workflow-transport-route-snapshot.1234567890abcdef",
+  route_id: "transport-route.primary-event-backbone",
+  route_revision: "revision.9",
+  route_set_id: "transport-route-set.primary-event-backbone",
+  route_set_revision: "revision.3",
+  selection_epoch_id: "selection-epoch.primary-event-backbone",
+  selection_epoch_revision: "revision.2",
+  source_route_digest: "9".repeat(64),
+  deployment_release_id: "atlas-release.2026.08.14",
+  deployment_profile: "enterprise-test",
+  scope: { ...plan.scope },
+  transport_profile_id: transportProfileSnapshot.transport_profile_id,
+  transport_profile_revision: transportProfileSnapshot.transport_profile_revision,
+  transport_resource_id: transportProfileSnapshot.transport_resource_id,
+  transport_implementation_id: transportProfileSnapshot.transport_implementation_id,
+  transport_implementation_version: transportProfileSnapshot.transport_implementation_version,
+  adapter_contract_id: transportProfileSnapshot.adapter_contract_id,
+  adapter_contract_version: transportProfileSnapshot.adapter_contract_version,
+  route_kind: "message-broker",
+  endpoint_set_id: "opaque-endpoint-set.primary-event-backbone.internal",
+  endpoint_set_revision: "revision.4",
+  destination_id: "opaque-destination.workflow-dispatch.internal",
+  destination_revision: "revision.12",
+  routing_contract_id: "opaque-routing-contract.workflow-run-ordering.internal",
+  routing_contract_revision: "revision.6",
+  transport_security_policy_id: "policy.transport-security.internal-tls",
+  transport_security_policy_version: "1.0",
+  minimum_tls_version: "1.3",
+  server_authentication_required: true,
+  client_authentication_required: true,
+  plaintext_fallback_prohibited: true,
+  network_policy_id: "policy.transport-network.restricted-internal",
+  network_policy_version: "1.0",
+  source_zone_class: "zone.workload-internal",
+  destination_zone_class: "zone.event-backbone-internal",
+  restricted_network_enforced: true,
+  public_egress_prohibited: true,
+  proxy_mode: "prohibited",
+  credential_requirement_profile_id: "policy.transport-credential.brokered-workload",
+  credential_requirement_profile_version: "1.0",
+  authentication_mechanism_class: "mutual-tls",
+  principal_class: "service-workload",
+  snapshotter_subject_id: "workload.workflow.transport-route-registry",
+  captured_at: "2026-08-14T10:02:00Z",
+  state: "snapshotted",
+  authority: {
+    route_selection_authorized: false,
+    route_binding_authorized: false,
+    endpoint_resolution_authorized: false,
+    credential_access_authorized: false,
+    network_access_authorized: false,
+    readiness_probe_authorized: false,
+    publication_authorized: false,
+    delivery_authorized: false,
+    dispatch_authorized: false,
+    execution_authorized: false,
+  },
+  canonical_digest: "8".repeat(64),
+};
+
 const transportCompatibilityAdmission: WorkflowTransportCompatibilityAdmission = {
   compatibility_admission_id:
     "workflow-transport-compatibility-admission.1234567890abcdef",
@@ -812,6 +874,21 @@ function transportProfileSnapshotResponse(
   );
 }
 
+function transportRouteSnapshotResponse(snapshots: unknown[], status = 200): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: { transport_route_snapshots: snapshots, durable: false },
+          meta: {
+            correlation_id: "correlation.workflow.transport-route-snapshot",
+            generated_at: "2026-08-14T10:02:00Z",
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function transportCompatibilityAdmissionResponse(
   admissions: unknown[],
   status = 200,
@@ -846,11 +923,13 @@ function mockReadResponses(input: {
   byteArtifacts?: unknown[];
   logicalChannelBindings?: unknown[];
   transportProfileSnapshots?: unknown[];
+  transportRouteSnapshots?: unknown[];
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
   pendingByteArtifactResponse?: Promise<Response>;
   pendingLogicalChannelBindingResponse?: Promise<Response>;
   pendingTransportProfileResponse?: Promise<Response>;
+  pendingTransportRouteSnapshotResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
   runStatus?: number;
@@ -867,6 +946,8 @@ function mockReadResponses(input: {
   logicalChannelBindingStatuses?: number[];
   transportProfileStatus?: number;
   transportProfileStatuses?: number[];
+  transportRouteSnapshotStatus?: number;
+  transportRouteSnapshotStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
   transportCompatibilityAdmissionStatuses?: number[];
 }) {
@@ -874,9 +955,25 @@ function mockReadResponses(input: {
   let byteArtifactReadCount = 0;
   let logicalChannelBindingReadCount = 0;
   let transportProfileReadCount = 0;
+  let transportRouteSnapshotReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/api/v1/workflows/transport-route-snapshots")) {
+      if (input.pendingTransportRouteSnapshotResponse) {
+        return input.pendingTransportRouteSnapshotResponse;
+      }
+      const status =
+        input.transportRouteSnapshotStatuses?.[
+          Math.min(
+            transportRouteSnapshotReadCount++,
+            input.transportRouteSnapshotStatuses.length - 1,
+          )
+        ] ?? input.transportRouteSnapshotStatus ?? 200;
+      return Promise.resolve(
+        transportRouteSnapshotResponse(input.transportRouteSnapshots ?? [], status),
+      );
+    }
     if (url.includes("/api/v1/workflows/transport-compatibility-admissions?")) {
       if (input.pendingTransportCompatibilityAdmissionResponse) {
         return input.pendingTransportCompatibilityAdmissionResponse;
@@ -1179,6 +1276,170 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(await within(section).findByText("Transport capability profiles are unavailable")).toBeVisible();
     expect(within(section).queryByRole("list", { name: "Transport capability profiles" })).toBeNull();
     expect(section).not.toHaveTextContent(/hidden-topic|hidden-credential|workflow-event\.hidden|site\.other/i);
+  });
+
+  it("loads global immutable transport route snapshots without exposing route locators", async () => {
+    mockReadResponses({ transportRouteSnapshots: [transportRouteSnapshot] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport route snapshots",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Transport route snapshots",
+    });
+    expect(screen.queryByRole("heading", { name: plan.plan_id })).toBeNull();
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/transport-route-snapshots",
+        ),
+      ),
+    ).toBe(true);
+    expect(within(section).getByTitle(transportRouteSnapshot.route_id)).toBeVisible();
+    expect(within(section).getByTitle(transportRouteSnapshot.snapshot_id)).toBeVisible();
+    expect(within(section).getByTitle(transportRouteSnapshot.transport_profile_id)).toBeVisible();
+    expect(within(section).getByTitle(transportRouteSnapshot.transport_resource_id)).toBeVisible();
+    expect(within(section).getByTitle(transportRouteSnapshot.transport_implementation_id)).toBeVisible();
+    expect(within(section).getByTitle(transportRouteSnapshot.adapter_contract_id)).toBeVisible();
+    expect(within(section).getByTitle(transportRouteSnapshot.transport_security_policy_id)).toBeVisible();
+    expect(within(section).getByTitle(transportRouteSnapshot.network_policy_id)).toBeVisible();
+    expect(
+      within(section).getByTitle(transportRouteSnapshot.credential_requirement_profile_id),
+    ).toBeVisible();
+    expect(records).toHaveTextContent("revision.9");
+    expect(records).toHaveTextContent("enterprise-test");
+    expect(records).toHaveTextContent("TLS 1.3 minimum");
+    expect(records).toHaveTextContent("restricted internal");
+    expect(records).toHaveTextContent("mutual-tls");
+    expect(records).toHaveTextContent("opaque-endpoin...ternal");
+    expect(records).toHaveTextContent("opaque-destina...ternal");
+    expect(records).toHaveTextContent("opaque-routing...ternal");
+    expect(within(section).queryByTitle(transportRouteSnapshot.endpoint_set_id)).toBeNull();
+    expect(within(section).queryByTitle(transportRouteSnapshot.destination_id)).toBeNull();
+    expect(within(section).queryByTitle(transportRouteSnapshot.routing_contract_id)).toBeNull();
+    expect(records).toHaveTextContent(
+      "Authority route selection false | route binding false | endpoint resolution false | credential access false | network access false | readiness probe false | publication false | delivery false | dispatch false | execution false",
+    );
+    expect(
+      within(section).queryByRole("button", {
+        name: /register|update|remove|select|bind|rebind|resolve|probe|credential|publish|deliver|dispatch|execute/i,
+      }),
+    ).toBeNull();
+    expect(screen.queryByRole("heading", { name: /route binding/i })).toBeNull();
+    expect(section).not.toHaveTextContent(/authorized browser session|MFA|second login/i);
+    expect(section).not.toHaveTextContent(
+      /https?:\/\/|\b(?:\d{1,3}\.){3}\d{1,3}\b|broker\.internal|hidden-topic|field digest/i,
+    );
+  });
+
+  it("renders an empty transport route snapshot inventory as a healthy read-only state", async () => {
+    mockReadResponses({ transportRouteSnapshots: [] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport route snapshots",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("No transport route snapshots are recorded in this scope."),
+    ).toBeVisible();
+    expect(within(section).queryByRole("alert")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("shows a loading state while transport route snapshots are pending", async () => {
+    mockReadResponses({
+      pendingTransportRouteSnapshotResponse: new Promise<Response>(() => undefined),
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport route snapshots",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("Loading transport route snapshots...")).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("retries a failed transport route snapshot read without mutation controls", async () => {
+    mockReadResponses({
+      transportRouteSnapshots: [transportRouteSnapshot],
+      transportRouteSnapshotStatuses: [500, 200],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport route snapshots",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("Transport route snapshots are unavailable")).toBeVisible();
+    fireEvent.click(
+      within(section).getByRole("button", { name: "Retry transport route snapshot read" }),
+    );
+    expect(await within(section).findByTitle(transportRouteSnapshot.snapshot_id)).toBeVisible();
+    expect(
+      within(section).queryByRole("button", {
+        name: /register|update|remove|select|bind|resolve|probe|publish|deliver|dispatch|execute/i,
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [
+      403,
+      "Transport route snapshot permission is missing",
+      "current role or scope cannot inspect",
+    ],
+  ])(
+    "handles transport route snapshot status %s with the normal session boundary",
+    async (status, title, detail) => {
+      mockReadResponses({ transportRouteSnapshotStatus: status });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Transport route snapshots",
+      })).closest("section") as HTMLElement;
+      expect(await within(section).findByText(title)).toBeVisible();
+      expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+      expect(within(section).queryByRole("button")).toBeNull();
+      expect(section).not.toHaveTextContent(/authorized browser session|MFA|second login/i);
+    },
+  );
+
+  it.each([
+    ["a raw endpoint", { ...transportRouteSnapshot, endpoint_url: "https://broker.internal" }],
+    ["a raw destination", { ...transportRouteSnapshot, topic: "hidden-topic" }],
+    ["a field-level digest", { ...transportRouteSnapshot, endpoint_set_digest: "9".repeat(64) }],
+    ["credential material", { ...transportRouteSnapshot, credential: "hidden-credential" }],
+    [
+      "a changed scope",
+      {
+        ...transportRouteSnapshot,
+        scope: { ...transportRouteSnapshot.scope, site_id: "site.other" },
+      },
+    ],
+    [
+      "operational authority",
+      {
+        ...transportRouteSnapshot,
+        authority: { ...transportRouteSnapshot.authority, network_access_authorized: true },
+      },
+    ],
+    [
+      "an unknown security requirement class",
+      { ...transportRouteSnapshot, minimum_tls_version: "1.2" },
+    ],
+  ])("fails closed when a transport route snapshot contains %s", async (_case, unsafeRoute) => {
+    mockReadResponses({ transportRouteSnapshots: [unsafeRoute] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport route snapshots",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("Transport route snapshots are unavailable")).toBeVisible();
+    expect(within(section).queryByRole("list", { name: "Transport route snapshots" })).toBeNull();
+    expect(section).not.toHaveTextContent(
+      /broker\.internal|hidden-topic|hidden-credential|site\.other|tls-optional/i,
+    );
   });
 
   it("creates and presents a planned-only workflow without requesting another login", async () => {

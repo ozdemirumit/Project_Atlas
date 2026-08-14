@@ -583,6 +583,10 @@ MVP workflows do not execute C3 through C5 capabilities.
 - ADR-147 establishes immutable policy-governed compatibility admission between one exact logical
   channel binding and one exact deployment transport profile snapshot without route selection,
   credentials, network calls, publication, delivery, dispatch or execution authority.
+- ADR-148 establishes an independently immutable deployment-owned physical transport route
+  snapshot using opaque route references and versioned security requirements, without workflow
+  binding, credential selection, network calls, readiness claims, publication, delivery, dispatch
+  or execution authority.
 
 ## 39. Assumptions
 

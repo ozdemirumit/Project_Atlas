@@ -139,6 +139,10 @@ class WorkflowEventTransportCompatibilityAdmissionState(StrEnum):
     ADMITTED = "admitted"
 
 
+class EventPhysicalTransportRouteSnapshotState(StrEnum):
+    SNAPSHOTTED = "snapshotted"
+
+
 @dataclass(frozen=True, slots=True)
 class WorkflowScope:
     organization_id: str
@@ -1945,6 +1949,11 @@ _ALLOWED_ENCODINGS = frozenset({"utf-8"})
 _ALLOWED_DELIVERY_SEMANTICS = frozenset({"at-least-once"})
 _ALLOWED_ORDERING_KEY_KINDS = frozenset({"workflow-run"})
 _ALLOWED_RETENTION_CLASSES = frozenset({"workflow-operational"})
+_ALLOWED_TRANSPORT_ROUTE_KINDS = frozenset({"message-broker"})
+_ALLOWED_TRANSPORT_TLS_MINIMUM_VERSIONS = frozenset({"1.2", "1.3"})
+_ALLOWED_TRANSPORT_PROXY_MODES = frozenset({"prohibited", "deployment-managed"})
+_ALLOWED_TRANSPORT_AUTHENTICATION_MECHANISM_CLASSES = frozenset({"mutual-tls", "workload-token"})
+_ALLOWED_TRANSPORT_PRINCIPAL_CLASSES = frozenset({"service-workload"})
 
 
 def _require_allowlisted_values(
@@ -2231,6 +2240,454 @@ class EventPhysicalTransportProfileSnapshot:
 
     @property
     def grants_route_selection_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_publication_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_delivery_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_dispatch_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_execution_authority(self) -> bool:
+        return False
+
+
+def _validate_transport_route_security_requirements(
+    value: DeploymentEventTransportRoute | EventPhysicalTransportRouteSnapshot,
+) -> None:
+    if value.route_kind not in _ALLOWED_TRANSPORT_ROUTE_KINDS:
+        raise ValueError("transport route kind is unsupported")
+    if value.minimum_tls_version not in _ALLOWED_TRANSPORT_TLS_MINIMUM_VERSIONS:
+        raise ValueError("transport route minimum TLS version is unsupported")
+    if value.server_authentication_required is not True:
+        raise ValueError("transport route must require server authentication")
+    if value.plaintext_fallback_prohibited is not True:
+        raise ValueError("transport route must prohibit plaintext fallback")
+    if value.restricted_network_enforced is not True:
+        raise ValueError("transport route must enforce a restricted network")
+    if value.public_egress_prohibited is not True:
+        raise ValueError("transport route must prohibit public egress")
+    if value.proxy_mode not in _ALLOWED_TRANSPORT_PROXY_MODES:
+        raise ValueError("transport route proxy mode is unsupported")
+    if (
+        value.authentication_mechanism_class
+        not in _ALLOWED_TRANSPORT_AUTHENTICATION_MECHANISM_CLASSES
+    ):
+        raise ValueError("transport route authentication mechanism class is unsupported")
+    if value.principal_class not in _ALLOWED_TRANSPORT_PRINCIPAL_CLASSES:
+        raise ValueError("transport route principal class is unsupported")
+
+
+@dataclass(frozen=True, slots=True)
+class DeploymentEventTransportRoute:
+    """Server-owned deployment route descriptor with no resolved endpoint or credential."""
+
+    route_id: str
+    route_revision: str
+    route_set_id: str
+    route_set_revision: str
+    selection_epoch_id: str
+    selection_epoch_revision: str
+    deployment_release_id: str
+    deployment_profile: str
+    scope: WorkflowScope
+    transport_profile_id: str
+    transport_profile_revision: str
+    transport_resource_id: str
+    transport_resource_digest: str
+    transport_implementation_id: str
+    transport_implementation_version: str
+    adapter_contract_id: str
+    adapter_contract_version: str
+    adapter_contract_digest: str
+    route_kind: str
+    endpoint_set_id: str
+    endpoint_set_revision: str
+    destination_id: str
+    destination_revision: str
+    routing_contract_id: str
+    routing_contract_revision: str
+    private_route_descriptor_commitment: str
+    transport_security_policy_id: str
+    transport_security_policy_version: str
+    transport_security_policy_digest: str
+    minimum_tls_version: str
+    server_authentication_required: bool
+    client_authentication_required: bool
+    plaintext_fallback_prohibited: bool
+    network_policy_id: str
+    network_policy_version: str
+    network_policy_digest: str
+    source_zone_class: str
+    destination_zone_class: str
+    restricted_network_enforced: bool
+    public_egress_prohibited: bool
+    proxy_mode: str
+    credential_requirement_profile_id: str
+    credential_requirement_profile_version: str
+    credential_requirement_profile_digest: str
+    authentication_mechanism_class: str
+    principal_class: str
+    active: bool
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.route_id, "route_id"),
+            (self.route_revision, "route_revision"),
+            (self.route_set_id, "route_set_id"),
+            (self.route_set_revision, "route_set_revision"),
+            (self.selection_epoch_id, "selection_epoch_id"),
+            (self.selection_epoch_revision, "selection_epoch_revision"),
+            (self.deployment_release_id, "deployment_release_id"),
+            (self.transport_profile_id, "transport_profile_id"),
+            (self.transport_profile_revision, "transport_profile_revision"),
+            (self.transport_resource_id, "transport_resource_id"),
+            (self.transport_implementation_id, "transport_implementation_id"),
+            (self.transport_implementation_version, "transport_implementation_version"),
+            (self.adapter_contract_id, "adapter_contract_id"),
+            (self.adapter_contract_version, "adapter_contract_version"),
+            (self.endpoint_set_id, "endpoint_set_id"),
+            (self.endpoint_set_revision, "endpoint_set_revision"),
+            (self.destination_id, "destination_id"),
+            (self.destination_revision, "destination_revision"),
+            (self.routing_contract_id, "routing_contract_id"),
+            (self.routing_contract_revision, "routing_contract_revision"),
+            (self.transport_security_policy_id, "transport_security_policy_id"),
+            (self.transport_security_policy_version, "transport_security_policy_version"),
+            (self.network_policy_id, "network_policy_id"),
+            (self.network_policy_version, "network_policy_version"),
+            (self.source_zone_class, "source_zone_class"),
+            (self.destination_zone_class, "destination_zone_class"),
+            (self.credential_requirement_profile_id, "credential_requirement_profile_id"),
+            (
+                self.credential_requirement_profile_version,
+                "credential_requirement_profile_version",
+            ),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.transport_resource_digest, "transport_resource_digest"),
+            (self.adapter_contract_digest, "adapter_contract_digest"),
+            (
+                self.private_route_descriptor_commitment,
+                "private_route_descriptor_commitment",
+            ),
+            (self.transport_security_policy_digest, "transport_security_policy_digest"),
+            (self.network_policy_digest, "network_policy_digest"),
+            (
+                self.credential_requirement_profile_digest,
+                "credential_requirement_profile_digest",
+            ),
+            (self.canonical_digest, "transport route canonical_digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.deployment_profile not in _ALLOWED_DEPLOYMENT_PROFILES:
+            raise ValueError("deployment_profile is unsupported")
+        if self.transport_implementation_id not in _ALLOWED_TRANSPORT_IMPLEMENTATIONS:
+            raise ValueError("transport_implementation_id is unsupported")
+        _validate_transport_route_security_requirements(self)
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("transport route canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "active": self.active,
+            "adapter_contract_digest": self.adapter_contract_digest,
+            "adapter_contract_id": self.adapter_contract_id,
+            "adapter_contract_version": self.adapter_contract_version,
+            "authentication_mechanism_class": self.authentication_mechanism_class,
+            "client_authentication_required": self.client_authentication_required,
+            "credential_requirement_profile_digest": (self.credential_requirement_profile_digest),
+            "credential_requirement_profile_id": self.credential_requirement_profile_id,
+            "credential_requirement_profile_version": self.credential_requirement_profile_version,
+            "deployment_profile": self.deployment_profile,
+            "deployment_release_id": self.deployment_release_id,
+            "destination_id": self.destination_id,
+            "destination_revision": self.destination_revision,
+            "destination_zone_class": self.destination_zone_class,
+            "endpoint_set_id": self.endpoint_set_id,
+            "endpoint_set_revision": self.endpoint_set_revision,
+            "minimum_tls_version": self.minimum_tls_version,
+            "network_policy_digest": self.network_policy_digest,
+            "network_policy_id": self.network_policy_id,
+            "network_policy_version": self.network_policy_version,
+            "plaintext_fallback_prohibited": self.plaintext_fallback_prohibited,
+            "principal_class": self.principal_class,
+            "proxy_mode": self.proxy_mode,
+            "public_egress_prohibited": self.public_egress_prohibited,
+            "restricted_network_enforced": self.restricted_network_enforced,
+            "route_id": self.route_id,
+            "route_kind": self.route_kind,
+            "route_revision": self.route_revision,
+            "route_set_id": self.route_set_id,
+            "route_set_revision": self.route_set_revision,
+            "routing_contract_id": self.routing_contract_id,
+            "routing_contract_revision": self.routing_contract_revision,
+            "selection_epoch_id": self.selection_epoch_id,
+            "selection_epoch_revision": self.selection_epoch_revision,
+            "scope": self.scope.canonical_value(),
+            "server_authentication_required": self.server_authentication_required,
+            "source_zone_class": self.source_zone_class,
+            "transport_implementation_id": self.transport_implementation_id,
+            "transport_implementation_version": self.transport_implementation_version,
+            "transport_profile_id": self.transport_profile_id,
+            "transport_profile_revision": self.transport_profile_revision,
+            "transport_resource_digest": self.transport_resource_digest,
+            "transport_resource_id": self.transport_resource_id,
+            "transport_security_policy_digest": self.transport_security_policy_digest,
+            "transport_security_policy_id": self.transport_security_policy_id,
+            "transport_security_policy_version": self.transport_security_policy_version,
+            "private_route_descriptor_commitment": self.private_route_descriptor_commitment,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class EventPhysicalTransportRouteSnapshotAuthority:
+    endpoint_resolution_authorized: bool = False
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    credential_access_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        if any(self.canonical_value().values()):
+            raise ValueError("transport route snapshots cannot grant operational authority")
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "credential_access_authorized": self.credential_access_authorized,
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "endpoint_resolution_authorized": self.endpoint_resolution_authorized,
+            "execution_authorized": self.execution_authorized,
+            "network_access_authorized": self.network_access_authorized,
+            "publication_authorized": self.publication_authorized,
+            "readiness_probe_authorized": self.readiness_probe_authorized,
+            "route_binding_authorized": self.route_binding_authorized,
+            "route_selection_authorized": self.route_selection_authorized,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class EventPhysicalTransportRouteSnapshot:
+    """Immutable opaque route evidence without resolution or operational authority."""
+
+    snapshot_id: str
+    route_id: str
+    route_revision: str
+    route_set_id: str
+    route_set_revision: str
+    selection_epoch_id: str
+    selection_epoch_revision: str
+    source_route_digest: str
+    deployment_release_id: str
+    deployment_profile: str
+    scope: WorkflowScope
+    transport_profile_id: str
+    transport_profile_revision: str
+    transport_resource_id: str
+    transport_resource_digest: str
+    transport_implementation_id: str
+    transport_implementation_version: str
+    adapter_contract_id: str
+    adapter_contract_version: str
+    adapter_contract_digest: str
+    route_kind: str
+    endpoint_set_id: str
+    endpoint_set_revision: str
+    destination_id: str
+    destination_revision: str
+    routing_contract_id: str
+    routing_contract_revision: str
+    private_route_descriptor_commitment: str
+    transport_security_policy_id: str
+    transport_security_policy_version: str
+    transport_security_policy_digest: str
+    minimum_tls_version: str
+    server_authentication_required: bool
+    client_authentication_required: bool
+    plaintext_fallback_prohibited: bool
+    network_policy_id: str
+    network_policy_version: str
+    network_policy_digest: str
+    source_zone_class: str
+    destination_zone_class: str
+    restricted_network_enforced: bool
+    public_egress_prohibited: bool
+    proxy_mode: str
+    credential_requirement_profile_id: str
+    credential_requirement_profile_version: str
+    credential_requirement_profile_digest: str
+    authentication_mechanism_class: str
+    principal_class: str
+    snapshotter_subject_id: str
+    captured_at: datetime
+    state: EventPhysicalTransportRouteSnapshotState
+    authority: EventPhysicalTransportRouteSnapshotAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.snapshot_id, "route snapshot_id"),
+            (self.route_id, "route_id"),
+            (self.route_revision, "route_revision"),
+            (self.route_set_id, "route_set_id"),
+            (self.route_set_revision, "route_set_revision"),
+            (self.selection_epoch_id, "selection_epoch_id"),
+            (self.selection_epoch_revision, "selection_epoch_revision"),
+            (self.deployment_release_id, "deployment_release_id"),
+            (self.transport_profile_id, "transport_profile_id"),
+            (self.transport_profile_revision, "transport_profile_revision"),
+            (self.transport_resource_id, "transport_resource_id"),
+            (self.transport_implementation_id, "transport_implementation_id"),
+            (self.transport_implementation_version, "transport_implementation_version"),
+            (self.adapter_contract_id, "adapter_contract_id"),
+            (self.adapter_contract_version, "adapter_contract_version"),
+            (self.endpoint_set_id, "endpoint_set_id"),
+            (self.endpoint_set_revision, "endpoint_set_revision"),
+            (self.destination_id, "destination_id"),
+            (self.destination_revision, "destination_revision"),
+            (self.routing_contract_id, "routing_contract_id"),
+            (self.routing_contract_revision, "routing_contract_revision"),
+            (self.transport_security_policy_id, "transport_security_policy_id"),
+            (self.transport_security_policy_version, "transport_security_policy_version"),
+            (self.network_policy_id, "network_policy_id"),
+            (self.network_policy_version, "network_policy_version"),
+            (self.source_zone_class, "source_zone_class"),
+            (self.destination_zone_class, "destination_zone_class"),
+            (self.credential_requirement_profile_id, "credential_requirement_profile_id"),
+            (
+                self.credential_requirement_profile_version,
+                "credential_requirement_profile_version",
+            ),
+            (self.snapshotter_subject_id, "route snapshotter_subject_id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.source_route_digest, "source_route_digest"),
+            (self.transport_resource_digest, "transport_resource_digest"),
+            (self.adapter_contract_digest, "adapter_contract_digest"),
+            (
+                self.private_route_descriptor_commitment,
+                "private_route_descriptor_commitment",
+            ),
+            (self.transport_security_policy_digest, "transport_security_policy_digest"),
+            (self.network_policy_digest, "network_policy_digest"),
+            (
+                self.credential_requirement_profile_digest,
+                "credential_requirement_profile_digest",
+            ),
+            (self.canonical_digest, "route snapshot canonical_digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.deployment_profile not in _ALLOWED_DEPLOYMENT_PROFILES:
+            raise ValueError("deployment_profile is unsupported")
+        if self.transport_implementation_id not in _ALLOWED_TRANSPORT_IMPLEMENTATIONS:
+            raise ValueError("transport_implementation_id is unsupported")
+        _validate_transport_route_security_requirements(self)
+        if self.captured_at.tzinfo is None:
+            raise ValueError("route snapshot capture time must be timezone-aware")
+        if self.state is not EventPhysicalTransportRouteSnapshotState.SNAPSHOTTED:
+            raise ValueError("transport route snapshots must remain snapshotted")
+        if any(self.authority.canonical_value().values()):
+            raise ValueError("transport route snapshots cannot grant operational authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("transport route snapshot canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "adapter_contract_digest": self.adapter_contract_digest,
+            "adapter_contract_id": self.adapter_contract_id,
+            "adapter_contract_version": self.adapter_contract_version,
+            "authentication_mechanism_class": self.authentication_mechanism_class,
+            "authority": self.authority.canonical_value(),
+            "captured_at": self.captured_at.isoformat(),
+            "client_authentication_required": self.client_authentication_required,
+            "credential_requirement_profile_digest": (self.credential_requirement_profile_digest),
+            "credential_requirement_profile_id": self.credential_requirement_profile_id,
+            "credential_requirement_profile_version": self.credential_requirement_profile_version,
+            "deployment_profile": self.deployment_profile,
+            "deployment_release_id": self.deployment_release_id,
+            "destination_id": self.destination_id,
+            "destination_revision": self.destination_revision,
+            "destination_zone_class": self.destination_zone_class,
+            "endpoint_set_id": self.endpoint_set_id,
+            "endpoint_set_revision": self.endpoint_set_revision,
+            "minimum_tls_version": self.minimum_tls_version,
+            "network_policy_digest": self.network_policy_digest,
+            "network_policy_id": self.network_policy_id,
+            "network_policy_version": self.network_policy_version,
+            "plaintext_fallback_prohibited": self.plaintext_fallback_prohibited,
+            "principal_class": self.principal_class,
+            "proxy_mode": self.proxy_mode,
+            "public_egress_prohibited": self.public_egress_prohibited,
+            "restricted_network_enforced": self.restricted_network_enforced,
+            "route_id": self.route_id,
+            "route_kind": self.route_kind,
+            "route_revision": self.route_revision,
+            "route_set_id": self.route_set_id,
+            "route_set_revision": self.route_set_revision,
+            "routing_contract_id": self.routing_contract_id,
+            "routing_contract_revision": self.routing_contract_revision,
+            "selection_epoch_id": self.selection_epoch_id,
+            "selection_epoch_revision": self.selection_epoch_revision,
+            "scope": self.scope.canonical_value(),
+            "server_authentication_required": self.server_authentication_required,
+            "source_zone_class": self.source_zone_class,
+            "snapshot_id": self.snapshot_id,
+            "snapshotter_subject_id": self.snapshotter_subject_id,
+            "source_route_digest": self.source_route_digest,
+            "state": self.state.value,
+            "transport_implementation_id": self.transport_implementation_id,
+            "transport_implementation_version": self.transport_implementation_version,
+            "transport_profile_id": self.transport_profile_id,
+            "transport_profile_revision": self.transport_profile_revision,
+            "transport_resource_digest": self.transport_resource_digest,
+            "transport_resource_id": self.transport_resource_id,
+            "transport_security_policy_digest": self.transport_security_policy_digest,
+            "transport_security_policy_id": self.transport_security_policy_id,
+            "transport_security_policy_version": self.transport_security_policy_version,
+            "private_route_descriptor_commitment": self.private_route_descriptor_commitment,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    @property
+    def grants_endpoint_resolution_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_route_selection_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_route_binding_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_credential_access_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_network_access_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_readiness_probe_authority(self) -> bool:
         return False
 
     @property

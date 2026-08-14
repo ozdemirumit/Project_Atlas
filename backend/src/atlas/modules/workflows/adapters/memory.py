@@ -71,9 +71,17 @@ from atlas.modules.workflows.application.transport_profile_snapshot_ports import
     WorkflowTransportProfileSnapshotResult,
     WorkflowTransportProfileSnapshotStatus,
 )
+from atlas.modules.workflows.application.transport_route_snapshot_ports import (
+    WorkflowTransportRouteSnapshotIdempotencyRecord,
+    WorkflowTransportRouteSnapshotRequest,
+    WorkflowTransportRouteSnapshotResult,
+    WorkflowTransportRouteSnapshotStatus,
+)
 from atlas.modules.workflows.domain import (
     EventPhysicalTransportProfileSnapshot,
     EventPhysicalTransportProfileSnapshotState,
+    EventPhysicalTransportRouteSnapshot,
+    EventPhysicalTransportRouteSnapshotState,
     WorkflowDispatchEventEnvelope,
     WorkflowDispatchEventEnvelopeState,
     WorkflowDispatchIntent,
@@ -163,6 +171,13 @@ class InMemoryWorkflowPlanRepository:
         self._transport_profile_snapshot_requests: dict[
             tuple[WorkflowScope, str, str],
             WorkflowTransportProfileSnapshotIdempotencyRecord,
+        ] = {}
+        self._transport_route_snapshots: dict[
+            tuple[str, str], EventPhysicalTransportRouteSnapshot
+        ] = {}
+        self._transport_route_snapshot_requests: dict[
+            tuple[WorkflowScope, str, str],
+            WorkflowTransportRouteSnapshotIdempotencyRecord,
         ] = {}
         self._transport_compatibility_admissions: dict[
             str, WorkflowEventTransportCompatibilityAdmission
@@ -899,6 +914,63 @@ class InMemoryWorkflowPlanRepository:
             )
             return WorkflowTransportProfileSnapshotResult(
                 WorkflowTransportProfileSnapshotStatus.SNAPSHOTTED, candidate
+            )
+
+    async def get_transport_route_snapshot(
+        self,
+        *,
+        route_id: str,
+        route_revision: str,
+    ) -> EventPhysicalTransportRouteSnapshot | None:
+        async with self._lock:
+            return self._transport_route_snapshots.get((route_id, route_revision))
+
+    async def get_transport_route_snapshot_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        snapshotter_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowTransportRouteSnapshotIdempotencyRecord | None:
+        async with self._lock:
+            return self._transport_route_snapshot_requests.get(
+                (scope, snapshotter_subject_id, idempotency_key)
+            )
+
+    async def snapshot_transport_route(
+        self, request: WorkflowTransportRouteSnapshotRequest
+    ) -> WorkflowTransportRouteSnapshotResult:
+        async with self._lock:
+            candidate = request.candidate
+            key = (candidate.scope, request.snapshotter_subject_id, request.idempotency_key)
+            prior = self._transport_route_snapshot_requests.get(key)
+            if prior is not None:
+                status = (
+                    WorkflowTransportRouteSnapshotStatus.REPLAY
+                    if prior.request_fingerprint == request.request_fingerprint
+                    else WorkflowTransportRouteSnapshotStatus.IDEMPOTENCY_CONFLICT
+                )
+                return WorkflowTransportRouteSnapshotResult(status, prior.snapshot)
+
+            if not self._transport_route_snapshot_evidence_matches(request):
+                return WorkflowTransportRouteSnapshotResult(
+                    WorkflowTransportRouteSnapshotStatus.SOURCE_CONFLICT, None
+                )
+            route_key = (candidate.route_id, candidate.route_revision)
+            current = self._transport_route_snapshots.get(route_key)
+            if current is not None:
+                return WorkflowTransportRouteSnapshotResult(
+                    WorkflowTransportRouteSnapshotStatus.ALREADY_SNAPSHOTTED, current
+                )
+            self._transport_route_snapshots[route_key] = candidate
+            self._transport_route_snapshot_requests[key] = (
+                WorkflowTransportRouteSnapshotIdempotencyRecord(
+                    request_fingerprint=request.request_fingerprint,
+                    snapshot=candidate,
+                )
+            )
+            return WorkflowTransportRouteSnapshotResult(
+                WorkflowTransportRouteSnapshotStatus.SNAPSHOTTED, candidate
             )
 
     async def get_event_logical_channel_binding_by_id(
@@ -2022,6 +2094,22 @@ class InMemoryWorkflowPlanRepository:
             and not candidate.grants_delivery_authority
             and not candidate.grants_dispatch_authority
             and not candidate.grants_execution_authority
+        )
+
+    @staticmethod
+    def _transport_route_snapshot_evidence_matches(
+        request: WorkflowTransportRouteSnapshotRequest,
+    ) -> bool:
+        candidate = request.candidate
+        return bool(
+            candidate.route_id == request.expected_source_route_id
+            and candidate.route_revision == request.expected_source_route_revision
+            and candidate.source_route_digest == request.expected_source_route_digest
+            and candidate.scope == request.scope
+            and candidate.snapshotter_subject_id == request.snapshotter_subject_id
+            and candidate.captured_at == request.requested_at
+            and candidate.state is EventPhysicalTransportRouteSnapshotState.SNAPSHOTTED
+            and not any(candidate.authority.canonical_value().values())
         )
 
     @staticmethod

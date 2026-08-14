@@ -69,8 +69,15 @@ from atlas.modules.workflows.application.transport_profile_snapshot_ports import
     WorkflowTransportProfileSnapshotRequest,
     WorkflowTransportProfileSnapshotResult,
 )
+from atlas.modules.workflows.application.transport_route_snapshot_ports import (
+    WorkflowTransportRouteSnapshotError,
+    WorkflowTransportRouteSnapshotIdempotencyRecord,
+    WorkflowTransportRouteSnapshotRequest,
+    WorkflowTransportRouteSnapshotResult,
+)
 from atlas.modules.workflows.domain import (
     EventPhysicalTransportProfileSnapshot,
+    EventPhysicalTransportRouteSnapshot,
     WorkflowDispatchEventEnvelope,
     WorkflowDispatchIntent,
     WorkflowDispatchOutboxEntry,
@@ -319,6 +326,28 @@ class UnavailableWorkflowPlanRepository:
     ) -> WorkflowTransportProfileSnapshotResult:
         self._raise_transport_profile_snapshot()
 
+    async def get_transport_route_snapshot(
+        self,
+        *,
+        route_id: str,
+        route_revision: str,
+    ) -> EventPhysicalTransportRouteSnapshot | None:
+        self._raise_transport_route_snapshot()
+
+    async def get_transport_route_snapshot_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        snapshotter_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowTransportRouteSnapshotIdempotencyRecord | None:
+        self._raise_transport_route_snapshot()
+
+    async def snapshot_transport_route(
+        self, request: WorkflowTransportRouteSnapshotRequest
+    ) -> WorkflowTransportRouteSnapshotResult:
+        self._raise_transport_route_snapshot()
+
     async def get_event_logical_channel_binding_by_id(
         self, *, binding_id: str
     ) -> WorkflowEventLogicalChannelBinding | None:
@@ -474,6 +503,13 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowTransportProfileSnapshotError(
             "workflow_transport_profile_snapshot_repository_unavailable",
             "Durable event transport profile snapshot storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_transport_route_snapshot() -> NoReturn:
+        raise WorkflowTransportRouteSnapshotError(
+            "workflow_transport_route_snapshot_repository_unavailable",
+            "Durable event transport route snapshot storage is not configured.",
         )
 
     @staticmethod

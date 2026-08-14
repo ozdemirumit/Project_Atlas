@@ -274,6 +274,16 @@ credential, performs no network call, proves no profile currency or runtime read
 route-selection, publication, delivery, dispatch or execution authority. Physical route binding
 and publication lifecycle evidence remain later boundaries.
 
+Independently of workflow events, a dedicated deployment-control workload may next snapshot one
+exact active physical route revision from server-owned configuration. The immutable snapshot
+records transport/profile/resource/adapter lineage, opaque endpoint-set, destination and
+routing-contract references, and versioned credential-requirement, transport-security and network
+policy evidence. It exposes no raw locator or field-level locator fingerprint, selects no
+credential, makes no network call, proves no readiness and grants no endpoint-resolution,
+route-selection, route-binding, credential, network, publication, delivery, dispatch or execution
+authority. Workflow route binding, credential/readiness verification and publication remain later
+boundaries.
+
 ### 10.2 Publication State
 
 Outbox records track:

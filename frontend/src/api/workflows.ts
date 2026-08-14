@@ -622,6 +622,74 @@ export type WorkflowTransportProfileSnapshotInventory = {
   durable: boolean;
 };
 
+export type WorkflowTransportRouteAuthority = {
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  endpoint_resolution_authorized: false;
+  credential_access_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+};
+
+export type WorkflowTransportRouteSnapshot = {
+  snapshot_id: string;
+  route_id: string;
+  route_revision: string;
+  route_set_id: string;
+  route_set_revision: string;
+  selection_epoch_id: string;
+  selection_epoch_revision: string;
+  source_route_digest: string;
+  deployment_release_id: string;
+  deployment_profile: "developer" | "lab" | "enterprise-test" | "production" | "offline";
+  scope: WorkflowRunPlan["scope"];
+  transport_profile_id: string;
+  transport_profile_revision: string;
+  transport_resource_id: string;
+  transport_implementation_id: string;
+  transport_implementation_version: string;
+  adapter_contract_id: string;
+  adapter_contract_version: string;
+  route_kind: "message-broker";
+  endpoint_set_id: string;
+  endpoint_set_revision: string;
+  destination_id: string;
+  destination_revision: string;
+  routing_contract_id: string;
+  routing_contract_revision: string;
+  transport_security_policy_id: string;
+  transport_security_policy_version: string;
+  minimum_tls_version: "1.3";
+  server_authentication_required: true;
+  client_authentication_required: boolean;
+  plaintext_fallback_prohibited: true;
+  network_policy_id: string;
+  network_policy_version: string;
+  source_zone_class: string;
+  destination_zone_class: string;
+  restricted_network_enforced: true;
+  public_egress_prohibited: true;
+  proxy_mode: "prohibited" | "deployment-managed";
+  credential_requirement_profile_id: string;
+  credential_requirement_profile_version: string;
+  authentication_mechanism_class: "mutual-tls" | "workload-token";
+  principal_class: "service-workload";
+  snapshotter_subject_id: string;
+  captured_at: string;
+  state: "snapshotted";
+  authority: WorkflowTransportRouteAuthority;
+  canonical_digest: string;
+};
+
+export type WorkflowTransportRouteSnapshotInventory = {
+  transport_route_snapshots: WorkflowTransportRouteSnapshot[];
+  durable: boolean;
+};
+
 export type WorkflowTransportCompatibilityAuthority = {
   route_selection_authorized: false;
   route_binding_authorized: false;
@@ -1128,6 +1196,68 @@ const transportProfileSnapshotInventoryFields = [
   "transport_profile_snapshots",
   "durable",
 ] as const;
+const transportRouteAuthorityFields = [
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "endpoint_resolution_authorized",
+  "credential_access_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+] as const;
+const transportRouteSnapshotFields = [
+  "snapshot_id",
+  "route_id",
+  "route_revision",
+  "route_set_id",
+  "route_set_revision",
+  "selection_epoch_id",
+  "selection_epoch_revision",
+  "source_route_digest",
+  "deployment_release_id",
+  "deployment_profile",
+  "scope",
+  "transport_profile_id",
+  "transport_profile_revision",
+  "transport_resource_id",
+  "transport_implementation_id",
+  "transport_implementation_version",
+  "adapter_contract_id",
+  "adapter_contract_version",
+  "route_kind",
+  "endpoint_set_id",
+  "endpoint_set_revision",
+  "destination_id",
+  "destination_revision",
+  "routing_contract_id",
+  "routing_contract_revision",
+  "transport_security_policy_id",
+  "transport_security_policy_version",
+  "minimum_tls_version",
+  "server_authentication_required",
+  "client_authentication_required",
+  "plaintext_fallback_prohibited",
+  "network_policy_id",
+  "network_policy_version",
+  "source_zone_class",
+  "destination_zone_class",
+  "restricted_network_enforced",
+  "public_egress_prohibited",
+  "proxy_mode",
+  "credential_requirement_profile_id",
+  "credential_requirement_profile_version",
+  "authentication_mechanism_class",
+  "principal_class",
+  "snapshotter_subject_id",
+  "captured_at",
+  "state",
+  "authority",
+  "canonical_digest",
+] as const;
+const transportRouteSnapshotInventoryFields = ["transport_route_snapshots", "durable"] as const;
 const transportCompatibilityAuthorityFields = [
   "route_selection_authorized",
   "route_binding_authorized",
@@ -2108,6 +2238,84 @@ function isTransportProfileSnapshot(
   );
 }
 
+function hasZeroTransportRouteAuthority(
+  value: unknown,
+): value is WorkflowTransportRouteAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, transportRouteAuthorityFields) &&
+    transportRouteAuthorityFields.every((field) => value[field] === false)
+  );
+}
+
+function isTransportRouteSnapshot(
+  value: unknown,
+  scope: WorkflowScope,
+): value is WorkflowTransportRouteSnapshot {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, transportRouteSnapshotFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value)
+  ) {
+    return false;
+  }
+  const snapshotScope = value.scope;
+  return (
+    isIdentifier(value.snapshot_id) &&
+    isIdentifier(value.route_id) &&
+    isIdentifier(value.route_revision) &&
+    isIdentifier(value.route_set_id) &&
+    isIdentifier(value.route_set_revision) &&
+    isIdentifier(value.selection_epoch_id) &&
+    isIdentifier(value.selection_epoch_revision) &&
+    isDigest(value.source_route_digest) &&
+    isIdentifier(value.deployment_release_id) &&
+    ["developer", "lab", "enterprise-test", "production", "offline"].includes(
+      String(value.deployment_profile),
+    ) &&
+    snapshotScope.organization_id === scope.organizationId &&
+    snapshotScope.environment_id === scope.environmentId &&
+    snapshotScope.site_id === scope.siteId &&
+    isIdentifier(value.transport_profile_id) &&
+    isIdentifier(value.transport_profile_revision) &&
+    isIdentifier(value.transport_resource_id) &&
+    isIdentifier(value.transport_implementation_id) &&
+    isIdentifier(value.transport_implementation_version) &&
+    isIdentifier(value.adapter_contract_id) &&
+    isIdentifier(value.adapter_contract_version) &&
+    value.route_kind === "message-broker" &&
+    isIdentifier(value.endpoint_set_id) &&
+    isIdentifier(value.endpoint_set_revision) &&
+    isIdentifier(value.destination_id) &&
+    isIdentifier(value.destination_revision) &&
+    isIdentifier(value.routing_contract_id) &&
+    isIdentifier(value.routing_contract_revision) &&
+    isIdentifier(value.transport_security_policy_id) &&
+    isIdentifier(value.transport_security_policy_version) &&
+    value.minimum_tls_version === "1.3" &&
+    value.server_authentication_required === true &&
+    typeof value.client_authentication_required === "boolean" &&
+    value.plaintext_fallback_prohibited === true &&
+    isIdentifier(value.network_policy_id) &&
+    isIdentifier(value.network_policy_version) &&
+    isIdentifier(value.source_zone_class) &&
+    isIdentifier(value.destination_zone_class) &&
+    value.restricted_network_enforced === true &&
+    value.public_egress_prohibited === true &&
+    ["prohibited", "deployment-managed"].includes(String(value.proxy_mode)) &&
+    isIdentifier(value.credential_requirement_profile_id) &&
+    isIdentifier(value.credential_requirement_profile_version) &&
+    ["mutual-tls", "workload-token"].includes(String(value.authentication_mechanism_class)) &&
+    value.principal_class === "service-workload" &&
+    isIdentifier(value.snapshotter_subject_id) &&
+    isTimestamp(value.captured_at) &&
+    value.state === "snapshotted" &&
+    hasZeroTransportRouteAuthority(value.authority) &&
+    isDigest(value.canonical_digest)
+  );
+}
+
 function hasZeroTransportCompatibilityAuthority(
   value: unknown,
 ): value is WorkflowTransportCompatibilityAuthority {
@@ -2708,6 +2916,46 @@ export async function listWorkflowTransportProfileSnapshots(input: {
     throw new ApiRequestError("Workflow transport capability profile response was unsafe", response.status);
   }
   return data as WorkflowTransportProfileSnapshotInventory;
+}
+
+export async function listWorkflowTransportRouteSnapshots(input: {
+  scope: WorkflowScope;
+}): Promise<WorkflowTransportRouteSnapshotInventory> {
+  const response = await apiFetch("/api/v1/workflows/transport-route-snapshots", {
+    headers: { Accept: "application/json" },
+  });
+  const data = await readData(response, "Workflow transport route snapshot retrieval failed");
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, transportRouteSnapshotInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.transport_route_snapshots) ||
+    typeof data.durable !== "boolean" ||
+    !data.transport_route_snapshots.every((snapshot) =>
+      isTransportRouteSnapshot(snapshot, input.scope),
+    )
+  ) {
+    throw new ApiRequestError("Workflow transport route snapshot response was unsafe", response.status);
+  }
+  const snapshotIds = new Set(
+    data.transport_route_snapshots.map((snapshot) =>
+      isObject(snapshot) ? snapshot.snapshot_id : undefined,
+    ),
+  );
+  const routeRevisions = new Set(
+    data.transport_route_snapshots.map((snapshot) =>
+      isObject(snapshot)
+        ? `${String(snapshot.route_id)}:${String(snapshot.route_revision)}`
+        : "",
+    ),
+  );
+  if (
+    snapshotIds.size !== data.transport_route_snapshots.length ||
+    routeRevisions.size !== data.transport_route_snapshots.length
+  ) {
+    throw new ApiRequestError("Workflow transport route snapshot response was unsafe", response.status);
+  }
+  return data as WorkflowTransportRouteSnapshotInventory;
 }
 
 export async function listWorkflowTransportCompatibilityAdmissions(input: {

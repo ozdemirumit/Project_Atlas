@@ -5709,6 +5709,152 @@ class EventPhysicalTransportProfileSnapshotClaimModel(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
+class EventPhysicalTransportRouteSnapshotModel(Base):
+    __tablename__ = "event_transport_route_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "route_id",
+            "route_revision",
+            name="uq_event_transport_route_snapshot_revision",
+        ),
+        UniqueConstraint(
+            "source_route_digest",
+            name="uq_event_transport_route_snapshot_source_digest",
+        ),
+        UniqueConstraint(
+            "canonical_digest",
+            name="uq_event_transport_route_snapshot_digest",
+        ),
+        CheckConstraint(
+            "state = 'snapshotted'",
+            name="ck_event_transport_route_snapshot_state",
+        ),
+        CheckConstraint(
+            "NOT route_selection_authority_granted "
+            "AND NOT route_binding_authority_granted "
+            "AND NOT endpoint_resolution_authority_granted "
+            "AND NOT credential_access_authority_granted "
+            "AND NOT network_access_authority_granted "
+            "AND NOT readiness_probe_authority_granted "
+            "AND NOT publication_authority_granted "
+            "AND NOT delivery_authority_granted "
+            "AND NOT dispatch_authority_granted "
+            "AND NOT execution_authority_granted",
+            name="ck_event_transport_route_snapshot_zero_auth",
+        ),
+    )
+
+    snapshot_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    # The deployment route is mutable outside this boundary. Preserve its
+    # exact historical identity without linking to the current source row.
+    route_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    route_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    route_set_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    route_set_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    selection_epoch_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    selection_epoch_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_route_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    deployment_release_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    deployment_profile: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    transport_profile_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    transport_profile_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    transport_resource_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    transport_resource_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    transport_implementation_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    transport_implementation_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    adapter_contract_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    adapter_contract_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    adapter_contract_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    route_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    endpoint_set_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    endpoint_set_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    destination_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    destination_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    routing_contract_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    routing_contract_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    private_route_descriptor_commitment: Mapped[str] = mapped_column(String(64), nullable=False)
+    transport_security_policy_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    transport_security_policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    transport_security_policy_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    minimum_tls_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    server_authentication_required: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    client_authentication_required: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    plaintext_fallback_prohibited: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    network_policy_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    network_policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    network_policy_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_zone_class: Mapped[str] = mapped_column(String(64), nullable=False)
+    destination_zone_class: Mapped[str] = mapped_column(String(64), nullable=False)
+    restricted_network_enforced: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    public_egress_prohibited: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    proxy_mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    credential_requirement_profile_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    credential_requirement_profile_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    credential_requirement_profile_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    authentication_mechanism_class: Mapped[str] = mapped_column(String(64), nullable=False)
+    principal_class: Mapped[str] = mapped_column(String(64), nullable=False)
+    snapshotter_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    route_selection_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    route_binding_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    endpoint_resolution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_access_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    network_access_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    readiness_probe_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    publication_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    delivery_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    dispatch_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    execution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class EventPhysicalTransportRouteSnapshotClaimModel(Base):
+    __tablename__ = "event_transport_route_snapshot_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "idempotency_scope_id",
+            "idempotency_key",
+            name="uq_event_transport_route_claim_scope_idem",
+        ),
+        UniqueConstraint("snapshot_id", name="uq_event_transport_route_claim_snapshot"),
+        UniqueConstraint(
+            "route_id",
+            "route_revision",
+            name="uq_event_transport_route_claim_revision",
+        ),
+        UniqueConstraint(
+            "canonical_digest",
+            name="uq_event_transport_route_claim_digest",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    idempotency_scope_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey("event_transport_route_snapshots.snapshot_id"), nullable=False, index=True
+    )
+    route_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    route_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_route_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    snapshotter_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class WorkflowEventTransportCompatibilityAdmissionModel(Base):
     __tablename__ = "workflow_event_transport_compatibility_admissions"
     __table_args__ = (
