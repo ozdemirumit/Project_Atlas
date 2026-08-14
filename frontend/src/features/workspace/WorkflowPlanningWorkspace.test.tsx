@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { listOperationalConversations } from "../../api/conversations";
@@ -11,6 +11,7 @@ import {
   WORKFLOW_PLAN_SAFETY_NOTICE,
   type WorkflowDefinition,
   type WorkflowDispatchIntent,
+  type WorkflowDispatchOutboxEntry,
   type WorkflowExecutionAttempt,
   type WorkflowExecutionRun,
   type WorkflowOrchestrationLease,
@@ -222,6 +223,37 @@ const stagedDispatchIntent: WorkflowDispatchIntent = {
   canonical_digest: "4".repeat(64),
 };
 
+const pendingOutboxEntry: WorkflowDispatchOutboxEntry = {
+  outbox_entry_id: "workflow-dispatch-outbox.1234567890abcdef",
+  dispatch_intent_id: stagedDispatchIntent.dispatch_intent_id,
+  dispatch_intent_digest: stagedDispatchIntent.canonical_digest,
+  plan_id: stagedDispatchIntent.plan_id,
+  plan_digest: stagedDispatchIntent.plan_digest,
+  run_id: stagedDispatchIntent.run_id,
+  run_digest: stagedDispatchIntent.run_digest,
+  step_run_id: stagedDispatchIntent.step_run_id,
+  step_run_digest: stagedDispatchIntent.step_run_digest,
+  step_id: stagedDispatchIntent.step_id,
+  attempt_id: stagedDispatchIntent.attempt_id,
+  attempt_digest: stagedDispatchIntent.attempt_digest,
+  attempt_number: 1,
+  scope: stagedDispatchIntent.scope,
+  target_id: stagedDispatchIntent.target_id,
+  target_type: "storage",
+  lease_id: stagedDispatchIntent.lease_id,
+  lease_digest: stagedDispatchIntent.lease_digest,
+  fencing_token: stagedDispatchIntent.fencing_token,
+  worker_subject_id: stagedDispatchIntent.worker_subject_id,
+  admitted_at: stagedDispatchIntent.staged_at,
+  state: "pending_publication",
+  authority: { ...stagedDispatchIntent.authority },
+  grants_publication_authority: false,
+  grants_delivery_authority: false,
+  grants_dispatch_authority: false,
+  grants_execution_authority: false,
+  canonical_digest: "6".repeat(64),
+};
+
 function leaseResponse(lease: WorkflowOrchestrationLease | null, status = 200): Response {
   return new Response(
     JSON.stringify({
@@ -300,18 +332,43 @@ function dispatchIntentResponse(dispatchIntents: unknown[], status = 200): Respo
   );
 }
 
+function outboxResponse(outboxEntries: unknown[], status = 200): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            dispatch_intent_id: stagedDispatchIntent.dispatch_intent_id,
+            outbox_entries: outboxEntries,
+            server_time: "2026-08-13T10:10:00Z",
+            durable: false,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.dispatch-outbox",
+            generated_at: "2026-08-13T10:10:00Z",
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function mockReadResponses(input: {
   lease?: WorkflowOrchestrationLease | null;
   run?: WorkflowExecutionRun | null;
   attempts?: unknown[];
   dispatchIntents?: unknown[];
+  outboxEntries?: unknown[];
   leaseStatus?: number;
   runStatus?: number;
   attemptStatus?: number;
   dispatchIntentStatus?: number;
+  outboxStatus?: number;
 }) {
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/outbox")) {
+      return Promise.resolve(outboxResponse(input.outboxEntries ?? [], input.outboxStatus ?? 200));
+    }
     if (url.endsWith("/dispatch-intents")) {
       return Promise.resolve(
         dispatchIntentResponse(
@@ -973,5 +1030,86 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(dispatchIntentReads).toBe(2);
     expect(screen.getByText(/No message was published, no worker or action ran/i)).toBeVisible();
     expect(screen.queryByRole("button", { name: /stage|publish|dispatch|execute/i })).toBeNull();
+  });
+
+  it("renders pending publication as authoritative, control-free database evidence", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Pending publication outbox records",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Pending publication outbox records",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          `/dispatch-intents/${stagedDispatchIntent.dispatch_intent_id}/outbox`,
+        ),
+      ),
+    ).toBe(true);
+    expect(within(section).getByTitle(pendingOutboxEntry.outbox_entry_id)).toBeVisible();
+    expect(records).toHaveTextContent("pending publication");
+    expect(records).toHaveTextContent("fence 7");
+    expect(records).toHaveTextContent("intent 444444444444...44444444");
+    expect(section).toHaveTextContent("durable database evidence only");
+    expect(section).toHaveTextContent("No broker is selected");
+    expect(section).toHaveTextContent("no broker address, topic, or routing key");
+    expect(section).toHaveTextContent("No publication, delivery, dispatch, or execution occurred or is authorized");
+    expect(within(section).queryByRole("button")).toBeNull();
+    expect(within(section).queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
+  });
+
+  it("fails closed when a staged intent has no atomic outbox record", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Pending publication outbox records",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText("Outbox evidence is unavailable")).toBeVisible();
+    expect(within(section).getByText(/No publication state is inferred/i)).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [403, "Outbox evidence permission is missing", "current role cannot inspect pending publication"],
+  ])("handles outbox read status %s without another login or an authority control", async (status, title, detail) => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxStatus: status,
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Pending publication outbox records",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText(title)).toBeVisible();
+    expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+    expect(within(section).queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
   });
 });

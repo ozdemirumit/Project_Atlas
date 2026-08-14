@@ -24,6 +24,7 @@ import {
   getWorkflowOrchestrationLease,
   listWorkflowDefinitions,
   listWorkflowAttemptDispatchIntents,
+  listWorkflowDispatchOutboxEntries,
   listWorkflowPlans,
   listWorkflowRunAttempts,
   WORKFLOW_PLAN_SAFETY_NOTICE,
@@ -183,6 +184,25 @@ export default function WorkflowPlanningWorkspace({
     enabled: attemptQuery.isSuccess && materializedAttempts.length > 0,
     retry: false,
   });
+  const dispatchIntents =
+    dispatchIntentQuery.data?.flatMap((inventory) => inventory.dispatch_intents) ?? [];
+  const dispatchOutboxQuery = useQuery({
+    queryKey: [
+      "workflow-dispatch-outbox-entries",
+      dispatchIntents.map((intent) => [intent.dispatch_intent_id, intent.canonical_digest]),
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () =>
+      Promise.all(
+        dispatchIntents.map((dispatchIntent) =>
+          listWorkflowDispatchOutboxEntries({ dispatchIntent, scope, authorizedTargetIds }),
+        ),
+      ),
+    enabled: dispatchIntentQuery.isSuccess && dispatchIntents.length > 0,
+    retry: false,
+  });
   const definitions = definitionQuery.data?.definitions ?? [];
   const selectedDefinition = definitions.find((item) => item.definition_id === definitionId);
   const createMutation = useMutation({
@@ -246,7 +266,12 @@ export default function WorkflowPlanningWorkspace({
     dispatchIntentQuery.error instanceof ApiRequestError
       ? dispatchIntentQuery.error.status
       : undefined;
-  const dispatchIntents = dispatchIntentQuery.data?.flatMap((inventory) => inventory.dispatch_intents) ?? [];
+  const dispatchOutboxErrorStatus =
+    dispatchOutboxQuery.error instanceof ApiRequestError
+      ? dispatchOutboxQuery.error.status
+      : undefined;
+  const dispatchOutboxEntries =
+    dispatchOutboxQuery.data?.flatMap((inventory) => inventory.outbox_entries) ?? [];
 
   const selectPlan = (plan: WorkflowRunPlan) => {
     setSelectedPlan(plan);
@@ -673,13 +698,86 @@ export default function WorkflowPlanningWorkspace({
                 </div>
               )}
 
+              {dispatchIntentQuery.isSuccess && dispatchIntents.length > 0 && (
+                <div aria-labelledby="workflow-dispatch-outbox-records-title">
+                  <div className="workflow-section-heading">
+                    <div>
+                      <p className="eyebrow">READ-ONLY DURABLE EVIDENCE</p>
+                      <h3 id="workflow-dispatch-outbox-records-title">Pending publication outbox records</h3>
+                    </div>
+                    <span>Database evidence only</span>
+                  </div>
+                  {dispatchOutboxQuery.isLoading && (
+                    <div className="workflow-empty-state" role="status">
+                      <Database size={19} />
+                      <span>Loading authoritative outbox records...</span>
+                    </div>
+                  )}
+                  {dispatchOutboxQuery.isError && (
+                    <div className="inline-error" role="alert">
+                      <div>
+                        <strong>
+                          {dispatchOutboxErrorStatus === 401
+                            ? "Your session has expired"
+                            : dispatchOutboxErrorStatus === 403
+                              ? "Outbox evidence permission is missing"
+                              : "Outbox evidence is unavailable"}
+                        </strong>
+                        <span>
+                          {dispatchOutboxErrorStatus === 401
+                            ? "Sign in again to continue."
+                            : dispatchOutboxErrorStatus === 403
+                              ? "Your current role cannot inspect pending publication evidence."
+                              : "No publication state is inferred from this failed read."}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {dispatchOutboxQuery.isSuccess && dispatchOutboxEntries.length > 0 && (
+                    <ol className="workflow-step-preview" aria-label="Pending publication outbox records">
+                      {dispatchOutboxEntries.map((entry) => (
+                        <li key={entry.outbox_entry_id}>
+                          <Database size={17} />
+                          <div>
+                            <strong>
+                              <code title={entry.outbox_entry_id}>
+                                {safeHolderIdentifier(entry.outbox_entry_id)}
+                              </code>
+                            </strong>
+                            <small>
+                              step {entry.step_id} | {readableKind(entry.state)} | admitted {formatTimestamp(entry.admitted_at)}
+                            </small>
+                            <small>
+                              worker {safeHolderIdentifier(entry.worker_subject_id)} | fence {entry.fencing_token}
+                            </small>
+                            <small>
+                              intent {shortDigest(entry.dispatch_intent_digest)} | attempt {shortDigest(entry.attempt_digest)} | run {shortDigest(entry.run_digest)}
+                            </small>
+                            <small>
+                              step {shortDigest(entry.step_run_digest)} | plan {shortDigest(entry.plan_digest)} | lease {shortDigest(entry.lease_digest)} | outbox {shortDigest(entry.canonical_digest)}
+                            </small>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                  <div className="workflow-safety-boundary" role="note">
+                    <LockKeyhole size={18} />
+                    <span>Pending publication is durable database evidence only. No broker is selected and no broker address, topic, or routing key is recorded. No publication, delivery, dispatch, or execution occurred or is authorized.</span>
+                  </div>
+                </div>
+              )}
+
               {selectedPlan.state === "planned" && (
-                <div className="workflow-plan-composer" aria-labelledby="workflow-cancel-title">
+                <div
+                  className="workflow-plan-composer workflow-cancel-form"
+                  aria-labelledby="workflow-cancel-title"
+                >
                   <div className="workflow-section-heading">
                     <div><p className="eyebrow">WITHDRAW INTENT</p><h3 id="workflow-cancel-title">Cancel this plan</h3></div>
                     <span>History is preserved</span>
                   </div>
-                  <label>
+                  <label className="workflow-cancel-field">
                     Cancellation reason
                     <textarea
                       value={cancellationReason}
@@ -688,7 +786,7 @@ export default function WorkflowPlanningWorkspace({
                       placeholder="Why this unstarted plan is being withdrawn"
                     />
                   </label>
-                  <label>
+                  <label className="workflow-cancel-acknowledgement">
                     <input
                       type="checkbox"
                       checked={cancellationAcknowledged}

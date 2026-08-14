@@ -29,6 +29,7 @@ from atlas.modules.workflows.application import (
 )
 from atlas.modules.workflows.domain import (
     WorkflowDispatchIntent,
+    WorkflowDispatchOutboxEntry,
     WorkflowExecutionAttempt,
     WorkflowExecutionRun,
     WorkflowOrchestrationLease,
@@ -135,6 +136,11 @@ class UnavailableWorkflowPlanRepository:
     async def list_dispatch_intents_by_run_id(
         self, *, run_id: str
     ) -> tuple[WorkflowDispatchIntent, ...]:
+        self._raise_dispatch_intent()
+
+    async def list_dispatch_outbox_entries_by_run_id(
+        self, *, run_id: str
+    ) -> tuple[WorkflowDispatchOutboxEntry, ...]:
         self._raise_dispatch_intent()
 
     async def get_dispatch_intent_staging_request(

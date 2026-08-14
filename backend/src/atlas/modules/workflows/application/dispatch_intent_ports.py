@@ -5,7 +5,11 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 
-from atlas.modules.workflows.domain import WorkflowDispatchIntent, WorkflowScope
+from atlas.modules.workflows.domain import (
+    WorkflowDispatchIntent,
+    WorkflowDispatchOutboxEntry,
+    WorkflowScope,
+)
 
 
 class WorkflowDispatchIntentStagingError(Exception):
@@ -26,6 +30,7 @@ class WorkflowDispatchIntentStagingStatus(StrEnum):
 class WorkflowDispatchIntentStagingIdempotencyRecord:
     request_fingerprint: str
     dispatch_intent: WorkflowDispatchIntent
+    outbox_entry: WorkflowDispatchOutboxEntry
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,12 +47,14 @@ class WorkflowDispatchIntentStagingRequest:
     requested_at: datetime
     idempotency_key: str
     request_fingerprint: str
+    outbox_entry: WorkflowDispatchOutboxEntry
 
 
 @dataclass(frozen=True, slots=True)
 class WorkflowDispatchIntentStagingResult:
     status: WorkflowDispatchIntentStagingStatus
     dispatch_intent: WorkflowDispatchIntent | None
+    outbox_entry: WorkflowDispatchOutboxEntry | None = None
 
 
 class WorkflowDispatchIntentStagingRepository(Protocol):
@@ -57,6 +64,10 @@ class WorkflowDispatchIntentStagingRepository(Protocol):
     async def list_dispatch_intents_by_run_id(
         self, *, run_id: str
     ) -> tuple[WorkflowDispatchIntent, ...]: ...
+
+    async def list_dispatch_outbox_entries_by_run_id(
+        self, *, run_id: str
+    ) -> tuple[WorkflowDispatchOutboxEntry, ...]: ...
 
     async def get_dispatch_intent_staging_request(
         self,

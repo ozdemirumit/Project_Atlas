@@ -91,6 +91,10 @@ class WorkflowDispatchIntentState(StrEnum):
     STAGED = "staged"
 
 
+class WorkflowDispatchOutboxState(StrEnum):
+    PENDING_PUBLICATION = "pending_publication"
+
+
 @dataclass(frozen=True, slots=True)
 class WorkflowScope:
     organization_id: str
@@ -521,6 +525,121 @@ class WorkflowDispatchIntent:
             "run_id": self.run_id,
             "scope": self.scope.canonical_value(),
             "staged_at": self.staged_at.isoformat(),
+            "state": self.state.value,
+            "step_id": self.step_id,
+            "step_run_digest": self.step_run_digest,
+            "step_run_id": self.step_run_id,
+            "target_id": self.target_id,
+            "target_type": self.target_type,
+            "worker_subject_id": self.worker_subject_id,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    @property
+    def grants_publication_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_delivery_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_dispatch_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_execution_authority(self) -> bool:
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowDispatchOutboxEntry:
+    """Provider-neutral admission evidence that cannot publish or deliver work."""
+
+    outbox_entry_id: str
+    dispatch_intent_id: str
+    dispatch_intent_digest: str
+    plan_id: str
+    plan_digest: str
+    run_id: str
+    run_digest: str
+    step_run_id: str
+    step_run_digest: str
+    step_id: str
+    attempt_id: str
+    attempt_digest: str
+    attempt_number: int
+    scope: WorkflowScope
+    target_id: str
+    target_type: str
+    lease_id: str
+    lease_digest: str
+    fencing_token: int
+    worker_subject_id: str
+    admitted_at: datetime
+    state: WorkflowDispatchOutboxState
+    authority: WorkflowPlanAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.outbox_entry_id, "dispatch outbox entry id"),
+            (self.dispatch_intent_id, "dispatch outbox dispatch_intent_id"),
+            (self.plan_id, "dispatch outbox plan_id"),
+            (self.run_id, "dispatch outbox run_id"),
+            (self.step_run_id, "dispatch outbox step_run_id"),
+            (self.step_id, "dispatch outbox step_id"),
+            (self.attempt_id, "dispatch outbox attempt_id"),
+            (self.target_id, "dispatch outbox target_id"),
+            (self.lease_id, "dispatch outbox lease_id"),
+            (self.worker_subject_id, "dispatch outbox worker_subject_id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.dispatch_intent_digest, "dispatch outbox dispatch_intent_digest"),
+            (self.plan_digest, "dispatch outbox plan_digest"),
+            (self.run_digest, "dispatch outbox run_digest"),
+            (self.step_run_digest, "dispatch outbox step_run_digest"),
+            (self.attempt_digest, "dispatch outbox attempt_digest"),
+            (self.lease_digest, "dispatch outbox lease_digest"),
+            (self.canonical_digest, "dispatch outbox canonical_digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.attempt_number != 1:
+            raise ValueError("dispatch outbox entries support only attempt number one")
+        if self.target_type != "storage":
+            raise ValueError("workflow dispatch outbox entries support only storage targets")
+        if self.fencing_token < 1:
+            raise ValueError("dispatch outbox fencing_token must be at least one")
+        if self.admitted_at.tzinfo is None:
+            raise ValueError("dispatch outbox admitted_at must be timezone-aware")
+        if self.state is not WorkflowDispatchOutboxState.PENDING_PUBLICATION:
+            raise ValueError("workflow dispatch outbox entries must remain pending_publication")
+        if any(self.authority.canonical_value().values()):
+            raise ValueError("workflow dispatch outbox entries cannot grant operational authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("workflow dispatch outbox canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "admitted_at": self.admitted_at.isoformat(),
+            "attempt_digest": self.attempt_digest,
+            "attempt_id": self.attempt_id,
+            "attempt_number": self.attempt_number,
+            "authority": self.authority.canonical_value(),
+            "dispatch_intent_digest": self.dispatch_intent_digest,
+            "dispatch_intent_id": self.dispatch_intent_id,
+            "fencing_token": self.fencing_token,
+            "lease_digest": self.lease_digest,
+            "lease_id": self.lease_id,
+            "outbox_entry_id": self.outbox_entry_id,
+            "plan_digest": self.plan_digest,
+            "plan_id": self.plan_id,
+            "run_digest": self.run_digest,
+            "run_id": self.run_id,
+            "scope": self.scope.canonical_value(),
             "state": self.state.value,
             "step_id": self.step_id,
             "step_run_digest": self.step_run_digest,

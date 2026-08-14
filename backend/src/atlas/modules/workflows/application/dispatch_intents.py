@@ -29,6 +29,8 @@ from atlas.modules.workflows.application.ports import WorkflowPlanRepository
 from atlas.modules.workflows.domain import (
     WorkflowDispatchIntent,
     WorkflowDispatchIntentState,
+    WorkflowDispatchOutboxEntry,
+    WorkflowDispatchOutboxState,
     WorkflowExecutionAttempt,
     WorkflowExecutionAttemptState,
     WorkflowExecutionRun,
@@ -202,6 +204,15 @@ class WorkflowDispatchIntentStagingService:
             self._validate_dispatch_intent(
                 prior.dispatch_intent, attempt, run, step, lease_digest, context
             )
+            self._validate_outbox_entry(
+                prior.outbox_entry,
+                prior.dispatch_intent,
+                attempt,
+                run,
+                step,
+                lease_digest,
+                context,
+            )
             await self._audit(
                 context,
                 "workflow_dispatch_intent_staging_replayed",
@@ -211,6 +222,7 @@ class WorkflowDispatchIntentStagingService:
             return prior.dispatch_intent
 
         dispatch_intent = self._build_dispatch_intent(attempt, run, step, lease_digest, context)
+        outbox_entry = self._build_outbox_entry(dispatch_intent)
         await self._audit(
             context,
             "workflow_dispatch_intent_staged",
@@ -232,6 +244,7 @@ class WorkflowDispatchIntentStagingService:
                     requested_at=context.requested_at,
                     idempotency_key=idempotency_key,
                     request_fingerprint=fingerprint,
+                    outbox_entry=outbox_entry,
                 )
             )
         except Exception:
@@ -246,9 +259,19 @@ class WorkflowDispatchIntentStagingService:
                 WorkflowDispatchIntentStagingStatus.REPLAY,
             }
             and result.dispatch_intent is not None
+            and result.outbox_entry is not None
         ):
             self._validate_dispatch_intent(
                 result.dispatch_intent, attempt, run, step, lease_digest, context
+            )
+            self._validate_outbox_entry(
+                result.outbox_entry,
+                result.dispatch_intent,
+                attempt,
+                run,
+                step,
+                lease_digest,
+                context,
             )
             return result.dispatch_intent
         code = (
@@ -316,6 +339,67 @@ class WorkflowDispatchIntentStagingService:
             worker_subject_id=context.subject_id,
             staged_at=context.requested_at,
             state=WorkflowDispatchIntentState.STAGED,
+            authority=authority,
+            canonical_digest=canonical_digest(payload),
+        )
+
+    @staticmethod
+    def _build_outbox_entry(
+        dispatch_intent: WorkflowDispatchIntent,
+    ) -> WorkflowDispatchOutboxEntry:
+        outbox_entry_id = (
+            "workflow-dispatch-outbox."
+            + sha256(f"{dispatch_intent.dispatch_intent_id}:admitted".encode()).hexdigest()[:24]
+        )
+        authority = WorkflowPlanAuthority()
+        payload = {
+            "admitted_at": dispatch_intent.staged_at.isoformat(),
+            "attempt_digest": dispatch_intent.attempt_digest,
+            "attempt_id": dispatch_intent.attempt_id,
+            "attempt_number": dispatch_intent.attempt_number,
+            "authority": authority.canonical_value(),
+            "dispatch_intent_digest": dispatch_intent.canonical_digest,
+            "dispatch_intent_id": dispatch_intent.dispatch_intent_id,
+            "fencing_token": dispatch_intent.fencing_token,
+            "lease_digest": dispatch_intent.lease_digest,
+            "lease_id": dispatch_intent.lease_id,
+            "outbox_entry_id": outbox_entry_id,
+            "plan_digest": dispatch_intent.plan_digest,
+            "plan_id": dispatch_intent.plan_id,
+            "run_digest": dispatch_intent.run_digest,
+            "run_id": dispatch_intent.run_id,
+            "scope": dispatch_intent.scope.canonical_value(),
+            "state": WorkflowDispatchOutboxState.PENDING_PUBLICATION.value,
+            "step_id": dispatch_intent.step_id,
+            "step_run_digest": dispatch_intent.step_run_digest,
+            "step_run_id": dispatch_intent.step_run_id,
+            "target_id": dispatch_intent.target_id,
+            "target_type": dispatch_intent.target_type,
+            "worker_subject_id": dispatch_intent.worker_subject_id,
+        }
+        return WorkflowDispatchOutboxEntry(
+            outbox_entry_id=outbox_entry_id,
+            dispatch_intent_id=dispatch_intent.dispatch_intent_id,
+            dispatch_intent_digest=dispatch_intent.canonical_digest,
+            plan_id=dispatch_intent.plan_id,
+            plan_digest=dispatch_intent.plan_digest,
+            run_id=dispatch_intent.run_id,
+            run_digest=dispatch_intent.run_digest,
+            step_run_id=dispatch_intent.step_run_id,
+            step_run_digest=dispatch_intent.step_run_digest,
+            step_id=dispatch_intent.step_id,
+            attempt_id=dispatch_intent.attempt_id,
+            attempt_digest=dispatch_intent.attempt_digest,
+            attempt_number=dispatch_intent.attempt_number,
+            scope=dispatch_intent.scope,
+            target_id=dispatch_intent.target_id,
+            target_type=dispatch_intent.target_type,
+            lease_id=dispatch_intent.lease_id,
+            lease_digest=dispatch_intent.lease_digest,
+            fencing_token=dispatch_intent.fencing_token,
+            worker_subject_id=dispatch_intent.worker_subject_id,
+            admitted_at=dispatch_intent.staged_at,
+            state=WorkflowDispatchOutboxState.PENDING_PUBLICATION,
             authority=authority,
             canonical_digest=canonical_digest(payload),
         )
@@ -403,6 +487,50 @@ class WorkflowDispatchIntentStagingService:
             raise WorkflowDispatchIntentStagingError(
                 "workflow_dispatch_intent_repository_scope_violation",
                 "The dispatch intent repository returned an incorrectly bound record.",
+            )
+
+    @staticmethod
+    def _validate_outbox_entry(
+        outbox_entry: WorkflowDispatchOutboxEntry | None,
+        dispatch_intent: WorkflowDispatchIntent,
+        attempt: WorkflowExecutionAttempt,
+        run: WorkflowExecutionRun,
+        step: WorkflowExecutionStepRun,
+        lease_digest: str,
+        context: WorkflowWorkerContext,
+    ) -> None:
+        if (
+            outbox_entry is None
+            or outbox_entry.dispatch_intent_id != dispatch_intent.dispatch_intent_id
+            or outbox_entry.dispatch_intent_digest != dispatch_intent.canonical_digest
+            or outbox_entry.plan_id != run.plan_id
+            or outbox_entry.plan_digest != run.plan_digest
+            or outbox_entry.run_id != run.run_id
+            or outbox_entry.run_digest != run.canonical_digest
+            or outbox_entry.step_run_id != step.step_run_id
+            or outbox_entry.step_run_digest != step.canonical_digest
+            or outbox_entry.step_id != step.step_id
+            or outbox_entry.attempt_id != attempt.attempt_id
+            or outbox_entry.attempt_digest != attempt.canonical_digest
+            or outbox_entry.attempt_number != attempt.attempt_number
+            or outbox_entry.scope != context.scope
+            or outbox_entry.target_id not in context.authorized_target_ids
+            or outbox_entry.target_type != run.target_type
+            or outbox_entry.lease_id != dispatch_intent.lease_id
+            or outbox_entry.lease_digest != lease_digest
+            or outbox_entry.fencing_token != dispatch_intent.fencing_token
+            or outbox_entry.worker_subject_id != context.subject_id
+            or outbox_entry.admitted_at != dispatch_intent.staged_at
+            or outbox_entry.state is not WorkflowDispatchOutboxState.PENDING_PUBLICATION
+            or any(outbox_entry.authority.canonical_value().values())
+            or outbox_entry.grants_publication_authority
+            or outbox_entry.grants_delivery_authority
+            or outbox_entry.grants_dispatch_authority
+            or outbox_entry.grants_execution_authority
+        ):
+            raise WorkflowDispatchIntentStagingError(
+                "workflow_dispatch_outbox_repository_scope_violation",
+                "The dispatch outbox repository returned an incorrectly bound record.",
             )
 
     async def _deny(self, context: WorkflowWorkerContext, code: str, key: str) -> NoReturn:

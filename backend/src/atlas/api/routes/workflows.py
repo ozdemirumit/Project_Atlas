@@ -34,6 +34,9 @@ from atlas.api.workflow_schemas import (
     WorkflowDispatchIntentInventoryData,
     WorkflowDispatchIntentInventoryResponse,
     WorkflowDispatchIntentResponse,
+    WorkflowDispatchOutboxEntryData,
+    WorkflowDispatchOutboxInventoryData,
+    WorkflowDispatchOutboxInventoryResponse,
     WorkflowExecutionAttemptData,
     WorkflowExecutionAttemptResponse,
     WorkflowExecutionRunData,
@@ -78,6 +81,8 @@ from atlas.modules.workflows.application import (
 from atlas.modules.workflows.domain import (
     WorkflowDispatchIntent,
     WorkflowDispatchIntentState,
+    WorkflowDispatchOutboxEntry,
+    WorkflowDispatchOutboxState,
     WorkflowExecutionAttempt,
     WorkflowExecutionAttemptState,
     WorkflowExecutionRun,
@@ -503,6 +508,40 @@ def _dispatch_intent_matches_attempt(
         and not intent.grants_delivery_authority
         and not intent.grants_dispatch_authority
         and not intent.grants_execution_authority
+    )
+
+
+def _outbox_entry_matches_intent(
+    entry: WorkflowDispatchOutboxEntry,
+    intent: WorkflowDispatchIntent,
+) -> bool:
+    return bool(
+        entry.dispatch_intent_id == intent.dispatch_intent_id
+        and entry.dispatch_intent_digest == intent.canonical_digest
+        and entry.plan_id == intent.plan_id
+        and entry.plan_digest == intent.plan_digest
+        and entry.run_id == intent.run_id
+        and entry.run_digest == intent.run_digest
+        and entry.step_run_id == intent.step_run_id
+        and entry.step_run_digest == intent.step_run_digest
+        and entry.step_id == intent.step_id
+        and entry.attempt_id == intent.attempt_id
+        and entry.attempt_digest == intent.attempt_digest
+        and entry.attempt_number == intent.attempt_number
+        and entry.scope == intent.scope
+        and entry.target_id == intent.target_id
+        and entry.target_type == intent.target_type
+        and entry.lease_id == intent.lease_id
+        and entry.lease_digest == intent.lease_digest
+        and entry.fencing_token == intent.fencing_token
+        and entry.worker_subject_id == intent.worker_subject_id
+        and entry.admitted_at == intent.staged_at
+        and entry.state is WorkflowDispatchOutboxState.PENDING_PUBLICATION
+        and not any(entry.authority.canonical_value().values())
+        and not entry.grants_publication_authority
+        and not entry.grants_delivery_authority
+        and not entry.grants_dispatch_authority
+        and not entry.grants_execution_authority
     )
 
 
@@ -953,6 +992,138 @@ async def list_workflow_dispatch_intents(
             dispatch_intents=[WorkflowDispatchIntentData.from_domain(item) for item in intents],
             server_time=datetime.now(UTC),
             durable=intent_repository.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.get(
+    (
+        "/plans/{plan_id}/runs/{run_id}/attempts/{attempt_id}/dispatch-intents/"
+        "{dispatch_intent_id}/outbox"
+    ),
+    response_model=WorkflowDispatchOutboxInventoryResponse,
+)
+async def list_workflow_dispatch_outbox_entries(
+    plan_id: Annotated[str, SAFE_ID],
+    run_id: Annotated[str, SAFE_ID],
+    attempt_id: Annotated[str, SAFE_ID],
+    dispatch_intent_id: Annotated[str, SAFE_ID],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[AuthorizationDecision, Depends(authorize_workflow_plan_read)],
+) -> WorkflowDispatchOutboxInventoryResponse:
+    planning_service: WorkflowPlanningService = request.app.state.workflow_planning_service
+    try:
+        plan = await planning_service.get_plan(
+            plan_id=plan_id,
+            context=await _context(request, subject, decision),
+        )
+    except WorkflowPlanningError as error:
+        _raise(error)
+    run_repository: WorkflowRunMaterializationRepository = (
+        request.app.state.workflow_run_materialization_repository
+    )
+    attempt_repository: WorkflowAttemptMaterializationRepository = (
+        request.app.state.workflow_attempt_materialization_repository
+    )
+    repository: WorkflowDispatchIntentStagingRepository = (
+        request.app.state.workflow_dispatch_intent_staging_repository
+    )
+    try:
+        run = await run_repository.get_materialized_run_by_plan_id(plan_id=plan.plan_id)
+        if run is None or run.run_id != run_id or not _run_matches_plan(run, plan):
+            raise AtlasError(
+                status=404,
+                code="workflow_resource_unavailable",
+                title="Workflow resource unavailable",
+                detail="The requested workflow resource is unavailable.",
+            )
+        attempts = await attempt_repository.list_attempts_by_run_id(run_id=run.run_id)
+        if any(not _attempt_matches_run(item, run) for item in attempts):
+            raise RuntimeError("unsafe workflow attempt evidence")
+        attempt_by_id = {item.attempt_id: item for item in attempts}
+        attempt = next((item for item in attempts if item.attempt_id == attempt_id), None)
+        if attempt is None:
+            raise AtlasError(
+                status=404,
+                code="workflow_resource_unavailable",
+                title="Workflow resource unavailable",
+                detail="The requested workflow resource is unavailable.",
+            )
+        intents = await repository.list_dispatch_intents_by_run_id(run_id=run.run_id)
+        if (
+            len({item.dispatch_intent_id for item in intents}) != len(intents)
+            or len({item.attempt_id for item in intents}) != len(intents)
+            or any(
+                item.attempt_id not in attempt_by_id
+                or not _dispatch_intent_matches_attempt(item, attempt_by_id[item.attempt_id])
+                for item in intents
+            )
+        ):
+            raise RuntimeError("unsafe workflow dispatch intent evidence")
+        intent = next(
+            (
+                item
+                for item in intents
+                if item.dispatch_intent_id == dispatch_intent_id
+                and item.attempt_id == attempt.attempt_id
+            ),
+            None,
+        )
+        if intent is None or not _dispatch_intent_matches_attempt(intent, attempt):
+            raise AtlasError(
+                status=404,
+                code="workflow_resource_unavailable",
+                title="Workflow resource unavailable",
+                detail="The requested workflow resource is unavailable.",
+            )
+        all_entries = await repository.list_dispatch_outbox_entries_by_run_id(run_id=run.run_id)
+    except AtlasError:
+        raise
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_dispatch_outbox_service_unavailable",
+            title="Workflow dispatch outbox service unavailable",
+            detail="Workflow dispatch outbox evidence is unavailable.",
+            retryable=True,
+        ) from error
+    intent_by_id = {item.dispatch_intent_id: item for item in intents}
+    if (
+        len(all_entries) != len(intents)
+        or len({item.outbox_entry_id for item in all_entries}) != len(all_entries)
+        or len({item.dispatch_intent_id for item in all_entries}) != len(all_entries)
+        or any(
+            item.dispatch_intent_id not in intent_by_id
+            or not _outbox_entry_matches_intent(item, intent_by_id[item.dispatch_intent_id])
+            for item in all_entries
+        )
+    ):
+        raise AtlasError(
+            status=503,
+            code="workflow_dispatch_outbox_service_unavailable",
+            title="Workflow dispatch outbox service unavailable",
+            detail="Workflow dispatch outbox evidence is unavailable.",
+            retryable=True,
+        )
+    entries = [item for item in all_entries if item.dispatch_intent_id == intent.dispatch_intent_id]
+    if len(entries) != 1:
+        raise AtlasError(
+            status=503,
+            code="workflow_dispatch_outbox_service_unavailable",
+            title="Workflow dispatch outbox service unavailable",
+            detail="Workflow dispatch outbox evidence is unavailable.",
+            retryable=True,
+        )
+    _no_store(response)
+    return WorkflowDispatchOutboxInventoryResponse(
+        data=WorkflowDispatchOutboxInventoryData(
+            dispatch_intent_id=intent.dispatch_intent_id,
+            outbox_entries=[WorkflowDispatchOutboxEntryData.from_domain(item) for item in entries],
+            server_time=datetime.now(UTC),
+            durable=repository.durable,
         ),
         meta=_meta(request),
     )

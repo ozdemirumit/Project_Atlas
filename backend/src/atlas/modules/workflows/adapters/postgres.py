@@ -21,6 +21,7 @@ from atlas.core.persistence.models import (
     WorkflowAttemptMaterializationClaimModel,
     WorkflowDispatchIntentModel,
     WorkflowDispatchIntentStagingClaimModel,
+    WorkflowDispatchOutboxEntryModel,
     WorkflowExecutionAttemptModel,
     WorkflowExecutionRunModel,
     WorkflowExecutionStepRunModel,
@@ -69,6 +70,8 @@ from atlas.modules.workflows.domain import (
     WorkflowCapabilityClass,
     WorkflowDispatchIntent,
     WorkflowDispatchIntentState,
+    WorkflowDispatchOutboxEntry,
+    WorkflowDispatchOutboxState,
     WorkflowExecutionAttempt,
     WorkflowExecutionAttemptState,
     WorkflowExecutionRun,
@@ -578,6 +581,21 @@ class PostgreSQLWorkflowPlanRepository:
             rows = tuple((await session.scalars(statement)).all())
             return tuple(self._dispatch_intent_from_row(row) for row in rows)
 
+    async def list_dispatch_outbox_entries_by_run_id(
+        self, *, run_id: str
+    ) -> tuple[WorkflowDispatchOutboxEntry, ...]:
+        statement = (
+            select(WorkflowDispatchOutboxEntryModel)
+            .where(WorkflowDispatchOutboxEntryModel.run_id == run_id)
+            .order_by(
+                WorkflowDispatchOutboxEntryModel.admitted_at,
+                WorkflowDispatchOutboxEntryModel.outbox_entry_id,
+            )
+        )
+        async with self._sessions() as session:
+            rows = tuple((await session.scalars(statement)).all())
+            return tuple(self._dispatch_outbox_from_row(row) for row in rows)
+
     async def get_dispatch_intent_staging_request(
         self,
         *,
@@ -594,9 +612,11 @@ class PostgreSQLWorkflowPlanRepository:
             )
             if claim is None:
                 return None
+            intent, outbox_entry = self._dispatch_pair_from_claim(claim)
             return WorkflowDispatchIntentStagingIdempotencyRecord(
                 request_fingerprint=claim.request_fingerprint,
-                dispatch_intent=self._dispatch_intent_from_claim(claim),
+                dispatch_intent=intent,
+                outbox_entry=outbox_entry,
             )
 
     async def stage_dispatch_intent(
@@ -604,6 +624,9 @@ class PostgreSQLWorkflowPlanRepository:
     ) -> WorkflowDispatchIntentStagingResult:
         self._validate_dispatch_intent_staging_request(request)
         intent = request.candidate
+        outbox_entry = request.outbox_entry
+        if outbox_entry is None:
+            raise ValueError("workflow dispatch outbox entry is required")
         async with self._sessions() as session:
             replay = await self._dispatch_intent_staging_replay(session, request=request)
             if replay is not None:
@@ -659,8 +682,9 @@ class PostgreSQLWorkflowPlanRepository:
             ):
                 await session.rollback()
                 return WorkflowDispatchIntentStagingResult(
-                    WorkflowDispatchIntentStagingStatus.STATE_CONFLICT,
-                    None,
+                    status=WorkflowDispatchIntentStagingStatus.STATE_CONFLICT,
+                    dispatch_intent=None,
+                    outbox_entry=None,
                 )
 
             existing = cast(
@@ -672,19 +696,37 @@ class PostgreSQLWorkflowPlanRepository:
                 ),
             )
             if existing is not None:
+                existing_outbox = cast(
+                    WorkflowDispatchOutboxEntryModel | None,
+                    await session.scalar(
+                        select(WorkflowDispatchOutboxEntryModel)
+                        .where(
+                            WorkflowDispatchOutboxEntryModel.dispatch_intent_id
+                            == existing.dispatch_intent_id
+                        )
+                        .with_for_update()
+                    ),
+                )
                 await session.rollback()
                 return WorkflowDispatchIntentStagingResult(
-                    WorkflowDispatchIntentStagingStatus.STATE_CONFLICT,
-                    self._dispatch_intent_from_row(existing),
+                    status=WorkflowDispatchIntentStagingStatus.STATE_CONFLICT,
+                    dispatch_intent=self._dispatch_intent_from_row(existing),
+                    outbox_entry=(
+                        None
+                        if existing_outbox is None
+                        else self._dispatch_outbox_from_row(existing_outbox)
+                    ),
                 )
 
             try:
                 session.add(self._dispatch_intent_model(intent))
+                session.add(self._dispatch_outbox_model(outbox_entry))
                 session.add(self._dispatch_intent_staging_claim_model(request))
                 await session.commit()
                 return WorkflowDispatchIntentStagingResult(
-                    WorkflowDispatchIntentStagingStatus.STAGED,
-                    intent,
+                    status=WorkflowDispatchIntentStagingStatus.STAGED,
+                    dispatch_intent=intent,
+                    outbox_entry=outbox_entry,
                 )
             except IntegrityError:
                 await session.rollback()
@@ -694,8 +736,9 @@ class PostgreSQLWorkflowPlanRepository:
             if replay is not None:
                 return replay
         return WorkflowDispatchIntentStagingResult(
-            WorkflowDispatchIntentStagingStatus.STATE_CONFLICT,
-            None,
+            status=WorkflowDispatchIntentStagingStatus.STATE_CONFLICT,
+            dispatch_intent=None,
+            outbox_entry=None,
         )
 
     async def get_lease_acquire_request(
@@ -1548,13 +1591,17 @@ class PostgreSQLWorkflowPlanRepository:
         )
         if claim is None:
             return None
-        result = self._dispatch_intent_from_claim(claim)
+        intent, outbox_entry = self._dispatch_pair_from_claim(claim)
         status = (
             WorkflowDispatchIntentStagingStatus.REPLAY
             if claim.request_fingerprint == request.request_fingerprint
             else WorkflowDispatchIntentStagingStatus.IDEMPOTENCY_CONFLICT
         )
-        return WorkflowDispatchIntentStagingResult(status, result)
+        return WorkflowDispatchIntentStagingResult(
+            status=status,
+            dispatch_intent=intent,
+            outbox_entry=outbox_entry,
+        )
 
     @classmethod
     async def _load_dispatch_intent_staging_claim(
@@ -1627,17 +1674,26 @@ class PostgreSQLWorkflowPlanRepository:
     def _dispatch_intent_from_claim(
         cls, claim: WorkflowDispatchIntentStagingClaimModel
     ) -> WorkflowDispatchIntent:
+        return cls._dispatch_pair_from_claim(claim)[0]
+
+    @classmethod
+    def _dispatch_pair_from_claim(
+        cls, claim: WorkflowDispatchIntentStagingClaimModel
+    ) -> tuple[WorkflowDispatchIntent, WorkflowDispatchOutboxEntry]:
         raw = claim.payload.get("result_dispatch_intent")
-        if not isinstance(raw, dict):
+        raw_outbox = claim.payload.get("result_outbox_entry")
+        if not isinstance(raw, dict) or not isinstance(raw_outbox, dict):
             cls._dispatch_intent_contract_violation()
         try:
             intent = cls._dispatch_intent_to_domain(cast(dict[str, Any], raw))
+            outbox_entry = cls._dispatch_outbox_to_domain(cast(dict[str, Any], raw_outbox))
         except (KeyError, TypeError, ValueError) as exc:
             raise WorkflowDispatchIntentStagingError(
                 "workflow_dispatch_intent_repository_contract_violation",
                 "The dispatch-intent repository contains an invalid idempotency result.",
             ) from exc
         intent_payload = cls._dispatch_intent_payload(intent)
+        outbox_payload = cls._dispatch_outbox_payload(outbox_entry)
         scope_id = cls._dispatch_intent_staging_scope_id(intent)
         expected: dict[str, Any] = {
             "idempotency_key": claim.idempotency_key,
@@ -1645,11 +1701,15 @@ class PostgreSQLWorkflowPlanRepository:
             "request_fingerprint": claim.request_fingerprint,
             "result_dispatch_intent": intent_payload,
             "result_digest": intent.canonical_digest,
+            "result_outbox_digest": outbox_entry.canonical_digest,
+            "result_outbox_entry": outbox_payload,
         }
         if (
             claim.idempotency_scope_id != scope_id
             or claim.result_digest != intent.canonical_digest
+            or claim.result_outbox_digest != outbox_entry.canonical_digest
             or claim.dispatch_intent_id != intent.dispatch_intent_id
+            or claim.outbox_entry_id != outbox_entry.outbox_entry_id
             or claim.attempt_id != intent.attempt_id
             or claim.run_id != intent.run_id
             or claim.plan_id != intent.plan_id
@@ -1659,9 +1719,10 @@ class PostgreSQLWorkflowPlanRepository:
             or claim.worker_subject_id != intent.worker_subject_id
             or claim.payload != expected
             or claim.canonical_digest != canonical_digest(expected)
+            or not cls._dispatch_outbox_matches_intent(outbox_entry, intent)
         ):
             cls._dispatch_intent_contract_violation()
-        return intent
+        return intent, outbox_entry
 
     @classmethod
     def _dispatch_intent_model(cls, intent: WorkflowDispatchIntent) -> WorkflowDispatchIntentModel:
@@ -1693,10 +1754,95 @@ class PostgreSQLWorkflowPlanRepository:
         )
 
     @classmethod
+    def _dispatch_outbox_model(
+        cls, entry: WorkflowDispatchOutboxEntry
+    ) -> WorkflowDispatchOutboxEntryModel:
+        return WorkflowDispatchOutboxEntryModel(
+            outbox_entry_id=entry.outbox_entry_id,
+            dispatch_intent_id=entry.dispatch_intent_id,
+            dispatch_intent_digest=entry.dispatch_intent_digest,
+            plan_id=entry.plan_id,
+            plan_digest=entry.plan_digest,
+            run_id=entry.run_id,
+            run_digest=entry.run_digest,
+            step_run_id=entry.step_run_id,
+            step_run_digest=entry.step_run_digest,
+            step_id=entry.step_id,
+            attempt_id=entry.attempt_id,
+            attempt_digest=entry.attempt_digest,
+            attempt_number=entry.attempt_number,
+            organization_id=entry.scope.organization_id,
+            environment_id=entry.scope.environment_id,
+            site_id=entry.scope.site_id,
+            target_type=entry.target_type,
+            target_id=entry.target_id,
+            lease_id=entry.lease_id,
+            lease_digest=entry.lease_digest,
+            lease_fencing_token=entry.fencing_token,
+            worker_subject_id=entry.worker_subject_id,
+            admitted_at=entry.admitted_at,
+            state=entry.state.value,
+            publication_authority_granted=entry.grants_publication_authority,
+            delivery_authority_granted=entry.grants_delivery_authority,
+            dispatch_authority_granted=entry.grants_dispatch_authority,
+            execution_authority_granted=entry.grants_execution_authority,
+            canonical_digest=entry.canonical_digest,
+            payload=cls._dispatch_outbox_payload(entry),
+        )
+
+    @classmethod
+    def _dispatch_outbox_from_row(
+        cls, row: WorkflowDispatchOutboxEntryModel
+    ) -> WorkflowDispatchOutboxEntry:
+        try:
+            entry = cls._dispatch_outbox_to_domain(row.payload)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowDispatchIntentStagingError(
+                "workflow_dispatch_outbox_repository_contract_violation",
+                "The workflow dispatch outbox repository contains an invalid entry.",
+            ) from exc
+        if (
+            row.outbox_entry_id != entry.outbox_entry_id
+            or row.dispatch_intent_id != entry.dispatch_intent_id
+            or row.dispatch_intent_digest != entry.dispatch_intent_digest
+            or row.plan_id != entry.plan_id
+            or row.plan_digest != entry.plan_digest
+            or row.run_id != entry.run_id
+            or row.run_digest != entry.run_digest
+            or row.step_run_id != entry.step_run_id
+            or row.step_run_digest != entry.step_run_digest
+            or row.step_id != entry.step_id
+            or row.attempt_id != entry.attempt_id
+            or row.attempt_digest != entry.attempt_digest
+            or row.attempt_number != entry.attempt_number
+            or row.organization_id != entry.scope.organization_id
+            or row.environment_id != entry.scope.environment_id
+            or row.site_id != entry.scope.site_id
+            or row.target_type != entry.target_type
+            or row.target_id != entry.target_id
+            or row.lease_id != entry.lease_id
+            or row.lease_digest != entry.lease_digest
+            or row.lease_fencing_token != entry.fencing_token
+            or row.worker_subject_id != entry.worker_subject_id
+            or row.admitted_at != entry.admitted_at
+            or row.state != entry.state.value
+            or row.publication_authority_granted != entry.grants_publication_authority
+            or row.delivery_authority_granted != entry.grants_delivery_authority
+            or row.dispatch_authority_granted != entry.grants_dispatch_authority
+            or row.execution_authority_granted != entry.grants_execution_authority
+            or row.canonical_digest != entry.canonical_digest
+        ):
+            cls._dispatch_outbox_contract_violation()
+        return entry
+
+    @classmethod
     def _dispatch_intent_staging_claim_model(
         cls, request: WorkflowDispatchIntentStagingRequest
     ) -> WorkflowDispatchIntentStagingClaimModel:
         intent = request.candidate
+        outbox_entry = request.outbox_entry
+        if outbox_entry is None:
+            raise ValueError("workflow dispatch outbox entry is required")
         scope_id = cls._dispatch_intent_staging_scope_id(intent)
         payload: dict[str, Any] = {
             "idempotency_key": request.idempotency_key,
@@ -1704,6 +1850,8 @@ class PostgreSQLWorkflowPlanRepository:
             "request_fingerprint": request.request_fingerprint,
             "result_dispatch_intent": cls._dispatch_intent_payload(intent),
             "result_digest": intent.canonical_digest,
+            "result_outbox_digest": outbox_entry.canonical_digest,
+            "result_outbox_entry": cls._dispatch_outbox_payload(outbox_entry),
         }
         digest = canonical_digest(payload)
         return WorkflowDispatchIntentStagingClaimModel(
@@ -1712,7 +1860,9 @@ class PostgreSQLWorkflowPlanRepository:
             idempotency_key=request.idempotency_key,
             request_fingerprint=request.request_fingerprint,
             result_digest=intent.canonical_digest,
+            result_outbox_digest=outbox_entry.canonical_digest,
             dispatch_intent_id=intent.dispatch_intent_id,
+            outbox_entry_id=outbox_entry.outbox_entry_id,
             attempt_id=intent.attempt_id,
             run_id=intent.run_id,
             plan_id=intent.plan_id,
@@ -1730,11 +1880,20 @@ class PostgreSQLWorkflowPlanRepository:
         cls, request: WorkflowDispatchIntentStagingRequest
     ) -> None:
         intent = request.candidate
+        outbox_entry = request.outbox_entry
+        if outbox_entry is None:
+            raise ValueError("workflow dispatch outbox entry is required")
         if (
             intent.state is not WorkflowDispatchIntentState.STAGED
             or intent.attempt_number != 1
             or intent.grants_dispatch_authority
             or intent.grants_execution_authority
+            or outbox_entry.state is not WorkflowDispatchOutboxState.PENDING_PUBLICATION
+            or outbox_entry.grants_publication_authority
+            or outbox_entry.grants_delivery_authority
+            or outbox_entry.grants_dispatch_authority
+            or outbox_entry.grants_execution_authority
+            or not cls._dispatch_outbox_matches_intent(outbox_entry, intent)
         ):
             raise ValueError("workflow dispatch-intent staging payload is unsafe")
         if len(request.idempotency_key) > 128 or not request.idempotency_key:
@@ -1857,6 +2016,54 @@ class PostgreSQLWorkflowPlanRepository:
         payload["state"] = WorkflowDispatchIntentState(str(payload["state"]))
         payload["authority"] = WorkflowPlanAuthority(**cast(Any, payload["authority"]))
         return WorkflowDispatchIntent(**cast(Any, payload))
+
+    @staticmethod
+    def _dispatch_outbox_payload(entry: WorkflowDispatchOutboxEntry) -> dict[str, Any]:
+        return cast(dict[str, Any], entry.canonical_value())
+
+    @staticmethod
+    def _dispatch_outbox_to_domain(raw: dict[str, Any]) -> WorkflowDispatchOutboxEntry:
+        payload = dict(raw)
+        payload["scope"] = WorkflowScope(**cast(Any, payload["scope"]))
+        payload["admitted_at"] = datetime.fromisoformat(str(payload["admitted_at"]))
+        payload["state"] = WorkflowDispatchOutboxState(str(payload["state"]))
+        payload["authority"] = WorkflowPlanAuthority(**cast(Any, payload["authority"]))
+        return WorkflowDispatchOutboxEntry(**cast(Any, payload))
+
+    @staticmethod
+    def _dispatch_outbox_matches_intent(
+        entry: WorkflowDispatchOutboxEntry,
+        intent: WorkflowDispatchIntent,
+    ) -> bool:
+        return bool(
+            entry.dispatch_intent_id == intent.dispatch_intent_id
+            and entry.dispatch_intent_digest == intent.canonical_digest
+            and entry.plan_id == intent.plan_id
+            and entry.plan_digest == intent.plan_digest
+            and entry.run_id == intent.run_id
+            and entry.run_digest == intent.run_digest
+            and entry.step_run_id == intent.step_run_id
+            and entry.step_run_digest == intent.step_run_digest
+            and entry.step_id == intent.step_id
+            and entry.attempt_id == intent.attempt_id
+            and entry.attempt_digest == intent.attempt_digest
+            and entry.attempt_number == intent.attempt_number
+            and entry.scope == intent.scope
+            and entry.target_id == intent.target_id
+            and entry.target_type == intent.target_type
+            and entry.lease_id == intent.lease_id
+            and entry.lease_digest == intent.lease_digest
+            and entry.fencing_token == intent.fencing_token
+            and entry.worker_subject_id == intent.worker_subject_id
+            and entry.admitted_at == intent.staged_at
+        )
+
+    @staticmethod
+    def _dispatch_outbox_contract_violation() -> None:
+        raise WorkflowDispatchIntentStagingError(
+            "workflow_dispatch_outbox_repository_contract_violation",
+            "The workflow dispatch outbox entry does not match its canonical payload.",
+        )
 
     @staticmethod
     def _dispatch_intent_contract_violation() -> None:
