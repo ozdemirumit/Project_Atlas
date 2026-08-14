@@ -55,7 +55,7 @@
   `20260814_0119` is the single Alembic head and contains no endpoint, destination, route,
   credential, secret, message, attempt, receipt or network-health field. Non-development
   environments expose no fabricated source profile unless deployment configuration injects one.
-- Ruff format/lint passed across 1,323 files, strict mypy passed across 1,034 source files, and the
+- Ruff format/lint passed across 1,323 files, strict mypy passed across 1,203 source files, and the
   full backend suite passed 1,817 tests with three expected Windows symlink skips. The full
   frontend suite passed 454 tests across 95 files; ESLint, TypeScript and the production build
   passed with only the pre-existing chunk-size advisory.

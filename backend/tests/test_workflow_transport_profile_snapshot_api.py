@@ -78,8 +78,11 @@ def _registry_token(service: WorkloadIdentityService) -> str:
 
 def _source_profile(app: Any) -> DeploymentEventTransportProfile:
     profiles = app.state.workflow_transport_profile_source_profiles
+    assert isinstance(profiles, tuple)
     assert len(profiles) == 1
-    return profiles[0]
+    profile = profiles[0]
+    assert isinstance(profile, DeploymentEventTransportProfile)
+    return profile
 
 
 def _payload(
