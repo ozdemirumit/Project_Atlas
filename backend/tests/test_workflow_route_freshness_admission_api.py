@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from test_workflow_outbox_publication_lease_api import (
     PUBLISHER_ID,
@@ -110,8 +111,9 @@ def _seed_binding(
         ),
     )
     assert binding.status_code == 201
+    application = cast(FastAPI, client.app)
     domain_binding = asyncio.run(
-        client.app.state.workflow_event_physical_transport_route_binding_repository.get_physical_transport_route_binding(
+        application.state.workflow_event_physical_transport_route_binding_repository.get_physical_transport_route_binding(
             logical_channel_binding_id=logical["logical_channel_binding_id"]
         )
     )
