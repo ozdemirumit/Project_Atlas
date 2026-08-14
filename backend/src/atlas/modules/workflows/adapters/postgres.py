@@ -32,6 +32,8 @@ from atlas.core.persistence.models import (
     WorkflowEventLogicalChannelBindingModel,
     WorkflowEventTransportAdmissionClaimModel,
     WorkflowEventTransportAdmissionModel,
+    WorkflowEventTransportCompatibilityAdmissionClaimModel,
+    WorkflowEventTransportCompatibilityAdmissionModel,
     WorkflowExecutionAttemptModel,
     WorkflowExecutionRunModel,
     WorkflowExecutionStepRunModel,
@@ -116,6 +118,13 @@ from atlas.modules.workflows.application.transport_admission_ports import (
     WorkflowEventTransportAdmissionResult,
     WorkflowEventTransportAdmissionStatus,
 )
+from atlas.modules.workflows.application.transport_compatibility_admission_ports import (
+    WorkflowEventTransportCompatibilityAdmissionError,
+    WorkflowEventTransportCompatibilityAdmissionIdempotencyRecord,
+    WorkflowEventTransportCompatibilityAdmissionRequest,
+    WorkflowEventTransportCompatibilityAdmissionResult,
+    WorkflowEventTransportCompatibilityAdmissionStatus,
+)
 from atlas.modules.workflows.application.transport_profile_snapshot_ports import (
     WorkflowTransportProfileSnapshotError,
     WorkflowTransportProfileSnapshotIdempotencyRecord,
@@ -145,6 +154,9 @@ from atlas.modules.workflows.domain import (
     WorkflowEventTransportAdmission,
     WorkflowEventTransportAdmissionAuthority,
     WorkflowEventTransportAdmissionState,
+    WorkflowEventTransportCompatibilityAdmission,
+    WorkflowEventTransportCompatibilityAdmissionAuthority,
+    WorkflowEventTransportCompatibilityAdmissionState,
     WorkflowExecutionAttempt,
     WorkflowExecutionAttemptState,
     WorkflowExecutionRun,
@@ -1555,6 +1567,190 @@ class PostgreSQLWorkflowPlanRepository:
                 )
         return WorkflowTransportProfileSnapshotResult(
             WorkflowTransportProfileSnapshotStatus.SOURCE_CONFLICT, None
+        )
+
+    async def get_event_logical_channel_binding_by_id(
+        self, *, binding_id: str
+    ) -> WorkflowEventLogicalChannelBinding | None:
+        async with self._sessions() as session:
+            row = await session.get(WorkflowEventLogicalChannelBindingModel, binding_id)
+            return None if row is None else self._event_logical_channel_binding_from_row(row)
+
+    async def get_transport_profile_snapshot_by_id(
+        self, *, snapshot_id: str
+    ) -> EventPhysicalTransportProfileSnapshot | None:
+        async with self._sessions() as session:
+            row = await session.get(EventPhysicalTransportProfileSnapshotModel, snapshot_id)
+            return None if row is None else self._transport_profile_snapshot_from_row(row)
+
+    async def get_transport_compatibility_admission(
+        self,
+        *,
+        logical_channel_binding_id: str,
+        transport_profile_snapshot_id: str,
+        policy_digest: str,
+    ) -> WorkflowEventTransportCompatibilityAdmission | None:
+        async with self._sessions() as session:
+            row = cast(
+                WorkflowEventTransportCompatibilityAdmissionModel | None,
+                await session.scalar(
+                    select(WorkflowEventTransportCompatibilityAdmissionModel).where(
+                        WorkflowEventTransportCompatibilityAdmissionModel.logical_channel_binding_id
+                        == logical_channel_binding_id,
+                        WorkflowEventTransportCompatibilityAdmissionModel.transport_profile_snapshot_id
+                        == transport_profile_snapshot_id,
+                        WorkflowEventTransportCompatibilityAdmissionModel.policy_digest
+                        == policy_digest,
+                    )
+                ),
+            )
+            return None if row is None else self._transport_compatibility_admission_from_row(row)
+
+    async def list_transport_compatibility_admissions_by_binding(
+        self, *, logical_channel_binding_id: str
+    ) -> tuple[WorkflowEventTransportCompatibilityAdmission, ...]:
+        async with self._sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(WorkflowEventTransportCompatibilityAdmissionModel)
+                    .where(
+                        WorkflowEventTransportCompatibilityAdmissionModel.logical_channel_binding_id
+                        == logical_channel_binding_id
+                    )
+                    .order_by(
+                        WorkflowEventTransportCompatibilityAdmissionModel.transport_profile_snapshot_id,
+                        WorkflowEventTransportCompatibilityAdmissionModel.policy_digest,
+                        WorkflowEventTransportCompatibilityAdmissionModel.compatibility_admission_id,
+                    )
+                )
+            ).all()
+            return tuple(self._transport_compatibility_admission_from_row(row) for row in rows)
+
+    async def get_transport_compatibility_admission_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        admitter_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventTransportCompatibilityAdmissionIdempotencyRecord | None:
+        async with self._sessions() as session:
+            claim = await self._load_transport_compatibility_admission_claim(
+                session,
+                scope=scope,
+                admitter_subject_id=admitter_subject_id,
+                idempotency_key=idempotency_key,
+            )
+            if claim is None:
+                return None
+            admission_row = await session.get(
+                WorkflowEventTransportCompatibilityAdmissionModel,
+                claim.compatibility_admission_id,
+            )
+            return self._transport_compatibility_admission_record_from_claim(claim, admission_row)
+
+    async def admit_transport_compatibility(
+        self, request: WorkflowEventTransportCompatibilityAdmissionRequest
+    ) -> WorkflowEventTransportCompatibilityAdmissionResult:
+        self._validate_transport_compatibility_admission_request(request)
+        candidate = request.candidate
+        async with self._sessions() as session:
+            replay = await self._transport_compatibility_admission_replay(session, request=request)
+            if replay is not None:
+                return replay
+
+            # Every caller locks the two immutable source types in this fixed
+            # order, preventing inverse lock acquisition across competing pairs.
+            binding_row = cast(
+                WorkflowEventLogicalChannelBindingModel | None,
+                await session.scalar(
+                    select(WorkflowEventLogicalChannelBindingModel)
+                    .where(
+                        WorkflowEventLogicalChannelBindingModel.binding_id
+                        == candidate.logical_channel_binding_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            profile_row = cast(
+                EventPhysicalTransportProfileSnapshotModel | None,
+                await session.scalar(
+                    select(EventPhysicalTransportProfileSnapshotModel)
+                    .where(
+                        EventPhysicalTransportProfileSnapshotModel.snapshot_id
+                        == candidate.transport_profile_snapshot_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            if not self._transport_compatibility_admission_evidence_matches(
+                binding_row=binding_row,
+                profile_row=profile_row,
+                request=request,
+            ):
+                await session.rollback()
+                return WorkflowEventTransportCompatibilityAdmissionResult(
+                    WorkflowEventTransportCompatibilityAdmissionStatus.EVIDENCE_CONFLICT,
+                    None,
+                )
+
+            existing = cast(
+                WorkflowEventTransportCompatibilityAdmissionModel | None,
+                await session.scalar(
+                    select(WorkflowEventTransportCompatibilityAdmissionModel).where(
+                        WorkflowEventTransportCompatibilityAdmissionModel.logical_channel_binding_id
+                        == candidate.logical_channel_binding_id,
+                        WorkflowEventTransportCompatibilityAdmissionModel.transport_profile_snapshot_id
+                        == candidate.transport_profile_snapshot_id,
+                        WorkflowEventTransportCompatibilityAdmissionModel.policy_digest
+                        == candidate.policy_digest,
+                    )
+                ),
+            )
+            if existing is not None:
+                await session.rollback()
+                return WorkflowEventTransportCompatibilityAdmissionResult(
+                    WorkflowEventTransportCompatibilityAdmissionStatus.ALREADY_ADMITTED,
+                    self._transport_compatibility_admission_from_row(existing),
+                )
+
+            try:
+                session.add(self._transport_compatibility_admission_model(candidate))
+                session.add(self._transport_compatibility_admission_claim_model(request))
+                await session.commit()
+                return WorkflowEventTransportCompatibilityAdmissionResult(
+                    WorkflowEventTransportCompatibilityAdmissionStatus.ADMITTED,
+                    candidate,
+                )
+            except IntegrityError:
+                await session.rollback()
+
+        # A competing transaction may have committed either the same scoped
+        # request or another immutable identity while this transaction waited.
+        async with self._sessions() as session:
+            replay = await self._transport_compatibility_admission_replay(session, request=request)
+            if replay is not None:
+                return replay
+            existing = cast(
+                WorkflowEventTransportCompatibilityAdmissionModel | None,
+                await session.scalar(
+                    select(WorkflowEventTransportCompatibilityAdmissionModel).where(
+                        WorkflowEventTransportCompatibilityAdmissionModel.logical_channel_binding_id
+                        == candidate.logical_channel_binding_id,
+                        WorkflowEventTransportCompatibilityAdmissionModel.transport_profile_snapshot_id
+                        == candidate.transport_profile_snapshot_id,
+                        WorkflowEventTransportCompatibilityAdmissionModel.policy_digest
+                        == candidate.policy_digest,
+                    )
+                ),
+            )
+            if existing is not None:
+                return WorkflowEventTransportCompatibilityAdmissionResult(
+                    WorkflowEventTransportCompatibilityAdmissionStatus.ALREADY_ADMITTED,
+                    self._transport_compatibility_admission_from_row(existing),
+                )
+        return WorkflowEventTransportCompatibilityAdmissionResult(
+            WorkflowEventTransportCompatibilityAdmissionStatus.EVIDENCE_CONFLICT,
+            None,
         )
 
     async def get_dispatch_intent_staging_request(
@@ -5332,6 +5528,366 @@ class PostgreSQLWorkflowPlanRepository:
         raise WorkflowTransportProfileSnapshotError(
             "workflow_transport_profile_snapshot_repository_contract_violation",
             "The event transport profile snapshot does not match its durable evidence.",
+        )
+
+    async def _transport_compatibility_admission_replay(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowEventTransportCompatibilityAdmissionRequest,
+    ) -> WorkflowEventTransportCompatibilityAdmissionResult | None:
+        candidate = request.candidate
+        claim = await self._load_transport_compatibility_admission_claim(
+            session,
+            scope=candidate.scope,
+            admitter_subject_id=candidate.admitter_subject_id,
+            idempotency_key=request.idempotency_key,
+        )
+        if claim is None:
+            return None
+        admission_row = await session.get(
+            WorkflowEventTransportCompatibilityAdmissionModel,
+            claim.compatibility_admission_id,
+        )
+        record = self._transport_compatibility_admission_record_from_claim(claim, admission_row)
+        status = (
+            WorkflowEventTransportCompatibilityAdmissionStatus.REPLAY
+            if record.request_fingerprint == request.request_fingerprint
+            else WorkflowEventTransportCompatibilityAdmissionStatus.IDEMPOTENCY_CONFLICT
+        )
+        return WorkflowEventTransportCompatibilityAdmissionResult(status, record.admission)
+
+    @classmethod
+    async def _load_transport_compatibility_admission_claim(
+        cls,
+        session: AsyncSession,
+        *,
+        scope: WorkflowScope,
+        admitter_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventTransportCompatibilityAdmissionClaimModel | None:
+        scope_id = cls._transport_compatibility_admission_idempotency_scope(
+            scope, admitter_subject_id
+        )
+        return cast(
+            WorkflowEventTransportCompatibilityAdmissionClaimModel | None,
+            await session.scalar(
+                select(WorkflowEventTransportCompatibilityAdmissionClaimModel).where(
+                    WorkflowEventTransportCompatibilityAdmissionClaimModel.idempotency_scope_id
+                    == scope_id,
+                    WorkflowEventTransportCompatibilityAdmissionClaimModel.idempotency_key
+                    == idempotency_key,
+                    WorkflowEventTransportCompatibilityAdmissionClaimModel.organization_id
+                    == scope.organization_id,
+                    WorkflowEventTransportCompatibilityAdmissionClaimModel.environment_id
+                    == scope.environment_id,
+                    WorkflowEventTransportCompatibilityAdmissionClaimModel.site_id == scope.site_id,
+                    WorkflowEventTransportCompatibilityAdmissionClaimModel.admitter_subject_id
+                    == admitter_subject_id,
+                )
+            ),
+        )
+
+    @classmethod
+    def _transport_compatibility_admission_record_from_claim(
+        cls,
+        claim: WorkflowEventTransportCompatibilityAdmissionClaimModel,
+        admission_row: WorkflowEventTransportCompatibilityAdmissionModel | None,
+    ) -> WorkflowEventTransportCompatibilityAdmissionIdempotencyRecord:
+        if admission_row is None:
+            cls._transport_compatibility_admission_contract_violation()
+        assert admission_row is not None
+        admission = cls._transport_compatibility_admission_from_row(admission_row)
+        scope_id = cls._transport_compatibility_admission_idempotency_scope(
+            admission.scope, admission.admitter_subject_id
+        )
+        payload: dict[str, Any] = {
+            "idempotency_key": claim.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": claim.request_fingerprint,
+            "result_admission": cls._transport_compatibility_admission_payload(admission),
+            "result_digest": admission.canonical_digest,
+        }
+        if (
+            claim.idempotency_scope_id != scope_id
+            or claim.result_digest != admission.canonical_digest
+            or claim.compatibility_admission_id != admission.compatibility_admission_id
+            or claim.logical_channel_binding_id != admission.logical_channel_binding_id
+            or claim.transport_profile_snapshot_id != admission.transport_profile_snapshot_id
+            or claim.policy_digest != admission.policy_digest
+            or claim.organization_id != admission.scope.organization_id
+            or claim.environment_id != admission.scope.environment_id
+            or claim.site_id != admission.scope.site_id
+            or claim.admitter_subject_id != admission.admitter_subject_id
+            or claim.created_at.tzinfo is None
+            or claim.created_at != admission.admitted_at
+            or claim.payload != payload
+            or claim.canonical_digest != canonical_digest(payload)
+        ):
+            cls._transport_compatibility_admission_contract_violation()
+        return WorkflowEventTransportCompatibilityAdmissionIdempotencyRecord(
+            request_fingerprint=claim.request_fingerprint,
+            admission=admission,
+        )
+
+    @classmethod
+    def _transport_compatibility_admission_from_row(
+        cls, row: WorkflowEventTransportCompatibilityAdmissionModel
+    ) -> WorkflowEventTransportCompatibilityAdmission:
+        try:
+            admission = cls._transport_compatibility_admission_to_domain(row.payload)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowEventTransportCompatibilityAdmissionError(
+                "workflow_transport_compatibility_admission_repository_contract_violation",
+                "The workflow transport compatibility repository contains an invalid record.",
+            ) from exc
+        authority = admission.authority
+        if (
+            row.compatibility_admission_id != admission.compatibility_admission_id
+            or row.logical_channel_binding_id != admission.logical_channel_binding_id
+            or row.logical_channel_binding_digest != admission.logical_channel_binding_digest
+            or row.transport_profile_snapshot_id != admission.transport_profile_snapshot_id
+            or row.transport_profile_snapshot_digest != admission.transport_profile_snapshot_digest
+            or row.transport_profile_id != admission.transport_profile_id
+            or row.transport_profile_revision != admission.transport_profile_revision
+            or row.policy_id != admission.policy_id
+            or row.policy_version != admission.policy_version
+            or row.policy_digest != admission.policy_digest
+            or row.organization_id != admission.scope.organization_id
+            or row.environment_id != admission.scope.environment_id
+            or row.site_id != admission.scope.site_id
+            or row.event_type != admission.event_type
+            or row.event_version != admission.event_version
+            or row.schema_uri != admission.schema_uri
+            or row.data_classification != admission.data_classification
+            or row.representation_name != admission.representation_name
+            or row.encoding != admission.encoding
+            or row.delivery_semantics != admission.delivery_semantics
+            or row.durability_required != admission.durability_required
+            or row.ordering_key_kind != admission.ordering_key_kind
+            or row.retention_class != admission.retention_class
+            or row.logical_maximum_byte_count != admission.logical_maximum_byte_count
+            or row.artifact_byte_count != admission.artifact_byte_count
+            or row.profile_maximum_message_byte_count
+            != admission.profile_maximum_message_byte_count
+            or row.admitter_subject_id != admission.admitter_subject_id
+            or row.admitted_at != admission.admitted_at
+            or row.state != admission.state.value
+            or row.route_selection_authority_granted != authority.route_selection_authorized
+            or row.route_binding_authority_granted != authority.route_binding_authorized
+            or row.credential_access_authority_granted != authority.credential_access_authorized
+            or row.publication_authority_granted != authority.publication_authorized
+            or row.delivery_authority_granted != authority.delivery_authorized
+            or row.dispatch_authority_granted != authority.dispatch_authorized
+            or row.execution_authority_granted != authority.execution_authorized
+            or row.canonical_digest != admission.canonical_digest
+            or row.payload != cls._transport_compatibility_admission_payload(admission)
+        ):
+            cls._transport_compatibility_admission_contract_violation()
+        return admission
+
+    @classmethod
+    def _transport_compatibility_admission_model(
+        cls, admission: WorkflowEventTransportCompatibilityAdmission
+    ) -> WorkflowEventTransportCompatibilityAdmissionModel:
+        authority = admission.authority
+        return WorkflowEventTransportCompatibilityAdmissionModel(
+            compatibility_admission_id=admission.compatibility_admission_id,
+            logical_channel_binding_id=admission.logical_channel_binding_id,
+            logical_channel_binding_digest=admission.logical_channel_binding_digest,
+            transport_profile_snapshot_id=admission.transport_profile_snapshot_id,
+            transport_profile_snapshot_digest=admission.transport_profile_snapshot_digest,
+            transport_profile_id=admission.transport_profile_id,
+            transport_profile_revision=admission.transport_profile_revision,
+            policy_id=admission.policy_id,
+            policy_version=admission.policy_version,
+            policy_digest=admission.policy_digest,
+            organization_id=admission.scope.organization_id,
+            environment_id=admission.scope.environment_id,
+            site_id=admission.scope.site_id,
+            event_type=admission.event_type,
+            event_version=admission.event_version,
+            schema_uri=admission.schema_uri,
+            data_classification=admission.data_classification,
+            representation_name=admission.representation_name,
+            encoding=admission.encoding,
+            delivery_semantics=admission.delivery_semantics,
+            durability_required=admission.durability_required,
+            ordering_key_kind=admission.ordering_key_kind,
+            retention_class=admission.retention_class,
+            logical_maximum_byte_count=admission.logical_maximum_byte_count,
+            artifact_byte_count=admission.artifact_byte_count,
+            profile_maximum_message_byte_count=admission.profile_maximum_message_byte_count,
+            admitter_subject_id=admission.admitter_subject_id,
+            admitted_at=admission.admitted_at,
+            state=admission.state.value,
+            route_selection_authority_granted=authority.route_selection_authorized,
+            route_binding_authority_granted=authority.route_binding_authorized,
+            credential_access_authority_granted=authority.credential_access_authorized,
+            publication_authority_granted=authority.publication_authorized,
+            delivery_authority_granted=authority.delivery_authorized,
+            dispatch_authority_granted=authority.dispatch_authorized,
+            execution_authority_granted=authority.execution_authorized,
+            canonical_digest=admission.canonical_digest,
+            payload=cls._transport_compatibility_admission_payload(admission),
+        )
+
+    @classmethod
+    def _transport_compatibility_admission_claim_model(
+        cls, request: WorkflowEventTransportCompatibilityAdmissionRequest
+    ) -> WorkflowEventTransportCompatibilityAdmissionClaimModel:
+        admission = request.candidate
+        scope_id = cls._transport_compatibility_admission_idempotency_scope(
+            admission.scope, admission.admitter_subject_id
+        )
+        payload: dict[str, Any] = {
+            "idempotency_key": request.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": request.request_fingerprint,
+            "result_admission": cls._transport_compatibility_admission_payload(admission),
+            "result_digest": admission.canonical_digest,
+        }
+        digest = canonical_digest(payload)
+        return WorkflowEventTransportCompatibilityAdmissionClaimModel(
+            claim_id=f"wf_transport_compat_claim_{sha256(digest.encode()).hexdigest()[:32]}",
+            idempotency_scope_id=scope_id,
+            idempotency_key=request.idempotency_key,
+            request_fingerprint=request.request_fingerprint,
+            result_digest=admission.canonical_digest,
+            compatibility_admission_id=admission.compatibility_admission_id,
+            logical_channel_binding_id=admission.logical_channel_binding_id,
+            transport_profile_snapshot_id=admission.transport_profile_snapshot_id,
+            policy_digest=admission.policy_digest,
+            organization_id=admission.scope.organization_id,
+            environment_id=admission.scope.environment_id,
+            site_id=admission.scope.site_id,
+            admitter_subject_id=admission.admitter_subject_id,
+            created_at=request.requested_at,
+            canonical_digest=digest,
+            payload=payload,
+        )
+
+    @classmethod
+    def _transport_compatibility_admission_evidence_matches(
+        cls,
+        *,
+        binding_row: WorkflowEventLogicalChannelBindingModel | None,
+        profile_row: EventPhysicalTransportProfileSnapshotModel | None,
+        request: WorkflowEventTransportCompatibilityAdmissionRequest,
+    ) -> bool:
+        if binding_row is None or profile_row is None:
+            return False
+        binding = cls._event_logical_channel_binding_from_row(binding_row)
+        profile = cls._transport_profile_snapshot_from_row(profile_row)
+        candidate = request.candidate
+        event_contract = f"{binding.event_type}|{binding.event_version}|{binding.schema_uri}"
+        return bool(
+            binding.binding_id
+            == request.expected_logical_channel_binding_id
+            == candidate.logical_channel_binding_id
+            and binding.canonical_digest
+            == request.expected_logical_channel_binding_digest
+            == candidate.logical_channel_binding_digest
+            and binding.state is WorkflowEventLogicalChannelBindingState.BOUND
+            and not any(binding.authority.canonical_value().values())
+            and profile.snapshot_id
+            == request.expected_transport_profile_snapshot_id
+            == candidate.transport_profile_snapshot_id
+            and profile.canonical_digest
+            == request.expected_transport_profile_snapshot_digest
+            == candidate.transport_profile_snapshot_digest
+            and profile.state is EventPhysicalTransportProfileSnapshotState.SNAPSHOTTED
+            and not any(profile.authority.canonical_value().values())
+            and binding.scope == profile.scope == candidate.scope
+            and profile.transport_profile_id == candidate.transport_profile_id
+            and profile.transport_profile_revision == candidate.transport_profile_revision
+            and candidate.policy_digest == request.expected_policy_digest
+            and binding.event_type == candidate.event_type
+            and binding.event_version == candidate.event_version
+            and binding.schema_uri == candidate.schema_uri
+            and binding.data_classification == candidate.data_classification
+            and binding.representation_name == candidate.representation_name
+            and binding.encoding == candidate.encoding
+            and binding.delivery_semantics == candidate.delivery_semantics
+            and binding.durability_required == candidate.durability_required
+            and binding.ordering_key_kind == candidate.ordering_key_kind
+            and binding.retention_class == candidate.retention_class
+            and binding.maximum_canonical_byte_count == candidate.logical_maximum_byte_count
+            and binding.canonical_byte_count == candidate.artifact_byte_count
+            and profile.maximum_message_byte_count == candidate.profile_maximum_message_byte_count
+            and event_contract in profile.supported_event_contracts
+            and binding.data_classification in profile.supported_classifications
+            and binding.representation_name in profile.supported_representations
+            and binding.encoding in profile.supported_encodings
+            and binding.delivery_semantics in profile.supported_delivery_semantics
+            and (not binding.durability_required or profile.durable_delivery_supported)
+            and binding.ordering_key_kind in profile.supported_ordering_key_kinds
+            and binding.retention_class in profile.supported_retention_classes
+            and binding.maximum_canonical_byte_count <= profile.maximum_message_byte_count
+            and binding.canonical_byte_count <= profile.maximum_message_byte_count
+            and candidate.admitter_subject_id == request.admitter_subject_id
+            and candidate.admitted_at == request.requested_at
+            and candidate.state is WorkflowEventTransportCompatibilityAdmissionState.ADMITTED
+            and not any(candidate.authority.canonical_value().values())
+        )
+
+    @staticmethod
+    def _transport_compatibility_admission_idempotency_scope(
+        scope: WorkflowScope, admitter_subject_id: str
+    ) -> str:
+        return canonical_digest(
+            {
+                "admitter_subject_id": admitter_subject_id,
+                "scope": scope.canonical_value(),
+            }
+        )
+
+    @staticmethod
+    def _transport_compatibility_admission_payload(
+        admission: WorkflowEventTransportCompatibilityAdmission,
+    ) -> dict[str, Any]:
+        return cast(dict[str, Any], admission.canonical_value())
+
+    @staticmethod
+    def _transport_compatibility_admission_to_domain(
+        raw: dict[str, Any],
+    ) -> WorkflowEventTransportCompatibilityAdmission:
+        values = dict(raw)
+        values["scope"] = WorkflowScope(**cast(Any, values["scope"]))
+        values["admitted_at"] = datetime.fromisoformat(str(values["admitted_at"]))
+        values["state"] = WorkflowEventTransportCompatibilityAdmissionState(str(values["state"]))
+        values["authority"] = WorkflowEventTransportCompatibilityAdmissionAuthority(
+            **cast(Any, values["authority"])
+        )
+        return WorkflowEventTransportCompatibilityAdmission(**cast(Any, values))
+
+    @staticmethod
+    def _validate_transport_compatibility_admission_request(
+        request: WorkflowEventTransportCompatibilityAdmissionRequest,
+    ) -> None:
+        candidate = request.candidate
+        if candidate.scope != request.scope:
+            raise ValueError("workflow transport compatibility scope is invalid")
+        if candidate.admitter_subject_id != request.admitter_subject_id:
+            raise ValueError("workflow transport compatibility admitter is invalid")
+        if candidate.admitted_at != request.requested_at:
+            raise ValueError("workflow transport compatibility time is invalid")
+        if candidate.state is not WorkflowEventTransportCompatibilityAdmissionState.ADMITTED:
+            raise ValueError("workflow transport compatibility state is invalid")
+        if any(candidate.authority.canonical_value().values()):
+            raise ValueError("workflow transport compatibility authority is unsafe")
+        if not request.idempotency_key or len(request.idempotency_key) > 128:
+            raise ValueError("workflow transport compatibility idempotency key is invalid")
+        if len(request.request_fingerprint) != 64:
+            raise ValueError("workflow transport compatibility request fingerprint is invalid")
+        if request.requested_at.tzinfo is None or candidate.admitted_at.tzinfo is None:
+            raise ValueError("workflow transport compatibility time must be aware")
+
+    @staticmethod
+    def _transport_compatibility_admission_contract_violation() -> NoReturn:
+        raise WorkflowEventTransportCompatibilityAdmissionError(
+            "workflow_transport_compatibility_admission_repository_contract_violation",
+            "The workflow transport compatibility admission does not match its durable evidence.",
         )
 
     async def _publication_lease_acquire_replay(

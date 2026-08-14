@@ -57,6 +57,12 @@ from atlas.modules.workflows.application.transport_admission_ports import (
     WorkflowEventTransportAdmissionRequest,
     WorkflowEventTransportAdmissionResult,
 )
+from atlas.modules.workflows.application.transport_compatibility_admission_ports import (
+    WorkflowEventTransportCompatibilityAdmissionError,
+    WorkflowEventTransportCompatibilityAdmissionIdempotencyRecord,
+    WorkflowEventTransportCompatibilityAdmissionRequest,
+    WorkflowEventTransportCompatibilityAdmissionResult,
+)
 from atlas.modules.workflows.application.transport_profile_snapshot_ports import (
     WorkflowTransportProfileSnapshotError,
     WorkflowTransportProfileSnapshotIdempotencyRecord,
@@ -71,6 +77,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventByteArtifact,
     WorkflowEventLogicalChannelBinding,
     WorkflowEventTransportAdmission,
+    WorkflowEventTransportCompatibilityAdmission,
     WorkflowExecutionAttempt,
     WorkflowExecutionRun,
     WorkflowOrchestrationLease,
@@ -312,6 +319,44 @@ class UnavailableWorkflowPlanRepository:
     ) -> WorkflowTransportProfileSnapshotResult:
         self._raise_transport_profile_snapshot()
 
+    async def get_event_logical_channel_binding_by_id(
+        self, *, binding_id: str
+    ) -> WorkflowEventLogicalChannelBinding | None:
+        self._raise_transport_compatibility_admission()
+
+    async def get_transport_profile_snapshot_by_id(
+        self, *, snapshot_id: str
+    ) -> EventPhysicalTransportProfileSnapshot | None:
+        self._raise_transport_compatibility_admission()
+
+    async def get_transport_compatibility_admission(
+        self,
+        *,
+        logical_channel_binding_id: str,
+        transport_profile_snapshot_id: str,
+        policy_digest: str,
+    ) -> WorkflowEventTransportCompatibilityAdmission | None:
+        self._raise_transport_compatibility_admission()
+
+    async def list_transport_compatibility_admissions_by_binding(
+        self, *, logical_channel_binding_id: str
+    ) -> tuple[WorkflowEventTransportCompatibilityAdmission, ...]:
+        self._raise_transport_compatibility_admission()
+
+    async def get_transport_compatibility_admission_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        admitter_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventTransportCompatibilityAdmissionIdempotencyRecord | None:
+        self._raise_transport_compatibility_admission()
+
+    async def admit_transport_compatibility(
+        self, request: WorkflowEventTransportCompatibilityAdmissionRequest
+    ) -> WorkflowEventTransportCompatibilityAdmissionResult:
+        self._raise_transport_compatibility_admission()
+
     async def acquire_publication_lease(
         self, request: WorkflowOutboxPublicationLeaseAcquireRequest
     ) -> WorkflowOutboxPublicationLeaseAcquireResult:
@@ -429,4 +474,11 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowTransportProfileSnapshotError(
             "workflow_transport_profile_snapshot_repository_unavailable",
             "Durable event transport profile snapshot storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_transport_compatibility_admission() -> NoReturn:
+        raise WorkflowEventTransportCompatibilityAdmissionError(
+            "workflow_transport_compatibility_admission_repository_unavailable",
+            "Durable workflow transport compatibility storage is not configured.",
         )

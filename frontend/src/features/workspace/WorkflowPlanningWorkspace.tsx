@@ -14,6 +14,7 @@ import {
   Network,
   Plus,
   RefreshCw,
+  ShieldCheck,
   Workflow,
   X,
 } from "lucide-react";
@@ -35,6 +36,7 @@ import {
   listWorkflowEventTransportAdmissions,
   listWorkflowPlans,
   listWorkflowRunAttempts,
+  listWorkflowTransportCompatibilityAdmissions,
   listWorkflowTransportProfileSnapshots,
   WORKFLOW_PLAN_SAFETY_NOTICE,
   type WorkflowDefinition,
@@ -385,6 +387,36 @@ export default function WorkflowPlanningWorkspace({
     enabled: byteArtifactQuery.isSuccess && byteArtifactsForBindings.length > 0,
     retry: false,
   });
+  const logicalChannelBindingsForCompatibility =
+    logicalChannelBindingQuery.data?.flatMap(
+      (inventory) => inventory.logical_channel_bindings,
+    ) ?? [];
+  const transportCompatibilityAdmissionQuery = useQuery({
+    queryKey: [
+      "workflow-transport-compatibility-admissions",
+      logicalChannelBindingsForCompatibility.map((binding) => [
+        binding.logical_channel_binding_id,
+        binding.canonical_digest,
+      ]),
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () =>
+      Promise.all(
+        logicalChannelBindingsForCompatibility.map((logicalChannelBinding) =>
+          listWorkflowTransportCompatibilityAdmissions({
+            logicalChannelBinding,
+            scope,
+            authorizedTargetIds,
+          }),
+        ),
+      ),
+    enabled:
+      logicalChannelBindingQuery.isSuccess &&
+      logicalChannelBindingsForCompatibility.length > 0,
+    retry: false,
+  });
   const definitions = definitionQuery.data?.definitions ?? [];
   const selectedDefinition = definitions.find((item) => item.definition_id === definitionId);
   const createMutation = useMutation({
@@ -472,6 +504,10 @@ export default function WorkflowPlanningWorkspace({
     logicalChannelBindingQuery.error instanceof ApiRequestError
       ? logicalChannelBindingQuery.error.status
       : undefined;
+  const transportCompatibilityAdmissionErrorStatus =
+    transportCompatibilityAdmissionQuery.error instanceof ApiRequestError
+      ? transportCompatibilityAdmissionQuery.error.status
+      : undefined;
   const transportProfileErrorStatus =
     transportProfileQuery.error instanceof ApiRequestError
       ? transportProfileQuery.error.status
@@ -481,8 +517,10 @@ export default function WorkflowPlanningWorkspace({
   const byteArtifacts =
     byteArtifactQuery.data?.flatMap((inventory) => inventory.byte_artifacts) ?? [];
   const logicalChannelBindings =
-    logicalChannelBindingQuery.data?.flatMap(
-      (inventory) => inventory.logical_channel_bindings,
+    logicalChannelBindingsForCompatibility;
+  const transportCompatibilityAdmissions =
+    transportCompatibilityAdmissionQuery.data?.flatMap(
+      (inventory) => inventory.transport_compatibility_admissions,
     ) ?? [];
 
   const selectPlan = (plan: WorkflowRunPlan) => {
@@ -1725,6 +1763,149 @@ export default function WorkflowPlanningWorkspace({
                       provider, broker, endpoint, topic, stream, queue, partition, routing key,
                       credential, message, or network publication attempt exists. Publication,
                       delivery, dispatch, and execution authority remain zero.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {logicalChannelBindingQuery.isSuccess && logicalChannelBindings.length > 0 && (
+                <div aria-labelledby="workflow-transport-compatibility-admission-title">
+                  <div className="workflow-section-heading">
+                    <div>
+                      <p className="eyebrow">READ-ONLY POLICY EVIDENCE</p>
+                      <h3 id="workflow-transport-compatibility-admission-title">
+                        Transport compatibility admission
+                      </h3>
+                    </div>
+                    <span>Declared contracts only</span>
+                  </div>
+                  {transportCompatibilityAdmissionQuery.isLoading && (
+                    <div className="workflow-empty-state" role="status">
+                      <ShieldCheck size={19} />
+                      <span>Loading transport compatibility admission...</span>
+                    </div>
+                  )}
+                  {transportCompatibilityAdmissionQuery.isError && (
+                    <div className="inline-error" role="alert">
+                      <div>
+                        <strong>
+                          {transportCompatibilityAdmissionErrorStatus === 401
+                            ? "Your session has expired"
+                            : transportCompatibilityAdmissionErrorStatus === 403
+                              ? "Transport compatibility admission permission is missing"
+                              : "Transport compatibility admission is unavailable"}
+                        </strong>
+                        <span>
+                          {transportCompatibilityAdmissionErrorStatus === 401
+                            ? "Sign in again to continue."
+                            : transportCompatibilityAdmissionErrorStatus === 403
+                              ? "Your current role or scope cannot inspect compatibility evidence."
+                              : "No compatibility or operational state is inferred from this failed read."}
+                        </span>
+                      </div>
+                      {transportCompatibilityAdmissionErrorStatus !== 401 &&
+                        transportCompatibilityAdmissionErrorStatus !== 403 && (
+                          <button
+                            className="secondary-action"
+                            type="button"
+                            aria-label="Retry transport compatibility admission read"
+                            onClick={() =>
+                              void transportCompatibilityAdmissionQuery.refetch()
+                            }
+                          >
+                            <RefreshCw size={16} />
+                            Retry
+                          </button>
+                        )}
+                    </div>
+                  )}
+                  {transportCompatibilityAdmissionQuery.isSuccess &&
+                    transportCompatibilityAdmissions.length > 0 && (
+                      <ol
+                        className="workflow-step-preview workflow-transport-compatibility-admission-list"
+                        aria-label="Transport compatibility admissions"
+                      >
+                        {transportCompatibilityAdmissions.map((admission) => (
+                          <li key={admission.compatibility_admission_id}>
+                            <ShieldCheck size={17} />
+                            <div>
+                              <strong>
+                                <code title={admission.compatibility_admission_id}>
+                                  {safeHolderIdentifier(
+                                    admission.compatibility_admission_id,
+                                  )}
+                                </code>
+                                <span className="state-badge neutral">{admission.state}</span>
+                              </strong>
+                              <small>
+                                binding{" "}
+                                <code title={admission.logical_channel_binding_id}>
+                                  {safeHolderIdentifier(admission.logical_channel_binding_id)}
+                                </code>{" "}
+                                | digest {shortDigest(admission.logical_channel_binding_digest)}
+                              </small>
+                              <small>
+                                profile snapshot{" "}
+                                <code title={admission.transport_profile_snapshot_id}>
+                                  {safeHolderIdentifier(admission.transport_profile_snapshot_id)}
+                                </code>{" "}
+                                | digest {shortDigest(admission.transport_profile_snapshot_digest)}
+                              </small>
+                              <small>
+                                profile <code title={admission.transport_profile_id}>{safeHolderIdentifier(admission.transport_profile_id)}</code>{" "}
+                                | revision {admission.transport_profile_revision}
+                              </small>
+                              <small>
+                                policy <code title={admission.policy_id}>{safeHolderIdentifier(admission.policy_id)}</code>{" "}
+                                v{admission.policy_version} | digest{" "}
+                                {shortDigest(admission.policy_digest)}
+                              </small>
+                              <small>
+                                organization {admission.scope.organization_id} | environment{" "}
+                                {admission.scope.environment_id} | site {admission.scope.site_id}
+                              </small>
+                              <small>
+                                event {admission.event_type} v{admission.event_version} | schema{" "}
+                                <code title={admission.schema_uri}>{admission.schema_uri}</code>
+                              </small>
+                              <small>
+                                {admission.data_classification} | {admission.representation_name} |{" "}
+                                {admission.encoding} | {admission.delivery_semantics} | durable required
+                              </small>
+                              <small>
+                                ordering {admission.ordering_key_kind} | retention {admission.retention_class}
+                              </small>
+                              <small>
+                                logical maximum {admission.logical_maximum_byte_count.toLocaleString()} bytes | artifact{" "}
+                                {admission.artifact_byte_count.toLocaleString()} bytes | profile maximum{" "}
+                                {admission.profile_maximum_message_byte_count.toLocaleString()} bytes
+                              </small>
+                              <small>
+                                admitted {formatTimestamp(admission.admitted_at)} by{" "}
+                                <code title={admission.admitter_subject_id}>{safeHolderIdentifier(admission.admitter_subject_id)}</code>
+                              </small>
+                              <small>
+                                authority route selection false | route binding false | credential access false | publication false | delivery false | dispatch false | execution false
+                              </small>
+                              <small>metadata digest {shortDigest(admission.canonical_digest)}</small>
+                            </div>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  {transportCompatibilityAdmissionQuery.isSuccess &&
+                    transportCompatibilityAdmissions.length === 0 && (
+                      <div className="workflow-empty-state" role="status">
+                        <ShieldCheck size={19} />
+                        <span>No transport compatibility admission has been recorded.</span>
+                      </div>
+                    )}
+                  <div className="workflow-safety-boundary" role="note">
+                    <LockKeyhole size={18} />
+                    <span>
+                      Admission proves only that the exact declared contracts match under the
+                      named policy. It creates no operational state and all seven authority flags
+                      remain false.
                     </span>
                   </div>
                 </div>

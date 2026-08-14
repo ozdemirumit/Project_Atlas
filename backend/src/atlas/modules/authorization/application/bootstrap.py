@@ -49,6 +49,7 @@ WORKFLOW_DEFINITION_READ = "workflow.definitions.read"
 WORKFLOW_PLAN_CREATE = "workflow.plans.create"
 WORKFLOW_PLAN_CANCEL = "workflow.plans.cancel"
 WORKFLOW_PLAN_READ = "workflow.plans.read"
+WORKFLOW_TRANSPORT_COMPATIBILITY_ADMISSION_READ = "workflow.transport-compatibility-admissions.read"
 WORKFLOW_TRANSPORT_PROFILE_READ = "workflow.transport-profiles.read"
 INVESTIGATION_CREATE = "investigation.create"
 RCA_CREATE = "rca.create"
@@ -1652,6 +1653,20 @@ def workflow_transport_profile_scope(
     )
 
 
+def workflow_transport_compatibility_admission_scope(
+    organization_id: str,
+    environment: str,
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.workflow",
+        resource_id="resource.workflow.transport-compatibility-admissions",
+        capability_class=CapabilityClass.C0_INFORMATIONAL,
+    )
+
+
 def investigation_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -1888,6 +1903,10 @@ def build_development_authorization_service(
         PermissionDefinition(
             permission_id=WORKFLOW_PLAN_READ,
             description="Read exact-scope non-executable workflow run plans.",
+        ),
+        PermissionDefinition(
+            permission_id=WORKFLOW_TRANSPORT_COMPATIBILITY_ADMISSION_READ,
+            description="Read minimized immutable workflow transport compatibility admissions.",
         ),
         PermissionDefinition(
             permission_id=WORKFLOW_TRANSPORT_PROFILE_READ,
@@ -2764,6 +2783,7 @@ def build_development_authorization_service(
                 WORKFLOW_PLAN_CREATE,
                 WORKFLOW_PLAN_CANCEL,
                 WORKFLOW_PLAN_READ,
+                WORKFLOW_TRANSPORT_COMPATIBILITY_ADMISSION_READ,
                 WORKFLOW_TRANSPORT_PROFILE_READ,
                 INVESTIGATION_CREATE,
                 RCA_CREATE,
@@ -4832,6 +4852,17 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=workflow_transport_profile_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.workflow-transport-compatibility-admissions",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=workflow_transport_compatibility_admission_scope(
                     settings.development_organization_id,
                     settings.environment,
                 ),

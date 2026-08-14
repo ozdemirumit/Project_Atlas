@@ -580,6 +580,9 @@ MVP workflows do not execute C3 through C5 capabilities.
 - ADR-146 establishes an independently immutable deployment-owned physical transport capability
   profile snapshot without event lineage, compatibility admission, route binding, credentials,
   network calls, publication, delivery, dispatch or execution authority.
+- ADR-147 establishes immutable policy-governed compatibility admission between one exact logical
+  channel binding and one exact deployment transport profile snapshot without route selection,
+  credentials, network calls, publication, delivery, dispatch or execution authority.
 
 ## 39. Assumptions
 

@@ -59,6 +59,12 @@ from atlas.modules.workflows.application.publication_lease_ports import (
     WorkflowOutboxPublicationLeaseMutationResult,
     WorkflowOutboxPublicationLeaseMutationStatus,
 )
+from atlas.modules.workflows.application.transport_compatibility_admission_ports import (
+    WorkflowEventTransportCompatibilityAdmissionIdempotencyRecord,
+    WorkflowEventTransportCompatibilityAdmissionRequest,
+    WorkflowEventTransportCompatibilityAdmissionResult,
+    WorkflowEventTransportCompatibilityAdmissionStatus,
+)
 from atlas.modules.workflows.application.transport_profile_snapshot_ports import (
     WorkflowTransportProfileSnapshotIdempotencyRecord,
     WorkflowTransportProfileSnapshotRequest,
@@ -80,6 +86,8 @@ from atlas.modules.workflows.domain import (
     WorkflowEventLogicalChannelBindingState,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportAdmissionState,
+    WorkflowEventTransportCompatibilityAdmission,
+    WorkflowEventTransportCompatibilityAdmissionState,
     WorkflowExecutionAttempt,
     WorkflowExecutionAttemptState,
     WorkflowExecutionRun,
@@ -155,6 +163,16 @@ class InMemoryWorkflowPlanRepository:
         self._transport_profile_snapshot_requests: dict[
             tuple[WorkflowScope, str, str],
             WorkflowTransportProfileSnapshotIdempotencyRecord,
+        ] = {}
+        self._transport_compatibility_admissions: dict[
+            str, WorkflowEventTransportCompatibilityAdmission
+        ] = {}
+        self._transport_compatibility_admission_pairs: dict[
+            tuple[str, str, str], WorkflowEventTransportCompatibilityAdmission
+        ] = {}
+        self._transport_compatibility_admission_requests: dict[
+            tuple[WorkflowScope, str, str],
+            WorkflowEventTransportCompatibilityAdmissionIdempotencyRecord,
         ] = {}
         self._lock = asyncio.Lock()
 
@@ -881,6 +899,152 @@ class InMemoryWorkflowPlanRepository:
             )
             return WorkflowTransportProfileSnapshotResult(
                 WorkflowTransportProfileSnapshotStatus.SNAPSHOTTED, candidate
+            )
+
+    async def get_event_logical_channel_binding_by_id(
+        self, *, binding_id: str
+    ) -> WorkflowEventLogicalChannelBinding | None:
+        async with self._lock:
+            return next(
+                (
+                    value
+                    for value in self._event_logical_channel_bindings_by_artifact.values()
+                    if value.binding_id == binding_id
+                ),
+                None,
+            )
+
+    async def get_transport_profile_snapshot_by_id(
+        self, *, snapshot_id: str
+    ) -> EventPhysicalTransportProfileSnapshot | None:
+        async with self._lock:
+            return next(
+                (
+                    value
+                    for value in self._transport_profile_snapshots.values()
+                    if value.snapshot_id == snapshot_id
+                ),
+                None,
+            )
+
+    async def get_transport_compatibility_admission(
+        self,
+        *,
+        logical_channel_binding_id: str,
+        transport_profile_snapshot_id: str,
+        policy_digest: str,
+    ) -> WorkflowEventTransportCompatibilityAdmission | None:
+        async with self._lock:
+            return self._transport_compatibility_admission_pairs.get(
+                (
+                    logical_channel_binding_id,
+                    transport_profile_snapshot_id,
+                    policy_digest,
+                )
+            )
+
+    async def list_transport_compatibility_admissions_by_binding(
+        self, *, logical_channel_binding_id: str
+    ) -> tuple[WorkflowEventTransportCompatibilityAdmission, ...]:
+        async with self._lock:
+            return tuple(
+                sorted(
+                    (
+                        admission
+                        for admission in self._transport_compatibility_admissions.values()
+                        if admission.logical_channel_binding_id == logical_channel_binding_id
+                    ),
+                    key=lambda admission: (
+                        admission.transport_profile_snapshot_id,
+                        admission.policy_digest,
+                        admission.compatibility_admission_id,
+                    ),
+                )
+            )
+
+    async def get_transport_compatibility_admission_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        admitter_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventTransportCompatibilityAdmissionIdempotencyRecord | None:
+        async with self._lock:
+            return self._transport_compatibility_admission_requests.get(
+                (scope, admitter_subject_id, idempotency_key)
+            )
+
+    async def admit_transport_compatibility(
+        self, request: WorkflowEventTransportCompatibilityAdmissionRequest
+    ) -> WorkflowEventTransportCompatibilityAdmissionResult:
+        async with self._lock:
+            candidate = request.candidate
+            key = (candidate.scope, request.admitter_subject_id, request.idempotency_key)
+            prior = self._transport_compatibility_admission_requests.get(key)
+            if prior is not None:
+                status = (
+                    WorkflowEventTransportCompatibilityAdmissionStatus.REPLAY
+                    if prior.request_fingerprint == request.request_fingerprint
+                    else WorkflowEventTransportCompatibilityAdmissionStatus.IDEMPOTENCY_CONFLICT
+                )
+                return WorkflowEventTransportCompatibilityAdmissionResult(status, prior.admission)
+
+            binding = next(
+                (
+                    value
+                    for value in self._event_logical_channel_bindings_by_artifact.values()
+                    if value.binding_id == candidate.logical_channel_binding_id
+                ),
+                None,
+            )
+            profile = next(
+                (
+                    value
+                    for value in self._transport_profile_snapshots.values()
+                    if value.snapshot_id == candidate.transport_profile_snapshot_id
+                ),
+                None,
+            )
+            if not self._transport_compatibility_admission_evidence_matches(
+                binding=binding,
+                profile=profile,
+                request=request,
+            ):
+                return WorkflowEventTransportCompatibilityAdmissionResult(
+                    WorkflowEventTransportCompatibilityAdmissionStatus.EVIDENCE_CONFLICT,
+                    None,
+                )
+
+            pair_key = (
+                candidate.logical_channel_binding_id,
+                candidate.transport_profile_snapshot_id,
+                candidate.policy_digest,
+            )
+            existing = self._transport_compatibility_admission_pairs.get(pair_key)
+            if existing is not None:
+                return WorkflowEventTransportCompatibilityAdmissionResult(
+                    WorkflowEventTransportCompatibilityAdmissionStatus.ALREADY_ADMITTED,
+                    existing,
+                )
+            if candidate.compatibility_admission_id in self._transport_compatibility_admissions:
+                return WorkflowEventTransportCompatibilityAdmissionResult(
+                    WorkflowEventTransportCompatibilityAdmissionStatus.EVIDENCE_CONFLICT,
+                    None,
+                )
+
+            self._transport_compatibility_admissions[candidate.compatibility_admission_id] = (
+                candidate
+            )
+            self._transport_compatibility_admission_pairs[pair_key] = candidate
+            self._transport_compatibility_admission_requests[key] = (
+                WorkflowEventTransportCompatibilityAdmissionIdempotencyRecord(
+                    request_fingerprint=request.request_fingerprint,
+                    admission=candidate,
+                )
+            )
+            return WorkflowEventTransportCompatibilityAdmissionResult(
+                WorkflowEventTransportCompatibilityAdmissionStatus.ADMITTED,
+                candidate,
             )
 
     async def acquire_publication_lease(
@@ -1858,6 +2022,67 @@ class InMemoryWorkflowPlanRepository:
             and not candidate.grants_delivery_authority
             and not candidate.grants_dispatch_authority
             and not candidate.grants_execution_authority
+        )
+
+    @staticmethod
+    def _transport_compatibility_admission_evidence_matches(
+        *,
+        binding: WorkflowEventLogicalChannelBinding | None,
+        profile: EventPhysicalTransportProfileSnapshot | None,
+        request: WorkflowEventTransportCompatibilityAdmissionRequest,
+    ) -> bool:
+        if binding is None or profile is None:
+            return False
+        candidate = request.candidate
+        event_contract = f"{binding.event_type}|{binding.event_version}|{binding.schema_uri}"
+        return bool(
+            binding.binding_id
+            == request.expected_logical_channel_binding_id
+            == candidate.logical_channel_binding_id
+            and binding.canonical_digest
+            == request.expected_logical_channel_binding_digest
+            == candidate.logical_channel_binding_digest
+            and binding.state is WorkflowEventLogicalChannelBindingState.BOUND
+            and not any(binding.authority.canonical_value().values())
+            and profile.snapshot_id
+            == request.expected_transport_profile_snapshot_id
+            == candidate.transport_profile_snapshot_id
+            and profile.canonical_digest
+            == request.expected_transport_profile_snapshot_digest
+            == candidate.transport_profile_snapshot_digest
+            and profile.state is EventPhysicalTransportProfileSnapshotState.SNAPSHOTTED
+            and not any(profile.authority.canonical_value().values())
+            and binding.scope == profile.scope == candidate.scope
+            and profile.transport_profile_id == candidate.transport_profile_id
+            and profile.transport_profile_revision == candidate.transport_profile_revision
+            and candidate.policy_digest == request.expected_policy_digest
+            and binding.event_type == candidate.event_type
+            and binding.event_version == candidate.event_version
+            and binding.schema_uri == candidate.schema_uri
+            and binding.data_classification == candidate.data_classification
+            and binding.representation_name == candidate.representation_name
+            and binding.encoding == candidate.encoding
+            and binding.delivery_semantics == candidate.delivery_semantics
+            and binding.durability_required == candidate.durability_required
+            and binding.ordering_key_kind == candidate.ordering_key_kind
+            and binding.retention_class == candidate.retention_class
+            and binding.maximum_canonical_byte_count == candidate.logical_maximum_byte_count
+            and binding.canonical_byte_count == candidate.artifact_byte_count
+            and profile.maximum_message_byte_count == candidate.profile_maximum_message_byte_count
+            and event_contract in profile.supported_event_contracts
+            and binding.data_classification in profile.supported_classifications
+            and binding.representation_name in profile.supported_representations
+            and binding.encoding in profile.supported_encodings
+            and binding.delivery_semantics in profile.supported_delivery_semantics
+            and (not binding.durability_required or profile.durable_delivery_supported)
+            and binding.ordering_key_kind in profile.supported_ordering_key_kinds
+            and binding.retention_class in profile.supported_retention_classes
+            and binding.maximum_canonical_byte_count <= profile.maximum_message_byte_count
+            and binding.canonical_byte_count <= profile.maximum_message_byte_count
+            and candidate.admitter_subject_id == request.admitter_subject_id
+            and candidate.admitted_at == request.requested_at
+            and candidate.state is WorkflowEventTransportCompatibilityAdmissionState.ADMITTED
+            and not any(candidate.authority.canonical_value().values())
         )
 
     @classmethod

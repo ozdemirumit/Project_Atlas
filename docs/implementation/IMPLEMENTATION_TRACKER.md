@@ -4,14 +4,69 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-196 |
-| Title | Immutable deployment transport capability profile snapshot without route binding |
-| Status | Validation complete; ready for pull request |
-| Branch | `agent/workflow-transport-profile-snapshot` |
+| Task ID | ATLAS-IMP-197 |
+| Title | Immutable workflow transport compatibility admission without route binding |
+| Status | Implementation complete; delivery validation in progress |
+| Branch | `agent/workflow-transport-profile-compatibility-admission` |
 | Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-136, ADR-137, ADR-138, ADR-139, ADR-140, ADR-141, ADR-142, ADR-143, ADR-144, ADR-145, ADR-146 |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-136, ADR-137, ADR-138, ADR-139, ADR-140, ADR-141, ADR-142, ADR-143, ADR-144, ADR-145, ADR-146, ADR-147 |
 | Last Updated | 2026-08-14 |
-| Next Action | Open, validate and merge the IMP-196 pull request |
+| Next Action | Open the exact-head pull request, pass CI, merge, and verify `main` |
+
+### ATLAS-IMP-197 Scope Rationale
+
+- IMP-195 freezes one exact logical publication contract and IMP-196 independently freezes one
+  deployment transport profile's declared capabilities. The next smallest boundary is a
+  deterministic policy decision that compares those two exact records.
+- Compatibility admission proves only that the declared event, representation, delivery,
+  durability, ordering, retention and size contracts match. It selects no physical route and does
+  not prove endpoint configuration, credentials, reachability or readiness.
+- Endpoint and destination selection, credential authorization, network probes, provider messages,
+  publication attempts, delivery, retries, quarantine, worker dispatch and execution remain
+  deferred.
+
+### ATLAS-IMP-197 Acceptance Criteria
+
+- A dedicated compatibility-admitter workload can idempotently admit one exact logical binding and
+  one exact profile snapshot under the same organization, environment and site scope; changed
+  requests, competing identities, unsupported requirements, tampered evidence and audit failure
+  fail closed.
+- The admission records a versioned code-owned compatibility policy, exact source identities and
+  digests, compared contract evidence, deterministic digest and zero route-selection,
+  route-binding, credential-access, publication, delivery, dispatch or execution authority.
+- PostgreSQL locks and revalidates both immutable sources before atomically storing admission and
+  idempotency records. Production never falls back to memory, and the schema contains no endpoint,
+  route, credential, secret, network-health, message, attempt or receipt field.
+- Human UI exposes minimized read-only compatibility evidence through the normal username/password
+  session with no admit, recalculate, override, select, bind, probe, publish, deliver, dispatch or
+  execute control and no second-login or MFA prompt.
+
+### ATLAS-IMP-197 Local Validation Evidence
+
+- Ruff format and lint passed; strict mypy passed across 1,208 source and test files; Alembic reports
+  the single linear head `20260814_0120`.
+- The focused compatibility suite passed 21 backend tests and 176 frontend tests. The IMP-195,
+  IMP-196, IMP-197, browser-session and API-health regression suite passed 93 backend and 177
+  frontend tests.
+- The complete local release candidate passed 1,846 backend tests with three expected Windows
+  symlink skips and 465 frontend tests across 95 files. Full ESLint, TypeScript and production build
+  checks also passed.
+- One normal `atlas-demo` username/password browser session exposed immutable admission
+  `workflow-event-transport-compatibility-admission.25f835d166ec190764c99f50` for logical binding
+  `workflow-event-logical-channel-binding.6368a26e939883ebe9686880` and transport profile snapshot
+  `event-physical-transport-profile-snapshot.1cc66e184be98da0a2991398`. The panel contained no
+  operational control, no second-login or MFA prompt, and no horizontal overflow at the 584-pixel
+  in-app browser viewport.
+
+### ATLAS-IMP-196 Delivery Evidence
+
+- Exact-head commit `9bfacd6e94d244c3513dd1de0264bbc41a9c5e76` passed PR CI run
+  `31794562780`; frontend completed in 6m08s and backend in 9m09s.
+- PR [#208](https://github.com/ozdemirumit/Project_Atlas/pull/208) was squash-merged as
+  `ac7a5033adc8f9991e92b491e869146a6353627a`.
+- The exact merged commit independently passed `main` CI run `31795210186`; frontend completed in
+  5m58s and backend in 10m11s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-197 branched.
 
 ### ATLAS-IMP-196 Scope Rationale
 

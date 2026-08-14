@@ -266,6 +266,14 @@ no compatibility or readiness, selects no route and grants no publication, deliv
 execution authority. Logical-binding/profile compatibility admission and physical route binding
 remain separate later boundaries.
 
+A dedicated compatibility-admitter may next compare one exact bound logical-channel record with
+one exact snapshotted deployment transport profile under a versioned code-owned policy. The
+immutable admission records only matching event-contract, representation, encoding, delivery,
+durability, ordering, retention and maximum-size evidence. It selects no endpoint or route, uses no
+credential, performs no network call, proves no profile currency or runtime readiness and grants no
+route-selection, publication, delivery, dispatch or execution authority. Physical route binding
+and publication lifecycle evidence remain later boundaries.
+
 ### 10.2 Publication State
 
 Outbox records track:
