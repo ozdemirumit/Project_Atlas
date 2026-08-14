@@ -19,6 +19,8 @@ from sqlalchemy.ext.asyncio import (
 
 from atlas.core.persistence.models import (
     WorkflowAttemptMaterializationClaimModel,
+    WorkflowDispatchEventEnvelopeModel,
+    WorkflowDispatchEventEnvelopePreparationClaimModel,
     WorkflowDispatchIntentModel,
     WorkflowDispatchIntentStagingClaimModel,
     WorkflowDispatchOutboxEntryModel,
@@ -68,6 +70,13 @@ from atlas.modules.workflows.application.dispatch_intent_ports import (
     WorkflowDispatchIntentStagingResult,
     WorkflowDispatchIntentStagingStatus,
 )
+from atlas.modules.workflows.application.event_envelope_ports import (
+    WorkflowDispatchEventEnvelopeError,
+    WorkflowDispatchEventEnvelopePrepareIdempotencyRecord,
+    WorkflowDispatchEventEnvelopePrepareRequest,
+    WorkflowDispatchEventEnvelopePrepareResult,
+    WorkflowDispatchEventEnvelopePrepareStatus,
+)
 from atlas.modules.workflows.application.publication_lease_ports import (
     WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord,
     WorkflowOutboxPublicationLeaseAcquireRequest,
@@ -80,6 +89,10 @@ from atlas.modules.workflows.application.publication_lease_ports import (
 )
 from atlas.modules.workflows.domain import (
     WorkflowCapabilityClass,
+    WorkflowDispatchEventAuthority,
+    WorkflowDispatchEventEnvelope,
+    WorkflowDispatchEventEnvelopeState,
+    WorkflowDispatchEventPayload,
     WorkflowDispatchIntent,
     WorkflowDispatchIntentState,
     WorkflowDispatchOutboxEntry,
@@ -777,6 +790,139 @@ class PostgreSQLWorkflowPlanRepository:
         self, request: WorkflowOutboxPublicationLeaseMutationRequest
     ) -> WorkflowOutboxPublicationLeaseMutationResult:
         return await self._mutate_publication_lease(request)
+
+    async def get_dispatch_event_envelope_by_outbox_entry_id(
+        self, *, outbox_entry_id: str
+    ) -> WorkflowDispatchEventEnvelope | None:
+        async with self._sessions() as session:
+            row = cast(
+                WorkflowDispatchEventEnvelopeModel | None,
+                await session.scalar(
+                    select(WorkflowDispatchEventEnvelopeModel).where(
+                        WorkflowDispatchEventEnvelopeModel.outbox_entry_id == outbox_entry_id
+                    )
+                ),
+            )
+            return None if row is None else self._dispatch_event_envelope_from_row(row)
+
+    async def get_dispatch_event_envelope_prepare_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        publisher_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowDispatchEventEnvelopePrepareIdempotencyRecord | None:
+        async with self._sessions() as session:
+            claim = await self._load_dispatch_event_envelope_claim(
+                session,
+                scope=scope,
+                publisher_subject_id=publisher_subject_id,
+                idempotency_key=idempotency_key,
+            )
+            return None if claim is None else self._dispatch_event_envelope_record_from_claim(claim)
+
+    async def prepare_dispatch_event_envelope(
+        self, request: WorkflowDispatchEventEnvelopePrepareRequest
+    ) -> WorkflowDispatchEventEnvelopePrepareResult:
+        self._validate_dispatch_event_envelope_preparation_request(request)
+        candidate = request.candidate
+        async with self._sessions() as session:
+            replay = await self._dispatch_event_envelope_preparation_replay(
+                session,
+                request=request,
+            )
+            if replay is not None:
+                return replay
+
+            plan_row = cast(
+                WorkflowRunPlanModel | None,
+                await session.scalar(
+                    select(WorkflowRunPlanModel)
+                    .where(WorkflowRunPlanModel.plan_id == candidate.payload.plan_id)
+                    .with_for_update()
+                ),
+            )
+            outbox_row = cast(
+                WorkflowDispatchOutboxEntryModel | None,
+                await session.scalar(
+                    select(WorkflowDispatchOutboxEntryModel)
+                    .where(
+                        WorkflowDispatchOutboxEntryModel.outbox_entry_id
+                        == candidate.payload.outbox_entry_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            orchestration_lease_row = cast(
+                WorkflowOrchestrationLeaseModel | None,
+                await session.scalar(
+                    select(WorkflowOrchestrationLeaseModel)
+                    .where(WorkflowOrchestrationLeaseModel.plan_id == candidate.payload.plan_id)
+                    .with_for_update()
+                ),
+            )
+            publication_lease_row = cast(
+                WorkflowOutboxPublicationLeaseModel | None,
+                await session.scalar(
+                    select(WorkflowOutboxPublicationLeaseModel)
+                    .where(
+                        WorkflowOutboxPublicationLeaseModel.outbox_entry_id
+                        == candidate.payload.outbox_entry_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            if not self._dispatch_event_envelope_evidence_matches(
+                plan_row=plan_row,
+                outbox_row=outbox_row,
+                orchestration_lease_row=orchestration_lease_row,
+                publication_lease_row=publication_lease_row,
+                request=request,
+            ):
+                await session.rollback()
+                return WorkflowDispatchEventEnvelopePrepareResult(
+                    WorkflowDispatchEventEnvelopePrepareStatus.EVIDENCE_CONFLICT,
+                    None,
+                )
+
+            existing = cast(
+                WorkflowDispatchEventEnvelopeModel | None,
+                await session.scalar(
+                    select(WorkflowDispatchEventEnvelopeModel).where(
+                        WorkflowDispatchEventEnvelopeModel.outbox_entry_id
+                        == candidate.payload.outbox_entry_id
+                    )
+                ),
+            )
+            if existing is not None:
+                await session.rollback()
+                return WorkflowDispatchEventEnvelopePrepareResult(
+                    WorkflowDispatchEventEnvelopePrepareStatus.ALREADY_PREPARED,
+                    self._dispatch_event_envelope_from_row(existing),
+                )
+
+            try:
+                session.add(self._dispatch_event_envelope_model(candidate))
+                session.add(self._dispatch_event_envelope_claim_model(request))
+                await session.commit()
+                return WorkflowDispatchEventEnvelopePrepareResult(
+                    WorkflowDispatchEventEnvelopePrepareStatus.PREPARED,
+                    candidate,
+                )
+            except IntegrityError:
+                await session.rollback()
+
+        async with self._sessions() as session:
+            replay = await self._dispatch_event_envelope_preparation_replay(
+                session,
+                request=request,
+            )
+            if replay is not None:
+                return replay
+        return WorkflowDispatchEventEnvelopePrepareResult(
+            WorkflowDispatchEventEnvelopePrepareStatus.EVIDENCE_CONFLICT,
+            None,
+        )
 
     async def get_dispatch_intent_staging_request(
         self,
@@ -2367,6 +2513,457 @@ class PostgreSQLWorkflowPlanRepository:
         raise WorkflowDispatchIntentStagingError(
             "workflow_dispatch_intent_repository_contract_violation",
             "The workflow dispatch-intent record does not match its canonical payload.",
+        )
+
+    async def _dispatch_event_envelope_preparation_replay(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowDispatchEventEnvelopePrepareRequest,
+    ) -> WorkflowDispatchEventEnvelopePrepareResult | None:
+        envelope = request.candidate
+        claim = await self._load_dispatch_event_envelope_claim(
+            session,
+            scope=envelope.payload.scope,
+            publisher_subject_id=envelope.publisher_subject_id,
+            idempotency_key=request.idempotency_key,
+        )
+        if claim is None:
+            return None
+        record = self._dispatch_event_envelope_record_from_claim(claim)
+        status = (
+            WorkflowDispatchEventEnvelopePrepareStatus.REPLAY
+            if record.request_fingerprint == request.request_fingerprint
+            else WorkflowDispatchEventEnvelopePrepareStatus.IDEMPOTENCY_CONFLICT
+        )
+        return WorkflowDispatchEventEnvelopePrepareResult(status, record.envelope)
+
+    @classmethod
+    async def _load_dispatch_event_envelope_claim(
+        cls,
+        session: AsyncSession,
+        *,
+        scope: WorkflowScope,
+        publisher_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowDispatchEventEnvelopePreparationClaimModel | None:
+        scope_id = cls._dispatch_event_envelope_idempotency_scope(
+            scope,
+            publisher_subject_id,
+        )
+        return cast(
+            WorkflowDispatchEventEnvelopePreparationClaimModel | None,
+            await session.scalar(
+                select(WorkflowDispatchEventEnvelopePreparationClaimModel).where(
+                    WorkflowDispatchEventEnvelopePreparationClaimModel.idempotency_scope_id
+                    == scope_id,
+                    WorkflowDispatchEventEnvelopePreparationClaimModel.idempotency_key
+                    == idempotency_key,
+                    WorkflowDispatchEventEnvelopePreparationClaimModel.organization_id
+                    == scope.organization_id,
+                    WorkflowDispatchEventEnvelopePreparationClaimModel.environment_id
+                    == scope.environment_id,
+                    WorkflowDispatchEventEnvelopePreparationClaimModel.site_id == scope.site_id,
+                    WorkflowDispatchEventEnvelopePreparationClaimModel.publisher_subject_id
+                    == publisher_subject_id,
+                )
+            ),
+        )
+
+    @classmethod
+    def _dispatch_event_envelope_record_from_claim(
+        cls,
+        claim: WorkflowDispatchEventEnvelopePreparationClaimModel,
+    ) -> WorkflowDispatchEventEnvelopePrepareIdempotencyRecord:
+        raw = claim.payload.get("result_envelope")
+        if not isinstance(raw, dict):
+            cls._dispatch_event_envelope_contract_violation()
+        try:
+            envelope = cls._dispatch_event_envelope_to_domain(cast(dict[str, Any], raw))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowDispatchEventEnvelopeError(
+                "workflow_dispatch_event_envelope_repository_contract_violation",
+                "The dispatch-event envelope repository contains an invalid idempotency result.",
+            ) from exc
+        scope_id = cls._dispatch_event_envelope_idempotency_scope(
+            envelope.payload.scope,
+            envelope.publisher_subject_id,
+        )
+        expected: dict[str, Any] = {
+            "idempotency_key": claim.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": claim.request_fingerprint,
+            "result_digest": envelope.canonical_digest,
+            "result_envelope": cls._dispatch_event_envelope_payload(envelope),
+        }
+        if (
+            claim.idempotency_scope_id != scope_id
+            or claim.result_digest != envelope.canonical_digest
+            or claim.event_id != envelope.event_id
+            or claim.outbox_entry_id != envelope.payload.outbox_entry_id
+            or claim.plan_id != envelope.payload.plan_id
+            or claim.organization_id != envelope.payload.scope.organization_id
+            or claim.environment_id != envelope.payload.scope.environment_id
+            or claim.site_id != envelope.payload.scope.site_id
+            or claim.publisher_subject_id != envelope.publisher_subject_id
+            or claim.payload != expected
+            or claim.canonical_digest != canonical_digest(expected)
+        ):
+            cls._dispatch_event_envelope_contract_violation()
+        return WorkflowDispatchEventEnvelopePrepareIdempotencyRecord(
+            claim.request_fingerprint,
+            envelope,
+        )
+
+    @classmethod
+    def _dispatch_event_envelope_from_row(
+        cls,
+        row: WorkflowDispatchEventEnvelopeModel,
+    ) -> WorkflowDispatchEventEnvelope:
+        try:
+            envelope = cls._dispatch_event_envelope_to_domain(row.payload)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowDispatchEventEnvelopeError(
+                "workflow_dispatch_event_envelope_repository_contract_violation",
+                "The dispatch-event envelope repository contains an invalid envelope.",
+            ) from exc
+        payload = envelope.payload
+        if (
+            row.event_id != envelope.event_id
+            or row.event_type != envelope.event_type
+            or row.event_version != envelope.event_version
+            or row.occurred_at != envelope.occurred_at
+            or row.recorded_at != envelope.recorded_at
+            or row.producer != envelope.producer
+            or row.producer_version != envelope.producer_version
+            or row.subject_type != envelope.subject_type
+            or row.subject_id != envelope.subject_id
+            or row.organization_id != envelope.organization_id
+            or row.environment_id != envelope.environment_id
+            or row.site_id != payload.scope.site_id
+            or row.correlation_id != envelope.correlation_id
+            or row.causation_id != envelope.causation_id
+            or row.workflow_id != envelope.workflow_id
+            or row.data_classification != envelope.data_classification
+            or row.schema_uri != envelope.schema_uri
+            or row.outbox_entry_id != payload.outbox_entry_id
+            or row.outbox_entry_digest != payload.outbox_entry_digest
+            or row.dispatch_intent_id != payload.dispatch_intent_id
+            or row.dispatch_intent_digest != payload.dispatch_intent_digest
+            or row.plan_id != payload.plan_id
+            or row.plan_digest != payload.plan_digest
+            or row.run_id != payload.run_id
+            or row.run_digest != payload.run_digest
+            or row.step_run_id != payload.step_run_id
+            or row.step_run_digest != payload.step_run_digest
+            or row.step_id != payload.step_id
+            or row.attempt_id != payload.attempt_id
+            or row.attempt_digest != payload.attempt_digest
+            or row.attempt_number != payload.attempt_number
+            or row.target_type != payload.target_type
+            or row.target_id != payload.target_id
+            or row.orchestration_lease_id != envelope.orchestration_lease_id
+            or row.orchestration_lease_digest != envelope.orchestration_lease_digest
+            or row.orchestration_fencing_token != envelope.orchestration_fencing_token
+            or row.publication_lease_id != envelope.publication_lease_id
+            or row.publication_lease_digest != envelope.publication_lease_digest
+            or row.publication_fencing_token != envelope.publication_fencing_token
+            or row.publisher_subject_id != envelope.publisher_subject_id
+            or row.prepared_at != envelope.prepared_at
+            or row.state != envelope.state.value
+            or row.publication_authority_granted != envelope.grants_publication_authority
+            or row.delivery_authority_granted != envelope.grants_delivery_authority
+            or row.dispatch_authority_granted != envelope.grants_dispatch_authority
+            or row.execution_authority_granted != envelope.grants_execution_authority
+            or row.canonical_digest != envelope.canonical_digest
+        ):
+            cls._dispatch_event_envelope_contract_violation()
+        return envelope
+
+    @classmethod
+    def _dispatch_event_envelope_model(
+        cls,
+        envelope: WorkflowDispatchEventEnvelope,
+    ) -> WorkflowDispatchEventEnvelopeModel:
+        payload = envelope.payload
+        return WorkflowDispatchEventEnvelopeModel(
+            event_id=envelope.event_id,
+            event_type=envelope.event_type,
+            event_version=envelope.event_version,
+            occurred_at=envelope.occurred_at,
+            recorded_at=envelope.recorded_at,
+            producer=envelope.producer,
+            producer_version=envelope.producer_version,
+            subject_type=envelope.subject_type,
+            subject_id=envelope.subject_id,
+            organization_id=envelope.organization_id,
+            environment_id=envelope.environment_id,
+            site_id=payload.scope.site_id,
+            correlation_id=envelope.correlation_id,
+            causation_id=envelope.causation_id,
+            workflow_id=envelope.workflow_id,
+            data_classification=envelope.data_classification,
+            schema_uri=envelope.schema_uri,
+            outbox_entry_id=payload.outbox_entry_id,
+            outbox_entry_digest=payload.outbox_entry_digest,
+            dispatch_intent_id=payload.dispatch_intent_id,
+            dispatch_intent_digest=payload.dispatch_intent_digest,
+            plan_id=payload.plan_id,
+            plan_digest=payload.plan_digest,
+            run_id=payload.run_id,
+            run_digest=payload.run_digest,
+            step_run_id=payload.step_run_id,
+            step_run_digest=payload.step_run_digest,
+            step_id=payload.step_id,
+            attempt_id=payload.attempt_id,
+            attempt_digest=payload.attempt_digest,
+            attempt_number=payload.attempt_number,
+            target_type=payload.target_type,
+            target_id=payload.target_id,
+            orchestration_lease_id=envelope.orchestration_lease_id,
+            orchestration_lease_digest=envelope.orchestration_lease_digest,
+            orchestration_fencing_token=envelope.orchestration_fencing_token,
+            publication_lease_id=envelope.publication_lease_id,
+            publication_lease_digest=envelope.publication_lease_digest,
+            publication_fencing_token=envelope.publication_fencing_token,
+            publisher_subject_id=envelope.publisher_subject_id,
+            prepared_at=envelope.prepared_at,
+            state=envelope.state.value,
+            publication_authority_granted=envelope.grants_publication_authority,
+            delivery_authority_granted=envelope.grants_delivery_authority,
+            dispatch_authority_granted=envelope.grants_dispatch_authority,
+            execution_authority_granted=envelope.grants_execution_authority,
+            canonical_digest=envelope.canonical_digest,
+            payload=cls._dispatch_event_envelope_payload(envelope),
+        )
+
+    @classmethod
+    def _dispatch_event_envelope_claim_model(
+        cls,
+        request: WorkflowDispatchEventEnvelopePrepareRequest,
+    ) -> WorkflowDispatchEventEnvelopePreparationClaimModel:
+        envelope = request.candidate
+        scope = envelope.payload.scope
+        scope_id = cls._dispatch_event_envelope_idempotency_scope(
+            scope,
+            envelope.publisher_subject_id,
+        )
+        payload: dict[str, Any] = {
+            "idempotency_key": request.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": request.request_fingerprint,
+            "result_digest": envelope.canonical_digest,
+            "result_envelope": cls._dispatch_event_envelope_payload(envelope),
+        }
+        digest = canonical_digest(payload)
+        return WorkflowDispatchEventEnvelopePreparationClaimModel(
+            claim_id=f"workflow_dispatch_event_claim_{sha256(digest.encode()).hexdigest()[:32]}",
+            idempotency_scope_id=scope_id,
+            idempotency_key=request.idempotency_key,
+            request_fingerprint=request.request_fingerprint,
+            result_digest=envelope.canonical_digest,
+            event_id=envelope.event_id,
+            outbox_entry_id=envelope.payload.outbox_entry_id,
+            plan_id=envelope.payload.plan_id,
+            organization_id=scope.organization_id,
+            environment_id=scope.environment_id,
+            site_id=scope.site_id,
+            publisher_subject_id=envelope.publisher_subject_id,
+            created_at=request.requested_at,
+            canonical_digest=digest,
+            payload=payload,
+        )
+
+    @classmethod
+    def _dispatch_event_envelope_evidence_matches(
+        cls,
+        *,
+        plan_row: WorkflowRunPlanModel | None,
+        outbox_row: WorkflowDispatchOutboxEntryModel | None,
+        orchestration_lease_row: WorkflowOrchestrationLeaseModel | None,
+        publication_lease_row: WorkflowOutboxPublicationLeaseModel | None,
+        request: WorkflowDispatchEventEnvelopePrepareRequest,
+    ) -> bool:
+        if any(
+            item is None
+            for item in (
+                plan_row,
+                outbox_row,
+                orchestration_lease_row,
+                publication_lease_row,
+            )
+        ):
+            return False
+        assert plan_row is not None
+        assert outbox_row is not None
+        assert orchestration_lease_row is not None
+        assert publication_lease_row is not None
+        candidate = request.candidate
+        payload = candidate.payload
+        try:
+            outbox = cls._dispatch_outbox_from_row(outbox_row)
+            orchestration_lease = cls._lease_from_row(orchestration_lease_row)
+            publication_lease = cls._publication_lease_from_row(publication_lease_row)
+        except (
+            WorkflowDispatchIntentStagingError,
+            WorkflowOrchestrationLeaseError,
+            WorkflowOutboxPublicationLeaseError,
+        ) as exc:
+            raise WorkflowDispatchEventEnvelopeError(
+                "workflow_dispatch_event_envelope_repository_contract_violation",
+                "Workflow evidence is inconsistent during event-envelope preparation.",
+            ) from exc
+        return bool(
+            plan_row.plan_id == payload.plan_id
+            and plan_row.state == WorkflowPlanState.PLANNED.value
+            and plan_row.canonical_digest == request.expected_plan_digest == payload.plan_digest
+            and plan_row.organization_id == payload.scope.organization_id
+            and plan_row.environment_id == payload.scope.environment_id
+            and plan_row.site_id == payload.scope.site_id
+            and plan_row.target_type == payload.target_type
+            and plan_row.target_id == payload.target_id
+            and outbox.state is WorkflowDispatchOutboxState.PENDING_PUBLICATION
+            and outbox.canonical_digest
+            == request.expected_outbox_entry_digest
+            == payload.outbox_entry_digest
+            and outbox.outbox_entry_id == payload.outbox_entry_id
+            and outbox.dispatch_intent_id == payload.dispatch_intent_id
+            and outbox.dispatch_intent_digest == payload.dispatch_intent_digest
+            and outbox.plan_id == payload.plan_id
+            and outbox.plan_digest == payload.plan_digest
+            and outbox.run_id == payload.run_id
+            and outbox.run_digest == payload.run_digest
+            and outbox.step_run_id == payload.step_run_id
+            and outbox.step_run_digest == payload.step_run_digest
+            and outbox.step_id == payload.step_id
+            and outbox.attempt_id == payload.attempt_id
+            and outbox.attempt_digest == payload.attempt_digest
+            and outbox.attempt_number == payload.attempt_number == 1
+            and outbox.scope == payload.scope
+            and outbox.target_id == payload.target_id
+            and outbox.target_type == payload.target_type
+            and not any(outbox.authority.canonical_value().values())
+            and orchestration_lease.lease_id
+            == request.expected_orchestration_lease_id
+            == candidate.orchestration_lease_id
+            == outbox.lease_id
+            and orchestration_lease.canonical_digest
+            == request.expected_orchestration_lease_digest
+            == candidate.orchestration_lease_digest
+            == outbox.lease_digest
+            and orchestration_lease.fencing_token
+            == request.expected_orchestration_fencing_token
+            == candidate.orchestration_fencing_token
+            == outbox.fencing_token
+            and orchestration_lease.plan_id == payload.plan_id
+            and orchestration_lease.plan_digest == payload.plan_digest
+            and orchestration_lease.scope == payload.scope
+            and orchestration_lease.target_id == payload.target_id
+            and orchestration_lease.target_type == payload.target_type
+            and orchestration_lease.effective_state(requested_at=request.requested_at)
+            is WorkflowOrchestrationLeaseEffectiveState.ACTIVE
+            and publication_lease.publication_lease_id
+            == request.expected_publication_lease_id
+            == candidate.publication_lease_id
+            and publication_lease.canonical_digest
+            == request.expected_publication_lease_digest
+            == candidate.publication_lease_digest
+            and publication_lease.publication_fencing_token
+            == request.expected_publication_fencing_token
+            == candidate.publication_fencing_token
+            and publication_lease.outbox_entry_id == payload.outbox_entry_id
+            and publication_lease.outbox_entry_digest == payload.outbox_entry_digest
+            and publication_lease.dispatch_intent_id == payload.dispatch_intent_id
+            and publication_lease.dispatch_intent_digest == payload.dispatch_intent_digest
+            and publication_lease.plan_id == payload.plan_id
+            and publication_lease.plan_digest == payload.plan_digest
+            and publication_lease.run_id == payload.run_id
+            and publication_lease.run_digest == payload.run_digest
+            and publication_lease.step_run_id == payload.step_run_id
+            and publication_lease.step_run_digest == payload.step_run_digest
+            and publication_lease.step_id == payload.step_id
+            and publication_lease.attempt_id == payload.attempt_id
+            and publication_lease.attempt_digest == payload.attempt_digest
+            and publication_lease.attempt_number == payload.attempt_number
+            and publication_lease.scope == payload.scope
+            and publication_lease.target_id == payload.target_id
+            and publication_lease.target_type == payload.target_type
+            and publication_lease.orchestration_lease_id == candidate.orchestration_lease_id
+            and publication_lease.orchestration_lease_digest == candidate.orchestration_lease_digest
+            and publication_lease.orchestration_fencing_token
+            == candidate.orchestration_fencing_token
+            and publication_lease.publisher_subject_id == candidate.publisher_subject_id
+            and publication_lease.publisher_subject_id == request.publisher_subject_id
+            and publication_lease.effective_state(requested_at=request.requested_at)
+            is WorkflowOutboxPublicationLeaseEffectiveState.ACTIVE
+            and not any(candidate.authority.canonical_value().values())
+            and not candidate.grants_publication_authority
+            and not candidate.grants_delivery_authority
+            and not candidate.grants_dispatch_authority
+            and not candidate.grants_execution_authority
+        )
+
+    @staticmethod
+    def _dispatch_event_envelope_idempotency_scope(
+        scope: WorkflowScope,
+        publisher_subject_id: str,
+    ) -> str:
+        return canonical_digest(
+            {
+                "publisher_subject_id": publisher_subject_id,
+                "scope": scope.canonical_value(),
+            }
+        )
+
+    @staticmethod
+    def _dispatch_event_envelope_payload(
+        envelope: WorkflowDispatchEventEnvelope,
+    ) -> dict[str, Any]:
+        return cast(dict[str, Any], envelope.canonical_value())
+
+    @staticmethod
+    def _dispatch_event_envelope_to_domain(
+        raw: dict[str, Any],
+    ) -> WorkflowDispatchEventEnvelope:
+        values = dict(raw)
+        event_payload = dict(cast(dict[str, Any], values["payload"]))
+        event_payload["scope"] = WorkflowScope(**cast(Any, event_payload["scope"]))
+        values["payload"] = WorkflowDispatchEventPayload(**cast(Any, event_payload))
+        values["occurred_at"] = datetime.fromisoformat(str(values["occurred_at"]))
+        values["recorded_at"] = datetime.fromisoformat(str(values["recorded_at"]))
+        values["prepared_at"] = datetime.fromisoformat(str(values["prepared_at"]))
+        values["extensions"] = tuple(sorted(cast(dict[str, str], values["extensions"]).items()))
+        values["state"] = WorkflowDispatchEventEnvelopeState(str(values["state"]))
+        values["authority"] = WorkflowDispatchEventAuthority(**cast(Any, values["authority"]))
+        return WorkflowDispatchEventEnvelope(**cast(Any, values))
+
+    @staticmethod
+    def _validate_dispatch_event_envelope_preparation_request(
+        request: WorkflowDispatchEventEnvelopePrepareRequest,
+    ) -> None:
+        candidate = request.candidate
+        if (
+            candidate.state is not WorkflowDispatchEventEnvelopeState.PREPARED
+            or candidate.payload.attempt_number != 1
+            or candidate.publisher_subject_id != request.publisher_subject_id
+            or candidate.grants_publication_authority
+            or candidate.grants_delivery_authority
+            or candidate.grants_dispatch_authority
+            or candidate.grants_execution_authority
+        ):
+            raise ValueError("workflow dispatch-event envelope preparation payload is unsafe")
+        if not request.idempotency_key or len(request.idempotency_key) > 128:
+            raise ValueError("workflow dispatch-event envelope idempotency key is invalid")
+        if len(request.request_fingerprint) != 64:
+            raise ValueError("workflow dispatch-event envelope request fingerprint is invalid")
+        if request.requested_at.tzinfo is None:
+            raise ValueError("workflow dispatch-event envelope preparation time must be aware")
+
+    @staticmethod
+    def _dispatch_event_envelope_contract_violation() -> None:
+        raise WorkflowDispatchEventEnvelopeError(
+            "workflow_dispatch_event_envelope_repository_contract_violation",
+            "The workflow dispatch-event envelope does not match its canonical payload.",
         )
 
     async def _publication_lease_acquire_replay(

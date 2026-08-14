@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Database,
   FileClock,
+  FileJson2,
   History,
   LockKeyhole,
   Plus,
@@ -25,6 +26,7 @@ import {
   listWorkflowDefinitions,
   listWorkflowAttemptDispatchIntents,
   listWorkflowDispatchOutboxEntries,
+  listWorkflowDispatchEventEnvelopes,
   listWorkflowDispatchOutboxPublicationLeases,
   listWorkflowPlans,
   listWorkflowRunAttempts,
@@ -227,6 +229,34 @@ export default function WorkflowPlanningWorkspace({
     enabled: dispatchOutboxQuery.isSuccess && dispatchOutboxEntries.length > 0,
     retry: false,
   });
+  const publicationLeases =
+    publicationLeaseQuery.data?.flatMap((inventory) => inventory.publication_leases) ?? [];
+  const eventEnvelopeQuery = useQuery({
+    queryKey: [
+      "workflow-dispatch-event-envelopes",
+      dispatchOutboxEntries.map((entry) => [entry.outbox_entry_id, entry.canonical_digest]),
+      publicationLeases.map((lease) => [lease.publication_lease_id, lease.canonical_digest]),
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () =>
+      Promise.all(
+        dispatchOutboxEntries.map((outboxEntry) =>
+          listWorkflowDispatchEventEnvelopes({
+            outboxEntry,
+            publicationLease:
+              publicationLeases.find(
+                (lease) => lease.outbox_entry_id === outboxEntry.outbox_entry_id,
+              ) ?? null,
+            scope,
+            authorizedTargetIds,
+          }),
+        ),
+      ),
+    enabled: publicationLeaseQuery.isSuccess && dispatchOutboxEntries.length > 0,
+    retry: false,
+  });
   const definitions = definitionQuery.data?.definitions ?? [];
   const selectedDefinition = definitions.find((item) => item.definition_id === definitionId);
   const createMutation = useMutation({
@@ -298,8 +328,12 @@ export default function WorkflowPlanningWorkspace({
     publicationLeaseQuery.error instanceof ApiRequestError
       ? publicationLeaseQuery.error.status
       : undefined;
-  const publicationLeases =
-    publicationLeaseQuery.data?.flatMap((inventory) => inventory.publication_leases) ?? [];
+  const eventEnvelopeErrorStatus =
+    eventEnvelopeQuery.error instanceof ApiRequestError
+      ? eventEnvelopeQuery.error.status
+      : undefined;
+  const eventEnvelopes =
+    eventEnvelopeQuery.data?.flatMap((inventory) => inventory.event_envelopes) ?? [];
 
   const selectPlan = (plan: WorkflowRunPlan) => {
     setSelectedPlan(plan);
@@ -874,6 +908,128 @@ export default function WorkflowPlanningWorkspace({
                   <div className="workflow-safety-boundary" role="note">
                     <LockKeyhole size={18} />
                     <span>This lease is read-only coordination evidence. It grants no publication, delivery, dispatch, or execution authority.</span>
+                  </div>
+                </div>
+              )}
+
+              {dispatchOutboxQuery.isSuccess && dispatchOutboxEntries.length > 0 && (
+                <div aria-labelledby="workflow-event-envelope-evidence-title">
+                  <div className="workflow-section-heading">
+                    <div>
+                      <p className="eyebrow">READ-ONLY CANONICAL EVIDENCE</p>
+                      <h3 id="workflow-event-envelope-evidence-title">
+                        Canonical event-envelope evidence
+                      </h3>
+                    </div>
+                    <span>Prepared data only</span>
+                  </div>
+                  {eventEnvelopeQuery.isLoading && (
+                    <div className="workflow-empty-state" role="status">
+                      <FileJson2 size={19} />
+                      <span>Loading authoritative event-envelope evidence...</span>
+                    </div>
+                  )}
+                  {eventEnvelopeQuery.isError && (
+                    <div className="inline-error" role="alert">
+                      <div>
+                        <strong>
+                          {eventEnvelopeErrorStatus === 401
+                            ? "Your session has expired"
+                            : eventEnvelopeErrorStatus === 403
+                              ? "Event-envelope evidence permission is missing"
+                              : "Event-envelope evidence is unavailable"}
+                        </strong>
+                        <span>
+                          {eventEnvelopeErrorStatus === 401
+                            ? "Sign in again to continue."
+                            : eventEnvelopeErrorStatus === 403
+                              ? "Your current role or scope cannot inspect canonical event-envelope evidence."
+                              : "No preparation, publication, delivery, dispatch, or execution state is inferred from this failed read."}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {eventEnvelopeQuery.isSuccess && eventEnvelopes.length > 0 && (
+                    <ol
+                      className="workflow-step-preview workflow-event-envelope-list"
+                      aria-label="Canonical event-envelope evidence"
+                    >
+                      {eventEnvelopes.map((envelope) => (
+                        <li key={envelope.event_id}>
+                          <FileJson2 size={17} />
+                          <div>
+                            <strong>
+                              <code title={envelope.event_id}>
+                                {safeHolderIdentifier(envelope.event_id)}
+                              </code>
+                              <span className="state-badge neutral">{envelope.state}</span>
+                            </strong>
+                            <small>
+                              {envelope.event_type} v{envelope.event_version} | producer{" "}
+                              <code title={envelope.producer}>{safeHolderIdentifier(envelope.producer)}</code>{" "}
+                              v{envelope.producer_version}
+                            </small>
+                            <small>
+                              occurred {formatTimestamp(envelope.occurred_at)} | recorded{" "}
+                              {formatTimestamp(envelope.recorded_at)} | prepared{" "}
+                              {formatTimestamp(envelope.prepared_at)}
+                            </small>
+                            <small>
+                              subject {readableKind(envelope.subject_type)}:{" "}
+                              <code title={envelope.subject_id}>{safeHolderIdentifier(envelope.subject_id)}</code>{" "}
+                              | workflow <code title={envelope.workflow_id}>{safeHolderIdentifier(envelope.workflow_id)}</code>
+                            </small>
+                            <small>
+                              organization {envelope.organization_id} | environment {envelope.environment_id} | site{" "}
+                              {envelope.payload.scope.site_id} | target {envelope.payload.target_id}
+                            </small>
+                            <small>
+                              correlation <code title={envelope.correlation_id}>{safeHolderIdentifier(envelope.correlation_id)}</code>{" "}
+                              | causation <code title={envelope.causation_id}>{safeHolderIdentifier(envelope.causation_id)}</code>
+                            </small>
+                            <small>
+                              classification {envelope.data_classification} | schema{" "}
+                              <code title={envelope.schema_uri}>{envelope.schema_uri}</code>
+                            </small>
+                            <small>
+                              publisher <code title={envelope.publisher_subject_id}>{safeHolderIdentifier(envelope.publisher_subject_id)}</code>{" "}
+                              | publication fence {envelope.publication_fencing_token} | source fence{" "}
+                              {envelope.orchestration_fencing_token}
+                            </small>
+                            <small>
+                              publication lease {shortDigest(envelope.publication_lease_digest)} | source lease{" "}
+                              {shortDigest(envelope.orchestration_lease_digest)} | outbox{" "}
+                              {shortDigest(envelope.payload.outbox_entry_digest)}
+                            </small>
+                            <small>
+                              intent {shortDigest(envelope.payload.dispatch_intent_digest)} | attempt{" "}
+                              {shortDigest(envelope.payload.attempt_digest)} | run{" "}
+                              {shortDigest(envelope.payload.run_digest)} | step{" "}
+                              {shortDigest(envelope.payload.step_run_digest)} | plan{" "}
+                              {shortDigest(envelope.payload.plan_digest)}
+                            </small>
+                            <small>
+                              payload/outbox {shortDigest(envelope.payload.outbox_entry_digest)} | envelope{" "}
+                              {shortDigest(envelope.canonical_digest)}
+                            </small>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                  {eventEnvelopeQuery.isSuccess && eventEnvelopes.length === 0 && (
+                    <div className="workflow-empty-state" role="status">
+                      <FileJson2 size={19} />
+                      <span>No event envelope has been prepared.</span>
+                    </div>
+                  )}
+                  <div className="workflow-safety-boundary" role="note">
+                    <LockKeyhole size={18} />
+                    <span>
+                      Prepared canonical data only. No transport is selected, no bytes were
+                      serialized, no message was published or delivered, no worker was dispatched,
+                      and no action was executed.
+                    </span>
                   </div>
                 </div>
               )}

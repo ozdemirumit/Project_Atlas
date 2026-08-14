@@ -224,6 +224,13 @@ lease. Lease ownership contains no transport configuration and grants no publica
 dispatch or execution authority. Broker selection and publication lifecycle evidence remain
 separate later boundaries.
 
+While holding that exact active lease, the publisher may durably prepare one immutable canonical
+`WorkflowStepDispatchRequested` envelope for the pending entry. Preparation binds the exact outbox,
+source orchestration lease and publication lease, but remains provider-neutral. It selects no
+broker or route, creates no wire serialization or transport attempt, and grants no publication,
+delivery, dispatch or execution authority. Transport admission and publication lifecycle evidence
+remain separate later boundaries.
+
 ### 10.2 Publication State
 
 Outbox records track:

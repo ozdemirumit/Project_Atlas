@@ -18,6 +18,21 @@ from atlas.modules.workflows.application.dispatch_intent_ports import (
 from atlas.modules.workflows.application.dispatch_intents import (
     WorkflowDispatchIntentStagingService,
 )
+from atlas.modules.workflows.application.event_envelope_ports import (
+    WorkflowDispatchEventEnvelopeError,
+    WorkflowDispatchEventEnvelopePrepareIdempotencyRecord,
+    WorkflowDispatchEventEnvelopePrepareRequest,
+    WorkflowDispatchEventEnvelopePrepareResult,
+    WorkflowDispatchEventEnvelopePrepareStatus,
+    WorkflowDispatchEventEnvelopeRepository,
+)
+from atlas.modules.workflows.application.event_envelopes import (
+    WORKFLOW_DISPATCH_EVENT_PRODUCER,
+    WORKFLOW_DISPATCH_EVENT_SCHEMA_URI,
+    WORKFLOW_DISPATCH_EVENT_TYPE,
+    WORKFLOW_DISPATCH_EVENT_VERSION,
+    WorkflowDispatchEventEnvelopeService,
+)
 from atlas.modules.workflows.application.materialization import (
     WorkflowRunMaterializationService,
 )
@@ -78,6 +93,10 @@ from atlas.modules.workflows.application.service import (
 )
 
 __all__ = [
+    "WORKFLOW_DISPATCH_EVENT_PRODUCER",
+    "WORKFLOW_DISPATCH_EVENT_SCHEMA_URI",
+    "WORKFLOW_DISPATCH_EVENT_TYPE",
+    "WORKFLOW_DISPATCH_EVENT_VERSION",
     "WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE",
     "WORKFLOW_WORKER_AUDIENCE",
     "WorkflowAccessContext",
@@ -88,6 +107,13 @@ __all__ = [
     "WorkflowAttemptMaterializationResult",
     "WorkflowAttemptMaterializationService",
     "WorkflowAttemptMaterializationStatus",
+    "WorkflowDispatchEventEnvelopeError",
+    "WorkflowDispatchEventEnvelopePrepareIdempotencyRecord",
+    "WorkflowDispatchEventEnvelopePrepareRequest",
+    "WorkflowDispatchEventEnvelopePrepareResult",
+    "WorkflowDispatchEventEnvelopePrepareStatus",
+    "WorkflowDispatchEventEnvelopeRepository",
+    "WorkflowDispatchEventEnvelopeService",
     "WorkflowDispatchIntentStagingError",
     "WorkflowDispatchIntentStagingIdempotencyRecord",
     "WorkflowDispatchIntentStagingRepository",

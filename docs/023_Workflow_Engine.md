@@ -565,6 +565,9 @@ MVP workflows do not execute C3 through C5 capabilities.
 - ADR-141 establishes bounded, independently fenced publisher ownership of an exact pending outbox
   entry without selecting a broker or granting publication, delivery, dispatch or execution
   authority.
+- ADR-142 establishes one immutable canonical dispatch-event envelope under the exact active
+  publication lease without transport selection, wire serialization, publication, delivery,
+  dispatch or execution authority.
 
 ## 39. Assumptions
 

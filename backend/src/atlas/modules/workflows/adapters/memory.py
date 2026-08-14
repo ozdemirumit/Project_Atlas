@@ -7,6 +7,10 @@ from atlas.modules.workflows.application import (
     WorkflowAttemptMaterializationRequest,
     WorkflowAttemptMaterializationResult,
     WorkflowAttemptMaterializationStatus,
+    WorkflowDispatchEventEnvelopePrepareIdempotencyRecord,
+    WorkflowDispatchEventEnvelopePrepareRequest,
+    WorkflowDispatchEventEnvelopePrepareResult,
+    WorkflowDispatchEventEnvelopePrepareStatus,
     WorkflowDispatchIntentStagingIdempotencyRecord,
     WorkflowDispatchIntentStagingRequest,
     WorkflowDispatchIntentStagingResult,
@@ -40,6 +44,7 @@ from atlas.modules.workflows.application.publication_lease_ports import (
     WorkflowOutboxPublicationLeaseMutationStatus,
 )
 from atlas.modules.workflows.domain import (
+    WorkflowDispatchEventEnvelope,
     WorkflowDispatchIntent,
     WorkflowDispatchIntentState,
     WorkflowDispatchOutboxEntry,
@@ -89,6 +94,11 @@ class InMemoryWorkflowPlanRepository:
         self._publication_lease_acquire_requests: dict[
             tuple[WorkflowScope, str, str],
             WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord,
+        ] = {}
+        self._dispatch_event_envelopes_by_outbox: dict[str, WorkflowDispatchEventEnvelope] = {}
+        self._dispatch_event_envelope_prepare_requests: dict[
+            tuple[WorkflowScope, str, str],
+            WorkflowDispatchEventEnvelopePrepareIdempotencyRecord,
         ] = {}
         self._lock = asyncio.Lock()
 
@@ -448,6 +458,80 @@ class InMemoryWorkflowPlanRepository:
         async with self._lock:
             return self._publication_lease_acquire_requests.get(
                 (scope, publisher_subject_id, idempotency_key)
+            )
+
+    async def get_dispatch_event_envelope_by_outbox_entry_id(
+        self, *, outbox_entry_id: str
+    ) -> WorkflowDispatchEventEnvelope | None:
+        async with self._lock:
+            return self._dispatch_event_envelopes_by_outbox.get(outbox_entry_id)
+
+    async def get_dispatch_event_envelope_prepare_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        publisher_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowDispatchEventEnvelopePrepareIdempotencyRecord | None:
+        async with self._lock:
+            return self._dispatch_event_envelope_prepare_requests.get(
+                (scope, publisher_subject_id, idempotency_key)
+            )
+
+    async def prepare_dispatch_event_envelope(
+        self, request: WorkflowDispatchEventEnvelopePrepareRequest
+    ) -> WorkflowDispatchEventEnvelopePrepareResult:
+        async with self._lock:
+            candidate = request.candidate
+            key = (candidate.payload.scope, request.publisher_subject_id, request.idempotency_key)
+            prior = self._dispatch_event_envelope_prepare_requests.get(key)
+            if prior is not None:
+                status = (
+                    WorkflowDispatchEventEnvelopePrepareStatus.REPLAY
+                    if prior.request_fingerprint == request.request_fingerprint
+                    else WorkflowDispatchEventEnvelopePrepareStatus.IDEMPOTENCY_CONFLICT
+                )
+                return WorkflowDispatchEventEnvelopePrepareResult(status, prior.envelope)
+
+            outbox = next(
+                (
+                    entry
+                    for entry in self._dispatch_outbox_entries_by_intent.values()
+                    if entry.outbox_entry_id == candidate.payload.outbox_entry_id
+                ),
+                None,
+            )
+            plan = self._plans.get(candidate.payload.plan_id)
+            orchestration_lease = self._leases_by_plan.get(candidate.payload.plan_id)
+            publication_lease = self._publication_leases_by_outbox.get(
+                candidate.payload.outbox_entry_id
+            )
+            if not self._dispatch_event_evidence_matches(
+                outbox=outbox,
+                plan=plan,
+                orchestration_lease=orchestration_lease,
+                publication_lease=publication_lease,
+                request=request,
+            ):
+                return WorkflowDispatchEventEnvelopePrepareResult(
+                    WorkflowDispatchEventEnvelopePrepareStatus.EVIDENCE_CONFLICT, None
+                )
+            current = self._dispatch_event_envelopes_by_outbox.get(
+                candidate.payload.outbox_entry_id
+            )
+            if current is not None:
+                return WorkflowDispatchEventEnvelopePrepareResult(
+                    WorkflowDispatchEventEnvelopePrepareStatus.ALREADY_PREPARED, current
+                )
+            self._dispatch_event_envelopes_by_outbox[candidate.payload.outbox_entry_id] = candidate
+            self._dispatch_event_envelope_prepare_requests[key] = (
+                WorkflowDispatchEventEnvelopePrepareIdempotencyRecord(
+                    request_fingerprint=request.request_fingerprint,
+                    envelope=candidate,
+                )
+            )
+            return WorkflowDispatchEventEnvelopePrepareResult(
+                WorkflowDispatchEventEnvelopePrepareStatus.PREPARED, candidate
             )
 
     async def acquire_publication_lease(
@@ -890,6 +974,101 @@ class InMemoryWorkflowPlanRepository:
             and orchestration_lease.worker_subject_id == outbox.worker_subject_id
             and orchestration_lease.effective_state(requested_at=request.requested_at)
             is WorkflowOrchestrationLeaseEffectiveState.ACTIVE
+            and not any(candidate.authority.canonical_value().values())
+            and not candidate.grants_publication_authority
+            and not candidate.grants_delivery_authority
+            and not candidate.grants_dispatch_authority
+            and not candidate.grants_execution_authority
+        )
+
+    @staticmethod
+    def _dispatch_event_evidence_matches(
+        *,
+        outbox: WorkflowDispatchOutboxEntry | None,
+        plan: WorkflowRunPlan | None,
+        orchestration_lease: WorkflowOrchestrationLease | None,
+        publication_lease: WorkflowOutboxPublicationLease | None,
+        request: WorkflowDispatchEventEnvelopePrepareRequest,
+    ) -> bool:
+        candidate = request.candidate
+        payload = candidate.payload
+        return bool(
+            outbox is not None
+            and outbox.state is WorkflowDispatchOutboxState.PENDING_PUBLICATION
+            and outbox.canonical_digest
+            == request.expected_outbox_entry_digest
+            == payload.outbox_entry_digest
+            and outbox.outbox_entry_id == payload.outbox_entry_id
+            and outbox.dispatch_intent_id == payload.dispatch_intent_id
+            and outbox.dispatch_intent_digest == payload.dispatch_intent_digest
+            and outbox.plan_id == payload.plan_id
+            and outbox.plan_digest == request.expected_plan_digest == payload.plan_digest
+            and outbox.run_id == payload.run_id
+            and outbox.run_digest == payload.run_digest
+            and outbox.step_run_id == payload.step_run_id
+            and outbox.step_run_digest == payload.step_run_digest
+            and outbox.step_id == payload.step_id
+            and outbox.attempt_id == payload.attempt_id
+            and outbox.attempt_digest == payload.attempt_digest
+            and outbox.attempt_number == payload.attempt_number
+            and outbox.scope == payload.scope
+            and outbox.target_id == payload.target_id
+            and outbox.target_type == payload.target_type
+            and not any(outbox.authority.canonical_value().values())
+            and not outbox.grants_publication_authority
+            and not outbox.grants_delivery_authority
+            and not outbox.grants_dispatch_authority
+            and not outbox.grants_execution_authority
+            and plan is not None
+            and plan.state is WorkflowPlanState.PLANNED
+            and plan.canonical_digest == request.expected_plan_digest
+            and plan.scope == payload.scope
+            and plan.target_id == payload.target_id
+            and plan.target_type == payload.target_type
+            and orchestration_lease is not None
+            and orchestration_lease.lease_id
+            == request.expected_orchestration_lease_id
+            == candidate.orchestration_lease_id
+            == outbox.lease_id
+            and orchestration_lease.canonical_digest
+            == request.expected_orchestration_lease_digest
+            == candidate.orchestration_lease_digest
+            == outbox.lease_digest
+            and orchestration_lease.fencing_token
+            == request.expected_orchestration_fencing_token
+            == candidate.orchestration_fencing_token
+            == outbox.fencing_token
+            and orchestration_lease.scope == payload.scope
+            and orchestration_lease.target_id == payload.target_id
+            and orchestration_lease.target_type == payload.target_type
+            and orchestration_lease.effective_state(requested_at=request.requested_at)
+            is WorkflowOrchestrationLeaseEffectiveState.ACTIVE
+            and publication_lease is not None
+            and publication_lease.publication_lease_id
+            == request.expected_publication_lease_id
+            == candidate.publication_lease_id
+            and publication_lease.canonical_digest
+            == request.expected_publication_lease_digest
+            == candidate.publication_lease_digest
+            and publication_lease.publication_fencing_token
+            == request.expected_publication_fencing_token
+            == candidate.publication_fencing_token
+            and publication_lease.outbox_entry_id == outbox.outbox_entry_id
+            and publication_lease.outbox_entry_digest == outbox.canonical_digest
+            and publication_lease.orchestration_lease_id == orchestration_lease.lease_id
+            and publication_lease.orchestration_lease_digest == orchestration_lease.canonical_digest
+            and publication_lease.orchestration_fencing_token == orchestration_lease.fencing_token
+            and publication_lease.publisher_subject_id
+            == request.publisher_subject_id
+            == candidate.publisher_subject_id
+            and publication_lease.effective_state(requested_at=request.requested_at)
+            is WorkflowOutboxPublicationLeaseEffectiveState.ACTIVE
+            and not any(publication_lease.authority.canonical_value().values())
+            and not publication_lease.grants_publication_authority
+            and not publication_lease.grants_delivery_authority
+            and not publication_lease.grants_dispatch_authority
+            and not publication_lease.grants_execution_authority
+            and not candidate.extensions
             and not any(candidate.authority.canonical_value().values())
             and not candidate.grants_publication_authority
             and not candidate.grants_delivery_authority
