@@ -9,6 +9,7 @@ from atlas.api.schemas import ResponseMeta
 from atlas.modules.workflows.domain import (
     WorkflowDefinition,
     WorkflowDispatchIntent,
+    WorkflowDispatchOutboxEntry,
     WorkflowExecutionAttempt,
     WorkflowExecutionRun,
     WorkflowOrchestrationLease,
@@ -419,6 +420,65 @@ class WorkflowDispatchIntentResponse(BaseModel):
 
 class WorkflowDispatchIntentInventoryResponse(BaseModel):
     data: WorkflowDispatchIntentInventoryData
+    meta: ResponseMeta
+
+
+class WorkflowDispatchOutboxEntryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    outbox_entry_id: str
+    dispatch_intent_id: str
+    dispatch_intent_digest: str
+    plan_id: str
+    plan_digest: str
+    run_id: str
+    run_digest: str
+    step_run_id: str
+    step_run_digest: str
+    step_id: str
+    attempt_id: str
+    attempt_digest: str
+    attempt_number: Literal[1]
+    scope: WorkflowScopeData
+    target_id: str
+    target_type: Literal["storage"]
+    lease_id: str
+    lease_digest: str
+    fencing_token: int
+    worker_subject_id: str
+    admitted_at: datetime
+    state: Literal["pending_publication"]
+    authority: WorkflowPlanAuthorityData
+    grants_publication_authority: Literal[False]
+    grants_delivery_authority: Literal[False]
+    grants_dispatch_authority: Literal[False]
+    grants_execution_authority: Literal[False]
+    canonical_digest: str
+
+    @classmethod
+    def from_domain(cls, entry: WorkflowDispatchOutboxEntry) -> WorkflowDispatchOutboxEntryData:
+        return cls.model_validate(
+            entry.canonical_value()
+            | {
+                "grants_publication_authority": entry.grants_publication_authority,
+                "grants_delivery_authority": entry.grants_delivery_authority,
+                "grants_dispatch_authority": entry.grants_dispatch_authority,
+                "grants_execution_authority": entry.grants_execution_authority,
+            }
+        )
+
+
+class WorkflowDispatchOutboxInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dispatch_intent_id: str
+    outbox_entries: list[WorkflowDispatchOutboxEntryData] = Field(min_length=1, max_length=1)
+    server_time: datetime
+    durable: bool
+
+
+class WorkflowDispatchOutboxInventoryResponse(BaseModel):
+    data: WorkflowDispatchOutboxInventoryData
     meta: ResponseMeta
 
 

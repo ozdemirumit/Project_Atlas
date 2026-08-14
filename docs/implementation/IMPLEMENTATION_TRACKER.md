@@ -4,14 +4,73 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-189 |
-| Title | Durable workflow dispatch-intent staging without publication authority |
-| Status | Implementation and local validation complete; delivery gates in progress |
-| Branch | `agent/workflow-dispatch-intent-staging` |
+| Task ID | ATLAS-IMP-190 |
+| Title | Transactional workflow dispatch outbox admission without publication authority |
+| Status | Implementation, full local validation and live validation complete; delivery gates in progress |
+| Branch | `agent/workflow-outbox-admission` |
 | Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ADR-134, ADR-135, ADR-136, ADR-137, ADR-138, ADR-139 |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ADR-134, ADR-135, ADR-136, ADR-137, ADR-138, ADR-139, ADR-140 |
 | Last Updated | 2026-08-14 |
-| Next Action | Open the exact-head pull request, pass CI, merge and verify `main` |
+| Next Action | Commit the exact head, open the pull request, pass CI, merge and verify `main` |
+
+### ATLAS-IMP-190 Scope Rationale
+
+- A staged dispatch intent identifies the exact eligible attempt but does not yet provide the
+  transactional outbox record required by the event architecture. The next durable boundary is to
+  create that provider-neutral record in the same transaction as future intent staging and safely
+  backfill pre-existing staged intents.
+- An outbox entry remains `pending_publication`. It contains no broker address, topic, routing key,
+  serialized message, publication attempt, delivery receipt or worker reservation.
+- Publication, delivery acknowledgement, worker dispatch, running states, results, retries,
+  timers, signals, connector/model calls, approvals, ITSM, runbooks and infrastructure actions
+  remain deferred.
+
+### ATLAS-IMP-190 Acceptance Criteria
+
+- Staging an exact dispatch intent atomically persists one immutable outbox entry and the existing
+  idempotency claim under the active unexpired fenced lease; exact replay returns the same evidence
+  and stale, changed or competing requests fail closed.
+- Existing staged intents are upgraded deterministically to one pending-publication outbox entry
+  without inventing publication or delivery evidence.
+- PostgreSQL locks and revalidates plan, current lease, run, step run and attempt before the atomic
+  write. Production never falls back to memory, and no broker-specific field exists.
+- Human UI exposes authoritative read-only outbox evidence with no publish, deliver, dispatch or
+  execution control, no credential material, no second-login or MFA prompt and no implication that
+  a message or workload ran.
+
+### ATLAS-IMP-190 Validation Evidence
+
+- Dispatch-intent staging now constructs and atomically persists one immutable
+  `pending_publication` outbox entry with the intent and idempotency claim. Exact replay returns the
+  same pair; stale, changed, competing or incompletely persisted evidence fails closed.
+- PostgreSQL locks and revalidates plan, current lease, run, step run and attempt before the atomic
+  write. Migration `20260814_0113` deterministically backfills existing intents and claim snapshots,
+  adds no lease foreign key and contains no broker-specific field. Alembic reports one head at
+  `20260814_0113`.
+- The browser API validates the complete run-level intent/outbox chain and requires exactly one
+  entry per staged intent. The web client repeats exact lineage, scope, lease and zero-authority
+  validation and exposes no mutation control. A missing atomic entry is treated as an integrity
+  failure rather than a healthy empty state.
+- Ruff format/lint passed across 1,287 files and strict mypy passed across 1,022 source files. The
+  full backend suite passed 1,675 tests with three expected Windows symlink skips. The full frontend
+  suite passed 326 tests across 95 files; the final focused suite passed 37 tests, and ESLint,
+  TypeScript and the production build passed with only the pre-existing chunk-size advisory.
+- Live validation at `http://127.0.0.1:5253/#/workspace/workflows` used plan
+  `workflow-plan.5a56208a85aa250a786b6fb5` and one `atlas-demo` / `local-demo` login. The exact
+  pending-publication record rendered with matching intent, attempt, run, step, plan, current lease
+  and fencing evidence. Publish/dispatch/execute controls, additional login/MFA text and console
+  warnings/errors each counted zero. Browser measurement showed no horizontal overflow, and the
+  cancellation form was corrected and visually rechecked without overlap.
+
+### ATLAS-IMP-189 Delivery Evidence
+
+- Source commit `a9f8a71ac1852c970ea9260a2bf8c466ef65733c` passed exact-head PR CI run
+  `31758270881`; frontend completed in 5m12s and backend in 7m34s.
+- PR [#201](https://github.com/ozdemirumit/Project_Atlas/pull/201) was squash-merged as
+  `a012e2300a572b9a1d2ea028a7366f39324671c1`.
+- The exact merged commit independently passed `main` CI run `31758707413`; frontend completed in
+  5m25s and backend in 8m38s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-190 branched.
 
 ### ATLAS-IMP-189 Scope Rationale
 

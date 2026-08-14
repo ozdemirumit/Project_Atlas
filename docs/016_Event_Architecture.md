@@ -214,6 +214,11 @@ Other components cannot publish an event that claims another component's authori
 
 When an event represents a committed local state transition, the producer writes state and an outbox record in the same local transaction. A publisher forwards the outbox record to the event backbone.
 
+The initial workflow implementation uses an immutable, provider-neutral `pending_publication`
+entry created atomically with dispatch-intent staging. This entry is durable publication input only;
+it contains no broker address, topic, routing key, delivery receipt, dispatch claim or execution
+authority. Publication lifecycle evidence is introduced separately when a broker profile is chosen.
+
 ### 10.2 Publication State
 
 Outbox records track:

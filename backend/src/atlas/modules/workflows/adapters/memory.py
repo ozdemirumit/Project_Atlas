@@ -33,6 +33,8 @@ from atlas.modules.workflows.application import (
 from atlas.modules.workflows.domain import (
     WorkflowDispatchIntent,
     WorkflowDispatchIntentState,
+    WorkflowDispatchOutboxEntry,
+    WorkflowDispatchOutboxState,
     WorkflowExecutionAttempt,
     WorkflowExecutionAttemptState,
     WorkflowExecutionRun,
@@ -68,6 +70,7 @@ class InMemoryWorkflowPlanRepository:
             tuple[WorkflowScope, str, str], WorkflowAttemptMaterializationIdempotencyRecord
         ] = {}
         self._dispatch_intents_by_attempt: dict[str, WorkflowDispatchIntent] = {}
+        self._dispatch_outbox_entries_by_intent: dict[str, WorkflowDispatchOutboxEntry] = {}
         self._dispatch_intent_staging_requests: dict[
             tuple[WorkflowScope, str, str], WorkflowDispatchIntentStagingIdempotencyRecord
         ] = {}
@@ -385,6 +388,21 @@ class InMemoryWorkflowPlanRepository:
                 )
             )
 
+    async def list_dispatch_outbox_entries_by_run_id(
+        self, *, run_id: str
+    ) -> tuple[WorkflowDispatchOutboxEntry, ...]:
+        async with self._lock:
+            return tuple(
+                sorted(
+                    (
+                        entry
+                        for entry in self._dispatch_outbox_entries_by_intent.values()
+                        if entry.run_id == run_id
+                    ),
+                    key=lambda item: (item.admitted_at, item.outbox_entry_id),
+                )
+            )
+
     async def get_dispatch_intent_staging_request(
         self,
         *,
@@ -402,6 +420,7 @@ class InMemoryWorkflowPlanRepository:
     ) -> WorkflowDispatchIntentStagingResult:
         async with self._lock:
             dispatch_intent = request.candidate
+            outbox_entry = request.outbox_entry
             key = (dispatch_intent.scope, request.worker_subject_id, request.idempotency_key)
             prior = self._dispatch_intent_staging_requests.get(key)
             if prior is not None:
@@ -410,7 +429,9 @@ class InMemoryWorkflowPlanRepository:
                     if prior.request_fingerprint == request.request_fingerprint
                     else WorkflowDispatchIntentStagingStatus.IDEMPOTENCY_CONFLICT
                 )
-                return WorkflowDispatchIntentStagingResult(status, prior.dispatch_intent)
+                return WorkflowDispatchIntentStagingResult(
+                    status, prior.dispatch_intent, prior.outbox_entry
+                )
 
             plan = self._plans.get(dispatch_intent.plan_id)
             run = self._runs_by_plan.get(dispatch_intent.plan_id)
@@ -475,24 +496,62 @@ class InMemoryWorkflowPlanRepository:
                 or any(dispatch_intent.authority.canonical_value().values())
                 or dispatch_intent.grants_dispatch_authority
                 or dispatch_intent.grants_execution_authority
+                or outbox_entry is None
+                or outbox_entry.dispatch_intent_id != dispatch_intent.dispatch_intent_id
+                or outbox_entry.dispatch_intent_digest != dispatch_intent.canonical_digest
+                or outbox_entry.plan_id != dispatch_intent.plan_id
+                or outbox_entry.plan_digest != dispatch_intent.plan_digest
+                or outbox_entry.run_id != dispatch_intent.run_id
+                or outbox_entry.run_digest != dispatch_intent.run_digest
+                or outbox_entry.step_run_id != dispatch_intent.step_run_id
+                or outbox_entry.step_run_digest != dispatch_intent.step_run_digest
+                or outbox_entry.step_id != dispatch_intent.step_id
+                or outbox_entry.attempt_id != dispatch_intent.attempt_id
+                or outbox_entry.attempt_digest != dispatch_intent.attempt_digest
+                or outbox_entry.attempt_number != dispatch_intent.attempt_number
+                or outbox_entry.scope != dispatch_intent.scope
+                or outbox_entry.target_id != dispatch_intent.target_id
+                or outbox_entry.target_type != dispatch_intent.target_type
+                or outbox_entry.lease_id != lease.lease_id
+                or outbox_entry.lease_digest != lease.canonical_digest
+                or outbox_entry.fencing_token != lease.fencing_token
+                or outbox_entry.worker_subject_id != request.worker_subject_id
+                or outbox_entry.admitted_at != dispatch_intent.staged_at
+                or outbox_entry.state is not WorkflowDispatchOutboxState.PENDING_PUBLICATION
+                or any(outbox_entry.authority.canonical_value().values())
+                or outbox_entry.grants_publication_authority
+                or outbox_entry.grants_delivery_authority
+                or outbox_entry.grants_dispatch_authority
+                or outbox_entry.grants_execution_authority
             ):
                 return WorkflowDispatchIntentStagingResult(
                     WorkflowDispatchIntentStagingStatus.STATE_CONFLICT, None
                 )
             current = self._dispatch_intents_by_attempt.get(attempt.attempt_id)
-            if current is not None:
+            current_outbox = self._dispatch_outbox_entries_by_intent.get(
+                dispatch_intent.dispatch_intent_id
+            )
+            if current is not None or current_outbox is not None:
                 return WorkflowDispatchIntentStagingResult(
-                    WorkflowDispatchIntentStagingStatus.STATE_CONFLICT, current
+                    WorkflowDispatchIntentStagingStatus.STATE_CONFLICT,
+                    current,
+                    current_outbox,
                 )
             self._dispatch_intents_by_attempt[attempt.attempt_id] = dispatch_intent
+            self._dispatch_outbox_entries_by_intent[dispatch_intent.dispatch_intent_id] = (
+                outbox_entry
+            )
             self._dispatch_intent_staging_requests[key] = (
                 WorkflowDispatchIntentStagingIdempotencyRecord(
                     request_fingerprint=request.request_fingerprint,
                     dispatch_intent=dispatch_intent,
+                    outbox_entry=outbox_entry,
                 )
             )
             return WorkflowDispatchIntentStagingResult(
-                WorkflowDispatchIntentStagingStatus.STAGED, dispatch_intent
+                WorkflowDispatchIntentStagingStatus.STAGED,
+                dispatch_intent,
+                outbox_entry,
             )
 
     async def acquire_lease(

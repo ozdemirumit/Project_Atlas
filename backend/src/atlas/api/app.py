@@ -5391,6 +5391,7 @@ def create_app(
     if workflow_dispatch_intent_staging_service is None:
         dispatch_intent_repository_methods = (
             "list_dispatch_intents_by_run_id",
+            "list_dispatch_outbox_entries_by_run_id",
             "get_dispatch_intent_staging_request",
             "stage_dispatch_intent",
         )

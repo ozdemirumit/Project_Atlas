@@ -597,6 +597,18 @@ def test_workload_materializes_one_created_attempt_visible_to_same_browser_sessi
         staged = client.post(dispatch_url, json=dispatch_payload, headers=dispatch_headers)
         staged_replay = client.post(dispatch_url, json=dispatch_payload, headers=dispatch_headers)
         browser_dispatch_inventory = client.get(dispatch_url)
+        staged_data = staged.json()["data"]
+        outbox_url = f"{dispatch_url}/{staged_data['dispatch_intent_id']}/outbox"
+        browser_outbox_inventory = client.get(outbox_url)
+        missing_outbox_inventory = client.get(
+            f"{dispatch_url}/workflow-dispatch-intent.missing/outbox"
+        )
+        repository = cast(
+            InMemoryWorkflowPlanRepository,
+            app.state.workflow_dispatch_intent_staging_repository,
+        )
+        repository._dispatch_outbox_entries_by_intent.clear()
+        incomplete_outbox_inventory = client.get(outbox_url)
         unchanged_run = client.get(f"/api/v1/workflows/plans/{plan_id}/materialized-run")
 
     assert empty_inventory.status_code == 200
@@ -643,6 +655,28 @@ def test_workload_materializes_one_created_attempt_visible_to_same_browser_sessi
     assert browser_dispatch_inventory.status_code == 200
     assert browser_dispatch_inventory.headers["Cache-Control"].startswith("no-store")
     assert browser_dispatch_inventory.json()["data"]["dispatch_intents"] == [intent]
+    assert browser_outbox_inventory.status_code == 200
+    assert browser_outbox_inventory.headers["Cache-Control"].startswith("no-store")
+    outbox_entries = browser_outbox_inventory.json()["data"]["outbox_entries"]
+    assert len(outbox_entries) == 1
+    outbox = outbox_entries[0]
+    assert outbox["state"] == "pending_publication"
+    assert outbox["dispatch_intent_id"] == intent["dispatch_intent_id"]
+    assert outbox["dispatch_intent_digest"] == intent["canonical_digest"]
+    assert outbox["attempt_id"] == attempt["attempt_id"]
+    assert outbox["lease_digest"] == intent["lease_digest"]
+    assert outbox["worker_subject_id"] == WORKER_ID
+    assert not any(outbox["authority"].values())
+    assert outbox["grants_publication_authority"] is False
+    assert outbox["grants_delivery_authority"] is False
+    assert outbox["grants_dispatch_authority"] is False
+    assert outbox["grants_execution_authority"] is False
+    assert missing_outbox_inventory.status_code == 404
+    assert missing_outbox_inventory.json()["code"] == "workflow_resource_unavailable"
+    assert incomplete_outbox_inventory.status_code == 503
+    assert incomplete_outbox_inventory.json()["code"] == (
+        "workflow_dispatch_outbox_service_unavailable"
+    )
     assert unchanged_run.status_code == 200
     assert unchanged_run.json()["data"]["run"] == run
     assert all(step["state"] == "not_started" for step in run["step_runs"])

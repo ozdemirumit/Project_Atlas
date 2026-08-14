@@ -6255,6 +6255,46 @@ textarea:focus-visible {
 }
 .workflow-form-grid textarea { min-height: 86px; resize: vertical; }
 
+.workflow-cancel-form {
+  display: grid;
+  gap: 12px;
+}
+
+.workflow-cancel-field {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  font-weight: 650;
+}
+
+.workflow-cancel-field textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 86px;
+  padding: 10px 11px;
+  border: 1px solid #c9d4d1;
+  border-radius: 5px;
+  background: #ffffff;
+  color: inherit;
+  font: inherit;
+  resize: vertical;
+}
+
+.workflow-cancel-acknowledgement {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+  line-height: 1.45;
+}
+
+.workflow-cancel-acknowledgement input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.workflow-cancel-form > .primary-action { justify-self: start; }
+
 .workflow-step-preview {
   list-style: none;
   margin: 12px 0;

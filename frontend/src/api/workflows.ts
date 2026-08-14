@@ -246,6 +246,44 @@ export type WorkflowDispatchIntentInventory = {
   durable: boolean;
 };
 
+export type WorkflowDispatchOutboxEntry = {
+  outbox_entry_id: string;
+  dispatch_intent_id: string;
+  dispatch_intent_digest: string;
+  plan_id: string;
+  plan_digest: string;
+  run_id: string;
+  run_digest: string;
+  step_run_id: string;
+  step_run_digest: string;
+  step_id: string;
+  attempt_id: string;
+  attempt_digest: string;
+  attempt_number: 1;
+  scope: WorkflowRunPlan["scope"];
+  target_id: string;
+  target_type: "storage";
+  lease_id: string;
+  lease_digest: string;
+  fencing_token: number;
+  worker_subject_id: string;
+  admitted_at: string;
+  state: "pending_publication";
+  authority: WorkflowPlanAuthority;
+  grants_publication_authority: false;
+  grants_delivery_authority: false;
+  grants_dispatch_authority: false;
+  grants_execution_authority: false;
+  canonical_digest: string;
+};
+
+export type WorkflowDispatchOutboxInventory = {
+  dispatch_intent_id: string;
+  outbox_entries: WorkflowDispatchOutboxEntry[];
+  server_time: string;
+  durable: boolean;
+};
+
 const digest = /^[a-f0-9]{64}$/;
 const capabilityClasses = new Set<WorkflowCapabilityClass>(["C0", "C1", "C2"]);
 const stepKinds = new Set<WorkflowStepKind>([
@@ -354,6 +392,42 @@ const dispatchIntentFields = [
 const dispatchIntentInventoryFields = [
   "attempt_id",
   "dispatch_intents",
+  "server_time",
+  "durable",
+] as const;
+const dispatchOutboxEntryFields = [
+  "outbox_entry_id",
+  "dispatch_intent_id",
+  "dispatch_intent_digest",
+  "plan_id",
+  "plan_digest",
+  "run_id",
+  "run_digest",
+  "step_run_id",
+  "step_run_digest",
+  "step_id",
+  "attempt_id",
+  "attempt_digest",
+  "attempt_number",
+  "scope",
+  "target_id",
+  "target_type",
+  "lease_id",
+  "lease_digest",
+  "fencing_token",
+  "worker_subject_id",
+  "admitted_at",
+  "state",
+  "authority",
+  "grants_publication_authority",
+  "grants_delivery_authority",
+  "grants_dispatch_authority",
+  "grants_execution_authority",
+  "canonical_digest",
+] as const;
+const dispatchOutboxInventoryFields = [
+  "dispatch_intent_id",
+  "outbox_entries",
   "server_time",
   "durable",
 ] as const;
@@ -745,6 +819,70 @@ function areDispatchIntentsBoundToAttempt(
   });
 }
 
+function isDispatchOutboxEntryBoundToIntent(
+  value: unknown,
+  intent: WorkflowDispatchIntent,
+): value is WorkflowDispatchOutboxEntry {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, dispatchOutboxEntryFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value)
+  ) {
+    return false;
+  }
+  return (
+    isIdentifier(value.outbox_entry_id) &&
+    value.dispatch_intent_id === intent.dispatch_intent_id &&
+    value.dispatch_intent_digest === intent.canonical_digest &&
+    value.plan_id === intent.plan_id &&
+    value.plan_digest === intent.plan_digest &&
+    value.run_id === intent.run_id &&
+    value.run_digest === intent.run_digest &&
+    value.step_run_id === intent.step_run_id &&
+    value.step_run_digest === intent.step_run_digest &&
+    value.step_id === intent.step_id &&
+    value.attempt_id === intent.attempt_id &&
+    value.attempt_digest === intent.attempt_digest &&
+    value.attempt_number === intent.attempt_number &&
+    value.scope.organization_id === intent.scope.organization_id &&
+    value.scope.environment_id === intent.scope.environment_id &&
+    value.scope.site_id === intent.scope.site_id &&
+    value.target_id === intent.target_id &&
+    value.target_type === intent.target_type &&
+    value.lease_id === intent.lease_id &&
+    value.lease_digest === intent.lease_digest &&
+    value.fencing_token === intent.fencing_token &&
+    value.worker_subject_id === intent.worker_subject_id &&
+    isTimestamp(value.admitted_at) &&
+    Date.parse(value.admitted_at) === Date.parse(intent.staged_at) &&
+    value.state === "pending_publication" &&
+    hasSafeAuthority(value.authority) &&
+    value.grants_publication_authority === false &&
+    value.grants_delivery_authority === false &&
+    value.grants_dispatch_authority === false &&
+    value.grants_execution_authority === false &&
+    isDigest(value.canonical_digest)
+  );
+}
+
+function areDispatchOutboxEntriesBoundToIntent(
+  entries: unknown[],
+  intent: WorkflowDispatchIntent,
+): entries is WorkflowDispatchOutboxEntry[] {
+  const seen = new Set<string>();
+  return entries.every((entry) => {
+    if (
+      !isDispatchOutboxEntryBoundToIntent(entry, intent) ||
+      seen.has(entry.outbox_entry_id)
+    ) {
+      return false;
+    }
+    seen.add(entry.outbox_entry_id);
+    return true;
+  });
+}
+
 function isRunPlan(value: unknown): value is WorkflowRunPlan {
   if (
     !isObject(value) ||
@@ -986,6 +1124,46 @@ export async function listWorkflowAttemptDispatchIntents(input: {
     throw new ApiRequestError("Workflow dispatch-intent evidence response was unsafe", response.status);
   }
   return data as WorkflowDispatchIntentInventory;
+}
+
+export async function listWorkflowDispatchOutboxEntries(input: {
+  dispatchIntent: WorkflowDispatchIntent;
+  scope: WorkflowScope;
+  authorizedTargetIds: readonly string[];
+}): Promise<WorkflowDispatchOutboxInventory> {
+  const intent = input.dispatchIntent;
+  if (
+    intent.scope.organization_id !== input.scope.organizationId ||
+    intent.scope.environment_id !== input.scope.environmentId ||
+    intent.scope.site_id !== input.scope.siteId ||
+    !input.authorizedTargetIds.includes(intent.target_id) ||
+    !hasSafeAuthority(intent.authority) ||
+    intent.grants_publication_authority !== false ||
+    intent.grants_delivery_authority !== false ||
+    intent.grants_dispatch_authority !== false ||
+    intent.grants_execution_authority !== false
+  ) {
+    throw new ApiRequestError("Workflow dispatch intent is outside the authorized outbox scope", 403);
+  }
+  const response = await apiFetch(
+    `/api/v1/workflows/plans/${encodeURIComponent(intent.plan_id)}/runs/${encodeURIComponent(intent.run_id)}/attempts/${encodeURIComponent(intent.attempt_id)}/dispatch-intents/${encodeURIComponent(intent.dispatch_intent_id)}/outbox`,
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(response, "Workflow dispatch outbox evidence retrieval failed");
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, dispatchOutboxInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    data.dispatch_intent_id !== intent.dispatch_intent_id ||
+    !Array.isArray(data.outbox_entries) ||
+    data.outbox_entries.length !== 1 ||
+    !areDispatchOutboxEntriesBoundToIntent(data.outbox_entries, intent) ||
+    !isTimestamp(data.server_time) ||
+    typeof data.durable !== "boolean"
+  ) {
+    throw new ApiRequestError("Workflow dispatch outbox evidence response was unsafe", response.status);
+  }
+  return data as WorkflowDispatchOutboxInventory;
 }
 
 export async function createWorkflowPlan(input: {

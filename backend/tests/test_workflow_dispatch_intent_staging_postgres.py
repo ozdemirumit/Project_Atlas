@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, cast
 
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from atlas.core.persistence.models import (
     WorkflowDispatchIntentModel,
     WorkflowDispatchIntentStagingClaimModel,
+    WorkflowDispatchOutboxEntryModel,
     WorkflowExecutionAttemptModel,
     WorkflowExecutionRunModel,
     WorkflowExecutionStepRunModel,
@@ -226,8 +228,43 @@ def _intent_payload() -> dict[str, Any]:
     )
 
 
+def _outbox_payload() -> dict[str, Any]:
+    intent = _intent_payload()
+    outbox_entry_id = (
+        "workflow-dispatch-outbox." + sha256(f"{INTENT_ID}:admitted".encode()).hexdigest()[:24]
+    )
+    return _with_digest(
+        {
+            "admitted_at": intent["staged_at"],
+            "attempt_digest": intent["attempt_digest"],
+            "attempt_id": intent["attempt_id"],
+            "attempt_number": intent["attempt_number"],
+            "authority": _no_authority(),
+            "dispatch_intent_digest": intent["canonical_digest"],
+            "dispatch_intent_id": INTENT_ID,
+            "fencing_token": intent["fencing_token"],
+            "lease_digest": intent["lease_digest"],
+            "lease_id": intent["lease_id"],
+            "outbox_entry_id": outbox_entry_id,
+            "plan_digest": intent["plan_digest"],
+            "plan_id": intent["plan_id"],
+            "run_digest": intent["run_digest"],
+            "run_id": intent["run_id"],
+            "scope": SCOPE,
+            "state": "pending_publication",
+            "step_id": intent["step_id"],
+            "step_run_digest": intent["step_run_digest"],
+            "step_run_id": intent["step_run_id"],
+            "target_id": intent["target_id"],
+            "target_type": intent["target_type"],
+            "worker_subject_id": WORKER_ID,
+        }
+    )
+
+
 def _request(*, fingerprint: str = "f" * 64) -> WorkflowDispatchIntentStagingRequest:
     intent = PostgreSQLWorkflowPlanRepository._dispatch_intent_to_domain(_intent_payload())
+    outbox_entry = PostgreSQLWorkflowPlanRepository._dispatch_outbox_to_domain(_outbox_payload())
     return WorkflowDispatchIntentStagingRequest(
         candidate=intent,
         expected_plan_digest=intent.plan_digest,
@@ -241,6 +278,7 @@ def _request(*, fingerprint: str = "f" * 64) -> WorkflowDispatchIntentStagingReq
         requested_at=NOW,
         idempotency_key="workflow-dispatch-intent-postgres-0001",
         request_fingerprint=fingerprint,
+        outbox_entry=outbox_entry,
     )
 
 
@@ -347,6 +385,50 @@ def test_dispatch_intent_schema_is_staged_only_and_has_no_delivery_surface() -> 
     assert prohibited.isdisjoint(intent_table.columns.keys())
 
 
+def test_dispatch_outbox_schema_is_pending_provider_neutral_and_zero_authority() -> None:
+    table = cast(Table, WorkflowDispatchOutboxEntryModel.__table__)
+    constraints = {constraint.name for constraint in table.constraints}
+    foreign_keys = {
+        (foreign_key.parent.name, foreign_key.target_fullname) for foreign_key in table.foreign_keys
+    }
+
+    assert "uq_workflow_dispatch_outbox_source_intent" in constraints
+    assert "uq_workflow_dispatch_outbox_digest" in constraints
+    assert "ck_workflow_dispatch_outbox_state" in constraints
+    assert "ck_workflow_dispatch_outbox_zero_authority" in constraints
+    assert foreign_keys == {
+        ("dispatch_intent_id", "workflow_dispatch_intents.dispatch_intent_id"),
+        ("plan_id", "workflow_run_plans.plan_id"),
+        ("run_id", "workflow_execution_runs.run_id"),
+        ("step_run_id", "workflow_execution_step_runs.step_run_id"),
+        ("attempt_id", "workflow_execution_attempts.attempt_id"),
+    }
+    assert "lease_id" in table.columns
+    assert "lease_digest" in table.columns
+    assert {"queue", "broker", "topic", "routing_key", "published_at"}.isdisjoint(
+        table.columns.keys()
+    )
+
+
+def test_dispatch_outbox_migration_backfills_existing_intents_and_claims() -> None:
+    migration = (
+        Path(__file__).parents[1]
+        / "migrations"
+        / "versions"
+        / "20260814_0113_workflow_dispatch_outbox_admission.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'revision: str = "20260814_0113"' in migration
+    assert 'down_revision: str | None = "20260814_0112"' in migration
+    assert "workflow_dispatch_intents ORDER BY dispatch_intent_id" in migration
+    assert '"admitted_at": intent["staged_at"]' in migration
+    assert 'sha256(f"{dispatch_intent_id}:admitted".encode())' in migration
+    assert "result_outbox_entry" in migration
+    assert "result_outbox_digest" in migration
+    assert "fk_workflow_dispatch_outbox_lease" not in migration
+    assert '["workflow_orchestration_leases.lease_id"]' not in migration
+
+
 def test_dispatch_intent_migration_follows_attempt_head_without_lease_fk_or_delivery_fields() -> (
     None
 ):
@@ -368,7 +450,7 @@ def test_dispatch_intent_migration_follows_attempt_head_without_lease_fk_or_deli
 
 
 @pytest.mark.asyncio
-async def test_first_stage_locks_every_source_and_commits_intent_and_claim_atomically() -> None:
+async def test_first_stage_locks_sources_and_commits_intent_outbox_and_claim_atomically() -> None:
     request = _request()
     session = _FakeSession(
         scalar_values=(
@@ -386,10 +468,12 @@ async def test_first_stage_locks_every_source_and_commits_intent_and_claim_atomi
 
     assert result.status is WorkflowDispatchIntentStagingStatus.STAGED
     assert result.dispatch_intent == request.candidate
+    assert result.outbox_entry == request.outbox_entry
     assert session.commits == 1
     assert session.rollbacks == 0
     assert [type(item) for item in session.added] == [
         WorkflowDispatchIntentModel,
+        WorkflowDispatchOutboxEntryModel,
         WorkflowDispatchIntentStagingClaimModel,
     ]
     assert all("FOR UPDATE" in str(statement) for statement in session.statements[1:])
@@ -405,6 +489,7 @@ async def test_exact_staging_replay_returns_immutable_snapshot_without_writes() 
 
     assert result.status is WorkflowDispatchIntentStagingStatus.REPLAY
     assert result.dispatch_intent == request.candidate
+    assert result.outbox_entry == request.outbox_entry
     assert session.added == []
     assert session.commits == 0
     assert session.rollbacks == 0
@@ -420,6 +505,7 @@ async def test_changed_staging_idempotency_fails_closed_with_original_snapshot()
 
     assert result.status is WorkflowDispatchIntentStagingStatus.IDEMPOTENCY_CONFLICT
     assert result.dispatch_intent == original.candidate
+    assert result.outbox_entry == original.outbox_entry
     assert session.added == []
 
 
@@ -427,10 +513,13 @@ async def test_changed_staging_idempotency_fails_closed_with_original_snapshot()
 async def test_intent_claim_and_list_round_trip_use_domain_contracts() -> None:
     request = _request()
     intent_row = PostgreSQLWorkflowPlanRepository._dispatch_intent_model(request.candidate)
+    assert request.outbox_entry is not None
+    outbox_row = PostgreSQLWorkflowPlanRepository._dispatch_outbox_model(request.outbox_entry)
     claim = PostgreSQLWorkflowPlanRepository._dispatch_intent_staging_claim_model(request)
     claim_session = _FakeSession(scalar_values=(claim,))
     list_session = _FakeSession(scalars_values=((intent_row,),))
-    repository = _repository(claim_session, list_session)
+    outbox_list_session = _FakeSession(scalars_values=((outbox_row,),))
+    repository = _repository(claim_session, list_session, outbox_list_session)
 
     record = await repository.get_dispatch_intent_staging_request(
         scope=request.candidate.scope,
@@ -438,12 +527,16 @@ async def test_intent_claim_and_list_round_trip_use_domain_contracts() -> None:
         idempotency_key=request.idempotency_key,
     )
     intents = await repository.list_dispatch_intents_by_run_id(run_id=RUN_ID)
+    outbox_entries = await repository.list_dispatch_outbox_entries_by_run_id(run_id=RUN_ID)
 
     assert record is not None
     assert record.request_fingerprint == request.request_fingerprint
     assert record.dispatch_intent == request.candidate
+    assert record.outbox_entry == request.outbox_entry
     assert intents == (request.candidate,)
+    assert outbox_entries == (request.outbox_entry,)
     assert "ORDER BY" in str(list_session.statements[0])
+    assert "ORDER BY" in str(outbox_list_session.statements[0])
 
 
 @pytest.mark.asyncio
@@ -530,6 +623,8 @@ async def test_corrupt_attempt_storage_raises_repository_contract_error() -> Non
 async def test_competing_intent_for_same_attempt_is_state_conflict() -> None:
     request = _request()
     existing = PostgreSQLWorkflowPlanRepository._dispatch_intent_model(request.candidate)
+    assert request.outbox_entry is not None
+    existing_outbox = PostgreSQLWorkflowPlanRepository._dispatch_outbox_model(request.outbox_entry)
     session = _FakeSession(
         scalar_values=(
             None,
@@ -539,6 +634,7 @@ async def test_competing_intent_for_same_attempt_is_state_conflict() -> None:
             _step_row(),
             _attempt_row(),
             existing,
+            existing_outbox,
         )
     )
 
@@ -546,6 +642,7 @@ async def test_competing_intent_for_same_attempt_is_state_conflict() -> None:
 
     assert result.status is WorkflowDispatchIntentStagingStatus.STATE_CONFLICT
     assert result.dispatch_intent == request.candidate
+    assert result.outbox_entry == request.outbox_entry
     assert session.added == []
     assert session.commits == 0
     assert session.rollbacks == 1
@@ -563,3 +660,20 @@ def test_dispatch_intent_round_trip_retains_zero_authority_and_current_lease_sna
     assert restored.grants_execution_authority is False
     assert restored.lease_digest == CURRENT_LEASE_DIGEST
     assert restored.lease_digest != HISTORICAL_LEASE_DIGEST
+
+
+def test_dispatch_outbox_round_trip_retains_exact_snapshot_and_zero_authority() -> None:
+    request = _request()
+    assert request.outbox_entry is not None
+    row = PostgreSQLWorkflowPlanRepository._dispatch_outbox_model(request.outbox_entry)
+
+    restored = PostgreSQLWorkflowPlanRepository._dispatch_outbox_from_row(row)
+
+    assert restored == request.outbox_entry
+    assert restored.state.value == "pending_publication"
+    assert restored.dispatch_intent_digest == request.candidate.canonical_digest
+    assert restored.lease_digest == CURRENT_LEASE_DIGEST
+    assert restored.grants_publication_authority is False
+    assert restored.grants_delivery_authority is False
+    assert restored.grants_dispatch_authority is False
+    assert restored.grants_execution_authority is False

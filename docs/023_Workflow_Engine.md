@@ -560,6 +560,8 @@ MVP workflows do not execute C3 through C5 capabilities.
   authority.
 - ADR-139 establishes durable dispatch-intent staging without broker publication, delivery,
   dispatch or execution authority.
+- ADR-140 establishes atomic, provider-neutral pending-publication outbox evidence without broker
+  publication, delivery, dispatch or execution authority.
 
 ## 39. Assumptions
 
