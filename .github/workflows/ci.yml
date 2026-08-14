@@ -51,10 +51,16 @@ jobs:
         env:
           ATLAS_DATABASE_URL: postgresql+psycopg://atlas:atlas@localhost:5432/atlas_test
         run: uv run alembic upgrade head
-      - name: Test
+      - name: Test PostgreSQL integration
         working-directory: backend
         env:
           ATLAS_TEST_POSTGRES_DSN: postgresql+psycopg://atlas:atlas@localhost:5432/atlas_test
+        run: >-
+          uv run pytest -q
+          tests/test_workflow_physical_transport_route_bindings_postgres.py
+          -k live_postgres
+      - name: Test
+        working-directory: backend
         run: uv run pytest
 
   frontend:

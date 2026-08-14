@@ -18,8 +18,12 @@ from test_workflow_transport_profile_snapshots import profile_fixture
 from test_workflow_transport_route_snapshots import route_fixture
 
 from atlas.core.persistence.models import (
+    EventPhysicalTransportProfileSnapshotModel,
+    EventPhysicalTransportRouteSnapshotModel,
+    WorkflowEventLogicalChannelBindingModel,
     WorkflowEventPhysicalTransportRouteBindingClaimModel,
     WorkflowEventPhysicalTransportRouteBindingModel,
+    WorkflowEventTransportCompatibilityAdmissionModel,
 )
 from atlas.modules.workflows.adapters.postgres import PostgreSQLWorkflowPlanRepository
 from atlas.modules.workflows.adapters.unavailable import UnavailableWorkflowPlanRepository
@@ -232,6 +236,60 @@ async def _seed_integration_sources(
         await session.commit()
 
 
+async def _assert_durable_integration_sources(
+    engine: AsyncEngine,
+    request: WorkflowEventPhysicalTransportRouteBindingRequest,
+) -> None:
+    expected = _integration_sources()
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    async with sessions() as session:
+        logical_row = await session.get(
+            WorkflowEventLogicalChannelBindingModel,
+            request.expected_logical_channel_binding_id,
+        )
+        admission_row = await session.get(
+            WorkflowEventTransportCompatibilityAdmissionModel,
+            request.expected_transport_compatibility_admission_id,
+        )
+        profile_row = await session.get(
+            EventPhysicalTransportProfileSnapshotModel,
+            request.expected_transport_profile_snapshot_id,
+        )
+        route_row = await session.get(
+            EventPhysicalTransportRouteSnapshotModel,
+            request.expected_transport_route_snapshot_id,
+        )
+
+    assert logical_row is not None, "logical binding was not persisted"
+    assert admission_row is not None, "compatibility admission was not persisted"
+    assert profile_row is not None, "transport profile snapshot was not persisted"
+    assert route_row is not None, "transport route snapshot was not persisted"
+    durable = (
+        PostgreSQLWorkflowPlanRepository._event_logical_channel_binding_from_row(logical_row),
+        PostgreSQLWorkflowPlanRepository._transport_compatibility_admission_from_row(admission_row),
+        PostgreSQLWorkflowPlanRepository._transport_profile_snapshot_from_row(profile_row),
+        PostgreSQLWorkflowPlanRepository._transport_route_snapshot_from_row(route_row),
+    )
+    source_pairs: tuple[tuple[str, Any, Any], ...] = (
+        ("logical", durable[0], expected[0]),
+        ("admission", durable[1], expected[1]),
+        ("profile", durable[2], expected[2]),
+        ("route", durable[3], expected[3]),
+    )
+    for label, source, expected_source in source_pairs:
+        assert source == expected_source, f"{label} source changed during PostgreSQL round-trip"
+        assert canonical_digest(source.digest_payload()) == source.canonical_digest, (
+            f"{label} source digest changed during PostgreSQL round-trip"
+        )
+    assert PostgreSQLWorkflowPlanRepository._physical_transport_route_binding_evidence_matches(
+        logical_row=logical_row,
+        admission_row=admission_row,
+        profile_row=profile_row,
+        route_row=route_row,
+        request=request,
+    ), "durable source chain does not satisfy the physical route binding contract"
+
+
 def test_binding_and_claim_round_trip_verify_durable_payloads() -> None:
     request = _request()
     binding_row = PostgreSQLWorkflowPlanRepository._physical_transport_route_binding_model(
@@ -378,6 +436,7 @@ async def test_live_postgres_serializes_exact_replay_and_enforces_append_only_st
     try:
         await _reset_integration_rows(engine, request)
         await _seed_integration_sources(engine, request)
+        await _assert_durable_integration_sources(engine, request)
         repository = PostgreSQLWorkflowPlanRepository(engine=engine)
 
         first, second = await asyncio.gather(
