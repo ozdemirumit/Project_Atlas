@@ -87,6 +87,10 @@ class WorkflowExecutionAttemptState(StrEnum):
     CREATED = "created"
 
 
+class WorkflowDispatchIntentState(StrEnum):
+    STAGED = "staged"
+
+
 @dataclass(frozen=True, slots=True)
 class WorkflowScope:
     organization_id: str
@@ -431,6 +435,115 @@ class WorkflowExecutionAttempt:
 
     def canonical_value(self) -> dict[str, object]:
         return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    @property
+    def grants_execution_authority(self) -> bool:
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowDispatchIntent:
+    """Durable dispatch staging evidence that grants no delivery or execution authority."""
+
+    dispatch_intent_id: str
+    plan_id: str
+    plan_digest: str
+    run_id: str
+    run_digest: str
+    step_run_id: str
+    step_run_digest: str
+    step_id: str
+    attempt_id: str
+    attempt_digest: str
+    attempt_number: int
+    scope: WorkflowScope
+    target_id: str
+    target_type: str
+    lease_id: str
+    lease_digest: str
+    fencing_token: int
+    worker_subject_id: str
+    staged_at: datetime
+    state: WorkflowDispatchIntentState
+    authority: WorkflowPlanAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.dispatch_intent_id, "dispatch intent id"),
+            (self.plan_id, "dispatch intent plan_id"),
+            (self.run_id, "dispatch intent run_id"),
+            (self.step_run_id, "dispatch intent step_run_id"),
+            (self.step_id, "dispatch intent step_id"),
+            (self.attempt_id, "dispatch intent attempt_id"),
+            (self.target_id, "dispatch intent target_id"),
+            (self.lease_id, "dispatch intent lease_id"),
+            (self.worker_subject_id, "dispatch intent worker_subject_id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.plan_digest, "dispatch intent plan_digest"),
+            (self.run_digest, "dispatch intent run_digest"),
+            (self.step_run_digest, "dispatch intent step_run_digest"),
+            (self.attempt_digest, "dispatch intent attempt_digest"),
+            (self.lease_digest, "dispatch intent lease_digest"),
+            (self.canonical_digest, "dispatch intent canonical_digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.attempt_number != 1:
+            raise ValueError("dispatch intents support only attempt number one")
+        if self.target_type != "storage":
+            raise ValueError("workflow dispatch intents support only storage targets")
+        if self.fencing_token < 1:
+            raise ValueError("dispatch intent fencing_token must be at least one")
+        if self.staged_at.tzinfo is None:
+            raise ValueError("dispatch intent staged_at must be timezone-aware")
+        if self.state is not WorkflowDispatchIntentState.STAGED:
+            raise ValueError("workflow dispatch intents must remain staged")
+        if any(self.authority.canonical_value().values()):
+            raise ValueError("workflow dispatch intents cannot grant operational authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("workflow dispatch intent canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "attempt_digest": self.attempt_digest,
+            "attempt_id": self.attempt_id,
+            "attempt_number": self.attempt_number,
+            "authority": self.authority.canonical_value(),
+            "dispatch_intent_id": self.dispatch_intent_id,
+            "fencing_token": self.fencing_token,
+            "lease_digest": self.lease_digest,
+            "lease_id": self.lease_id,
+            "plan_digest": self.plan_digest,
+            "plan_id": self.plan_id,
+            "run_digest": self.run_digest,
+            "run_id": self.run_id,
+            "scope": self.scope.canonical_value(),
+            "staged_at": self.staged_at.isoformat(),
+            "state": self.state.value,
+            "step_id": self.step_id,
+            "step_run_digest": self.step_run_digest,
+            "step_run_id": self.step_run_id,
+            "target_id": self.target_id,
+            "target_type": self.target_type,
+            "worker_subject_id": self.worker_subject_id,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    @property
+    def grants_publication_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_delivery_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_dispatch_authority(self) -> bool:
+        return False
 
     @property
     def grants_execution_authority(self) -> bool:

@@ -7,6 +7,10 @@ from atlas.modules.workflows.application import (
     WorkflowAttemptMaterializationRequest,
     WorkflowAttemptMaterializationResult,
     WorkflowAttemptMaterializationStatus,
+    WorkflowDispatchIntentStagingIdempotencyRecord,
+    WorkflowDispatchIntentStagingRequest,
+    WorkflowDispatchIntentStagingResult,
+    WorkflowDispatchIntentStagingStatus,
     WorkflowLeaseAcquireIdempotencyRecord,
     WorkflowLeaseAcquireRequest,
     WorkflowLeaseAcquireResult,
@@ -27,6 +31,8 @@ from atlas.modules.workflows.application import (
     WorkflowRunMaterializationStatus,
 )
 from atlas.modules.workflows.domain import (
+    WorkflowDispatchIntent,
+    WorkflowDispatchIntentState,
     WorkflowExecutionAttempt,
     WorkflowExecutionAttemptState,
     WorkflowExecutionRun,
@@ -60,6 +66,10 @@ class InMemoryWorkflowPlanRepository:
         self._attempts_by_step_run: dict[str, WorkflowExecutionAttempt] = {}
         self._attempt_materialization_requests: dict[
             tuple[WorkflowScope, str, str], WorkflowAttemptMaterializationIdempotencyRecord
+        ] = {}
+        self._dispatch_intents_by_attempt: dict[str, WorkflowDispatchIntent] = {}
+        self._dispatch_intent_staging_requests: dict[
+            tuple[WorkflowScope, str, str], WorkflowDispatchIntentStagingIdempotencyRecord
         ] = {}
         self._lock = asyncio.Lock()
 
@@ -358,6 +368,131 @@ class InMemoryWorkflowPlanRepository:
             )
             return WorkflowAttemptMaterializationResult(
                 WorkflowAttemptMaterializationStatus.CREATED, attempt
+            )
+
+    async def list_dispatch_intents_by_run_id(
+        self, *, run_id: str
+    ) -> tuple[WorkflowDispatchIntent, ...]:
+        async with self._lock:
+            return tuple(
+                sorted(
+                    (
+                        dispatch_intent
+                        for dispatch_intent in self._dispatch_intents_by_attempt.values()
+                        if dispatch_intent.run_id == run_id
+                    ),
+                    key=lambda item: (item.staged_at, item.dispatch_intent_id),
+                )
+            )
+
+    async def get_dispatch_intent_staging_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        worker_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowDispatchIntentStagingIdempotencyRecord | None:
+        async with self._lock:
+            return self._dispatch_intent_staging_requests.get(
+                (scope, worker_subject_id, idempotency_key)
+            )
+
+    async def stage_dispatch_intent(
+        self, request: WorkflowDispatchIntentStagingRequest
+    ) -> WorkflowDispatchIntentStagingResult:
+        async with self._lock:
+            dispatch_intent = request.candidate
+            key = (dispatch_intent.scope, request.worker_subject_id, request.idempotency_key)
+            prior = self._dispatch_intent_staging_requests.get(key)
+            if prior is not None:
+                status = (
+                    WorkflowDispatchIntentStagingStatus.REPLAY
+                    if prior.request_fingerprint == request.request_fingerprint
+                    else WorkflowDispatchIntentStagingStatus.IDEMPOTENCY_CONFLICT
+                )
+                return WorkflowDispatchIntentStagingResult(status, prior.dispatch_intent)
+
+            plan = self._plans.get(dispatch_intent.plan_id)
+            run = self._runs_by_plan.get(dispatch_intent.plan_id)
+            lease = self._leases_by_plan.get(dispatch_intent.plan_id)
+            step = (
+                None
+                if run is None
+                else next(
+                    (
+                        item
+                        for item in run.step_runs
+                        if item.step_run_id == dispatch_intent.step_run_id
+                    ),
+                    None,
+                )
+            )
+            attempt = self._attempts_by_step_run.get(dispatch_intent.step_run_id)
+            if (
+                plan is None
+                or plan.state is not WorkflowPlanState.PLANNED
+                or plan.canonical_digest != request.expected_plan_digest
+                or request.expected_plan_digest != dispatch_intent.plan_digest
+                or plan.scope != dispatch_intent.scope
+                or plan.target_id != dispatch_intent.target_id
+                or plan.target_type != dispatch_intent.target_type
+                or run is None
+                or run.state is not WorkflowExecutionRunState.CREATED
+                or run.canonical_digest != request.expected_run_digest
+                or request.expected_run_digest != dispatch_intent.run_digest
+                or run.run_id != dispatch_intent.run_id
+                or step is None
+                or step.state is not WorkflowExecutionStepRunState.NOT_STARTED
+                or step.canonical_digest != request.expected_step_run_digest
+                or request.expected_step_run_digest != dispatch_intent.step_run_digest
+                or step.step_id != dispatch_intent.step_id
+                or attempt is None
+                or attempt.state is not WorkflowExecutionAttemptState.CREATED
+                or attempt.canonical_digest != request.expected_attempt_digest
+                or request.expected_attempt_digest != dispatch_intent.attempt_digest
+                or attempt.attempt_id != dispatch_intent.attempt_id
+                or attempt.attempt_number != dispatch_intent.attempt_number
+                or attempt.run_id != run.run_id
+                or attempt.step_run_id != step.step_run_id
+                or attempt.grants_execution_authority
+                or lease is None
+                or lease.lease_id != request.expected_lease_id
+                or request.expected_lease_id != dispatch_intent.lease_id
+                or lease.canonical_digest != request.expected_lease_digest
+                or request.expected_lease_digest != dispatch_intent.lease_digest
+                or lease.fencing_token != request.expected_fencing_token
+                or request.expected_fencing_token != dispatch_intent.fencing_token
+                or lease.worker_subject_id != request.worker_subject_id
+                or request.worker_subject_id != dispatch_intent.worker_subject_id
+                or run.lease_id != lease.lease_id
+                or run.fencing_token != lease.fencing_token
+                or attempt.lease_id != lease.lease_id
+                or attempt.fencing_token != lease.fencing_token
+                or lease.effective_state(requested_at=request.requested_at)
+                is not WorkflowOrchestrationLeaseEffectiveState.ACTIVE
+                or lease.grants_execution_authority
+                or dispatch_intent.state is not WorkflowDispatchIntentState.STAGED
+                or any(dispatch_intent.authority.canonical_value().values())
+                or dispatch_intent.grants_dispatch_authority
+                or dispatch_intent.grants_execution_authority
+            ):
+                return WorkflowDispatchIntentStagingResult(
+                    WorkflowDispatchIntentStagingStatus.STATE_CONFLICT, None
+                )
+            current = self._dispatch_intents_by_attempt.get(attempt.attempt_id)
+            if current is not None:
+                return WorkflowDispatchIntentStagingResult(
+                    WorkflowDispatchIntentStagingStatus.STATE_CONFLICT, current
+                )
+            self._dispatch_intents_by_attempt[attempt.attempt_id] = dispatch_intent
+            self._dispatch_intent_staging_requests[key] = (
+                WorkflowDispatchIntentStagingIdempotencyRecord(
+                    request_fingerprint=request.request_fingerprint,
+                    dispatch_intent=dispatch_intent,
+                )
+            )
+            return WorkflowDispatchIntentStagingResult(
+                WorkflowDispatchIntentStagingStatus.STAGED, dispatch_intent
             )
 
     async def acquire_lease(

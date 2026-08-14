@@ -210,6 +210,42 @@ export type WorkflowExecutionAttemptInventory = {
   durable: boolean;
 };
 
+export type WorkflowDispatchIntent = {
+  dispatch_intent_id: string;
+  plan_id: string;
+  plan_digest: string;
+  run_id: string;
+  run_digest: string;
+  step_run_id: string;
+  step_run_digest: string;
+  step_id: string;
+  attempt_id: string;
+  attempt_digest: string;
+  attempt_number: 1;
+  scope: WorkflowRunPlan["scope"];
+  target_id: string;
+  target_type: "storage";
+  lease_id: string;
+  lease_digest: string;
+  fencing_token: number;
+  worker_subject_id: string;
+  staged_at: string;
+  state: "staged";
+  authority: WorkflowPlanAuthority;
+  grants_publication_authority: false;
+  grants_delivery_authority: false;
+  grants_dispatch_authority: false;
+  grants_execution_authority: false;
+  canonical_digest: string;
+};
+
+export type WorkflowDispatchIntentInventory = {
+  attempt_id: string;
+  dispatch_intents: WorkflowDispatchIntent[];
+  server_time: string;
+  durable: boolean;
+};
+
 const digest = /^[a-f0-9]{64}$/;
 const capabilityClasses = new Set<WorkflowCapabilityClass>(["C0", "C1", "C2"]);
 const stepKinds = new Set<WorkflowStepKind>([
@@ -287,6 +323,40 @@ const attemptFields = [
   "canonical_digest",
 ] as const;
 const attemptInventoryFields = ["run_id", "attempts", "server_time", "durable"] as const;
+const dispatchIntentFields = [
+  "dispatch_intent_id",
+  "plan_id",
+  "plan_digest",
+  "run_id",
+  "run_digest",
+  "step_run_id",
+  "step_run_digest",
+  "step_id",
+  "attempt_id",
+  "attempt_digest",
+  "attempt_number",
+  "scope",
+  "target_id",
+  "target_type",
+  "lease_id",
+  "lease_digest",
+  "fencing_token",
+  "worker_subject_id",
+  "staged_at",
+  "state",
+  "authority",
+  "grants_publication_authority",
+  "grants_delivery_authority",
+  "grants_dispatch_authority",
+  "grants_execution_authority",
+  "canonical_digest",
+] as const;
+const dispatchIntentInventoryFields = [
+  "attempt_id",
+  "dispatch_intents",
+  "server_time",
+  "durable",
+] as const;
 const scopeFields = ["organization_id", "environment_id", "site_id"] as const;
 const forbiddenCredentialFields = new Set([
   "api_key",
@@ -616,6 +686,65 @@ function areAttemptsBoundToRun(
   });
 }
 
+function isDispatchIntentBoundToAttempt(
+  value: unknown,
+  attempt: WorkflowExecutionAttempt,
+): value is WorkflowDispatchIntent {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, dispatchIntentFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value)
+  ) {
+    return false;
+  }
+  return (
+    isIdentifier(value.dispatch_intent_id) &&
+    value.plan_id === attempt.plan_id &&
+    value.plan_digest === attempt.plan_digest &&
+    value.run_id === attempt.run_id &&
+    value.run_digest === attempt.run_digest &&
+    value.step_run_id === attempt.step_run_id &&
+    value.step_run_digest === attempt.step_run_digest &&
+    value.step_id === attempt.step_id &&
+    value.attempt_id === attempt.attempt_id &&
+    value.attempt_digest === attempt.canonical_digest &&
+    value.attempt_number === attempt.attempt_number &&
+    value.scope.organization_id === attempt.scope.organization_id &&
+    value.scope.environment_id === attempt.scope.environment_id &&
+    value.scope.site_id === attempt.scope.site_id &&
+    value.target_id === attempt.target_id &&
+    value.target_type === attempt.target_type &&
+    value.lease_id === attempt.lease_id &&
+    isDigest(value.lease_digest) &&
+    value.fencing_token === attempt.fencing_token &&
+    isIdentifier(value.worker_subject_id) &&
+    isTimestamp(value.staged_at) &&
+    Date.parse(value.staged_at) >= Date.parse(attempt.created_at) &&
+    value.state === "staged" &&
+    hasSafeAuthority(value.authority) &&
+    value.grants_publication_authority === false &&
+    value.grants_delivery_authority === false &&
+    value.grants_dispatch_authority === false &&
+    value.grants_execution_authority === false &&
+    isDigest(value.canonical_digest)
+  );
+}
+
+function areDispatchIntentsBoundToAttempt(
+  intents: unknown[],
+  attempt: WorkflowExecutionAttempt,
+): intents is WorkflowDispatchIntent[] {
+  const seen = new Set<string>();
+  return intents.every((intent) => {
+    if (!isDispatchIntentBoundToAttempt(intent, attempt) || seen.has(intent.dispatch_intent_id)) {
+      return false;
+    }
+    seen.add(intent.dispatch_intent_id);
+    return true;
+  });
+}
+
 function isRunPlan(value: unknown): value is WorkflowRunPlan {
   if (
     !isObject(value) ||
@@ -822,6 +951,41 @@ export async function listWorkflowRunAttempts(input: {
     throw new ApiRequestError("Workflow attempt evidence response was unsafe", response.status);
   }
   return data as WorkflowExecutionAttemptInventory;
+}
+
+export async function listWorkflowAttemptDispatchIntents(input: {
+  attempt: WorkflowExecutionAttempt;
+  scope: WorkflowScope;
+  authorizedTargetIds: readonly string[];
+}): Promise<WorkflowDispatchIntentInventory> {
+  if (
+    input.attempt.scope.organization_id !== input.scope.organizationId ||
+    input.attempt.scope.environment_id !== input.scope.environmentId ||
+    input.attempt.scope.site_id !== input.scope.siteId ||
+    !input.authorizedTargetIds.includes(input.attempt.target_id) ||
+    !hasSafeAuthority(input.attempt.authority) ||
+    input.attempt.grants_execution_authority !== false
+  ) {
+    throw new ApiRequestError("Workflow attempt is outside the authorized dispatch-intent scope", 403);
+  }
+  const response = await apiFetch(
+    `/api/v1/workflows/plans/${encodeURIComponent(input.attempt.plan_id)}/runs/${encodeURIComponent(input.attempt.run_id)}/attempts/${encodeURIComponent(input.attempt.attempt_id)}/dispatch-intents`,
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(response, "Workflow dispatch-intent evidence retrieval failed");
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, dispatchIntentInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    data.attempt_id !== input.attempt.attempt_id ||
+    !Array.isArray(data.dispatch_intents) ||
+    !areDispatchIntentsBoundToAttempt(data.dispatch_intents, input.attempt) ||
+    !isTimestamp(data.server_time) ||
+    typeof data.durable !== "boolean"
+  ) {
+    throw new ApiRequestError("Workflow dispatch-intent evidence response was unsafe", response.status);
+  }
+  return data as WorkflowDispatchIntentInventory;
 }
 
 export async function createWorkflowPlan(input: {

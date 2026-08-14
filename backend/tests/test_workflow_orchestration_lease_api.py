@@ -170,6 +170,8 @@ def test_injected_planning_service_and_default_lease_service_share_one_repositor
         assert app.state.workflow_run_materialization_repository is repository
         assert app.state.workflow_attempt_materialization_service.repository is repository
         assert app.state.workflow_attempt_materialization_repository is repository
+        assert app.state.workflow_dispatch_intent_staging_service.repository is repository
+        assert app.state.workflow_dispatch_intent_staging_repository is repository
 
 
 def test_plan_only_repository_requires_an_explicit_lease_service() -> None:
@@ -561,6 +563,40 @@ def test_workload_materializes_one_created_attempt_visible_to_same_browser_sessi
         materialized = client.post(root_url, json=payload, headers=headers)
         replayed = client.post(root_url, json=payload, headers=headers)
         browser_inventory = client.get(inventory_url)
+        attempt = materialized.json()["data"]
+        dispatch_url = (
+            f"/api/v1/workflows/plans/{plan_id}/runs/{run['run_id']}"
+            f"/attempts/{attempt['attempt_id']}/dispatch-intents"
+        )
+        dispatch_payload = {
+            "schema_version": "atlas.workflow-dispatch-intent-staging-input.v1",
+            "plan_digest": plan["canonical_digest"],
+            "run_digest": run["canonical_digest"],
+            "step_run_id": root["step_run_id"],
+            "step_run_digest": root["canonical_digest"],
+            "attempt_digest": attempt["canonical_digest"],
+            "target_id": TARGET_ID,
+            "target_type": "storage",
+            "lease_id": lease["lease_id"],
+            "lease_digest": lease["canonical_digest"],
+            "fencing_token": lease["fencing_token"],
+            (
+                "acknowledged_staging_only_no_publication_delivery_dispatch_or_execution_authority"
+            ): True,
+        }
+        empty_dispatch_inventory = client.get(dispatch_url)
+        browser_dispatch_mutation = client.post(
+            dispatch_url,
+            json=dispatch_payload,
+            headers={"Idempotency-Key": "workflow-dispatch-browser-denied"},
+        )
+        dispatch_headers = {
+            **_workload_headers(token),
+            "Idempotency-Key": "workflow-dispatch-stage-api",
+        }
+        staged = client.post(dispatch_url, json=dispatch_payload, headers=dispatch_headers)
+        staged_replay = client.post(dispatch_url, json=dispatch_payload, headers=dispatch_headers)
+        browser_dispatch_inventory = client.get(dispatch_url)
         unchanged_run = client.get(f"/api/v1/workflows/plans/{plan_id}/materialized-run")
 
     assert empty_inventory.status_code == 200
@@ -585,6 +621,28 @@ def test_workload_materializes_one_created_attempt_visible_to_same_browser_sessi
     assert browser_inventory.status_code == 200
     assert browser_inventory.headers["Cache-Control"].startswith("no-store")
     assert browser_inventory.json()["data"]["attempts"] == [attempt]
+    assert empty_dispatch_inventory.status_code == 200
+    assert empty_dispatch_inventory.json()["data"]["dispatch_intents"] == []
+    assert browser_dispatch_mutation.status_code == 401
+    assert browser_dispatch_mutation.json()["code"] == "workload_authentication_failed"
+    assert "mfa" not in browser_dispatch_mutation.text.casefold()
+    assert "authorized browser session" not in browser_dispatch_mutation.text.casefold()
+    assert staged.status_code == 201
+    intent = staged.json()["data"]
+    assert staged_replay.status_code == 201
+    assert staged_replay.json()["data"] == intent
+    assert intent["state"] == "staged"
+    assert intent["attempt_id"] == attempt["attempt_id"]
+    assert intent["attempt_digest"] == attempt["canonical_digest"]
+    assert intent["worker_subject_id"] == WORKER_ID
+    assert not any(intent["authority"].values())
+    assert intent["grants_publication_authority"] is False
+    assert intent["grants_delivery_authority"] is False
+    assert intent["grants_dispatch_authority"] is False
+    assert intent["grants_execution_authority"] is False
+    assert browser_dispatch_inventory.status_code == 200
+    assert browser_dispatch_inventory.headers["Cache-Control"].startswith("no-store")
+    assert browser_dispatch_inventory.json()["data"]["dispatch_intents"] == [intent]
     assert unchanged_run.status_code == 200
     assert unchanged_run.json()["data"]["run"] == run
     assert all(step["state"] == "not_started" for step in run["step_runs"])

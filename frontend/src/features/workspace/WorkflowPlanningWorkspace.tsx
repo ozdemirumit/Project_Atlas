@@ -23,6 +23,7 @@ import {
   getWorkflowMaterializedRun,
   getWorkflowOrchestrationLease,
   listWorkflowDefinitions,
+  listWorkflowAttemptDispatchIntents,
   listWorkflowPlans,
   listWorkflowRunAttempts,
   WORKFLOW_PLAN_SAFETY_NOTICE,
@@ -164,6 +165,24 @@ export default function WorkflowPlanningWorkspace({
     enabled: Boolean(materializedRun),
     retry: false,
   });
+  const materializedAttempts = attemptQuery.data?.attempts ?? [];
+  const dispatchIntentQuery = useQuery({
+    queryKey: [
+      "workflow-attempt-dispatch-intents",
+      materializedAttempts.map((attempt) => [attempt.attempt_id, attempt.canonical_digest]),
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () =>
+      Promise.all(
+        materializedAttempts.map((attempt) =>
+          listWorkflowAttemptDispatchIntents({ attempt, scope, authorizedTargetIds }),
+        ),
+      ),
+    enabled: attemptQuery.isSuccess && materializedAttempts.length > 0,
+    retry: false,
+  });
   const definitions = definitionQuery.data?.definitions ?? [];
   const selectedDefinition = definitions.find((item) => item.definition_id === definitionId);
   const createMutation = useMutation({
@@ -223,6 +242,11 @@ export default function WorkflowPlanningWorkspace({
       : undefined;
   const attemptErrorStatus =
     attemptQuery.error instanceof ApiRequestError ? attemptQuery.error.status : undefined;
+  const dispatchIntentErrorStatus =
+    dispatchIntentQuery.error instanceof ApiRequestError
+      ? dispatchIntentQuery.error.status
+      : undefined;
+  const dispatchIntents = dispatchIntentQuery.data?.flatMap((inventory) => inventory.dispatch_intents) ?? [];
 
   const selectPlan = (plan: WorkflowRunPlan) => {
     setSelectedPlan(plan);
@@ -555,6 +579,95 @@ export default function WorkflowPlanningWorkspace({
                     <div className="workflow-safety-boundary" role="note">
                       <LockKeyhole size={18} />
                       <span>These records preserve pre-dispatch attempt identity only. No action ran, and no execution authority is granted.</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {attemptQuery.isSuccess && attemptQuery.data.attempts.length > 0 && (
+                <div aria-labelledby="workflow-dispatch-intent-records-title">
+                  <div className="workflow-section-heading">
+                    <div>
+                      <p className="eyebrow">READ-ONLY DISPATCH EVIDENCE</p>
+                      <h3 id="workflow-dispatch-intent-records-title">Staged dispatch-intent records</h3>
+                    </div>
+                    <span>No human controls</span>
+                  </div>
+                  {dispatchIntentQuery.isLoading && (
+                    <div className="workflow-empty-state" role="status">
+                      <FileClock size={19} />
+                      <span>Loading authoritative dispatch-intent records...</span>
+                    </div>
+                  )}
+                  {dispatchIntentQuery.isError && (
+                    <div className="inline-error" role="alert">
+                      <div>
+                        <strong>
+                          {dispatchIntentErrorStatus === 401
+                            ? "Your session has expired"
+                            : dispatchIntentErrorStatus === 403
+                              ? "Dispatch-intent evidence permission is missing"
+                              : "Dispatch-intent evidence is unavailable"}
+                        </strong>
+                        <span>
+                          {dispatchIntentErrorStatus === 401
+                            ? "Sign in again to continue."
+                            : dispatchIntentErrorStatus === 403
+                              ? "Your current role cannot inspect staged dispatch-intent records."
+                              : "No dispatch state is inferred. Retry the read-only request."}
+                        </span>
+                      </div>
+                      {dispatchIntentErrorStatus !== 401 && dispatchIntentErrorStatus !== 403 && (
+                        <button type="button" onClick={() => void dispatchIntentQuery.refetch()}>
+                          <RefreshCw size={15} /> Retry intent evidence
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {dispatchIntentQuery.isSuccess && dispatchIntents.length === 0 && (
+                    <div className="workflow-empty-state">
+                      <FileClock size={19} /> No dispatch intents are staged for these attempts.
+                    </div>
+                  )}
+                  {dispatchIntentQuery.isSuccess && dispatchIntents.length > 0 && (
+                    <>
+                      <ol className="workflow-step-preview" aria-label="Staged dispatch-intent records">
+                        {dispatchIntents.map((intent) => (
+                          <li key={intent.dispatch_intent_id}>
+                            <span>{intent.attempt_number}</span>
+                            <div>
+                              <strong>
+                                <code title={intent.dispatch_intent_id}>
+                                  {safeHolderIdentifier(intent.dispatch_intent_id)}
+                                </code>
+                              </strong>
+                              <small>
+                                step {intent.step_id} | {intent.state} | staged {formatTimestamp(intent.staged_at)}
+                              </small>
+                              <small>
+                                worker {safeHolderIdentifier(intent.worker_subject_id)} | fence {intent.fencing_token}
+                              </small>
+                              <small>
+                                attempt {shortDigest(intent.attempt_digest)} | run {shortDigest(intent.run_digest)} | step {shortDigest(intent.step_run_digest)}
+                              </small>
+                              <small>
+                                plan {shortDigest(intent.plan_digest)} | lease {shortDigest(intent.lease_digest)} | intent {shortDigest(intent.canonical_digest)}
+                              </small>
+                            </div>
+                          </li>
+                        ))}
+                      </ol>
+                      <dl>
+                        <div><dt>Attempts inspected</dt><dd>{dispatchIntentQuery.data.length}</dd></div>
+                        <div><dt>Observed</dt><dd>{formatTimestamp(dispatchIntentQuery.data[0]!.server_time)}</dd></div>
+                        <div><dt>Storage</dt><dd>{dispatchIntentQuery.data.every((item) => item.durable) ? "durable" : "development memory"}</dd></div>
+                      </dl>
+                    </>
+                  )}
+                  {dispatchIntentQuery.isSuccess && (
+                    <div className="workflow-safety-boundary" role="note">
+                      <LockKeyhole size={18} />
+                      <span>No message was published, no worker or action ran, and no dispatch or execution authority is granted.</span>
                     </div>
                   )}
                 </div>

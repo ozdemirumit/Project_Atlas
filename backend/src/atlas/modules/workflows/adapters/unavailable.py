@@ -7,6 +7,10 @@ from atlas.modules.workflows.application import (
     WorkflowAttemptMaterializationIdempotencyRecord,
     WorkflowAttemptMaterializationRequest,
     WorkflowAttemptMaterializationResult,
+    WorkflowDispatchIntentStagingError,
+    WorkflowDispatchIntentStagingIdempotencyRecord,
+    WorkflowDispatchIntentStagingRequest,
+    WorkflowDispatchIntentStagingResult,
     WorkflowLeaseAcquireIdempotencyRecord,
     WorkflowLeaseAcquireRequest,
     WorkflowLeaseAcquireResult,
@@ -24,6 +28,7 @@ from atlas.modules.workflows.application import (
     WorkflowRunMaterializationResult,
 )
 from atlas.modules.workflows.domain import (
+    WorkflowDispatchIntent,
     WorkflowExecutionAttempt,
     WorkflowExecutionRun,
     WorkflowOrchestrationLease,
@@ -127,6 +132,25 @@ class UnavailableWorkflowPlanRepository:
     ) -> WorkflowAttemptMaterializationResult:
         self._raise_attempt()
 
+    async def list_dispatch_intents_by_run_id(
+        self, *, run_id: str
+    ) -> tuple[WorkflowDispatchIntent, ...]:
+        self._raise_dispatch_intent()
+
+    async def get_dispatch_intent_staging_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        worker_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowDispatchIntentStagingIdempotencyRecord | None:
+        self._raise_dispatch_intent()
+
+    async def stage_dispatch_intent(
+        self, request: WorkflowDispatchIntentStagingRequest
+    ) -> WorkflowDispatchIntentStagingResult:
+        self._raise_dispatch_intent()
+
     async def get_lease_acquire_request(
         self,
         *,
@@ -166,4 +190,11 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowAttemptMaterializationError(
             "workflow_attempt_repository_unavailable",
             "Durable workflow attempt materialization storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_dispatch_intent() -> NoReturn:
+        raise WorkflowDispatchIntentStagingError(
+            "workflow_dispatch_intent_repository_unavailable",
+            "Durable workflow dispatch intent staging storage is not configured.",
         )

@@ -558,6 +558,8 @@ MVP workflows do not execute C3 through C5 capabilities.
 - ADR-137 establishes durable run and step-run materialization without attempt or dispatch authority.
 - ADR-138 establishes durable root-step attempt materialization without queue, dispatch or execution
   authority.
+- ADR-139 establishes durable dispatch-intent staging without broker publication, delivery,
+  dispatch or execution authority.
 
 ## 39. Assumptions
 
