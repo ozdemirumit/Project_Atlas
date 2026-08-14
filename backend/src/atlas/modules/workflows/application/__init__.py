@@ -127,6 +127,21 @@ from atlas.modules.workflows.application.transport_admissions import (
     WORKFLOW_EVENT_TRANSPORT_ADMISSION_PRODUCER,
     WorkflowEventTransportAdmissionService,
 )
+from atlas.modules.workflows.application.transport_profile_snapshot_ports import (
+    DeploymentEventTransportProfileRegistry,
+    WorkflowTransportProfileSnapshotError,
+    WorkflowTransportProfileSnapshotIdempotencyRecord,
+    WorkflowTransportProfileSnapshotRepository,
+    WorkflowTransportProfileSnapshotRequest,
+    WorkflowTransportProfileSnapshotResult,
+    WorkflowTransportProfileSnapshotStatus,
+)
+from atlas.modules.workflows.application.transport_profile_snapshots import (
+    WORKFLOW_TRANSPORT_PROFILE_REGISTRY_AUDIENCE,
+    WORKFLOW_TRANSPORT_PROFILE_SNAPSHOT_PRODUCER,
+    WorkflowTransportProfileRegistryContext,
+    WorkflowTransportProfileSnapshotService,
+)
 
 __all__ = [
     "WORKFLOW_DISPATCH_EVENT_PRODUCER",
@@ -137,7 +152,10 @@ __all__ = [
     "WORKFLOW_EVENT_LOGICAL_CHANNEL_BINDING_PRODUCER",
     "WORKFLOW_EVENT_TRANSPORT_ADMISSION_PRODUCER",
     "WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE",
+    "WORKFLOW_TRANSPORT_PROFILE_REGISTRY_AUDIENCE",
+    "WORKFLOW_TRANSPORT_PROFILE_SNAPSHOT_PRODUCER",
     "WORKFLOW_WORKER_AUDIENCE",
+    "DeploymentEventTransportProfileRegistry",
     "WorkflowAccessContext",
     "WorkflowAttemptMaterializationError",
     "WorkflowAttemptMaterializationIdempotencyRecord",
@@ -219,5 +237,13 @@ __all__ = [
     "WorkflowRunMaterializationResult",
     "WorkflowRunMaterializationService",
     "WorkflowRunMaterializationStatus",
+    "WorkflowTransportProfileRegistryContext",
+    "WorkflowTransportProfileSnapshotError",
+    "WorkflowTransportProfileSnapshotIdempotencyRecord",
+    "WorkflowTransportProfileSnapshotRepository",
+    "WorkflowTransportProfileSnapshotRequest",
+    "WorkflowTransportProfileSnapshotResult",
+    "WorkflowTransportProfileSnapshotService",
+    "WorkflowTransportProfileSnapshotStatus",
     "WorkflowWorkerContext",
 ]

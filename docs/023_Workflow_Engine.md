@@ -577,6 +577,9 @@ MVP workflows do not execute C3 through C5 capabilities.
 - ADR-145 establishes immutable binding of the exact byte artifact to a code-owned logical
   publication channel contract without physical transport selection, credentials, network calls,
   publication, delivery, dispatch or execution authority.
+- ADR-146 establishes an independently immutable deployment-owned physical transport capability
+  profile snapshot without event lineage, compatibility admission, route binding, credentials,
+  network calls, publication, delivery, dispatch or execution authority.
 
 ## 39. Assumptions
 

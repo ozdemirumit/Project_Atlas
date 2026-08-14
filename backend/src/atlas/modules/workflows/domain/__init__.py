@@ -1,5 +1,9 @@
 from atlas.modules.workflows.domain.models import (
     NO_EXECUTION_SAFETY_NOTICE,
+    DeploymentEventTransportProfile,
+    EventPhysicalTransportProfileSnapshot,
+    EventPhysicalTransportProfileSnapshotAuthority,
+    EventPhysicalTransportProfileSnapshotState,
     WorkflowCapabilityClass,
     WorkflowDefinition,
     WorkflowDefinitionRegistry,
@@ -53,6 +57,10 @@ from atlas.modules.workflows.domain.models import (
 
 __all__ = [
     "NO_EXECUTION_SAFETY_NOTICE",
+    "DeploymentEventTransportProfile",
+    "EventPhysicalTransportProfileSnapshot",
+    "EventPhysicalTransportProfileSnapshotAuthority",
+    "EventPhysicalTransportProfileSnapshotState",
     "WorkflowCapabilityClass",
     "WorkflowDefinition",
     "WorkflowDefinitionRegistry",

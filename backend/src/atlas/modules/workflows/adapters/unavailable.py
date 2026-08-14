@@ -57,7 +57,14 @@ from atlas.modules.workflows.application.transport_admission_ports import (
     WorkflowEventTransportAdmissionRequest,
     WorkflowEventTransportAdmissionResult,
 )
+from atlas.modules.workflows.application.transport_profile_snapshot_ports import (
+    WorkflowTransportProfileSnapshotError,
+    WorkflowTransportProfileSnapshotIdempotencyRecord,
+    WorkflowTransportProfileSnapshotRequest,
+    WorkflowTransportProfileSnapshotResult,
+)
 from atlas.modules.workflows.domain import (
+    EventPhysicalTransportProfileSnapshot,
     WorkflowDispatchEventEnvelope,
     WorkflowDispatchIntent,
     WorkflowDispatchOutboxEntry,
@@ -283,6 +290,28 @@ class UnavailableWorkflowPlanRepository:
     ) -> WorkflowEventLogicalChannelBindingResult:
         self._raise_event_logical_channel_binding()
 
+    async def get_transport_profile_snapshot(
+        self,
+        *,
+        transport_profile_id: str,
+        transport_profile_revision: str,
+    ) -> EventPhysicalTransportProfileSnapshot | None:
+        self._raise_transport_profile_snapshot()
+
+    async def get_transport_profile_snapshot_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        snapshotter_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowTransportProfileSnapshotIdempotencyRecord | None:
+        self._raise_transport_profile_snapshot()
+
+    async def snapshot_transport_profile(
+        self, request: WorkflowTransportProfileSnapshotRequest
+    ) -> WorkflowTransportProfileSnapshotResult:
+        self._raise_transport_profile_snapshot()
+
     async def acquire_publication_lease(
         self, request: WorkflowOutboxPublicationLeaseAcquireRequest
     ) -> WorkflowOutboxPublicationLeaseAcquireResult:
@@ -393,4 +422,11 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowEventLogicalChannelBindingError(
             "workflow_event_logical_channel_binding_repository_unavailable",
             "Durable workflow event logical channel binding storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_transport_profile_snapshot() -> NoReturn:
+        raise WorkflowTransportProfileSnapshotError(
+            "workflow_transport_profile_snapshot_repository_unavailable",
+            "Durable event transport profile snapshot storage is not configured.",
         )

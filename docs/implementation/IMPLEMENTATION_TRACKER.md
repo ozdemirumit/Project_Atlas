@@ -4,14 +4,76 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-195 |
-| Title | Immutable workflow logical publication channel binding without physical transport selection |
-| Status | Local validation complete; ready for pull request |
-| Branch | `agent/workflow-logical-channel-binding` |
+| Task ID | ATLAS-IMP-196 |
+| Title | Immutable deployment transport capability profile snapshot without route binding |
+| Status | Validation complete; ready for pull request |
+| Branch | `agent/workflow-transport-profile-snapshot` |
 | Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-136, ADR-137, ADR-138, ADR-139, ADR-140, ADR-141, ADR-142, ADR-143, ADR-144, ADR-145 |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-136, ADR-137, ADR-138, ADR-139, ADR-140, ADR-141, ADR-142, ADR-143, ADR-144, ADR-145, ADR-146 |
 | Last Updated | 2026-08-14 |
-| Next Action | Commit, open the pull request and verify exact-head CI |
+| Next Action | Open, validate and merge the IMP-196 pull request |
+
+### ATLAS-IMP-196 Scope Rationale
+
+- IMP-195 freezes event-domain, delivery, durability, ordering, retention and size requirements but
+  intentionally identifies no deployment transport implementation. The next smallest boundary is
+  an immutable deployment-owned snapshot of one transport profile's declared capabilities.
+- Registration records profile identity, adapter identity, deployment scope and bounded capability
+  claims only. It does not bind an event, logical channel, artifact, route or destination and does
+  not prove runtime readiness.
+- Endpoint and destination selection, credentials, secret or encryption-key references, network
+  probes, compatibility admission, route binding, provider messages, publication attempts,
+  delivery, retries, quarantine, worker dispatch and execution remain deferred.
+
+### ATLAS-IMP-196 Acceptance Criteria
+
+- A dedicated deployment-controller workload can idempotently register one immutable profile
+  version under an exact organization, environment and site scope; changed requests, competing
+  identities, malformed or overstated capabilities and audit failure fail closed.
+- The snapshot records normalized transport and adapter identity plus declared event-contract,
+  representation, classification, delivery, durability, ordering, retention and maximum-size
+  capabilities with a deterministic digest and zero operational authority.
+- PostgreSQL atomically stores immutable profile and idempotency records. Production never falls
+  back to memory, and the schema contains no endpoint, namespace, topic, stream, queue, partition,
+  routing key, credential, secret, encryption key, message, attempt, receipt or network-health
+  field.
+- Human UI exposes minimized read-only profile metadata through the normal username/password
+  session with no register, update, select, bind, probe, publish, deliver, dispatch or execute
+  control and no second-login or MFA prompt.
+
+### ATLAS-IMP-196 Validation Evidence
+
+- Domain and application services capture one exact deployment-owned transport profile revision
+  under the dedicated `audience.workflow-transport-profile-registry` workload audience. Exact
+  replay returns the same snapshot; changed requests, inactive or tampered source profiles,
+  cross-scope access, competing requests and audit failure fail closed.
+- Snapshot `event-physical-transport-profile-snapshot.1cc66e184be98da0a2991398` records bounded
+  event-contract, classification, representation, encoding, delivery, durability, ordering,
+  retention, size, encryption and restricted-network capability evidence. Route selection,
+  publication, delivery, dispatch and execution authority all remain false.
+- PostgreSQL atomically stores immutable profile and idempotency records. Migration
+  `20260814_0119` is the single Alembic head and contains no endpoint, destination, route,
+  credential, secret, message, attempt, receipt or network-health field. Non-development
+  environments expose no fabricated source profile unless deployment configuration injects one.
+- Ruff format/lint passed across 1,323 files, strict mypy passed across 1,203 source files, and the
+  full backend suite passed 1,817 tests with three expected Windows symlink skips. The full
+  frontend suite passed 454 tests across 95 files; ESLint, TypeScript and the production build
+  passed with only the pre-existing chunk-size advisory.
+- Live validation used one `atlas-demo` / `local-demo` username/password login to open Connector
+  Inventory and return to the workflow profile evidence in the same session. No sign-in form,
+  authorized-browser/MFA/second-login text or operational profile button appeared. Browser
+  measurements found the profile contract `WorkflowStepDispatchRequested v1.0`, zero horizontal
+  overflow at 1,280 pixels and exact read-only authority evidence.
+
+### ATLAS-IMP-195 Delivery Evidence
+
+- Source commit `a24f99dde5f9e05d2672f5887ca9cd4f5d323797` passed exact-head PR CI run
+  `31787240216`; frontend completed in 4m03s and backend in 9m44s.
+- PR [#207](https://github.com/ozdemirumit/Project_Atlas/pull/207) was squash-merged as
+  `fbb7577dc3473955089cb443b8423448b7b607f8`.
+- The exact merged commit independently passed `main` CI run `31788018210`; frontend completed in
+  4m30s and backend in 9m38s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-196 branched.
 
 ### ATLAS-IMP-195 Scope Rationale
 

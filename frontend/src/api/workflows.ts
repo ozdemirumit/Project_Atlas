@@ -570,6 +570,58 @@ export type WorkflowEventLogicalChannelBindingInventory = {
   durable: boolean;
 };
 
+export type WorkflowTransportProfileAuthority = {
+  route_selection_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+};
+
+export type WorkflowTransportEventContract = {
+  event_type: "WorkflowStepDispatchRequested";
+  event_version: "1.0";
+  schema_uri: "urn:project-atlas:event:workflow-step-dispatch-requested:1.0";
+};
+
+export type WorkflowTransportProfileSnapshot = {
+  snapshot_id: string;
+  transport_profile_id: string;
+  transport_profile_revision: string;
+  source_profile_digest: string;
+  deployment_release_id: string;
+  deployment_profile: "developer" | "lab" | "enterprise-test" | "production" | "offline";
+  scope: WorkflowRunPlan["scope"];
+  transport_resource_id: string;
+  transport_resource_digest: string;
+  transport_implementation_id: string;
+  transport_implementation_version: string;
+  adapter_contract_id: string;
+  adapter_contract_version: string;
+  adapter_contract_digest: string;
+  supported_event_contracts: WorkflowTransportEventContract[];
+  supported_classifications: "internal"[];
+  supported_representations: "canonical-json"[];
+  supported_encodings: "utf-8"[];
+  supported_delivery_semantics: "at-least-once"[];
+  durable_delivery_supported: boolean;
+  supported_ordering_key_kinds: "workflow-run"[];
+  supported_retention_classes: "workflow-operational"[];
+  maximum_message_byte_count: number;
+  transport_encryption_required: boolean;
+  restricted_network_supported: boolean;
+  snapshotter_subject_id: string;
+  captured_at: string;
+  state: "snapshotted";
+  authority: WorkflowTransportProfileAuthority;
+  canonical_digest: string;
+};
+
+export type WorkflowTransportProfileSnapshotInventory = {
+  transport_profile_snapshots: WorkflowTransportProfileSnapshot[];
+  durable: boolean;
+};
+
 const digest = /^[a-f0-9]{64}$/;
 const capabilityClasses = new Set<WorkflowCapabilityClass>(["C0", "C1", "C2"]);
 const stepKinds = new Set<WorkflowStepKind>([
@@ -984,6 +1036,50 @@ const eventLogicalChannelBindingInventoryFields = [
   "logical_channel_bindings",
   "durable",
 ] as const;
+const transportProfileAuthorityFields = [
+  "route_selection_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+] as const;
+const transportProfileEventContractFields = ["event_type", "event_version", "schema_uri"] as const;
+const transportProfileSnapshotFields = [
+  "snapshot_id",
+  "transport_profile_id",
+  "transport_profile_revision",
+  "source_profile_digest",
+  "deployment_release_id",
+  "deployment_profile",
+  "scope",
+  "transport_resource_id",
+  "transport_resource_digest",
+  "transport_implementation_id",
+  "transport_implementation_version",
+  "adapter_contract_id",
+  "adapter_contract_version",
+  "adapter_contract_digest",
+  "supported_event_contracts",
+  "supported_classifications",
+  "supported_representations",
+  "supported_encodings",
+  "supported_delivery_semantics",
+  "durable_delivery_supported",
+  "supported_ordering_key_kinds",
+  "supported_retention_classes",
+  "maximum_message_byte_count",
+  "transport_encryption_required",
+  "restricted_network_supported",
+  "snapshotter_subject_id",
+  "captured_at",
+  "state",
+  "authority",
+  "canonical_digest",
+] as const;
+const transportProfileSnapshotInventoryFields = [
+  "transport_profile_snapshots",
+  "durable",
+] as const;
 const dispatchEventAuthorityFields = [
   "publication_authorized",
   "delivery_authorized",
@@ -1037,6 +1133,31 @@ function isDigest(value: unknown): value is string {
 
 function isTimestamp(value: unknown): value is string {
   return typeof value === "string" && !Number.isNaN(Date.parse(value));
+}
+
+function isSortedUniqueArray<T extends string>(
+  value: unknown,
+  allowed: ReadonlySet<T>,
+): value is T[] {
+  if (!Array.isArray(value) || value.length < 1) {
+    return false;
+  }
+  const unknownValues: unknown[] = value;
+  if (
+    !unknownValues.every(
+      (item) => typeof item === "string" && allowed.has(item as T),
+    )
+  ) {
+    return false;
+  }
+  const values = unknownValues as T[];
+  return (
+    new Set(values).size === values.length &&
+    values.every((item, index) => {
+      const previous = values[index - 1];
+      return index === 0 || (previous !== undefined && previous.localeCompare(item) < 0);
+    })
+  );
 }
 
 function isScope(value: unknown): value is WorkflowRunPlan["scope"] {
@@ -1813,6 +1934,87 @@ function isEventLogicalChannelBindingBoundToArtifact(
   );
 }
 
+function hasZeroTransportProfileAuthority(
+  value: unknown,
+): value is WorkflowTransportProfileAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, transportProfileAuthorityFields) &&
+    transportProfileAuthorityFields.every((field) => value[field] === false)
+  );
+}
+
+function isTransportProfileEventContract(
+  value: unknown,
+): value is WorkflowTransportEventContract {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, transportProfileEventContractFields) &&
+    value.event_type === "WorkflowStepDispatchRequested" &&
+    value.event_version === "1.0" &&
+    value.schema_uri ===
+      "urn:project-atlas:event:workflow-step-dispatch-requested:1.0"
+  );
+}
+
+function isTransportProfileSnapshot(
+  value: unknown,
+  scope: WorkflowScope,
+): value is WorkflowTransportProfileSnapshot {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, transportProfileSnapshotFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value)
+  ) {
+    return false;
+  }
+  const snapshotScope = value.scope;
+  return (
+    isIdentifier(value.snapshot_id) &&
+    isIdentifier(value.transport_profile_id) &&
+    isIdentifier(value.transport_profile_revision) &&
+    isDigest(value.source_profile_digest) &&
+    isIdentifier(value.deployment_release_id) &&
+    ["developer", "lab", "enterprise-test", "production", "offline"].includes(
+      String(value.deployment_profile),
+    ) &&
+    snapshotScope.organization_id === scope.organizationId &&
+    snapshotScope.environment_id === scope.environmentId &&
+    snapshotScope.site_id === scope.siteId &&
+    isIdentifier(value.transport_resource_id) &&
+    isDigest(value.transport_resource_digest) &&
+    isIdentifier(value.transport_implementation_id) &&
+    isIdentifier(value.transport_implementation_version) &&
+    isIdentifier(value.adapter_contract_id) &&
+    isIdentifier(value.adapter_contract_version) &&
+    isDigest(value.adapter_contract_digest) &&
+    Array.isArray(value.supported_event_contracts) &&
+    value.supported_event_contracts.length === 1 &&
+    value.supported_event_contracts.every(isTransportProfileEventContract) &&
+    isSortedUniqueArray(value.supported_classifications, new Set(["internal"] as const)) &&
+    isSortedUniqueArray(value.supported_representations, new Set(["canonical-json"] as const)) &&
+    isSortedUniqueArray(value.supported_encodings, new Set(["utf-8"] as const)) &&
+    isSortedUniqueArray(value.supported_delivery_semantics, new Set(["at-least-once"] as const)) &&
+    typeof value.durable_delivery_supported === "boolean" &&
+    isSortedUniqueArray(value.supported_ordering_key_kinds, new Set(["workflow-run"] as const)) &&
+    isSortedUniqueArray(
+      value.supported_retention_classes,
+      new Set(["workflow-operational"] as const),
+    ) &&
+    Number.isSafeInteger(value.maximum_message_byte_count) &&
+    Number(value.maximum_message_byte_count) >= 1 &&
+    Number(value.maximum_message_byte_count) <= 16_777_216 &&
+    typeof value.transport_encryption_required === "boolean" &&
+    typeof value.restricted_network_supported === "boolean" &&
+    isIdentifier(value.snapshotter_subject_id) &&
+    isTimestamp(value.captured_at) &&
+    value.state === "snapshotted" &&
+    hasZeroTransportProfileAuthority(value.authority) &&
+    isDigest(value.canonical_digest)
+  );
+}
+
 function isRunPlan(value: unknown): value is WorkflowRunPlan {
   if (
     !isObject(value) ||
@@ -2316,6 +2518,38 @@ export async function listWorkflowEventLogicalChannelBindings(input: {
     throw new ApiRequestError("Workflow logical-channel binding response was unsafe", response.status);
   }
   return data as WorkflowEventLogicalChannelBindingInventory;
+}
+
+export async function listWorkflowTransportProfileSnapshots(input: {
+  scope: WorkflowScope;
+}): Promise<WorkflowTransportProfileSnapshotInventory> {
+  const response = await apiFetch("/api/v1/workflows/transport-profile-snapshots", {
+    headers: { Accept: "application/json" },
+  });
+  const data = await readData(response, "Workflow transport capability profile retrieval failed");
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, transportProfileSnapshotInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.transport_profile_snapshots) ||
+    typeof data.durable !== "boolean" ||
+    !data.transport_profile_snapshots.every((snapshot) =>
+      isTransportProfileSnapshot(snapshot, input.scope),
+    )
+  ) {
+    throw new ApiRequestError("Workflow transport capability profile response was unsafe", response.status);
+  }
+  const identities = new Set(
+    data.transport_profile_snapshots.map((snapshot) =>
+      isObject(snapshot)
+        ? `${String(snapshot.transport_profile_id)}:${String(snapshot.transport_profile_revision)}`
+        : "",
+    ),
+  );
+  if (identities.size !== data.transport_profile_snapshots.length) {
+    throw new ApiRequestError("Workflow transport capability profile response was unsafe", response.status);
+  }
+  return data as WorkflowTransportProfileSnapshotInventory;
 }
 
 export async function createWorkflowPlan(input: {

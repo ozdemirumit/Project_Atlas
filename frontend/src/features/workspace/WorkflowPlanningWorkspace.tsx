@@ -11,6 +11,7 @@ import {
   History,
   Link2,
   LockKeyhole,
+  Network,
   Plus,
   RefreshCw,
   Workflow,
@@ -34,9 +35,11 @@ import {
   listWorkflowEventTransportAdmissions,
   listWorkflowPlans,
   listWorkflowRunAttempts,
+  listWorkflowTransportProfileSnapshots,
   WORKFLOW_PLAN_SAFETY_NOTICE,
   type WorkflowDefinition,
   type WorkflowRunPlan,
+  type WorkflowTransportEventContract,
 } from "../../api/workflows";
 
 interface WorkflowPlanningWorkspaceProps {
@@ -63,6 +66,10 @@ function formatTimestamp(value: string): string {
   return new Date(value).toLocaleString();
 }
 
+function formatTransportEventContract(value: WorkflowTransportEventContract): string {
+  return `${value.event_type} v${value.event_version}`;
+}
+
 export default function WorkflowPlanningWorkspace({
   environmentId,
   organizationId,
@@ -82,6 +89,11 @@ export default function WorkflowPlanningWorkspace({
     () => ({ organizationId, environmentId, siteId }),
     [environmentId, organizationId, siteId],
   );
+  const transportProfileQuery = useQuery({
+    queryKey: ["workflow-transport-profile-snapshots", organizationId, environmentId, siteId],
+    queryFn: () => listWorkflowTransportProfileSnapshots({ scope }),
+    retry: false,
+  });
   const targetQuery = useQuery({
     queryKey: ["workflow-targets", organizationId, environmentId, siteId, ownerSubjectId],
     queryFn: () =>
@@ -460,6 +472,10 @@ export default function WorkflowPlanningWorkspace({
     logicalChannelBindingQuery.error instanceof ApiRequestError
       ? logicalChannelBindingQuery.error.status
       : undefined;
+  const transportProfileErrorStatus =
+    transportProfileQuery.error instanceof ApiRequestError
+      ? transportProfileQuery.error.status
+      : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
   const byteArtifacts =
@@ -500,6 +516,156 @@ export default function WorkflowPlanningWorkspace({
         <LockKeyhole size={19} />
         <div><strong>No execution authority</strong><span>{WORKFLOW_PLAN_SAFETY_NOTICE}</span></div>
       </div>
+
+      <section
+        className="workflow-transport-profile-band"
+        aria-labelledby="workflow-transport-profile-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">DEPLOYMENT CAPABILITY EVIDENCE</p>
+            <h2 id="workflow-transport-profile-title">Transport capability profiles</h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {transportProfileQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading transport capability profiles...</span>
+          </div>
+        )}
+        {transportProfileQuery.isError && (
+          <div className="inline-error" role="alert">
+            <div>
+              <strong>
+                {transportProfileErrorStatus === 401
+                  ? "Your session has expired"
+                  : transportProfileErrorStatus === 403
+                    ? "Transport capability profile permission is missing"
+                    : "Transport capability profiles are unavailable"}
+              </strong>
+              <span>
+                {transportProfileErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : transportProfileErrorStatus === 403
+                    ? "Your current role or scope cannot inspect transport capability profiles."
+                    : "No deployment capability or operational state is inferred from this failed read."}
+              </span>
+            </div>
+            {transportProfileErrorStatus !== 401 && transportProfileErrorStatus !== 403 && (
+              <button
+                className="secondary-action"
+                type="button"
+                aria-label="Retry transport capability profile read"
+                onClick={() => void transportProfileQuery.refetch()}
+              >
+                <RefreshCw size={16} />
+                Retry
+              </button>
+            )}
+          </div>
+        )}
+        {transportProfileQuery.isSuccess &&
+          transportProfileQuery.data.transport_profile_snapshots.length === 0 && (
+            <div className="workflow-empty-state">
+              <Network size={19} /> No transport capability profiles are recorded in this scope.
+            </div>
+          )}
+        {transportProfileQuery.isSuccess &&
+          transportProfileQuery.data.transport_profile_snapshots.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-transport-profile-list"
+              aria-label="Transport capability profiles"
+            >
+              {transportProfileQuery.data.transport_profile_snapshots.map((profile) => (
+                <li key={profile.snapshot_id}>
+                  <Network size={18} />
+                  <div>
+                    <strong>
+                      <code title={profile.transport_profile_id}>
+                        {safeHolderIdentifier(profile.transport_profile_id)}
+                      </code>
+                      <span className="state-badge neutral">{profile.state}</span>
+                    </strong>
+                    <div className="workflow-transport-profile-grid">
+                      <span>
+                        Revision <b>{profile.transport_profile_revision}</b> | deployment{" "}
+                        <code title={profile.deployment_release_id}>
+                          {safeHolderIdentifier(profile.deployment_release_id)}
+                        </code>{" "}
+                        | {profile.deployment_profile}
+                      </span>
+                      <span>
+                        Organization {profile.scope.organization_id} | environment{" "}
+                        {profile.scope.environment_id} | site {profile.scope.site_id}
+                      </span>
+                      <span>
+                        Implementation{" "}
+                        <code title={profile.transport_implementation_id}>
+                          {safeHolderIdentifier(profile.transport_implementation_id)}
+                        </code>{" "}
+                        v{profile.transport_implementation_version}
+                      </span>
+                      <span>
+                        Adapter <code title={profile.adapter_contract_id}>{profile.adapter_contract_id}</code>{" "}
+                        v{profile.adapter_contract_version}
+                      </span>
+                      <span>
+                        Event {profile.supported_event_contracts
+                          .map(formatTransportEventContract)
+                          .join(", ")}
+                      </span>
+                      <span>
+                        Classification {profile.supported_classifications.join(", ")} | representation{" "}
+                        {profile.supported_representations.join(", ")} | encoding{" "}
+                        {profile.supported_encodings.join(", ")}
+                      </span>
+                      <span>
+                        Delivery {profile.supported_delivery_semantics.join(", ")} | durable{" "}
+                        {profile.durable_delivery_supported ? "supported" : "not supported"}
+                      </span>
+                      <span>
+                        Ordering {profile.supported_ordering_key_kinds.join(", ")} | retention{" "}
+                        {profile.supported_retention_classes.join(", ")}
+                      </span>
+                      <span>
+                        Maximum {profile.maximum_message_byte_count.toLocaleString()} bytes | encryption{" "}
+                        {profile.transport_encryption_required ? "required" : "not required"} | restricted network{" "}
+                        {profile.restricted_network_supported ? "supported" : "not supported"}
+                      </span>
+                      <span>
+                        Captured {formatTimestamp(profile.captured_at)} by{" "}
+                        <code title={profile.snapshotter_subject_id}>
+                          {safeHolderIdentifier(profile.snapshotter_subject_id)}
+                        </code>
+                      </span>
+                      <span>
+                        Snapshot <code title={profile.snapshot_id}>{safeHolderIdentifier(profile.snapshot_id)}</code>{" "}
+                        | resource <code title={profile.transport_resource_id}>{safeHolderIdentifier(profile.transport_resource_id)}</code>
+                      </span>
+                      <span>
+                        Source {shortDigest(profile.source_profile_digest)} | resource{" "}
+                        {shortDigest(profile.transport_resource_digest)} | adapter{" "}
+                        {shortDigest(profile.adapter_contract_digest)} | snapshot{" "}
+                        <code title={profile.canonical_digest}>{shortDigest(profile.canonical_digest)}</code>
+                      </span>
+                      <span>
+                        Authority route selection false | publication false | delivery false | dispatch false | execution false
+                      </span>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            These immutable records describe declared deployment capabilities only. They do not
+            select or operate a transport.
+          </span>
+        </div>
+      </section>
 
       {loading && (
         <div className="workspace-message" role="status"><RefreshCw className="spin" size={18} /><span>Loading authorized workflow context...</span></div>

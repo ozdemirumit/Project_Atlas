@@ -250,6 +250,7 @@ from atlas.modules.authorization.application.bootstrap import (
     WORKFLOW_PLAN_CANCEL,
     WORKFLOW_PLAN_CREATE,
     WORKFLOW_PLAN_READ,
+    WORKFLOW_TRANSPORT_PROFILE_READ,
     WORKLOAD_IDENTITY_ADMIN_CREATE,
     WORKLOAD_IDENTITY_ADMIN_REVOKE,
     WORKLOAD_IDENTITY_ADMIN_ROTATE,
@@ -355,6 +356,7 @@ from atlas.modules.authorization.application.bootstrap import (
     upgrade_human_review_scope,
     upgrade_simulation_scope,
     workflow_scope,
+    workflow_transport_profile_scope,
     workload_identity_governance_scope,
 )
 from atlas.modules.authorization.application.service import AuthorizationService
@@ -378,6 +380,7 @@ from atlas.modules.identity.domain.models import (
 from atlas.modules.identity.domain.sessions import CredentialKind
 from atlas.modules.workflows.application import (
     WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE,
+    WORKFLOW_TRANSPORT_PROFILE_REGISTRY_AUDIENCE,
     WORKFLOW_WORKER_AUDIENCE,
 )
 
@@ -594,6 +597,70 @@ async def workflow_outbox_publisher_subject(
         subject = await service.authenticate(
             token if valid_envelope else "",
             audience=WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE,
+            environment_id=expected_environment,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except WorkloadIdentityError as exc:
+        raise AtlasError(
+            status=401,
+            code="workload_authentication_failed",
+            title="Workload authentication failed",
+            detail="The workload credential is invalid or unavailable for this operation.",
+        ) from exc
+    if (
+        subject.kind is not SubjectKind.SERVICE
+        or subject.authentication_method is not AuthenticationMethod.WORKLOAD_TOKEN
+    ):
+        raise AtlasError(
+            status=401,
+            code="workload_authentication_failed",
+            title="Workload authentication failed",
+            detail="The workload credential is invalid or unavailable for this operation.",
+        )
+    request.state.authenticated_subject = subject
+    return subject
+
+
+async def workflow_transport_profile_registry_subject(
+    request: Request,
+    authorization: Annotated[
+        str | None, Header(alias="Authorization", min_length=1, max_length=8192)
+    ] = None,
+    audience: Annotated[
+        str | None,
+        Header(
+            alias="X-Atlas-Audience",
+            min_length=3,
+            max_length=127,
+            pattern=r"^[a-z][a-z0-9_.:-]{2,126}$",
+        ),
+    ] = None,
+    environment_id: Annotated[
+        str | None,
+        Header(
+            alias="X-Atlas-Environment",
+            min_length=3,
+            max_length=127,
+            pattern=r"^[a-z][a-z0-9_.:-]{2,126}$",
+        ),
+    ] = None,
+) -> AuthenticatedSubject:
+    """Authenticate only the deployment-owned transport profile registry workload."""
+
+    expected_environment = f"environment.{request.app.state.settings.environment}"
+    scheme, separator, token = (authorization or "").partition(" ")
+    valid_envelope = (
+        separator == " "
+        and scheme.lower() == "workload"
+        and bool(token)
+        and audience == WORKFLOW_TRANSPORT_PROFILE_REGISTRY_AUDIENCE
+        and environment_id == expected_environment
+    )
+    service: WorkloadIdentityService = request.app.state.workload_identity_service
+    try:
+        subject = await service.authenticate(
+            token if valid_envelope else "",
+            audience=WORKFLOW_TRANSPORT_PROFILE_REGISTRY_AUDIENCE,
             environment_id=expected_environment,
             correlation_id=str(request.state.correlation_id),
         )
@@ -2132,6 +2199,36 @@ async def authorize_workflow_plan_read(
         permission_id=WORKFLOW_PLAN_READ,
         capability_class=CapabilityClass.C1_READ_ONLY,
     )
+
+
+async def authorize_workflow_transport_profile_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=WORKFLOW_TRANSPORT_PROFILE_READ,
+            resource_type="resource.workflow.transport-profile-snapshot",
+            scope=workflow_transport_profile_scope(
+                subject.organization_id,
+                settings.environment,
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
 
 
 async def authorize_investigation_create(

@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from typing import cast
+from typing import Any, cast
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -1530,6 +1530,7 @@ from atlas.modules.workflows.adapters.memory import InMemoryWorkflowPlanReposito
 from atlas.modules.workflows.adapters.postgres import PostgreSQLWorkflowPlanRepository
 from atlas.modules.workflows.adapters.unavailable import UnavailableWorkflowPlanRepository
 from atlas.modules.workflows.application import (
+    DeploymentEventTransportProfileRegistry,
     WorkflowAttemptMaterializationRepository,
     WorkflowAttemptMaterializationService,
     WorkflowDispatchEventEnvelopeRepository,
@@ -1550,8 +1551,100 @@ from atlas.modules.workflows.application import (
     WorkflowPlanRepository,
     WorkflowRunMaterializationRepository,
     WorkflowRunMaterializationService,
+    WorkflowTransportProfileSnapshotRepository,
+    WorkflowTransportProfileSnapshotService,
 )
-from atlas.modules.workflows.domain import code_owned_workflow_registry
+from atlas.modules.workflows.domain import (
+    DeploymentEventTransportProfile,
+    WorkflowScope,
+    canonical_digest,
+    code_owned_workflow_registry,
+)
+
+
+class _ConfiguredDeploymentEventTransportProfileRegistry:
+    def __init__(self, profiles: tuple[DeploymentEventTransportProfile, ...]) -> None:
+        self._profiles = profiles
+
+    @property
+    def durable(self) -> bool:
+        return True
+
+    @property
+    def profiles(self) -> tuple[DeploymentEventTransportProfile, ...]:
+        return self._profiles
+
+    async def get_active_transport_profile(
+        self,
+        *,
+        transport_profile_id: str,
+        transport_profile_revision: str,
+    ) -> DeploymentEventTransportProfile | None:
+        return next(
+            (
+                profile
+                for profile in self._profiles
+                if profile.transport_profile_id == transport_profile_id
+                and profile.transport_profile_revision == transport_profile_revision
+                and profile.active
+            ),
+            None,
+        )
+
+
+def _deployment_event_transport_profiles(
+    settings: Settings,
+) -> tuple[DeploymentEventTransportProfile, ...]:
+    if settings.environment != "development":
+        return ()
+    scope = WorkflowScope(
+        organization_id=settings.development_organization_id,
+        environment_id=f"environment.{settings.environment}",
+        site_id="site.local",
+    )
+    values: dict[str, Any] = {
+        "transport_profile_id": "transport-profile.workflow.internal",
+        "transport_profile_revision": "revision.1",
+        "deployment_release_id": f"release.project-atlas.{__version__}",
+        "deployment_profile": "developer",
+        "scope": scope,
+        "transport_resource_id": "transport-resource.workflow.internal",
+        "transport_resource_digest": sha256(
+            f"transport-resource.workflow.internal:{settings.environment}".encode()
+        ).hexdigest(),
+        "transport_implementation_id": "transport.nats-jetstream",
+        "transport_implementation_version": "version.1",
+        "adapter_contract_id": "adapter.workflow-event-transport",
+        "adapter_contract_version": "version.1",
+        "adapter_contract_digest": sha256(
+            b"adapter.workflow-event-transport:version.1"
+        ).hexdigest(),
+        "supported_event_contracts": (
+            "WorkflowStepDispatchRequested|1.0|"
+            "urn:project-atlas:event:workflow-step-dispatch-requested:1.0",
+        ),
+        "supported_classifications": ("internal",),
+        "supported_representations": ("canonical-json",),
+        "supported_encodings": ("utf-8",),
+        "supported_delivery_semantics": ("at-least-once",),
+        "durable_delivery_supported": True,
+        "supported_ordering_key_kinds": ("workflow-run",),
+        "supported_retention_classes": ("workflow-operational",),
+        "maximum_message_byte_count": 65_536,
+        "transport_encryption_required": True,
+        "restricted_network_supported": True,
+        "active": True,
+    }
+    digest_payload = {
+        key: value.canonical_value() if isinstance(value, WorkflowScope) else value
+        for key, value in values.items()
+    }
+    return (
+        DeploymentEventTransportProfile(
+            **values,
+            canonical_digest=canonical_digest(digest_payload),
+        ),
+    )
 
 
 def create_app(
@@ -1586,6 +1679,9 @@ def create_app(
     workflow_event_byte_artifact_service: WorkflowEventByteArtifactService | None = None,
     workflow_event_logical_channel_binding_service: WorkflowEventLogicalChannelBindingService
     | None = None,
+    workflow_transport_profile_snapshot_service: WorkflowTransportProfileSnapshotService
+    | None = None,
+    deployment_event_transport_profiles: tuple[DeploymentEventTransportProfile, ...] | None = None,
     security_export_service: SecurityExportService | None = None,
     session_service: SessionService | None = None,
     api_credential_service: ApiCredentialService | None = None,
@@ -5602,6 +5698,55 @@ def create_app(
         resolved_workflow_event_logical_channel_binding_service = (
             workflow_event_logical_channel_binding_service
         )
+    configured_transport_profiles = (
+        _deployment_event_transport_profiles(resolved_settings)
+        if deployment_event_transport_profiles is None
+        else tuple(deployment_event_transport_profiles)
+    )
+    profile_keys = tuple(
+        (profile.transport_profile_id, profile.transport_profile_revision)
+        for profile in configured_transport_profiles
+    )
+    if len(profile_keys) != len(set(profile_keys)):
+        raise ValueError("deployment transport profile revisions must be unique")
+    expected_profile_environment = f"environment.{resolved_settings.environment}"
+    if any(
+        profile.scope.environment_id != expected_profile_environment
+        for profile in configured_transport_profiles
+    ):
+        raise ValueError("deployment transport profile scope does not match the environment")
+    if workflow_transport_profile_snapshot_service is None:
+        transport_profile_snapshot_repository_methods = (
+            "get_transport_profile_snapshot",
+            "get_transport_profile_snapshot_request",
+            "snapshot_transport_profile",
+        )
+        if not all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in transport_profile_snapshot_repository_methods
+        ):
+            raise ValueError(
+                "workflow planning repository does not implement transport profile snapshots; "
+                "inject workflow_transport_profile_snapshot_service explicitly"
+            )
+        transport_profile_snapshot_repository = cast(
+            WorkflowTransportProfileSnapshotRepository,
+            workflow_repository,
+        )
+        transport_profile_registry: DeploymentEventTransportProfileRegistry = (
+            _ConfiguredDeploymentEventTransportProfileRegistry(configured_transport_profiles)
+        )
+        resolved_workflow_transport_profile_snapshot_service = (
+            WorkflowTransportProfileSnapshotService(
+                transport_profile_registry=transport_profile_registry,
+                snapshot_repository=transport_profile_snapshot_repository,
+                audit_sink=resolved_audit_sink,
+            )
+        )
+    else:
+        resolved_workflow_transport_profile_snapshot_service = (
+            workflow_transport_profile_snapshot_service
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -5875,6 +6020,13 @@ def create_app(
         app.state.workflow_event_logical_channel_binding_repository = (
             resolved_workflow_event_logical_channel_binding_service.repository
         )
+        app.state.workflow_transport_profile_snapshot_service = (
+            resolved_workflow_transport_profile_snapshot_service
+        )
+        app.state.workflow_transport_profile_snapshot_repository = (
+            resolved_workflow_transport_profile_snapshot_service.repository
+        )
+        app.state.workflow_transport_profile_source_profiles = configured_transport_profiles
         yield
         await resolved_workflow_planning_service.close()
         await resolved_conversation_service.close()
