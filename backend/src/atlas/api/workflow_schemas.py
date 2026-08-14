@@ -16,6 +16,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventByteArtifact,
     WorkflowEventLogicalChannelBinding,
     WorkflowEventPhysicalTransportRouteBinding,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmission,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportCompatibilityAdmission,
     WorkflowExecutionAttempt,
@@ -1226,6 +1227,100 @@ class WorkflowEventPhysicalTransportRouteBindingResponse(BaseModel):
 
 class WorkflowEventPhysicalTransportRouteBindingInventoryResponse(BaseModel):
     data: WorkflowEventPhysicalTransportRouteBindingInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowEventPhysicalTransportRouteFreshnessAdmissionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    physical_transport_route_binding_id: str = Field(
+        min_length=3, max_length=128, pattern=STABLE_ID
+    )
+    physical_transport_route_binding_digest: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    policy_id: Literal["policy.workflow-event-physical-transport-route-freshness"]
+    policy_version: Literal["1.0"]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowEventPhysicalTransportRouteFreshnessAdmissionAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    endpoint_resolution_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+
+
+class WorkflowEventPhysicalTransportRouteFreshnessAdmissionData(BaseModel):
+    """Human-safe point-in-time route freshness evidence without source digests."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    freshness_admission_id: str
+    physical_transport_route_binding_id: str
+    transport_route_snapshot_id: str
+    selection_head_id: str
+    selection_generation: int = Field(ge=1)
+    policy_id: str
+    policy_version: str
+    scope: WorkflowScopeData
+    admitter_subject_id: str
+    evaluated_at: datetime
+    valid_until: datetime
+    state: Literal["admitted_current"]
+    authority: WorkflowEventPhysicalTransportRouteFreshnessAdmissionAuthorityData
+    integrity_reference: str = Field(min_length=3, max_length=256, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls, admission: WorkflowEventPhysicalTransportRouteFreshnessAdmission
+    ) -> WorkflowEventPhysicalTransportRouteFreshnessAdmissionData:
+        return cls(
+            freshness_admission_id=admission.freshness_admission_id,
+            physical_transport_route_binding_id=(admission.physical_transport_route_binding_id),
+            transport_route_snapshot_id=admission.transport_route_snapshot_id,
+            selection_head_id=admission.current_selection_head_id,
+            selection_generation=admission.current_selection_head_generation,
+            policy_id=admission.policy_id,
+            policy_version=admission.policy_version,
+            scope=WorkflowScopeData.model_validate(admission.scope.canonical_value()),
+            admitter_subject_id=admission.admitter_subject_id,
+            evaluated_at=admission.evaluated_at,
+            valid_until=admission.valid_until,
+            state="admitted_current",
+            authority=(
+                WorkflowEventPhysicalTransportRouteFreshnessAdmissionAuthorityData.model_validate(
+                    admission.authority.canonical_value()
+                )
+            ),
+            integrity_reference=f"integrity.{admission.freshness_admission_id}",
+        )
+
+
+class WorkflowEventPhysicalTransportRouteFreshnessAdmissionInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    physical_transport_route_freshness_admissions: list[
+        WorkflowEventPhysicalTransportRouteFreshnessAdmissionData
+    ] = Field(max_length=256)
+    durable: bool
+
+
+class WorkflowEventPhysicalTransportRouteFreshnessAdmissionResponse(BaseModel):
+    data: WorkflowEventPhysicalTransportRouteFreshnessAdmissionData
+    meta: ResponseMeta
+
+
+class WorkflowEventPhysicalTransportRouteFreshnessAdmissionInventoryResponse(BaseModel):
+    data: WorkflowEventPhysicalTransportRouteFreshnessAdmissionInventoryData
     meta: ResponseMeta
 
 

@@ -4,6 +4,7 @@ from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Date,
@@ -6110,6 +6111,242 @@ class WorkflowEventPhysicalTransportRouteBindingClaimModel(Base):
     environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     binder_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class DeploymentEventTransportRouteSelectionHeadModel(Base):
+    __tablename__ = "deployment_event_transport_route_selection_heads"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "route_set_id",
+            name="uq_deploy_route_head_scope_set",
+        ),
+        CheckConstraint("generation > 0", name="ck_deploy_route_head_generation"),
+        CheckConstraint("current", name="ck_deploy_route_head_current"),
+    )
+
+    head_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    route_set_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    route_set_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    selection_epoch_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    selection_epoch_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    selected_route_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    selected_route_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    selected_route_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    fencing_token_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    selection_active: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    selection_eligible: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    selection_suspended: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    selection_withdrawn: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    selection_superseded: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    current: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class DeploymentEventTransportRouteSelectionHeadHistoryModel(Base):
+    __tablename__ = "deployment_event_transport_route_selection_head_history"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "route_set_id",
+            "generation",
+            name="uq_deploy_route_head_history_generation",
+        ),
+        UniqueConstraint(
+            "canonical_digest",
+            name="uq_deploy_route_head_history_digest",
+        ),
+        CheckConstraint("generation > 0", name="ck_deploy_route_head_hist_generation"),
+        CheckConstraint("current", name="ck_deploy_route_head_hist_current"),
+    )
+
+    history_id: Mapped[str] = mapped_column(String(192), primary_key=True)
+    head_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    route_set_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    route_set_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    selection_epoch_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    selection_epoch_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    selected_route_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    selected_route_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    selected_route_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    fencing_token_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    selection_active: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    selection_eligible: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    selection_suspended: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    selection_withdrawn: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    selection_superseded: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    current: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel(Base):
+    __tablename__ = "workflow_event_physical_transport_route_freshness_admissions"
+    __table_args__ = (
+        UniqueConstraint(
+            "physical_transport_route_binding_id",
+            name="uq_wf_route_fresh_admission_binding",
+        ),
+        UniqueConstraint(
+            "canonical_digest",
+            name="uq_wf_route_fresh_admission_digest",
+        ),
+        CheckConstraint(
+            "state = 'admitted_current'",
+            name="ck_wf_route_fresh_admission_state",
+        ),
+        CheckConstraint(
+            "selection_active AND selection_eligible "
+            "AND NOT selection_suspended AND NOT selection_withdrawn "
+            "AND NOT selection_superseded",
+            name="ck_wf_route_fresh_admission_selection",
+        ),
+        CheckConstraint(
+            "NOT endpoint_resolution_authority_granted "
+            "AND NOT route_selection_authority_granted "
+            "AND NOT route_binding_authority_granted "
+            "AND NOT credential_access_authority_granted "
+            "AND NOT network_access_authority_granted "
+            "AND NOT readiness_probe_authority_granted "
+            "AND NOT publication_authority_granted "
+            "AND NOT delivery_authority_granted "
+            "AND NOT dispatch_authority_granted "
+            "AND NOT execution_authority_granted",
+            name="ck_wf_route_fresh_admission_zero_auth",
+        ),
+        CheckConstraint(
+            "current_selection_head_generation > 0",
+            name="ck_wf_route_fresh_admission_generation",
+        ),
+        CheckConstraint(
+            "valid_until > evaluated_at",
+            name="ck_wf_route_fresh_admission_window",
+        ),
+    )
+
+    freshness_admission_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    physical_transport_route_binding_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_event_physical_transport_route_bindings.binding_id"),
+        nullable=False,
+        index=True,
+    )
+    physical_transport_route_binding_digest: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
+    transport_route_snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey("event_transport_route_snapshots.snapshot_id"), nullable=False, index=True
+    )
+    transport_route_snapshot_digest: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
+    current_selection_head_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    current_selection_head_digest: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
+    current_selection_head_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    current_selection_head_fencing_token_digest: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
+    route_set_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    route_set_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    selection_epoch_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    selection_epoch_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    selected_route_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    selected_route_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    selected_route_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    selection_active: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    selection_eligible: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    selection_suspended: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    selection_withdrawn: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    selection_superseded: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    policy_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    admitter_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    endpoint_resolution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    route_selection_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    route_binding_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_access_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    network_access_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    readiness_probe_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    publication_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    delivery_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    dispatch_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    execution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowEventPhysicalTransportRouteFreshnessAdmissionClaimModel(Base):
+    __tablename__ = "workflow_event_route_freshness_admission_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "idempotency_scope_id",
+            "idempotency_key",
+            name="uq_wf_route_fresh_claim_scope_idem",
+        ),
+        UniqueConstraint(
+            "freshness_admission_id",
+            name="uq_wf_route_fresh_claim_admission",
+        ),
+        UniqueConstraint(
+            "canonical_digest",
+            name="uq_wf_route_fresh_claim_digest",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    idempotency_scope_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    freshness_admission_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_physical_transport_route_freshness_admissions.freshness_admission_id"
+        ),
+        nullable=False,
+        index=True,
+    )
+    physical_transport_route_binding_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_event_physical_transport_route_bindings.binding_id"),
+        nullable=False,
+        index=True,
+    )
+    transport_route_snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey("event_transport_route_snapshots.snapshot_id"), nullable=False, index=True
+    )
+    current_selection_head_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    current_selection_head_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    current_selection_head_fencing_token_digest: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
+    policy_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    admitter_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

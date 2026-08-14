@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 
 from atlas.modules.workflows.application import (
     WorkflowAttemptMaterializationIdempotencyRecord,
@@ -65,6 +66,13 @@ from atlas.modules.workflows.application.publication_lease_ports import (
     WorkflowOutboxPublicationLeaseMutationResult,
     WorkflowOutboxPublicationLeaseMutationStatus,
 )
+from atlas.modules.workflows.application.route_freshness_admission_ports import (
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionError,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionIdempotencyRecord,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionRequest,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionResult,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionStatus,
+)
 from atlas.modules.workflows.application.transport_compatibility_admission_ports import (
     WorkflowEventTransportCompatibilityAdmissionIdempotencyRecord,
     WorkflowEventTransportCompatibilityAdmissionRequest,
@@ -84,6 +92,7 @@ from atlas.modules.workflows.application.transport_route_snapshot_ports import (
     WorkflowTransportRouteSnapshotStatus,
 )
 from atlas.modules.workflows.domain import (
+    DeploymentEventTransportRouteSelectionHead,
     EventPhysicalTransportProfileSnapshot,
     EventPhysicalTransportProfileSnapshotState,
     EventPhysicalTransportRouteSnapshot,
@@ -100,6 +109,8 @@ from atlas.modules.workflows.domain import (
     WorkflowEventLogicalChannelBindingState,
     WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventPhysicalTransportRouteBindingState,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmission,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionState,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportAdmissionState,
     WorkflowEventTransportCompatibilityAdmission,
@@ -119,6 +130,7 @@ from atlas.modules.workflows.domain import (
     canonical_digest,
     canonical_json_byte_count,
     canonical_json_bytes,
+    code_owned_workflow_event_physical_transport_route_freshness_policy,
 )
 
 
@@ -204,6 +216,16 @@ class InMemoryWorkflowPlanRepository:
         self._physical_transport_route_binding_requests: dict[
             tuple[WorkflowScope, str, str],
             WorkflowEventPhysicalTransportRouteBindingIdempotencyRecord,
+        ] = {}
+        self._route_selection_heads: dict[
+            tuple[WorkflowScope, str], DeploymentEventTransportRouteSelectionHead
+        ] = {}
+        self._route_freshness_admissions: dict[
+            str, WorkflowEventPhysicalTransportRouteFreshnessAdmission
+        ] = {}
+        self._route_freshness_admission_requests: dict[
+            tuple[WorkflowScope, str, str],
+            WorkflowEventPhysicalTransportRouteFreshnessAdmissionIdempotencyRecord,
         ] = {}
         self._lock = asyncio.Lock()
 
@@ -1260,6 +1282,177 @@ class InMemoryWorkflowPlanRepository:
             )
             return WorkflowEventPhysicalTransportRouteBindingResult(
                 WorkflowEventPhysicalTransportRouteBindingStatus.BOUND,
+                candidate,
+            )
+
+    async def synchronize_route_selection_heads(
+        self, heads: tuple[DeploymentEventTransportRouteSelectionHead, ...]
+    ) -> None:
+        async with self._lock:
+            if not heads:
+                self._raise_route_selection_head_sync_conflict()
+            unique: dict[tuple[WorkflowScope, str], DeploymentEventTransportRouteSelectionHead] = {}
+            for head in heads:
+                key = (head.scope, head.route_set_id)
+                duplicate = unique.get(key)
+                if duplicate is not None and duplicate != head:
+                    self._raise_route_selection_head_sync_conflict()
+                unique[key] = head
+            authoritative_scopes = {head.scope for head in unique.values()}
+            existing_keys = {
+                key for key in self._route_selection_heads if key[0] in authoritative_scopes
+            }
+            if not existing_keys.issubset(unique):
+                self._raise_route_selection_head_sync_conflict()
+            replacements: dict[
+                tuple[WorkflowScope, str], DeploymentEventTransportRouteSelectionHead
+            ] = {}
+            for key in sorted(
+                unique,
+                key=lambda value: (
+                    value[0].organization_id,
+                    value[0].environment_id,
+                    value[0].site_id,
+                    value[1],
+                ),
+            ):
+                candidate = unique[key]
+                current = self._route_selection_heads.get(key)
+                if current == candidate:
+                    continue
+                if current is not None and (
+                    candidate.generation <= current.generation
+                    or candidate.fencing_token_digest == current.fencing_token_digest
+                ):
+                    self._raise_route_selection_head_sync_conflict()
+                replacements[key] = candidate
+            self._route_selection_heads.update(replacements)
+
+    async def get_physical_transport_route_binding_by_id(
+        self, *, binding_id: str
+    ) -> WorkflowEventPhysicalTransportRouteBinding | None:
+        async with self._lock:
+            return next(
+                (
+                    binding
+                    for binding in self._physical_transport_route_bindings.values()
+                    if binding.binding_id == binding_id
+                ),
+                None,
+            )
+
+    async def get_current_route_selection_head(
+        self, *, scope: WorkflowScope, route_set_id: str
+    ) -> DeploymentEventTransportRouteSelectionHead | None:
+        async with self._lock:
+            return self._route_selection_heads.get((scope, route_set_id))
+
+    async def get_route_freshness_admission(
+        self, *, physical_transport_route_binding_id: str
+    ) -> WorkflowEventPhysicalTransportRouteFreshnessAdmission | None:
+        async with self._lock:
+            return self._route_freshness_admissions.get(physical_transport_route_binding_id)
+
+    async def list_route_freshness_admissions(
+        self, *, scope: WorkflowScope, limit: int
+    ) -> tuple[WorkflowEventPhysicalTransportRouteFreshnessAdmission, ...]:
+        capped = min(max(limit, 0), 256)
+        async with self._lock:
+            admissions = sorted(
+                (
+                    admission
+                    for admission in self._route_freshness_admissions.values()
+                    if admission.scope == scope
+                ),
+                key=lambda admission: admission.freshness_admission_id,
+            )
+            admissions.sort(key=lambda admission: admission.evaluated_at, reverse=True)
+            return tuple(admissions[:capped])
+
+    async def get_route_freshness_admission_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        admitter_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventPhysicalTransportRouteFreshnessAdmissionIdempotencyRecord | None:
+        async with self._lock:
+            return self._route_freshness_admission_requests.get(
+                (scope, admitter_subject_id, idempotency_key)
+            )
+
+    async def admit_physical_transport_route_freshness(
+        self, request: WorkflowEventPhysicalTransportRouteFreshnessAdmissionRequest
+    ) -> WorkflowEventPhysicalTransportRouteFreshnessAdmissionResult:
+        async with self._lock:
+            candidate = request.candidate
+            binding = next(
+                (
+                    value
+                    for value in self._physical_transport_route_bindings.values()
+                    if value.binding_id == candidate.physical_transport_route_binding_id
+                ),
+                None,
+            )
+            route = next(
+                (
+                    value
+                    for value in self._transport_route_snapshots.values()
+                    if value.snapshot_id == candidate.transport_route_snapshot_id
+                ),
+                None,
+            )
+            head = self._route_selection_heads.get((request.scope, request.expected_route_set_id))
+            if not self._route_freshness_admission_evidence_matches(
+                binding=binding,
+                route=route,
+                head=head,
+                request=request,
+            ):
+                return WorkflowEventPhysicalTransportRouteFreshnessAdmissionResult(
+                    WorkflowEventPhysicalTransportRouteFreshnessAdmissionStatus.EVIDENCE_CONFLICT,
+                    None,
+                )
+
+            key = (request.scope, request.admitter_subject_id, request.idempotency_key)
+            prior = self._route_freshness_admission_requests.get(key)
+            if prior is not None:
+                if prior.request_fingerprint != request.request_fingerprint:
+                    return WorkflowEventPhysicalTransportRouteFreshnessAdmissionResult(
+                        WorkflowEventPhysicalTransportRouteFreshnessAdmissionStatus.IDEMPOTENCY_CONFLICT,
+                        prior.admission,
+                    )
+                if head is None or not self._route_freshness_admission_remains_current(
+                    prior.admission, head=head, observed_at=request.evaluated_at
+                ):
+                    return WorkflowEventPhysicalTransportRouteFreshnessAdmissionResult(
+                        WorkflowEventPhysicalTransportRouteFreshnessAdmissionStatus.EVIDENCE_CONFLICT,
+                        None,
+                    )
+                return WorkflowEventPhysicalTransportRouteFreshnessAdmissionResult(
+                    WorkflowEventPhysicalTransportRouteFreshnessAdmissionStatus.REPLAY,
+                    prior.admission,
+                )
+
+            existing = self._route_freshness_admissions.get(
+                candidate.physical_transport_route_binding_id
+            )
+            if existing is not None:
+                return WorkflowEventPhysicalTransportRouteFreshnessAdmissionResult(
+                    WorkflowEventPhysicalTransportRouteFreshnessAdmissionStatus.ALREADY_ADMITTED,
+                    existing,
+                )
+            self._route_freshness_admissions[candidate.physical_transport_route_binding_id] = (
+                candidate
+            )
+            self._route_freshness_admission_requests[key] = (
+                WorkflowEventPhysicalTransportRouteFreshnessAdmissionIdempotencyRecord(
+                    request_fingerprint=request.request_fingerprint,
+                    admission=candidate,
+                )
+            )
+            return WorkflowEventPhysicalTransportRouteFreshnessAdmissionResult(
+                WorkflowEventPhysicalTransportRouteFreshnessAdmissionStatus.ADMITTED_CURRENT,
                 candidate,
             )
 
@@ -2397,6 +2590,147 @@ class InMemoryWorkflowPlanRepository:
             and candidate.state is WorkflowEventPhysicalTransportRouteBindingState.BOUND
             and canonical_digest(candidate.digest_payload()) == candidate.canonical_digest
             and not any(candidate.authority.canonical_value().values())
+        )
+
+    @staticmethod
+    def _route_freshness_admission_evidence_matches(
+        *,
+        binding: WorkflowEventPhysicalTransportRouteBinding | None,
+        route: EventPhysicalTransportRouteSnapshot | None,
+        head: DeploymentEventTransportRouteSelectionHead | None,
+        request: WorkflowEventPhysicalTransportRouteFreshnessAdmissionRequest,
+    ) -> bool:
+        if binding is None or route is None or head is None:
+            return False
+        candidate = request.candidate
+        policy = code_owned_workflow_event_physical_transport_route_freshness_policy()
+        return bool(
+            canonical_digest(binding.digest_payload()) == binding.canonical_digest
+            and canonical_digest(route.digest_payload()) == route.canonical_digest
+            and canonical_digest(head.digest_payload()) == head.canonical_digest
+            and binding.state is WorkflowEventPhysicalTransportRouteBindingState.BOUND
+            and route.state is EventPhysicalTransportRouteSnapshotState.SNAPSHOTTED
+            and binding.binding_id
+            == request.expected_physical_transport_route_binding_id
+            == candidate.physical_transport_route_binding_id
+            and binding.canonical_digest
+            == request.expected_physical_transport_route_binding_digest
+            == candidate.physical_transport_route_binding_digest
+            and binding.transport_route_snapshot_id
+            == route.snapshot_id
+            == request.expected_transport_route_snapshot_id
+            == candidate.transport_route_snapshot_id
+            and binding.transport_route_snapshot_digest
+            == route.canonical_digest
+            == request.expected_transport_route_snapshot_digest
+            == candidate.transport_route_snapshot_digest
+            and head.head_id
+            == request.expected_current_selection_head_id
+            == candidate.current_selection_head_id
+            and head.canonical_digest
+            == request.expected_current_selection_head_digest
+            == candidate.current_selection_head_digest
+            and head.generation
+            == request.expected_current_selection_head_generation
+            == candidate.current_selection_head_generation
+            and head.fencing_token_digest
+            == request.expected_current_selection_head_fencing_token_digest
+            == candidate.current_selection_head_fencing_token_digest
+            and head.route_set_id
+            == route.route_set_id
+            == request.expected_route_set_id
+            == candidate.route_set_id
+            and head.route_set_revision
+            == route.route_set_revision
+            == request.expected_route_set_revision
+            == candidate.route_set_revision
+            and head.selection_epoch_id
+            == route.selection_epoch_id
+            == request.expected_selection_epoch_id
+            == candidate.selection_epoch_id
+            and head.selection_epoch_revision
+            == route.selection_epoch_revision
+            == request.expected_selection_epoch_revision
+            == candidate.selection_epoch_revision
+            and head.selected_route_id
+            == route.route_id
+            == request.expected_selected_route_id
+            == candidate.selected_route_id
+            and head.selected_route_revision
+            == route.route_revision
+            == request.expected_selected_route_revision
+            == candidate.selected_route_revision
+            and head.selected_route_digest
+            == route.source_route_digest
+            == request.expected_selected_route_digest
+            == candidate.selected_route_digest
+            and head.selection_active
+            == request.expected_selection_active
+            == candidate.selection_active
+            is True
+            and head.selection_eligible
+            == request.expected_selection_eligible
+            == candidate.selection_eligible
+            is True
+            and head.selection_suspended
+            == request.expected_selection_suspended
+            == candidate.selection_suspended
+            is False
+            and head.selection_withdrawn
+            == request.expected_selection_withdrawn
+            == candidate.selection_withdrawn
+            is False
+            and head.selection_superseded
+            == request.expected_selection_superseded
+            == candidate.selection_superseded
+            is False
+            and head.current
+            and binding.scope == route.scope == head.scope == candidate.scope == request.scope
+            and route.captured_at <= binding.bound_at <= candidate.evaluated_at
+            and candidate.policy_id == policy.policy_id
+            and candidate.policy_version == policy.policy_version
+            and candidate.policy_digest == request.expected_policy_digest == policy.canonical_digest
+            and candidate.admitter_subject_id == request.admitter_subject_id
+            and candidate.evaluated_at == request.evaluated_at
+            and (candidate.valid_until - candidate.evaluated_at).total_seconds()
+            == policy.validity_window_seconds
+            and candidate.state
+            is WorkflowEventPhysicalTransportRouteFreshnessAdmissionState.ADMITTED_CURRENT
+            and canonical_digest(candidate.digest_payload()) == candidate.canonical_digest
+            and not any(binding.authority.canonical_value().values())
+            and not any(route.authority.canonical_value().values())
+            and not any(candidate.authority.canonical_value().values())
+        )
+
+    @staticmethod
+    def _route_freshness_admission_remains_current(
+        admission: WorkflowEventPhysicalTransportRouteFreshnessAdmission,
+        *,
+        head: DeploymentEventTransportRouteSelectionHead,
+        observed_at: datetime,
+    ) -> bool:
+        return bool(
+            observed_at < admission.valid_until
+            and admission.current_selection_head_id == head.head_id
+            and admission.current_selection_head_digest == head.canonical_digest
+            and admission.current_selection_head_generation == head.generation
+            and admission.current_selection_head_fencing_token_digest == head.fencing_token_digest
+            and admission.selected_route_id == head.selected_route_id
+            and admission.selected_route_revision == head.selected_route_revision
+            and admission.selected_route_digest == head.selected_route_digest
+            and head.current
+            and head.selection_active
+            and head.selection_eligible
+            and not head.selection_suspended
+            and not head.selection_withdrawn
+            and not head.selection_superseded
+        )
+
+    @staticmethod
+    def _raise_route_selection_head_sync_conflict() -> None:
+        raise WorkflowEventPhysicalTransportRouteFreshnessAdmissionError(
+            "workflow_route_selection_head_synchronization_conflict",
+            "The authoritative route selection head synchronization conflicted.",
         )
 
     @classmethod

@@ -125,6 +125,20 @@ from atlas.modules.workflows.application.publication_leases import (
     WorkflowOutboxPublicationLeaseService,
     WorkflowOutboxPublisherContext,
 )
+from atlas.modules.workflows.application.route_freshness_admission_ports import (
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionError,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionIdempotencyRecord,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionRepository,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionRequest,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionResult,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionStatus,
+)
+from atlas.modules.workflows.application.route_freshness_admissions import (
+    WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMISSION_PRODUCER,
+    WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMITTER_AUDIENCE,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionService,
+    WorkflowPhysicalTransportRouteFreshnessAdmitterContext,
+)
 from atlas.modules.workflows.application.service import (
     WorkflowAccessContext,
     WorkflowPlanningService,
@@ -197,6 +211,8 @@ __all__ = [
     "WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE",
     "WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDER_AUDIENCE",
     "WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDING_PRODUCER",
+    "WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMISSION_PRODUCER",
+    "WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMITTER_AUDIENCE",
     "WORKFLOW_TRANSPORT_COMPATIBILITY_ADMISSION_PRODUCER",
     "WORKFLOW_TRANSPORT_COMPATIBILITY_ADMITTER_AUDIENCE",
     "WORKFLOW_TRANSPORT_PROFILE_REGISTRY_AUDIENCE",
@@ -249,6 +265,13 @@ __all__ = [
     "WorkflowEventPhysicalTransportRouteBindingResult",
     "WorkflowEventPhysicalTransportRouteBindingService",
     "WorkflowEventPhysicalTransportRouteBindingStatus",
+    "WorkflowEventPhysicalTransportRouteFreshnessAdmissionError",
+    "WorkflowEventPhysicalTransportRouteFreshnessAdmissionIdempotencyRecord",
+    "WorkflowEventPhysicalTransportRouteFreshnessAdmissionRepository",
+    "WorkflowEventPhysicalTransportRouteFreshnessAdmissionRequest",
+    "WorkflowEventPhysicalTransportRouteFreshnessAdmissionResult",
+    "WorkflowEventPhysicalTransportRouteFreshnessAdmissionService",
+    "WorkflowEventPhysicalTransportRouteFreshnessAdmissionStatus",
     "WorkflowEventTransportAdmissionError",
     "WorkflowEventTransportAdmissionIdempotencyRecord",
     "WorkflowEventTransportAdmissionRepository",
@@ -285,6 +308,7 @@ __all__ = [
     "WorkflowOutboxPublicationLeaseService",
     "WorkflowOutboxPublisherContext",
     "WorkflowPhysicalTransportRouteBinderContext",
+    "WorkflowPhysicalTransportRouteFreshnessAdmitterContext",
     "WorkflowPlanCancellationIdempotencyRecord",
     "WorkflowPlanCancellationRequest",
     "WorkflowPlanCancellationResult",

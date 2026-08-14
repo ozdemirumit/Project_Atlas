@@ -57,6 +57,12 @@ from atlas.modules.workflows.application.publication_lease_ports import (
     WorkflowOutboxPublicationLeaseMutationRequest,
     WorkflowOutboxPublicationLeaseMutationResult,
 )
+from atlas.modules.workflows.application.route_freshness_admission_ports import (
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionError,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionIdempotencyRecord,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionRequest,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionResult,
+)
 from atlas.modules.workflows.application.transport_admission_ports import (
     WorkflowEventTransportAdmissionError,
     WorkflowEventTransportAdmissionIdempotencyRecord,
@@ -82,6 +88,7 @@ from atlas.modules.workflows.application.transport_route_snapshot_ports import (
     WorkflowTransportRouteSnapshotResult,
 )
 from atlas.modules.workflows.domain import (
+    DeploymentEventTransportRouteSelectionHead,
     EventPhysicalTransportProfileSnapshot,
     EventPhysicalTransportRouteSnapshot,
     WorkflowDispatchEventEnvelope,
@@ -90,6 +97,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventByteArtifact,
     WorkflowEventLogicalChannelBinding,
     WorkflowEventPhysicalTransportRouteBinding,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmission,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportCompatibilityAdmission,
     WorkflowExecutionAttempt,
@@ -427,6 +435,45 @@ class UnavailableWorkflowPlanRepository:
     ) -> WorkflowEventPhysicalTransportRouteBindingResult:
         self._raise_physical_transport_route_binding()
 
+    async def synchronize_route_selection_heads(
+        self, heads: tuple[DeploymentEventTransportRouteSelectionHead, ...]
+    ) -> None:
+        self._raise_route_freshness_admission()
+
+    async def get_physical_transport_route_binding_by_id(
+        self, *, binding_id: str
+    ) -> WorkflowEventPhysicalTransportRouteBinding | None:
+        self._raise_route_freshness_admission()
+
+    async def get_current_route_selection_head(
+        self, *, scope: WorkflowScope, route_set_id: str
+    ) -> DeploymentEventTransportRouteSelectionHead | None:
+        self._raise_route_freshness_admission()
+
+    async def get_route_freshness_admission(
+        self, *, physical_transport_route_binding_id: str
+    ) -> WorkflowEventPhysicalTransportRouteFreshnessAdmission | None:
+        self._raise_route_freshness_admission()
+
+    async def list_route_freshness_admissions(
+        self, *, scope: WorkflowScope, limit: int
+    ) -> tuple[WorkflowEventPhysicalTransportRouteFreshnessAdmission, ...]:
+        self._raise_route_freshness_admission()
+
+    async def get_route_freshness_admission_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        admitter_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventPhysicalTransportRouteFreshnessAdmissionIdempotencyRecord | None:
+        self._raise_route_freshness_admission()
+
+    async def admit_physical_transport_route_freshness(
+        self, request: WorkflowEventPhysicalTransportRouteFreshnessAdmissionRequest
+    ) -> WorkflowEventPhysicalTransportRouteFreshnessAdmissionResult:
+        self._raise_route_freshness_admission()
+
     async def acquire_publication_lease(
         self, request: WorkflowOutboxPublicationLeaseAcquireRequest
     ) -> WorkflowOutboxPublicationLeaseAcquireResult:
@@ -565,4 +612,11 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowEventPhysicalTransportRouteBindingError(
             "workflow_physical_transport_route_binding_repository_unavailable",
             "Durable workflow physical transport route binding storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_route_freshness_admission() -> NoReturn:
+        raise WorkflowEventPhysicalTransportRouteFreshnessAdmissionError(
+            "workflow_route_freshness_admission_repository_unavailable",
+            "Durable workflow route freshness admission storage is not configured.",
         )

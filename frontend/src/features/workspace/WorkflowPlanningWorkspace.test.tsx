@@ -21,6 +21,7 @@ import {
   type WorkflowExecutionRun,
   type WorkflowOrchestrationLease,
   type WorkflowPhysicalTransportRouteBinding,
+  type WorkflowPhysicalTransportRouteFreshnessAdmission,
   type WorkflowRunPlan,
   type WorkflowTransportCompatibilityAdmission,
   type WorkflowTransportProfileSnapshot,
@@ -646,6 +647,34 @@ const physicalTransportRouteBinding: WorkflowPhysicalTransportRouteBinding = {
   integrity_reference: "integrity-ref.workflow-physical-route-binding.1234567890abcdef",
 };
 
+const physicalTransportRouteFreshnessAdmission: WorkflowPhysicalTransportRouteFreshnessAdmission = {
+  freshness_admission_id: "workflow-physical-route-freshness-admission.1234567890abcdef",
+  physical_transport_route_binding_id: physicalTransportRouteBinding.binding_id,
+  transport_route_snapshot_id: transportRouteSnapshot.snapshot_id,
+  selection_head_id: "workflow-transport-route-selection-head.1234567890abcdef",
+  selection_generation: 7,
+  policy_id: "policy.workflow-event-physical-transport-route-freshness",
+  policy_version: "1.0",
+  scope: { ...plan.scope },
+  admitter_subject_id: "workload.workflow-physical-route-freshness-admitter",
+  evaluated_at: "2026-08-14T10:07:00Z",
+  valid_until: "2026-08-14T10:08:00Z",
+  state: "admitted_current",
+  authority: {
+    route_selection_authorized: false,
+    route_binding_authorized: false,
+    endpoint_resolution_authorized: false,
+    credential_access_authorized: false,
+    network_access_authorized: false,
+    readiness_probe_authorized: false,
+    publication_authorized: false,
+    delivery_authorized: false,
+    dispatch_authorized: false,
+    execution_authorized: false,
+  },
+  integrity_reference: "integrity-ref.workflow-route-freshness.1234567890abcdef",
+};
+
 const transportCompatibilityAdmission: WorkflowTransportCompatibilityAdmission = {
   compatibility_admission_id:
     "workflow-transport-compatibility-admission.1234567890abcdef",
@@ -933,6 +962,27 @@ function physicalTransportRouteBindingResponse(bindings: unknown[], status = 200
   );
 }
 
+function physicalTransportRouteFreshnessAdmissionResponse(
+  admissions: unknown[],
+  status = 200,
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            physical_transport_route_freshness_admissions: admissions,
+            durable: false,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.physical-route-freshness-admission",
+            generated_at: "2026-08-14T10:07:00Z",
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function transportCompatibilityAdmissionResponse(
   admissions: unknown[],
   status = 200,
@@ -969,6 +1019,7 @@ function mockReadResponses(input: {
   transportProfileSnapshots?: unknown[];
   transportRouteSnapshots?: unknown[];
   physicalTransportRouteBindings?: unknown[];
+  physicalTransportRouteFreshnessAdmissions?: unknown[];
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
   pendingByteArtifactResponse?: Promise<Response>;
@@ -976,6 +1027,7 @@ function mockReadResponses(input: {
   pendingTransportProfileResponse?: Promise<Response>;
   pendingTransportRouteSnapshotResponse?: Promise<Response>;
   pendingPhysicalTransportRouteBindingResponse?: Promise<Response>;
+  pendingPhysicalTransportRouteFreshnessAdmissionResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
   runStatus?: number;
@@ -996,6 +1048,8 @@ function mockReadResponses(input: {
   transportRouteSnapshotStatuses?: number[];
   physicalTransportRouteBindingStatus?: number;
   physicalTransportRouteBindingStatuses?: number[];
+  physicalTransportRouteFreshnessAdmissionStatus?: number;
+  physicalTransportRouteFreshnessAdmissionStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
   transportCompatibilityAdmissionStatuses?: number[];
 }) {
@@ -1005,9 +1059,28 @@ function mockReadResponses(input: {
   let transportProfileReadCount = 0;
   let transportRouteSnapshotReadCount = 0;
   let physicalTransportRouteBindingReadCount = 0;
+  let physicalTransportRouteFreshnessAdmissionReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/api/v1/workflows/physical-transport-route-freshness-admissions")) {
+      if (input.pendingPhysicalTransportRouteFreshnessAdmissionResponse) {
+        return input.pendingPhysicalTransportRouteFreshnessAdmissionResponse;
+      }
+      const status =
+        input.physicalTransportRouteFreshnessAdmissionStatuses?.[
+          Math.min(
+            physicalTransportRouteFreshnessAdmissionReadCount++,
+            input.physicalTransportRouteFreshnessAdmissionStatuses.length - 1,
+          )
+        ] ?? input.physicalTransportRouteFreshnessAdmissionStatus ?? 200;
+      return Promise.resolve(
+        physicalTransportRouteFreshnessAdmissionResponse(
+          input.physicalTransportRouteFreshnessAdmissions ?? [],
+          status,
+        ),
+      );
+    }
     if (url.endsWith("/api/v1/workflows/physical-transport-route-bindings")) {
       if (input.pendingPhysicalTransportRouteBindingResponse) {
         return input.pendingPhysicalTransportRouteBindingResponse;
@@ -1681,6 +1754,291 @@ describe("WorkflowPlanningWorkspace", () => {
     ).toBeVisible();
     expect(
       within(section).queryByRole("list", { name: "Physical transport route bindings" }),
+    ).toBeNull();
+  });
+
+  it("loads read-only physical route freshness admissions without private route details or mutation controls", async () => {
+    mockReadResponses({
+      physicalTransportRouteFreshnessAdmissions: [physicalTransportRouteFreshnessAdmission],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport route freshness admissions",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Physical transport route freshness admissions",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/physical-transport-route-freshness-admissions",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      within(section).getByTitle(
+        physicalTransportRouteFreshnessAdmission.freshness_admission_id,
+      ),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(
+        physicalTransportRouteFreshnessAdmission.physical_transport_route_binding_id,
+      ),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(
+        physicalTransportRouteFreshnessAdmission.transport_route_snapshot_id,
+      ),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(physicalTransportRouteFreshnessAdmission.selection_head_id),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(physicalTransportRouteFreshnessAdmission.policy_id),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(
+        physicalTransportRouteFreshnessAdmission.admitter_subject_id,
+      ),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(
+        physicalTransportRouteFreshnessAdmission.integrity_reference,
+      ),
+    ).toBeVisible();
+    expect(records).toHaveTextContent("admitted_current");
+    expect(records).toHaveTextContent("generation 7");
+    expect(records).toHaveTextContent("organization.test");
+    expect(records).toHaveTextContent(
+      "Authority route selection false | route binding false | endpoint resolution false | credential access false | network access false | readiness probe false | publication false | delivery false | dispatch false | execution false",
+    );
+    expect(
+      within(section).queryByRole("button", {
+        name: /create|admit|register|update|remove|select|bind|rebind|resolve|probe|credential|publish|deliver|dispatch|execute/i,
+      }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(
+      /digest|https?:\/\/|hostname|IP address|topic|stream|queue|partition|routing key|credential value|secret|MFA|second login|authorized browser session/i,
+    );
+  });
+
+  it("renders an empty physical route freshness inventory as a healthy read-only state", async () => {
+    mockReadResponses({ physicalTransportRouteFreshnessAdmissions: [] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport route freshness admissions",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "No physical transport route freshness admissions are recorded in this scope.",
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("alert")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("marks an elapsed route freshness window as expired without inferring head state", async () => {
+    const evaluatedAt = new Date(Date.now() - 120_000);
+    const validUntil = new Date(evaluatedAt.getTime() + 60_000);
+    mockReadResponses({
+      physicalTransportRouteFreshnessAdmissions: [
+        {
+          ...physicalTransportRouteFreshnessAdmission,
+          evaluated_at: evaluatedAt.toISOString(),
+          valid_until: validUntil.toISOString(),
+        },
+      ],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport route freshness admissions",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("Expired")).toBeVisible();
+    expect(section).not.toHaveTextContent(/still current|current head confirmed/i);
+  });
+
+  it("shows a loading state while physical route freshness admissions are pending", async () => {
+    mockReadResponses({
+      pendingPhysicalTransportRouteFreshnessAdmissionResponse: new Promise<Response>(
+        () => undefined,
+      ),
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport route freshness admissions",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "Loading physical transport route freshness admissions...",
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("retries a generic physical route freshness read failure without mutation controls", async () => {
+    mockReadResponses({
+      physicalTransportRouteFreshnessAdmissions: [physicalTransportRouteFreshnessAdmission],
+      physicalTransportRouteFreshnessAdmissionStatuses: [500, 200],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport route freshness admissions",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "Physical transport route freshness admissions are unavailable",
+      ),
+    ).toBeVisible();
+    expect(section).toHaveTextContent(
+      "No freshness or operational state is inferred from this failed read.",
+    );
+    fireEvent.click(
+      within(section).getByRole("button", {
+        name: "Retry physical transport route freshness admission read",
+      }),
+    );
+    expect(
+      await within(section).findByTitle(
+        physicalTransportRouteFreshnessAdmission.freshness_admission_id,
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [
+      403,
+      "Physical transport route freshness permission is missing",
+      "current role or scope cannot inspect route freshness evidence",
+    ],
+  ])(
+    "handles physical route freshness status %s with the normal session boundary",
+    async (status, title, detail) => {
+      mockReadResponses({ physicalTransportRouteFreshnessAdmissionStatus: status });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Physical transport route freshness admissions",
+      })).closest("section") as HTMLElement;
+      expect(await within(section).findByText(title)).toBeVisible();
+      expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+      expect(within(section).queryByRole("button")).toBeNull();
+      if (status !== 401) expect(section).not.toHaveTextContent("Sign in again");
+      expect(section).not.toHaveTextContent(/MFA|second login|authorized browser session/i);
+    },
+  );
+
+  it.each([
+    [
+      "an extra digest",
+      { ...physicalTransportRouteFreshnessAdmission, canonical_digest: "a".repeat(64) },
+    ],
+    [
+      "private route details",
+      {
+        ...physicalTransportRouteFreshnessAdmission,
+        endpoint_url: "https://broker.internal/private-topic",
+      },
+    ],
+    [
+      "credential material",
+      { ...physicalTransportRouteFreshnessAdmission, credential: "hidden-secret" },
+    ],
+    [
+      "a changed scope",
+      {
+        ...physicalTransportRouteFreshnessAdmission,
+        scope: { ...physicalTransportRouteFreshnessAdmission.scope, site_id: "site.other" },
+      },
+    ],
+    [
+      "operational authority",
+      {
+        ...physicalTransportRouteFreshnessAdmission,
+        authority: {
+          ...physicalTransportRouteFreshnessAdmission.authority,
+          endpoint_resolution_authorized: true,
+        },
+      },
+    ],
+    [
+      "a non-positive generation",
+      { ...physicalTransportRouteFreshnessAdmission, selection_generation: 0 },
+    ],
+    [
+      "a non-v1 validity window",
+      {
+        ...physicalTransportRouteFreshnessAdmission,
+        valid_until: "2026-08-14T10:12:00Z",
+      },
+    ],
+    [
+      "a non-code-owned policy",
+      {
+        ...physicalTransportRouteFreshnessAdmission,
+        policy_id: "policy.workflow-physical-transport-route-freshness-admission",
+      },
+    ],
+    [
+      "an unknown state",
+      { ...physicalTransportRouteFreshnessAdmission, state: "expired" },
+    ],
+  ])(
+    "fails closed when a physical route freshness admission contains %s",
+    async (_case, unsafeAdmission) => {
+      mockReadResponses({ physicalTransportRouteFreshnessAdmissions: [unsafeAdmission] });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Physical transport route freshness admissions",
+      })).closest("section") as HTMLElement;
+      expect(
+        await within(section).findByText(
+          "Physical transport route freshness admissions are unavailable",
+        ),
+      ).toBeVisible();
+      expect(
+        within(section).queryByRole("list", {
+          name: "Physical transport route freshness admissions",
+        }),
+      ).toBeNull();
+      expect(section).not.toHaveTextContent(
+        /broker\.internal|private-topic|hidden-secret|site\.other|expired/i,
+      );
+    },
+  );
+
+  it("fails closed when physical route freshness admission identifiers are duplicated", async () => {
+    mockReadResponses({
+      physicalTransportRouteFreshnessAdmissions: [
+        physicalTransportRouteFreshnessAdmission,
+        {
+          ...physicalTransportRouteFreshnessAdmission,
+          physical_transport_route_binding_id:
+            "workflow-physical-route-binding.abcdef1234567890",
+        },
+      ],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport route freshness admissions",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "Physical transport route freshness admissions are unavailable",
+      ),
+    ).toBeVisible();
+    expect(
+      within(section).queryByRole("list", {
+        name: "Physical transport route freshness admissions",
+      }),
     ).toBeNull();
   });
 

@@ -11,6 +11,7 @@ from atlas.api.security import (
     authenticated_subject,
     authorize_workflow_definition_read,
     authorize_workflow_physical_transport_route_binding_read,
+    authorize_workflow_physical_transport_route_freshness_admission_read,
     authorize_workflow_plan_cancel,
     authorize_workflow_plan_create,
     authorize_workflow_plan_read,
@@ -20,6 +21,7 @@ from atlas.api.security import (
     browser_session_subject,
     workflow_outbox_publisher_subject,
     workflow_physical_transport_route_binder_subject,
+    workflow_physical_transport_route_freshness_admitter_subject,
     workflow_transport_compatibility_admitter_subject,
     workflow_transport_profile_registry_subject,
     workflow_transport_route_registry_subject,
@@ -34,6 +36,7 @@ from atlas.api.workflow_schemas import (
     CreateEventPhysicalTransportProfileSnapshotInput,
     CreateEventPhysicalTransportRouteSnapshotInput,
     CreateWorkflowEventPhysicalTransportRouteBindingInput,
+    CreateWorkflowEventPhysicalTransportRouteFreshnessAdmissionInput,
     CreateWorkflowEventTransportCompatibilityAdmissionInput,
     CreateWorkflowPlanInput,
     EventPhysicalTransportProfileSnapshotData,
@@ -81,6 +84,10 @@ from atlas.api.workflow_schemas import (
     WorkflowEventPhysicalTransportRouteBindingInventoryData,
     WorkflowEventPhysicalTransportRouteBindingInventoryResponse,
     WorkflowEventPhysicalTransportRouteBindingResponse,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionData,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionInventoryData,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionInventoryResponse,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionResponse,
     WorkflowEventTransportAdmissionData,
     WorkflowEventTransportAdmissionInventoryData,
     WorkflowEventTransportAdmissionInventoryResponse,
@@ -118,6 +125,7 @@ from atlas.modules.identity.domain.models import AuthenticatedSubject
 from atlas.modules.workflows.application import (
     WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDER_AUDIENCE,
+    WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMITTER_AUDIENCE,
     WORKFLOW_TRANSPORT_COMPATIBILITY_ADMITTER_AUDIENCE,
     WORKFLOW_TRANSPORT_PROFILE_REGISTRY_AUDIENCE,
     WORKFLOW_TRANSPORT_ROUTE_REGISTRY_AUDIENCE,
@@ -134,6 +142,8 @@ from atlas.modules.workflows.application import (
     WorkflowEventLogicalChannelBindingError,
     WorkflowEventLogicalChannelBindingService,
     WorkflowEventPhysicalTransportRouteBindingService,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionError,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionService,
     WorkflowEventTransportCompatibilityAdmissionService,
     WorkflowOrchestrationLeaseError,
     WorkflowOrchestrationLeaseRepository,
@@ -143,6 +153,7 @@ from atlas.modules.workflows.application import (
     WorkflowOutboxPublicationLeaseService,
     WorkflowOutboxPublisherContext,
     WorkflowPhysicalTransportRouteBinderContext,
+    WorkflowPhysicalTransportRouteFreshnessAdmitterContext,
     WorkflowPlanningError,
     WorkflowPlanningService,
     WorkflowRunMaterializationError,
@@ -192,6 +203,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventLogicalChannelBindingState,
     WorkflowEventLogicalChannelPolicy,
     WorkflowEventPhysicalTransportRouteBinding,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmission,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportAdmissionPolicy,
     WorkflowEventTransportAdmissionState,
@@ -681,6 +693,24 @@ def _raise_physical_transport_route_binding(
         status, title = 404, "Workflow physical transport route binding evidence unavailable"
     else:
         status, title = 409, "Workflow physical transport route binding unavailable"
+    raise AtlasError(
+        status=status,
+        code=error.code,
+        title=title,
+        detail=error.detail,
+        retryable=status == 503,
+    ) from error
+
+
+def _raise_physical_transport_route_freshness_admission(
+    error: WorkflowEventPhysicalTransportRouteFreshnessAdmissionError,
+) -> NoReturn:
+    if error.code.endswith("_invalid") or error.code.endswith("_required"):
+        status, title = 422, "Workflow physical route freshness request invalid"
+    elif "repository" in error.code:
+        status, title = 503, "Workflow physical route freshness service unavailable"
+    else:
+        status, title = 409, "Workflow physical route freshness admission unavailable"
     raise AtlasError(
         status=status,
         code=error.code,
@@ -1293,6 +1323,18 @@ def _physical_transport_route_binding_response(
     _no_store(response)
     return WorkflowEventPhysicalTransportRouteBindingResponse(
         data=WorkflowEventPhysicalTransportRouteBindingData.from_domain(binding),
+        meta=_meta(request),
+    )
+
+
+def _physical_transport_route_freshness_admission_response(
+    admission: WorkflowEventPhysicalTransportRouteFreshnessAdmission,
+    request: Request,
+    response: Response,
+) -> WorkflowEventPhysicalTransportRouteFreshnessAdmissionResponse:
+    _no_store(response)
+    return WorkflowEventPhysicalTransportRouteFreshnessAdmissionResponse(
+        data=WorkflowEventPhysicalTransportRouteFreshnessAdmissionData.from_domain(admission),
         meta=_meta(request),
     )
 
@@ -3673,6 +3715,117 @@ async def create_workflow_physical_transport_route_binding(
     except WorkflowEventPhysicalTransportRouteBindingError as error:
         _raise_physical_transport_route_binding(error)
     return _physical_transport_route_binding_response(binding, request, response)
+
+
+@router.get(
+    "/physical-transport-route-freshness-admissions",
+    response_model=WorkflowEventPhysicalTransportRouteFreshnessAdmissionInventoryResponse,
+)
+async def list_workflow_physical_transport_route_freshness_admissions(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_physical_transport_route_freshness_admission_read),
+    ],
+) -> WorkflowEventPhysicalTransportRouteFreshnessAdmissionInventoryResponse:
+    del decision
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service: WorkflowEventPhysicalTransportRouteFreshnessAdmissionService = (
+        request.app.state.workflow_event_physical_transport_route_freshness_admission_service
+    )
+    try:
+        admissions = await service.repository.list_route_freshness_admissions(
+            scope=scope,
+            limit=256,
+        )
+        if any(admission.scope != scope for admission in admissions):
+            raise WorkflowEventPhysicalTransportRouteFreshnessAdmissionError(
+                "workflow_physical_transport_route_freshness_repository_scope_violation",
+                "Stored route freshness admission metadata escaped its query scope.",
+            )
+    except WorkflowEventPhysicalTransportRouteFreshnessAdmissionError as error:
+        _raise_physical_transport_route_freshness_admission(error)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_physical_transport_route_freshness_repository_unavailable",
+            title="Workflow physical route freshness service unavailable",
+            detail="Physical route freshness admission metadata is unavailable.",
+            retryable=True,
+        ) from error
+    _no_store(response)
+    return WorkflowEventPhysicalTransportRouteFreshnessAdmissionInventoryResponse(
+        data=WorkflowEventPhysicalTransportRouteFreshnessAdmissionInventoryData(
+            physical_transport_route_freshness_admissions=[
+                WorkflowEventPhysicalTransportRouteFreshnessAdmissionData.from_domain(admission)
+                for admission in sorted(
+                    admissions,
+                    key=lambda value: value.freshness_admission_id,
+                )
+            ],
+            durable=service.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/physical-transport-route-freshness-admissions",
+    response_model=WorkflowEventPhysicalTransportRouteFreshnessAdmissionResponse,
+    status_code=201,
+)
+async def create_workflow_physical_transport_route_freshness_admission(
+    payload: CreateWorkflowEventPhysicalTransportRouteFreshnessAdmissionInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_physical_transport_route_freshness_admitter_subject),
+    ],
+) -> WorkflowEventPhysicalTransportRouteFreshnessAdmissionResponse:
+    service: WorkflowEventPhysicalTransportRouteFreshnessAdmissionService = (
+        request.app.state.workflow_event_physical_transport_route_freshness_admission_service
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        admission = await service.admit(
+            physical_transport_route_binding_id=(payload.physical_transport_route_binding_id),
+            physical_transport_route_binding_digest=(
+                payload.physical_transport_route_binding_digest
+            ),
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowPhysicalTransportRouteFreshnessAdmitterContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=(WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMITTER_AUDIENCE),
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id=(
+                    "decision.workflow-physical-transport-route-freshness-admitter-authenticated"
+                ),
+                requested_at=datetime.now(UTC),
+            ),
+        )
+    except WorkflowEventPhysicalTransportRouteFreshnessAdmissionError as error:
+        _raise_physical_transport_route_freshness_admission(error)
+    return _physical_transport_route_freshness_admission_response(
+        admission,
+        request,
+        response,
+    )
 
 
 @router.get(

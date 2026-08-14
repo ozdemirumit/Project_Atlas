@@ -724,6 +724,41 @@ export type WorkflowPhysicalTransportRouteBindingInventory = {
   durable: boolean;
 };
 
+export type WorkflowPhysicalTransportRouteFreshnessAdmissionAuthority = {
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  endpoint_resolution_authorized: false;
+  credential_access_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+};
+
+export type WorkflowPhysicalTransportRouteFreshnessAdmission = {
+  freshness_admission_id: string;
+  physical_transport_route_binding_id: string;
+  transport_route_snapshot_id: string;
+  selection_head_id: string;
+  selection_generation: number;
+  policy_id: "policy.workflow-event-physical-transport-route-freshness";
+  policy_version: "1.0";
+  scope: WorkflowRunPlan["scope"];
+  admitter_subject_id: string;
+  evaluated_at: string;
+  valid_until: string;
+  state: "admitted_current";
+  authority: WorkflowPhysicalTransportRouteFreshnessAdmissionAuthority;
+  integrity_reference: string;
+};
+
+export type WorkflowPhysicalTransportRouteFreshnessAdmissionInventory = {
+  physical_transport_route_freshness_admissions: WorkflowPhysicalTransportRouteFreshnessAdmission[];
+  durable: boolean;
+};
+
 export type WorkflowTransportCompatibilityAuthority = {
   route_selection_authorized: false;
   route_binding_authorized: false;
@@ -1321,6 +1356,38 @@ const physicalTransportRouteBindingFields = [
 ] as const;
 const physicalTransportRouteBindingInventoryFields = [
   "physical_transport_route_bindings",
+  "durable",
+] as const;
+const physicalTransportRouteFreshnessAdmissionAuthorityFields = [
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "endpoint_resolution_authorized",
+  "credential_access_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+] as const;
+const physicalTransportRouteFreshnessAdmissionFields = [
+  "freshness_admission_id",
+  "physical_transport_route_binding_id",
+  "transport_route_snapshot_id",
+  "selection_head_id",
+  "selection_generation",
+  "policy_id",
+  "policy_version",
+  "scope",
+  "admitter_subject_id",
+  "evaluated_at",
+  "valid_until",
+  "state",
+  "authority",
+  "integrity_reference",
+] as const;
+const physicalTransportRouteFreshnessAdmissionInventoryFields = [
+  "physical_transport_route_freshness_admissions",
   "durable",
 ] as const;
 const transportCompatibilityAuthorityFields = [
@@ -2423,6 +2490,55 @@ function isPhysicalTransportRouteBinding(
   );
 }
 
+function hasZeroPhysicalTransportRouteFreshnessAdmissionAuthority(
+  value: unknown,
+): value is WorkflowPhysicalTransportRouteFreshnessAdmissionAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, physicalTransportRouteFreshnessAdmissionAuthorityFields) &&
+    physicalTransportRouteFreshnessAdmissionAuthorityFields.every(
+      (field) => value[field] === false,
+    )
+  );
+}
+
+function isPhysicalTransportRouteFreshnessAdmission(
+  value: unknown,
+  scope: WorkflowScope,
+): value is WorkflowPhysicalTransportRouteFreshnessAdmission {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, physicalTransportRouteFreshnessAdmissionFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value)
+  ) {
+    return false;
+  }
+  const admissionScope = value.scope;
+  const evaluatedAt = Date.parse(String(value.evaluated_at));
+  const validUntil = Date.parse(String(value.valid_until));
+  return (
+    isIdentifier(value.freshness_admission_id) &&
+    isIdentifier(value.physical_transport_route_binding_id) &&
+    isIdentifier(value.transport_route_snapshot_id) &&
+    isIdentifier(value.selection_head_id) &&
+    Number.isSafeInteger(value.selection_generation) &&
+    Number(value.selection_generation) >= 1 &&
+    value.policy_id === "policy.workflow-event-physical-transport-route-freshness" &&
+    value.policy_version === "1.0" &&
+    admissionScope.organization_id === scope.organizationId &&
+    admissionScope.environment_id === scope.environmentId &&
+    admissionScope.site_id === scope.siteId &&
+    isIdentifier(value.admitter_subject_id) &&
+    isTimestamp(value.evaluated_at) &&
+    isTimestamp(value.valid_until) &&
+    validUntil - evaluatedAt === 60_000 &&
+    value.state === "admitted_current" &&
+    hasZeroPhysicalTransportRouteFreshnessAdmissionAuthority(value.authority) &&
+    isIdentifier(value.integrity_reference)
+  );
+}
+
 function hasZeroTransportCompatibilityAuthority(
   value: unknown,
 ): value is WorkflowTransportCompatibilityAuthority {
@@ -3108,6 +3224,47 @@ export async function listWorkflowPhysicalTransportRouteBindings(input: {
     );
   }
   return data as WorkflowPhysicalTransportRouteBindingInventory;
+}
+
+export async function listWorkflowPhysicalTransportRouteFreshnessAdmissions(input: {
+  scope: WorkflowScope;
+}): Promise<WorkflowPhysicalTransportRouteFreshnessAdmissionInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/physical-transport-route-freshness-admissions",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow physical transport route freshness admission retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, physicalTransportRouteFreshnessAdmissionInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.physical_transport_route_freshness_admissions) ||
+    data.physical_transport_route_freshness_admissions.length > 256 ||
+    typeof data.durable !== "boolean" ||
+    !data.physical_transport_route_freshness_admissions.every((admission) =>
+      isPhysicalTransportRouteFreshnessAdmission(admission, input.scope),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport route freshness admission response was unsafe",
+      response.status,
+    );
+  }
+  const admissionIds = new Set(
+    data.physical_transport_route_freshness_admissions.map((admission) =>
+      isObject(admission) ? admission.freshness_admission_id : undefined,
+    ),
+  );
+  if (admissionIds.size !== data.physical_transport_route_freshness_admissions.length) {
+    throw new ApiRequestError(
+      "Workflow physical transport route freshness admission response was unsafe",
+      response.status,
+    );
+  }
+  return data as WorkflowPhysicalTransportRouteFreshnessAdmissionInventory;
 }
 
 export async function listWorkflowTransportCompatibilityAdmissions(input: {

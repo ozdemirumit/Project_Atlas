@@ -147,6 +147,10 @@ class WorkflowEventPhysicalTransportRouteBindingState(StrEnum):
     BOUND = "bound"
 
 
+class WorkflowEventPhysicalTransportRouteFreshnessAdmissionState(StrEnum):
+    ADMITTED_CURRENT = "admitted_current"
+
+
 @dataclass(frozen=True, slots=True)
 class WorkflowScope:
     organization_id: str
@@ -3150,6 +3154,354 @@ class WorkflowEventPhysicalTransportRouteBinding:
             "transport_profile_snapshot_id": self.transport_profile_snapshot_id,
             "transport_route_snapshot_digest": self.transport_route_snapshot_digest,
             "transport_route_snapshot_id": self.transport_route_snapshot_id,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    @property
+    def grants_endpoint_resolution_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_route_selection_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_route_binding_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_credential_access_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_network_access_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_readiness_probe_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_publication_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_delivery_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_dispatch_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_execution_authority(self) -> bool:
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class DeploymentEventTransportRouteSelectionHead:
+    """Server-owned current route selection evidence without runtime authority."""
+
+    head_id: str
+    generation: int
+    route_set_id: str
+    route_set_revision: str
+    selection_epoch_id: str
+    selection_epoch_revision: str
+    selected_route_id: str
+    selected_route_revision: str
+    selected_route_digest: str
+    fencing_token_digest: str
+    selection_active: bool
+    selection_eligible: bool
+    selection_suspended: bool
+    selection_withdrawn: bool
+    selection_superseded: bool
+    scope: WorkflowScope
+    current: bool
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.head_id, "transport route selection head id"),
+            (self.route_set_id, "transport route selection head route set id"),
+            (self.route_set_revision, "transport route selection head route set revision"),
+            (self.selection_epoch_id, "transport route selection head epoch id"),
+            (self.selection_epoch_revision, "transport route selection head epoch revision"),
+            (self.selected_route_id, "transport route selection head selected route id"),
+            (
+                self.selected_route_revision,
+                "transport route selection head selected route revision",
+            ),
+        ):
+            _require_identifier(value, name=name)
+        if self.generation < 1:
+            raise ValueError("transport route selection head generation must be positive")
+        _require_digest(
+            self.selected_route_digest,
+            name="transport route selection head selected route digest",
+        )
+        _require_digest(
+            self.fencing_token_digest,
+            name="transport route selection head fencing token digest",
+        )
+        if self.current is not True:
+            raise ValueError("transport route selection head must be current")
+        if any(
+            not isinstance(value, bool)
+            for value in (
+                self.selection_active,
+                self.selection_eligible,
+                self.selection_suspended,
+                self.selection_withdrawn,
+                self.selection_superseded,
+            )
+        ):
+            raise ValueError("transport route selection head state evidence must be boolean")
+        _require_digest(
+            self.canonical_digest,
+            name="transport route selection head canonical digest",
+        )
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("transport route selection head canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "current": self.current,
+            "fencing_token_digest": self.fencing_token_digest,
+            "generation": self.generation,
+            "head_id": self.head_id,
+            "route_set_id": self.route_set_id,
+            "route_set_revision": self.route_set_revision,
+            "scope": self.scope.canonical_value(),
+            "selection_active": self.selection_active,
+            "selection_eligible": self.selection_eligible,
+            "selection_superseded": self.selection_superseded,
+            "selection_suspended": self.selection_suspended,
+            "selection_withdrawn": self.selection_withdrawn,
+            "selected_route_digest": self.selected_route_digest,
+            "selected_route_id": self.selected_route_id,
+            "selected_route_revision": self.selected_route_revision,
+            "selection_epoch_id": self.selection_epoch_id,
+            "selection_epoch_revision": self.selection_epoch_revision,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportRouteFreshnessPolicy:
+    """Code-owned requirements for a point-in-time route freshness admission."""
+
+    policy_id: str
+    policy_version: str
+    validity_window_seconds: int
+    unique_current_head_required: bool
+    monotonic_generation_required: bool
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        _require_identifier(self.policy_id, name="route freshness policy id")
+        _require_identifier(self.policy_version, name="route freshness policy version")
+        if self.validity_window_seconds != 60:
+            raise ValueError("route freshness policy validity window must be 60 seconds")
+        if self.unique_current_head_required is not True:
+            raise ValueError("route freshness policy must require one unique current head")
+        if self.monotonic_generation_required is not True:
+            raise ValueError("route freshness policy must require monotonic head generations")
+        _require_digest(self.canonical_digest, name="route freshness policy digest")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("route freshness policy canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "monotonic_generation_required": self.monotonic_generation_required,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "unique_current_head_required": self.unique_current_head_required,
+            "validity_window_seconds": self.validity_window_seconds,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+def code_owned_workflow_event_physical_transport_route_freshness_policy() -> (
+    WorkflowEventPhysicalTransportRouteFreshnessPolicy
+):
+    values: dict[str, object] = {
+        "policy_id": "policy.workflow-event-physical-transport-route-freshness",
+        "policy_version": "1.0",
+        "validity_window_seconds": 60,
+        "unique_current_head_required": True,
+        "monotonic_generation_required": True,
+    }
+    return WorkflowEventPhysicalTransportRouteFreshnessPolicy(
+        **cast(Any, values), canonical_digest=canonical_digest(values)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportRouteFreshnessAdmissionAuthority:
+    endpoint_resolution_authorized: bool = False
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    credential_access_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        if any(self.canonical_value().values()):
+            raise ValueError("route freshness admissions cannot grant operational authority")
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "credential_access_authorized": self.credential_access_authorized,
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "endpoint_resolution_authorized": self.endpoint_resolution_authorized,
+            "execution_authorized": self.execution_authorized,
+            "network_access_authorized": self.network_access_authorized,
+            "publication_authorized": self.publication_authorized,
+            "readiness_probe_authorized": self.readiness_probe_authorized,
+            "route_binding_authorized": self.route_binding_authorized,
+            "route_selection_authorized": self.route_selection_authorized,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportRouteFreshnessAdmission:
+    """Immutable point-in-time currentness evidence without runtime authority."""
+
+    freshness_admission_id: str
+    physical_transport_route_binding_id: str
+    physical_transport_route_binding_digest: str
+    transport_route_snapshot_id: str
+    transport_route_snapshot_digest: str
+    current_selection_head_id: str
+    current_selection_head_digest: str
+    current_selection_head_generation: int
+    current_selection_head_fencing_token_digest: str
+    route_set_id: str
+    route_set_revision: str
+    selection_epoch_id: str
+    selection_epoch_revision: str
+    selected_route_id: str
+    selected_route_revision: str
+    selected_route_digest: str
+    selection_active: bool
+    selection_eligible: bool
+    selection_suspended: bool
+    selection_withdrawn: bool
+    selection_superseded: bool
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    scope: WorkflowScope
+    admitter_subject_id: str
+    evaluated_at: datetime
+    valid_until: datetime
+    state: WorkflowEventPhysicalTransportRouteFreshnessAdmissionState
+    authority: WorkflowEventPhysicalTransportRouteFreshnessAdmissionAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.freshness_admission_id, "route freshness admission id"),
+            (self.physical_transport_route_binding_id, "physical route binding id"),
+            (self.transport_route_snapshot_id, "transport route snapshot id"),
+            (self.current_selection_head_id, "current selection head id"),
+            (self.route_set_id, "route freshness route set id"),
+            (self.route_set_revision, "route freshness route set revision"),
+            (self.selection_epoch_id, "route freshness selection epoch id"),
+            (self.selection_epoch_revision, "route freshness selection epoch revision"),
+            (self.selected_route_id, "route freshness selected route id"),
+            (self.selected_route_revision, "route freshness selected route revision"),
+            (self.policy_id, "route freshness policy id"),
+            (self.policy_version, "route freshness policy version"),
+            (self.admitter_subject_id, "route freshness admitter subject id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.physical_transport_route_binding_digest, "physical route binding digest"),
+            (self.transport_route_snapshot_digest, "transport route snapshot digest"),
+            (self.current_selection_head_digest, "current selection head digest"),
+            (
+                self.current_selection_head_fencing_token_digest,
+                "current selection head fencing token digest",
+            ),
+            (self.selected_route_digest, "selected route digest"),
+            (self.policy_digest, "route freshness policy digest"),
+            (self.canonical_digest, "route freshness admission canonical digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.current_selection_head_generation < 1:
+            raise ValueError("route freshness head generation must be positive")
+        if (
+            self.selection_active is not True
+            or self.selection_eligible is not True
+            or self.selection_suspended
+            or self.selection_withdrawn
+            or self.selection_superseded
+        ):
+            raise ValueError("route freshness admission selection state is not admissible")
+        if self.evaluated_at.tzinfo is None or self.valid_until.tzinfo is None:
+            raise ValueError("route freshness admission times must be timezone-aware")
+        if self.valid_until <= self.evaluated_at:
+            raise ValueError("route freshness admission must have a positive validity window")
+        if (
+            self.state
+            is not WorkflowEventPhysicalTransportRouteFreshnessAdmissionState.ADMITTED_CURRENT
+        ):
+            raise ValueError("route freshness admissions must remain admitted_current")
+        if any(self.authority.canonical_value().values()):
+            raise ValueError("route freshness admissions cannot grant operational authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("route freshness admission canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "admitter_subject_id": self.admitter_subject_id,
+            "authority": self.authority.canonical_value(),
+            "current_selection_head_digest": self.current_selection_head_digest,
+            "current_selection_head_fencing_token_digest": (
+                self.current_selection_head_fencing_token_digest
+            ),
+            "current_selection_head_generation": self.current_selection_head_generation,
+            "current_selection_head_id": self.current_selection_head_id,
+            "evaluated_at": self.evaluated_at.isoformat(),
+            "freshness_admission_id": self.freshness_admission_id,
+            "physical_transport_route_binding_digest": (
+                self.physical_transport_route_binding_digest
+            ),
+            "physical_transport_route_binding_id": self.physical_transport_route_binding_id,
+            "policy_digest": self.policy_digest,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "route_set_id": self.route_set_id,
+            "route_set_revision": self.route_set_revision,
+            "scope": self.scope.canonical_value(),
+            "selection_active": self.selection_active,
+            "selection_eligible": self.selection_eligible,
+            "selection_superseded": self.selection_superseded,
+            "selection_suspended": self.selection_suspended,
+            "selection_withdrawn": self.selection_withdrawn,
+            "selected_route_digest": self.selected_route_digest,
+            "selected_route_id": self.selected_route_id,
+            "selected_route_revision": self.selected_route_revision,
+            "selection_epoch_id": self.selection_epoch_id,
+            "selection_epoch_revision": self.selection_epoch_revision,
+            "state": self.state.value,
+            "transport_route_snapshot_digest": self.transport_route_snapshot_digest,
+            "transport_route_snapshot_id": self.transport_route_snapshot_id,
+            "valid_until": self.valid_until.isoformat(),
         }
 
     def canonical_value(self) -> dict[str, object]:

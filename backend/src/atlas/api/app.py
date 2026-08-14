@@ -1544,6 +1544,8 @@ from atlas.modules.workflows.application import (
     WorkflowEventLogicalChannelBindingService,
     WorkflowEventPhysicalTransportRouteBindingRepository,
     WorkflowEventPhysicalTransportRouteBindingService,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionRepository,
+    WorkflowEventPhysicalTransportRouteFreshnessAdmissionService,
     WorkflowEventTransportAdmissionRepository,
     WorkflowEventTransportAdmissionService,
     WorkflowEventTransportCompatibilityAdmissionRepository,
@@ -1564,6 +1566,7 @@ from atlas.modules.workflows.application import (
 from atlas.modules.workflows.domain import (
     DeploymentEventTransportProfile,
     DeploymentEventTransportRoute,
+    DeploymentEventTransportRouteSelectionHead,
     WorkflowScope,
     canonical_digest,
     code_owned_workflow_registry,
@@ -1768,6 +1771,63 @@ def _deployment_event_transport_routes(
     )
 
 
+def _deployment_event_transport_route_selection_heads(
+    settings: Settings,
+    routes: tuple[DeploymentEventTransportRoute, ...],
+) -> tuple[DeploymentEventTransportRouteSelectionHead, ...]:
+    if settings.environment != "development":
+        return ()
+    active_routes = tuple(route for route in routes if route.active)
+    route_set_keys = tuple(
+        (
+            route.scope.organization_id,
+            route.scope.environment_id,
+            route.scope.site_id,
+            route.route_set_id,
+        )
+        for route in active_routes
+    )
+    if len(route_set_keys) != len(set(route_set_keys)):
+        raise ValueError("deployment transport route selection heads must be unique")
+    heads: list[DeploymentEventTransportRouteSelectionHead] = []
+    for route in active_routes:
+        values: dict[str, Any] = {
+            "head_id": f"transport-route-selection-head.{route.route_set_id}",
+            "generation": 1,
+            "route_set_id": route.route_set_id,
+            "route_set_revision": route.route_set_revision,
+            "selection_epoch_id": route.selection_epoch_id,
+            "selection_epoch_revision": route.selection_epoch_revision,
+            "selected_route_id": route.route_id,
+            "selected_route_revision": route.route_revision,
+            "selected_route_digest": route.canonical_digest,
+            "fencing_token_digest": sha256(
+                (
+                    f"development-route-selection-head:{route.route_set_id}:"
+                    f"{route.route_revision}:{route.canonical_digest}"
+                ).encode()
+            ).hexdigest(),
+            "selection_active": True,
+            "selection_eligible": True,
+            "selection_suspended": False,
+            "selection_withdrawn": False,
+            "selection_superseded": False,
+            "scope": route.scope,
+            "current": True,
+        }
+        digest_payload = {
+            key: value.canonical_value() if isinstance(value, WorkflowScope) else value
+            for key, value in values.items()
+        }
+        heads.append(
+            DeploymentEventTransportRouteSelectionHead(
+                **values,
+                canonical_digest=canonical_digest(digest_payload),
+            )
+        )
+    return tuple(heads)
+
+
 def create_app(
     settings: Settings | None = None,
     *,
@@ -1806,11 +1866,17 @@ def create_app(
     workflow_event_physical_transport_route_binding_service: (
         WorkflowEventPhysicalTransportRouteBindingService | None
     ) = None,
+    workflow_event_physical_transport_route_freshness_admission_service: (
+        WorkflowEventPhysicalTransportRouteFreshnessAdmissionService | None
+    ) = None,
     workflow_transport_profile_snapshot_service: WorkflowTransportProfileSnapshotService
     | None = None,
     deployment_event_transport_profiles: tuple[DeploymentEventTransportProfile, ...] | None = None,
     workflow_transport_route_snapshot_service: WorkflowTransportRouteSnapshotService | None = None,
     deployment_event_transport_routes: tuple[DeploymentEventTransportRoute, ...] | None = None,
+    deployment_event_transport_route_selection_heads: (
+        tuple[DeploymentEventTransportRouteSelectionHead, ...] | None
+    ) = None,
     security_export_service: SecurityExportService | None = None,
     session_service: SessionService | None = None,
     api_credential_service: ApiCredentialService | None = None,
@@ -5987,9 +6053,80 @@ def create_app(
         resolved_workflow_event_physical_transport_route_binding_service = (
             workflow_event_physical_transport_route_binding_service
         )
+    if workflow_event_physical_transport_route_freshness_admission_service is None:
+        physical_transport_route_freshness_repository_methods = (
+            "get_physical_transport_route_binding_by_id",
+            "get_transport_route_snapshot_by_id",
+            "get_current_route_selection_head",
+            "get_route_freshness_admission",
+            "list_route_freshness_admissions",
+            "get_route_freshness_admission_request",
+            "admit_physical_transport_route_freshness",
+            "synchronize_route_selection_heads",
+        )
+        if not all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in physical_transport_route_freshness_repository_methods
+        ):
+            raise ValueError(
+                "workflow planning repository does not implement physical transport route "
+                "freshness admissions; inject "
+                "workflow_event_physical_transport_route_freshness_admission_service explicitly"
+            )
+        physical_transport_route_freshness_repository = cast(
+            WorkflowEventPhysicalTransportRouteFreshnessAdmissionRepository,
+            workflow_repository,
+        )
+        resolved_workflow_event_physical_transport_route_freshness_admission_service = (
+            WorkflowEventPhysicalTransportRouteFreshnessAdmissionService(
+                admission_repository=physical_transport_route_freshness_repository,
+                audit_sink=resolved_audit_sink,
+            )
+        )
+    else:
+        resolved_workflow_event_physical_transport_route_freshness_admission_service = (
+            workflow_event_physical_transport_route_freshness_admission_service
+        )
+    configured_transport_route_selection_heads = (
+        _deployment_event_transport_route_selection_heads(
+            resolved_settings,
+            configured_transport_routes,
+        )
+        if deployment_event_transport_route_selection_heads is None
+        else tuple(deployment_event_transport_route_selection_heads)
+    )
+    synchronize_transport_route_selection_heads = (
+        resolved_settings.environment == "development"
+        or deployment_event_transport_route_selection_heads is not None
+    )
+    selection_head_keys = tuple(
+        (
+            head.scope.organization_id,
+            head.scope.environment_id,
+            head.scope.site_id,
+            head.route_set_id,
+        )
+        for head in configured_transport_route_selection_heads
+    )
+    if len(selection_head_keys) != len(set(selection_head_keys)):
+        raise ValueError("deployment transport route selection heads must be unique")
+    if any(
+        head.scope.environment_id != expected_route_environment
+        for head in configured_transport_route_selection_heads
+    ):
+        raise ValueError(
+            "deployment transport route selection head scope does not match environment"
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        route_freshness_repository = (
+            resolved_workflow_event_physical_transport_route_freshness_admission_service.repository
+        )
+        if synchronize_transport_route_selection_heads:
+            await route_freshness_repository.synchronize_route_selection_heads(
+                configured_transport_route_selection_heads
+            )
         app.state.settings = resolved_settings
         app.state.audit_sink = resolved_audit_sink
         app.state.security_export_service = resolved_security_export_service
@@ -6278,6 +6415,15 @@ def create_app(
         )
         app.state.workflow_event_physical_transport_route_binding_repository = (
             resolved_workflow_event_physical_transport_route_binding_service.repository
+        )
+        app.state.workflow_event_physical_transport_route_freshness_admission_service = (
+            resolved_workflow_event_physical_transport_route_freshness_admission_service
+        )
+        app.state.workflow_event_physical_transport_route_freshness_admission_repository = (
+            resolved_workflow_event_physical_transport_route_freshness_admission_service.repository
+        )
+        app.state.workflow_transport_route_selection_heads = (
+            configured_transport_route_selection_heads
         )
         app.state.workflow_transport_route_source_routes = configured_transport_routes
         app.state.workflow_event_transport_compatibility_admission_service = (
