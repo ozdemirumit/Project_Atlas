@@ -6,9 +6,9 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-201 |
 | Title | Bounded single-use workflow physical transport endpoint-resolution authorization lease without endpoint materialization |
-| Status | Implementation and local validation complete; PR pending |
+| Status | Implementation and local validation complete; PR CI pending |
 | Branch | `agent/workflow-endpoint-resolution-authorization-lease` |
-| Pull Request | Not opened |
+| Pull Request | [#214](https://github.com/ozdemirumit/Project_Atlas/pull/214) |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-148, ADR-149, ADR-150, ADR-151 |
 | Last Updated | 2026-08-14 |
 | Next Action | Publish the exact validated head, require green PR CI, squash-merge and independently verify the merged `main` commit |
