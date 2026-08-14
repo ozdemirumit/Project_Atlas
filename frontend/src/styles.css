@@ -6320,14 +6320,17 @@ textarea:focus-visible {
 }
 .workflow-step-preview li div { display: grid; gap: 2px; }
 
-.workflow-publication-lease-list li {
+.workflow-publication-lease-list li,
+.workflow-event-envelope-list li {
   align-items: flex-start;
   min-width: 0;
 }
 
-.workflow-publication-lease-list li > div { min-width: 0; }
+.workflow-publication-lease-list li > div,
+.workflow-event-envelope-list li > div { min-width: 0; }
 
-.workflow-publication-lease-list strong {
+.workflow-publication-lease-list strong,
+.workflow-event-envelope-list strong {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -6336,8 +6339,14 @@ textarea:focus-visible {
 }
 
 .workflow-publication-lease-list code,
-.workflow-publication-lease-list small {
+.workflow-publication-lease-list small,
+.workflow-event-envelope-list code,
+.workflow-event-envelope-list small {
   overflow-wrap: anywhere;
+}
+
+.workflow-event-envelope-list small {
+  line-height: 1.45;
 }
 
 .workflow-empty-state {

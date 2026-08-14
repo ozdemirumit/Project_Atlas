@@ -4,14 +4,76 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-191 |
-| Title | Fenced workflow outbox publication lease without publication authority |
+| Task ID | ATLAS-IMP-192 |
+| Title | Canonical workflow dispatch event envelope without transport authority |
 | Status | Implementation and validation complete; delivery in progress |
-| Branch | `agent/workflow-outbox-publication-lease` |
+| Branch | `agent/workflow-dispatch-event-envelope` |
 | Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ADR-136, ADR-137, ADR-138, ADR-139, ADR-140, ADR-141 |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-025, ATLAS-032, ADR-136, ADR-137, ADR-138, ADR-139, ADR-140, ADR-141, ADR-142 |
 | Last Updated | 2026-08-14 |
-| Next Action | Commit, open the pull request, pass CI, merge and verify `main` |
+| Next Action | Commit, open PR, pass exact-head CI, merge and verify independent `main` CI |
+
+### ATLAS-IMP-192 Scope Rationale
+
+- IMP-191 provides fenced publisher ownership but intentionally leaves the logical event contract
+  implicit in workflow lineage. The next smallest durable boundary is one immutable canonical event
+  envelope for the exact pending outbox entry.
+- Envelope preparation remains provider-neutral and records no broker, endpoint, queue, topic,
+  routing key, partition, transport credential, wire serialization, publication attempt or receipt.
+- Publication, delivery acknowledgement, worker dispatch, running states, results, retries, timers,
+  signals, connector/model calls, approvals, ITSM, runbooks and infrastructure actions remain
+  deferred.
+
+### ATLAS-IMP-192 Acceptance Criteria
+
+- A dedicated publisher workload identity can idempotently prepare exactly one canonical
+  `WorkflowStepDispatchRequested` envelope for an exact pending outbox entry while holding its
+  current active publication lease; stale fences, expired/released leases, changed lineage and
+  competing requests fail closed.
+- The envelope has a stable event identity and version, UTC times, producer, subject, organization,
+  environment, correlation, causation, workflow, classification, schema and minimized payload. Its
+  preparation record binds the exact outbox and publication-lease evidence and grants no authority.
+- PostgreSQL locks and revalidates the planned plan, pending outbox entry, current exact source
+  orchestration lease and current exact publication lease before the atomic envelope/idempotency
+  write. Production never falls back to memory and no transport-specific field exists.
+- Human UI exposes authoritative read-only envelope evidence through the normal username/password
+  session with no preparation, serialization, publish, deliver, dispatch or execution control, no
+  credential material, no second-login or MFA prompt and no implication that a message was sent.
+
+### ATLAS-IMP-192 Validation Evidence
+
+- Domain and application services prepare one deterministic immutable
+  `WorkflowStepDispatchRequested` version `1.0` envelope only for the exact pending outbox entry
+  under its current active source orchestration and publication leases. Exact replay returns the
+  same envelope; stale fences, expired or released leases, changed lineage, competing requests and
+  tampered persisted producer evidence fail closed.
+- The canonical envelope contains minimized organization, environment, site, target, workflow,
+  correlation, causation, subject, producer, schema and exact lease/outbox/intent/attempt/run/step/
+  plan lineage. Every authority flag remains false and no broker, endpoint, queue, topic, partition,
+  routing key, transport credential, wire payload, serialization, publication attempt or receipt is
+  represented.
+- PostgreSQL locks and revalidates the planned plan, exact pending outbox entry, current exact source
+  orchestration lease and current exact publication lease before the atomic envelope/idempotency
+  write. Migration `20260814_0115` creates immutable envelope and claim tables; four PostgreSQL
+  adapter tests pass and Alembic reports one head at `20260814_0115`.
+- Backend Ruff format/lint passed across 1,299 files, strict mypy passed across 1,026 source files,
+  and the full backend suite passed 1,721 tests with three expected Windows symlink skips. The full
+  frontend suite passed 354 tests across 95 files; ESLint, TypeScript and the production build also
+  passed. The focused workflow UI suite passed 65 tests.
+- Live username/password validation used plan `workflow-plan.5a56208a85aa250a786b6fb5` and event
+  `workflow-dispatch-event.e75f236fa7799660fd182eca`. The authoritative evidence rendered once
+  without a sign-in form, extra browser-session/MFA text, forbidden operational controls or
+  horizontal overflow; no transport message, worker dispatch or infrastructure action occurred.
+
+### ATLAS-IMP-191 Delivery Evidence
+
+- Source commit `e29094610e22916e145bed0212067a24a8631546` passed exact-head PR CI run
+  `31766115163`; frontend completed in 3m33s and backend in 8m46s.
+- PR [#203](https://github.com/ozdemirumit/Project_Atlas/pull/203) was squash-merged as
+  `2c45ddc7c22f16bbd576c94869c78229ef0d0d4f`.
+- The exact merged commit independently passed `main` CI run `31766590935`; frontend completed in
+  5m02s and backend in 9m31s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-192 branched.
 
 ### ATLAS-IMP-191 Scope Rationale
 

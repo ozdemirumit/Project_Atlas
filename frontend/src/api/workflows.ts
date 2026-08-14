@@ -328,6 +328,75 @@ export type WorkflowDispatchOutboxPublicationLeaseInventory = {
   durable: boolean;
 };
 
+export type WorkflowDispatchEventEnvelopePayload = {
+  plan_id: string;
+  plan_digest: string;
+  run_id: string;
+  run_digest: string;
+  step_run_id: string;
+  step_run_digest: string;
+  step_id: string;
+  attempt_id: string;
+  attempt_digest: string;
+  attempt_number: 1;
+  scope: WorkflowRunPlan["scope"];
+  target_id: string;
+  target_type: "storage";
+  dispatch_intent_id: string;
+  dispatch_intent_digest: string;
+  outbox_entry_id: string;
+  outbox_entry_digest: string;
+};
+
+export type WorkflowDispatchEventAuthority = {
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+};
+
+export type WorkflowDispatchEventEnvelope = {
+  event_id: string;
+  event_type: "WorkflowStepDispatchRequested";
+  event_version: "1.0";
+  producer: string;
+  producer_version: string;
+  occurred_at: string;
+  recorded_at: string;
+  subject_type: "workflow-execution-attempt";
+  subject_id: string;
+  organization_id: string;
+  environment_id: string;
+  correlation_id: string;
+  causation_id: string;
+  workflow_id: string;
+  data_classification: "internal";
+  schema_uri: "urn:project-atlas:event:workflow-step-dispatch-requested:1.0";
+  payload: WorkflowDispatchEventEnvelopePayload;
+  extensions: Record<string, never>;
+  orchestration_lease_id: string;
+  orchestration_lease_digest: string;
+  orchestration_fencing_token: number;
+  publication_lease_id: string;
+  publication_lease_digest: string;
+  publication_fencing_token: number;
+  publisher_subject_id: string;
+  prepared_at: string;
+  state: "prepared";
+  authority: WorkflowDispatchEventAuthority;
+  grants_publication_authority: false;
+  grants_delivery_authority: false;
+  grants_dispatch_authority: false;
+  grants_execution_authority: false;
+  canonical_digest: string;
+};
+
+export type WorkflowDispatchEventEnvelopeInventory = {
+  outbox_entry_id: string;
+  event_envelopes: WorkflowDispatchEventEnvelope[];
+  durable: boolean;
+};
+
 const digest = /^[a-f0-9]{64}$/;
 const capabilityClasses = new Set<WorkflowCapabilityClass>(["C0", "C1", "C2"]);
 const stepKinds = new Set<WorkflowStepKind>([
@@ -516,6 +585,71 @@ const dispatchOutboxPublicationLeaseInventoryFields = [
   "publication_leases",
   "server_time",
   "durable",
+] as const;
+const dispatchEventEnvelopePayloadFields = [
+  "plan_id",
+  "plan_digest",
+  "run_id",
+  "run_digest",
+  "step_run_id",
+  "step_run_digest",
+  "step_id",
+  "attempt_id",
+  "attempt_digest",
+  "attempt_number",
+  "scope",
+  "target_id",
+  "target_type",
+  "dispatch_intent_id",
+  "dispatch_intent_digest",
+  "outbox_entry_id",
+  "outbox_entry_digest",
+] as const;
+const dispatchEventEnvelopeFields = [
+  "event_id",
+  "event_type",
+  "event_version",
+  "producer",
+  "producer_version",
+  "occurred_at",
+  "recorded_at",
+  "subject_type",
+  "subject_id",
+  "organization_id",
+  "environment_id",
+  "correlation_id",
+  "causation_id",
+  "workflow_id",
+  "data_classification",
+  "schema_uri",
+  "payload",
+  "extensions",
+  "orchestration_lease_id",
+  "orchestration_lease_digest",
+  "orchestration_fencing_token",
+  "publication_lease_id",
+  "publication_lease_digest",
+  "publication_fencing_token",
+  "publisher_subject_id",
+  "prepared_at",
+  "state",
+  "authority",
+  "grants_publication_authority",
+  "grants_delivery_authority",
+  "grants_dispatch_authority",
+  "grants_execution_authority",
+  "canonical_digest",
+] as const;
+const dispatchEventEnvelopeInventoryFields = [
+  "outbox_entry_id",
+  "event_envelopes",
+  "durable",
+] as const;
+const dispatchEventAuthorityFields = [
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
 ] as const;
 const scopeFields = ["organization_id", "environment_id", "site_id"] as const;
 const forbiddenCredentialFields = new Set([
@@ -1039,6 +1173,91 @@ function isDispatchOutboxPublicationLeaseBoundToEntry(
   );
 }
 
+function hasSafeDispatchEventAuthority(value: unknown): value is WorkflowDispatchEventAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, dispatchEventAuthorityFields) &&
+    dispatchEventAuthorityFields.every((field) => value[field] === false)
+  );
+}
+
+function isDispatchEventEnvelopeBoundToEntry(
+  value: unknown,
+  entry: WorkflowDispatchOutboxEntry,
+  publicationLease: WorkflowDispatchOutboxPublicationLease | null,
+): value is WorkflowDispatchEventEnvelope {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, dispatchEventEnvelopeFields) ||
+    !isObject(value.payload) ||
+    !hasExactKeys(value.payload, dispatchEventEnvelopePayloadFields) ||
+    !isExactScope(value.payload.scope) ||
+    !isObject(value.extensions) ||
+    Object.keys(value.extensions).length !== 0 ||
+    containsCredentialMaterial(value)
+  ) {
+    return false;
+  }
+  const payload = value.payload;
+  const payloadScope = payload.scope as WorkflowRunPlan["scope"];
+  return (
+    publicationLease !== null &&
+    isIdentifier(value.event_id) &&
+    value.event_type === "WorkflowStepDispatchRequested" &&
+    value.event_version === "1.0" &&
+    isIdentifier(value.producer) &&
+    isIdentifier(value.producer_version) &&
+    isTimestamp(value.occurred_at) &&
+    Date.parse(value.occurred_at) === Date.parse(entry.admitted_at) &&
+    isTimestamp(value.recorded_at) &&
+    isTimestamp(value.prepared_at) &&
+    Date.parse(value.recorded_at) === Date.parse(value.prepared_at) &&
+    Date.parse(value.recorded_at) >= Date.parse(value.occurred_at) &&
+    value.subject_type === "workflow-execution-attempt" &&
+    value.subject_id === entry.attempt_id &&
+    value.organization_id === entry.scope.organization_id &&
+    value.environment_id === entry.scope.environment_id &&
+    value.correlation_id === entry.run_id &&
+    value.causation_id === entry.dispatch_intent_id &&
+    value.workflow_id === entry.run_id &&
+    value.data_classification === "internal" &&
+    value.schema_uri === "urn:project-atlas:event:workflow-step-dispatch-requested:1.0" &&
+    payload.plan_id === entry.plan_id &&
+    payload.plan_digest === entry.plan_digest &&
+    payload.run_id === entry.run_id &&
+    payload.run_digest === entry.run_digest &&
+    payload.step_run_id === entry.step_run_id &&
+    payload.step_run_digest === entry.step_run_digest &&
+    payload.step_id === entry.step_id &&
+    payload.attempt_id === entry.attempt_id &&
+    payload.attempt_digest === entry.attempt_digest &&
+    payload.attempt_number === entry.attempt_number &&
+    payloadScope.organization_id === entry.scope.organization_id &&
+    payloadScope.environment_id === entry.scope.environment_id &&
+    payloadScope.site_id === entry.scope.site_id &&
+    payload.target_id === entry.target_id &&
+    payload.target_type === entry.target_type &&
+    payload.dispatch_intent_id === entry.dispatch_intent_id &&
+    payload.dispatch_intent_digest === entry.dispatch_intent_digest &&
+    payload.outbox_entry_id === entry.outbox_entry_id &&
+    payload.outbox_entry_digest === entry.canonical_digest &&
+    value.orchestration_lease_id === entry.lease_id &&
+    value.orchestration_lease_digest === entry.lease_digest &&
+    value.orchestration_fencing_token === entry.fencing_token &&
+    value.publication_lease_id === publicationLease.publication_lease_id &&
+    value.publication_lease_digest === publicationLease.canonical_digest &&
+    value.publication_fencing_token === publicationLease.publication_fencing_token &&
+    value.publisher_subject_id === publicationLease.publisher_subject_id &&
+    value.state === "prepared" &&
+    hasSafeDispatchEventAuthority(value.authority) &&
+    value.grants_publication_authority === false &&
+    value.grants_delivery_authority === false &&
+    value.grants_dispatch_authority === false &&
+    value.grants_execution_authority === false &&
+    isDigest(value.canonical_digest)
+  );
+}
+
 function isRunPlan(value: unknown): value is WorkflowRunPlan {
   if (
     !isObject(value) ||
@@ -1367,6 +1586,48 @@ export async function listWorkflowDispatchOutboxPublicationLeases(input: {
     throw new ApiRequestError("Workflow publication lease evidence response was unsafe", response.status);
   }
   return data as WorkflowDispatchOutboxPublicationLeaseInventory;
+}
+
+export async function listWorkflowDispatchEventEnvelopes(input: {
+  outboxEntry: WorkflowDispatchOutboxEntry;
+  publicationLease: WorkflowDispatchOutboxPublicationLease | null;
+  scope: WorkflowScope;
+  authorizedTargetIds: readonly string[];
+}): Promise<WorkflowDispatchEventEnvelopeInventory> {
+  const entry = input.outboxEntry;
+  if (
+    entry.scope.organization_id !== input.scope.organizationId ||
+    entry.scope.environment_id !== input.scope.environmentId ||
+    entry.scope.site_id !== input.scope.siteId ||
+    !input.authorizedTargetIds.includes(entry.target_id) ||
+    !hasSafeAuthority(entry.authority) ||
+    entry.grants_publication_authority !== false ||
+    entry.grants_delivery_authority !== false ||
+    entry.grants_dispatch_authority !== false ||
+    entry.grants_execution_authority !== false
+  ) {
+    throw new ApiRequestError("Workflow outbox entry is outside the authorized event-envelope scope", 403);
+  }
+  const response = await apiFetch(
+    `/api/v1/workflows/plans/${encodeURIComponent(entry.plan_id)}/runs/${encodeURIComponent(entry.run_id)}/attempts/${encodeURIComponent(entry.attempt_id)}/dispatch-intents/${encodeURIComponent(entry.dispatch_intent_id)}/outbox/${encodeURIComponent(entry.outbox_entry_id)}/event-envelope`,
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(response, "Workflow event-envelope evidence retrieval failed");
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, dispatchEventEnvelopeInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    data.outbox_entry_id !== entry.outbox_entry_id ||
+    !Array.isArray(data.event_envelopes) ||
+    data.event_envelopes.length > 1 ||
+    typeof data.durable !== "boolean" ||
+    !data.event_envelopes.every((envelope) =>
+      isDispatchEventEnvelopeBoundToEntry(envelope, entry, input.publicationLease),
+    )
+  ) {
+    throw new ApiRequestError("Workflow event-envelope evidence response was unsafe", response.status);
+  }
+  return data as WorkflowDispatchEventEnvelopeInventory;
 }
 
 export async function createWorkflowPlan(input: {

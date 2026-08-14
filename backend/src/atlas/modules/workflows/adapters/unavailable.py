@@ -7,6 +7,10 @@ from atlas.modules.workflows.application import (
     WorkflowAttemptMaterializationIdempotencyRecord,
     WorkflowAttemptMaterializationRequest,
     WorkflowAttemptMaterializationResult,
+    WorkflowDispatchEventEnvelopeError,
+    WorkflowDispatchEventEnvelopePrepareIdempotencyRecord,
+    WorkflowDispatchEventEnvelopePrepareRequest,
+    WorkflowDispatchEventEnvelopePrepareResult,
     WorkflowDispatchIntentStagingError,
     WorkflowDispatchIntentStagingIdempotencyRecord,
     WorkflowDispatchIntentStagingRequest,
@@ -36,6 +40,7 @@ from atlas.modules.workflows.application.publication_lease_ports import (
     WorkflowOutboxPublicationLeaseMutationResult,
 )
 from atlas.modules.workflows.domain import (
+    WorkflowDispatchEventEnvelope,
     WorkflowDispatchIntent,
     WorkflowDispatchOutboxEntry,
     WorkflowExecutionAttempt,
@@ -171,6 +176,25 @@ class UnavailableWorkflowPlanRepository:
     ) -> WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord | None:
         self._raise_publication_lease()
 
+    async def get_dispatch_event_envelope_by_outbox_entry_id(
+        self, *, outbox_entry_id: str
+    ) -> WorkflowDispatchEventEnvelope | None:
+        self._raise_dispatch_event_envelope()
+
+    async def get_dispatch_event_envelope_prepare_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        publisher_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowDispatchEventEnvelopePrepareIdempotencyRecord | None:
+        self._raise_dispatch_event_envelope()
+
+    async def prepare_dispatch_event_envelope(
+        self, request: WorkflowDispatchEventEnvelopePrepareRequest
+    ) -> WorkflowDispatchEventEnvelopePrepareResult:
+        self._raise_dispatch_event_envelope()
+
     async def acquire_publication_lease(
         self, request: WorkflowOutboxPublicationLeaseAcquireRequest
     ) -> WorkflowOutboxPublicationLeaseAcquireResult:
@@ -253,4 +277,11 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowOutboxPublicationLeaseError(
             "workflow_outbox_publication_lease_repository_unavailable",
             "Durable workflow outbox publication lease storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_dispatch_event_envelope() -> NoReturn:
+        raise WorkflowDispatchEventEnvelopeError(
+            "workflow_dispatch_event_envelope_repository_unavailable",
+            "Durable workflow dispatch event envelope storage is not configured.",
         )

@@ -106,6 +106,10 @@ class WorkflowOutboxPublicationLeaseEffectiveState(StrEnum):
     RELEASED = "released"
 
 
+class WorkflowDispatchEventEnvelopeState(StrEnum):
+    PREPARED = "prepared"
+
+
 @dataclass(frozen=True, slots=True)
 class WorkflowScope:
     organization_id: str
@@ -812,6 +816,242 @@ class WorkflowOutboxPublicationLease:
         if requested_at >= self.expires_at:
             return WorkflowOutboxPublicationLeaseEffectiveState.EXPIRED
         return WorkflowOutboxPublicationLeaseEffectiveState.ACTIVE
+
+    @property
+    def grants_publication_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_delivery_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_dispatch_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_execution_authority(self) -> bool:
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowDispatchEventAuthority:
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        if any(self.canonical_value().values()):
+            raise ValueError("workflow dispatch event envelopes cannot grant operational authority")
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "execution_authorized": self.execution_authorized,
+            "publication_authorized": self.publication_authorized,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowDispatchEventPayload:
+    """Minimized provider-neutral lineage carried by a workflow dispatch event."""
+
+    outbox_entry_id: str
+    outbox_entry_digest: str
+    dispatch_intent_id: str
+    dispatch_intent_digest: str
+    plan_id: str
+    plan_digest: str
+    run_id: str
+    run_digest: str
+    step_run_id: str
+    step_run_digest: str
+    step_id: str
+    attempt_id: str
+    attempt_digest: str
+    attempt_number: int
+    scope: WorkflowScope
+    target_id: str
+    target_type: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.outbox_entry_id, "event payload outbox_entry_id"),
+            (self.dispatch_intent_id, "event payload dispatch_intent_id"),
+            (self.plan_id, "event payload plan_id"),
+            (self.run_id, "event payload run_id"),
+            (self.step_run_id, "event payload step_run_id"),
+            (self.step_id, "event payload step_id"),
+            (self.attempt_id, "event payload attempt_id"),
+            (self.target_id, "event payload target_id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.outbox_entry_digest, "event payload outbox_entry_digest"),
+            (self.dispatch_intent_digest, "event payload dispatch_intent_digest"),
+            (self.plan_digest, "event payload plan_digest"),
+            (self.run_digest, "event payload run_digest"),
+            (self.step_run_digest, "event payload step_run_digest"),
+            (self.attempt_digest, "event payload attempt_digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.attempt_number != 1:
+            raise ValueError("workflow dispatch event payloads support only attempt number one")
+        if self.target_type != "storage":
+            raise ValueError("workflow dispatch event payloads support only storage targets")
+
+    def canonical_value(self) -> dict[str, object]:
+        return {
+            "attempt_digest": self.attempt_digest,
+            "attempt_id": self.attempt_id,
+            "attempt_number": self.attempt_number,
+            "dispatch_intent_digest": self.dispatch_intent_digest,
+            "dispatch_intent_id": self.dispatch_intent_id,
+            "outbox_entry_digest": self.outbox_entry_digest,
+            "outbox_entry_id": self.outbox_entry_id,
+            "plan_digest": self.plan_digest,
+            "plan_id": self.plan_id,
+            "run_digest": self.run_digest,
+            "run_id": self.run_id,
+            "scope": self.scope.canonical_value(),
+            "step_id": self.step_id,
+            "step_run_digest": self.step_run_digest,
+            "step_run_id": self.step_run_id,
+            "target_id": self.target_id,
+            "target_type": self.target_type,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowDispatchEventEnvelope:
+    """Canonical event evidence that deliberately has no transport authority."""
+
+    event_id: str
+    event_type: str
+    event_version: str
+    occurred_at: datetime
+    recorded_at: datetime
+    producer: str
+    producer_version: str
+    subject_type: str
+    subject_id: str
+    organization_id: str
+    environment_id: str
+    correlation_id: str
+    causation_id: str
+    workflow_id: str
+    data_classification: str
+    schema_uri: str
+    payload: WorkflowDispatchEventPayload
+    extensions: tuple[tuple[str, str], ...]
+    orchestration_lease_id: str
+    orchestration_lease_digest: str
+    orchestration_fencing_token: int
+    publication_lease_id: str
+    publication_lease_digest: str
+    publication_fencing_token: int
+    publisher_subject_id: str
+    prepared_at: datetime
+    state: WorkflowDispatchEventEnvelopeState
+    authority: WorkflowDispatchEventAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.event_id, "dispatch event id"),
+            (self.producer, "dispatch event producer"),
+            (self.producer_version, "dispatch event producer_version"),
+            (self.subject_id, "dispatch event subject_id"),
+            (self.organization_id, "dispatch event organization_id"),
+            (self.environment_id, "dispatch event environment_id"),
+            (self.correlation_id, "dispatch event correlation_id"),
+            (self.causation_id, "dispatch event causation_id"),
+            (self.workflow_id, "dispatch event workflow_id"),
+            (self.orchestration_lease_id, "dispatch event orchestration_lease_id"),
+            (self.publication_lease_id, "dispatch event publication_lease_id"),
+            (self.publisher_subject_id, "dispatch event publisher_subject_id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.orchestration_lease_digest, "dispatch event orchestration_lease_digest"),
+            (self.publication_lease_digest, "dispatch event publication_lease_digest"),
+            (self.canonical_digest, "dispatch event canonical_digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.event_type != "WorkflowStepDispatchRequested":
+            raise ValueError("workflow dispatch event type is unsupported")
+        if self.event_version != "1.0":
+            raise ValueError("workflow dispatch event version is unsupported")
+        if self.subject_type != "workflow-execution-attempt":
+            raise ValueError("workflow dispatch event subject type is unsupported")
+        if self.data_classification != "internal":
+            raise ValueError("workflow dispatch event classification must be internal")
+        if self.schema_uri != "urn:project-atlas:event:workflow-step-dispatch-requested:1.0":
+            raise ValueError("workflow dispatch event schema URI is unsupported")
+        if self.extensions:
+            raise ValueError("workflow dispatch event extensions must remain empty")
+        if any(
+            timestamp.tzinfo is None
+            for timestamp in (self.occurred_at, self.recorded_at, self.prepared_at)
+        ):
+            raise ValueError("workflow dispatch event timestamps must be timezone-aware")
+        if self.recorded_at != self.prepared_at or self.recorded_at < self.occurred_at:
+            raise ValueError("workflow dispatch event recording time is invalid")
+        if self.subject_id != self.payload.attempt_id:
+            raise ValueError("workflow dispatch event subject does not match its attempt")
+        if (
+            self.organization_id != self.payload.scope.organization_id
+            or self.environment_id != self.payload.scope.environment_id
+            or self.correlation_id != self.payload.run_id
+            or self.causation_id != self.payload.dispatch_intent_id
+            or self.workflow_id != self.payload.run_id
+        ):
+            raise ValueError("workflow dispatch event context does not match its payload")
+        if self.orchestration_fencing_token < 1 or self.publication_fencing_token < 1:
+            raise ValueError("workflow dispatch event fencing tokens must be at least one")
+        if self.state is not WorkflowDispatchEventEnvelopeState.PREPARED:
+            raise ValueError("workflow dispatch event envelopes must remain prepared")
+        if any(self.authority.canonical_value().values()):
+            raise ValueError("workflow dispatch event envelopes cannot grant operational authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("workflow dispatch event envelope canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "authority": self.authority.canonical_value(),
+            "causation_id": self.causation_id,
+            "correlation_id": self.correlation_id,
+            "data_classification": self.data_classification,
+            "environment_id": self.environment_id,
+            "event_id": self.event_id,
+            "event_type": self.event_type,
+            "event_version": self.event_version,
+            "extensions": {},
+            "occurred_at": self.occurred_at.isoformat(),
+            "orchestration_fencing_token": self.orchestration_fencing_token,
+            "orchestration_lease_digest": self.orchestration_lease_digest,
+            "orchestration_lease_id": self.orchestration_lease_id,
+            "organization_id": self.organization_id,
+            "payload": self.payload.canonical_value(),
+            "prepared_at": self.prepared_at.isoformat(),
+            "producer": self.producer,
+            "producer_version": self.producer_version,
+            "publication_fencing_token": self.publication_fencing_token,
+            "publication_lease_digest": self.publication_lease_digest,
+            "publication_lease_id": self.publication_lease_id,
+            "publisher_subject_id": self.publisher_subject_id,
+            "recorded_at": self.recorded_at.isoformat(),
+            "schema_uri": self.schema_uri,
+            "state": self.state.value,
+            "subject_id": self.subject_id,
+            "subject_type": self.subject_type,
+            "workflow_id": self.workflow_id,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
 
     @property
     def grants_publication_authority(self) -> bool:

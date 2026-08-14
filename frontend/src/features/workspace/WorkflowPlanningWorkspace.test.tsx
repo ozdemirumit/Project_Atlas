@@ -11,6 +11,7 @@ import {
   WORKFLOW_PLAN_SAFETY_NOTICE,
   type WorkflowDefinition,
   type WorkflowDispatchIntent,
+  type WorkflowDispatchEventEnvelope,
   type WorkflowDispatchOutboxEntry,
   type WorkflowDispatchOutboxPublicationLease,
   type WorkflowExecutionAttempt,
@@ -292,6 +293,65 @@ const activePublicationLease: WorkflowDispatchOutboxPublicationLease = {
   effective_state: "active",
 };
 
+const preparedEventEnvelope: WorkflowDispatchEventEnvelope = {
+  event_id: "workflow-event.1234567890abcdef",
+  event_type: "WorkflowStepDispatchRequested",
+  event_version: "1.0",
+  producer: "atlas.workflow",
+  producer_version: "1.0.0",
+  occurred_at: pendingOutboxEntry.admitted_at,
+  recorded_at: "2026-08-13T10:14:00Z",
+  subject_type: "workflow-execution-attempt",
+  subject_id: pendingOutboxEntry.attempt_id,
+  organization_id: pendingOutboxEntry.scope.organization_id,
+  environment_id: pendingOutboxEntry.scope.environment_id,
+  correlation_id: pendingOutboxEntry.run_id,
+  causation_id: pendingOutboxEntry.dispatch_intent_id,
+  workflow_id: pendingOutboxEntry.run_id,
+  data_classification: "internal",
+  schema_uri: "urn:project-atlas:event:workflow-step-dispatch-requested:1.0",
+  payload: {
+    plan_id: pendingOutboxEntry.plan_id,
+    plan_digest: pendingOutboxEntry.plan_digest,
+    run_id: pendingOutboxEntry.run_id,
+    run_digest: pendingOutboxEntry.run_digest,
+    step_run_id: pendingOutboxEntry.step_run_id,
+    step_run_digest: pendingOutboxEntry.step_run_digest,
+    step_id: pendingOutboxEntry.step_id,
+    attempt_id: pendingOutboxEntry.attempt_id,
+    attempt_digest: pendingOutboxEntry.attempt_digest,
+    attempt_number: pendingOutboxEntry.attempt_number,
+    scope: pendingOutboxEntry.scope,
+    target_id: pendingOutboxEntry.target_id,
+    target_type: pendingOutboxEntry.target_type,
+    dispatch_intent_id: pendingOutboxEntry.dispatch_intent_id,
+    dispatch_intent_digest: pendingOutboxEntry.dispatch_intent_digest,
+    outbox_entry_id: pendingOutboxEntry.outbox_entry_id,
+    outbox_entry_digest: pendingOutboxEntry.canonical_digest,
+  },
+  extensions: {},
+  orchestration_lease_id: activePublicationLease.orchestration_lease_id,
+  orchestration_lease_digest: activePublicationLease.orchestration_lease_digest,
+  orchestration_fencing_token: activePublicationLease.orchestration_fencing_token,
+  publication_lease_id: activePublicationLease.publication_lease_id,
+  publication_lease_digest: activePublicationLease.canonical_digest,
+  publication_fencing_token: activePublicationLease.publication_fencing_token,
+  publisher_subject_id: activePublicationLease.publisher_subject_id,
+  prepared_at: "2026-08-13T10:14:00Z",
+  state: "prepared",
+  authority: {
+    publication_authorized: false,
+    delivery_authorized: false,
+    dispatch_authorized: false,
+    execution_authorized: false,
+  },
+  grants_publication_authority: false,
+  grants_delivery_authority: false,
+  grants_dispatch_authority: false,
+  grants_execution_authority: false,
+  canonical_digest: "9".repeat(64),
+};
+
 function leaseResponse(lease: WorkflowOrchestrationLease | null, status = 200): Response {
   return new Response(
     JSON.stringify({
@@ -410,6 +470,25 @@ function publicationLeaseResponse(publicationLeases: unknown[], status = 200): R
   );
 }
 
+function eventEnvelopeResponse(eventEnvelopes: unknown[], status = 200): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            outbox_entry_id: pendingOutboxEntry.outbox_entry_id,
+            event_envelopes: eventEnvelopes,
+            durable: false,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.event-envelope",
+            generated_at: "2026-08-13T10:15:00Z",
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function mockReadResponses(input: {
   lease?: WorkflowOrchestrationLease | null;
   run?: WorkflowExecutionRun | null;
@@ -417,15 +496,22 @@ function mockReadResponses(input: {
   dispatchIntents?: unknown[];
   outboxEntries?: unknown[];
   publicationLeases?: unknown[];
+  eventEnvelopes?: unknown[];
   leaseStatus?: number;
   runStatus?: number;
   attemptStatus?: number;
   dispatchIntentStatus?: number;
   outboxStatus?: number;
   publicationLeaseStatus?: number;
+  eventEnvelopeStatus?: number;
 }) {
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/event-envelope")) {
+      return Promise.resolve(
+        eventEnvelopeResponse(input.eventEnvelopes ?? [], input.eventEnvelopeStatus ?? 200),
+      );
+    }
     if (url.endsWith("/publication-lease")) {
       return Promise.resolve(
         publicationLeaseResponse(
@@ -1363,5 +1449,232 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
     expect(within(section).queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
     expect(within(section).queryByRole("button", { name: /acquire|heartbeat|release|publish|deliver|dispatch|execute/i })).toBeNull();
+  });
+
+  it("renders one canonical event envelope with exact preparation lineage and no authority controls", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Canonical event-envelope evidence",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Canonical event-envelope evidence",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          `/outbox/${pendingOutboxEntry.outbox_entry_id}/event-envelope`,
+        ),
+      ),
+    ).toBe(true);
+    expect(within(section).getByTitle(preparedEventEnvelope.event_id)).toBeVisible();
+    expect(records).toHaveTextContent("WorkflowStepDispatchRequested v1.0");
+    expect(records).toHaveTextContent("atlas.workflow v1.0.0");
+    expect(records).toHaveTextContent("workflow-execution-attempt");
+    expect(records).toHaveTextContent("organization.test");
+    expect(records).toHaveTextContent("environment.test");
+    expect(records).toHaveTextContent("correlation");
+    expect(records).toHaveTextContent("causation");
+    expect(records).toHaveTextContent("internal");
+    expect(within(section).getByTitle(preparedEventEnvelope.schema_uri)).toBeVisible();
+    expect(records).toHaveTextContent("publication fence 1");
+    expect(records).toHaveTextContent("source fence 7");
+    expect(records).toHaveTextContent("payload/outbox 666666666666...66666666");
+    expect(records).toHaveTextContent("envelope 999999999999...99999999");
+    expect(section).toHaveTextContent("Prepared canonical data only");
+    expect(section).toHaveTextContent("no bytes were serialized");
+    expect(section).toHaveTextContent("no message was published or delivered");
+    expect(section).toHaveTextContent("no worker was dispatched");
+    expect(section).toHaveTextContent("no action was executed");
+    expect(
+      within(section).queryByRole("button", {
+        name: /prepare|serialize|publish|deliver|dispatch|execute/i,
+      }),
+    ).toBeNull();
+    expect(within(section).queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
+  });
+
+  it("renders zero event envelopes as a healthy read-only state", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Canonical event-envelope evidence",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText("No event envelope has been prepared.")).toBeVisible();
+    expect(within(section).queryByRole("alert")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("fails closed when duplicate event envelopes are returned", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [
+        preparedEventEnvelope,
+        { ...preparedEventEnvelope, event_id: "workflow-event.other" },
+      ],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Canonical event-envelope evidence",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText("Event-envelope evidence is unavailable")).toBeVisible();
+    expect(within(section).queryByRole("list", { name: "Canonical event-envelope evidence" })).toBeNull();
+  });
+
+  it.each([
+    ["an extra key", { ...preparedEventEnvelope, unexpected: "unsafe" }],
+    [
+      "a mismatched payload lineage",
+      {
+        ...preparedEventEnvelope,
+        payload: { ...preparedEventEnvelope.payload, attempt_digest: "0".repeat(64) },
+      },
+    ],
+    [
+      "a different scope",
+      {
+        ...preparedEventEnvelope,
+        payload: {
+          ...preparedEventEnvelope.payload,
+          scope: { ...preparedEventEnvelope.payload.scope, site_id: "site.other" },
+        },
+      },
+    ],
+    [
+      "a different target",
+      {
+        ...preparedEventEnvelope,
+        payload: { ...preparedEventEnvelope.payload, target_id: "asset.storage.other" },
+      },
+    ],
+    ["a stale publication fence", { ...preparedEventEnvelope, publication_fencing_token: 2 }],
+    ["a stale source fence", { ...preparedEventEnvelope, orchestration_fencing_token: 8 }],
+    ["a broken envelope digest", { ...preparedEventEnvelope, canonical_digest: "not-a-digest" }],
+    [
+      "unsafe embedded authority",
+      {
+        ...preparedEventEnvelope,
+        authority: { ...preparedEventEnvelope.authority, worker_dispatch_authorized: true },
+      },
+    ],
+    ["publication authority", { ...preparedEventEnvelope, grants_publication_authority: true }],
+  ])("fails closed when event-envelope evidence contains %s", async (_case, unsafeEnvelope) => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [unsafeEnvelope],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Canonical event-envelope evidence",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText("Event-envelope evidence is unavailable")).toBeVisible();
+    expect(section).toHaveTextContent(
+      "No preparation, publication, delivery, dispatch, or execution state is inferred",
+    );
+    expect(within(section).queryByRole("list", { name: "Canonical event-envelope evidence" })).toBeNull();
+    expect(
+      within(section).queryByRole("button", {
+        name: /prepare|serialize|publish|deliver|dispatch|execute/i,
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [403, "Event-envelope evidence permission is missing", "current role or scope cannot inspect"],
+  ])("handles event-envelope read status %s with the normal session boundary", async (status, title, detail) => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopeStatus: status,
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Canonical event-envelope evidence",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText(title)).toBeVisible();
+    expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+    expect(within(section).queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("keeps long envelope evidence responsive and control-free at a narrow viewport", async () => {
+    vi.stubGlobal("innerWidth", 390);
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [
+        {
+          ...preparedEventEnvelope,
+          event_id: `workflow-event.${"longsegment".repeat(15)}`,
+        },
+      ],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Canonical event-envelope evidence",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Canonical event-envelope evidence",
+    });
+    expect(records).toHaveClass("workflow-event-envelope-list");
+    expect(within(section).getByTitle(/workflow-event\.longsegment/)).toBeVisible();
+    expect(
+      within(section).queryByRole("button", {
+        name: /prepare|serialize|publish|deliver|dispatch|execute/i,
+      }),
+    ).toBeNull();
   });
 });

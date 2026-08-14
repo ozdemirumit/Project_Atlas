@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from atlas.api.schemas import ResponseMeta
 from atlas.modules.workflows.domain import (
     WorkflowDefinition,
+    WorkflowDispatchEventEnvelope,
     WorkflowDispatchIntent,
     WorkflowDispatchOutboxEntry,
     WorkflowExecutionAttempt,
@@ -149,6 +150,18 @@ class HeartbeatWorkflowOutboxPublicationLeaseInput(WorkflowOutboxPublicationLeas
 
 class ReleaseWorkflowOutboxPublicationLeaseInput(WorkflowOutboxPublicationLeaseMutationInput):
     schema_version: Literal["atlas.workflow-outbox-publication-lease-release-input.v1"]
+
+
+class PrepareWorkflowDispatchEventEnvelopeInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["atlas.workflow-dispatch-event-envelope-prepare-input.v1"]
+    outbox_entry_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    publication_lease_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    publication_fencing_token: int = Field(ge=1)
+    acknowledged_preparation_only_no_publication_delivery_dispatch_or_execution_authority: Literal[
+        True
+    ]
 
 
 class WorkflowStepDefinitionData(BaseModel):
@@ -356,6 +369,107 @@ class WorkflowOutboxPublicationLeaseResponse(BaseModel):
 
 class WorkflowOutboxPublicationLeaseInventoryResponse(BaseModel):
     data: WorkflowOutboxPublicationLeaseInventoryData
+    meta: ResponseMeta
+
+
+class WorkflowDispatchEventPayloadData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    outbox_entry_id: str
+    outbox_entry_digest: str
+    dispatch_intent_id: str
+    dispatch_intent_digest: str
+    plan_id: str
+    plan_digest: str
+    run_id: str
+    run_digest: str
+    step_run_id: str
+    step_run_digest: str
+    step_id: str
+    attempt_id: str
+    attempt_digest: str
+    attempt_number: Literal[1]
+    scope: WorkflowScopeData
+    target_id: str
+    target_type: Literal["storage"]
+
+
+class WorkflowDispatchEventAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+
+
+class WorkflowDispatchEventEnvelopeData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    event_type: Literal["WorkflowStepDispatchRequested"]
+    event_version: Literal["1.0"]
+    occurred_at: datetime
+    recorded_at: datetime
+    producer: str
+    producer_version: str
+    subject_type: Literal["workflow-execution-attempt"]
+    subject_id: str
+    organization_id: str
+    environment_id: str
+    correlation_id: str
+    causation_id: str
+    workflow_id: str
+    data_classification: Literal["internal"]
+    schema_uri: Literal["urn:project-atlas:event:workflow-step-dispatch-requested:1.0"]
+    payload: WorkflowDispatchEventPayloadData
+    extensions: dict[str, str]
+    orchestration_lease_id: str
+    orchestration_lease_digest: str
+    orchestration_fencing_token: int
+    publication_lease_id: str
+    publication_lease_digest: str
+    publication_fencing_token: int
+    publisher_subject_id: str
+    prepared_at: datetime
+    state: Literal["prepared"]
+    authority: WorkflowDispatchEventAuthorityData
+    grants_publication_authority: Literal[False]
+    grants_delivery_authority: Literal[False]
+    grants_dispatch_authority: Literal[False]
+    grants_execution_authority: Literal[False]
+    canonical_digest: str
+
+    @classmethod
+    def from_domain(
+        cls, envelope: WorkflowDispatchEventEnvelope
+    ) -> WorkflowDispatchEventEnvelopeData:
+        return cls.model_validate(
+            envelope.canonical_value()
+            | {
+                "grants_publication_authority": False,
+                "grants_delivery_authority": False,
+                "grants_dispatch_authority": False,
+                "grants_execution_authority": False,
+            }
+        )
+
+
+class WorkflowDispatchEventEnvelopeInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    outbox_entry_id: str
+    event_envelopes: list[WorkflowDispatchEventEnvelopeData] = Field(max_length=1)
+    durable: bool
+
+
+class WorkflowDispatchEventEnvelopeResponse(BaseModel):
+    data: WorkflowDispatchEventEnvelopeData
+    meta: ResponseMeta
+
+
+class WorkflowDispatchEventEnvelopeInventoryResponse(BaseModel):
+    data: WorkflowDispatchEventEnvelopeInventoryData
     meta: ResponseMeta
 
 
